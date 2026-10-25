@@ -118,5 +118,3 @@ export function TextPanel({
     </div>
   );
 }
-
-export default TextPanel;

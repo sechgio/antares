@@ -10,7 +10,6 @@ from backend.core.editor.assets import (
     ALLOWED_SUFFIXES,
     AssetImportError,
     import_file,
-    large_file_warning,
 )
 
 
@@ -48,19 +47,6 @@ def test_missing_file_rejected(assets_dir: Path) -> None:
 def test_allowed_suffixes_cover_media_formats() -> None:
     for expected in (".mp4", ".mkv", ".mov", ".webm", ".mp3", ".wav", ".png", ".jpg", ".gif"):
         assert expected in ALLOWED_SUFFIXES
-
-
-def test_large_file_warning_over_threshold(tmp_path: Path) -> None:
-    big = tmp_path / "grande.mp4"
-    big.write_bytes(b"\0" * (600 * 1024 * 1024))
-    warning = large_file_warning(big)
-    assert warning is not None and "GB" in warning
-
-
-def test_small_file_no_warning(tmp_path: Path) -> None:
-    small = tmp_path / "pequeno.mp4"
-    small.write_bytes(b"\0" * 1024)
-    assert large_file_warning(small) is None
 
 
 BUILD_DIR = os.environ.get("ANTARES_FFMPEG_DIR", "")

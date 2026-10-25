@@ -504,6 +504,40 @@ class AgentStore:
             approval = self._approvals.get(approval_id)
             return dict(approval) if isinstance(approval, dict) else None
 
+    def approval_history(
+        self,
+        *,
+        session_id: str | None = None,
+        method: str | None = None,
+        status: str | None = None,
+        limit: int = 500,
+    ) -> list[JsonObject]:
+        self._expire_stale_approvals()
+        wanted = status if status in {"pending", "approved", "denied", "expired", "uncertain"} else None
+        with self._lock:
+            records: list[JsonObject] = []
+            for approval in self._approvals.values():
+                if session_id and approval.get("session_id") != session_id:
+                    continue
+                if method and approval.get("method") != method:
+                    continue
+                dispatch = self._dispatches.get(
+                    dispatch_key(str(approval.get("session_id")), str(approval.get("call_id") or ""))
+                )
+                if wanted == "uncertain":
+                    if not isinstance(dispatch, dict) or dispatch.get("status") != "uncertain":
+                        continue
+                elif wanted and approval.get("status") != wanted:
+                    continue
+                record = dict(approval)
+                if isinstance(dispatch, dict):
+                    record["dispatch"] = {
+                        key: dispatch.get(key) for key in ("status", "finished_at") if dispatch.get(key) is not None
+                    }
+                records.append(record)
+        records.sort(key=lambda item: float(item.get("created_at") or 0), reverse=True)
+        return records[: max(1, min(int(limit), 1000))]
+
     def decide_approval(self, approval_id: str, approved: bool) -> JsonObject | None:
         self._expire_stale_approvals()
         with self._lock:
@@ -526,6 +560,14 @@ class AgentStore:
     def ensure_approval(self, session_id: str, call: JsonObject) -> JsonObject:
         with self._lock:
             return self.approval_for_call(session_id, str(call["id"])) or self.create_approval(session_id, call)
+
+    def expire_approval(self, approval_id: str) -> None:
+        with self._lock:
+            approval = self._approvals.get(approval_id)
+            if isinstance(approval, dict) and approval.get("status") == "pending":
+                approval["status"] = "expired"
+                approval["decided_at"] = _now_ms()
+                self._write_approvals()
 
     def deny_pending_approvals(self, session_id: str) -> list[str]:
         self._expire_stale_approvals()
@@ -800,12 +842,50 @@ class AgentRunner:
         self._store.update_tool_call(session_id, str(call["id"]), "failed" if failed else "done", result)
         return str(result)
 
+    def _subagent_approval(
+        self,
+        session_id: str,
+        name: str,
+        params: JsonObject,
+        agent_name: str,
+        token: _CancelEvent | None,
+    ) -> str | None:
+        approval = self._store.ensure_approval(
+            session_id,
+            {
+                "id": f"sub-{uuid.uuid4().hex[:12]}",
+                "name": name,
+                "params": params,
+                "context": {"subagent": agent_name, "subagent_role": "worker"},
+            },
+        )
+        approval_id = str(approval["id"])
+        try:
+            while True:
+                if token is not None and token.cancelled:
+                    raise RunCancelled()
+                current = self._store.get_approval(approval_id)
+                status = str((current or {}).get("status") or "expired")
+                if status != "pending":
+                    break
+                if token is None:
+                    time.sleep(0.2)
+                elif token.wait(0.2):
+                    raise RunCancelled()
+        except RunCancelled:
+            self._store.expire_approval(approval_id)
+            raise
+        if status == "approved":
+            return None
+        if status == "denied":
+            return json.dumps({"error": "El usuario rechazó esta acción del subagente"}, ensure_ascii=False)
+        return json.dumps({"error": "La aprobación del subagente expiró; vuelve a intentarlo"}, ensure_ascii=False)
+
     def _run_subagent(self, call: JsonObject, token: _CancelEvent | None = None) -> str:
         profile = call.get("subagent")
         session_id = str(call.get("session_id") or "")
         raw_params = call.get("params")
         params: JsonObject = raw_params if isinstance(raw_params, dict) else {}
-        task = str(params.get("task") or "").strip()
         session = self._store.get_session(session_id) if session_id else None
         if not isinstance(profile, dict) or not str(profile.get("name") or "").strip():
             return json.dumps({"error": "No hay un agente guardado disponible para esta delegación"}, ensure_ascii=False)
@@ -813,34 +893,61 @@ class AgentRunner:
         model = str(profile.get("model") or (session or {}).get("model") or "")
         if session is None and (not provider or not model):
             return json.dumps({"error": "El subagente necesita una conversación activa"}, ensure_ascii=False)
-        if not task:
-            return json.dumps({"error": "Indica qué tarea debe resolver el subagente"}, ensure_ascii=False)
-        allowed = set(subagent.allowed_tool_names(profile.get("tools"), profile.get("enabled")))
-        specs = [spec for spec in tool_specs() if str(spec.get("name") or "") in allowed]
-        allowed = {str(spec.get("name") or "") for spec in specs}
-
-        def execute(name: str, args: JsonObject) -> str:
-            if name not in allowed:
-                return json.dumps({"error": f"Herramienta no disponible para el subagente: {name}"}, ensure_ascii=False)
-            return self._execute(
-                {"id": f"sub-{uuid.uuid4().hex[:12]}", "name": name, "params": args, "session_id": session_id},
-                token,
-            )
-
         try:
-            receipt = subagent.run(
-                provider=provider,
-                model=model,
-                agent=profile,
-                task=task,
-                tools=specs,
-                execute=execute,
-                cancelled=(lambda: token.cancelled) if token is not None else None,
-            )
-        except RunCancelled:
-            raise
-        except Exception as err:
+            tasks = subagent.normalize_tasks(profile, params)
+        except ValueError as err:
             return json.dumps({"error": str(err)[:300]}, ensure_ascii=False)
+        specs = tool_specs()
+        results: list[JsonObject] = []
+        for task in tasks:
+            allowed = set(
+                subagent.allowed_tool_names(
+                    profile.get("tools"),
+                    profile.get("enabled"),
+                    role=str(task["role"]),
+                    exclude_tools=task["exclude_tools"],
+                )
+            )
+            offered = [spec for spec in specs if str(spec.get("name") or "") in allowed]
+            offered_names = {str(spec.get("name") or "") for spec in offered}
+            gated = {str(spec.get("name") or "") for spec in offered if spec.get("gated")}
+
+            def execute(name: str, args: JsonObject, *, _offered=offered_names, _gated=gated) -> str:
+                if name not in _offered:
+                    return json.dumps(
+                        {"error": f"Herramienta no disponible para el subagente: {name}"},
+                        ensure_ascii=False,
+                    )
+                if name in _gated:
+                    rejected = self._subagent_approval(
+                        session_id, name, args, str(profile.get("name") or "Subagente"), token,
+                    )
+                    if rejected is not None:
+                        return rejected
+                return self._execute(
+                    {"id": f"sub-{uuid.uuid4().hex[:12]}", "name": name, "params": args, "session_id": session_id},
+                    token,
+                )
+
+            try:
+                results.append(
+                    subagent.run(
+                        provider=provider,
+                        model=model,
+                        agent=profile,
+                        task=str(task["task"]),
+                        tools=offered,
+                        execute=execute,
+                        role=str(task["role"]),
+                        output_schema=task.get("output_schema"),
+                        cancelled=(lambda: token.cancelled) if token is not None else None,
+                    )
+                )
+            except RunCancelled:
+                raise
+            except Exception as err:
+                return json.dumps({"error": str(err)[:300]}, ensure_ascii=False)
+        receipt = results[0] if params.get("tasks") is None else subagent.group_receipt(profile, results)
         return json.dumps(scrub_secrets(receipt), ensure_ascii=False)
 
     def _execute(self, call: JsonObject, token: _CancelEvent | None = None) -> str:

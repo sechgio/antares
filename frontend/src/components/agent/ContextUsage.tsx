@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import type { AgentUsage } from '../../api/agentApi';
 
 const CONTEXT_WINDOWS: [RegExp, number][] = [
   [/gemini/i, 1_048_576],
@@ -19,6 +20,12 @@ export function formatTokens(value: number): string {
   if (value >= 1_000_000) return `${compact(value / 1_000_000)} M`;
   if (value >= 1000) return `${compact(value / 1000)} k`;
   return String(value);
+}
+
+export function formatCost(value: number): string {
+  if (value > 0 && value < 0.0001) return '<$0,0001';
+  const decimals = value > 0 && value < 1 ? 4 : 2;
+  return `$${new Intl.NumberFormat('es', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value)}`;
 }
 
 function Ring({ ratio, level }: { ratio: number; level: 'ok' | 'warn' | 'critical' }) {
@@ -44,7 +51,7 @@ function Ring({ ratio, level }: { ratio: number; level: 'ok' | 'warn' | 'critica
 }
 
 export default function ContextUsage({ usage, model, contextWindow, thresholds, compacting }: {
-  usage: { input: number; output: number; context?: number; cached?: number; prompt?: number } | null;
+  usage: AgentUsage | null;
   model: string;
   contextWindow?: number | null;
   thresholds?: { warn: number; compact: number } | null;
@@ -54,13 +61,19 @@ export default function ContextUsage({ usage, model, contextWindow, thresholds, 
   const cardId = useId();
   if (!usage && !compacting) return null;
   const used = usage ? (usage.context ?? usage.input + usage.output) : 0;
-  // Ventana real del proveedor cuando existe; si no, heurística por modelo.
-  const max = contextWindow && contextWindow > 0 ? contextWindow : contextWindowFor(model);
+  // Ventana real del proveedor cuando existe; si no, la del backend o la heurística por modelo.
+  const max = (usage?.window && usage.window > 0 ? usage.window : 0)
+    || (contextWindow && contextWindow > 0 ? contextWindow : 0)
+    || contextWindowFor(model);
   const ratio = max ? Math.min(1, used / max) : 0;
   const percent = `${new Intl.NumberFormat('es', { maximumFractionDigits: 1 }).format(ratio * 100)}%`;
   const level: 'ok' | 'warn' | 'critical' = thresholds && max && used >= thresholds.compact
     ? 'critical'
     : thresholds && max && used >= thresholds.warn ? 'warn' : 'ok';
+  const turn = usage?.turn;
+  const cost = usage?.cost ?? 0;
+  const showCost = cost > 0 || (turn?.cost ?? 0) > 0;
+  const compactions = usage?.compactions ?? 0;
 
   return (
     <div
@@ -78,6 +91,7 @@ export default function ContextUsage({ usage, model, contextWindow, thresholds, 
       >
         {max && <Ring ratio={ratio} level={level} />}
         {compacting ? 'Compactando…' : max ? percent : formatTokens(used)}
+        {cost > 0 && <span className="text-[var(--text-muted)]">· {formatCost(cost)}</span>}
       </button>
       {open && (
         <div
@@ -129,6 +143,36 @@ export default function ContextUsage({ usage, model, contextWindow, thresholds, 
               </>
             )}
           </div>
+          {(turn || showCost || compactions > 0) && (
+            <div className="space-y-1.5 border-t border-[var(--border-subtle)] p-3 tabular-nums">
+              {turn && (
+                <div className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Último turno</span>
+                  <span className="text-[var(--text-primary)]">
+                    {formatTokens(turn.input)} ent. · {formatTokens(turn.output)} sal.
+                  </span>
+                </div>
+              )}
+              {showCost && (
+                <div className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Coste del turno</span>
+                  <span className="text-[var(--text-primary)]">{formatCost(turn?.cost ?? 0)}</span>
+                </div>
+              )}
+              {showCost && (
+                <div className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Coste de la sesión</span>
+                  <span className="text-[var(--text-primary)]">{formatCost(cost)}</span>
+                </div>
+              )}
+              {compactions > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Compactaciones</span>
+                  <span className="text-[var(--text-primary)]">{compactions}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

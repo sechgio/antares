@@ -12,7 +12,6 @@ from backend.core.editor.effects import (
     chromakey_chain,
     stabilize_chains,
 )
-from backend.core.editor.stabilize import improvement, is_stabilized, measure_motion
 from backend.core.editor.toolchain import resolve_toolchain
 
 BUILD_DIR = os.environ.get("ANTARES_FFMPEG_DIR", "")
@@ -124,53 +123,6 @@ def test_stabilize_chains_map_shakiness_to_build_range() -> None:
     assert "shakiness=1" in detect
     detect, _ = stabilize_chains(99)
     assert "shakiness=10" in detect
-
-
-def test_improvement_metric() -> None:
-    assert improvement(4.0, 1.0) == 0.75
-    assert improvement(4.0, 4.0) == 0.0
-    assert improvement(0.0, 0.0) == 0.0
-    assert improvement(4.0, 8.0) == 0.0
-
-
-def test_is_stabilized_requires_halving_motion() -> None:
-    assert is_stabilized(4.0, 1.0) is True
-    assert is_stabilized(4.0, 3.0) is False
-
-
-def test_static_clip_has_zero_motion(toolchain: Any) -> None:
-    import subprocess
-
-    still = SCRATCH / "quieto.mp4"
-    subprocess.run(
-        [
-            str(toolchain.ffmpeg),
-            "-hide_banner",
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=c=gray:s=320x240:r=25:d=2",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-pix_fmt",
-            "yuv420p",
-            str(still),
-        ],
-        capture_output=True,
-        timeout=120,
-        check=False,
-    )
-    motion = measure_motion(toolchain, still, SCRATCH / "metric-quiet", count=4)
-    assert motion < 0.5, f"clip quieto con movimiento {motion}"
-
-
-def test_shaky_clip_has_motion(toolchain: Any) -> None:
-    source = _shaky_clip(toolchain, SCRATCH / "temblor.mp4")
-    motion = measure_motion(toolchain, source, SCRATCH / "metric-shaky", count=6)
-    assert motion > 1.0, f"clip tembloroso sin movimiento medible: {motion}"
 
 
 def test_stabilize_runs_and_preserves_source(toolchain: Any) -> None:

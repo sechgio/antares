@@ -80,6 +80,16 @@ a los umbrales y el estado «Compactando…»; la proyección de mensajes añade
 entrada «🗜 Contexto compactado» con el motivo y el resumen, para que el usuario
 vea qué se conservó.
 
+**Coexistencia con el guardián mecánico.** Antares además compacta cada petición
+individual de forma mecánica y sin modelo (`compactMessages`/`requestBudget`,
+mismo módulo, capas 1 y 2): recorta resultados antiguos, textos e imágenes y
+pliega turnos viejos para que ninguna llamada única se pase del presupuesto,
+respetando el emparejamiento llamada/resultado y sin tocar el mensaje actual.
+Esa capa es transitoria y por petición; la política duradera de esta decisión
+(es el resumen que persiste en la conversación) actúa sobre umbrales distintos y
+ambas conviven: la mecánica evita el pico puntual, la política evita el agotamiento
+progresivo del contexto.
+
 ## Alternativas consideradas
 
 | Alternativa | Por qué se descartó |
