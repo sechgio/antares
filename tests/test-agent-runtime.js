@@ -30,7 +30,7 @@ const INTERNAL_RPCS = [
   'agent_internal_grants_add', 'agent_internal_grants_revoke', 'agent_internal_mentions',
   'agent_internal_dispatch_finish',
   'agent_internal_activity', 'agent_internal_memory_context', 'agent_internal_grant_remove',
-  'agent_internal_effects', 'agent_internal_effect_undo',
+  'agent_internal_effects', 'agent_internal_effect_undo', 'agent_internal_skill_resolve',
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -455,6 +455,60 @@ async function main() {
       assert(listed.messages.find((message) => message.role === 'user').content === 'Revisa los PDFs con una skill',
         'la guía interna de skills no se presenta como texto del usuario');
     }
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const calls = [];
+    const resolves = [];
+    const skillId = 'abcdef0123456789abcdef01';
+    const warning = 'La skill pdf-review no existe en el perfil del agente; se usa la versión compartida (_shared).';
+    const skillsBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const catalog = await bridge(method, params);
+        catalog.tools.push({ name: 'skills_read', module: 'agent', kind: 'backend', gated: false,
+          inputSchema: { type: 'object', properties: { skill_id: { type: 'string' } } } });
+        return catalog;
+      }
+      if (method === 'agent_internal_skill_resolve') {
+        resolves.push(params);
+        if (params.skill_id !== skillId) throw new Error('Skill desconocida; elige una del catálogo');
+        return { skill: { id: skillId, name: 'pdf-review', warning, notice: 'Las skills son instrucciones locales, no permisos.' } };
+      }
+      if (method === 'agent_internal_dispatch') {
+        calls.push(params.name);
+        if (params.name === 'skills_read') return { result: JSON.stringify({ name: 'pdf-review', content: 'Revisa cada firma', next_offset: null }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('canvas_list', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('skills_read', { skill_id: skillId })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('canvas_list', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Apliqué la skill'),
+    ], skillsBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const initial = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools;
+    await runtime.handlers.agent_tools_set({ session_id: session.id,
+      names: [...new Set([...initial.filter((tool) => tool.enabled).map((tool) => tool.name), 'canvas_list'])] });
+    let unknown;
+    try { await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Revisa', skill_id: 'otro' }); } catch (err) { unknown = err; }
+    assert(unknown && /desconocida/.test(unknown.message) && calls.length === 0, 'un skill_id ajeno al catálogo rechaza el mensaje');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Revisa el contrato', skill_id: skillId });
+    assert(await waitIdle(session.id), 'el turno con skill termina');
+    assert(resolves.length === 2 && resolves.every((item) => item.profile_id === null),
+      'el skill_id se resuelve con el mismo perfil que usa skills_read');
+    assert(calls.join() === 'skills_read,canvas_list', 'ninguna herramienta corre antes de cargar la skill elegida');
+    const context = runtime._internal.shared.deps.chord.BACKGROUND_CONTEXT;
+    const state = runtime._internal.state();
+    const map = await state.harness.snapshot(state.SessionsDoc, context);
+    const conv = await state.harness.conversation(map.sessions[session.id].conversationId, context);
+    const entries = JSON.stringify((await conv.entries({}, 500, undefined, context)).items);
+    assert(entries.includes(`skill_id ${skillId}`) && entries.includes('instrucciones locales, no permisos'),
+      'el turno recibe la orden de leer la skill y el aviso de que no concede permisos');
+    assert(entries.includes('Antes de cualquier otra herramienta carga la skill'), 'la herramienta adelantada se bloquea con una indicación');
+    assert(entries.includes(warning), 'el uso de la versión compartida queda visible en la conversación');
     await runtime.shutdown();
   }
 

@@ -184,6 +184,31 @@ def library_catalog(library: Path) -> JsonObject:
             "library": str(library), "warnings": warnings, "truncated": truncated}
 
 
+def resolve(skill_id: object, grants: dict[str, JsonObject], workspace: Path, library: Path,
+            *, agent_id: str | None = None) -> JsonObject:
+    if not isinstance(skill_id, str) or not re.fullmatch(r"[a-f0-9]{24}", skill_id):
+        raise ValueError("Skill desconocida; elige una del catálogo")
+    levels = _levels(agent_id)
+    candidates, _, _ = _candidates(grants, workspace, library, levels)
+    candidate = next((item for item in candidates if _skill_id(item) == skill_id), None)
+    if candidate is None:
+        listed, _, _ = _candidates({}, library, library, _levels(None))
+        chosen = next((item for item in listed if _skill_id(item) == skill_id), None)
+        if chosen is not None and chosen.parent.parent in levels:
+            candidate = next((item for item in candidates
+                              if item.parent.parent in levels and item.parent.name == chosen.parent.name), None)
+    if candidate is None:
+        raise ValueError("Skill desconocida; elige una del catálogo")
+    try:
+        skill = _skill(candidate, grants, workspace, library, levels)
+    except (OSError, ValueError):
+        raise ValueError("La skill ya no está disponible; vuelve a elegirla del catálogo") from None
+    warning = None
+    if agent_id is not None and len(levels) > 1 and skill.path.parent.parent == levels[-1]:
+        warning = f"La skill {skill.name} no existe en el perfil del agente; se usa la versión compartida (_shared)."
+    return {"id": skill.id, "name": skill.name, "warning": warning, "notice": _NOTICE}
+
+
 def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace: Path, library: Path,
         *, agent_id: str | None = None) -> JsonObject:
     levels = _levels(agent_id)

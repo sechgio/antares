@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownRight, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
-import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentRuleAudit, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
+import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentRuleAudit, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentSkill, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
@@ -27,6 +27,7 @@ import AgentBrowserPanel from './AgentBrowserPanel';
 import AgentAuditPanel from './AgentAuditPanel';
 import ScheduledTasksPanel from './ScheduledTasksPanel';
 import { METHOD_LABELS } from './methodLabels';
+import { useComposerAutocomplete, type ComposerSuggestion } from './useComposerAutocomplete';
 import { ApprovalCard, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel } from './AgentTimeline';
 
 const POLL_MS = 1500;
@@ -40,7 +41,23 @@ type SendIntent = Readonly<{
   requestId: string;
   attachments: readonly string[];
   correction: boolean;
+  skillId?: string;
 }>;
+
+type ComposerOption = { kind: 'bot'; profile: AgentProfile } | { kind: 'skill'; skill: AgentSkill };
+
+// Subsecuencia difusa: null si no coincide; menor es mejor (huecos entre letras).
+function fuzzyGaps(query: string, text: string): number | null {
+  let at = -1;
+  let gaps = 0;
+  for (const char of query) {
+    const next = text.indexOf(char, at + 1);
+    if (next < 0) return null;
+    gaps += next - at - 1;
+    at = next;
+  }
+  return gaps;
+}
 
 type SendReceipt = { intent: SendIntent } & (
   | { phase: 'sending' | 'received' }
@@ -172,9 +189,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const sendInFlightRef = useRef(false);
   const [messagesStale, setMessagesStale] = useState(false);
   const [draft, setDraft] = useState('');
-  const [mentionCursor, setMentionCursor] = useState(0);
-  const [mentionIndex, setMentionIndex] = useState(0);
-  const [mentionsHidden, setMentionsHidden] = useState(false);
+  const [skills, setSkills] = useState<AgentSkill[] | null>(null);
+  const [activeSkill, setActiveSkill] = useState<AgentSkill | null>(null);
   const [search, setSearch] = useState('');
   const [profileSearch, setProfileSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -240,7 +256,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const atBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
-  const botMentionsRef = useRef<HTMLDivElement | null>(null);
+  const suggestionsRef = useRef<HTMLDivElement | null>(null);
   const announcedRef = useRef(new Set<string>());
   const [announcement, setAnnouncement] = useState<{ key: string; text: string } | null>(null);
   const activeCall = messages.flatMap((message) => message.tool_calls ?? []).reverse().find((call) => call.status === 'running');
@@ -592,24 +608,57 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     const query = profileSearch.trim().toLocaleLowerCase('es');
     return profiles.filter((profile) => `${profile.name} ${profile.description}`.toLocaleLowerCase('es').includes(query));
   }, [profiles, profileSearch]);
-  const mentionMatch = mentionsHidden ? null : draft.slice(0, mentionCursor).match(/(?:^|\s)@(?:"([^"\n]*)|([\p{L}\p{N}_-]*))$/u);
   const normalizeBotName = (value: string) => value.normalize('NFKD').replace(/\p{M}/gu, '').toLocaleLowerCase('es').trim().replace(/[\s_]+/g, '-');
-  const mentionQuery = normalizeBotName(mentionMatch?.[1] ?? mentionMatch?.[2] ?? '');
-  const mentionProfiles = mentionMatch ? profiles.filter((profile) => normalizeBotName(profile.name).includes(mentionQuery)).slice(0, 6) : [];
-  const selectedMention = mentionProfiles[Math.min(mentionIndex, Math.max(0, mentionProfiles.length - 1))];
+  const composer = useComposerAutocomplete<ComposerOption>(draft, [
+    {
+      id: 'bot',
+      pattern: /(?:^|\s)@(?:"([^"\n]*)|([\p{L}\p{N}_-]*))$/u,
+      options: (match) => {
+        const query = normalizeBotName(match[1] ?? match[2] ?? '');
+        return profiles.filter((profile) => normalizeBotName(profile.name).includes(query)).slice(0, 6)
+          .map((profile) => ({ kind: 'bot' as const, profile }));
+      },
+    },
+    {
+      id: 'skill',
+      pattern: /(?:^|\s)\/([\p{L}\p{N}_-]*)$/u,
+      options: (match) => {
+        const query = match[1].toLocaleLowerCase('es');
+        const ranked: { skill: AgentSkill; gaps: number }[] = [];
+        for (const skill of skills ?? []) {
+          const gaps = fuzzyGaps(query, skill.name.toLocaleLowerCase('es'));
+          if (gaps !== null) ranked.push({ skill, gaps });
+        }
+        return ranked.sort((a, b) => a.gaps - b.gaps).slice(0, 6).map(({ skill }) => ({ kind: 'skill' as const, skill }));
+      },
+    },
+  ]);
+  const autocomplete = composer.suggestion;
+  const optionId = (option: ComposerOption) => option.kind === 'bot' ? `agent-mention-${option.profile.id}` : `agent-skill-${option.skill.id}`;
+  const selectedOptionId = autocomplete?.selected ? optionId(autocomplete.selected) : undefined;
+  const listboxId = autocomplete?.id === 'bot' ? 'agent-bot-mentions' : 'agent-skill-options';
   useEffect(() => {
-    const option = Array.from(botMentionsRef.current?.children ?? []).find((item) => item.getAttribute('aria-selected') === 'true');
+    const option = Array.from(suggestionsRef.current?.children ?? []).find((item) => item.getAttribute('aria-selected') === 'true');
     option?.scrollIntoView({ block: 'nearest' });
-  }, [selectedMention?.id]);
-  const insertBotMention = (profile: AgentProfile) => {
-    if (!mentionMatch) return;
-    const token = `@bot:${profile.id}`;
-    const start = mentionCursor - mentionMatch[0].length + mentionMatch[0].indexOf('@');
-    const caret = start + token.length + 1;
+  }, [selectedOptionId]);
+  const skillsOpen = autocomplete?.id === 'skill';
+  useEffect(() => {
+    if (!skillsOpen) return;
+    let alive = true;
+    agentApi.agentSkillsList().then((res) => { if (alive) setSkills(res.skills); }).catch((err: unknown) => {
+      if (!alive) return;
+      setSkills([]);
+      addToast({ message: errorMessage(err, 'No se pudo cargar el catálogo de skills'), type: 'error' });
+    });
+    return () => { alive = false; };
+  }, [skillsOpen]);
+  const pickSuggestion = (option: ComposerOption, active: ComposerSuggestion<ComposerOption>) => {
+    const token = option.kind === 'bot' ? `@bot:${option.profile.id} ` : '';
+    const caret = active.start + token.length;
     draftVersionRef.current += 1;
-    setDraft(`${draft.slice(0, start)}${token} ${draft.slice(mentionCursor)}`);
-    setMentionCursor(caret);
-    setMentionsHidden(true);
+    setDraft(`${draft.slice(0, active.start)}${token}${draft.slice(active.end)}`);
+    if (option.kind === 'skill') setActiveSkill(option.skill);
+    composer.close(caret);
     window.requestAnimationFrame(() => { draftRef.current?.focus(); draftRef.current?.setSelectionRange(caret, caret); });
   };
 
@@ -668,7 +717,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
 
   const sendToSession = async (input: SendIntent): Promise<boolean> => {
     const intent = { ...input, attachments: [...input.attachments] };
-    const { session: id, text: content, requestId, attachments: attachmentIds, correction } = intent;
+    const { session: id, text: content, requestId, attachments: attachmentIds, correction, skillId } = intent;
     const key = JSON.stringify([id, requestId]);
     if (requestsInFlightRef.current.has(key) || (correction && correctionInFlightRef.current)) return false;
     requestsInFlightRef.current.add(key);
@@ -687,9 +736,11 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     try {
       const res = await (correction
         ? agentApi.agentMessageSend(id, content, requestId, attachmentIds, true)
-        : agentApi.agentMessageSend(id, content, requestId, attachmentIds)).finally(() => { state.pending -= 1; });
+        : skillId ? agentApi.agentMessageSend(id, content, requestId, attachmentIds, false, skillId)
+          : agentApi.agentMessageSend(id, content, requestId, attachmentIds)).finally(() => { state.pending -= 1; });
       if (res.accepted !== true) throw new Error(correction ? 'No se pudo registrar la indicación' : 'No se pudo registrar el mensaje');
       recordReceipt({ intent, phase: 'received' });
+      if (skillId) setActiveSkill((current) => current?.id === skillId ? null : current);
       setQueued((previous) => previous.filter((item) => item.session !== id || item.requestId !== requestId));
       setAttachments((previous) => previous.filter((file) => !attachmentIds.includes(file.id)));
       if (id === sessionIdRef.current) {
@@ -730,8 +781,13 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   };
 
   const send = async (correction = false, suggestion?: string) => {
-    const content = suggestion ?? draft.trim();
+    const skill = suggestion === undefined ? activeSkill : null;
+    const content = suggestion ?? (draft.trim() || (skill ? `/${skill.name}` : ''));
     if (!content || sendInFlightRef.current || modelBusy || stopping || (correction && correctionInFlightRef.current)) return;
+    if (skill && (correction || running || pending.length > 0)) {
+      addToast({ message: 'Espera a que termine el turno en curso para invocar una skill', type: 'warning' });
+      return;
+    }
     const attachmentIds = suggestion === undefined ? attachments.map((a) => a.id) : [];
     const version = draftVersionRef.current;
     sendInFlightRef.current = true;
@@ -743,14 +799,15 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       atBottomRef.current = true;
       const failed = sendReceipts.find((receipt) => receipt.phase === 'unconfirmed'
         && receipt.intent.session === id && receipt.intent.text === content && receipt.intent.correction === correction
-        && JSON.stringify(receipt.intent.attachments) === JSON.stringify(attachmentIds));
+        && JSON.stringify(receipt.intent.attachments) === JSON.stringify(attachmentIds) && receipt.intent.skillId === skill?.id);
       const requestId = failed?.intent.requestId ?? newRequestId();
       if (!correction && !failed && (running || pending.length > 0)) {
         setQueued((q) => [...q, { session: id, text: content, requestId, attachments: attachmentIds }]);
         setAttachments((previous) => previous.filter((file) => !attachmentIds.includes(file.id)));
         return;
       }
-      const ok = await sendToSession({ session: id, text: content, requestId, attachments: attachmentIds, correction });
+      const ok = await sendToSession({ session: id, text: content, requestId, attachments: attachmentIds, correction,
+        ...(skill ? { skillId: skill.id } : {}) });
       if (!ok && suggestion === undefined && id === sessionIdRef.current && version === draftVersionRef.current) {
         setDraft((prev) => {
           if (prev.trim()) return prev;
@@ -1403,20 +1460,47 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             onDragOver={(event) => { if (!sessionId || !event.dataTransfer.types.includes('Files')) return; event.preventDefault(); setDragging(true); }}
             onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
             onDrop={(event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); void attachFiles([...event.dataTransfer.files]); }}>
-            {mentionMatch && <div className="border-b border-[var(--border-subtle)] p-2">
-              <p className="px-2 pb-1 text-[11px] text-[var(--text-secondary)]">Colaborar con un bot · solo lectura</p>
-              <div ref={botMentionsRef} id="agent-bot-mentions" role="listbox" aria-label="Bots para mencionar" className="max-h-44 overflow-y-auto">
-                {mentionProfiles.map((profile) => <Button key={profile.id} id={`agent-mention-${profile.id}`} role="option"
-                  aria-selected={selectedMention?.id === profile.id} tabIndex={-1} variant="none" size="none"
-                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--bg-input)] ${selectedMention?.id === profile.id ? 'bg-[var(--bg-input)]' : ''}`}
-                  onMouseDown={(event) => event.preventDefault()} onClick={() => insertBotMention(profile)}>
-                  <AgentAvatar seed={profile.id} color={profile.color} name={profile.name} size={24} />
-                  <span className="min-w-0 flex-1"><span className="block truncate text-[12px]">{profile.name}</span>
-                    <span className="block truncate text-[11px] text-[var(--text-secondary)]">{profile.description || 'Agente guardado'} · {profile.id}</span></span>
+            {autocomplete && <div className="border-b border-[var(--border-subtle)] p-2">
+              <p className="px-2 pb-1 text-[11px] text-[var(--text-secondary)]">
+                {autocomplete.id === 'bot' ? 'Colaborar con un bot · solo lectura' : 'Usar una skill · instrucciones, no permisos'}
+              </p>
+              <div ref={suggestionsRef} id={listboxId} role="listbox" aria-label={autocomplete.id === 'bot' ? 'Bots para mencionar' : 'Skills disponibles'} className="max-h-44 overflow-y-auto">
+                {autocomplete.options.map((option) => <Button key={optionId(option)} id={optionId(option)} role="option"
+                  aria-selected={autocomplete.selected === option} tabIndex={-1} variant="none" size="none"
+                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--bg-input)] ${autocomplete.selected === option ? 'bg-[var(--bg-input)]' : ''}`}
+                  onMouseDown={(event) => event.preventDefault()} onClick={() => pickSuggestion(option, autocomplete)}>
+                  {option.kind === 'bot' ? <>
+                    <AgentAvatar seed={option.profile.id} color={option.profile.color} name={option.profile.name} size={24} />
+                    <span className="min-w-0 flex-1"><span className="block truncate text-[12px]">{option.profile.name}</span>
+                      <span className="block truncate text-[11px] text-[var(--text-secondary)]">{option.profile.description || 'Agente guardado'} · {option.profile.id}</span></span>
+                  </> : <>
+                    <span className="flex size-6 shrink-0 items-center justify-center text-[var(--text-secondary)]"><Sparkles size={14} /></span>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-[12px]">/{option.skill.name}</span>
+                      <span className="block truncate text-[11px] text-[var(--text-secondary)]">{option.skill.description}</span></span>
+                  </>}
                 </Button>)}
-                {mentionProfiles.length === 0 && <p className="px-2 py-1 text-[12px] text-[var(--text-secondary)]">Sin bots coincidentes. Crea uno en Agentes o continúa con tu mensaje.</p>}
+                {autocomplete.options.length === 0 && <p className="px-2 py-1 text-[12px] text-[var(--text-secondary)]">
+                  {autocomplete.id === 'bot' ? 'Sin bots coincidentes. Crea uno en Agentes o continúa con tu mensaje.'
+                    : skills === null ? 'Cargando skills…' : 'Sin skills coincidentes. Añádelas en Complementos o continúa con tu mensaje.'}
+                </p>}
               </div>
             </div>}
+            {activeSkill && (
+              <div className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Skill activa">
+                <span className="flex max-w-[60%] items-center gap-1 rounded-full bg-[var(--bg-input)] py-0.5 pl-2 pr-1 text-[11px] text-[var(--text-secondary)]">
+                  <Sparkles size={11} />
+                  <span className="truncate">/{activeSkill.name}</span>
+                  <button
+                    type="button"
+                    className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+                    aria-label={`Quitar la skill ${activeSkill.name}`}
+                    onClick={() => setActiveSkill(null)}
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              </div>
+            )}
             {attachments.length > 0 && (
               <div className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Adjuntos">
                 {attachments.map((item) => (
@@ -1444,22 +1528,16 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 ref={draftRef}
                 rows={1}
                 value={draft}
-                onChange={(event) => { draftVersionRef.current += 1; setDraft(event.target.value); setMentionCursor(event.target.selectionStart); setMentionIndex(0); setMentionsHidden(false); }}
-                onSelect={(event) => setMentionCursor(event.currentTarget.selectionStart)}
+                onChange={(event) => { draftVersionRef.current += 1; setDraft(event.target.value); composer.edited(event.target.selectionStart); }}
+                onSelect={(event) => composer.moved(event.currentTarget.selectionStart)}
                 onPaste={(event) => { if (!sessionId || !event.clipboardData.files.length) return; event.preventDefault(); void attachFiles([...event.clipboardData.files]); }}
                 aria-autocomplete="list"
-                aria-controls={mentionMatch ? 'agent-bot-mentions' : undefined}
-                aria-activedescendant={selectedMention ? `agent-mention-${selectedMention.id}` : undefined}
+                aria-controls={autocomplete ? listboxId : undefined}
+                aria-activedescendant={selectedOptionId}
                 onKeyDown={(e) => {
                   if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
                   if (e.key === 'Enter' && e.repeat && !e.shiftKey) { e.preventDefault(); return; }
-                  if (mentionMatch && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setMentionsHidden(true); return; }
-                  if (selectedMention && !e.shiftKey && ['ArrowDown', 'ArrowUp', 'Enter', 'Tab'].includes(e.key)) {
-                    e.preventDefault();
-                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') setMentionIndex((mentionProfiles.indexOf(selectedMention) + (e.key === 'ArrowDown' ? 1 : -1) + mentionProfiles.length) % mentionProfiles.length);
-                    else insertBotMention(selectedMention);
-                    return;
-                  }
+                  if (composer.keyDown(e, pickSuggestion)) return;
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     void send();
@@ -1468,7 +1546,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 placeholder={
                   running || pending.length > 0
                     ? 'Añade una indicación o déjala para después…'
-                    : 'Escribe un mensaje o @ para mencionar un bot…'
+                    : 'Escribe un mensaje, @ para mencionar un bot o / para usar una skill…'
                 }
                 aria-label="Mensaje para el agente"
                 className="block max-h-36 min-h-12 w-full min-w-0 resize-none bg-transparent py-0.5 text-[14px] leading-[22px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
