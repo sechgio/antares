@@ -33,6 +33,58 @@ it('resume la delegación con sus pasos y la devolución del subagente', () => {
   expect(screen.getByText('Consultar las plantillas disponibles')).toBeInTheDocument();
   expect(screen.getByText('Hay 2 documentos.')).toBeInTheDocument();
   expect(screen.getByText('¿Qué documentos hay?')).toBeInTheDocument();
+  expect(screen.queryByText('Contrato de salida')).toBeNull();
+});
+
+it('muestra el rol del subagente y su contrato de salida validado', () => {
+  render(<SubagentTrace call={call({ result: JSON.stringify({
+    agent: { id: 'p1', name: 'Investigador' },
+    status: 'done',
+    text: 'Revisión completa.',
+    steps: [],
+    ms: 300,
+    role: 'reviewer',
+    schema_valid: true,
+    output: { total: 2 },
+  }) })} />);
+  expect(screen.getByText('revisor')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Delegación en Investigador' }));
+  expect(screen.getByText('Contrato de salida')).toBeInTheDocument();
+  expect(screen.getByText('validado')).toBeInTheDocument();
+  expect(screen.getByText(/"total": 2/)).toBeInTheDocument();
+});
+
+it('agrupa los encargos y señala el contrato incumplido', () => {
+  render(<SubagentTrace call={call({ result: JSON.stringify({
+    agent: { name: 'Investigador' },
+    status: 'partial',
+    depth: 1,
+    ms: 900,
+    results: [
+      {
+        task: 'Revisa A', role: 'reviewer', status: 'done', text: 'A verificada',
+        schema_valid: true, output: { total: 2 },
+        steps: [{ name: 'canvas_list', status: 'done' }], ms: 400,
+      },
+      {
+        task: 'Revisa B', role: 'worker', status: 'invalid', text: 'Sin contrato',
+        schema_valid: false, schema_error: "total: 'dos' no es un entero", steps: [], ms: 500,
+      },
+    ],
+  }) })} />);
+  expect(screen.getByText('parcial')).toBeInTheDocument();
+  expect(screen.getByText('Revisa A')).toBeInTheDocument();
+  expect(screen.getByText('Revisa B')).toBeInTheDocument();
+  expect(screen.getByText('revisor')).toBeInTheDocument();
+  expect(screen.getByText('worker')).toBeInTheDocument();
+  expect(screen.getByText('completado')).toBeInTheDocument();
+  expect(screen.getByText('contrato incumplido')).toBeInTheDocument();
+  expect(screen.getAllByText('Contrato de salida')).toHaveLength(2);
+  expect(screen.getByText('validado')).toBeInTheDocument();
+  expect(screen.getByText('incumplido')).toBeInTheDocument();
+  expect(screen.getByText(/no es un entero/)).toBeInTheDocument();
+  expect(screen.getByText(/"total": 2/)).toBeInTheDocument();
+  expect(screen.getByText('Listar documentos de Canvas')).toBeInTheDocument();
 });
 
 it('muestra el trabajo en curso antes de recibir el comprobante', () => {

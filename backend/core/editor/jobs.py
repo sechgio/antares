@@ -18,8 +18,6 @@ from backend.utils.paths import user_data_path
 
 logger = logging.getLogger(__name__)
 
-EDITOR_JOB_TYPES: frozenset[str] = frozenset({"editor_import"})
-
 STAGES: tuple[str, ...] = ("validando", "copiando", "verificando", "registrando")
 
 

@@ -87,5 +87,3 @@ export function AudioPanel({
     </div>
   );
 }
-
-export default AudioPanel;

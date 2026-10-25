@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import type { AgentUsage } from '../../api/agentApi';
 
 const CONTEXT_WINDOWS: [RegExp, number][] = [
   [/gemini/i, 1_048_576],
@@ -19,6 +20,12 @@ export function formatTokens(value: number): string {
   if (value >= 1_000_000) return `${compact(value / 1_000_000)} M`;
   if (value >= 1000) return `${compact(value / 1000)} k`;
   return String(value);
+}
+
+export function formatCost(value: number): string {
+  if (value > 0 && value < 0.0001) return '<$0,0001';
+  const decimals = value > 0 && value < 1 ? 4 : 2;
+  return `$${new Intl.NumberFormat('es', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value)}`;
 }
 
 function Ring({ ratio }: { ratio: number }) {
@@ -43,16 +50,20 @@ function Ring({ ratio }: { ratio: number }) {
 }
 
 export default function ContextUsage({ usage, model }: {
-  usage: { input: number; output: number; context?: number; cached?: number; prompt?: number } | null;
+  usage: AgentUsage | null;
   model: string;
 }) {
   const [open, setOpen] = useState(false);
   const cardId = useId();
   if (!usage) return null;
   const used = usage.context ?? usage.input + usage.output;
-  const max = contextWindowFor(model);
+  const max = usage.window || contextWindowFor(model);
   const ratio = max ? Math.min(1, used / max) : 0;
   const percent = `${new Intl.NumberFormat('es', { maximumFractionDigits: 1 }).format(ratio * 100)}%`;
+  const turn = usage.turn;
+  const cost = usage.cost ?? 0;
+  const showCost = cost > 0 || (turn?.cost ?? 0) > 0;
+  const compactions = usage.compactions ?? 0;
 
   return (
     <div
@@ -70,6 +81,7 @@ export default function ContextUsage({ usage, model }: {
       >
         {max && <Ring ratio={ratio} />}
         {max ? percent : formatTokens(used)}
+        {cost > 0 && <span className="text-[var(--text-muted)]">· {formatCost(cost)}</span>}
       </button>
       {open && (
         <div
@@ -109,6 +121,36 @@ export default function ContextUsage({ usage, model }: {
               </div>
             )}
           </div>
+          {(turn || showCost || compactions > 0) && (
+            <div className="space-y-1.5 border-t border-[var(--border-subtle)] p-3 tabular-nums">
+              {turn && (
+                <div className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Último turno</span>
+                  <span className="text-[var(--text-primary)]">
+                    {formatTokens(turn.input)} ent. · {formatTokens(turn.output)} sal.
+                  </span>
+                </div>
+              )}
+              {showCost && (
+                <div className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Coste del turno</span>
+                  <span className="text-[var(--text-primary)]">{formatCost(turn?.cost ?? 0)}</span>
+                </div>
+              )}
+              {showCost && (
+                <div className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Coste de la sesión</span>
+                  <span className="text-[var(--text-primary)]">{formatCost(cost)}</span>
+                </div>
+              )}
+              {compactions > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-[var(--text-muted)]">Compactaciones</span>
+                  <span className="text-[var(--text-primary)]">{compactions}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -655,6 +655,61 @@ it('un envío fallido conserva el borrador y termina el indicador de ejecución'
   expect(vi.mocked(agentApi.agentMessageSend).mock.calls[2][2]).not.toBe(first[2]);
 });
 
+it('presenta la cola en orden y permite quitar un pendiente sin perder el borrador ni sus adjuntos', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
+  vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({ attachments: [{ id: 'a1', name: 'informe.pdf', kind: 'files' }] });
+  render(<AgentView />);
+  await act(async () => {});
+  const composer = within(screen.getByRole('group', { name: 'Redactar mensaje' }));
+  const input = composer.getByRole('textbox', { name: 'Mensaje para el agente' });
+  fireEvent.change(input, { target: { value: 'Primero revisa las firmas' } });
+  await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Dejar para después' })); });
+  await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Adjuntar archivos' })); });
+  fireEvent.change(input, { target: { value: 'Después compara el informe' } });
+  await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Dejar para después' })); });
+  fireEvent.change(input, { target: { value: 'Borrador que sigo escribiendo' } });
+  await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Adjuntar archivos' })); });
+  const queue = within(screen.getByRole('region', { name: 'Mensajes en cola' }));
+  expect(queue.getByLabelText('2 mensajes pendientes')).toBeVisible();
+  const items = within(queue.getByRole('list', { name: 'Orden de envío' })).getAllByRole('listitem');
+  expect(within(items[0]).getByText('Primero revisa las firmas')).toBeVisible();
+  expect(within(items[0]).getByText('A continuación')).toBeVisible();
+  expect(within(items[1]).getByText('Después compara el informe')).toBeVisible();
+  expect(within(items[1]).getByText('1 adjunto')).toBeVisible();
+  fireEvent.click(within(items[0]).getByRole('button', { name: 'Quitar de la cola' }));
+  expect(queue.getByLabelText('1 mensaje pendiente')).toBeVisible();
+  expect(queue.queryByText('Primero revisa las firmas')).not.toBeInTheDocument();
+  expect(queue.getByText('Después compara el informe')).toBeVisible();
+  expect(queue.getByText('A continuación')).toBeVisible();
+  expect(input).toHaveValue('Borrador que sigo escribiendo');
+  expect(composer.getByLabelText('Adjuntos')).toHaveTextContent('informe.pdf');
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+});
+
+it('permite desplegar un mensaje largo en cola sin enviarlo ni alterar el borrador', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
+  render(<AgentView />);
+  await act(async () => {});
+  const text = 'Revisa el informe completo, conserva los nombres de archivo y compara cada tabla con su versión anterior.\nIncluye también los anexos y las observaciones de la última página.';
+  const input = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
+  fireEvent.change(input, { target: { value: text } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' })); });
+  fireEvent.change(input, { target: { value: 'Sigo escribiendo' } });
+  const queue = within(screen.getByRole('region', { name: 'Mensajes en cola' }));
+  const summary = queue.getByTitle('Ver mensaje completo');
+  const details = summary.closest('details');
+  expect(details).not.toHaveAttribute('open');
+  fireEvent.click(summary);
+  expect(details).toHaveAttribute('open');
+  expect(summary).toHaveTextContent(text.replace('\n', ' '));
+  fireEvent.click(summary);
+  expect(details).not.toHaveAttribute('open');
+  expect(input).toHaveValue('Sigo escribiendo');
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+});
+
 it('restaura la conversación y la cola sin enviar tareas automáticamente tras reiniciar', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   localStorage.setItem('antares-agent-queue', JSON.stringify([{ session: session.id, text: 'Tarea pendiente', requestId: 'req-guardado' }]));
@@ -665,6 +720,7 @@ it('restaura la conversación y la cola sin enviar tareas automáticamente tras 
   await act(async () => {});
   expect(screen.getByText('Progreso recuperado')).toBeInTheDocument();
   expect(screen.getByText('Tarea pendiente')).toHaveAttribute('title', 'Reintentar el envío pendiente');
+  expect(screen.getByText('Revisar envío')).toBeVisible();
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   await act(async () => { fireEvent.click(screen.getByText('Tarea pendiente')); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Tarea pendiente', 'req-guardado', []);
@@ -1003,7 +1059,7 @@ it('envía una sugerencia del composer creando una única conversación si no ha
   const group = await screen.findByRole('group', { name: 'Sugerencias' });
   const buttons = within(group).getAllByRole('button');
   expect(buttons).toHaveLength(3);
-  expect(group.querySelector('[aria-hidden="true"]')).toHaveAttribute('inert');
+  expect(within(group).getAllByRole('button', { hidden: true })).toHaveLength(3);
   fireEvent.click(buttons[0]);
   fireEvent.click(buttons[0]);
   expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba' });
