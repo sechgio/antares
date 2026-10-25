@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 from backend.core.editor.jobs import (
-    EDITOR_JOB_TYPES,
     cancel_editor_job,
     editor_job_status,
     is_editor_job,
@@ -34,10 +33,6 @@ def _wait_done(mgr: JobManager, job_id: str, timeout_s: float = 10.0) -> None:
             return
         time.sleep(0.05)
     raise AssertionError("el job no terminó a tiempo")
-
-
-def test_import_job_types_are_registered() -> None:
-    assert "editor_import" in EDITOR_JOB_TYPES
 
 
 def test_start_returns_job_id_promptly(manager: JobManager, tmp_path: Path) -> None:

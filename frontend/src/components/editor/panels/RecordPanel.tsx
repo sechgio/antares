@@ -127,5 +127,3 @@ export function RecordPanel({
     </div>
   );
 }
-
-export default RecordPanel;

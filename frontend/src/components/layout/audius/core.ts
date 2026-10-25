@@ -1,7 +1,7 @@
-import { fetchJson, httpsUrl, atom, openExternal, useValue } from '../radio/core';
+import { fetchJson, httpsUrl, openExternal, useValue } from '../radio/core';
 import type { Atom } from '../radio/core';
 
-export { atom, openExternal, useValue };
+export { openExternal, useValue };
 export type { Atom };
 
 export const T = {

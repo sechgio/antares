@@ -11,6 +11,9 @@ const policy = require('../electron/agent-browser-policy');
 
 assert(policy.hostOf('https://Mail.Ejemplo.com/ruta?x=1') === 'mail.ejemplo.com', 'hostOf extrae el host en minúsculas sin puerto ni ruta');
 assert(policy.hostOf('no es una url') === '', 'hostOf devuelve vacío para direcciones inválidas');
+assert(policy.isBlocked(policy.hostOf('https://paypal.com.'))
+  && policy.isBlocked(policy.hostOf('https://www.paypal.com.')),
+  'el punto final de un dominio sensible no permite eludir su bloqueo');
 
 assert(policy.isBlocked('www.bcp.pe') && policy.isBlocked('empresas.bcp.pe'), 'la semilla bloquea la banca y sus subdominios');
 assert(!policy.isBlocked('bcp.com.pe') && !policy.isBlocked('ejemplo.pe'), 'un dominio distinto o parecido no queda bloqueado');

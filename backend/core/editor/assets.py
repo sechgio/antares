@@ -35,9 +35,6 @@ ALLOWED_SUFFIXES: frozenset[str] = frozenset(
     }
 )
 
-LARGE_FILE_WARN_BYTES = 512 * 1024 * 1024
-
-
 class AssetImportError(ValueError):
     pass
 
@@ -199,11 +196,3 @@ def with_remove(path: Path) -> None:
 
     with contextlib.suppress(OSError):
         path.unlink(missing_ok=True)
-
-
-def large_file_warning(source: Path) -> str | None:
-    size = source.stat().st_size
-    if size >= LARGE_FILE_WARN_BYTES:
-        gb = size / (1024**3)
-        return f"Este archivo ocupa {gb:.1f} GB y se copiará al almacén local de Antares."
-    return None

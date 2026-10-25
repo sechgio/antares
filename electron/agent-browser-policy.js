@@ -38,7 +38,7 @@ function matches(host, entry) {
 
 function hostOf(url) {
   try {
-    return String(new URL(url).hostname || '').toLowerCase();
+    return String(new URL(url).hostname || '').toLowerCase().replace(/\.$/, '');
   } catch {
     return '';
   }
