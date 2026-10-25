@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,7 +42,7 @@ print(json.dumps({'catalog': catalog, 'contents': contents, 'scans': catalog_sca
 `;
 
 let root;
-beforeEach(() => { root = mkdtempSync(path.join(os.tmpdir(), 'antares-skills-')); });
+beforeEach(() => { root = realpathSync.native(mkdtempSync(path.join(os.tmpdir(), 'antares-skills-'))); });
 afterEach(() => { rmSync(root, { recursive: true, force: true }); });
 
 function install(relative, body = 'Instrucciones', header = true) {
