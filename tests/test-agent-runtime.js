@@ -1974,6 +1974,54 @@ async function main() {
   {
     const { bridge, state } = makeBridge();
     await openFaux([
+      fauxAssistantMessage('primer turno'),
+      fauxAssistantMessage([fauxToolCall('canvas_list', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('no debería llegar'),
+    ], bridge);
+    for (const dailyTokens of [10, 1500.5, '2000', 200_000_000]) {
+      let error;
+      try { await runtime.handlers.agent_profile_save({ name: 'Inválido', instructions: 'x', tools: null, daily_tokens: dailyTokens }); } catch (err) { error = err; }
+      assert(!!error, `un presupuesto diario inválido se rechaza: ${dailyTokens}`);
+    }
+    const internal = runtime._internal.state();
+    const setUsage = (id, day, tokens) => internal.harness.commit(async (tx) => {
+      const doc = await tx.doc(internal.ProfilesDoc);
+      doc.usage = { ...(doc.usage || {}), [id]: { day, tokens } };
+    }, internal.ctx);
+    const today = require('../electron/agent-execution').localDay();
+    const { profile } = await runtime.handlers.agent_profile_save({ name: 'Ahorrador', instructions: 'Gasta poco', tools: null, daily_tokens: 50_000 });
+    assert(profile.daily_tokens === 50_000, 'el bot guarda su presupuesto diario');
+    const kept = (await runtime.handlers.agent_profile_save({ id: profile.id, name: 'Ahorrador', instructions: 'Gasta poco', tools: null })).profile;
+    assert(kept.daily_tokens === 50_000, 'editar sin indicar presupuesto lo conserva');
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
+    await setUsage(profile.id, '2000-01-01', 10_000_000);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'hola' });
+    assert(await waitIdle(session.id), 'el consumo de otro día no bloquea el turno');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(listed.token_budget && listed.token_budget.limit === 50_000 && listed.token_budget.used > 0 && listed.token_budget.used < 50_000,
+      'cada respuesta suma su consumo al día actual del bot');
+    await setUsage(profile.id, today, 49_999);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'lista los documentos' });
+    assert(await waitIdle(session.id), 'el turno que agota el presupuesto se detiene');
+    const paused = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(paused.resumable && paused.messages.some((message) => /presupuesto diario de tokens/.test(message.content || '')),
+      'agotar el presupuesto a mitad de turno deja un punto reanudable');
+    assert(!paused.messages.some((message) => message.content === 'no debería llegar'), 'sin presupuesto no se pide otra respuesta');
+    let error;
+    try { await runtime.handlers.agent_message_send({ session_id: session.id, content: 'sigue' }); } catch (err) { error = err; }
+    assert(error && /presupuesto diario/.test(error.message), 'un bot sin presupuesto no admite turnos nuevos ni reanudar');
+    const plain = (await runtime.handlers.agent_profile_save({ name: 'Libre', instructions: 'x', tools: null })).profile;
+    assert(!('daily_tokens' in plain), 'sin presupuesto la ficha no cambia');
+    await runtime.handlers.agent_profile_delete({ id: profile.id });
+    const usage = (await internal.harness.snapshot(internal.ProfilesDoc, internal.ctx)).usage || {};
+    assert(!(profile.id in usage), 'borrar el bot elimina su consumo');
+    assert(state.dispatchLog.length <= 1, 'el turno pausado no repite herramientas');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    await openFaux([
       fauxAssistantMessage([fauxToolCall('db_clear', { turno: 1 }, { id: 'call_0' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('primero'),
       fauxAssistantMessage([fauxToolCall('db_clear', { turno: 2 }, { id: 'call_0' })], { stopReason: 'toolUse' }),

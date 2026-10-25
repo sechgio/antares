@@ -41,6 +41,7 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
   const [description, setDescription] = useState(profile?.description ?? '');
   const [role, setRole] = useState<AgentRole>(profile?.role ?? 'explorer');
   const [memoryScope, setMemoryScope] = useState<AgentMemoryScope>(profile?.memory_scope ?? 'shared-read');
+  const [dailyTokens, setDailyTokens] = useState(profile?.daily_tokens ? String(profile.daily_tokens) : '');
   const [instructions, setInstructions] = useState(profile?.instructions ?? '');
   const [starter, setStarter] = useState(profile?.starter ?? '');
   const [allTools, setAllTools] = useState(profile ? profile.tools === null : true);
@@ -70,6 +71,7 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
       const res = await agentApi.agentProfileSave({
         ...(profile ? { id: profile.id } : {}),
         name, color, description, role, memory_scope: memoryScope, instructions, starter,
+        daily_tokens: dailyTokens.trim() ? Number(dailyTokens) : null,
         tools: allTools ? null : [...selected],
         tools_deny: allTools ? [...denied] : [],
       });
@@ -203,6 +205,17 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
               <span className="block text-[11px] leading-relaxed text-[var(--text-muted)]">{MEMORY_HINT[memoryScope]}</span>
             </div>
           </div>
+          <label className={FIELD}>
+            <span className={LABEL}>Tokens por día</span>
+            <div className="space-y-1.5">
+              <Input type="number" inputMode="numeric" min={1000} step={1000} value={dailyTokens}
+                onChange={(e) => setDailyTokens(e.target.value)} aria-label="Presupuesto diario de tokens"
+                placeholder="Sin límite" className="w-full" />
+              <span className="block text-[11px] leading-relaxed text-[var(--text-muted)]">
+                Tokens de entrada y salida de todas sus conversaciones. Al agotarlos se detiene en un punto reanudable hasta el día siguiente.
+              </span>
+            </div>
+          </label>
           <label className={FIELD}>
             <span className={LABEL}>Mensaje inicial</span>
             <Input value={starter} onChange={(e) => setStarter(e.target.value)} maxLength={500}

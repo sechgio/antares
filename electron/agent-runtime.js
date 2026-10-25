@@ -271,6 +271,8 @@ async function sessionsList() {
 const MAX_PROFILES = 30;
 const PROFILE_ROLES = new Set(['explorer', 'reviewer', 'worker']);
 const MEMORY_SCOPES = new Set(['shared-read', 'own', 'none']);
+const MIN_DAILY_TOKENS = 1000;
+const MAX_DAILY_TOKENS = 100_000_000;
 const SECRET_RE = /(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|bearer\s+[A-Za-z0-9._~+/-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:password|contraseña|api[_ -]?key|token|secret)\s*[:=]\s*\S+)/i;
 
 async function _profiles() {
@@ -313,6 +315,10 @@ async function profileSave(params = {}) {
   if (!PROFILE_ROLES.has(role)) throw validation('Rol de agente no válido: usa explorer, reviewer o worker');
   const memoryScope = params.memory_scope === undefined ? (existing?.memory_scope || 'shared-read') : String(params.memory_scope);
   if (!MEMORY_SCOPES.has(memoryScope)) throw validation('Alcance de memoria no válido: usa shared-read, own o none');
+  const dailyTokens = params.daily_tokens === undefined ? (existing?.daily_tokens ?? null) : params.daily_tokens;
+  if (dailyTokens !== null && (!Number.isInteger(dailyTokens) || dailyTokens < MIN_DAILY_TOKENS || dailyTokens > MAX_DAILY_TOKENS)) {
+    throw validation(`El presupuesto diario debe estar entre ${MIN_DAILY_TOKENS} y ${MAX_DAILY_TOKENS} tokens, o vacío para no limitarlo`);
+  }
   const now = Date.now();
   const profile = {
     id: existing ? existing.id : crypto.randomBytes(6).toString('hex'),
@@ -325,6 +331,7 @@ async function profileSave(params = {}) {
     tools: Array.isArray(tools) ? [...new Set(tools)] : null,
     ...(deny.length ? { tools_deny: [...new Set(deny)] } : {}),
     ...(memoryScope !== 'shared-read' ? { memory_scope: memoryScope } : {}),
+    ...(dailyTokens !== null ? { daily_tokens: dailyTokens } : {}),
     created_at: existing ? existing.created_at : now,
     updated_at: now,
   };
@@ -345,6 +352,7 @@ async function profileDelete(params = {}) {
     const doc = await tx.doc(shared.state.ProfilesDoc);
     removed = Boolean(doc.profiles[id]);
     delete doc.profiles[id];
+    if (doc.usage) delete doc.usage[id];
   }, ctx());
   if (!removed) throw notFound('El agente ya no existe');
   return { deleted: true, id };
@@ -643,6 +651,7 @@ async function messagesList(params) {
   const plan = _latestPlan(messages);
   const stopped = messages.length > 0 && messages[messages.length - 1].content === CANCELLED_NOTE;
   const contextWindow = execution.contextWindowFor(session);
+  const budget = await execution.profileBudget(await execution.sessionProfile(session));
   return {
     messages,
     running,
@@ -656,6 +665,7 @@ async function messagesList(params) {
     context_window: contextWindow,
     compaction_thresholds: compactionPolicy.thresholdsFor(shared.state.compaction, contextWindow),
     compacting: (projection.liveFor(session.conversationId).compactions || []).length > 0,
+    ...(budget ? { token_budget: { limit: budget.limit, used: budget.used } } : {}),
   };
 }
 
@@ -718,6 +728,10 @@ async function messageSend(params) {
   resolvePortableProfile(shared.state.portableProfiles, session.conversationId);
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: sessionId })).approvals;
   if (pending.length && !correction) throw validation('Resuelve primero las aprobaciones pendientes de esta conversación');
+  const budget = await execution.profileBudget(await execution.sessionProfile(session));
+  if (budget && budget.exhausted) {
+    throw validation('Este agente agotó su presupuesto diario de tokens; podrás seguir mañana o al ampliar su presupuesto');
+  }
   await execution.refreshTools();
   await execution.ensureProvider(session.provider, session.model);
   await _syncReasoning(session);

@@ -187,6 +187,28 @@ async function main() {
     ({ messages } = await runtime.handlers.agent_messages_list({ session_id: session.id }));
     const cancelled = messages.flatMap((message) => message.tool_calls || []).findLast((call) => call.name === 'task_schedule');
     assert.equal(JSON.parse(cancelled.result).tasks.find((item) => item.id === task.id).status, 'cancelled');
+    const { profile: limited } = await runtime.handlers.agent_profile_save({
+      name: 'Limitado', instructions: 'Gasta poco', tools: null, daily_tokens: 1000,
+    });
+    const { session: limitedSession } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: limited.id });
+    const internal = runtime._internal.state();
+    await internal.harness.commit(async (tx) => {
+      const doc = await tx.doc(internal.ProfilesDoc);
+      doc.usage = { ...(doc.usage || {}), [limited.id]: { day: require('../electron/agent-execution').localDay(), tokens: 1000 } };
+    }, internal.ctx);
+    const { scheduled: deferred } = await runtime.handlers.agent_tasks_save({
+      session_id: limitedSession.id, content: 'Resumen sin presupuesto', due_at: new Date(Date.now() + 1500).toISOString(),
+    });
+    const deferredTask = async () => (await runtime.handlers.agent_tasks_list({ session_id: limitedSession.id })).tasks
+      .find((item) => item.id === deferred.id);
+    await until(async () => Number((await deferredTask()).retry_at || 0) > Date.now());
+    const waiting = await deferredTask();
+    const midnight = new Date();
+    midnight.setHours(24, 0, 0, 0);
+    assert.equal(waiting.status, 'pending', 'un encargo sin presupuesto sigue pendiente');
+    assert.equal(waiting.retry_at, midnight.getTime(), 'un encargo sin presupuesto espera a la medianoche local');
+    assert.equal(waiting.runs.length, 0, 'aplazar por presupuesto no cuenta como ejecución ni fallo');
+    await runtime.handlers.agent_tasks_cancel({ id: deferred.id });
     const { profile } = await runtime.handlers.agent_profile_save({
       name: 'Auditor', instructions: 'SOLO_AUDITOR_PERSISTENTE: consulta Canvas y cita el comprobante', tools: null,
     });

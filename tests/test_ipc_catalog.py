@@ -81,6 +81,18 @@ def test_agent_profile_tools_deny_is_an_optional_list_of_names():
             jsonschema.validate({**params, "tools_deny": tools_deny}, schema)
 
 
+def test_agent_profile_daily_tokens_is_a_bounded_integer_or_null():
+    import jsonschema
+
+    schema = _catalog()["methods"]["agent_profile_save"]["inputSchema"]
+    params = {"name": "Revisor", "instructions": "Revisa documentos"}
+    for daily_tokens in (None, 1000, 200000, 100000000):
+        jsonschema.validate({**params, "daily_tokens": daily_tokens}, schema)
+    for daily_tokens in (0, 999, 1500.5, "2000", 100000001):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({**params, "daily_tokens": daily_tokens}, schema)
+
+
 def test_agent_profile_memory_scope_accepts_only_known_scopes():
     import jsonschema
 

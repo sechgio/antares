@@ -106,6 +106,21 @@ it('guarda el agente sin proveedor y muestra el perfil sin intentar abrir un cha
 });
 
 it.each([
+  { used: 150000, text: null },
+  { used: 170000, text: /usó el 85 % de su presupuesto diario/ },
+  { used: 200000, text: /agotó su presupuesto diario/ },
+])('avisa del presupuesto diario del agente a partir del 80 %: $used', async ({ used, text }) => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [] });
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, token_budget: { limit: 200000, used } });
+  render(<AgentView />);
+  await waitFor(() => expect(list).toHaveBeenCalled());
+  await act(async () => {});
+  if (text) expect(await screen.findByText(text)).toBeInTheDocument();
+  else expect(screen.queryByText(/presupuesto diario/)).not.toBeInTheDocument();
+});
+
+it.each([
   { options: { remember: true }, payload: { approval_id: 'a1', remember: true } },
   { options: { grantApp: true }, payload: { approval_id: 'a1', grant_app: true } },
   { options: {}, payload: { approval_id: 'a1' } },

@@ -408,6 +408,18 @@ async function tick() {
         await state.harness.commit(async (tx) => { (await tx.doc(state.TasksDoc)).tasks[task.id].status = 'cancelled'; }, ctx());
         continue;
       }
+      const execution = require('./agent-execution');
+      const budget = await execution.profileBudget(await execution.sessionProfile(session));
+      if (budget && budget.exhausted) {
+        // Sin presupuesto el encargo espera al día siguiente: no se reclama ni cuenta como fallo.
+        const midnight = new Date();
+        midnight.setHours(24, 0, 0, 0);
+        await state.harness.commit(async (tx) => {
+          const current = (await tx.doc(state.TasksDoc)).tasks[task.id];
+          if (current.status === 'pending') current.retry_at = midnight.getTime();
+        }, ctx());
+        continue;
+      }
       let submitted = false;
       try {
         const claimed = await state.harness.commit(async (tx) => {

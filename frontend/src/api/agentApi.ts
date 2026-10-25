@@ -60,6 +60,7 @@ export interface AgentProfile {
   tools: string[] | null;
   tools_deny?: string[];
   memory_scope?: AgentMemoryScope;
+  daily_tokens?: number;
   created_at: number;
   updated_at: number;
 }
@@ -350,6 +351,7 @@ export const agentApi = {
       context_window?: number;
       compaction_thresholds?: { warn: number; compact: number } | null;
       compacting?: boolean;
+      token_budget?: { limit: number; used: number };
     }>('agent_messages_list', { session_id }),
 
   agentContextRemoveFile: (session_id: string, path: string) =>
@@ -447,7 +449,7 @@ export const agentApi = {
 
   agentProfilesList: () => _invoke<{ profiles: AgentProfile[] }>('agent_profiles_list'),
 
-  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; role?: AgentRole; instructions: string; starter: string; tools: string[] | null; tools_deny?: string[]; memory_scope?: AgentMemoryScope }) =>
+  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; role?: AgentRole; instructions: string; starter: string; tools: string[] | null; tools_deny?: string[]; memory_scope?: AgentMemoryScope; daily_tokens?: number | null }) =>
     _invoke<{ profile: AgentProfile }>('agent_profile_save', p),
 
   agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),

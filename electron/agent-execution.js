@@ -463,6 +463,9 @@ async function refreshTools() {
         beforeRequest: async ({ messages }, api, context) => {
           resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
           if (await toolBudget(api, context) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
+          const budget = await profileBudget(await sessionProfile(
+            (await sessions())[await sessionForConversation(api.conversationId, api, context)]));
+          if (budget && budget.exhausted) await pauseForBudget(api, context, 'token_budget');
           await noteTurnStart(api, messages || []);
           const compacted = await compactRequest(messages, api, context);
           const next = compacted || messages;
@@ -473,6 +476,7 @@ async function refreshTools() {
         afterResponse: async (message, api, context) => {
           try {
             const sessionId = await sessionForConversation(api.conversationId, api, context);
+            await recordProfileUsage((await sessions())[sessionId], message.usage);
             if (message.stopReason !== 'toolUse') {
               try { require('./agent-browser').release(sessionId); } catch { }
             }
@@ -542,20 +546,23 @@ async function toolBudget(api, context, completed = false) {
   return rounds;
 }
 
-async function pauseForBudget(api, context) {
+async function pauseForBudget(api, context, reason = 'tool_budget') {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   const remaining = turnState(api.conversationId).remaining || [];
   await commitSessions((map) => {
     if (map[sessionId]) map[sessionId].continuation = {
-      reason: 'tool_budget', rounds: MAX_TOOL_STEPS, pending_steps: remaining, created_at: Date.now(),
+      reason, ...(reason === 'tool_budget' ? { rounds: MAX_TOOL_STEPS } : {}), pending_steps: remaining, created_at: Date.now(),
     };
   });
   const conv = await conversation(sessionId);
   const stopped = shared.state.harness.abortTask(api.taskId, ctx()).then(async () => {
     await conv.waitForIdle(ctx());
     return conv.submit({ type: 'write', requestId: `budget:${api.taskId}`, entry: {
-      kind: shared.NOTICE_KIND, data: { text: 'Este turno alcanzó su límite de pasos. Conservé un punto de continuación. '
-        + `Usa Reanudar para seguir.${remaining.length ? '\nPendiente: ' + remaining.join('; ') : ''}` },
+      kind: shared.NOTICE_KIND, data: { text: (reason === 'token_budget'
+        ? 'El agente agotó su presupuesto diario de tokens. Conservé un punto de continuación; '
+          + 'podrás reanudar mañana o al ampliar su presupuesto.'
+        : 'Este turno alcanzó su límite de pasos. Conservé un punto de continuación. Usa Reanudar para seguir.')
+        + (remaining.length ? '\nPendiente: ' + remaining.join('; ') : '') },
     } }, ctx());
   });
   // El aborto debe interrumpir esta espera: abortTask espera a que termine este mismo hook.
@@ -1156,6 +1163,36 @@ async function profileToolFilter(session) {
   return (name) => (!allowed || allowed.has(name)) && !denied.has(name);
 }
 
+function localDay(now = Date.now()) {
+  const date = new Date(now);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+// Presupuesto diario de un agente guardado: tokens de entrada y salida (sin la
+// caché) de todas sus conversaciones durante el día local, en ProfilesDoc.usage.
+async function profileBudget(profile) {
+  const limit = Number(profile && profile.daily_tokens) || 0;
+  if (!limit) return null;
+  const doc = await shared.state.harness.snapshot(shared.state.ProfilesDoc, ctx());
+  const entry = doc && doc.usage && doc.usage[profile.id];
+  const used = entry && entry.day === localDay() ? Number(entry.tokens) || 0 : 0;
+  return { limit, used, exhausted: used >= limit };
+}
+
+async function recordProfileUsage(session, usage) {
+  const id = session && session.profile && !session.profile.portable ? session.profile.id : null;
+  const tokens = (Number(usage && usage.input) || 0) + (Number(usage && usage.output) || 0);
+  if (!id || !tokens) return;
+  const day = localDay();
+  await shared.state.harness.commit(async (tx) => {
+    const doc = await tx.doc(shared.state.ProfilesDoc);
+    if (!doc.profiles[id]) return;
+    doc.usage ||= {};
+    const entry = doc.usage[id];
+    doc.usage[id] = { day, tokens: (entry && entry.day === day ? Number(entry.tokens) || 0 : 0) + tokens };
+  }, ctx());
+}
+
 // Herramientas con las que arranca, o a las que se restablece, una conversación.
 function profileInitialTools(profile, specs) {
   const available = new Set(specs.map((spec) => spec.name));
@@ -1230,6 +1267,8 @@ module.exports = {
   allToolSpecs,
   defaultToolNames,
   moduleToolNames,
+  localDay,
+  profileBudget,
   profileDenied,
   profileInitialTools,
   profileToolFilter,
