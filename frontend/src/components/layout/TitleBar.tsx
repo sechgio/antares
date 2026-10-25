@@ -24,7 +24,7 @@ export default function TitleBar() {
   return (
     <div
       data-testid="app-titlebar"
-      className="app-titlebar flex h-8 shrink-0 items-center justify-end overflow-visible bg-[color:color-mix(in_srgb,var(--accent-blue)_6%,var(--bg-elevated))] pr-2 text-[var(--text-secondary)] select-none"
+      className="app-titlebar flex h-8 shrink-0 items-center justify-end overflow-visible bg-[color:color-mix(in_srgb,var(--text-primary)_4%,var(--bg-base))] pr-2 text-[var(--text-secondary)] select-none"
     >
       <div className="app-titlebar-controls flex h-8 items-stretch overflow-visible">
         {hasTitlebarPlugins && (
