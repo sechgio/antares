@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const { appendLogEvent } = require('./app-log');
 const { OperationCancelledError } = require('./autoimg-concurrency');
 const { emit } = require('./autoimg-notify');
@@ -6,6 +7,7 @@ const CANCELLABLE_OPERATIONS = new Set(['scan', 'scan_sync', 'sync_to', 'sync_fr
 
 const operationState = {
   active: null,
+  operation_id: null,
   cancelRequested: false,
 };
 
@@ -20,6 +22,7 @@ async function runLocked(operation, fn) {
     throw new Error(`Ya hay una operación en curso (${operationState.active}). Espera a que termine.`);
   }
   operationState.active = operation;
+  operationState.operation_id = crypto.randomUUID();
   operationState.cancelRequested = false;
   const startedAt = Date.now();
   appendLogEvent('INFO', 'autoimg.operation_start', {
@@ -68,7 +71,9 @@ async function runLocked(operation, fn) {
     throw err;
   } finally {
     operationState.active = null;
+    operationState.operation_id = null;
     operationState.cancelRequested = false;
+    try { require('./agent-shared').wakeWaiters(); } catch { }
   }
 }
 
@@ -84,6 +89,7 @@ function cancelOperation() {
 function getOperationStatus() {
   return {
     active: operationState.active,
+    operation_id: operationState.operation_id,
     cancellable: CANCELLABLE_OPERATIONS.has(operationState.active),
   };
 }

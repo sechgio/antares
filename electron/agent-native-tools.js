@@ -152,7 +152,8 @@ RENDERER_TOOLS.espacios_comment_create = ['espacios', 'Añadir un comentario a u
 }, true];
 
 const CLOUD = {};
-for (const service of [require('./google-workspace-service'), require('./microsoft-files-service')]) {
+for (const service of [require('./google-workspace-service'), require('./microsoft-files-service'),
+  require('./gmail-service'), require('./microsoft-mail-service'), require('./github-service')]) {
   for (const name of Object.keys(service.TOOLS)) CLOUD[name] = service;
 }
 
@@ -323,7 +324,7 @@ async function runNativeTool(name, params, { sessionId, approvedContext } = {}) 
     }
   }
   if (CLOUD[name]) return CLOUD[name].run(name, params || {}, { dir: draftsDir(sessionId) });
-  if (WEB[name]) return require('./agent-browser').run(name, params || {}, { dir: `${draftsDir(sessionId)}.screens`, approvedContext });
+  if (WEB[name]) return require('./agent-browser').run(name, params || {}, { dir: `${draftsDir(sessionId)}.screens`, approvedContext, sessionId });
   if (name === 'document_generate') return generateDocument(params, sessionId);
   if ((name === 'canvas_fill_fields' || name === 'canvas_apply_layers')
     && !require('./agent-renderer-tools').isRendererAvailable()) {

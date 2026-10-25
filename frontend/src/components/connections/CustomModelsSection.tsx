@@ -90,6 +90,11 @@ const VISION_OPTIONS: { value: Vision; label: string }[] = [
   { value: 'yes', label: 'Sí, acepta capturas e imágenes' },
   { value: 'no', label: 'No, solo texto' },
 ];
+const REASONING_OPTIONS: { value: Vision; label: string }[] = [
+  { value: 'auto', label: 'Detectar por el catálogo o el nombre' },
+  { value: 'yes', label: 'Sí, admite niveles de razonamiento' },
+  { value: 'no', label: 'No razona' },
+];
 const MIN_CONTEXT = 1024;
 const MAX_CONTEXT = 10_000_000;
 
@@ -103,6 +108,7 @@ interface EditorState {
   auth: Auth;
   apiKey: string;
   vision: Vision;
+  reasoning: Vision;
   contextWindow: string;
   advanced: boolean;
   submitted: boolean;
@@ -300,6 +306,7 @@ function CustomModelEditor({
         ...(form.auth === 'key' ? { api_key: apiKey } : {}),
         ...(form.auth === 'none' && editing?.has_key ? { remove_key: true } : {}),
         ...(form.vision !== initial.vision ? { vision: form.vision === 'auto' ? null : form.vision === 'yes' } : {}),
+        ...(form.reasoning !== initial.reasoning ? { reasoning: form.reasoning === 'auto' ? null : form.reasoning === 'yes' } : {}),
         ...(form.contextWindow.trim() !== initial.contextWindow ? { context_window: contextWindow } : {}),
       });
       await onSaved(label);
@@ -520,6 +527,18 @@ function CustomModelEditor({
                     />
                     <span className={helper}>El agente envía sus capturas de pantalla como imagen solo a modelos con visión.</span>
                   </div>
+                  <div className={fieldLabel}>
+                    <span>Razonamiento</span>
+                    <ThemedSelect
+                      className="mt-1.5 w-full"
+                      aria-label="Si el modelo admite razonamiento"
+                      value={form.reasoning}
+                      disabled={form.saving}
+                      options={REASONING_OPTIONS}
+                      onChange={(value) => patch({ reasoning: value === 'yes' || value === 'no' ? value : 'auto' })}
+                    />
+                    <span className={helper}>Con razonamiento, el chat muestra el selector de nivel y lo envía al proveedor.</span>
+                  </div>
                   <label className={fieldLabel}>
                     Ventana de contexto (tokens, opcional)
                     <Input
@@ -580,7 +599,7 @@ export default function CustomModelsSection({
     const preset = PRESETS[0];
     setEditor({
       id: null, preset: preset.id, api: preset.api, baseUrl: preset.baseUrl, model: '', displayName: '',
-      auth: 'key', apiKey: '', vision: 'auto', contextWindow: '', advanced: false, submitted: false, saving: false, error: null,
+      auth: 'key', apiKey: '', vision: 'auto', reasoning: 'auto', contextWindow: '', advanced: false, submitted: false, saving: false, error: null,
     });
   };
 
@@ -597,6 +616,7 @@ export default function CustomModelsSection({
       auth: p.has_key ? 'stored' : 'none',
       apiKey: '',
       vision: p.capabilities?.vision === undefined ? 'auto' : p.capabilities.vision ? 'yes' : 'no',
+      reasoning: p.capabilities?.reasoning === undefined ? 'auto' : p.capabilities.reasoning ? 'yes' : 'no',
       contextWindow: p.capabilities?.context_window ? String(p.capabilities.context_window) : '',
       advanced: false,
       submitted: false,

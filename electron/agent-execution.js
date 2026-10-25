@@ -17,6 +17,7 @@ const {
   ctx,
 } = require('./agent-shared');
 const { compactMessages, requestBudget } = require('./agent-compaction');
+const { resolvePortableProfile, mergeProfileSkills, readProfileSkill } = require('./agent-profiles');
 
 const { appendTurn } = require('./turn-log');
 
@@ -34,6 +35,16 @@ const SUBAGENT_MAX_TASKS = 4;
 const TOOLS_LOAD = 'tools_load';
 const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent']);
 const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD]);
+// Acciones ui_ que inyectan entrada: el marco ámbar del lease humano cubre la
+// ventana objetivo durante su despacho (ui_windows/ui_observe/ui_launch no inyectan).
+const UI_ACTION_TOOLS = new Set(['ui_click', 'ui_type', 'ui_key', 'ui_scroll', 'ui_drag', 'ui_set_value']);
+// En Acceso completo siguen exigiendo decisión humana: el shell (incluidos los
+// jobs en segundo plano) y las acciones de Equipo que inyectan entrada o abren
+// aplicaciones.
+const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'ui_launch', ...UI_ACTION_TOOLS]);
+// Acciones con efecto que el techo desatendido contabiliza por encargo programado.
+const UNATTENDED_ACTION_TOOLS = new Set(['ui_launch', ...UI_ACTION_TOOLS]);
+const MAX_UNATTENDED_ACTIONS = 25;
 const MAX_LOADED_TOOLS = 25;
 const MAX_DEFAULT_TOOLS = 100;
 
@@ -52,8 +63,22 @@ function supportsReasoning(style, modelId) {
   return (style === 'anthropic_messages' ? REASONING_ANTHROPIC_MODEL : REASONING_OPENAI_MODEL).test(String(modelId || ''));
 }
 
-function thinkingLevelFor(style, modelId) {
-  return supportsReasoning(style, modelId) ? 'low' : 'off';
+const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'];
+
+// Niveles que admite el modelo ya registrado (ensureProvider), según su
+// definición: capacidad declarada en el proveedor, catálogo de pi-ai o nombre.
+async function reasoningLevels(providerId, modelId) {
+  const model = shared.state.models.getModel(providerId, modelId);
+  if (!model) return [];
+  const { getSupportedThinkingLevels } = await import('@earendil-works/pi-ai');
+  return getSupportedThinkingLevels(model).filter((level) => REASONING_EFFORTS.includes(level));
+}
+
+// El nivel elegido, o el más cercano por debajo que el modelo admita.
+function thinkingLevelFor(levels, effort) {
+  if (!levels.length) return 'off';
+  const wanted = REASONING_EFFORTS.indexOf(REASONING_EFFORTS.includes(effort) ? effort : 'low');
+  return levels.filter((level) => REASONING_EFFORTS.indexOf(level) <= wanted).at(-1) ?? levels[0];
 }
 
 async function providerInfo(provider) {
@@ -120,7 +145,10 @@ function modelDefinition(info, id, api, verified, catalogModel) {
     ...(api === 'openai-completions' && /(^|\.)openrouter\.ai$/i.test(host) && id.startsWith('anthropic/')
       ? { cacheControlFormat: 'anthropic' } : {}),
     ...(classic ? { supportsStore: false, supportsDeveloperRole: false, maxTokensField: 'max_tokens' } : {}),
+    ...(flags.forceAdaptiveThinking ? { forceAdaptiveThinking: true } : {}),
   };
+  const reasoning = typeof capabilities.reasoning === 'boolean' ? capabilities.reasoning
+    : typeof catalog.reasoning === 'boolean' ? catalog.reasoning : supportsReasoning(info.style, id);
   return {
     id,
     name: id,
@@ -137,7 +165,8 @@ function modelDefinition(info, id, api, verified, catalogModel) {
     },
     contextWindow,
     maxTokens: Math.min(DEFAULT_MAX_TOKENS, Math.floor(contextWindow / 4)),
-    reasoning: supportsReasoning(info.style, id),
+    reasoning,
+    ...(reasoning && catalog.thinkingLevelMap ? { thinkingLevelMap: catalog.thinkingLevelMap } : {}),
     ...(Object.keys(compat).length ? { compat } : {}),
   };
 }
@@ -195,6 +224,8 @@ async function allToolSpecs() {
   const merged = new Map(tools.map((tool) => [tool.name, tool]));
   const scheduleTool = require('./agent-tasks').TOOL;
   merged.set(scheduleTool.name, scheduleTool);
+  const eventTool = require('./agent-events').TOOL;
+  merged.set(eventTool.name, eventTool);
   for (const tool of nativeTools().nativeToolSpecs()) {
     const current = merged.get(tool.name);
     merged.set(tool.name, { ...current, ...tool, ...(tool.inheritSchema && current ? { inputSchema: current.inputSchema } : {}) });
@@ -345,7 +376,7 @@ async function loadTools(args, sessionId, context) {
   const conv = await conversation(sessionId);
   const enabled = new Set((await conv.agent(context)).tools.map((tool) => tool.name));
   const specs = [...shared.toolSpecs.values()].filter((spec) => spec.kind !== 'meta'
-    || spec.name === 'task_schedule' || spec.name === 'agent_delegate');
+    || ['task_schedule', 'agent_delegate', 'wait_event'].includes(spec.name));
   const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
   const words = normal(args.query).split(/[^a-z0-9_]+/).filter((word) => word.length > 2);
   if (!modules.length && !words.length) {
@@ -413,6 +444,7 @@ async function refreshTools() {
       pi.hook(pi.ToolTask, { beforeTool }),
       pi.hook(pi.GenerationTask, {
         beforeRequest: async ({ messages }, api, context) => {
+          resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
           if (await toolBudget(api, context) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
           await noteTurnStart(api, messages || []);
           const compacted = await compactRequest(messages, api, context);
@@ -423,9 +455,12 @@ async function refreshTools() {
         onYield: (answer, api) => planCheck(answer, api),
         afterResponse: async (message, api, context) => {
           try {
+            const sessionId = await sessionForConversation(api.conversationId, api, context);
+            if (message.stopReason !== 'toolUse') {
+              try { require('./agent-browser').release(sessionId); } catch { }
+            }
             if (message.stopReason === 'aborted') return;
             if (message.errorMessage) message.errorMessage = sanitizeProviderError(message.errorMessage);
-            const sessionId = await sessionForConversation(api.conversationId, api, context);
             await commitSessions((sessions) => {
               if (sessions[sessionId]) sessions[sessionId].last_error = message.errorMessage ? message.errorMessage.slice(0, 300) : null;
               if (sessions[sessionId] && !message.errorMessage && message.stopReason === 'stop'
@@ -470,7 +505,7 @@ async function countRound(api, context) {
 
 async function toolBudget(api, context, completed = false) {
   const { harness, BudgetDoc } = shared.state;
-  const rounds = await harness.commit(async (tx) => {
+  const { rounds, submission_id } = await harness.commit(async (tx) => {
     const live = await tx.doc(shared.deps.pi.LiveDoc, api.conversationId);
     const budget = await tx.doc(BudgetDoc, api.conversationId);
     const run = live.run?.inputs[0];
@@ -483,9 +518,10 @@ async function toolBudget(api, context, completed = false) {
       budget.rounds += 1;
       budget.lastRound = api.taskId;
     }
-    return budget.rounds;
+    return { rounds: budget.rounds, submission_id: typeof run === 'number' ? run : null };
   }, context);
   shared.rounds.set(api.conversationId, rounds);
+  shared.turnRuns.set(api.conversationId, submission_id);
   return rounds;
 }
 
@@ -619,6 +655,10 @@ function stableJson(value) {
   return JSON.stringify(value === undefined ? null : value);
 }
 
+function callSignature(name, args) {
+  return `${name}:${stableJson(args || {})}`;
+}
+
 function planCheck(answer, api) {
   const turn = shared.turns.get(api.conversationId);
   if (!turn || turn.checked || !turn.remaining || !turn.remaining.length) return undefined;
@@ -645,12 +685,16 @@ async function beforeTool(call, api, context) {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   if (!await toolEnabled(sessionId, call.name, context)) return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
   const calls = turnState(api.conversationId).calls;
-  const signature = `${call.name}:${stableJson(call.arguments || {})}`;
-  const repeated = calls.get(signature) || { count: 0 };
-  repeated.count += 1;
-  calls.set(signature, repeated);
-  if (repeated.count > MAX_REPEATS) {
-    return { block: `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno con los mismos argumentos. No lo repitas: `
+  const signature = callSignature(call.name, call.arguments);
+  let repeated = calls.get(signature);
+  if (!repeated) {
+    repeated = { count: 0, outcome: undefined, exempt: false };
+    calls.set(signature, repeated);
+  }
+  if (repeated.count >= MAX_REPEATS && !repeated.exempt) {
+    const detail = spec.name === 'web_click' ? 'sin cambiar de página'
+      : !spec.gated || spec.name === 'desktop_observe' ? 'con el mismo resultado o error' : 'con los mismos argumentos';
+    return { block: `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno ${detail}. No la repitas: `
       + 'cambia de enfoque o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
   }
   const session = await requireSession(sessionId);
@@ -659,6 +703,15 @@ async function beforeTool(call, api, context) {
   }
   const mode = session.permission_mode || 'auto';
   if (!spec.gated && !(mode === 'ask' && call.name.startsWith('web_'))) return undefined;
+  const unattendedApps = await unattendedAllowlist(api, context, mode, spec);
+  if (unattendedApps && UNATTENDED_ACTION_TOOLS.has(call.name)) {
+    const turn = turnState(api.conversationId);
+    turn.uiActions = (turn.uiActions || 0) + 1;
+    if (turn.uiActions > MAX_UNATTENDED_ACTIONS) {
+      return { block: `Alcanzaste el techo de ${MAX_UNATTENDED_ACTIONS} acciones sobre apps de este encargo programado. `
+        + 'Detente e informa de lo hecho y de lo que quedó pendiente.' };
+    }
+  }
 
   const callId = dispatchCallId(call.id, api.taskId);
   let approval;
@@ -670,9 +723,10 @@ async function beforeTool(call, api, context) {
       method: call.name,
       params: call.arguments || {},
       ...(approvedContext ? { context: approvedContext } : {}),
+      ...(unattendedApps ? { unattended_apps: unattendedApps } : {}),
     }));
     if (approval.status === 'pending'
-      && ((mode === 'full' && call.name !== 'shell_run') || webAlwaysAllowed(call.name, approvedContext))) {
+      && ((mode === 'full' && !NEVER_AUTO_APPROVE.has(call.name)) || webAlwaysAllowed(call.name, approvedContext))) {
       ({ approval } = await bridge('agent_internal_approval_decide', { approval_id: approval.id, approve: true }));
     }
   } catch (err) {
@@ -702,6 +756,16 @@ async function beforeTool(call, api, context) {
 
 function callKey(sessionId, callId) {
   return `${sessionId}:${callId}`;
+}
+
+// Un turno desatendido es el que arrancó con un encargo programado; tick()
+// registra su lista blanca de apps por id de submission y el projection la
+// limpia al terminar el run (los registros de submission se podan al asentarse).
+async function unattendedAllowlist(api, context, mode, spec) {
+  if (mode === 'ask' || !spec.gated) return null;
+  const submissionId = shared.turnRuns.get(api.conversationId);
+  if (!submissionId) return null;
+  return shared.unattendedApps.get(submissionId) || null;
 }
 
 function waitForDecision(approvalId, context) {
@@ -767,6 +831,8 @@ async function executeTool(spec, args, api, context) {
     noteToolResult(api, spec.name, text, true);
     return { content: [{ type: 'text', text }], isError: true };
   }
+  const uiAction = UI_ACTION_TOOLS.has(spec.name);
+  if (uiAction) require('./agent-overlay').showOverlay(sessionId, turnState(api.conversationId).uiRect);
   let text;
   let added;
   try {
@@ -774,33 +840,64 @@ async function executeTool(spec, args, api, context) {
   } catch (err) {
     noteToolResult(api, spec.name, `error: ${(err && err.message) || err}`, true);
     throw err;
+  } finally {
+    if (uiAction) require('./agent-overlay').hideOverlay(sessionId);
   }
   let parsed = null;
   try { parsed = JSON.parse(text); } catch { }
+  const rect = parsed && (Array.isArray(parsed.window_rect) ? parsed.window_rect
+    : (parsed.window && Array.isArray(parsed.window.rect) ? parsed.window.rect : null));
+  if (rect) turnState(api.conversationId).uiRect = rect;
   const isError = !!(parsed && typeof parsed === 'object' && (parsed.error !== undefined || parsed.isError === true));
   if (spec.name === 'task_plan' && !isError && parsed && Array.isArray(parsed.remaining)) {
     turnState(api.conversationId).remaining = parsed.remaining.map(String);
   }
   const image = isError || !await acceptsImages(api, context) ? null : await resultImage(parsed);
-  if (!isError && (!spec.gated || spec.name === 'desktop_observe')) {
-    const repeated = turnState(api.conversationId).calls.get(`${spec.name}:${stableJson(args || {})}`);
-    if (repeated) {
-      let outcome = stableJson(parsed ?? text);
-      const capture = parsed && (parsed.image || (parsed.observation && parsed.observation.image));
-      if (capture && typeof capture.path === 'string') {
-        const fingerprint = image ? crypto.createHash('sha256').update(image.data).digest('hex') : 'captura';
-        outcome = outcome.replaceAll(JSON.stringify(capture.path), JSON.stringify(fingerprint));
-      }
-      if (repeated.result !== undefined && repeated.result !== outcome) repeated.count = 1;
-      repeated.result = outcome;
-    }
+  const calls = turnState(api.conversationId).calls;
+  const signature = callSignature(spec.name, args);
+  let repeated = calls.get(signature);
+  if (!repeated) {
+    repeated = { count: 0, outcome: undefined, exempt: false };
+    calls.set(signature, repeated);
   }
+  let outcome = stableJson(parsed ?? text);
+  const capture = parsed && (parsed.image || (parsed.observation && parsed.observation.image));
+  if (capture && typeof capture.path === 'string') {
+    const fingerprint = image ? crypto.createHash('sha256').update(image.data).digest('hex') : 'captura';
+    outcome = outcome.replaceAll(JSON.stringify(capture.path), JSON.stringify(fingerprint));
+  }
+  // El guard mide progreso, no llamadas: un fallo recuperable (espera, control
+  // o página cambiada) no consume intentos. Las lecturas, las observaciones y
+  // los clics que cambian de página progresan; el resto de efectos gated
+  // conserva su límite aunque el resultado cambie, para no repetir acciones.
+  const trackOutcome = !spec.gated || spec.name === 'desktop_observe' || spec.name === 'web_click';
+  const progress = spec.name === 'web_click'
+    ? stableJson({ url: parsed && parsed.page && parsed.page.url ? String(parsed.page.url) : '' })
+    : outcome;
+  const hash = crypto.createHash('sha256').update(progress).digest('hex');
+  const exempt = !!(isError && parsed && typeof parsed === 'object'
+    && (parsed.retryable === true || parsed.recoverable === true) && parsed.uncertain !== true);
+  if (exempt) {
+    repeated.exempt = true;
+    repeated.count = 0;
+  } else if (trackOutcome && repeated.outcome !== undefined && repeated.outcome !== hash) {
+    repeated.count = 1;
+    repeated.exempt = false;
+  } else {
+    repeated.count = (repeated.count || 0) + 1;
+    repeated.exempt = false;
+  }
+  if (trackOutcome) repeated.outcome = hash;
   noteToolResult(api, spec.name, text, isError);
   return { content: [{ type: 'text', text }, ...(image ? [image] : [])], isError,
     ...(added && added.length ? { control: { addTools: added } } : {}) };
 }
 
 async function dispatchTool(spec, args, sessionId, api, context) {
+  const portableProfile = resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
+  if (portableProfile && spec.name === 'skills_read' && typeof args?.skill_id === 'string' && args.skill_id.startsWith('profile:')) {
+    return { text: JSON.stringify(readProfileSkill(portableProfile, args)) };
+  }
   if (spec.kind === 'meta') {
     if (spec.name === 'agent_delegate') {
       const profile = await resolveProfile(args?.agent);
@@ -808,6 +905,7 @@ async function dispatchTool(spec, args, sessionId, api, context) {
       return { text: JSON.stringify(await require('./agent-tasks').delegate(profile, args, sessionId, api, context)) };
     }
     if (spec.name === 'task_schedule') return { text: JSON.stringify(await require('./agent-tasks').schedule(args || {}, sessionId, api)) };
+    if (spec.name === 'wait_event') return { text: JSON.stringify(await require('./agent-events').wait(args || {}, sessionId, api, context)) };
     if (spec.name === 'sessions_search') return { text: JSON.stringify(await searchSessions(args || {}, sessionId, context)) };
     return loadTools(args || {}, sessionId, context);
   }
@@ -848,7 +946,7 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     const text = spec.kind === 'native'
       ? await dispatchNative(spec, request, context)
       : await dispatchAndWait(request, context, api);
-    return { text };
+    return { text: portableProfile && spec.name === 'skills_list' ? mergeProfileSkills(portableProfile, args, text) : text };
   } finally {
     if (spec.name === 'ask_user') shared.waitingInput.delete(sessionId);
   }
@@ -909,7 +1007,14 @@ async function dispatchNative(spec, request, context) {
     text = JSON.stringify(result === undefined ? null : result);
   } catch (err) {
     uncertain = err?.uncertain === true;
-    text = JSON.stringify({ error: String((err && err.message) || err).slice(0, 500), ...(uncertain ? { interrupted: true, uncertain: true } : {}) });
+    text = JSON.stringify({
+      error: String((err && err.message) || err).slice(0, 500),
+      ...(err?.code ? { code: String(err.code) } : {}),
+      ...(err?.retryable === true ? { retryable: true } : {}),
+      ...(err?.recoverable === true ? { recoverable: true } : {}),
+      ...(Number.isFinite(err?.retryAfterMs) ? { retry_after_ms: Math.max(0, Math.round(err.retryAfterMs)) } : {}),
+      ...(uncertain ? { interrupted: true, uncertain: true } : {}),
+    });
   }
   const finished = await bridge('agent_internal_dispatch_finish', {
     session_id: request.session_id,
@@ -1012,6 +1117,9 @@ module.exports = {
   callKey,
   providerInfo,
   thinkingLevelFor,
+  reasoningLevels,
+  supportsReasoning,
+  REASONING_EFFORTS,
   ensureProvider,
   refreshTools,
   notifyDecision,

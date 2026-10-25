@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AppWindow, ArrowLeft, Ban, BookOpen, Camera, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Copy, FilePen, FileText, FolderOpen, Globe, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Network, Package, Route, Search, ShieldCheck, Terminal, Wrench, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { AgentApproval, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
+import type { agentApi, AgentApproval, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
 import Toggle from '../ui/Toggle';
 import AgentAvatar from './AgentAvatar';
@@ -72,6 +72,15 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   desktop_scroll: Mouse,
   desktop_launch: AppWindow,
   desktop_focus: AppWindow,
+  ui_click: MousePointerClick,
+  ui_type: Keyboard,
+  ui_key: Keyboard,
+  ui_scroll: Mouse,
+  ui_drag: Mouse,
+  ui_set_value: Keyboard,
+  ui_windows: AppWindow,
+  ui_observe: Monitor,
+  ui_launch: AppWindow,
   task_plan: ListChecks,
   tools_load: Package,
   skills_list: BookOpen,
@@ -410,7 +419,7 @@ export function ApprovalCard({
   approval: AgentApproval;
   busy: boolean;
   decision?: 'approve' | 'deny';
-  onDecide: (id: string, ok: boolean, remember?: boolean) => void;
+  onDecide: (id: string, ok: boolean, opts?: Parameters<typeof agentApi.agentApprove>[1]) => void;
 }) {
   const { params, context } = approval;
   const [remember, setRemember] = useState(false);
@@ -418,6 +427,7 @@ export function ApprovalCard({
     && typeof context?.domain === 'string' && context.domain ? context.domain : null;
   const label = Object.prototype.hasOwnProperty.call(METHOD_LABELS, approval.method) ? METHOD_LABELS[approval.method] : undefined;
   const filename = typeof params.filename === 'string' && params.filename ? params.filename : params.name;
+  const appGrant = typeof context?.computer?.app === 'string' ? context.computer.app : null;
   const action = approval.method === 'drafts_save' && typeof filename === 'string'
     ? `Guardar ${filename}` : label;
   const facts = [
@@ -448,6 +458,9 @@ export function ApprovalCard({
     typeof context?.page_url === 'string' && context.page_url !== params.url && `Página actual: ${context.page_url}`,
     context?.account && `Cuenta: ${context.account}`,
     context?.sheet_id && `Hoja: ${context.sheet_id}`,
+    context?.computer?.app && `Aplicación: ${context.computer.app}`,
+    context?.computer?.window && `Ventana: ${context.computer.window}`,
+    context?.computer?.element && `Elemento: ${context.computer.element}`,
     context?.subagent && `Solicitada por el subagente: ${context.subagent}${context.subagent_role === 'worker' ? ' (worker)' : ''}`,
     ...(approval.resources ?? []).map((resource) => `Archivo: ${resource.path}`),
   ].filter((fact): fact is string => !!fact);
@@ -502,13 +515,21 @@ export function ApprovalCard({
               Permitir siempre en {alwaysDomain}
             </label>
           ) : (
-            <span className="mr-auto basis-full text-[11.5px] leading-5 text-[var(--text-secondary)] sm:basis-auto">Solo esta acción</span>
+            <span className="mr-auto basis-full text-[11.5px] leading-5 text-[var(--text-secondary)] sm:basis-auto">{appGrant ? 'Solo esta acción · o siempre en esta app' : 'Solo esta acción'}</span>
           )}
           <Button size="sm" variant="ghost" aria-label="Rechazar esta acción" disabled={busy} onClick={() => onDecide(approval.id, false)}>
             {decision === 'deny' ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <X size={13} aria-hidden="true" />}
             Rechazar
           </Button>
-          <Button size="sm" aria-label="Permitir esta acción" disabled={busy} onClick={() => onDecide(approval.id, true, remember)}>
+          {appGrant && (
+            <Button size="sm" variant="ghost" aria-label={`Permitir esta acción y las siguientes sobre ${appGrant} durante la sesión`} disabled={busy}
+              onClick={() => onDecide(approval.id, true, { grantApp: true })}>
+              {decision === 'approve' ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <AppWindow size={13} aria-hidden="true" />}
+              Siempre esta app
+            </Button>
+          )}
+          <Button size="sm" aria-label="Permitir esta acción" disabled={busy}
+            onClick={() => alwaysDomain ? onDecide(approval.id, true, { remember }) : onDecide(approval.id, true)}>
             {decision === 'approve' ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Check size={13} aria-hidden="true" />}
             Permitir
           </Button>

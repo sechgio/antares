@@ -103,7 +103,7 @@ it('muestra cuenta y recursos revisados antes de una decisión explícita', () =
   expect(screen.getByText('Archivo: C:\\trabajos\\informe.pdf')).toBeInTheDocument();
   expect(decide).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Permitir esta acción' }));
-  expect(decide).toHaveBeenCalledWith('approval', true, false);
+  expect(decide).toHaveBeenCalledWith('approval', true);
 });
 
 it('resume más de dos pasos de herramientas y los abre si alguno necesita atención', () => {
@@ -379,7 +379,7 @@ it('ofrece permitir siempre en el dominio de una acción web y manda la elecció
   expect(screen.getByText('Página actual: https://tienda.miejemplo.pe/checkout')).toBeInTheDocument();
   expect(screen.queryByText('Solo esta acción')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Permitir esta acción' }));
-  expect(decide).toHaveBeenCalledWith('a2', true, false);
+  expect(decide).toHaveBeenCalledWith('a2', true, { remember: false });
 });
 
 it('manda recordar cuando el usuario activa permitir siempre', () => {
@@ -391,7 +391,7 @@ it('manda recordar cuando el usuario activa permitir siempre', () => {
   }} />);
   fireEvent.click(screen.getByRole('switch', { name: 'Permitir siempre en tienda.miejemplo.pe' }));
   fireEvent.click(screen.getByRole('button', { name: 'Permitir esta acción' }));
-  expect(decide).toHaveBeenCalledWith('a5', true, true);
+  expect(decide).toHaveBeenCalledWith('a5', true, { remember: true });
 });
 
 it('no ofrece permitir siempre en un dominio bloqueado ni fuera del navegador', () => {
