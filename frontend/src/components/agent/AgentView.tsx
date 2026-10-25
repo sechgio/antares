@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownRight, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
-import { agentApi, type AgentPermissionMode, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
+import { agentApi, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
@@ -15,6 +15,7 @@ import { SegmentedControl } from '../ui/SegmentedControl';
 import AgentAvatar from './AgentAvatar';
 import ModelPicker from './ModelPicker';
 import PermissionPicker from './PermissionPicker';
+import ReasoningPicker from './ReasoningPicker';
 import ContextUsage from './ContextUsage';
 import ArtifactCard from './ArtifactCard';
 import QuestionCard from './QuestionCard';
@@ -159,6 +160,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [model, setModel] = useState('');
   const [modelBusy, setModelBusy] = useState(false);
   const [permissionsBusy, setPermissionsBusy] = useState(false);
+  const [reasoningBusy, setReasoningBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const sendInFlightRef = useRef(false);
   const [messagesStale, setMessagesStale] = useState(false);
@@ -465,6 +467,18 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       addToast({ message: errorMessage(err, 'No se pudieron guardar los permisos'), type: 'error' });
     } finally {
       setPermissionsBusy(false);
+    }
+  };
+  const changeReasoning = async (effort: AgentReasoningEffort) => {
+    if (!sessionId || reasoningBusy) return;
+    setReasoningBusy(true);
+    try {
+      const { session: updated } = await agentApi.agentSessionReasoningSet(sessionId, effort);
+      setSessions((list) => list.map((item) => item.id === updated.id ? updated : item));
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo cambiar el razonamiento'), type: 'error' });
+    } finally {
+      setReasoningBusy(false);
     }
   };
   const queuedForSession = queued.filter((i) => i.session === sessionId);
@@ -1382,6 +1396,15 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                     <Sparkles size={11} className="shrink-0 text-[var(--accent-primary-hover)]" />
                     {session?.model || model || providerLabel || 'Proveedor IA'}
                   </span>
+                )}
+                {!!session?.reasoning_levels?.length && (
+                  <ReasoningPicker
+                    key={session.id}
+                    levels={session.reasoning_levels}
+                    value={session.reasoning_effort ?? 'low'}
+                    onChange={(effort) => void changeReasoning(effort)}
+                    disabled={reasoningBusy || modelBusy || running || stopping || pending.length > 0}
+                  />
                 )}
                 <ContextUsage usage={usage} model={session?.model ?? model} />
               </div>

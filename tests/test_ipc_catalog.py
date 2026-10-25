@@ -80,6 +80,16 @@ def test_agent_permission_selection_is_a_renderer_command_not_an_agent_tool():
     assert "agent_session_permissions_set" not in ORCHESTRATABLE_METHODS
 
 
+def test_agent_reasoning_selection_is_a_renderer_command_not_an_agent_tool():
+    from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
+
+    entry = _catalog()["methods"]["agent_session_reasoning_set"]
+    assert entry["handler"] == "native:agent"
+    assert entry["inputSchema"]["required"] == ["id", "reasoning_effort"]
+    assert entry["inputSchema"]["properties"]["reasoning_effort"]["enum"] == ["minimal", "low", "medium", "high", "xhigh"]
+    assert "agent_session_reasoning_set" not in ORCHESTRATABLE_METHODS
+
+
 def test_agent_methods_have_explicit_schemas_and_internal_refresh_hides_client_secrets(monkeypatch):
     from backend.core.agent import agent_chat
     from backend.core.integrations import connections

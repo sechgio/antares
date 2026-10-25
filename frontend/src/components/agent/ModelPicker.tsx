@@ -100,11 +100,16 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
       }
       return { id: item.id, label: item.label, state, entries, custom: false };
     });
-    const customEntries: MenuItem[] = customs
-      .filter((item) => !needle || item.label.toLowerCase().includes(needle) || item.default_model.toLowerCase().includes(needle))
-      .map((item) => ({ provider: item.id, model: item.default_model, label: item.label, detail: item.default_model }));
-    return customEntries.length
-      ? [...listed, { id: 'custom', label: 'Personalizados', state: { loading: false, models: [], error: null }, entries: customEntries, custom: true }]
+    // Un modelo personalizado muestra su modelo configurado y, tras «Buscar
+    // modelos activos», los que su endpoint sirve ahora mismo.
+    const customEntries: MenuItem[] = customs.flatMap((item) => [
+      { provider: item.id, model: item.default_model, label: item.label, detail: item.default_model },
+      ...[...new Set(models[item.id]?.models ?? [])].filter((model) => model !== item.default_model)
+        .map((model) => ({ provider: item.id, model, label: model, detail: item.label })),
+    ]).filter((entry) => !needle || entry.label.toLowerCase().includes(needle) || entry.model.toLowerCase().includes(needle));
+    const customLoading = customs.some((item) => models[item.id]?.loading);
+    return customs.length
+      ? [...listed, { id: 'custom', label: 'Personalizados', state: { loading: customLoading, models: customEntries.map((entry) => entry.model), error: null }, entries: customEntries, custom: true }]
       : listed;
   }, [standard, customs, models, term, currentProvider?.id]);
   const items = useMemo(() => groups.flatMap((group) => group.entries), [groups]);
@@ -159,7 +164,8 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
     );
   }
 
-  const modelLabel = (selectedProvider?.custom && selectedProvider.label) || value.model || currentProvider?.default_model || 'Elegir modelo';
+  const modelLabel = (selectedProvider?.custom && (!value.model || value.model === selectedProvider.default_model) && selectedProvider.label)
+    || value.model || currentProvider?.default_model || 'Elegir modelo';
   let index = -1;
 
   return (
@@ -283,6 +289,24 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
                   {state.error && entries.length > 0 && (
                     <p className="px-2 pb-1.5 text-[11px] leading-relaxed text-[var(--text-muted)]">{state.error}</p>
                   )}
+                  {custom && customs.map((item) => {
+                    const fetched = models[item.id];
+                    return (
+                      <Fragment key={item.id}>
+                        <button
+                          type="button"
+                          onClick={() => void load(item.id)}
+                          disabled={fetched?.loading}
+                          aria-label={`Buscar modelos activos de ${item.label}`}
+                          className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:opacity-60"
+                        >
+                          {fetched?.loading ? <Loader2 size={11} className="shrink-0 animate-spin" /> : <RefreshCw size={11} className="shrink-0" />}
+                          <span className="truncate">{customs.length > 1 ? `Buscar modelos activos · ${item.label}` : 'Buscar modelos activos'}</span>
+                        </button>
+                        {fetched?.error && <p className="px-2 pb-1.5 text-[11px] leading-relaxed text-[var(--text-muted)]">{fetched.error}</p>}
+                      </Fragment>
+                    );
+                  })}
                   {state.error && (
                     <button
                       type="button"

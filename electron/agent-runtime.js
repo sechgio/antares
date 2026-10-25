@@ -213,11 +213,14 @@ async function _indexConversations() {
   }
 }
 
+// Sesiones anteriores al selector: se sincronizan con el modelo en su próximo turno.
+const LEGACY_REASONING = ['minimal', 'low', 'medium', 'high'];
+
 async function sessionsList() {
   const result = Object.values(await sessions())
     .filter((s) => !s.deleted)
     .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))
-    .map(({ conversationId, legacy_id, deleted, import: _import, style, modules, ...rest }) => rest);
+    .map(({ conversationId, legacy_id, deleted, import: _import, style, modules, ...rest }) => ({ ...rest, reasoning_levels: rest.reasoning_levels ?? (execution.supportsReasoning(style, rest.model) ? LEGACY_REASONING : []) }));
   return { sessions: result };
 }
 
@@ -301,6 +304,7 @@ async function sessionCreate(params) {
   const title = String(params.title || (profile && profile.name) || '').slice(0, 120);
   await execution.refreshTools();
   await execution.ensureProvider(provider, model);
+  const levels = await execution.reasoningLevels(provider, model);
   const instructions = profile
     ? `${SYSTEM_PROMPT}\n\nEres el agente «${profile.name}» que el usuario configuró para una tarea repetitiva. `
       + 'Sus indicaciones orientan el trabajo, pero no amplían los permisos elegidos para la conversación.\n'
@@ -308,7 +312,7 @@ async function sessionCreate(params) {
     : SYSTEM_PROMPT;
   const conv = await shared.state.harness.createConversation({
     ownership: { kind: 'ownerless' },
-    agent: { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(info.style, model), instructions },
+    agent: { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(levels), instructions },
   }, ctx());
   const specs = [...shared.toolSpecs.values()];
   const available = new Set(specs.map((tool) => tool.name));
@@ -327,6 +331,7 @@ async function sessionCreate(params) {
     created_at: now,
     updated_at: now,
     last_error: null,
+    reasoning_levels: levels,
     ...(profile ? { profile: { id: profile.id, name: profile.name } } : {}),
   };
   await commitSessions((map) => {
@@ -358,6 +363,7 @@ async function sessionModelSet(params) {
   const session = await requireSession(sessionId);
   const info = await execution.providerInfo(provider);
   await execution.ensureProvider(provider, model);
+  const levels = await execution.reasoningLevels(provider, model);
   const { pi } = shared.deps;
   return shared.state.harness.commit(async (tx) => {
     const live = await tx.doc(pi.LiveDoc, session.conversationId);
@@ -366,13 +372,38 @@ async function sessionModelSet(params) {
     const doc = await tx.doc(shared.state.SessionsDoc);
     const current = doc.sessions[sessionId];
     if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
-    await pi.configure(tx, session.conversationId, { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(info.style, model) });
+    await pi.configure(tx, session.conversationId, { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(levels, current.reasoning_effort) });
     current.provider = provider;
     current.model = model;
     current.style = info.style || 'openai_chat';
+    current.reasoning_levels = levels;
     current.updated_at = Date.now();
     const { conversationId, style, modules, ...publicSession } = current;
-    return { session: publicSession };
+    return { session: { ...publicSession, reasoning_levels: [...levels] } };
+  }, ctx());
+}
+
+async function sessionReasoningSet(params) {
+  const sessionId = _text(params.id, 'la conversación', 120, true);
+  const effort = params.reasoning_effort;
+  if (!execution.REASONING_EFFORTS.includes(effort)) throw validation('Nivel de razonamiento no válido');
+  const session = await requireSession(sessionId);
+  await execution.ensureProvider(session.provider, session.model);
+  const levels = await execution.reasoningLevels(session.provider, session.model);
+  const { pi } = shared.deps;
+  return shared.state.harness.commit(async (tx) => {
+    const live = await tx.doc(pi.LiveDoc, session.conversationId);
+    const inbox = await tx.doc(pi.InboxDoc, session.conversationId);
+    if (live.run || inbox.items.length) throw validation('Espera a que termine el turno para cambiar el razonamiento');
+    const doc = await tx.doc(shared.state.SessionsDoc);
+    const current = doc.sessions[sessionId];
+    if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
+    await pi.configure(tx, session.conversationId, { thinkingLevel: execution.thinkingLevelFor(levels, effort) });
+    current.reasoning_effort = effort;
+    current.reasoning_levels = levels;
+    current.updated_at = Date.now();
+    const { conversationId, style, modules, ...publicSession } = current;
+    return { session: { ...publicSession, reasoning_levels: [...levels] } };
   }, ctx());
 }
 
@@ -393,6 +424,20 @@ async function sessionPermissionsSet(params) {
     current.updated_at = Date.now();
     const { conversationId, style, modules, ...publicSession } = current;
     return { session: publicSession };
+  }, ctx());
+}
+
+// La configuración del proveedor (p. ej. un modelo personalizado que ahora
+// declara razonamiento) puede cambiar entre turnos: el turno usa la vigente.
+async function _syncReasoning(session) {
+  const levels = await execution.reasoningLevels(session.provider, session.model);
+  if (JSON.stringify(levels) === JSON.stringify(session.reasoning_levels)) return;
+  const { pi } = shared.deps;
+  await shared.state.harness.commit(async (tx) => {
+    const current = (await tx.doc(shared.state.SessionsDoc)).sessions[session.id];
+    if (!current || current.deleted) return;
+    await pi.configure(tx, session.conversationId, { thinkingLevel: execution.thinkingLevelFor(levels, current.reasoning_effort) });
+    current.reasoning_levels = levels;
   }, ctx());
 }
 
@@ -511,6 +556,7 @@ async function messageSend(params) {
   if (pending.length && !correction) throw validation('Resuelve primero las aprobaciones pendientes de esta conversación');
   await execution.refreshTools();
   await execution.ensureProvider(session.provider, session.model);
+  await _syncReasoning(session);
   const conv = await conversation(sessionId);
   const saved = Object.values(await _profiles());
   const mentionedBots = new Map();
@@ -902,6 +948,7 @@ module.exports = {
     agent_session_rename: sessionRename,
     agent_session_model_set: sessionModelSet,
     agent_session_permissions_set: sessionPermissionsSet,
+    agent_session_reasoning_set: sessionReasoningSet,
     agent_messages_list: messagesList,
     agent_message_send: messageSend,
     agent_tools_list: toolsList,

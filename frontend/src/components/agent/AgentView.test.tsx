@@ -320,6 +320,29 @@ it('permite ocultar la barra sin conversación activa y Ctrl+K la recupera para 
   expect(within(sidebar).getByRole('textbox', { name: 'Buscar conversaciones' })).toHaveFocus();
 });
 
+it('regula el razonamiento con los niveles del modelo y lo guarda al soltar', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const reasoning_levels = ['low', 'medium', 'high'] as const;
+  const plain = { ...session, id: 's2', title: 'Segunda', reasoning_levels: [] };
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [{ ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'xhigh' }, plain] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const save = vi.spyOn(agentApi, 'agentSessionReasoningSet')
+    .mockResolvedValueOnce({ session: { ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'medium' } });
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Alto' }));
+  const slider = within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByRole('slider', { name: 'Nivel de razonamiento' });
+  expect(slider).toHaveAttribute('max', '2');
+  fireEvent.change(slider, { target: { value: '1' } });
+  expect(slider).toHaveAttribute('aria-valuetext', 'Medio');
+  expect(save).not.toHaveBeenCalled();
+  await act(async () => { fireEvent.keyUp(slider, { key: 'ArrowLeft' }); });
+  expect(save).toHaveBeenCalledWith(session.id, 'medium');
+  expect(screen.getByRole('button', { name: 'Razonamiento: Medio' })).toBeEnabled();
+  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
+  expect(screen.queryByRole('button', { name: /^Razonamiento:/ })).not.toBeInTheDocument();
+});
+
 it('cambia los permisos por conversación y conserva el modo si falla el guardado', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   const second = { ...session, id: 's2', title: 'Segunda', permission_mode: 'ask' as const };

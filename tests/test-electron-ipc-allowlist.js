@@ -91,6 +91,10 @@ function main() {
     || catalog.METHODS.agent_session_permissions_set.handler !== 'native:agent') {
     throw new Error('El selector de permisos debe usar el método nativo permitido del agente.');
   }
+  if (!apiMethods.has('agent_session_reasoning_set') || !allowed.has('agent_session_reasoning_set')
+    || catalog.METHODS.agent_session_reasoning_set.handler !== 'native:agent') {
+    throw new Error('El selector de razonamiento debe usar el método nativo permitido del agente.');
+  }
   const refreshMethod = 'connections_token_refresh';
   if (!catalog.INTERNAL_METHODS.has(refreshMethod) || knownUsedMethods.has(refreshMethod)) {
     throw new Error('El refresco de conexiones debe ser interno, sin acceso del renderer.');
