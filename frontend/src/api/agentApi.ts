@@ -343,6 +343,9 @@ export const agentApi = {
       questions?: AgentQuestion[];
       context?: AgentContext;
       usage?: AgentUsage | null;
+      context_window?: number;
+      compaction_thresholds?: { warn: number; compact: number } | null;
+      compacting?: boolean;
     }>('agent_messages_list', { session_id }),
 
   agentContextRemoveFile: (session_id: string, path: string) =>
@@ -368,6 +371,7 @@ export const agentApi = {
       running: boolean;
       pending_approvals: AgentApproval[];
       last_error: string | null;
+      compacting?: boolean;
     }>('agent_turn_status', { session_id }),
 
   agentBrowser: (action: 'state' | 'bounds' | 'tab' | 'control' | 'allow' | 'open' | 'back' | 'forward' | 'reload',

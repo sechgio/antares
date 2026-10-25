@@ -19,6 +19,7 @@ const {
 const execution = require('./agent-execution');
 const projection = require('./agent-projection');
 const { validateRules } = require('./agent-channels');
+const compactionPolicy = require('./agent-compaction');
 const { loadAgentProfile, resolvePortableProfile } = require('./agent-profiles');
 
 const MAX_MESSAGE_CHARS = 12_000;
@@ -163,11 +164,15 @@ async function _open(options = {}) {
     const registry = pi.createRegistry();
     // Retención larga: una aprobación o una pausa de más de 5 minutos no vacía
     // la caché del prefijo (solo la reciben las APIs oficiales, ver modelDefinition).
-    // La compactación automática conserva los valores por defecto de pi-durable;
-    // agent-compaction cubre las ventanas donde su corte no llega a activarse.
+    // Compactación en dos capas: los umbrales de ai-agent/compaction.json con
+    // la política sagrada de resumen en agent-compaction.beforeCompact, y el
+    // guardián mecánico por petición en agent-execution.compactRequest.
     const settings = {
       ...(options.settings || {}),
       stream: { cacheRetention: 'long', ...(options.settings && options.settings.stream) },
+      // La política del llamante gana; si no, la de ai-agent/compaction.json.
+      compaction: options.compaction || (options.settings && options.settings.compaction) || compactionPolicy.loadPolicy(dir),
+      ...(options.retry ? { retry: options.retry } : {}),
     };
     const harness = await pi.Harness.open(storage, { models, registry, settings }, ctx());
     shared.boot = crypto.randomUUID();
@@ -181,6 +186,7 @@ async function _open(options = {}) {
       PolicyDoc,
       WaitsDoc,
       BudgetDoc,
+      compaction: settings.compaction,
       dir,
       ctx: ctx(),
       convIndex: shared.convToSession,
@@ -627,6 +633,7 @@ async function messagesList(params) {
   const running = projection.isRunning(session.conversationId);
   const plan = _latestPlan(messages);
   const stopped = messages.length > 0 && messages[messages.length - 1].content === CANCELLED_NOTE;
+  const contextWindow = execution.contextWindowFor(session);
   return {
     messages,
     running,
@@ -637,6 +644,9 @@ async function messagesList(params) {
     questions,
     context: { modules: session.modules || [], files: (context && context.files) || [], accounts: (context && context.accounts) || [] },
     usage: usage || null,
+    context_window: contextWindow,
+    compaction_thresholds: compactionPolicy.thresholdsFor(shared.state.compaction, contextWindow),
+    compacting: (projection.liveFor(session.conversationId).compactions || []).length > 0,
   };
 }
 
@@ -971,6 +981,7 @@ async function turnStatus(params) {
     running: projection.isRunning(session.conversationId),
     pending_approvals: pending,
     last_error: session.last_error || null,
+    compacting: (projection.liveFor(session.conversationId).compactions || []).length > 0,
   };
 }
 
