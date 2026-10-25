@@ -21,7 +21,6 @@ class _CancelEvent:
         self.progress = ""
 
     def report(self, text: str) -> None:
-        """Salida en curso de la herramienta; se conserva el principio para que solo crezca."""
         with self._progress_lock:
             self.progress = (self.progress + text)[:_MAX_PROGRESS_CHARS]
 

@@ -177,8 +177,6 @@ async function updateRange(params) {
 
 async function append(params) {
   const id = _id(params.spreadsheet_id, 'Hoja');
-  // Un append perdido no se puede distinguir de un duplicado: sin
-  // verificación, queda incierto y no se repite.
   const body = await cloud.write(() => _request(
     `${SHEETS}/${id}/values/${encodeURIComponent(String(params.range))}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: cloud.matrix(params.values) }) },

@@ -563,7 +563,6 @@ it('no repite el estado de trabajo mientras una herramienta en curso ya lo muest
     messages: [{ role: 'assistant', content: '', ts: 1, tool_calls: [{ ...call('done'), result: '{"exit_code":0}' }] }] } as never);
   render(<AgentView />);
   await act(async () => {});
-  // La conversación abierta se recuerda al volver a montar la vista.
   expect(await screen.findByText(/Ejecutó/)).toBeInTheDocument();
   expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('El agente está trabajando')).toBeInTheDocument();
 });
