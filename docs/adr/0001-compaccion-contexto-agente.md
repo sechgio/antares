@@ -81,8 +81,9 @@ entrada «🗜 Contexto compactado» con el motivo y el resumen, para que el usu
 vea qué se conservó.
 
 **Coexistencia con el guardián mecánico.** Antares además compacta cada petición
-individual de forma mecánica y sin modelo (`compactMessages`/`requestBudget`,
-mismo módulo, capas 1 y 2): recorta resultados antiguos, textos e imágenes y
+individual de forma mecánica y sin modelo (`compactMessages`/`requestBudget` en
+`electron/agent-request-budget.js`; la política de esta decisión vive en
+`electron/agent-compaction.js`): recorta resultados antiguos, textos e imágenes y
 pliega turnos viejos para que ninguna llamada única se pase del presupuesto,
 respetando el emparejamiento llamada/resultado y sin tocar el mensaje actual.
 Esa capa es transitoria y por petición; la política duradera de esta decisión

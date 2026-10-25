@@ -16,7 +16,7 @@ const {
   dispatchCallId,
   ctx,
 } = require('./agent-shared');
-const { compactMessages, requestBudget } = require('./agent-compaction');
+const { compactMessages, requestBudget } = require('./agent-request-budget');
 
 const compaction = require('./agent-compaction');
 

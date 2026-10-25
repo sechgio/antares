@@ -231,7 +231,7 @@ const fakeCompaction = () => ({ reason: 'threshold', entries: [], messages: [], 
 
 const tempDirs = [];
 
-const { compactMessages, requestBudget } = require('../electron/agent-compaction');
+const { compactMessages, requestBudget } = require('../electron/agent-request-budget');
 
 function chars(message) {
   if (typeof message.content === 'string') return message.content.length;
