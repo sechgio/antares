@@ -16,6 +16,7 @@ const {
   dispatchCallId,
   ctx,
 } = require('./agent-shared');
+const { compactMessages, requestBudget } = require('./agent-compaction');
 
 const { appendTurn } = require('./turn-log');
 
@@ -30,6 +31,8 @@ const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar:
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
 const SUBAGENT_TOOL = 'subagent_run';
 const SUBAGENT_DESCRIPTION_MAX = 80;
+const SUBAGENT_MAX_DEPTH = 1;
+const SUBAGENT_MAX_TASKS = 4;
 const TOOLS_LOAD = 'tools_load';
 // Núcleo que reciben las conversaciones nuevas: el resto del catálogo se carga
 // con tools_load o al mencionar un módulo, para no superar el límite de
@@ -100,9 +103,11 @@ async function ensureProvider(providerId, modelId) {
 const OPENAI_NATIVE_HOST = /(^|\.)(openai\.com|openrouter\.ai|openai\.azure\.com)$/i;
 const LONG_CACHE_HOST = /(^|\.)(openai\.com|openrouter\.ai|anthropic\.com)$/i;
 
-function modelDefinition(info, id, api, verified) {
+function modelDefinition(info, id, api, verified, catalogModel) {
   const capabilities = info.capabilities || {};
-  const contextWindow = Number(capabilities.context_window) || DEFAULT_CONTEXT_WINDOW;
+  const catalog = catalogModel || verified || {};
+  const contextWindow = Number(capabilities.context_window) || Number(catalog.contextWindow) || DEFAULT_CONTEXT_WINDOW;
+  const rates = catalog.cost || {};
   let host = '';
   try { host = new URL(info.base_url).hostname; } catch { }
   const classic = info.custom && api === 'openai-completions' && !OPENAI_NATIVE_HOST.test(host);
@@ -128,12 +133,31 @@ function modelDefinition(info, id, api, verified) {
     provider: info.provider,
     baseUrl: info.base_url,
     input: (typeof capabilities.vision === 'boolean' ? capabilities.vision : supportsVision(id)) ? ['text', 'image'] : ['text'],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    cost: {
+      input: Number(rates.input) || 0,
+      output: Number(rates.output) || 0,
+      cacheRead: Number(rates.cacheRead) || 0,
+      cacheWrite: Number(rates.cacheWrite) || 0,
+      ...(Array.isArray(rates.tiers) ? { tiers: rates.tiers } : {}),
+    },
     contextWindow,
     maxTokens: Math.min(DEFAULT_MAX_TOKENS, Math.floor(contextWindow / 4)),
     reasoning: supportsReasoning(info.style, id),
     ...(Object.keys(compat).length ? { compat } : {}),
   };
+}
+
+const MODEL_CATALOGS = {
+  openai: ['@earendil-works/pi-ai/providers/openai.models', 'OPENAI_MODELS'],
+  anthropic: ['@earendil-works/pi-ai/providers/anthropic.models', 'ANTHROPIC_MODELS'],
+  openrouter: ['@earendil-works/pi-ai/providers/openrouter.models', 'OPENROUTER_MODELS'],
+};
+
+async function catalogModels(provider) {
+  const entry = MODEL_CATALOGS[provider];
+  if (!entry) return {};
+  const module = await import(entry[0]);
+  return module[entry[1]] || {};
 }
 
 async function buildProvider(record) {
@@ -142,7 +166,7 @@ async function buildProvider(record) {
   const anthropic = info.style === 'anthropic_messages';
   const api = anthropic ? 'anthropic-messages' : 'openai-completions';
   const providerId = info.provider;
-  const catalog = anthropic ? (await import('@earendil-works/pi-ai/providers/anthropic.models')).ANTHROPIC_MODELS : {};
+  const catalog = await catalogModels(providerId);
   return createProvider({
     id: providerId,
     name: providerId,
@@ -166,7 +190,7 @@ async function buildProvider(record) {
         },
       },
     },
-    models: [...modelIds].map((id) => modelDefinition(info, id, api, catalog[id])),
+    models: [...modelIds].map((id) => modelDefinition(info, id, api, anthropic ? catalog[id] : undefined, catalog[id])),
     api: anthropic ? shared.deps.aiAnthropic.anthropicMessagesApi() : shared.deps.aiOpenai.openAICompletionsApi(),
   });
 }
@@ -186,7 +210,11 @@ async function allToolSpecs() {
     merged.set(delegateTool.name, delegateTool);
     merged.set(SUBAGENT_TOOL, {
       name: SUBAGENT_TOOL,
-      description: `Delega una tarea acotada en uno de los agentes guardados del usuario: solo lee datos y devuelve su resultado y sus pasos. Agentes disponibles: ${saved.map((profile) => `«${profile.name}» (${String(profile.description || 'agente personalizado').slice(0, SUBAGENT_DESCRIPTION_MAX)})`).join('; ')}.`,
+      description: `Delega trabajo acotado en uno de los agentes guardados del usuario y devuelve el resultado con sus pasos y su rol. `
+        + `Por defecto solo lee; role=reviewer pide una revisión y role=worker solo funciona si la ficha del agente tiene ese rol, `
+        + `con cada efecto aprobado en esta conversación. Admiten task o hasta ${SUBAGENT_MAX_TASKS} tasks agrupadas. `
+        + `output_schema valida la respuesta como JSON Schema. No hay delegación recursiva (profundidad máxima ${SUBAGENT_MAX_DEPTH}). `
+        + `Agentes disponibles: ${saved.map((profile) => `«${profile.name}» (${String(profile.description || 'agente personalizado').slice(0, SUBAGENT_DESCRIPTION_MAX)})`).join('; ')}.`,
       gated: false,
       kind: 'subagent',
       inputSchema: {
@@ -194,8 +222,25 @@ async function allToolSpecs() {
         properties: {
           agent: { type: 'string', description: 'Identificador del agente mencionado o nombre exacto y único del agente guardado' },
           task: { type: 'string', description: 'Encargo concreto y autocontenido para el subagente' },
+          tasks: {
+            type: 'array', minItems: 1, maxItems: SUBAGENT_MAX_TASKS,
+            description: 'Encargos que se ejecutan en orden y se devuelven agrupados; no lo combines con task',
+            items: {
+              type: 'object',
+              properties: {
+                task: { type: 'string', description: 'Encargo concreto y autocontenido' },
+                role: { type: 'string', enum: ['explorer', 'reviewer', 'worker'] },
+                exclude_tools: { type: 'array', items: { type: 'string' }, description: 'Herramientas que este encargo no debe usar' },
+                output_schema: { type: 'object', description: 'JSON Schema que debe cumplir la respuesta' },
+              },
+              required: ['task'],
+            },
+          },
+          role: { type: 'string', enum: ['explorer', 'reviewer', 'worker'], description: 'Rol del encargo; worker requiere que la ficha lo permita' },
+          exclude_tools: { type: 'array', items: { type: 'string' }, description: 'Sustrae herramientas de las que permite la ficha' },
+          output_schema: { type: 'object', description: 'JSON Schema que debe cumplir la respuesta final' },
         },
-        required: ['agent', 'task'],
+        required: ['agent'],
       },
     });
   } else {
@@ -375,7 +420,9 @@ async function refreshTools() {
         beforeRequest: async ({ messages }, api, context) => {
           if (await toolBudget(api, context) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
           await noteTurnStart(api, messages || []);
-          return leadingSystem(messages);
+          const compacted = await compactRequest(messages, api, context);
+          const next = compacted || messages;
+          return leadingSystem(next) || (compacted ? { messages: next } : undefined);
         },
         afterTools: (_output, _task, api, context) => countRound(api, context),
         onYield: (answer, api) => planCheck(answer, api),
@@ -396,6 +443,18 @@ async function refreshTools() {
       }),
     ],
   }));
+}
+
+let tokenEstimator;
+
+async function compactRequest(messages, api, context) {
+  const sessionId = await sessionForConversation(api.conversationId, api, context);
+  const session = sessionId ? (await sessions())[sessionId] : null;
+  const model = session && shared.state.models.getModel(session.provider, session.model);
+  const budget = requestBudget(model && model.contextWindow, model && model.maxTokens);
+  if (!budget) return undefined;
+  tokenEstimator ||= (await import('@earendil-works/pi-ai/utils/estimate')).estimateContextTokens;
+  return compactMessages(messages, { budget, estimate: (list) => tokenEstimator(list).tokens });
 }
 
 // pi-durable escribe el prompt base al preparar la primera generación, detrás
@@ -772,6 +831,7 @@ async function dispatchTool(spec, args, sessionId, api, context) {
       subagent: {
         id: profile.id,
         name: profile.name,
+        role: profile.role || 'explorer',
         instructions: profile.instructions,
         tools: Array.isArray(profile.tools) ? profile.tools : null,
         enabled,

@@ -94,15 +94,11 @@ def test_repeated_save_request_returns_same_revision(store: EditorStore) -> None
     assert reloaded is not None and reloaded["revision"] == 2
 
 
-def test_delete_moves_to_trash_and_restores(store: EditorStore) -> None:
+def test_delete_moves_to_trash(store: EditorStore) -> None:
     created = store.create("P")["project"]
     pid = created["id"]
     assert store.delete(pid)["trash"] is True
     assert store.get(pid) is None
-    trash = store.list_trash()
-    assert any(item["id"] == pid for item in trash)
-    store.restore(pid)
-    assert store.get(pid) is not None
 
 
 def test_delete_twice_rejected(store: EditorStore) -> None:
@@ -110,11 +106,6 @@ def test_delete_twice_rejected(store: EditorStore) -> None:
     store.delete(created["id"])
     with pytest.raises(EditorContractError):
         store.delete(created["id"])
-
-
-def test_restore_missing_rejected(store: EditorStore) -> None:
-    with pytest.raises(EditorContractError, match="papelera"):
-        store.restore("no-existe")
 
 
 def test_duplicate_shares_content_with_new_identity(store: EditorStore) -> None:

@@ -148,7 +148,12 @@ async function _open(options = {}) {
     const registry = pi.createRegistry();
     // Retención larga: una aprobación o una pausa de más de 5 minutos no vacía
     // la caché del prefijo (solo la reciben las APIs oficiales, ver modelDefinition).
-    const settings = { stream: { cacheRetention: 'long' } };
+    // La compactación automática conserva los valores por defecto de pi-durable;
+    // agent-compaction cubre las ventanas donde su corte no llega a activarse.
+    const settings = {
+      ...(options.settings || {}),
+      stream: { cacheRetention: 'long', ...(options.settings && options.settings.stream) },
+    };
     const harness = await pi.Harness.open(storage, { models, registry, settings }, ctx());
     shared.state = {
       harness,
@@ -215,6 +220,7 @@ async function sessionsList() {
 }
 
 const MAX_PROFILES = 30;
+const PROFILE_ROLES = new Set(['explorer', 'reviewer', 'worker']);
 const SECRET_RE = /(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|bearer\s+[A-Za-z0-9._~+/-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:password|contraseña|api[_ -]?key|token|secret)\s*[:=]\s*\S+)/i;
 
 async function _profiles() {
@@ -246,11 +252,14 @@ async function profileSave(params = {}) {
   }
   const existing = params.id ? (await _profiles())[String(params.id)] : null;
   if (params.id && !existing) throw notFound('El agente ya no existe');
+  const role = params.role === undefined ? (existing?.role || 'explorer') : String(params.role);
+  if (!PROFILE_ROLES.has(role)) throw validation('Rol de agente no válido: usa explorer, reviewer o worker');
   const now = Date.now();
   const profile = {
     id: existing ? existing.id : crypto.randomBytes(6).toString('hex'),
     name: _text(params.name, 'un nombre', 60, true),
     description: _text(params.description, 'la descripción', 200),
+    role,
     instructions: _text(params.instructions, 'las instrucciones', 4000, true),
     starter: _text(params.starter, 'el mensaje inicial', 500),
     tools: Array.isArray(tools) ? [...new Set(tools)] : null,
@@ -796,6 +805,46 @@ async function _settleRecoveredApproval(approval) {
   }, ctx());
 }
 
+async function approvalHistory(params) {
+  const sessionId = typeof params.session_id === 'string' ? params.session_id : '';
+  if (sessionId) await requireSession(sessionId);
+  const payload = {};
+  if (sessionId) payload.session_id = sessionId;
+  if (typeof params.method === 'string' && params.method) payload.method = params.method.slice(0, 200);
+  if (typeof params.status === 'string' && params.status) payload.status = params.status;
+  if (Number.isInteger(params.limit)) payload.limit = params.limit;
+  return bridge('agent_internal_approvals_history', payload);
+}
+
+async function grantsList(params) {
+  const sessionId = String(params.session_id || '');
+  await requireSession(sessionId);
+  return bridge('agent_internal_grants_list', { session_id: sessionId });
+}
+
+async function grantsRevoke(params) {
+  const sessionId = String(params.session_id || '');
+  await requireSession(sessionId);
+  const path = typeof params.path === 'string' && params.path ? params.path : undefined;
+  return bridge('agent_internal_grants_revoke', { session_id: sessionId, ...(path ? { path } : {}) });
+}
+
+function tasksList(params) {
+  return require('./agent-tasks').listTasks(params || {});
+}
+
+function tasksSave(params) {
+  return require('./agent-tasks').saveTask(params || {});
+}
+
+function tasksCancel(params) {
+  return require('./agent-tasks').cancelTask(params || {});
+}
+
+function tasksRun(params) {
+  return require('./agent-tasks').runTaskNow(params || {});
+}
+
 async function _resultEntryFor(conv, callId) {
   const entries = await projection.allEntries(conv);
   const owner = entries.findLastIndex((entry) => entry.kind === 'pi.assistant' && entry.model && entry.model[0]
@@ -855,6 +904,13 @@ module.exports = {
     agent_profile_delete: profileDelete,
     agent_approve: (p) => approve(p, true),
     agent_deny: (p) => approve(p, false),
+    agent_approvals_history: approvalHistory,
+    agent_grants_list: grantsList,
+    agent_grants_revoke: grantsRevoke,
+    agent_tasks_list: tasksList,
+    agent_tasks_save: tasksSave,
+    agent_tasks_cancel: tasksCancel,
+    agent_tasks_run: tasksRun,
   },
   _internal: {
     state: () => shared.state,
