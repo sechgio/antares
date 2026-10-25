@@ -62,6 +62,49 @@ afterEach(() => {
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
 });
 
+it('crea el agente y abre su conversación sin enviar mensajes ni duplicarla al editar', async () => {
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const profile = { id: 'revisor', name: 'Revisor', color: '#0E7490', description: '', instructions: 'Revisa informes', starter: '', tools: null, created_at: 1, updated_at: 1 };
+  vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile });
+  const create = vi.spyOn(agentApi, 'agentSessionCreate').mockResolvedValue({ session: { ...session, profile: { id: profile.id, name: profile.name } } });
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Nuevo agente' }));
+  const editor = within(screen.getByRole('dialog', { name: 'Crear agente' }));
+  fireEvent.change(editor.getByLabelText('Nombre del agente'), { target: { value: profile.name } });
+  fireEvent.change(editor.getByLabelText('Indicaciones del agente'), { target: { value: profile.instructions } });
+  fireEvent.click(editor.getByRole('radio', { name: 'Color Verde' }));
+  await act(async () => { fireEvent.click(editor.getByRole('button', { name: 'Crear y chatear' })); });
+  expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba', profile_id: profile.id });
+  expect(screen.queryByRole('dialog', { name: 'Crear agente' })).not.toBeInTheDocument();
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Agentes' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Editar agente Revisor' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(create).toHaveBeenCalledTimes(1);
+});
+
+it('guarda el agente sin proveedor y muestra el perfil sin intentar abrir un chat', async () => {
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const profile = { id: 'revisor', name: 'Revisor', description: '', instructions: 'Revisa informes', starter: '', tools: null, created_at: 1, updated_at: 1 };
+  vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile });
+  const create = vi.spyOn(agentApi, 'agentSessionCreate');
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Nuevo agente' }));
+  const editor = within(screen.getByRole('dialog', { name: 'Crear agente' }));
+  fireEvent.change(editor.getByLabelText('Nombre del agente'), { target: { value: profile.name } });
+  fireEvent.change(editor.getByLabelText('Indicaciones del agente'), { target: { value: profile.instructions } });
+  await act(async () => { fireEvent.click(editor.getByRole('button', { name: 'Crear agente' })); });
+  expect(create).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Agentes' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: 'Editar agente Revisor' })).toBeInTheDocument();
+  expect(addToast).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+});
+
 it.each([
   { options: { remember: true }, payload: { approval_id: 'a1', remember: true } },
   { options: { grantApp: true }, payload: { approval_id: 'a1', grant_app: true } },

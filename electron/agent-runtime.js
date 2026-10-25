@@ -291,6 +291,9 @@ async function profilesList() {
 }
 
 async function profileSave(params = {}) {
+  if (params.color !== undefined && (typeof params.color !== 'string' || !/^(?:#[0-9a-fA-F]{6})?(?![\s\S])/.test(params.color))) {
+    throw validation('El color debe ser hexadecimal o automático');
+  }
   const tools = params.tools;
   if (tools !== null && tools !== undefined && (!Array.isArray(tools) || tools.some((name) => typeof name !== 'string'))) {
     throw validation('Las herramientas deben ser una lista o «todas»');
@@ -307,6 +310,7 @@ async function profileSave(params = {}) {
   const profile = {
     id: existing ? existing.id : crypto.randomBytes(6).toString('hex'),
     name: _text(params.name, 'un nombre', 60, true),
+    ...((params.color ?? existing?.color) ? { color: params.color ?? existing.color } : {}),
     description: _text(params.description, 'la descripción', 200),
     role,
     instructions: _text(params.instructions, 'las instrucciones', 4000, true),
