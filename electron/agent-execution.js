@@ -34,6 +34,9 @@ const TOOLS_LOAD = 'tools_load';
 // herramientas por petición de los proveedores ni saturar modelos pequeños.
 const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent']);
 const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD]);
+// Acciones ui_ que inyectan entrada: el marco ámbar del lease humano cubre la
+// ventana objetivo durante su despacho (ui_windows/ui_observe/ui_launch no inyectan).
+const UI_ACTION_TOOLS = new Set(['ui_click', 'ui_type', 'ui_key', 'ui_scroll', 'ui_drag', 'ui_set_value']);
 const MAX_LOADED_TOOLS = 25;
 const MAX_DEFAULT_TOOLS = 100;
 
@@ -606,9 +609,20 @@ async function executeTool(spec, args, api, context) {
   if (!await toolEnabled(sessionId, spec.name, context)) {
     return { content: [{ type: 'text', text: `Herramienta deshabilitada en esta conversación: ${spec.name}` }], isError: true };
   }
-  const { text, added } = await dispatchTool(spec, args, sessionId, api, context);
+  const uiAction = UI_ACTION_TOOLS.has(spec.name);
+  if (uiAction) require('./agent-overlay').showOverlay(sessionId, turnState(api.conversationId).uiRect);
+  let text;
+  let added;
+  try {
+    ({ text, added } = await dispatchTool(spec, args, sessionId, api, context));
+  } finally {
+    if (uiAction) require('./agent-overlay').hideOverlay(sessionId);
+  }
   let parsed = null;
   try { parsed = JSON.parse(text); } catch { }
+  const rect = parsed && (Array.isArray(parsed.window_rect) ? parsed.window_rect
+    : (parsed.window && Array.isArray(parsed.window.rect) ? parsed.window.rect : null));
+  if (rect) turnState(api.conversationId).uiRect = rect;
   const isError = !!(parsed && typeof parsed === 'object' && (parsed.error !== undefined || parsed.isError === true));
   if (spec.name === 'task_plan' && !isError && parsed && Array.isArray(parsed.remaining)) {
     turnState(api.conversationId).remaining = parsed.remaining.map(String);

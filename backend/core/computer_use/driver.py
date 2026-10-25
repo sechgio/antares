@@ -13,7 +13,7 @@ from contextlib import suppress
 from ctypes import wintypes
 from typing import Any, cast
 
-from backend.core.computer_use import policy, targets
+from backend.core.computer_use import input_guard, policy, targets
 from backend.core.computer_use.policy import DriverRefused
 from backend.core.computer_use.targets import DriverError
 from backend.core.integrations.types import JsonObject
@@ -109,6 +109,8 @@ _PW_RENDERFULLCONTENT = 0x00000002
 _SW_RESTORE = 9
 
 _CACHE = targets.TargetCache()
+_GUARD = input_guard.InputGuard()
+_ACTION_LEASE_LOCK = threading.Lock()
 
 
 def _user32() -> Any:
@@ -443,9 +445,17 @@ def perform_action(window_id: str, action: str, element_id: str | None, params: 
         target = _CACHE.check_element(window_id, element_id, by_runtime) if element_id else None
         ctx = {"window_id": window_id, "by_runtime": by_runtime, "raws": raws, "window_rect": _window_rect(hwnd)}
         result = _ACTION_IMPL[action](hwnd, target, element_id, params, ctx)
-        return {"action": action, "performed": True, "policy": classification, **result}
+        return {"action": action, "performed": True, "policy": classification, "window_rect": ctx["window_rect"], **result}
 
-    return cast(JsonObject, _run_on_worker(run, 25.0))
+    with _ACTION_LEASE_LOCK:
+        _GUARD.begin()
+        try:
+            outcome = cast(JsonObject, _run_on_worker(run, 25.0))
+        finally:
+            _GUARD.end()
+    if _GUARD.broken:
+        raise DriverRefused(input_guard.LEASE_MESSAGE)
+    return outcome
 
 
 def _center(entry: JsonObject, window_rect: list[int]) -> tuple[int, int]:
@@ -484,6 +494,8 @@ def _act_type_text(hwnd: int, target: JsonObject | None, element_id: str | None,
     _ensure_element_focus(ctx, target)
     sent = 0
     for char in text.replace("\r\n", "\n"):
+        if _GUARD.broken:
+            raise DriverRefused(input_guard.LEASE_MESSAGE)
         if char == "\n":
             _send(_key(0x0D), _key(0x0D, up=True))
         elif char == "\t":
@@ -504,6 +516,8 @@ def _act_press_key(hwnd: int, target: JsonObject | None, element_id: str | None,
     else:
         _ensure_foreground(hwnd)
     for combo in combos:
+        if _GUARD.broken:
+            raise DriverRefused(input_guard.LEASE_MESSAGE)
         codes = [_vk_for(t) for t in combo]
         _send(*[_key(c) for c in codes], *[_key(c, up=True) for c in reversed(codes)])
         time.sleep(0.12)
@@ -548,6 +562,9 @@ def _act_drag(hwnd: int, target: JsonObject | None, element_id: str | None, para
     _send(_mouse(_MOUSE_DOWN))
     steps = 12
     for step in range(1, steps + 1):
+        if _GUARD.broken:
+            _send(_mouse(_MOUSE_UP))
+            raise DriverRefused(input_guard.LEASE_MESSAGE)
         _user32().SetCursorPos(sx + (dx - sx) * step // steps, sy + (dy - sy) * step // steps)
         time.sleep(0.015)
     _send(_mouse(_MOUSE_UP))
