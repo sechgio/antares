@@ -264,6 +264,21 @@ async function projectMessages(conv, session) {
   const live = liveFor(convId);
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: session.id })).approvals;
   const pendingByCall = new Map(pending.map((a) => [providerCallId(a.call_id), a]));
+  let effects = [];
+  try {
+    effects = (await bridge('agent_internal_effects', { session_id: session.id })).dispatches || [];
+  } catch { }
+  const effectByCall = new Map();
+  const ambiguousEffects = new Set();
+  for (const effect of effects) {
+    if (!effect || !effect.call_id) continue;
+    const id = providerCallId(effect.call_id);
+    if (effectByCall.has(id)) ambiguousEffects.add(id);
+    else effectByCall.set(id, effect);
+  }
+  // Un proveedor puede repetir «call_0» entre turnos. Sin el id de tarea en la
+  // entrada, asociar el recibo equivocado sería peor que no mostrar recibo.
+  for (const id of ambiguousEffects) effectByCall.delete(id);
   const entries = await allEntries(conv);
 
   const resultByCall = new Map();
@@ -314,7 +329,7 @@ async function projectMessages(conv, session) {
     }
     if (entry.kind === 'pi.assistant' && msg) {
       const calls = (msg.content || []).filter((block) => block && block.type === 'toolCall');
-      const tool_calls = calls.map((call) => projectCall(call, resultByCall, slotByCall, pendingByCall, entry, entry.id === liveRound));
+      const tool_calls = calls.map((call) => projectCall(call, resultByCall, slotByCall, pendingByCall, effectByCall, entry, entry.id === liveRound));
       const legacy = Array.isArray(entry.data && entry.data.tool_calls) ? entry.data.tool_calls : null;
       const reasoning = reasoningOf(msg);
       const reasoningMs = reasoningTime(convId, reasoning);
@@ -338,12 +353,40 @@ function mergeLegacyCalls(legacy, projected) {
   return legacy.map((call) => ({ ...call, ...(byId.get(call.id) || {}) }));
 }
 
-function projectCall(call, resultByCall, slotByCall, pendingByCall, assistantEntry, inLiveRound = false) {
+function sanitizeUndo(undo) {
+  if (!undo || typeof undo !== 'object') return null;
+  return {
+    available: undo.available === true,
+    ...(undo.kind === 'delete' || undo.kind === 'restore' ? { kind: undo.kind } : {}),
+    ...(typeof undo.reason === 'string' && undo.reason ? { reason: undo.reason } : {}),
+    ...(typeof undo.undone_at === 'number' ? { undone_at: undo.undone_at } : {}),
+  };
+}
+
+function projectCall(call, resultByCall, slotByCall, pendingByCall, effectByCall, assistantEntry, inLiveRound = false) {
+  const spec = shared.toolSpecs.get(call.name);
+  const pending = pendingByCall.get(call.id);
+  const result = resultByCall.get(`${assistantEntry.id}:${call.id}`);
+  const candidate = effectByCall.get(call.id);
+  const recovered = !!(candidate && candidate.recovered === true
+    && candidate.status === 'succeeded' && /interrump|inciert/i.test(result ? textOf(result.msg) : ''));
+  const effect = result && candidate && candidate.method === call.name && (recovered
+    ? true
+    : result.msg.isError
+      ? candidate.status === 'failed' || candidate.status === 'uncertain'
+      : candidate.status === 'succeeded' || candidate.status === 'submitted') ? candidate : null;
+  const undo = sanitizeUndo(effect && effect.undo);
   const base = {
     id: call.id,
     name: call.name,
     params: call.arguments || {},
-    gated: !!(shared.toolSpecs.get(call.name) && shared.toolSpecs.get(call.name).gated),
+    gated: !!(spec && spec.gated),
+    dispatch_id: (effect && effect.call_id) || null,
+    channel: (pending && pending.channel) || (effect && effect.channel) || (spec && spec.channel) || null,
+    approval_source: effect && effect.approval_source && effect.approval_source !== 'none'
+      ? effect.approval_source : null,
+    ...(effect && effect.recovered ? { recovered: true } : {}),
+    ...(undo ? { undo } : {}),
     result: null,
     status: 'queued',
   };
@@ -352,8 +395,12 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, assistantEnt
     : null;
   if (legacy && legacy.gated !== undefined) base.gated = !!legacy.gated;
 
-  const result = resultByCall.get(`${assistantEntry.id}:${call.id}`);
   if (result) {
+    if (effect && effect.recovered) {
+      base.result = JSON.stringify({ recovered: true, detail: 'La escritura terminó antes de cerrar la aplicación' });
+      base.status = 'done';
+      return base;
+    }
     base.result = textOf(result.msg);
     const diagnostics = (result.entry.data && result.entry.data.diagnostics) || [];
     const blocked = result.msg.isError && diagnostics.some((d) => d && (d.code === 'blocked' || d.code === 'tool_unavailable'));
@@ -369,7 +416,7 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, assistantEnt
     } catch { }
     return base;
   }
-  if (pendingByCall.has(call.id)) {
+  if (pending) {
     base.status = 'pending';
     return base;
   }

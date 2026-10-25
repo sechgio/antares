@@ -23,6 +23,7 @@ const shared = {
   providers: new Map(),
   providerOverrides: new Map(),
   nativeTools: null,
+  globalRules: {},
   attachments: new Map(),
   dialog: null,
   notify: null,
@@ -44,6 +45,12 @@ function providerCallId(dispatchId) {
   const value = String(dispatchId || '');
   const at = value.lastIndexOf(TASK_SUFFIX);
   return at === -1 ? value : value.slice(0, at);
+}
+
+function dispatchTaskId(dispatchId) {
+  const value = String(dispatchId || '');
+  const at = value.lastIndexOf(TASK_SUFFIX);
+  return at === -1 ? '' : value.slice(at + TASK_SUFFIX.length);
 }
 
 function bridge(method, params) {
@@ -132,4 +139,5 @@ module.exports = {
   sessionForConversation,
   dispatchCallId,
   providerCallId,
+  dispatchTaskId,
 };

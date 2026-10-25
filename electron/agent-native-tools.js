@@ -198,7 +198,8 @@ const SPECS = [
 ];
 
 function nativeToolSpecs() {
-  return SPECS.map((s) => ({ ...s }));
+  const { channelFor } = require('./agent-channels');
+  return SPECS.map((s) => ({ ...s, channel: channelFor(s.name, s.module) }));
 }
 
 async function nativeToolContext(name) {

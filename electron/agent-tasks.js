@@ -7,7 +7,7 @@ let timer = null;
 let ticking = null;
 
 const TOOL = {
-  name: 'task_schedule', kind: 'meta', module: 'agent', gated: false, replay_safe: true,
+  name: 'task_schedule', kind: 'meta', module: 'agenda', gated: true, replay_safe: true,
   description: 'Programa un encargo solo cuando el usuario lo pide. Antares debe seguir abierto, incluida la bandeja; '
     + 'al volver a abrir recupera los pendientes. No concede permisos ni acceso a archivos. '
     + 'action=create requiere content y due_at ISO 8601 con zona horaria; every_minutes permite repetición. '
