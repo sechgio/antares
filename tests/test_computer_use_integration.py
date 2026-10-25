@@ -7,6 +7,7 @@ import time
 import pytest
 
 from backend.core.computer_use import driver, policy
+from backend.core.computer_use.targets import DriverError
 
 # Estos tests abren Notepad real: hay que ejecutarlos en serie (-n0) porque
 # Win11 Notepad fusiona instancias en pestañas de una misma ventana y dos
@@ -71,9 +72,9 @@ def test_driver_operates_real_notepad(tmp_path):
             subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, check=False)
 
 
-def test_unknown_alias_is_rejected():
-    with pytest.raises(ValueError, match="conocidos"):
-        driver.launch_app("cmd.exe /c del C:\\Windows")
+def test_missing_executable_suggests_start_process():
+    with pytest.raises(DriverError, match="Start-Process"):
+        driver.launch_app("antares-app-inexistente-xyz")
 
 
 def test_stale_element_raises_driver_error(tmp_path):

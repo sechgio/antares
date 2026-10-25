@@ -131,12 +131,12 @@ TOOL_SPECS: list[JsonObject] = [
         "gated": True,
         "module": "computer",
         "description": (
-            "Equipo · ui_launch (efecto: requiere aprobación del usuario): abre una aplicación por alias conocido "
-            "(notepad, calc, mspaint, explorer, cmd, powershell, control, taskmgr) o ruta de programa/documento, y "
-            "devuelve el pid lanzado; enumera con ui_windows para operar su ventana"
+            "Equipo · ui_launch (efecto: requiere aprobación del usuario): abre cualquier aplicación por nombre "
+            "(firefox, chrome, spotify, notepad, calc…) o ruta de programa/documento; si no encuentra el ejecutable "
+            "sugiere abrirla vía shell con Start-Process; enumera con ui_windows para operar su ventana"
         ),
         "inputSchema": {"type": "object", "properties": {
-            "app": {"type": "string", "description": "Alias conocido o ruta"},
+            "app": {"type": "string", "description": "Nombre de la aplicación o ruta"},
             "args": {"type": "string", "description": "Argumentos, por ejemplo la ruta del documento"},
         }, "required": ["app"]},
     },
@@ -196,7 +196,7 @@ def run(name: str, params: JsonObject, root: Path) -> JsonObject:
     if name == "ui_observe":
         return _observe(params, root)
     if name == "ui_launch":
-        app = _required_text(params, "app", "la lista de alias de ui_launch")
+        app = _required_text(params, "app", "ui_launch")
         args = params.get("args")
         if args is not None and not isinstance(args, str):
             raise ValueError("args debe ser texto")

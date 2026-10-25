@@ -703,9 +703,13 @@ def approval_context(params: JsonObject) -> JsonObject:
 
 
 def launch_app(app: str, args: str | None = None) -> JsonObject:
-    name = str(app or "").strip().lower()
-    if name not in _KNOWN_ALIASES:
-        raise ValueError(f"Aplicación no permitida en esta fase. Alias conocidos: {', '.join(sorted(_KNOWN_ALIASES))}")
+    raw = str(app or "").strip()
+    name = raw.lower()
+    if not name or "\x00" in name or len(name) > 260:
+        raise ValueError("Nombre de aplicación no válido")
+    # Fuera de los alias se intenta el nombre tal cual: ShellExecute resuelve
+    # PATH y App Paths (firefox, chrome…); la aprobación del usuario sigue siendo obligatoria.
+    target = _KNOWN_ALIASES.get(name, raw)
     if args is not None and (not isinstance(args, str) or "\x00" in args or len(args) > 500):
         raise ValueError("Argumentos no válidos")
     classification = policy.classify_launch()
@@ -715,7 +719,13 @@ def launch_app(app: str, args: str | None = None) -> JsonObject:
         if not hasattr(os, "startfile"):
             raise DriverError("Abrir aplicaciones solo está disponible en Windows")
         _check_worker_active()
-        os.startfile(_KNOWN_ALIASES[name], arguments=args or "")
+        try:
+            os.startfile(target, arguments=args or "")
+        except FileNotFoundError as exc:
+            quoted = target.replace("'", "''")
+            raise DriverError(
+                f"No se encontró el ejecutable «{raw}». Prueba abrirla vía shell con: Start-Process '{quoted}'"
+            ) from exc
         time.sleep(1.2)
         return {"launched": name, "policy": classification}
 
