@@ -792,12 +792,12 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
 
-  const decide = async (id: string, ok: boolean, remember = false) => {
+  const decide = async (id: string, ok: boolean, opts?: Parameters<typeof agentApi.agentApprove>[1]) => {
     if (decisionRef.current) return;
     decisionRef.current = id;
     setDeciding({ id, approved: ok });
     try {
-      if (ok) await agentApi.agentApprove(id, remember);
+      if (ok) await agentApi.agentApprove(id, opts);
       else await agentApi.agentDeny(id);
       await loadMessages(sessionId);
     } catch (err) {
@@ -1163,7 +1163,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             <div key={a.id} id={`agent-approval-${a.id}`}>
               <ApprovalCard approval={a} busy={!!deciding}
                 decision={deciding?.id === a.id ? deciding.approved ? 'approve' : 'deny' : undefined}
-                onDecide={(id, ok, remember) => void decide(id, ok, remember)} />
+                onDecide={(id, ok, opts) => void decide(id, ok, opts)} />
             </div>
           ))}
           {artifacts.map((artifact) => <div key={artifact.id} id={`agent-artifact-${artifact.id}`}>
