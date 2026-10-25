@@ -737,7 +737,9 @@ async function turnCancel(params) {
 
 async function approve(params, approved) {
   const approvalId = String(params && params.approval_id || '');
-  const { approval } = await bridge('agent_internal_approval_decide', { approval_id: approvalId, approve: !!approved });
+  const { approval } = await bridge('agent_internal_approval_decide', {
+    approval_id: approvalId, approve: !!approved, ...(params.grant_app ? { grant_app: true } : {}),
+  });
   execution.notifyDecision(approvalId);
   const approvalCall = approval && execution.callKey(String(approval.session_id), String(approval.call_id));
   const approvalSession = approval && (await sessions())[String(approval.session_id)];

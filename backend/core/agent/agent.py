@@ -352,7 +352,8 @@ class AgentStore:
         with self._lock:
             session_grants = self._grants.setdefault(session_id, {})
             for record in records:
-                session_grants[resource_grants.grant_key(record)] = record
+                key = str(record["key"]) if record.get("key") else resource_grants.grant_key(record)
+                session_grants[key] = record
             self._write_grants()
 
     def drafts_dir(self, session_id: str) -> Path:

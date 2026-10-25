@@ -37,6 +37,9 @@ const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD]);
 // Acciones ui_ que inyectan entrada: el marco ámbar del lease humano cubre la
 // ventana objetivo durante su despacho (ui_windows/ui_observe/ui_launch no inyectan).
 const UI_ACTION_TOOLS = new Set(['ui_click', 'ui_type', 'ui_key', 'ui_scroll', 'ui_drag', 'ui_set_value']);
+// En Acceso completo siguen exigiendo decisión humana: el shell y las acciones
+// de Equipo que inyectan entrada o abren aplicaciones.
+const NEVER_AUTO_APPROVE = new Set(['shell_run', 'ui_launch', ...UI_ACTION_TOOLS]);
 const MAX_LOADED_TOOLS = 25;
 const MAX_DEFAULT_TOOLS = 100;
 
@@ -514,7 +517,7 @@ async function beforeTool(call, api, context) {
       params: call.arguments || {},
       ...(approvedContext ? { context: approvedContext } : {}),
     }));
-    if (mode === 'full' && call.name !== 'shell_run' && approval.status === 'pending') {
+    if (mode === 'full' && !NEVER_AUTO_APPROVE.has(call.name) && approval.status === 'pending') {
       ({ approval } = await bridge('agent_internal_approval_decide', { approval_id: approval.id, approve: true }));
     }
   } catch (err) {

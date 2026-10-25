@@ -243,6 +243,35 @@ async function main() {
     await runtime.shutdown();
   }
 
+  {
+    const { bridge, state } = makeBridge();
+    const uiBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools') {
+        result.tools.push(
+          { name: 'ui_click', kind: 'backend', gated: true, inputSchema: { type: 'object', properties: {} } },
+          { name: 'ui_observe', kind: 'backend', gated: true, inputSchema: { type: 'object', properties: {} } },
+        );
+      }
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('ui_click', { window_id: 'w1a2b', element_id: 'e3' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('ui_observe', { window_id: 'w1a2b' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Acciones de equipo terminadas'),
+    ], uiBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Opera el Bloc de notas' });
+    assert(await waitFor(() => state.approvals.size === 1), 'el clic en apps pide aprobación también en Acceso completo');
+    assert(state.dispatches.length === 0, 'no inyecta entrada en la app antes de la aprobación humana');
+    const approval = [...state.approvals.values()][0];
+    await runtime.handlers.agent_approve({ approval_id: approval.id });
+    assert(await waitIdle(session.id), 'las acciones ui continúan después de la aprobación humana');
+    assert(state.dispatches.length === 2, 'la aprobación ejecuta el clic; la observación de lectura sigue sola');
+    await runtime.shutdown();
+  }
+
   for (const legacy of [false, true]) {
     const { bridge } = makeBridge();
     let seen = '';

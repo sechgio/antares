@@ -182,3 +182,47 @@ def test_drag_suelta_el_boton_si_el_lease_se_rompio(monkeypatch):
         driver._act_drag(0x1111, target, "e0", {"to_x": 200, "to_y": 200}, ctx)
     assert sent[0] == [0x0002]
     assert sent[-1] == [0x0004]
+
+
+class _ContextCache:
+    def __init__(self, window=None, element=None):
+        self._window = window
+        self._element = element
+
+    def window(self, window_id):
+        if self._window is None:
+            raise driver.DriverError("ventana desconocida")
+        return self._window
+
+    def element(self, window_id, element_id):
+        if self._element is None:
+            raise driver.DriverError("elemento desconocido")
+        return self._element
+
+
+def test_approval_context_describe_ventana_y_elemento(monkeypatch):
+    monkeypatch.setattr(driver, "_CACHE", _ContextCache(
+        window={"process": "notepad.exe", "title": "Sin título - Bloc de notas"},
+        element={"role": "Edit", "name": "Búsqueda"},
+    ))
+    info = driver.approval_context({"window_id": "w1a2b", "element_id": "e3"})
+    assert info == {"app": "notepad.exe", "window": "Sin título - Bloc de notas", "element": "Edit «Búsqueda»"}
+
+
+def test_approval_context_elemento_sin_nombre(monkeypatch):
+    monkeypatch.setattr(driver, "_CACHE", _ContextCache(
+        window={"process": "calc.exe", "title": "Calculadora"},
+        element={"role": "Button", "name": ""},
+    ))
+    assert driver.approval_context({"window_id": "w1", "element_id": "e1"}) == {
+        "app": "calc.exe", "window": "Calculadora", "element": "Button"}
+
+
+def test_approval_context_responde_al_alias_de_app(monkeypatch):
+    assert driver.approval_context({"app": "Notepad"}) == {"app": "notepad.exe"}
+
+
+def test_approval_context_vacio_si_no_hay_nada_conocido(monkeypatch):
+    monkeypatch.setattr(driver, "_CACHE", _ContextCache())
+    assert driver.approval_context({"window_id": "wf", "element_id": "e9"}) == {}
+    assert driver.approval_context({}) == {}

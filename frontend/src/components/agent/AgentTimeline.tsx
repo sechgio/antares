@@ -68,6 +68,15 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   desktop_scroll: Mouse,
   desktop_launch: AppWindow,
   desktop_focus: AppWindow,
+  ui_click: MousePointerClick,
+  ui_type: Keyboard,
+  ui_key: Keyboard,
+  ui_scroll: Mouse,
+  ui_drag: Mouse,
+  ui_set_value: Keyboard,
+  ui_windows: AppWindow,
+  ui_observe: Monitor,
+  ui_launch: AppWindow,
   task_plan: ListChecks,
   tools_load: Package,
   skills_list: BookOpen,
@@ -411,11 +420,12 @@ export function ApprovalCard({
   approval: AgentApproval;
   busy: boolean;
   decision?: 'approve' | 'deny';
-  onDecide: (id: string, ok: boolean) => void;
+  onDecide: (id: string, ok: boolean, opts?: { grantApp?: boolean }) => void;
 }) {
   const { params, context } = approval;
   const label = Object.prototype.hasOwnProperty.call(METHOD_LABELS, approval.method) ? METHOD_LABELS[approval.method] : undefined;
   const filename = typeof params.filename === 'string' && params.filename ? params.filename : params.name;
+  const appGrant = typeof context?.computer?.app === 'string' ? context.computer.app : null;
   const action = approval.method === 'drafts_save' && typeof filename === 'string'
     ? `Guardar ${filename}` : label;
   const facts = [
@@ -445,6 +455,9 @@ export function ApprovalCard({
     typeof params.ref === 'string' && `Elemento de la página: ${params.ref}`,
     context?.account && `Cuenta: ${context.account}`,
     context?.sheet_id && `Hoja: ${context.sheet_id}`,
+    context?.computer?.app && `Aplicación: ${context.computer.app}`,
+    context?.computer?.window && `Ventana: ${context.computer.window}`,
+    context?.computer?.element && `Elemento: ${context.computer.element}`,
     ...(approval.resources ?? []).map((resource) => `Archivo: ${resource.path}`),
   ].filter((fact): fact is string => !!fact);
   const Icon = approval.method === 'shell_run' ? Terminal
@@ -491,11 +504,18 @@ export function ApprovalCard({
           </details>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border-subtle)] px-3 py-2.5 sm:px-4">
-          <span className="mr-auto basis-full text-[11.5px] leading-5 text-[var(--text-secondary)] sm:basis-auto">Solo esta acción</span>
+          <span className="mr-auto basis-full text-[11.5px] leading-5 text-[var(--text-secondary)] sm:basis-auto">{appGrant ? 'Solo esta acción · o siempre en esta app' : 'Solo esta acción'}</span>
           <Button size="sm" variant="ghost" aria-label="Rechazar esta acción" disabled={busy} onClick={() => onDecide(approval.id, false)}>
             {decision === 'deny' ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <X size={13} aria-hidden="true" />}
             Rechazar
           </Button>
+          {appGrant && (
+            <Button size="sm" variant="ghost" aria-label={`Permitir esta acción y las siguientes sobre ${appGrant} durante la sesión`} disabled={busy}
+              onClick={() => onDecide(approval.id, true, { grantApp: true })}>
+              {decision === 'approve' ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <AppWindow size={13} aria-hidden="true" />}
+              Siempre esta app
+            </Button>
+          )}
           <Button size="sm" aria-label="Permitir esta acción" disabled={busy} onClick={() => onDecide(approval.id, true)}>
             {decision === 'approve' ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Check size={13} aria-hidden="true" />}
             Permitir

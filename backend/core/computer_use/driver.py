@@ -633,6 +633,34 @@ def window_state(window_id: str, screenshot: bool = False, max_elements: int = _
     return cast(JsonObject, _run_on_worker(run, 25.0))
 
 
+def approval_context(params: JsonObject) -> JsonObject:
+    """Contexto legible para la tarjeta de aprobación: app, ventana y elemento objetivo."""
+    info: JsonObject = {}
+    app = params.get("app")
+    if isinstance(app, str) and app:
+        info["app"] = _KNOWN_ALIASES.get(app.strip().lower(), app)
+    window_id = params.get("window_id")
+    if isinstance(window_id, str) and window_id:
+        try:
+            window = _CACHE.window(window_id)
+        except DriverError:
+            window = None
+        if window is not None:
+            info["app"] = window.get("process")
+            info["window"] = window.get("title")
+        element_id = params.get("element_id")
+        if isinstance(element_id, str) and element_id:
+            try:
+                element = _CACHE.element(window_id, element_id)
+            except DriverError:
+                element = None
+            if element is not None:
+                role = str(element.get("role") or "")
+                name = str(element.get("name") or "")
+                info["element"] = f"{role} «{name}»" if name else role
+    return info
+
+
 def launch_app(app: str, args: str | None = None) -> JsonObject:
     name = str(app or "").strip().lower()
     if name not in _KNOWN_ALIASES:

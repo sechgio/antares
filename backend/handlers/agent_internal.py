@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from backend.core.agent import memory as _memory_store
 from backend.core.agent import modules as _agent_modules
 from backend.core.agent import subagent as _subagent
 from backend.core.agent.cancel import RunCancelled, _CancelEvent
+from backend.core.computer_use import driver as _computer_driver
 from backend.core.exceptions import NotFoundError, ValidationError
 from backend.core.integrations import ai_providers as _ai_providers
 from backend.core.integrations import mcp_servers as _mcp_servers
@@ -184,6 +186,8 @@ def _intent(session_id: str, method: str, params: JsonObject, context: JsonObjec
         tool = agent_tools.SPECS.get(method) or {"inputSchema": input_schema_for(method)}
         current_context = dict(context or {})
         current_context.update(artifact_context)
+        if method.startswith("ui_"):
+            current_context["computer"] = _computer_driver.approval_context(params)
         mcp = _mcp_servers.parse_agent_tool(method)
         if mcp is not None:
             current_context = _mcp_servers.approval_context(mcp[0], method)
@@ -267,6 +271,10 @@ def _approval_ensure(params: JsonObject) -> JsonObject:
     )
     if approval.get("method") != method or approval.get("fingerprint") != intent:
         raise ValidationError("Esta llamada ya tiene una aprobación con otros parámetros o archivos")
+    if method.startswith("ui_") and approval.get("status") == "pending":
+        app = str(((approval.get("context") or {}).get("computer") or {}).get("app") or "")
+        if app and f"app:{os.path.normcase(app)}" in store.grants_for(session_id):
+            approval = store.decide_approval(str(approval["id"]), True) or approval
     return {"approval": approval}
 
 
@@ -283,6 +291,13 @@ def _approval_decide(params: JsonObject) -> JsonObject:
     approval = _store().decide_approval(approval_id, bool(params["approve"]))
     if approval is None:
         raise _approval_error(_store().get_approval(approval_id))
+    if params.get("grant_app") is True and approval.get("status") == "approved" \
+            and str(approval.get("method") or "").startswith("ui_"):
+        app = str(((approval.get("context") or {}).get("computer") or {}).get("app") or "")
+        if app:
+            _store().add_grants(str(approval["session_id"]), [
+                {"kind": "computer_app", "app": app, "key": f"app:{os.path.normcase(app)}"},
+            ])
     return {"approval": approval}
 
 
