@@ -1,18 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  CheckCircle2,
-  Code2,
-  FileText,
-  KanbanSquare,
-  LayoutGrid,
-  MessagesSquare,
-  Palette,
-  Plug,
-  Search,
-  Tag,
-  Wrench,
-  type LucideIcon,
-} from 'lucide-react';
+import { AlertCircle, Check, Plus, RefreshCw, Search } from 'lucide-react';
 import { onNotify } from '../../api';
 import {
   connectionsApi,
@@ -26,74 +13,74 @@ import ConnectionDetail from './ConnectionDetail';
 import McpServersView from './McpServersView';
 import { ProviderIcon } from './connectionIcons';
 
-const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  desarrollo: Code2,
-  comunicacion: MessagesSquare,
-  documentos: FileText,
-  planificacion: KanbanSquare,
-  diseno: Palette,
-  productividad: Wrench,
-};
+type Filter = 'all' | 'connected';
 
-type Filter = 'all' | 'connected' | `cat:${string}`;
+interface Props {
+  detailId: string | null;
+  onDetailChange: (id: string | null) => void;
+  onProvidersChange?: (providers: ConnectionProviderSpec[]) => void;
+}
 
-function Row({
-  p,
-  onOpen,
-}: {
-  p: ConnectionProviderSpec;
-  onOpen: (p: ConnectionProviderSpec) => void;
-}) {
+function stateLabel(p: ConnectionProviderSpec): string {
+  if (p.connected) return 'Conectada';
+  return p.state === 'missing_scopes' ? 'Faltan permisos' : p.state === 'reauth_required' ? 'Volver a conectar'
+    : p.state === 'unavailable' ? 'Sin verificar' : p.state === 'connecting' ? 'Conectando…' : 'Conectar';
+}
+
+function Row({ p, onOpen }: { p: ConnectionProviderSpec; onOpen: (p: ConnectionProviderSpec) => void }) {
+  const attention = !p.connected && (p.state === 'missing_scopes' || p.state === 'reauth_required');
+  const label = stateLabel(p);
   return (
     <button
+      type="button"
       onClick={() => onOpen(p)}
-      className="group flex w-full items-center gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3 text-left transition-colors duration-150 hover:border-[var(--border-medium)] hover:bg-[var(--bg-elevated)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
+      className="group flex w-full items-center gap-3.5 rounded-xl px-3 py-2.5 text-left transition-colors duration-150 hover:bg-[color:color-mix(in_srgb,var(--text-primary)_4%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
     >
-      <ProviderIcon providerId={p.id} label={p.label} />
+      <ProviderIcon providerId={p.id} label={p.label} size={36} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-[var(--text-primary)]">
-          {p.label}
-        </span>
-        <span className="block truncate text-xs text-[var(--text-secondary)]">{p.description}</span>
+        <span className="block truncate text-[14px] font-medium leading-5 text-[var(--text-primary)]">{p.label}</span>
+        <span className="block truncate text-[12.5px] leading-5 text-[var(--text-secondary)]">{p.description}</span>
       </span>
-      {p.connected ? (
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--accent-green)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-green)_10%,transparent)] px-2.5 py-1 text-[11px] font-medium text-[var(--accent-green)]">
-          <CheckCircle2 size={12} />
-          Conectada
-        </span>
-      ) : (
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--border-subtle)] px-3 py-1 text-[11px] font-medium text-[var(--text-secondary)] transition-colors duration-150 group-hover:border-[var(--accent-primary)] group-hover:text-[var(--text-primary)]">
-          <Plug size={11} />
-          {p.state === 'missing_scopes' ? 'Faltan permisos' : p.state === 'reauth_required' ? 'Volver a conectar'
-            : p.state === 'unavailable' ? 'Sin verificar' : p.state === 'connecting' ? 'Conectando…' : 'Conectar'}
-        </span>
-      )}
+      <span
+        title={label}
+        className={`flex size-8 shrink-0 items-center justify-center rounded-full transition-colors duration-150 ${
+          p.connected
+            ? 'text-[var(--accent-green)]'
+            : attention
+              ? 'text-[var(--accent-yellow)]'
+              : 'text-[var(--text-secondary)] group-hover:bg-[var(--bg-input)] group-hover:text-[var(--text-primary)]'
+        }`}
+      >
+        {p.connected ? <Check size={16} strokeWidth={2.25} /> : attention ? <AlertCircle size={16} /> : <Plus size={18} strokeWidth={1.75} />}
+        <span className="sr-only">{label}</span>
+      </span>
     </button>
   );
 }
 
-export default function ConnectionsView() {
+export default function ConnectionsView({ detailId, onDetailChange, onProvidersChange }: Props) {
   const { addToast } = useToast();
   const { confirm } = useDialog();
   const [providers, setProviders] = useState<ConnectionProviderSpec[]>([]);
   const [categories, setCategories] = useState<ConnectionCategory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [connecting, setConnecting] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
-  const [detailId, setDetailId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const res = await connectionsApi.connectionsProviders();
       setProviders(res.providers);
       setCategories(res.categories);
+      onProvidersChange?.(res.providers);
     } catch (err) {
-      addToast({ message: errorMessage(err, 'No se pudieron cargar las conexiones'), type: 'error' });
+      addToast({ message: errorMessage(err, 'No se pudieron cargar los complementos'), type: 'error' });
     } finally {
       setLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, onProvidersChange]);
 
   useEffect(() => {
     void refresh();
@@ -102,6 +89,15 @@ export default function ConnectionsView() {
     });
     return off;
   }, [refresh]);
+
+  const reload = async () => {
+    setRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const saveCreds = async (
     p: ConnectionProviderSpec,
@@ -158,7 +154,6 @@ export default function ConnectionsView() {
     const q = search.trim().toLowerCase();
     const visible = providers.filter((p) => {
       if (filter === 'connected' && !p.connected) return false;
-      if (filter.startsWith('cat:') && (p.category || '') !== filter.slice(4)) return false;
       if (!q) return true;
       return `${p.label} ${p.description}`.toLowerCase().includes(q);
     });
@@ -187,108 +182,91 @@ export default function ConnectionsView() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]">
-        Cargando conexiones…
+        Cargando complementos…
       </div>
     );
   }
 
-  const railItem = (
-    id: Filter,
-    label: string,
-    icon: LucideIcon,
-    count?: number,
-  ) => {
-    const Icon = icon;
-    const active = filter === id;
-    return (
-      <button
-        key={id}
-        onClick={() => setFilter(id)}
-        aria-pressed={active}
-        className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors duration-150 ${
-          active
-            ? 'bg-[var(--bg-elevated)] font-medium text-[var(--text-primary)]'
-            : 'text-[var(--text-secondary)] hover:bg-[color:color-mix(in_srgb,var(--bg-elevated)_60%,transparent)] hover:text-[var(--text-primary)]'
-        }`}
-      >
-        <Icon size={13} />
-        <span className="flex-1 truncate">{label}</span>
-        {count !== undefined && (
-          <span className="text-[10px] tabular-nums text-[var(--text-secondary)]">{count}</span>
-        )}
-      </button>
-    );
-  };
+  const pill = (id: Filter, label: string, count: number) => (
+    <button
+      key={id}
+      type="button"
+      onClick={() => setFilter(id)}
+      aria-pressed={filter === id}
+      className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-medium transition-colors duration-150 ${
+        filter === id
+          ? 'bg-[var(--bg-input)] text-[var(--text-primary)]'
+          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+      }`}
+    >
+      {label}
+      <span className="ml-1.5 tabular-nums text-[var(--text-muted)]">{count}</span>
+    </button>
+  );
 
   return (
-    <div className="relative flex h-full">
-      <aside className="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-[var(--border-medium)] px-2 py-4">
-        {railItem('all', 'Todas', LayoutGrid, providers.length)}
-        {railItem('connected', 'Conectadas', CheckCircle2, connectedCount)}
-        {categories.length > 0 && (
-          <>
-            <div className="mb-1 mt-4 px-2.5 text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">
-              Categorías
-            </div>
-            {categories.map((c) =>
-              railItem(
-                `cat:${c.id}` as Filter,
-                c.label,
-                CATEGORY_ICONS[c.id] ?? Tag,
-                providers.filter((p) => p.category === c.id).length,
-              ),
-            )}
-          </>
-        )}
-      </aside>
-
-      <div className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-4xl px-6 py-5">
-          <div className="mb-5 flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Conexiones</h2>
-              <p className="mt-1 text-xs text-[var(--text-secondary)]">
-                Autoriza apps externas vía OAuth para usarlas desde Antares.
+    <div className="relative h-full">
+      <div className="custom-scrollbar h-full overflow-y-auto">
+        <div className="mx-auto max-w-[880px] px-8 pb-12 pt-8">
+          <header className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h1 className="text-[22px] font-semibold tracking-tight text-[var(--text-primary)]">Complementos</h1>
+              <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
+                Conecta tus herramientas para que el agente pueda trabajar con ellas.
               </p>
             </div>
-            <div className="relative w-60 shrink-0">
-              <Search
-                size={13}
-                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]"
-              />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar por nombre…"
-                aria-label="Buscar conexiones"
-                spellCheck={false}
-                className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-input)] py-1.5 pl-8 pr-3 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:border-[var(--border-active)] focus:outline-none"
-              />
+            <div className="flex items-center gap-1.5">
+              <label className="flex h-9 w-64 items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3.5 focus-within:border-[var(--border-active)]">
+                <Search size={14} className="shrink-0 text-[var(--text-secondary)]" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar complementos"
+                  aria-label="Buscar complementos"
+                  spellCheck={false}
+                  className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => void reload()}
+                disabled={refreshing}
+                aria-label="Actualizar complementos"
+                title="Actualizar"
+                className="flex size-9 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+              >
+                <RefreshCw size={15} className={refreshing ? 'animate-spin' : undefined} />
+              </button>
             </div>
+          </header>
+
+          <div role="group" aria-label="Filtrar complementos" className="mt-6 flex gap-1">
+            {pill('all', 'Todos', providers.length)}
+            {pill('connected', 'Conectados', connectedCount)}
           </div>
 
           {groups.map((g) => (
-            <section key={g.id} className="mb-6">
-              <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">
-                {g.label}
-              </h3>
-              <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
+            <section key={g.id} aria-label={g.label} className="mt-8">
+              <h2 className="mb-2 px-3 text-[15px] font-medium text-[var(--text-primary)]">{g.label}</h2>
+              <div className="grid grid-cols-1 gap-x-6 gap-y-0.5 lg:grid-cols-2">
                 {g.items.map((p) => (
-                  <Row key={p.id} p={p} onOpen={(prov) => setDetailId(prov.id)} />
+                  <Row key={p.id} p={p} onOpen={(prov) => onDetailChange(prov.id)} />
                 ))}
               </div>
             </section>
           ))}
 
           {!groups.length && (
-            <p className="mt-8 text-center text-sm text-[var(--text-secondary)]">
+            <p className="mt-12 text-center text-sm text-[var(--text-secondary)]">
               {providers.length
-                ? `Sin resultados para «${search.trim()}»${filter !== 'all' ? ' en este filtro' : ''}.`
-                : 'No hay proveedores configurados en el catálogo.'}
+                ? search.trim()
+                  ? `Sin resultados para «${search.trim()}».`
+                  : 'Todavía no hay complementos conectados.'
+                : 'No hay complementos configurados en el catálogo.'}
             </p>
           )}
 
-          <div className="mt-8 border-t border-[var(--border-subtle)] pt-5">
+          <div className="mt-10 border-t border-[var(--border-subtle)] px-3 pt-6">
             <McpServersView />
           </div>
         </div>
@@ -301,7 +279,7 @@ export default function ConnectionsView() {
           onConnect={(p) => void connect(p)}
           onDisconnect={(p) => void disconnect(p)}
           onSaveCreds={saveCreds}
-          onClose={() => setDetailId(null)}
+          onClose={() => onDetailChange(null)}
         />
       )}
     </div>
