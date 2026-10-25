@@ -44,7 +44,7 @@ import Button from '@/components/ui/Button';
 const TaskNotificationsBell = lazy(() => import('./TaskNotificationsBell'));
 
 const SIDEBAR_STORAGE_KEY = 'antares_sidebar_expanded';
-const RAIL_WIDTH = 48;
+const RAIL_WIDTH = 52;
 const PANEL_WIDTH = 232;
 const ACCOUNT_MENU_WIDTH = 264;
 const PEEK_CLOSE_DELAY_MS = 180;
@@ -128,11 +128,10 @@ const TAB_BY_ID = Object.fromEntries(TAB_DEFINITIONS.map((tab) => [tab.id, tab])
   (typeof TAB_DEFINITIONS)[number]
 >;
 
-const RAIL_BG = 'bg-[color:color-mix(in_srgb,var(--accent-blue)_6%,var(--bg-elevated))]';
-const RAIL_ICON = 'flex size-8 items-center justify-center rounded-lg transition-[color,background-color,box-shadow,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.96] motion-reduce:active:scale-100';
-const RAIL_ICON_IDLE = 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]';
-const RAIL_ICON_ON = 'bg-[var(--bg-input)] text-[var(--text-primary)] shadow-[inset_0_0_0_1px_var(--border-medium)]';
-const RAIL_DIVIDER = 'my-1 h-px w-5 shrink-0 bg-[var(--border-medium)]';
+const RAIL_BG = 'bg-[color:color-mix(in_srgb,var(--text-primary)_4%,var(--bg-base))]';
+const RAIL_ICON = 'flex size-9 items-center justify-center rounded-[10px] transition-[color,background-color,box-shadow,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.96] motion-reduce:active:scale-100';
+const RAIL_ICON_IDLE = 'text-[var(--text-secondary)] hover:bg-[color:color-mix(in_srgb,var(--text-primary)_6%,transparent)] hover:text-[var(--text-primary)]';
+const RAIL_ICON_ON = 'bg-[color:color-mix(in_srgb,var(--text-primary)_8%,transparent)] text-[var(--text-primary)]';
 const PANEL_ROW = 'flex h-8 w-full shrink-0 items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] transition-[color,background-color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.99] motion-reduce:active:scale-100';
 const MENU_ITEM = 'flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] text-[var(--text-primary)] transition-colors duration-150 hover:bg-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)] disabled:pointer-events-none disabled:opacity-45';
 const MENU_ICON = 'size-[15px] shrink-0 text-[var(--text-secondary)]';
@@ -295,19 +294,18 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
         data-peeking={peeking ? 'true' : 'false'}
         data-slot="sidebar"
         aria-label="Barra lateral de navegación"
-        className="flex shrink-0 flex-col items-center gap-1 py-1.5"
+        className="flex shrink-0 flex-col items-center gap-1.5 py-2"
         style={{ width: RAIL_WIDTH }}
         onMouseLeave={schedulePeekClose}
       >
-        <nav aria-label="Grupos" className="flex flex-col items-center gap-1">
-          {NAV_GROUPS.map((group, index) => {
+        <nav aria-label="Grupos" className="flex flex-col items-center gap-1.5">
+          {NAV_GROUPS.map((group) => {
             const Icon = group.icon;
             const isShown = panelVisible && group.id === shownGroupId;
             const hasActive = group.id === activeGroupId;
             const directTab = RAIL_DIRECT_TABS[group.id];
             return (
-              <div key={group.id} className="flex flex-col items-center gap-1">
-                {index === 1 && <span className={RAIL_DIVIDER} aria-hidden />}
+              <div key={group.id} className="flex flex-col items-center gap-1.5">
                 <div className="relative">
                   <Button variant="none" size="none"
                     data-testid={`sidebar-group-${group.id}`}
@@ -318,7 +316,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
                     onFocus={directTab ? undefined : () => peekGroup(group.id)}
                     className={cn(RAIL_ICON, isShown || (!panelVisible && hasActive) ? RAIL_ICON_ON : RAIL_ICON_IDLE)}
                   >
-                    <Icon className="size-4" strokeWidth={1.75} />
+                    <Icon className="size-[18px]" strokeWidth={1.6} />
                   </Button>
                   {expanded && <HoverTooltip label={group.label} />}
                 </div>
@@ -327,14 +325,13 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
           })}
         </nav>
 
-        <div className="flex flex-1 flex-col items-center justify-end gap-1 self-stretch" onMouseEnter={schedulePeekClose}>
-          <Suspense fallback={<div className="size-8" aria-hidden />}>
+        <div className="flex flex-1 flex-col items-center justify-end gap-1.5 self-stretch" onMouseEnter={schedulePeekClose}>
+          <Suspense fallback={<div className="size-9" aria-hidden />}>
             <TaskNotificationsBell
               triggerClassName={cn(RAIL_ICON, RAIL_ICON_IDLE)}
               onOpenEspacios={() => onTabChange('espacios')}
             />
           </Suspense>
-          <span className={RAIL_DIVIDER} aria-hidden />
 
           <div className="relative">
             <Button variant="none" size="none"
@@ -345,7 +342,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
               aria-expanded={account.isOpen}
               onClick={account.toggle}
               className={cn(
-                'flex size-8 items-center justify-center rounded-full bg-[var(--bg-surface)] text-[11px] font-semibold text-[var(--text-primary)] transition-[background-color,box-shadow,transform] duration-150 ease-[var(--ease-out)] hover:bg-[var(--bg-input)] active:scale-[0.96] motion-reduce:active:scale-100',
+                'flex size-7 items-center justify-center rounded-full bg-[var(--accent-primary)] text-[11px] font-semibold text-[var(--text-on-accent)] transition-[filter,box-shadow,transform] duration-150 ease-[var(--ease-out)] hover:brightness-110 active:scale-[0.96] motion-reduce:active:scale-100',
                 account.isOpen && 'ring-2 ring-[color:color-mix(in_srgb,var(--accent-primary)_45%,transparent)] ring-offset-2 ring-offset-transparent',
               )}
             >
@@ -388,10 +385,10 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
           onMouseEnter={cancelPeekClose}
           onMouseLeave={schedulePeekClose}
           className={cn(
-            'absolute bottom-3 top-3 z-40 flex flex-col rounded-md [-webkit-app-region:no-drag] border border-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)] bg-[color:color-mix(in_srgb,var(--text-primary)_4%,var(--bg-surface))] text-[var(--sidebar-foreground)] shadow-[0_16px_48px_rgba(0,0,0,0.28),0_2px_8px_rgba(0,0,0,0.10)] transition-[opacity,transform] duration-200 ease-[var(--ease-out)] motion-reduce:transition-none',
+            'absolute z-40 flex flex-col rounded-[10px] [-webkit-app-region:no-drag] border border-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)] bg-[color:color-mix(in_srgb,var(--text-primary)_4%,var(--bg-surface))] text-[var(--sidebar-foreground)] shadow-[0_16px_48px_rgba(0,0,0,0.28),0_2px_8px_rgba(0,0,0,0.10)] transition-[opacity,transform] duration-200 ease-[var(--ease-out)] motion-reduce:transition-none',
             peeking ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-2 opacity-0',
           )}
-          style={{ left: RAIL_WIDTH + PEEK_INSET, width: PANEL_WIDTH }}
+          style={{ top: PEEK_INSET, bottom: PEEK_INSET + 8, left: RAIL_WIDTH + PEEK_INSET, width: PANEL_WIDTH }}
         >
           {panelBody}
         </div>
