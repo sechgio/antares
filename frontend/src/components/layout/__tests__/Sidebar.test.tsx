@@ -22,7 +22,7 @@ vi.mock('../TaskNotificationsBell', () => ({
   ),
 }));
 
-const GROUP_IDS = ['general', 'produccion', 'reportes', 'herramientas', 'agent'];
+const GROUP_IDS = ['general', 'produccion', 'reportes', 'herramientas', 'agent', 'complementos'];
 
 function renderSidebar(props: { activeTab?: TabId; onTabChange?: (tab: TabId) => void; onOpenSettings?: () => void } = {}) {
   return render(
