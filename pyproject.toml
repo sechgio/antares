@@ -33,7 +33,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
-    "pytest-cov>=5.0.0",
     "pytest-xdist>=3.6.0",
     "mypy>=1.10.0",
     "ruff>=0.5.0",
@@ -59,6 +58,7 @@ ignore = ["E501"]
 "backend/main.py" = ["E402"]
 
 [tool.mypy]
+# Stubs del venv (numpy sobre CPython 3.14) en sintaxis 3.12: un objetivo menor no parsea.
 python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true

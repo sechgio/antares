@@ -86,8 +86,6 @@ function keyArgument(params: Record<string, unknown>): string | null {
   return null;
 }
 
-// Los textos largos (páginas, archivos) se leen con sus saltos de línea reales
-// en vez de «\n» escapados; una barra invertida escapada se respeta.
 function prettyJson(text: string): string {
   try {
     const value: unknown = JSON.parse(text);
@@ -194,7 +192,6 @@ function shellOutput(result: string | null | undefined) {
     return {
       exit: typeof data.exit_code === 'number' ? data.exit_code : null,
       text: [stdout, errors].filter(Boolean).join('\n'),
-      // Las líneas desde aquí son stderr o el error de la herramienta y se pintan en rojo.
       errorFrom: errors ? (stdout ? stdout.split('\n').length : 0) : Infinity,
       duration: typeof data.duration_s === 'number' ? data.duration_s : null,
     };
@@ -203,7 +200,6 @@ function shellOutput(result: string | null | undefined) {
   }
 }
 
-// Segundos que lleva en curso una herramienta, desde el inicio que marca el motor.
 function Elapsed({ since }: { since?: number }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -231,7 +227,6 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
   const failed = call.status === 'failed' || call.status === 'denied' || exitFailed;
   const text = output ? output.text : (call.output ?? '').replace(/\n+$/, '');
   const lines = text ? text.split('\n') : [];
-  // Como una terminal, se ve el final de la salida: ahí suelen estar el error o el resumen.
   const logRef = useRef<HTMLDivElement>(null);
   const followOutputRef = useRef(true);
   useEffect(() => {
@@ -321,8 +316,8 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
 function UserBubble({ msg }: { msg: AgentMessage }) {
   return (
     <div className="agent-trace-in flex justify-end">
-      <div className="agent-message-user max-w-[min(600px,85%)] rounded-[18px] bg-[var(--bg-input)] px-4 py-2.5 text-[14px] leading-[21px] text-[var(--text-primary)]">
-        <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+      <div className="agent-message-user min-w-0 max-w-[min(600px,88%)] rounded-2xl px-4 py-3 text-[14px] leading-[22px] text-[var(--text-primary)]">
+        <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
       </div>
     </div>
   );
@@ -398,7 +393,7 @@ function AssistantBlock({ msg, agent, onUndo }: {
         )}
         {msg.reasoning && <Reasoning text={msg.reasoning} streaming={!!msg.partial && !msg.content} ms={msg.reasoning_ms} />}
         {msg.content && (
-          <div className="agent-message-answer w-fit max-w-[min(620px,100%)] rounded-[18px] bg-[var(--bg-input)] px-4 py-3 text-[14px] leading-[22px] text-[var(--text-primary)]">
+          <div className="agent-message-answer min-w-0 max-w-full py-1 text-[14px] leading-[23px] text-[var(--text-primary)]">
             <MessageMarkdown text={msg.content} streaming={!!msg.partial} />
           </div>
         )}
@@ -468,6 +463,7 @@ export function ApprovalCard({
     typeof params.ref === 'string' && `Elemento de la página: ${params.ref}`,
     context?.account && `Cuenta: ${context.account}`,
     context?.sheet_id && `Hoja: ${context.sheet_id}`,
+    context?.subagent && `Solicitada por el subagente: ${context.subagent}${context.subagent_role === 'worker' ? ' (worker)' : ''}`,
     ...(approval.resources ?? []).map((resource) => `Archivo: ${resource.path}`),
   ].filter((fact): fact is string => !!fact);
   const Icon = approval.method === 'shell_run' ? Terminal

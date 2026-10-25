@@ -64,7 +64,7 @@ def test_task_schedule_is_a_gated_meta_tool_with_the_electron_schema():
     assert spec["inputSchema"] == {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["create", "list", "cancel"]},
+            "action": {"type": "string", "enum": ["create", "list", "cancel", "enqueue", "pause", "resume"]},
             "content": {"type": "string", "minLength": 1, "maxLength": 12000},
             "due_at": {"type": "string"},
             "every_minutes": {"type": "integer", "minimum": 1, "maximum": 525600},
@@ -157,6 +157,39 @@ def test_approval_flow(tmp_path):
     assert decided["status"] == "approved" and decided["decided_at"]
     assert store.decide_approval(ap["id"], True) is None
     assert store.pending_approvals(s["id"]) == []
+
+
+def test_approval_history_filters_and_joins_dispatch(tmp_path):
+    store = _store(tmp_path)
+    s1 = store.create_session("ollama", "m", "uno")["id"]
+    s2 = store.create_session("ollama", "m", "dos")["id"]
+    first = store.create_approval(s1, {"id": "c1", "name": "flujos_x", "params": {"a": 1}})
+    second = store.create_approval(s1, {"id": "c2", "name": "db_export", "params": {}})
+    third = store.create_approval(s2, {"id": "c3", "name": "flujos_x", "params": {}})
+    store.decide_approval(first["id"], True)
+    store.decide_approval(second["id"], False)
+    status, record = store.dispatch_claim(s1, "c1", "flujos_x", {"a": 1}, first["id"])
+    assert status == "new"
+    store.dispatch_finish(s1, "c1", record["op_id"], "uncertain", "{}")
+
+    assert {a["id"] for a in store.approval_history()} == {first["id"], second["id"], third["id"]}
+    assert {a["id"] for a in store.approval_history(session_id=s1)} == {first["id"], second["id"]}
+    assert {a["id"] for a in store.approval_history(method="db_export")} == {second["id"]}
+    assert {a["id"] for a in store.approval_history(status="approved")} == {first["id"]}
+    assert {a["id"] for a in store.approval_history(status="denied")} == {second["id"]}
+    assert {a["id"] for a in store.approval_history(status="uncertain")} == {first["id"]}
+    assert len(store.approval_history(limit=1)) == 1
+    joined = next(a for a in store.approval_history() if a["id"] == first["id"])
+    assert joined["dispatch"]["status"] == "uncertain"
+
+
+def test_approval_history_keeps_expired_decisions(tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    session_id = store.create_session("ollama", "m", "t")["id"]
+    approval = store.create_approval(session_id, {"id": "c1", "name": "flujos_x", "params": {}})
+    monkeypatch.setattr(agent, "_APPROVAL_TTL_MS", -1)
+    assert store.pending_approvals(session_id) == []
+    assert [a["id"] for a in store.approval_history(status="expired")] == [approval["id"]]
 
 
 @pytest.mark.parametrize("name,params", [

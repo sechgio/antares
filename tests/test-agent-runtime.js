@@ -152,11 +152,11 @@ function makeBridge() {
   return { bridge, state };
 }
 
-async function openFaux(responses, bridge) {
+async function openFaux(responses, bridge, { faux: fauxOptions = {}, settings } = {}) {
   const { MemoryStorage } = await import('@earendil-works/pi-durable');
   const { fauxProvider } = await import('@earendil-works/pi-ai');
-  await runtime.open({ storage: new MemoryStorage(), bridge, skipImport: true });
-  const faux = fauxProvider();
+  await runtime.open({ storage: new MemoryStorage(), bridge, skipImport: true, settings });
+  const faux = fauxProvider(fauxOptions);
   runtime._internal._providerOverrides.set('faux', faux.provider);
   faux.setResponses(responses);
   return faux;
@@ -211,6 +211,20 @@ async function main() {
       .cacheControlFormat === 'anthropic', 'Claude vía OpenRouter lleva cache_control aunque el proveedor sea propio');
     assert(define({ custom: true, base_url: 'http://x.local/v1', capabilities: { vision: true } }, 'mi-modelo').input.includes('image'),
       'un modelo personalizado puede declarar visión aunque su nombre no la sugiera');
+    const { OPENAI_MODELS } = await import('@earendil-works/pi-ai/providers/openai.models');
+    const openai = { provider: 'openai', style: 'openai_chat', base_url: 'https://api.openai.com/v1' };
+    const priced = modelDefinition(openai, 'gpt-4o', 'openai-completions', undefined, OPENAI_MODELS['gpt-4o']);
+    assert(priced.cost.input === 2.5 && priced.cost.output === 10 && priced.cost.cacheRead === 1.25,
+      'un modelo del catálogo lleva sus precios reales por millón de tokens');
+    assert(priced.contextWindow === 128000
+      && modelDefinition(openai, 'gpt-4.1', 'openai-completions', undefined, OPENAI_MODELS['gpt-4.1']).contextWindow === 1047576,
+      'la ventana del catálogo sustituye al valor por defecto');
+    const declared = modelDefinition({ ...openai, capabilities: { context_window: 32000 } }, 'gpt-4o',
+      'openai-completions', undefined, OPENAI_MODELS['gpt-4o']);
+    assert(declared.contextWindow === 32000 && declared.maxTokens === 8000,
+      'la ventana declarada por el usuario manda sobre el catálogo');
+    assert(!define({ custom: true, base_url: 'http://127.0.0.1:11434/v1' }, 'gpt-4o').cost.input,
+      'un endpoint propio no hereda los precios del catálogo');
   }
   {
     const { MemoryStorage } = await import('@earendil-works/pi-durable');
@@ -1078,6 +1092,71 @@ async function main() {
     assert(usage.context < first.context + first.input, 'el contexto no acumula los turnos anteriores');
     assert(first.cached === 0 && usage.cached > 0 && usage.cached < usage.prompt,
       'el segundo turno reutiliza el prefijo cacheado y se informa frente al prompt total');
+    assert(usage.window === 128000 && usage.turn && usage.turn.input > 0,
+      'el medidor conoce la ventana del modelo y el gasto del último turno');
+    assert(usage.cost === 0, 'un proveedor sin precios no inventa un coste');
+    const { requireSession } = require('../electron/agent-shared');
+    const conversationId = (await requireSession(session.id)).conversationId;
+    const state = runtime._internal.state();
+    await state.harness.commit(async (tx) => {
+      const doc = await tx.doc(runtime._internal.shared.deps.pi.UsageDoc, conversationId);
+      doc.models['openai/gpt-4o'] = {
+        input: 1000, output: 500, cacheRead: 0, cacheWrite: 0, totalTokens: 1500,
+        cost: { input: 0.0025, output: 0.005, cacheRead: 0, cacheWrite: 0, total: 0.0075 },
+      };
+    }, state.ctx);
+    const billed = (await runtime.handlers.agent_messages_list({ session_id: session.id })).usage;
+    assert(Math.abs(billed.cost - 0.0075) < 1e-9 && billed.input >= 1000,
+      'el coste acumulado sale del libro pi.usage de la conversación');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const seen = [];
+    const reply = (text) => (context) => {
+      seen.push(context.messages);
+      return fauxAssistantMessage(text);
+    };
+    await openFaux([reply('primero'), reply('segundo'), reply('tercero')], bridge, {
+      faux: { models: [{ id: 'faux-1', contextWindow: 8192, maxTokens: 2048 }] },
+    });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'primer turno ' + 'a'.repeat(30000) });
+    assert(await waitIdle(session.id), 'el turno largo termina');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'segundo turno' });
+    assert(await waitIdle(session.id), 'el segundo turno compacta el historial');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'tercer turno' });
+    assert(await waitIdle(session.id), 'el tercer turno termina');
+    const last = seen[seen.length - 1];
+    assert(last.some((message) => typeof message.content === 'string'
+      && message.content.includes('[Contexto compactado por Antares')),
+      'una ventana pequeña recibe un resumen estructurado en lugar del historial completo');
+    assert(last.some((message) => message.role === 'user' && String(message.content).includes('tercer turno')),
+      'el mensaje actual viaja intacto');
+    assert(!JSON.stringify(last).includes('a'.repeat(500)), 'el texto antiguo ya no consume la ventana');
+    const { usage } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(usage && usage.window === 8192, 'el medidor usa la ventana real del modelo pequeño');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    await openFaux([fauxAssistantMessage('listo'), fauxAssistantMessage('Resumen del encargo')], bridge, {
+      settings: { compaction: { enabled: true, reserveTokens: 1024, keepRecentTokens: 100, backgroundTokens: 0 } },
+    });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'organiza el encargo' });
+    assert(await waitIdle(session.id), 'el turno previo a la compactación termina');
+    const { requireSession } = require('../electron/agent-shared');
+    const state = runtime._internal.state();
+    const conv = await state.harness.conversation((await requireSession(session.id)).conversationId, state.ctx);
+    const taskId = await conv.compact(undefined, state.ctx);
+    const settled = await state.harness.waitForTask(taskId, state.ctx);
+    assert(settled.state.outcome.status === 'completed', 'la compactación manual de pi-durable termina');
+    await conv.waitForIdle(state.ctx);
+    const { usage } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(usage && usage.compactions === 1, 'el medidor informa de la compactación aplicada');
     await runtime.shutdown();
   }
 

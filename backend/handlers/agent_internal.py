@@ -251,7 +251,20 @@ def _mentions(params: JsonObject) -> JsonObject:
 @with_locale
 @validate_params("session_id")
 def _grants_revoke(params: JsonObject) -> JsonObject:
+    path = params.get("path")
+    if isinstance(path, str) and path:
+        return {"revoked": _store().revoke_grant(str(params["session_id"]), path)}
     return {"revoked": _store().revoke_grants(str(params["session_id"]))}
+
+
+@with_locale
+@validate_params("session_id")
+def _grants_list(params: JsonObject) -> JsonObject:
+    grants = sorted(_store().grants_for(str(params["session_id"])).values(), key=lambda record: str(record.get("path") or ""))
+    return {"grants": [
+        {key: record.get(key) for key in ("path", "mode", "request_id", "size", "mtime_ns") if record.get(key) is not None}
+        for record in grants
+    ]}
 
 
 def _approval_error(approval: JsonObject | None) -> ValidationError:
@@ -303,6 +316,24 @@ def _approval_decide(params: JsonObject) -> JsonObject:
 @validate_params("session_id")
 def _approvals_pending(params: JsonObject) -> JsonObject:
     return {"approvals": _store().pending_approvals(str(params["session_id"]))}
+
+
+@with_locale
+def _approvals_history(params: JsonObject) -> JsonObject:
+    status = params.get("status")
+    if status is not None and status not in {"all", "pending", "approved", "denied", "expired", "uncertain"}:
+        raise ValidationError("Estado de aprobación no válido")
+    method = params.get("method")
+    session_id = params.get("session_id")
+    limit = params.get("limit", 500)
+    if not isinstance(limit, int) or isinstance(limit, bool):
+        raise ValidationError("El límite del historial no es válido")
+    return {"approvals": _store().approval_history(
+        session_id=str(session_id) if isinstance(session_id, str) and session_id else None,
+        method=str(method) if isinstance(method, str) and method else None,
+        status=str(status) if isinstance(status, str) and status != "all" else None,
+        limit=limit,
+    )}
 
 
 @with_locale
@@ -695,6 +726,7 @@ HANDLERS = {
     "agent_internal_approval_status": _approval_status,
     "agent_internal_approval_decide": _approval_decide,
     "agent_internal_approvals_pending": _approvals_pending,
+    "agent_internal_approvals_history": _approvals_history,
     "agent_internal_approvals_deny_session": _approvals_deny_session,
     "agent_internal_dispatch": _dispatch,
     "agent_internal_dispatch_result": _dispatch_result,
@@ -703,6 +735,7 @@ HANDLERS = {
     "agent_internal_effects": _effects,
     "agent_internal_effect_undo": _effect_undo,
     "agent_internal_grants_add": _grants_add,
+    "agent_internal_grants_list": _grants_list,
     "agent_internal_grants_revoke": _grants_revoke,
     "agent_internal_mentions": _mentions,
     "agent_internal_document_plan": _document_plan,

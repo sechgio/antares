@@ -75,6 +75,46 @@ async function main() {
     assert.equal(emptyListing.status, 'done', 'la consulta de un catálogo vacío debe terminar correctamente');
     assert.deepEqual(JSON.parse(emptyListing.result).tasks, [], 'el catálogo vacío se puede consultar sin materializar TasksDoc');
     await require('../electron/agent-tasks').stop();
+    const tasksModule = require('../electron/agent-tasks');
+    const { profile: reviewerProfile } = await runtime.handlers.agent_profile_save({
+      name: 'Revisor', instructions: 'Revisa la evidencia', tools: null, role: 'reviewer',
+    });
+    const { profile: workerProfile } = await runtime.handlers.agent_profile_save({
+      name: 'Operador', instructions: 'Ejecuta cambios', tools: null, role: 'worker',
+    });
+    assert.equal(reviewerProfile.role, 'reviewer');
+    assert.equal(workerProfile.role, 'worker');
+    await assert.rejects(
+      runtime.handlers.agent_profile_save({ name: 'Inválido', instructions: 'x', tools: null, role: 'admin' }),
+      /Rol de agente no válido/,
+    );
+    const delegateApi = {
+      taskId: 'exclusion-v2',
+      agent: async () => ({ tools: [{ name: 'canvas_list' }, { name: 'fs_write' }] }),
+    };
+    await assert.rejects(
+      tasksModule.delegate(workerProfile, { task: 'Modifica el documento' }, initialSession.id, delegateApi, {}),
+      /worker solo se delega con subagent_run/,
+    );
+    const aborted = new AbortController();
+    aborted.abort();
+    await assert.rejects(
+      tasksModule.delegate(reviewerProfile, { task: 'Revisa el comprobante', exclude_tools: ['canvas_list'] },
+        initialSession.id, delegateApi, { abortSignal: aborted.signal }),
+      /cancelado/,
+    );
+    const reviewChild = (await runtime.handlers.agent_sessions_list()).sessions
+      .find((item) => item.delegation?.parent_session_id === initialSession.id && item.title === 'Delegación: Revisor');
+    assert.ok(reviewChild, 'la delegación crea la conversación hija antes de cancelarse');
+    assert.equal(reviewChild.delegation.depth, 1);
+    const reviewTools = await runtime.handlers.agent_tools_list({ session_id: reviewChild.id });
+    assert.ok(!reviewTools.tools.some((tool) => tool.name === 'canvas_list' && tool.enabled),
+      'exclude_tools sustrae la herramienta del hijo');
+    await assert.rejects(
+      tasksModule.delegate(reviewerProfile, { task: 'Delega otra vez' }, reviewChild.id,
+        { ...delegateApi, taskId: 'depth-v2' }, {}),
+      /profundidad máxima/,
+    );
     faux.setResponses([
       fauxAssistantMessage([fauxToolCall('agent_delegate', { agent: initialProfile.id, task: 'Comprueba el arranque vacío' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('Delegado'),
