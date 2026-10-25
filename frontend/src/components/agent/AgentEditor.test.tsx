@@ -36,8 +36,18 @@ it('crea un agente con indicaciones y solo las herramientas elegidas', async () 
   fireEvent.click(screen.getByRole('switch', { name: 'Permitir templates_catalog' }));
   await act(async () => { fireEvent.click(create); });
   expect(save).toHaveBeenCalledWith({ name: 'Informe mensual', color: '#0E7490', description: '', role: 'explorer', instructions: 'Usa la plantilla de cortes',
-    starter: 'Prepara el informe', tools: ['templates_catalog'] });
+    starter: 'Prepara el informe', tools: ['templates_catalog'], tools_deny: [] });
   expect(onSaved).toHaveBeenCalledWith(saved);
+});
+
+it('bloquea herramientas concretas sin renunciar a todas las demás', async () => {
+  const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: saved });
+  await act(async () => { render(<AgentEditor profile={{ ...saved, tools: null, tools_deny: ['artifact_print'] }}
+    onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} />); });
+  expect(screen.getByRole('switch', { name: 'Bloquear artifact_print' })).toBeChecked();
+  fireEvent.click(screen.getByRole('switch', { name: 'Bloquear templates_catalog' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(save.mock.calls[0][0]).toMatchObject({ tools: null, tools_deny: ['artifact_print', 'templates_catalog'] });
 });
 
 it('permite empezar con nombre e instrucción sin abrir las opciones avanzadas', async () => {
@@ -48,7 +58,7 @@ it('permite empezar con nombre e instrucción sin abrir las opciones avanzadas',
   fireEvent.change(screen.getByLabelText('Nombre del agente'), { target: { value: 'Revisor' } });
   fireEvent.change(screen.getByLabelText('Indicaciones del agente'), { target: { value: 'Revisa mis informes' } });
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Crear y chatear' })); });
-  expect(save).toHaveBeenCalledWith({ name: 'Revisor', color: '', role: 'explorer', instructions: 'Revisa mis informes', description: '', starter: '', tools: null });
+  expect(save).toHaveBeenCalledWith({ name: 'Revisor', color: '', role: 'explorer', instructions: 'Revisa mis informes', description: '', starter: '', tools: null, tools_deny: [] });
 });
 
 it('conserva el color al editar y permite volver al automático', async () => {

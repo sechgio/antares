@@ -971,7 +971,9 @@ async function dispatchTool(spec, args, sessionId, api, context) {
         name: profile.name,
         role: profile.role || 'explorer',
         instructions: profile.instructions,
-        tools: Array.isArray(profile.tools) ? profile.tools : null,
+        tools: profile.tools_deny?.length
+          ? (Array.isArray(profile.tools) ? profile.tools : enabled).filter((name) => !profile.tools_deny.includes(name))
+          : Array.isArray(profile.tools) ? profile.tools : null,
         enabled,
         provider: session.provider,
         model: session.model,
@@ -1129,14 +1131,29 @@ async function dispatchApproved(approval, context) {
   }
 }
 
-// La lista de herramientas de un agente guardado (null = todas) limita la
-// conversación durante toda su vida, no solo al crearla.
-async function profileToolFilter(session) {
+async function sessionProfile(session) {
   const id = session && session.profile && !session.profile.portable ? session.profile.id : null;
-  const profile = id ? (await profiles())[id] : null;
-  if (!profile || !Array.isArray(profile.tools)) return null;
-  const allowed = new Set(profile.tools);
-  return (name) => allowed.has(name);
+  return id ? (await profiles())[id] || null : null;
+}
+
+// La lista de herramientas de un agente guardado (null = todas) y sus
+// bloqueadas limitan la conversación durante toda su vida, no solo al crearla.
+// Una herramienta bloqueada nunca se permite, aunque figure en la lista.
+async function profileToolFilter(session) {
+  const profile = await sessionProfile(session);
+  const denied = new Set((profile && profile.tools_deny) || []);
+  if (!profile || (!Array.isArray(profile.tools) && !denied.size)) return null;
+  const allowed = Array.isArray(profile.tools) ? new Set(profile.tools) : null;
+  return (name) => (!allowed || allowed.has(name)) && !denied.has(name);
+}
+
+// Herramientas con las que arranca, o a las que se restablece, una conversación.
+function profileInitialTools(profile, specs) {
+  const available = new Set(specs.map((spec) => spec.name));
+  const denied = new Set((profile && profile.tools_deny) || []);
+  const base = profile && Array.isArray(profile.tools)
+    ? profile.tools.filter((name) => available.has(name)) : defaultToolNames(specs);
+  return denied.size ? (base || [...available]).filter((name) => !denied.has(name)) : base;
 }
 
 async function toolEnabled(sessionId, name, context) {
@@ -1204,7 +1221,9 @@ module.exports = {
   allToolSpecs,
   defaultToolNames,
   moduleToolNames,
+  profileInitialTools,
   profileToolFilter,
+  sessionProfile,
   TOOLS_LOAD,
   supportsVision,
   modelDefinition,

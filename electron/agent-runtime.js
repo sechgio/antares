@@ -298,12 +298,16 @@ async function profileSave(params = {}) {
   if (tools !== null && tools !== undefined && (!Array.isArray(tools) || tools.some((name) => typeof name !== 'string'))) {
     throw validation('Las herramientas deben ser una lista o «todas»');
   }
-  if (Array.isArray(tools)) {
-    const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
-    if (tools.some((name) => !available.has(name))) throw validation('La selección contiene herramientas no disponibles');
-  }
   const existing = params.id ? (await _profiles())[String(params.id)] : null;
   if (params.id && !existing) throw notFound('El agente ya no existe');
+  const deny = params.tools_deny === undefined ? (existing?.tools_deny || []) : params.tools_deny;
+  if (!Array.isArray(deny) || deny.some((name) => typeof name !== 'string')) {
+    throw validation('Las herramientas bloqueadas deben ser una lista');
+  }
+  if (Array.isArray(tools) || deny.length) {
+    const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
+    if ([...(tools || []), ...deny].some((name) => !available.has(name))) throw validation('La selección contiene herramientas no disponibles');
+  }
   const role = params.role === undefined ? (existing?.role || 'explorer') : String(params.role);
   if (!PROFILE_ROLES.has(role)) throw validation('Rol de agente no válido: usa explorer, reviewer o worker');
   const now = Date.now();
@@ -316,6 +320,7 @@ async function profileSave(params = {}) {
     instructions: _text(params.instructions, 'las instrucciones', 4000, true),
     starter: _text(params.starter, 'el mensaje inicial', 500),
     tools: Array.isArray(tools) ? [...new Set(tools)] : null,
+    ...(deny.length ? { tools_deny: [...new Set(deny)] } : {}),
     created_at: existing ? existing.created_at : now,
     updated_at: now,
   };
@@ -363,11 +368,7 @@ async function sessionCreate(params) {
     ownership: { kind: 'ownerless' },
     agent: { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(levels), instructions },
   }, ctx());
-  const specs = [...shared.toolSpecs.values()];
-  const available = new Set(specs.map((tool) => tool.name));
-  const initialTools = profile && Array.isArray(profile.tools)
-    ? profile.tools.filter((name) => available.has(name))
-    : execution.defaultToolNames(specs);
+  const initialTools = execution.profileInitialTools(profile, [...shared.toolSpecs.values()]);
   if (initialTools) await conv.configure({ tools: initialTools.map((name) => ({ name })) }, ctx());
   const now = Date.now();
   const session = {
@@ -971,14 +972,14 @@ async function toolsSet(params) {
   }
   const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
   if (names && names.some((name) => !available.has(name))) throw validation('La selección contiene herramientas no disponibles');
-  const allows = await execution.profileToolFilter(await requireSession(String(params.session_id || '')));
+  const session = await requireSession(String(params.session_id || ''));
+  const allows = await execution.profileToolFilter(session);
   if (allows && names && names.some((name) => !allows(name))) {
     throw validation('El agente guardado de esta conversación no permite alguna de esas herramientas');
   }
   await execution.refreshTools();
-  const specs = [...shared.toolSpecs.values()];
   const selected = names !== null ? [...new Set(names)]
-    : allows ? specs.filter((spec) => allows(spec.name)).map((spec) => spec.name) : execution.defaultToolNames(specs);
+    : execution.profileInitialTools(await execution.sessionProfile(session), [...shared.toolSpecs.values()]);
   await conv.configure({ tools: selected && selected.map((name) => ({ name })) }, ctx());
   return toolsList(params);
 }

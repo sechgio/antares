@@ -38,6 +38,7 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
   const [starter, setStarter] = useState(profile?.starter ?? '');
   const [allTools, setAllTools] = useState(profile ? profile.tools === null : true);
   const [selected, setSelected] = useState<Set<string>>(new Set(profile?.tools ?? []));
+  const [denied, setDenied] = useState<Set<string>>(new Set(profile?.tools_deny ?? []));
   const [tools, setTools] = useState<AgentToolSpec[]>([]);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -63,6 +64,7 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
         ...(profile ? { id: profile.id } : {}),
         name, color, description, role, instructions, starter,
         tools: allTools ? null : [...selected],
+        tools_deny: allTools ? [...denied] : [],
       });
       addToast({ message: profile ? 'Agente actualizado. Los cambios se aplicarán a conversaciones nuevas.' : 'Agente creado', type: 'success' });
       onSaved(res.profile);
@@ -189,31 +191,34 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
             <span className="text-[13px] text-[var(--text-primary)]">Todas las herramientas</span>
             <Toggle checked={allTools} onChange={setAllTools} aria-label="Usar todas las herramientas" />
           </div>
-          {!allTools && (
-            <div className="mt-2 space-y-2">
-              {groups.map((group) => (
-                <div key={group.label}>
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">{group.label}</p>
-                  <ul className="mt-1 max-h-40 space-y-1 overflow-auto">
-                    {group.items.map((tool) => (
-                      <li key={tool.name} className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]" title={tool.name}>
-                        <span className="min-w-0 flex-1 truncate">{METHOD_LABELS[tool.name] ?? tool.name}</span>
-                        <Toggle
-                          checked={selected.has(tool.name)}
-                          aria-label={`Permitir ${tool.name}`}
-                          onChange={(on) => setSelected((prev) => {
-                            const next = new Set(prev);
-                            if (on) next.add(tool.name); else next.delete(tool.name);
-                            return next;
-                          })}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
+          {allTools && (
+            <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+              Bloquea las que el agente nunca debe usar, también las que se añadan después.
+            </p>
           )}
+          <div className="mt-2 space-y-2">
+            {groups.map((group) => (
+              <div key={group.label}>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">{group.label}</p>
+                <ul className="mt-1 max-h-40 space-y-1 overflow-auto">
+                  {group.items.map((tool) => (
+                    <li key={tool.name} className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]" title={tool.name}>
+                      <span className="min-w-0 flex-1 truncate">{METHOD_LABELS[tool.name] ?? tool.name}</span>
+                      <Toggle
+                        checked={allTools ? denied.has(tool.name) : selected.has(tool.name)}
+                        aria-label={`${allTools ? 'Bloquear' : 'Permitir'} ${tool.name}`}
+                        onChange={(on) => (allTools ? setDenied : setSelected)((prev) => {
+                          const next = new Set(prev);
+                          if (on) next.add(tool.name); else next.delete(tool.name);
+                          return next;
+                        })}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
         <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
           Tu pedido actual tiene prioridad sobre estas indicaciones; estas prevalecen sobre las preferencias de memoria.

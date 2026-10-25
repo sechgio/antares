@@ -69,6 +69,18 @@ def test_agent_profile_color_accepts_legacy_calls_and_rejects_non_hex_colors():
             jsonschema.validate({**params, "color": color}, schema)
 
 
+def test_agent_profile_tools_deny_is_an_optional_list_of_names():
+    import jsonschema
+
+    schema = _catalog()["methods"]["agent_profile_save"]["inputSchema"]
+    params = {"name": "Revisor", "instructions": "Revisa documentos"}
+    for tools_deny in ([], ["shell_run"]):
+        jsonschema.validate({**params, "tools_deny": tools_deny}, schema)
+    for tools_deny in (None, "shell_run", [1]):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({**params, "tools_deny": tools_deny}, schema)
+
+
 def test_agent_approve_accepts_optional_remember_for_always_allow():
     import jsonschema
 

@@ -1870,6 +1870,60 @@ async function main() {
 
   {
     const { bridge, state } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    const bigBridge = async (method, params) => {
+      if (method !== 'agent_internal_tools') return bridge(method, params);
+      const result = await bridge(method, params);
+      for (let i = 0; i < 3; i += 1) {
+        result.tools.push({ name: `sellador_t${i}`, module: 'sellador', description: `Sellar ${i}`, gated: false, kind: 'backend', inputSchema: schema });
+      }
+      result.tools.push({ name: 'fs_read', module: 'computer', description: 'Leer archivo', gated: false, kind: 'backend', inputSchema: schema });
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('tools_load', { modules: ['sellador'] })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('sellador revisado'),
+      fauxAssistantMessage([fauxToolCall('fs_read', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('lectura bloqueada'),
+    ], bigBridge);
+    for (const toolsDeny of [['desconocida'], 'fs_read', [false]]) {
+      let error;
+      try { await runtime.handlers.agent_profile_save({ name: 'Inválido', instructions: 'x', tools: null, tools_deny: toolsDeny }); } catch (err) { error = err; }
+      assert(!!error, 'una lista de bloqueadas inválida se rechaza');
+    }
+    const open = (await runtime.handlers.agent_profile_save({ name: 'Abierto', instructions: 'Todo menos sellar', tools: null, tools_deny: ['sellador_t0'] })).profile;
+    assert(JSON.stringify(open.tools_deny) === '["sellador_t0"]', 'el bot guarda sus herramientas bloqueadas');
+    const kept = (await runtime.handlers.agent_profile_save({ id: open.id, name: 'Abierto', instructions: 'Todo menos sellar', tools: null })).profile;
+    assert(JSON.stringify(kept.tools_deny) === '["sellador_t0"]', 'editar sin indicar bloqueadas las conserva');
+    const { session: openSession } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: open.id });
+    const { session: plainSession } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const enabledIn = async (id) => (await runtime.handlers.agent_tools_list({ session_id: id })).tools.filter((t) => t.enabled).map((t) => t.name);
+    assert(JSON.stringify(await enabledIn(openSession.id)) === JSON.stringify((await enabledIn(plainSession.id)).filter((name) => name !== 'sellador_t0')),
+      'un bot con todas las herramientas arranca como una conversación normal sin las bloqueadas');
+    const tools = ['fs_read', 'tools_load', 'sellador_t0', 'sellador_t1'];
+    const { profile } = await runtime.handlers.agent_profile_save({ name: 'Sellos', instructions: 'Sella', tools, tools_deny: ['sellador_t0'] });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
+    const enabledNames = async () => (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools
+      .filter((t) => t.enabled).map((t) => t.name).sort();
+    const expected = JSON.stringify(['fs_read', 'sellador_t1', 'tools_load']);
+    assert(JSON.stringify(await enabledNames()) === expected, 'la bloqueada gana aunque figure en la lista permitida');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'sella' });
+    assert(await waitIdle(session.id), 'el turno con tools_load y bloqueadas termina');
+    assert(JSON.stringify(await enabledNames()) === expected, 'tools_load no carga una herramienta bloqueada');
+    let error;
+    try { await runtime.handlers.agent_tools_set({ session_id: session.id, names: ['sellador_t0'] }); } catch (err) { error = err; }
+    assert(!!error, 'la selección manual no habilita una herramienta bloqueada');
+    await runtime.handlers.agent_profile_save({ ...profile, tools_deny: ['sellador_t0', 'fs_read'] });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'lee el archivo' });
+    assert(await waitIdle(session.id), 'el turno con una herramienta recién bloqueada termina');
+    assert(state.dispatchLog.length === 0, 'una herramienta recién bloqueada no se ejecuta aunque siga en la conversación');
+    await runtime.handlers.agent_tools_set({ session_id: session.id, names: null });
+    assert(JSON.stringify(await enabledNames()) === JSON.stringify(['sellador_t1', 'tools_load']), 'restablecer excluye las bloqueadas');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
     await openFaux([
       fauxAssistantMessage([fauxToolCall('db_clear', { turno: 1 }, { id: 'call_0' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('primero'),

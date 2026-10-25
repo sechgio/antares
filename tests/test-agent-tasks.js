@@ -110,6 +110,18 @@ async function main() {
     const reviewTools = await runtime.handlers.agent_tools_list({ session_id: reviewChild.id });
     assert.ok(!reviewTools.tools.some((tool) => tool.name === 'canvas_list' && tool.enabled),
       'exclude_tools sustrae la herramienta del hijo');
+    const { profile: blockedProfile } = await runtime.handlers.agent_profile_save({
+      name: 'Bloqueado', instructions: 'Revisa sin Canvas', tools: null, tools_deny: ['canvas_list'],
+    });
+    await assert.rejects(
+      tasksModule.delegate(blockedProfile, { task: 'Revisa sin Canvas' }, initialSession.id,
+        { ...delegateApi, taskId: 'deny-v2' }, { abortSignal: aborted.signal }),
+      /cancelado/,
+    );
+    const blockedChild = (await runtime.handlers.agent_sessions_list()).sessions
+      .find((item) => item.delegation?.parent_session_id === initialSession.id && item.title === 'Delegación: Bloqueado');
+    assert.ok(!(await runtime.handlers.agent_tools_list({ session_id: blockedChild.id })).tools
+      .some((tool) => tool.name === 'canvas_list' && tool.enabled), 'una herramienta bloqueada en la ficha no llega al hijo');
     await assert.rejects(
       tasksModule.delegate(reviewerProfile, { task: 'Delega otra vez' }, reviewChild.id,
         { ...delegateApi, taskId: 'depth-v2' }, {}),
