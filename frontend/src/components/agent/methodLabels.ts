@@ -20,6 +20,7 @@ export const METHOD_LABELS: Record<string, string> = {
   web_forward: 'Avanzar a la página siguiente',
   web_reload: 'Recargar la página web',
   web_handover: 'Ceder el control del navegador',
+  web_tab: 'Gestionar las pestañas del navegador',
   web_text: 'Leer el texto de la página web',
   web_console: 'Leer la consola del navegador',
   web_network: 'Leer las peticiones de red de la página',

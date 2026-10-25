@@ -29,6 +29,15 @@ const TOOLS = {
   web_open: ['Abrir una página web en el navegador del agente', {
     type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s) o búsqueda' } }, required: ['url'],
   }, false],
+  web_tab: ['Gestionar las pestañas del navegador del agente', {
+    type: 'object',
+    properties: {
+      action: { type: 'string', enum: ['list', 'open', 'select', 'close'], description: 'Listar, abrir, seleccionar o cerrar una pestaña' },
+      url: { type: 'string', description: 'Dirección http(s) o búsqueda, para «open»' },
+      id: { type: 'string', description: 'Identificador de la pestaña, para «select» y «close»' },
+    },
+    required: ['action'],
+  }, false],
   web_read: ['Leer el texto y los elementos interactivos de la página actual', {
     type: 'object', properties: { offset: { type: 'integer', minimum: 0, description: 'Carácter inicial del texto' } },
   }, false],
@@ -82,15 +91,15 @@ const USER_INPUT_GRACE_MS = 5_000;
 const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
 
 let host = null;
-let view = null;
 let docked = null;
 let userControl = false;
 let lastUserInputAt = 0;
 const pendingMouseInputs = new Set();
-let consoleLog = [];
-const netLog = new Map();
 let sessionReady = false;
 let downloadSlot = null;
+const tabs = new Map();
+let activeTabId = null;
+let tabSeq = 0;
 
 function isWeb(url) {
   try {
@@ -202,8 +211,18 @@ function hostWindow(electron) {
   return host;
 }
 
+function tabState(tab) {
+  const contents = tab.view.webContents;
+  return { id: tab.id, url: contents.getURL(), title: contents.getTitle(), active: tab.id === activeTabId };
+}
+
+function tabsState() {
+  return [...tabs.values()].filter((tab) => alive(tab.view && tab.view.webContents)).map(tabState);
+}
+
 function state() {
-  const contents = alive(view && view.webContents) ? view.webContents : null;
+  const tab = activeTab();
+  const contents = tab ? tab.view.webContents : null;
   return {
     open: !!contents,
     url: contents ? contents.getURL() : '',
@@ -213,6 +232,7 @@ function state() {
     can_go_forward: contents ? contents.navigationHistory.canGoForward() : false,
     docked: !!docked,
     user_control: userControl,
+    tabs: tabsState(),
   };
 }
 
@@ -223,11 +243,20 @@ function notify(reason) {
   } catch { }
 }
 
+function activeTab() {
+  const tab = tabs.get(activeTabId);
+  return tab && alive(tab.view && tab.view.webContents) ? tab : null;
+}
+
 function browser() {
-  if (view && alive(view.webContents)) return view;
-  const electron = require('electron');
+  const existing = activeTab();
+  if (existing) return existing.view;
+  return createTab(require('electron')).view;
+}
+
+function createTab(electron) {
   const ses = prepareSession(electron);
-  view = new electron.WebContentsView({
+  const view = new electron.WebContentsView({
     webPreferences: {
       session: ses,
       sandbox: true,
@@ -238,9 +267,10 @@ function browser() {
       backgroundThrottling: false,
     },
   });
+  const tab = { id: String(tabSeq += 1), view, consoleLog: [], netLog: new Map() };
+  tabs.set(tab.id, tab);
+  activeTabId = tab.id;
   const contents = view.webContents;
-  consoleLog = [];
-  netLog.clear();
   contents.setWindowOpenHandler(({ url }) => {
     if (isWeb(url)) setImmediate(() => contents.loadURL(url).catch(() => {}));
     return { action: 'deny' };
@@ -264,44 +294,40 @@ function browser() {
   contents.on('before-mouse-event', userInput);
   contents.on('input-event', (event, input) => { if (input.type === 'mouseWheel') userInput(event, input); });
   contents.on('console-message', ({ level, message }) => {
-    consoleLog.push({ level: String(level || 'info'), text: String(message || '') });
-    if (consoleLog.length > CONSOLE_KEEP) consoleLog.shift();
+    tab.consoleLog.push({ level: String(level || 'info'), text: String(message || '') });
+    if (tab.consoleLog.length > CONSOLE_KEEP) tab.consoleLog.shift();
   });
   // El debugger se adjunta al crear la página para que Network capture las
   // peticiones desde la primera carga, no solo desde la primera interacción.
-  contents.debugger.on('message', (_event, method, params) => noteNetwork(method, params));
+  contents.debugger.on('message', (_event, method, params) => noteNetwork(tab, method, params));
   ensureDebugger(contents).catch(() => { });
-  contents.on('did-navigate', () => fitPage());
+  contents.on('did-navigate', () => fitPage(tab));
   for (const event of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) {
     contents.on(event, () => notify('page'));
   }
-  contents.once('destroyed', () => {
-    view = null;
-    docked = null;
-    notify('closed');
-  });
+  contents.once('destroyed', () => releaseTab(tab));
   mount(electron);
-  return view;
+  return tab;
 }
 
 // Sin cabeceras, cookies ni cuerpos: el registro solo describe el tráfico.
-function recordNet(id, entry) {
-  netLog.set(id, entry);
-  if (netLog.size > NET_KEEP) netLog.delete(netLog.keys().next().value);
+function recordNet(tab, id, entry) {
+  tab.netLog.set(id, entry);
+  if (tab.netLog.size > NET_KEEP) tab.netLog.delete(tab.netLog.keys().next().value);
 }
 
-function noteNetwork(method, params = {}) {
+function noteNetwork(tab, method, params = {}) {
   if (method === 'Network.requestWillBeSent') {
     const request = params.request || {};
-    recordNet(params.requestId, { method: request.method || '', url: String(request.url || ''), type: params.type || '', status: null });
+    recordNet(tab, params.requestId, { method: request.method || '', url: String(request.url || ''), type: params.type || '', status: null });
   } else if (method === 'Network.responseReceived') {
-    const existing = netLog.get(params.requestId);
+    const existing = tab.netLog.get(params.requestId);
     const response = params.response || {};
     const entry = existing || { method: '', url: String(response.url || ''), type: params.type || '', status: null };
     entry.status = response.status ?? entry.status;
-    if (!existing) recordNet(params.requestId, entry);
+    if (!existing) recordNet(tab, params.requestId, entry);
   } else if (method === 'Network.loadingFailed') {
-    const entry = netLog.get(params.requestId);
+    const entry = tab.netLog.get(params.requestId);
     if (entry) entry.error = params.errorText || 'cancelada';
   }
 }
@@ -315,39 +341,64 @@ function clampBounds(bounds, zoom, size) {
   return { x, y, width, height };
 }
 
-// Coloca la página en el panel de la ventana principal o la devuelve a la
-// ventana anfitriona; mover el view conserva la página, su historial y su sesión.
+// Coloca cada página en su sitio: la activa se monta en el panel de la ventana
+// principal cuando está acoplado y las de fondo permanecen en la ventana
+// anfitriona, donde siguen cargando fuera de pantalla; mover un view conserva
+// su página, su historial y su sesión. La activa se añade la última para que
+// quede encima.
 function mount(electron) {
-  if (!view) return;
+  const active = activeTab();
+  if (!active) return;
   const main = require('./window-manager').getMainWindow();
-  const target = docked && alive(main) ? main : hostWindow(electron);
-  const parent = target === main ? host : main;
-  if (alive(parent)) parent.contentView.removeChildView(view);
-  target.contentView.addChildView(view);
-  if (target === main) {
-    const [width, height] = main.getContentSize();
-    view.setBounds(clampBounds(docked, main.webContents.getZoomFactor(), { width, height }));
-  } else {
-    view.setBounds({ x: 0, y: 0, ...HOST_SIZE });
+  const dockedMain = !!docked && alive(main);
+  const ordered = [...tabs.values()].filter((tab) => alive(tab.view && tab.view.webContents))
+    .sort((a, b) => (a === active ? 1 : b === active ? -1 : 0));
+  for (const tab of ordered) {
+    const view = tab.view;
+    if (tab === active && dockedMain) {
+      if (alive(host)) host.contentView.removeChildView(view);
+      main.contentView.addChildView(view);
+      const [width, height] = main.getContentSize();
+      view.setBounds(clampBounds(docked, main.webContents.getZoomFactor(), { width, height }));
+    } else {
+      if (alive(main)) main.contentView.removeChildView(view);
+      hostWindow(electron).contentView.addChildView(view);
+      view.setBounds({ x: 0, y: 0, ...HOST_SIZE });
+    }
   }
   fitPage();
+}
+
+// Retira una pestaña del registro; si era la activa, activa otra; al
+// desaparecer la última el navegador queda cerrado y sin acoplar.
+function releaseTab(tab) {
+  if (!tabs.has(tab.id)) return;
+  tabs.delete(tab.id);
+  if (activeTabId === tab.id) {
+    const next = [...tabs.values()].find((candidate) => alive(candidate.view && candidate.view.webContents));
+    activeTabId = next ? next.id : null;
+    if (next) mount(require('electron'));
+  }
+  if (!tabs.size) docked = null;
+  notify(tabs.size ? 'page' : 'closed');
 }
 
 // La página siempre se maqueta con el ancho de escritorio de la ventana
 // anfitriona y en un panel más estrecho se muestra reducida: el agente ve la
 // misma página, con los mismos elementos, sea cual sea el tamaño del panel.
-function fitPage() {
-  if (!view || !alive(view.webContents)) return;
-  const { width } = view.getBounds();
+function fitPage(tab = null) {
+  const target = tab || activeTab();
+  if (!target || !alive(target.view && target.view.webContents)) return;
+  const { width } = target.view.getBounds();
   const zoom = width > 0 && width < HOST_SIZE.width ? width / HOST_SIZE.width : 1;
-  if (Math.abs(view.webContents.getZoomFactor() - zoom) > 0.001) view.webContents.setZoomFactor(zoom);
+  if (Math.abs(target.view.webContents.getZoomFactor() - zoom) > 0.001) target.view.webContents.setZoomFactor(zoom);
 }
 
 function dock(bounds) {
   const valid = bounds && ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(Number(bounds[key])))
     && Number(bounds.width) > 0 && Number(bounds.height) > 0;
   docked = valid ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null;
-  if (view) mount(require('electron'));
+  if (tabs.size) mount(require('electron'));
   return state();
 }
 
@@ -355,6 +406,43 @@ function setUserControl(value) {
   userControl = !!value;
   notify('control');
   return state();
+}
+
+async function tabAction(params) {
+  const action = String(params.action || '');
+  if (action === 'list') return fit({ tabs: tabsState(), active: activeTabId });
+  if (action === 'open') {
+    const policy = require('./agent-browser-policy');
+    const target = normalizeUrl(params.url);
+    if (policy.isBlocked(policy.hostOf(target))) {
+      throw new Error('Dominio bloqueado por la política del navegador del agente');
+    }
+    const tab = createTab(require('electron'));
+    notify('agent-open');
+    await load(tab.view.webContents, target);
+    return { ...(await snapshot(tab.view.webContents)), tab: tab.id };
+  }
+  if (action !== 'select' && action !== 'close') throw new Error(`Acción de pestaña no válida: ${action}`);
+  const id = String(params.id || '').replace(/[^0-9]/g, '');
+  const tab = tabs.get(id);
+  if (!tab || !alive(tab.view && tab.view.webContents)) throw new Error('No existe esa pestaña; usa web_tab con «list» para verlas');
+  if (action === 'select') {
+    if (id !== activeTabId) {
+      activeTabId = id;
+      mount(require('electron'));
+      notify('page');
+    }
+    return { selected: id, ...state() };
+  }
+  if (action === 'close') {
+    if (tabs.size === 1) {
+      close();
+      return { closed: id, ...state() };
+    }
+    if (alive(tab.view && tab.view.webContents)) tab.view.webContents.close();
+    releaseTab(tab);
+    return { closed: id, ...state() };
+  }
 }
 
 async function navigate(action, url) {
@@ -453,8 +541,9 @@ async function snapshot(contents, offset = 0, budget = RESULT_BUDGET) {
 }
 
 function current() {
-  if (!view || !alive(view.webContents)) throw new Error('El navegador del agente no tiene ninguna página abierta; usa web_open');
-  return view.webContents;
+  const tab = activeTab();
+  if (!tab) throw new Error('El navegador del agente no tiene ninguna página abierta; usa web_open');
+  return tab.view.webContents;
 }
 
 const PAGE_TEXT = `(() => ({
@@ -612,7 +701,9 @@ async function run(name, params = {}, { dir, drafts, approvedContext } = {}) {
     return { handed_over: true, ...state() };
   }
   if (name === 'web_download') return startDownload(String(params.url || '').trim(), drafts);
+  if (name === 'web_tab') return tabAction(params);
   const contents = current();
+  const tab = activeTab();
   if (name === 'web_read') return snapshot(contents, params.offset);
   if (name === 'web_screenshot') return screenshot(contents, dir, params.full_page === true);
   if (name === 'web_back') {
@@ -631,13 +722,13 @@ async function run(name, params = {}, { dir, drafts, approvedContext } = {}) {
   }
   if (name === 'web_text') return pageText(contents, params.offset);
   if (name === 'web_console') {
-    return fit({ url: contents.getURL(), messages: consoleLog.map((item) => `[${item.level}] ${item.text}`) });
+    return fit({ url: contents.getURL(), messages: tab.consoleLog.map((item) => `[${item.level}] ${item.text}`) });
   }
   if (name === 'web_network') {
     await ensureDebugger(contents);
     return fit({
       url: contents.getURL(),
-      requests: [...netLog.values()].map((item) => `${item.status ?? '·'} ${item.method || '·'}${item.type ? ` ${item.type}` : ''} ${item.url}${item.error ? ` (falló: ${item.error})` : ''}`),
+      requests: [...tab.netLog.values()].map((item) => `${item.status ?? '·'} ${item.method || '·'}${item.type ? ` ${item.type}` : ''} ${item.url}${item.error ? ` (falló: ${item.error})` : ''}`),
     });
   }
   const input = { contents, expected: approvedContext || await approvalContext(contents), sent: false };
@@ -700,11 +791,14 @@ async function uploadFile(input, ref, filePath) {
 }
 
 function close() {
-  if (view && alive(view.webContents)) view.webContents.close();
+  for (const tab of [...tabs.values()]) {
+    if (alive(tab.view && tab.view.webContents)) tab.view.webContents.close();
+  }
   if (alive(host)) host.destroy();
-  view = null;
   host = null;
   docked = null;
+  tabs.clear();
+  activeTabId = null;
 }
 
 module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, run, close, normalizeUrl, isWeb, state, dock, navigate, setUserControl, clampBounds, siteUserAgent, approvalContext };

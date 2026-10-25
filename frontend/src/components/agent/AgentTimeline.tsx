@@ -61,6 +61,7 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   web_forward: ArrowRight,
   web_reload: RotateCw,
   web_handover: Hand,
+  web_tab: AppWindow,
   web_text: FileText,
   web_console: Terminal,
   web_network: Network,
