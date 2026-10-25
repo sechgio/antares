@@ -756,6 +756,15 @@ async function approve(params, approved) {
   const approvalId = String(params && params.approval_id || '');
   const { approval } = await bridge('agent_internal_approval_decide', { approval_id: approvalId, approve: !!approved });
   execution.notifyDecision(approvalId);
+  if (approved && params && params.remember === true && approval
+    && String(approval.method || '').startsWith('web_')) {
+    // La acción ya quedó aprobada; persistir el dominio es un favor añadido que no debe romperla.
+    try {
+      const policy = require('./agent-browser-policy');
+      const domain = policy.hostOf(approval.context && approval.context.page_url);
+      if (domain && !policy.isBlocked(domain)) policy.addAlwaysAllowed(domain);
+    } catch { }
+  }
   const approvalCall = approval && execution.callKey(String(approval.session_id), String(approval.call_id));
   const approvalSession = approval && (await sessions())[String(approval.session_id)];
   const approvalLive = approvalSession && shared.live.get(approvalSession.conversationId);
