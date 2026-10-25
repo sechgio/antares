@@ -134,6 +134,16 @@ export interface AgentGrant {
 }
 
 export type AgentTaskStatus = 'pending' | 'delivering' | 'delivered' | 'cancelled' | 'uncertain';
+export type AgentTaskKind = 'schedule' | 'queue';
+export type AgentQueuePauseReason = 'manual' | 'continuation' | 'failed' | 'cancelled';
+
+export interface AgentQueueState {
+  session_id: string;
+  paused: boolean;
+  paused_reason?: AgentQueuePauseReason;
+  pending: number;
+  running: number;
+}
 
 export interface AgentTaskRun {
   at: number;
@@ -146,6 +156,8 @@ export interface AgentTaskRun {
 export interface AgentTask {
   id: string;
   session_id: string;
+  kind?: AgentTaskKind;
+  seq?: number;
   content: string;
   due_at: number;
   interval_ms: number;
@@ -154,6 +166,7 @@ export interface AgentTask {
   updated_at?: number;
   timezone?: string;
   silent?: boolean;
+  origin_task_id?: string;
   runs?: AgentTaskRun[];
   last_run_at?: number;
   last_status?: AgentTaskRun['status'];
@@ -304,10 +317,10 @@ export const agentApi = {
     _invoke<{ revoked: number }>('agent_grants_revoke', { session_id, ...(path ? { path } : {}) }),
 
   agentTasksList: (session_id?: string) =>
-    _invoke<{ tasks: AgentTask[] }>('agent_tasks_list', session_id ? { session_id } : {}),
+    _invoke<{ tasks: AgentTask[]; queues: AgentQueueState[] }>('agent_tasks_list', session_id ? { session_id } : {}),
 
   agentTasksSave: (p: {
-    session_id: string; id?: string; content: string; due_at: string;
+    session_id: string; id?: string; kind?: AgentTaskKind; content: string; due_at?: string;
     every_minutes?: number | null; silent?: boolean; timezone?: string;
   }) => _invoke<{ scheduled: AgentTask }>('agent_tasks_save', p),
 
@@ -316,6 +329,9 @@ export const agentApi = {
 
   agentTasksRun: (id: string) =>
     _invoke<{ scheduled: AgentTask }>('agent_tasks_run', { id }),
+
+  agentTasksQueue: (session_id: string, action: 'pause' | 'resume') =>
+    _invoke<{ queue: AgentQueueState }>('agent_tasks_queue', { session_id, action }),
 
   agentRendererResult: (id: string, result?: unknown, error?: string, uncertain = false) =>
     _invoke<{ accepted: boolean }>('agent_renderer_result', { id, result, error, ...(uncertain ? { uncertain: true } : {}) }),
