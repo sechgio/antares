@@ -100,7 +100,7 @@ export default function PermissionPicker({ value, onChange, disabled, pending, r
       }}
     >
       <Icon size={12} className="shrink-0" aria-hidden="true" />
-      <span className="truncate">{selected.label}</span>
+      <span className="agent-permission-label truncate">{selected.label}</span>
       {pending > 0 && <span className="shrink-0 text-[var(--accent-yellow)]" aria-label={`${pending} por aprobar`}>· {pending}</span>}
     </Button>
     {isOpen && createPortal(

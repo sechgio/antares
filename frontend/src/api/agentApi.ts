@@ -28,6 +28,8 @@ export interface AgentRuleAudit {
   to: AgentChannelRule | null;
 }
 
+export type AgentReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+
 export interface AgentSession {
   id: string;
   title: string;
@@ -38,6 +40,9 @@ export interface AgentSession {
   last_error: string | null;
   permission_mode?: AgentPermissionMode;
   approval_rules?: AgentApprovalRules;
+  reasoning_effort?: AgentReasoningEffort;
+  /** Niveles de razonamiento que admite el modelo actual; vacío si no razona. */
+  reasoning_levels?: AgentReasoningEffort[];
   profile?: { id: string; name: string };
 }
 
@@ -151,7 +156,7 @@ export interface AgentApproval {
   consumed_by?: string;
   context?: { account?: string; sheet_id?: string; scopes?: string[]; filename?: string;
     page_url?: string; page_time_origin?: number; domain?: string; policy_blocked?: boolean;
-    subagent?: string; subagent_role?: AgentRole };
+    computer?: { app?: string; window?: string; element?: string }; subagent?: string; subagent_role?: AgentRole };
   resources?: { path: string; sha256?: string }[];
   dispatch?: { status: string; finished_at?: number };
 }
@@ -302,6 +307,9 @@ export const agentApi = {
   agentPolicyRulesSet: (rules: AgentApprovalRules) =>
     _invoke<{ rules: AgentApprovalRules; audit: AgentRuleAudit[] }>('agent_policy_rules_set', { rules }),
 
+  agentSessionReasoningSet: (id: string, reasoning_effort: AgentReasoningEffort) =>
+    _invoke<{ session: AgentSession }>('agent_session_reasoning_set', { id, reasoning_effort }),
+
   agentSessionDelete: (id: string) =>
     _invoke<{ deleted: boolean; id: string }>('agent_session_delete', { id }),
 
@@ -349,12 +357,16 @@ export const agentApi = {
   agentTurnCancel: (session_id: string) =>
     _invoke<{ cancelled: boolean }>('agent_turn_cancel', { session_id }),
 
-  agentApprove: (approval_id: string, options?: boolean | { channel: AgentChannel; rule: 'allow' | 'deny' }) =>
+  agentApprove: (approval_id: string, options?: boolean | { remember?: boolean; grantApp?: boolean; channel?: AgentChannel; rule?: 'allow' | 'deny' }) =>
     _invoke<{ approval: AgentApproval }>('agent_approve', {
       approval_id,
-      ...(typeof options === 'boolean'
-        ? (options ? { remember: true } : {})
-        : (options ? { channel: options.channel, rule: options.rule } : {})),
+      ...(typeof options === 'object' && options
+        ? {
+          ...(options.remember ? { remember: true } : {}),
+          ...(options.grantApp ? { grant_app: true } : {}),
+          ...(options.channel && options.rule ? { channel: options.channel, rule: options.rule } : {}),
+        }
+        : (options ? { remember: true } : {})),
     }),
 
   agentDeny: (approval_id: string, rule?: { channel: AgentChannel; rule: 'allow' | 'deny' }) =>

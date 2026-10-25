@@ -81,7 +81,7 @@ def _custom_spec(payload: JsonObject) -> JsonObject | None:
         "chat": {**preset["chat"], "default_model": model},
         "custom": True,
         "api": api,
-        "capabilities": {key: payload[key] for key in ("vision", "context_window") if payload.get(key) is not None},
+        "capabilities": {key: payload[key] for key in ("vision", "reasoning", "context_window") if payload.get(key) is not None},
     }
 
 
@@ -279,6 +279,11 @@ def upsert_custom(config: JsonObject) -> JsonObject:
         if vision is not None and not isinstance(vision, bool):
             raise ValueError("vision debe ser verdadero, falso o vacío")
         _set_or_drop(saved, "vision", vision)
+    if "reasoning" in config:
+        reasoning = config["reasoning"]
+        if reasoning is not None and not isinstance(reasoning, bool):
+            raise ValueError("reasoning debe ser verdadero, falso o vacío")
+        _set_or_drop(saved, "reasoning", reasoning)
     if "context_window" in config:
         window = config["context_window"]
         valid = isinstance(window, int) and not isinstance(window, bool) and _MIN_CONTEXT <= window <= _MAX_CONTEXT

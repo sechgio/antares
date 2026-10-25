@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownRight, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
-import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentRuleAudit, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
+import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentRuleAudit, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
@@ -15,6 +15,7 @@ import { SegmentedControl } from '../ui/SegmentedControl';
 import AgentAvatar from './AgentAvatar';
 import ModelPicker from './ModelPicker';
 import PermissionPicker from './PermissionPicker';
+import ReasoningPicker from './ReasoningPicker';
 import ContextUsage from './ContextUsage';
 import ArtifactCard from './ArtifactCard';
 import QuestionCard from './QuestionCard';
@@ -163,6 +164,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [rulesScope, setRulesScope] = useState<'session' | 'global'>('session');
   const [globalRules, setGlobalRules] = useState<AgentApprovalRules>({});
   const [audit, setAudit] = useState<AgentRuleAudit[]>([]);
+  const [reasoningBusy, setReasoningBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const sendInFlightRef = useRef(false);
   const [messagesStale, setMessagesStale] = useState(false);
@@ -518,10 +520,24 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       addToast({ message: errorMessage(err, 'No se pudo deshacer la acción'), type: 'error' });
     }
   };
+  const changeReasoning = async (effort: AgentReasoningEffort) => {
+    if (!sessionId || reasoningBusy) return;
+    setReasoningBusy(true);
+    try {
+      const { session: updated } = await agentApi.agentSessionReasoningSet(sessionId, effort);
+      setSessions((list) => list.map((item) => item.id === updated.id ? updated : item));
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo cambiar el razonamiento'), type: 'error' });
+    } finally {
+      setReasoningBusy(false);
+    }
+  };
   const queuedForSession = queued.filter((i) => i.session === sessionId);
   const receiptsForSession = sendReceipts.filter((receipt) => receipt.intent.session === sessionId);
   const latestReceipt = receiptsForSession[receiptsForSession.length - 1];
   const visibleReceipts = receiptsForSession.filter((receipt) => receipt.phase !== 'received' || receipt === latestReceipt);
+  // Un recibo confirmado solo se anuncia: el mensaje ya aparece en la conversación.
+  const receiptsQuiet = visibleReceipts.every((receipt) => receipt.phase === 'received');
   const readyProviders = providers.filter((p) => p.configured && (!p.needs_key || p.has_key));
   const providerLabel = providers.find((p) => p.id === provider)?.label ?? provider;
   const filteredTools = useMemo(() => {
@@ -826,12 +842,12 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
 
-  const decide = async (id: string, ok: boolean, remember = false) => {
+  const decide = async (id: string, ok: boolean, opts?: Parameters<typeof agentApi.agentApprove>[1]) => {
     if (decisionRef.current) return;
     decisionRef.current = id;
     setDeciding({ id, approved: ok });
     try {
-      if (ok) await agentApi.agentApprove(id, remember);
+      if (ok) await agentApi.agentApprove(id, opts);
       else await agentApi.agentDeny(id);
       await loadMessages(sessionId);
     } catch (err) {
@@ -1223,7 +1239,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             <div key={a.id} id={`agent-approval-${a.id}`}>
               <ApprovalCard approval={a} busy={!!deciding}
                 decision={deciding?.id === a.id ? deciding.approved ? 'approve' : 'deny' : undefined}
-                onDecide={(id, ok, remember) => void decide(id, ok, remember)}
+                onDecide={(id, ok, opts) => void decide(id, ok, opts)}
                 onRule={(channel, rule) => void decideWithRule(a, channel, rule)} />
             </div>
           ))}
@@ -1464,6 +1480,23 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               >
                 <FolderOpen size={14} />
               </button>
+              {session && (
+                <PermissionPicker
+                  key={session.id}
+                  value={session.permission_mode ?? 'auto'}
+                  onChange={(mode) => void changePermissions(mode)}
+                  disabled={permissionsBusy || rulesBusy || modelBusy || running || stopping || pending.length > 0}
+                  pending={pending.length}
+                  rules={session.approval_rules ?? {}}
+                  onRulesChange={(rules) => void changeRules(rules)}
+                  rulesBusy={rulesBusy}
+                  globalRules={globalRules}
+                  onGlobalRulesChange={(rules) => void changeGlobalRules(rules)}
+                  audit={audit}
+                  scope={rulesScope}
+                  onScopeChange={setRulesScope}
+                />
+              )}
               <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1">
                 {readyProviders.length > 0 ? (
                   <ModelPicker
@@ -1478,6 +1511,15 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                     <Sparkles size={11} className="shrink-0 text-[var(--accent-primary-hover)]" />
                     {session?.model || model || providerLabel || 'Proveedor IA'}
                   </span>
+                )}
+                {!!session?.reasoning_levels?.length && (
+                  <ReasoningPicker
+                    key={session.id}
+                    levels={session.reasoning_levels}
+                    value={session.reasoning_effort ?? 'low'}
+                    onChange={(effort) => void changeReasoning(effort)}
+                    disabled={reasoningBusy || modelBusy || running || stopping || pending.length > 0}
+                  />
                 )}
                 <ContextUsage usage={usage} model={session?.model ?? model} />
               </div>
@@ -1518,7 +1560,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             </div>
           </div>
           {visibleReceipts.length > 0 && (
-            <div role="region" aria-label="Estado de los envíos" tabIndex={0} className="custom-scrollbar max-h-36 space-y-2 overflow-y-auto px-3 pt-2">
+            <div role="region" aria-label="Estado de los envíos" tabIndex={receiptsQuiet ? undefined : 0} className={`${receiptsQuiet ? 'sr-only ' : ''}custom-scrollbar max-h-36 space-y-2 overflow-y-auto px-3 pt-2`}>
               {visibleReceipts.map((receipt) => (
                 <div key={receipt.intent.requestId} className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[12px] leading-5 text-[var(--text-secondary)]">
                   <p role="status" aria-live="polite" aria-atomic="true" className="min-w-0 flex-1">
@@ -1538,26 +1580,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               ))}
             </div>
           )}
-          <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 text-[12px] text-[var(--text-muted)]">
-            {session ? (
-              <PermissionPicker
-                key={session.id}
-                value={session.permission_mode ?? 'auto'}
-                onChange={(mode) => void changePermissions(mode)}
-                disabled={permissionsBusy || rulesBusy || modelBusy || running || stopping || pending.length > 0}
-                pending={pending.length}
-                rules={session.approval_rules ?? {}}
-                onRulesChange={(rules) => void changeRules(rules)}
-                rulesBusy={rulesBusy}
-                globalRules={globalRules}
-                onGlobalRulesChange={(rules) => void changeGlobalRules(rules)}
-                audit={audit}
-                scope={rulesScope}
-                onScopeChange={setRulesScope}
-              />
-            ) : <span />}
-            <div className="flex min-w-0 items-center gap-1">
-              {resumable && !running && pending.length === 0 && (
+          {resumable && !running && pending.length === 0 && (
+            <div className="mt-1.5 flex min-w-0 items-center justify-end gap-2 text-[12px] text-[var(--text-muted)]">
                 <button
                   type="button"
                   className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
@@ -1568,10 +1592,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   <Play size={11} aria-hidden="true" />
                   Reanudar
                 </button>
-              )}
-              <span className="hidden text-[11px] sm:inline">Mayús + Intro para una nueva línea</span>
             </div>
-          </div>
+          )}
         </div>
       </main>
 

@@ -20,6 +20,8 @@ const shared = {
   decisionWaiters: new Map(),
   rounds: new Map(),
   turns: new Map(),
+  turnRuns: new Map(),
+  unattendedApps: new Map(),
   waitingInput: new Set(),
   wakers: new Set(),
   providers: new Map(),

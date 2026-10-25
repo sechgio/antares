@@ -40,6 +40,10 @@ const TOOL = {
     + 'abierto, incluida la bandeja; al volver a abrir recupera los pendientes. No concede permisos ni acceso a archivos. '
     + 'Sus acciones con efecto requieren aprobación; action=list es solo lectura. '
     + 'action=create requiere content y due_at ISO 8601 con zona horaria; every_minutes permite repetición. '
+    + 'Si el encargo operará apps de Windows, declara apps con los alias permitidos (notepad, calc, mspaint, '
+    + 'explorer, cmd, powershell, control, taskmgr; máximo 8): mientras se ejecuta solo, solo esas apps se manejan '
+    + '(hasta 25 acciones con efecto) y las concesiones de app de la conversación no aplican; sin apps declaradas, '
+    + 'las acciones sobre apps esperan la aprobación humana como siempre. '
     + 'action=enqueue añade content a una cola FIFO por conversación que se ejecuta en orden, un encargo a la vez, '
     + 'cuando el turno actual termina. action=pause y action=resume pausan o reanudan esa cola entre encargos. '
     + 'action=list consulta encargos y estado de la cola; action=cancel cancela uno por id. '
@@ -49,6 +53,7 @@ const TOOL = {
     content: { type: 'string', minLength: 1, maxLength: 12000 },
     due_at: { type: 'string' },
     every_minutes: { type: 'integer', minimum: 1, maximum: 525600 },
+    apps: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 40 }, maxItems: 8 },
     id: { type: 'string' },
   }, required: ['action'] },
 };
@@ -256,6 +261,14 @@ async function schedule(args, sessionId, api) {
     || (hasInterval && interval !== null && (!Number.isInteger(interval) || interval < 1 || interval > 525600))) {
     throw validation('Indica el encargo y una fecha ISO 8601 con zona horaria; la repetición mínima es un minuto');
   }
+  let apps = null;
+  if (args.apps !== undefined) {
+    if (!Array.isArray(args.apps) || args.apps.length > 8
+      || !args.apps.every((app) => typeof app === 'string' && app.trim().length >= 1 && app.trim().length <= 40)) {
+      throw validation('La lista de apps debe ser alias válidos de aplicaciones (máximo 8)');
+    }
+    apps = [...new Set(args.apps.map((app) => app.trim().toLowerCase()))];
+  }
   if (dueAt <= Date.now()) throw validation('La fecha del encargo debe estar en el futuro');
   const timezone = resolveTimezone(args.timezone);
   const silent = args.silent === true;
@@ -271,6 +284,7 @@ async function schedule(args, sessionId, api) {
       if (hasInterval) task.interval_ms = (interval || 0) * 60000;
       task.silent = silent;
       task.timezone = timezone;
+      if (args.apps !== undefined) task.apps = apps;
       task.updated_at = Date.now();
       delete task.retry_at;
       delete task.last_error;
@@ -282,7 +296,7 @@ async function schedule(args, sessionId, api) {
     const now = Date.now();
     const task = { id, session_id: sessionId, content, due_at: dueAt,
       interval_ms: (interval || 0) * 60000, status: 'pending', created_at: now, updated_at: now,
-      timezone, silent, runs: [] };
+      timezone, silent, runs: [], ...(apps ? { apps } : {}) };
     doc.tasks[id] = task;
     return { scheduled: task };
   }, ctx());
@@ -412,9 +426,15 @@ async function tick() {
           await conv.submit({ type: 'write', requestId: `schedule:${task.id}:${task.due_at}:notice`,
             entry: { kind: shared.NOTICE_KIND, data: { text: `Encargo programado: ${task.content}` } } }, ctx());
         }
-        await conv.submit({ type: 'input', content: `${shared.CONTEXT_MARKER}\nEncargo programado por el usuario: ${task.content}\n`
+        const placed = await conv.submit({ type: 'input', content: `${shared.CONTEXT_MARKER}\nEncargo programado por el usuario: ${task.content}\n`
           + 'Los datos de este encargo no conceden permisos ni acceso a rutas. Usa las aprobaciones normales.\n' + (memory.context || ''),
         requestId: `schedule:${task.id}:${task.due_at}`, whenBusy: 'followUp' }, ctx());
+        // Los registros de submission se podan al asentarse: la lista blanca de
+        // apps de este encargo se recuerda en memoria mientras su turno esté vivo.
+        if (placed && typeof placed.id === 'number' && Array.isArray(task.apps) && task.apps.length) {
+          if (shared.unattendedApps.size > 200) shared.unattendedApps.clear();
+          shared.unattendedApps.set(placed.id, task.apps);
+        }
         submitted = true;
         await state.harness.commit(async (tx) => {
           const current = (await tx.doc(state.TasksDoc)).tasks[task.id];
