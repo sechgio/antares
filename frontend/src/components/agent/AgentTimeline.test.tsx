@@ -105,7 +105,7 @@ it('muestra cuenta y recursos revisados antes de una decisión explícita', () =
   expect(screen.getByText('Archivo: C:\\trabajos\\informe.pdf')).toBeInTheDocument();
   expect(decide).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Permitir esta acción' }));
-  expect(decide).toHaveBeenCalledWith('approval', true);
+  expect(decide).toHaveBeenCalledWith('approval', true, false);
 });
 
 it('ofrece reglas rápidas del canal desde la aprobación', () => {
@@ -392,6 +392,48 @@ it('explica el archivo, destino y alcance de permitir o rechazar una acción', (
   expect(screen.getByText(/Rechazar la omite e informa al agente/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Rechazar esta acción' }));
   expect(decide).toHaveBeenCalledExactlyOnceWith('a1', false);
+});
+
+it('ofrece permitir siempre en el dominio de una acción web y manda la elección', () => {
+  const decide = vi.fn();
+  render(<ApprovalCard busy={false} onDecide={decide} approval={{
+    id: 'a2', session_id: 's', call_id: 'c', method: 'web_click',
+    params: { ref: '1' }, status: 'pending', created_at: 1, decided_at: null,
+    context: { page_url: 'https://tienda.miejemplo.pe/checkout', domain: 'tienda.miejemplo.pe', policy_blocked: false },
+  }} />);
+  expect(screen.getByText('Página actual: https://tienda.miejemplo.pe/checkout')).toBeInTheDocument();
+  expect(screen.queryByText('Solo esta acción')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Permitir esta acción' }));
+  expect(decide).toHaveBeenCalledWith('a2', true, false);
+});
+
+it('manda recordar cuando el usuario activa permitir siempre', () => {
+  const decide = vi.fn();
+  render(<ApprovalCard busy={false} onDecide={decide} approval={{
+    id: 'a5', session_id: 's', call_id: 'c', method: 'web_type',
+    params: { ref: '1', text: 'dato' }, status: 'pending', created_at: 1, decided_at: null,
+    context: { page_url: 'https://tienda.miejemplo.pe/checkout', domain: 'tienda.miejemplo.pe', policy_blocked: false },
+  }} />);
+  fireEvent.click(screen.getByRole('switch', { name: 'Permitir siempre en tienda.miejemplo.pe' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Permitir esta acción' }));
+  expect(decide).toHaveBeenCalledWith('a5', true, true);
+});
+
+it('no ofrece permitir siempre en un dominio bloqueado ni fuera del navegador', () => {
+  const decide = vi.fn();
+  const { rerender } = render(<ApprovalCard busy={false} onDecide={decide} approval={{
+    id: 'a3', session_id: 's', call_id: 'c', method: 'web_click',
+    params: { ref: '1' }, status: 'pending', created_at: 1, decided_at: null,
+    context: { page_url: 'https://www.bcp.pe/login', domain: 'www.bcp.pe', policy_blocked: true },
+  }} />);
+  expect(screen.getByText('Solo esta acción')).toBeInTheDocument();
+  rerender(<ApprovalCard busy={false} onDecide={decide} approval={{
+    id: 'a4', session_id: 's', call_id: 'c', method: 'shell_run',
+    params: { command: 'dir' }, status: 'pending', created_at: 1, decided_at: null,
+    context: { domain: 'miejemplo.pe', policy_blocked: false },
+  }} />);
+  expect(screen.getByText('Solo esta acción')).toBeInTheDocument();
+  expect(decide).not.toHaveBeenCalled();
 });
 
 it.each(['metodo_desconocido', 'constructor'])('no inventa un efecto para %s ni decide al mostrarlo', (method) => {

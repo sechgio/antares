@@ -632,6 +632,14 @@ function planCheck(answer, api) {
   return { continue: `${shared.CHECK_MARKER} ${PLAN_CHECK_TEXT.replace('{steps}', steps)}` };
 }
 
+// El backend exige una aprobación aprobada para despachar gated: "permitir
+// siempre" se resuelve aprobándola sola, como el modo completo.
+function webAlwaysAllowed(name, context) {
+  if (!String(name || '').startsWith('web_') || !context || context.policy_blocked) return false;
+  const domain = String(context.domain || '');
+  return !!domain && require('./agent-browser-policy').isAlwaysAllowed(domain);
+}
+
 async function beforeTool(call, api, context) {
   const spec = shared.toolSpecs.get(call.name);
   const rounds = await toolBudget(api, context);
@@ -677,7 +685,8 @@ async function beforeTool(call, api, context) {
       ...(approvedContext ? { context: approvedContext } : {}),
     }));
     const autoSource = rule === 'allow' && call.name !== 'shell_run' ? 'rule'
-      : mode === 'full' && call.name !== 'shell_run' && rule !== 'ask' ? 'full' : null;
+      : mode === 'full' && call.name !== 'shell_run' && rule !== 'ask' ? 'full'
+        : rule !== 'ask' && webAlwaysAllowed(call.name, approvedContext) ? 'web' : null;
     if (autoSource && approval.status === 'pending') {
       ({ approval } = await bridge('agent_internal_approval_decide', {
         approval_id: approval.id, approve: true, source: autoSource,
@@ -835,6 +844,9 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     channel: spec.channel || channelFor(spec.name, spec.module),
     ...(spec.kind === 'native' ? { context: await nativeTools().nativeToolContext(spec.name) } : {}),
   };
+  if (spec.name === 'skills_list' || spec.name === 'skills_read') {
+    request.context = { profile_id: (await requireSession(sessionId)).profile?.id || null };
+  }
   if (spec.kind === 'subagent') {
     const profile = await resolveProfile(args && args.agent);
     if (!profile) return { text: JSON.stringify({ error: 'No se encontró un agente único con esa referencia; usa el identificador de un bot disponible' }) };

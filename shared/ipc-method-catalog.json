@@ -33,7 +33,7 @@
     "agent_tools_set": { "handler": "native:agent", "timeout": "long", "inputSchema": {"type":"object","properties":{"session_id":{"type":"string"},"names":{"type":["array","null"],"items":{"type":"string"}}},"required":["session_id","names"]} },
     "agent_turn_status": { "handler": "native:agent", "idempotent": true },
     "agent_turn_cancel": { "handler": "native:agent" },
-    "agent_approve": { "handler": "native:agent", "timeout": "long", "inputSchema": {"type":"object","properties":{"approval_id":{"type":"string"},"channel":{"type":"string"},"rule":{"type":"string","enum":["allow","deny"]}},"required":["approval_id"]} },
+    "agent_approve": { "handler": "native:agent", "timeout": "long", "inputSchema": {"type":"object","properties":{"approval_id":{"type":"string"},"remember":{"type":"boolean"},"channel":{"type":"string"},"rule":{"type":"string","enum":["allow","deny"]}},"required":["approval_id"]} },
     "agent_deny": { "handler": "native:agent", "inputSchema": {"type":"object","properties":{"approval_id":{"type":"string"},"channel":{"type":"string"},"rule":{"type":"string","enum":["allow","deny"]}},"required":["approval_id"]} },
     "agent_effect_undo": { "handler": "native:agent", "timeout": "long", "inputSchema": {"type":"object","properties":{"session_id":{"type":"string"},"call_id":{"type":"string"}},"required":["session_id","call_id"]} },
     "agent_attach": { "handler": "native:agent", "timeout": "long" },

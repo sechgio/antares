@@ -322,6 +322,7 @@ async function main() {
   for (const legacy of [false, true]) {
     const { bridge } = makeBridge();
     const calls = [];
+    const scopes = [];
     const skillId = 'abcdef0123456789abcdef01';
     const skillsBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
@@ -334,6 +335,7 @@ async function main() {
       }
       if (method === 'agent_internal_dispatch' && params.name.startsWith('skills_')) {
         calls.push(params.name);
+        scopes.push(params.context?.profile_id);
         return { result: JSON.stringify(params.name === 'skills_list'
           ? { skills: [{ id: skillId, name: 'pdf-review', description: 'Revisa firmas' }] }
           : { name: 'pdf-review', content: 'Revisa cada firma', next_offset: null }) };
@@ -345,7 +347,12 @@ async function main() {
       fauxAssistantMessage([fauxToolCall('skills_read', { skill_id: skillId })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('Leí las instrucciones de revisión de firmas'),
     ], skillsBridge);
-    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const profile = legacy ? (await runtime.handlers.agent_profile_save({
+      name: 'Revisor de skills', instructions: 'Revisa firmas', tools: ['skills_list', 'skills_read'],
+    })).profile : null;
+    const { session } = await runtime.handlers.agent_session_create({
+      provider: 'faux', model: 'faux-1', ...(profile ? { profile_id: profile.id } : {}),
+    });
     const context = runtime._internal.shared.deps.chord.BACKGROUND_CONTEXT;
     const state = runtime._internal.state();
     const map = await state.harness.snapshot(state.SessionsDoc, context);
@@ -357,6 +364,8 @@ async function main() {
     const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(calls.join() === 'skills_list,skills_read' && listed.messages.some((message) => message.content.includes('Leí las instrucciones')),
       'la skill se carga bajo demanda sin pedir aprobación para leer');
+    assert(scopes.length === 2 && scopes.every((id) => id === (profile?.id || null)),
+      'el runtime identifica las skills por perfil guardado y usa compartidas sin perfil');
     if (legacy) {
       const entries = await conv.entries({}, 500, undefined, context);
       assert(entries.items.some((entry) => entry.kind === 'pi.user' && JSON.stringify(entry.model).includes('skills_list')),
@@ -576,6 +585,74 @@ async function main() {
     assert(executed === 0 && JSON.parse(state.dispatches[0].result).error.includes('deshabilitada'), 'se registra el bloqueo sin ejecutar el efecto reservado');
     runtime._internal.shared.nativeTools = null;
     await runtime.shutdown();
+  }
+
+  {
+    const policyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-agent-policy-'));
+    fs.mkdirSync(path.join(policyRoot, 'Antares', 'ai-agent'), { recursive: true });
+    const policyFile = path.join(policyRoot, 'Antares', 'ai-agent', 'browser-policy.json');
+    fs.writeFileSync(policyFile, JSON.stringify({ always_allowed: ['www.bcp.pe'] }));
+    const realLocalAppData = process.env.LOCALAPPDATA;
+    process.env.LOCALAPPDATA = policyRoot;
+    try {
+      const { bridge, state } = makeBridge();
+      let executed = 0;
+      runtime._internal.shared.nativeTools = {
+        nativeToolContext: async () => ({ tool_version: 'fake-v1', page_url: 'https://www.bcp.pe/panel', domain: 'www.bcp.pe', policy_blocked: false }),
+        nativeToolSpecs: () => [{ name: 'web_click', description: 'Clic web', gated: true, kind: 'native', inputSchema: { type: 'object', properties: {} } }],
+        runNativeTool: async () => { executed += 1; return { ok: true }; },
+      };
+      await openFaux([
+        fauxAssistantMessage([fauxToolCall('web_click', {})], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('hecho'),
+      ], bridge);
+      const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'haz clic' });
+      assert(await waitIdle(session.id), 'el turno termina cuando el dominio está permitido siempre');
+      assert(executed === 1, 'la acción web sobre un dominio permitido siempre se ejecuta sin preguntar');
+      const decided = [...state.approvals.values()];
+      assert(decided.length === 1 && decided[0].status === 'approved', 'la aprobación del dominio autorizado se resuelve sola');
+      runtime._internal.shared.nativeTools = null;
+      await runtime.shutdown();
+
+      const ajeno = makeBridge();
+      let rechazado = 0;
+      runtime._internal.shared.nativeTools = {
+        nativeToolContext: async () => ({ tool_version: 'fake-v1', page_url: 'https://panel.banco-ajeno.pe/f', domain: 'panel.banco-ajeno.pe', policy_blocked: false }),
+        nativeToolSpecs: () => [{ name: 'web_click', description: 'Clic web', gated: true, kind: 'native', inputSchema: { type: 'object', properties: {} } }],
+        runNativeTool: async () => { rechazado += 1; return { ok: true }; },
+      };
+      await openFaux([
+        fauxAssistantMessage([fauxToolCall('web_click', {})], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('bloqueada'),
+      ], ajeno.bridge);
+      const sesionAjena = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+      await runtime.handlers.agent_message_send({ session_id: sesionAjena.session.id, content: 'haz clic' });
+      assert(await waitFor(() => ajeno.state.approvals.size > 0), 'un dominio sin permiso sigue pidiendo aprobación');
+      const pending = [...ajeno.state.approvals.values()].find((a) => a.status === 'pending');
+      await runtime.handlers.agent_deny({ approval_id: pending.id });
+      assert(await waitIdle(sesionAjena.session.id), 'el turno continúa tras rechazar la acción web');
+      assert(rechazado === 0, 'la acción web rechazada no se ejecuta');
+      runtime._internal.shared.nativeTools = null;
+      await runtime.shutdown();
+
+      const recordar = makeBridge();
+      await openFaux([], recordar.bridge);
+      recordar.state.approvals.set('ap-rec', { id: 'ap-rec', session_id: 'ses-recordar', call_id: 'call-rec', method: 'web_type', status: 'pending',
+        context: { page_url: 'https://forms.miejemplo.pe/paso-2' } });
+      recordar.state.approvals.set('ap-bloq', { id: 'ap-bloq', session_id: 'ses-recordar', call_id: 'call-bloq', method: 'web_click', status: 'pending',
+        context: { page_url: 'https://operaciones.sunat.gob.pe/ruc' } });
+      await runtime.handlers.agent_approve({ approval_id: 'ap-rec', remember: true });
+      await runtime.handlers.agent_approve({ approval_id: 'ap-bloq', remember: true });
+      const written = JSON.parse(fs.readFileSync(policyFile, 'utf8'));
+      assert(written.always_allowed.includes('forms.miejemplo.pe'), 'Permitir siempre persiste el dominio de la página aprobada');
+      assert(!written.always_allowed.includes('operaciones.sunat.gob.pe'), 'un dominio bloqueado nunca entra en Permitir siempre');
+      await runtime.shutdown();
+    } finally {
+      process.env.LOCALAPPDATA = realLocalAppData;
+      delete require.cache[require.resolve('../electron/agent-browser-policy')];
+      fs.rmSync(policyRoot, { recursive: true, force: true });
+    }
   }
 
   for (const name of PUBLIC_METHODS) {

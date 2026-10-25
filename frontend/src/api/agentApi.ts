@@ -9,7 +9,7 @@ export type AgentPermissionMode = 'ask' | 'auto' | 'full';
 export type AgentChannel = 'terminal' | 'files' | 'desktop' | 'cloud' | 'mcp' | 'documents' | 'memory' | 'agenda' | 'other';
 export type AgentChannelRule = 'ask' | 'allow' | 'deny';
 export type AgentApprovalRules = Partial<Record<AgentChannel, AgentChannelRule>>;
-export type AgentApprovalSource = 'manual' | 'rule' | 'full' | 'cancel';
+export type AgentApprovalSource = 'manual' | 'rule' | 'full' | 'web' | 'cancel';
 
 export interface AgentUndo {
   available: boolean;
@@ -149,7 +149,9 @@ export interface AgentApproval {
   channel?: AgentChannel | null;
   source?: AgentApprovalSource | null;
   consumed_by?: string;
-  context?: { account?: string; sheet_id?: string; scopes?: string[]; filename?: string; subagent?: string; subagent_role?: AgentRole };
+  context?: { account?: string; sheet_id?: string; scopes?: string[]; filename?: string;
+    page_url?: string; page_time_origin?: number; domain?: string; policy_blocked?: boolean;
+    subagent?: string; subagent_role?: AgentRole };
   resources?: { path: string; sha256?: string }[];
   dispatch?: { status: string; finished_at?: number };
 }
@@ -340,8 +342,13 @@ export const agentApi = {
   agentTurnCancel: (session_id: string) =>
     _invoke<{ cancelled: boolean }>('agent_turn_cancel', { session_id }),
 
-  agentApprove: (approval_id: string, rule?: { channel: AgentChannel; rule: 'allow' | 'deny' }) =>
-    _invoke<{ approval: AgentApproval }>('agent_approve', { approval_id, ...(rule ? { channel: rule.channel, rule: rule.rule } : {}) }),
+  agentApprove: (approval_id: string, options?: boolean | { channel: AgentChannel; rule: 'allow' | 'deny' }) =>
+    _invoke<{ approval: AgentApproval }>('agent_approve', {
+      approval_id,
+      ...(typeof options === 'boolean'
+        ? (options ? { remember: true } : {})
+        : (options ? { channel: options.channel, rule: options.rule } : {})),
+    }),
 
   agentDeny: (approval_id: string, rule?: { channel: AgentChannel; rule: 'allow' | 'deny' }) =>
     _invoke<{ approval: AgentApproval }>('agent_deny', { approval_id, ...(rule ? { channel: rule.channel, rule: rule.rule } : {}) }),

@@ -9,6 +9,9 @@ const MAX_ELEMENTS = 80;
 const RESULT_BUDGET = 5_600;
 const SHOT_WIDTH = 1280;
 const KEEP_SCREENS = 12;
+const CONSOLE_KEEP = 200;
+const NET_KEEP = 300;
+const MAX_PAGE_TEXT = 12_000;
 const LOAD_TIMEOUT_MS = 30_000;
 const SETTLE_MS = 700;
 const KEY_CODES = {
@@ -31,6 +34,11 @@ const TOOLS = {
   }, false],
   web_screenshot: ['Capturar la página actual del navegador del agente', { type: 'object', properties: {} }, false],
   web_back: ['Volver a la página anterior', { type: 'object', properties: {} }, false],
+  web_text: ['Leer el texto completo de la página actual, sin la lista de elementos', {
+    type: 'object', properties: { offset: { type: 'integer', minimum: 0, description: 'Carácter inicial del texto' } },
+  }, false],
+  web_console: ['Leer los mensajes recientes de la consola del navegador', { type: 'object', properties: {} }, false],
+  web_network: ['Leer las peticiones de red recientes de la página actual', { type: 'object', properties: {} }, false],
   web_click: ['Hacer clic en un elemento de la página', { type: 'object', properties: { ref: REF }, required: ['ref'] }, true],
   web_type: ['Escribir en un campo de la página', {
     type: 'object',
@@ -57,6 +65,8 @@ let docked = null;
 let userControl = false;
 let lastUserInputAt = 0;
 const pendingMouseInputs = new Set();
+let consoleLog = [];
+const netLog = new Map();
 let sessionReady = false;
 
 function isWeb(url) {
@@ -157,6 +167,8 @@ function browser() {
     },
   });
   const contents = view.webContents;
+  consoleLog = [];
+  netLog.clear();
   contents.setWindowOpenHandler(({ url }) => {
     if (isWeb(url)) setImmediate(() => contents.loadURL(url).catch(() => {}));
     return { action: 'deny' };
@@ -179,6 +191,14 @@ function browser() {
   contents.on('before-input-event', userInput);
   contents.on('before-mouse-event', userInput);
   contents.on('input-event', (event, input) => { if (input.type === 'mouseWheel') userInput(event, input); });
+  contents.on('console-message', ({ level, message }) => {
+    consoleLog.push({ level: String(level || 'info'), text: String(message || '') });
+    if (consoleLog.length > CONSOLE_KEEP) consoleLog.shift();
+  });
+  // El debugger se adjunta al crear la página para que Network capture las
+  // peticiones desde la primera carga, no solo desde la primera interacción.
+  contents.debugger.on('message', (_event, method, params) => noteNetwork(method, params));
+  ensureDebugger(contents).catch(() => { });
   contents.on('did-navigate', () => fitPage());
   for (const event of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) {
     contents.on(event, () => notify('page'));
@@ -190,6 +210,28 @@ function browser() {
   });
   mount(electron);
   return view;
+}
+
+// Sin cabeceras, cookies ni cuerpos: el registro solo describe el tráfico.
+function recordNet(id, entry) {
+  netLog.set(id, entry);
+  if (netLog.size > NET_KEEP) netLog.delete(netLog.keys().next().value);
+}
+
+function noteNetwork(method, params = {}) {
+  if (method === 'Network.requestWillBeSent') {
+    const request = params.request || {};
+    recordNet(params.requestId, { method: request.method || '', url: String(request.url || ''), type: params.type || '', status: null });
+  } else if (method === 'Network.responseReceived') {
+    const existing = netLog.get(params.requestId);
+    const response = params.response || {};
+    const entry = existing || { method: '', url: String(response.url || ''), type: params.type || '', status: null };
+    entry.status = response.status ?? entry.status;
+    if (!existing) recordNet(params.requestId, entry);
+  } else if (method === 'Network.loadingFailed') {
+    const entry = netLog.get(params.requestId);
+    if (entry) entry.error = params.errorText || 'cancelada';
+  }
 }
 
 function clampBounds(bounds, zoom, size) {
@@ -338,6 +380,21 @@ function current() {
   return view.webContents;
 }
 
+const PAGE_TEXT = `(() => ({
+  url: location.href,
+  title: document.title,
+  text: (document.body ? document.body.innerText : '').replace(/\\n{3,}/g, '\\n\\n'),
+}))()`;
+
+async function pageText(contents, offset = 0) {
+  const page = await contents.executeJavaScript(PAGE_TEXT, true);
+  const start = Math.max(0, Number(offset) || 0);
+  const text = String(page.text || '');
+  const result = fit({ url: page.url, title: page.title, text: text.slice(start, start + MAX_PAGE_TEXT) });
+  const end = start + result.text.length;
+  return { ...result, text_offset: start, text_total: text.length, ...(end < text.length ? { next_offset: end } : {}) };
+}
+
 async function approvalContext(contents = current()) {
   const page = await contents.executeJavaScriptInIsolatedWorld(1001, [{
     code: '({ url: location.href, time_origin: performance.timeOrigin })',
@@ -375,16 +432,20 @@ async function assertInteraction(input) {
   throw error;
 }
 
+async function ensureDebugger(contents) {
+  if (contents.debugger.isAttached()) return false;
+  contents.debugger.attach('1.3');
+  await contents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
+  await contents.debugger.sendCommand('Network.enable', {});
+  return true;
+}
+
 async function send(input, method, event) {
   const target = input.contents;
   let mouseInput;
   try {
     await assertInteraction(input);
-    if (!target.debugger.isAttached()) {
-      target.debugger.attach('1.3');
-      await target.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
-      await assertInteraction(input);
-    }
+    if (await ensureDebugger(target)) await assertInteraction(input);
     if (method === 'Input.dispatchMouseEvent' && event.type === 'mousePressed') {
       const zoom = target.getZoomFactor();
       mouseInput = { contents: target, x: event.x * zoom, y: event.y * zoom, button: event.button, clickCount: event.clickCount };
@@ -447,11 +508,17 @@ async function observeAfter(contents) {
 
 async function run(name, params = {}, { dir, approvedContext } = {}) {
   if (userControl) throw new Error(USER_CONTROL_ERROR);
-  if (!['web_read', 'web_screenshot'].includes(name) && Date.now() - lastUserInputAt < USER_INPUT_GRACE_MS) throw new Error(USER_BUSY_ERROR);
+  if (!['web_read', 'web_screenshot', 'web_text', 'web_console', 'web_network'].includes(name)
+    && Date.now() - lastUserInputAt < USER_INPUT_GRACE_MS) throw new Error(USER_BUSY_ERROR);
   if (name === 'web_open') {
+    const policy = require('./agent-browser-policy');
+    const target = normalizeUrl(params.url);
+    if (policy.isBlocked(policy.hostOf(target))) {
+      throw new Error('Dominio bloqueado por la política del navegador del agente');
+    }
     const contents = browser().webContents;
     notify('agent-open');
-    await load(contents, normalizeUrl(params.url));
+    await load(contents, target);
     return snapshot(contents);
   }
   const contents = current();
@@ -461,6 +528,17 @@ async function run(name, params = {}, { dir, approvedContext } = {}) {
     if (!contents.navigationHistory.canGoBack()) throw new Error('No hay una página anterior');
     contents.navigationHistory.goBack();
     return observeAfter(contents);
+  }
+  if (name === 'web_text') return pageText(contents, params.offset);
+  if (name === 'web_console') {
+    return fit({ url: contents.getURL(), messages: consoleLog.map((item) => `[${item.level}] ${item.text}`) });
+  }
+  if (name === 'web_network') {
+    await ensureDebugger(contents);
+    return fit({
+      url: contents.getURL(),
+      requests: [...netLog.values()].map((item) => `${item.status ?? '·'} ${item.method || '·'}${item.type ? ` ${item.type}` : ''} ${item.url}${item.error ? ` (falló: ${item.error})` : ''}`),
+    });
   }
   const input = { contents, expected: approvedContext || await approvalContext(contents), sent: false };
   if (name === 'web_click') {

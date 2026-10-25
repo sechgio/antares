@@ -33,6 +33,7 @@ export default function ArtifactCard({ artifact, sessionId, onRefresh, onOpenMod
       : receipt.status === 'submitted' ? 'Enviado'
         : receipt.status === 'uncertain' ? 'Incierto'
           : receipt.approval_source === 'rule' ? 'Permitido por regla'
+            : receipt.approval_source === 'web' ? 'Permitido por regla web'
             : receipt.approval_source === 'full' ? 'Permitido por acceso completo'
               : receipt.approval_source === 'manual' ? 'Permitido por ti'
                 : receipt.approval_source === 'cancel' ? 'Cancelado' : 'Ejecutado'

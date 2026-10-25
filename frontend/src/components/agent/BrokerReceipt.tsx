@@ -16,6 +16,7 @@ function receiptState(call: AgentToolCall): string {
   if (call.status === 'submitted') return 'Enviado';
   if (call.status === 'running' || call.status === 'queued') return 'En curso';
   if (call.approval_source === 'rule') return 'Permitido por regla';
+  if (call.approval_source === 'web') return 'Permitido por regla web';
   if (call.approval_source === 'full') return 'Permitido por acceso completo';
   if (call.approval_source === 'manual') return 'Permitido por ti';
   if (call.approval_source === 'cancel') return 'Cancelado';
