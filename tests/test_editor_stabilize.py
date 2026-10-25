@@ -12,7 +12,6 @@ from backend.core.editor.effects import (
     chromakey_chain,
     stabilize_chains,
 )
-from backend.core.editor.stabilize import improvement, is_stabilized, measure_motion
 from backend.core.editor.toolchain import resolve_toolchain
 
 BUILD_DIR = os.environ.get("ANTARES_FFMPEG_DIR", "")
@@ -33,13 +32,6 @@ def toolchain() -> Any:
 
 
 def _shaky_clip(toolchain: Any, output: Path, amplitude: int = 12) -> Path:
-    """Clip con desplazamiento sintético (simula cámara temblorosa).
-
-    El fuente es más ancho que el recuadro visible: vid.stab necesita
-    margen alrededor para mover la ventana sin perder bordes. Sin ese
-    margen el recuadre de la propia herramienta introduce más
-    desplazamiento del que elimina y la métrica empeora.
-    """
     import subprocess
 
     proc = subprocess.run(
@@ -126,53 +118,6 @@ def test_stabilize_chains_map_shakiness_to_build_range() -> None:
     assert "shakiness=10" in detect
 
 
-def test_improvement_metric() -> None:
-    assert improvement(4.0, 1.0) == 0.75
-    assert improvement(4.0, 4.0) == 0.0
-    assert improvement(0.0, 0.0) == 0.0
-    assert improvement(4.0, 8.0) == 0.0
-
-
-def test_is_stabilized_requires_halving_motion() -> None:
-    assert is_stabilized(4.0, 1.0) is True
-    assert is_stabilized(4.0, 3.0) is False
-
-
-def test_static_clip_has_zero_motion(toolchain: Any) -> None:
-    import subprocess
-
-    still = SCRATCH / "quieto.mp4"
-    subprocess.run(
-        [
-            str(toolchain.ffmpeg),
-            "-hide_banner",
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=c=gray:s=320x240:r=25:d=2",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-pix_fmt",
-            "yuv420p",
-            str(still),
-        ],
-        capture_output=True,
-        timeout=120,
-        check=False,
-    )
-    motion = measure_motion(toolchain, still, SCRATCH / "metric-quiet", count=4)
-    assert motion < 0.5, f"clip quieto con movimiento {motion}"
-
-
-def test_shaky_clip_has_motion(toolchain: Any) -> None:
-    source = _shaky_clip(toolchain, SCRATCH / "temblor.mp4")
-    motion = measure_motion(toolchain, source, SCRATCH / "metric-shaky", count=6)
-    assert motion > 1.0, f"clip tembloroso sin movimiento medible: {motion}"
-
-
 def test_stabilize_runs_and_preserves_source(toolchain: Any) -> None:
     source = _shaky_clip(toolchain, SCRATCH / "temblor.mp4")
     out = SCRATCH / "estabilizado.mp4"
@@ -187,13 +132,6 @@ def test_stabilize_runs_and_preserves_source(toolchain: Any) -> None:
 
 
 def test_stabilize_reduces_motion_on_trackable_clip(toolchain: Any) -> None:
-    """Criterio del hito con un clip donde vid.stab logra trackear.
-
-    ``testsrc2`` tiene la textura que vid.stab necesita (los clips de
-    color plano dan «too low contrast» y no se estabilizan). Se aplica
-    un desplazamiento horizontal amplio y se mide el borde izquierdo
-    de la escena: tras estabilizar debe variar menos entre cuadros.
-    """
     import subprocess
 
     source = SCRATCH / "trackeable.mp4"

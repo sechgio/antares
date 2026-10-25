@@ -404,8 +404,6 @@ def resources(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> 
 
 
 def fit(result: JsonObject, limit: int = _RESULT_BUDGET) -> JsonObject:
-    """Recorta el texto o la lista más larga hasta que el resultado quepa sin que el runtime lo resuma."""
-
     def size(value: object) -> int:
         return len(json.dumps(value, ensure_ascii=False, default=str))
 

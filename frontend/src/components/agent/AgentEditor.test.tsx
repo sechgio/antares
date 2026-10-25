@@ -33,7 +33,7 @@ it('crea un agente con indicaciones y solo las herramientas elegidas', async () 
   fireEvent.click(screen.getByRole('switch', { name: 'Usar todas las herramientas' }));
   fireEvent.click(screen.getByRole('switch', { name: 'Permitir templates_catalog' }));
   await act(async () => { fireEvent.click(create); });
-  expect(save).toHaveBeenCalledWith({ name: 'Informe mensual', description: '', instructions: 'Usa la plantilla de cortes',
+  expect(save).toHaveBeenCalledWith({ name: 'Informe mensual', description: '', role: 'explorer', instructions: 'Usa la plantilla de cortes',
     starter: 'Prepara el informe', tools: ['templates_catalog'] });
   expect(onSaved).toHaveBeenCalledWith(saved);
 });
@@ -51,6 +51,17 @@ it('edita conservando el id y borra solo tras confirmar', async () => {
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Borrar' })); });
   expect(remove).toHaveBeenCalledWith('p1');
   expect(onDeleted).toHaveBeenCalledWith('p1');
+});
+
+it('guarda el rol y advierte del alcance de un worker', async () => {
+  const worker: AgentProfile = { ...saved, role: 'worker' };
+  const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: worker });
+  await act(async () => { render(<AgentEditor profile={saved} onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} />); });
+  expect(screen.getByRole('button', { name: 'Explorador' })).toHaveAttribute('aria-pressed', 'true');
+  fireEvent.click(screen.getByRole('button', { name: 'Worker' }));
+  expect(screen.getByText(/cada acción pedirá tu aprobación/)).toBeVisible();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(save.mock.calls[0][0]).toMatchObject({ id: 'p1', role: 'worker' });
 });
 
 it('muestra el error del runtime sin cerrar el editor', async () => {

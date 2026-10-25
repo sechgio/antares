@@ -2,7 +2,7 @@ export const METHOD_LABELS: Record<string, string> = {
   task_plan: 'Actualizar el plan del encargo',
   mcp_status: 'Consultar estado y diagnóstico de MCP',
   shell_output: 'Leer la salida completa de un comando',
-  task_schedule: 'Gestionar encargos programados',
+  task_schedule: 'Gestionar encargos y cola',
   wait_event: 'Esperar un evento del encargo',
   agent_delegate: 'Delegar un encargo en otra conversación',
   sessions_search: 'Buscar en conversaciones anteriores',
