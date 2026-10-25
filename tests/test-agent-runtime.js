@@ -2752,6 +2752,9 @@ for line in sys.stdin:
       const { profile } = await runtime.handlers.agent_profile_save({ name: 'Investigador real',
         instructions: 'Lee Canvas y resume.', tools: ['canvas_list', 'db_clear'] });
       const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+      const initial = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools;
+      await runtime.handlers.agent_tools_set({ session_id: session.id,
+        names: [...new Set([...initial.filter((tool) => tool.enabled).map((tool) => tool.name), 'canvas_list'])] });
       const responses = (task) => [
         fauxAssistantMessage([fauxToolCall('subagent_run', { agent: profile.id, task })], { stopReason: 'toolUse' }),
         fauxAssistantMessage('Recibí el resultado del subagente'),
