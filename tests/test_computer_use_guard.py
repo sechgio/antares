@@ -269,6 +269,34 @@ def test_normalize_app_resuelve_alias():
     assert driver.normalize_app("MiApp.EXE") == "miapp.exe"
 
 
+def test_launch_app_abre_cualquier_nombre_y_resuelve_alias(monkeypatch):
+    launched = []
+    monkeypatch.setattr(driver, "_ensure_dpi", lambda: None)
+    monkeypatch.setattr(driver.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(
+        driver.os, "startfile", lambda target, arguments="": launched.append((target, arguments)), raising=False
+    )
+    assert driver.launch_app(" Firefox ")["launched"] == "firefox"
+    assert driver.launch_app("Calc", "x")["launched"] == "calc"
+    assert launched == [("Firefox", ""), ("calc.exe", "x")]
+
+
+def test_launch_app_sugiere_start_process_si_no_encuentra_el_ejecutable(monkeypatch):
+    def missing(target, arguments=""):
+        raise FileNotFoundError(2, "No se encuentra", target)
+
+    monkeypatch.setattr(driver, "_ensure_dpi", lambda: None)
+    monkeypatch.setattr(driver.os, "startfile", missing, raising=False)
+    with pytest.raises(DriverError, match=r"Start-Process 'O''Brien App'"):
+        driver.launch_app("O'Brien App")
+
+
+@pytest.mark.parametrize("app", ["", "   ", "a\x00b", "x" * 261])
+def test_launch_app_rechaza_nombres_no_validos(app):
+    with pytest.raises(ValueError, match="no válido"):
+        driver.launch_app(app)
+
+
 @pytest.mark.parametrize("current", [
     [{"element_id": "e0", "runtime_id": "delete"}, {"element_id": "e1", "runtime_id": "save"}],
     [{"element_id": "e0", "runtime_id": "delete"}],
