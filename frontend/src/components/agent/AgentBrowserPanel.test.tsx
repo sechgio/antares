@@ -57,6 +57,39 @@ it('abre direcciones desde la barra y permite tomar y devolver el control', asyn
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });
 
+it('avisa de la espera humana y permite liberarla', async () => {
+  const call = vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue({
+    ...base, open: true, url: 'https://example.com', busy_until: Date.now() + 4000, busy_reason: 'user_input',
+  });
+  const { unmount } = render(<AgentBrowserPanel onClose={vi.fn()} />);
+  expect(await screen.findByText(/El agente espera porque usaste la página/)).toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Permitir al agente' })); });
+  expect(call).toHaveBeenCalledWith('allow', {});
+  unmount();
+});
+
+it('separa la pestaña del agente y la del usuario', async () => {
+  const state: AgentBrowserState = {
+    ...base,
+    open: true,
+    url: 'https://user.example',
+    active_tab: 'user',
+    tabs: [
+      { id: 'agent', label: 'Agente', open: true, url: 'https://agent.example', title: 'Agente', loading: false,
+        can_go_back: false, can_go_forward: false, user_control: false, busy_until: 0, busy_reason: '', active: false },
+      { id: 'user', label: 'Tú', open: true, url: 'https://user.example', title: 'Mi página', loading: false,
+        can_go_back: false, can_go_forward: false, user_control: false, busy_until: 0, busy_reason: '', active: true },
+    ],
+  };
+  const call = vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue(state);
+  render(<AgentBrowserPanel onClose={vi.fn()} />);
+  expect(await screen.findByRole('tablist', { name: 'Pestañas del navegador' })).toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: /Tú/ })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.queryByRole('button', { name: /Tomar el control/ })).not.toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Agente/ })); });
+  expect(call).toHaveBeenCalledWith('tab', { tab: 'agent' });
+});
+
 it('desacopla la página mientras un menú la tapa y la vuelve a colocar al cerrarse', async () => {
   const call = vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue(base);
   const box = (left: number, top: number, width: number, height: number) => ({

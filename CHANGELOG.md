@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- El navegador del Agent separa la página del agente y la del usuario en dos pestañas con la misma sesión y cookies. El agente puede abrir, leer y actuar en su pestaña mientras el usuario usa la suya; el bloqueo, el control y la aprobación se aplican por pestaña, y la barra «Agente/Tú» muestra cuál está activa. Incluye `web_reload` y `web_forward`, y un lease por conversación que impide que dos tareas naveguen a la vez en la pestaña del agente.
 - Agent muestra recibos de envío y permite recuperar una petición no confirmada con el mismo texto, adjuntos e intención, sin borrar un borrador nuevo, incluso al cambiar de módulo o reiniciar. La cola distingue lo guardado de lo recibido y conserva las indicaciones al restaurarse; el compositor ignora Intro repetido y la actividad reconoce las herramientas web reales.
 - Agent explica qué confirma cada modo de permisos y su alcance por conversación. Cada solicitud muestra el efecto, destino, cuenta y recursos disponibles, aclara que permitir autoriza solo esa llamada y que rechazar la omite e informa al agente. Las categorías de herramientas dejan de prometer una aprobación en todos los modos.
 - Agent conserva stdout y stderr completos del shell y permite leerlos por páginas con `shell_output`, también tras reiniciar y sin cruzar conversaciones. El shell mantiene su límite de tiempo y no admite entrada interactiva.
@@ -91,6 +92,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 
 ### Fixed
+- El navegador del Agent espera de forma acotada antes de abrir una página o volver atrás cuando el usuario acaba de usar la suya, muestra la espera con cuenta atrás y permite liberarla. Un fallo transitorio ya no consume el freno de repeticiones: las lecturas y observaciones avanzan cuando cambia el resultado, los clics que cambian de página también progresan, los errores recuperables no consumen intentos, otros efectos con aprobación conservan su límite y una corrección o un mensaje nuevo reinician el freno y la pausa de actividad. `web_open` rechaza nombres de archivos locales y remite a `fs_read`.
 - Se actualizan DOMPurify a 3.4.17 y Brotli a 1.2.1 para corregir las vulnerabilidades que bloqueaban la auditoría de dependencias.
 - Agent explicita la prioridad del pedido actual sobre las indicaciones del agente y las preferencias de memoria. El editor y la memoria muestran el alcance por perfil y los recuerdos globales heredados; editar un perfil informa que afecta a conversaciones nuevas. La guía distingue cambios puntuales y preferencias duraderas, conserva las correcciones humanas y responde de forma natural ante saludos y ayuda vaga.
 - Agent destaca la aprobación, pregunta, actividad o resultado que requiere atención junto al composer, anuncia cada evento una sola vez y permite ir a sus detalles sin interrumpir la lectura del historial. Conserva los detalles abiertos durante las actualizaciones y respeta movimiento reducido al desplazarse.

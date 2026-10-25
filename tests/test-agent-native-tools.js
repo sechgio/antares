@@ -29,7 +29,7 @@ assert(JSON.stringify(exportsSpecs.slice(0, 3).map((s) => s.module)) === JSON.st
   'cada exportación pertenece a su módulo');
 
 const web = specs.filter((s) => s.name.startsWith('web_'));
-assert(web.length === 7 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
+assert(web.length === 9 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
 assert(web.filter((s) => s.gated).map((s) => s.name).sort().join() === 'web_click,web_key,web_type',
   'leer páginas es automático; hacer clic, escribir o pulsar teclas requiere aprobación');
 const browser = require('../electron/agent-browser');
@@ -64,6 +64,12 @@ for (const bad of ['', '..', 'sub/a.pdf', String.raw`C:\x\a.pdf`, 'a?.pdf']) {
 }
 
 async function exportTest() {
+  {
+    let localError = null;
+    try { await browser.run('web_open', { url: 'agents.md' }); } catch (error) { localError = error; }
+    assert(localError?.code === 'LOCAL_FILE' && /fs_read/.test(localError.message),
+      'web_open remite un archivo local a fs_read');
+  }
   {
     const isolatedCalls = [];
     const inputCommands = [];
@@ -271,13 +277,141 @@ async function exportTest() {
     const timers = installInertTimers();
     try { await browser.navigate('open', 'https://example.com'); } finally { timers.restore(); }
     contents.emit('before-mouse-event', {}, { type: 'mouseDown' });
+    assert(browser.state().busy_until > Date.now(), 'el estado expone cuándo termina la espera humana');
+    let blocked = null;
+    try { await browser.run('web_key', { keys: 'enter' }); } catch (err) { blocked = err; }
+    assert(blocked && blocked.code === 'USER_BUSY' && blocked.retryable === true && blocked.retryAfterMs > 0,
+      'una acción no navegable devuelve un error retryable con la espera restante');
+    browser.resetUserActivity();
+    assert(browser.state().busy_until === 0, 'enviar una instrucción reinicia la espera humana');
+    contents.emit('before-mouse-event', {}, { type: 'mouseDown' });
     const attempt = async () => { try { await browser.run('web_back', {}); return null; } catch (err) { return err.message; } };
-    assert(await attempt() === browser.USER_BUSY_ERROR, 'si el usuario acaba de usar la página, el agente no actúa sobre ella');
+    browser.allowAgent();
+    assert(browser.state().busy_until === 0, 'permitir al agente limpia la espera');
+    assert(await attempt() === 'No hay una página anterior', 'permitir al agente deja navegar de inmediato');
+    contents.emit('before-mouse-event', {}, { type: 'mouseDown' });
     const now = Date.now;
     Date.now = () => now() + 6_000;
     try {
-      assert(await attempt() === 'No hay una página anterior', 'pasados unos segundos sin actividad del usuario, el agente retoma la página');
+      assert(await attempt() === 'No hay una página anterior', 'pasado el tiempo de gracia, la navegación se reanuda');
     } finally { Date.now = now; }
+    browser.close();
+  }
+  {
+    const pages = [];
+    const mainChildren = new Set();
+    const hostChildren = new Set();
+    const main = {
+      isDestroyed: () => false,
+      getContentSize: () => [1000, 700],
+      webContents: { getZoomFactor: () => 1, send: () => {} },
+      contentView: {
+        addChildView: (child) => mainChildren.add(child),
+        removeChildView: (child) => mainChildren.delete(child),
+      },
+    };
+    const host = {
+      isDestroyed: () => false,
+      on: () => {},
+      showInactive: () => {},
+      setIgnoreMouseEvents: () => {},
+      destroy: () => {},
+      contentView: {
+        addChildView: (child) => hostChildren.add(child),
+        removeChildView: (child) => hostChildren.delete(child),
+      },
+    };
+    const makePage = () => {
+      const contents = Object.assign(new EventEmitter(), {
+        url: '', title: '',
+        isDestroyed() { return false; },
+        getURL() { return contents.url; },
+        getTitle() { return contents.title; },
+        isLoading() { return false; },
+        getZoomFactor() { return 1; },
+        setZoomFactor() {},
+        navigationHistory: { canGoBack: () => false, canGoForward: () => false, goBack() {}, goForward() {} },
+        setWindowOpenHandler() {},
+        loadURL: async (url) => { contents.url = url; contents.title = url; },
+        executeJavaScript: async () => ({ url: contents.url, title: contents.title, text: '', elements: [] }),
+        executeJavaScriptInIsolatedWorld: async () => ({ url: contents.url, time_origin: 1 }),
+        close() { contents.emit('destroyed'); },
+      });
+      const page = { webContents: contents, bounds: { width: 1280, height: 860 },
+        setBounds(next) { page.bounds = next; }, getBounds() { return page.bounds; } };
+      pages.push(page);
+      return page;
+    };
+    stubModule('electron/window-manager.js', { getMainWindow: () => main });
+    stubModule('electron', {
+      BrowserWindow: function () { return host; },
+      WebContentsView: function () { return makePage(); },
+      session: { fromPartition: () => ({ setPermissionRequestHandler: () => {}, setPermissionCheckHandler: () => {},
+        on: () => {}, getUserAgent: () => 'Mozilla/5.0 Chrome/1 Electron/1', setUserAgent: () => {} }) },
+    });
+    const timers = installInertTimers();
+    try {
+      browser.dock({ x: 10, y: 20, width: 400, height: 500 });
+      await browser.run('web_open', { url: 'https://agent.example' });
+    } finally { timers.restore(); }
+    const agentPage = pages[0];
+    let current = browser.state();
+    assert(current.active_tab === 'agent' && current.tabs[0].url === 'https://agent.example',
+      'el agente abre en su propia pestaña');
+    assert(mainChildren.has(agentPage), 'la pestaña activa se monta en la ventana principal');
+
+    browser.activateTab('user');
+    const userTimers = installInertTimers();
+    try { await browser.navigate('open', 'https://user.example', 'user'); } finally { userTimers.restore(); }
+    const userPage = pages[1];
+    current = browser.state();
+    assert(current.active_tab === 'user' && current.tabs[1].url === 'https://user.example',
+      'el usuario abre su pestaña sin tocar la del agente');
+    assert(mainChildren.has(userPage) && !mainChildren.has(agentPage) && hostChildren.has(agentPage),
+      'al cambiar de pestaña se mueve la vista activa y la otra sigue viva fuera de pantalla');
+
+    userPage.webContents.emit('before-mouse-event', {}, { type: 'mouseDown' });
+    current = browser.state();
+    const agentTab = current.tabs.find((tab) => tab.id === 'agent');
+    const userTab = current.tabs.find((tab) => tab.id === 'user');
+    assert(userTab.busy_until > Date.now() && agentTab.busy_until === 0,
+      'la entrada en la pestaña del usuario no bloquea al agente');
+
+    browser.setUserControl(true, 'user');
+    current = browser.state();
+    assert(current.tabs.find((tab) => tab.id === 'user').user_control
+      && !current.tabs.find((tab) => tab.id === 'agent').user_control,
+    'el control de una pestaña no bloquea la otra');
+    browser.setUserControl(false, 'user');
+
+    const agentTimers = installInertTimers();
+    try { await browser.run('web_open', { url: 'https://agent-2.example' }); } finally { agentTimers.restore(); }
+    current = browser.state();
+    assert(current.active_tab === 'user' && current.tabs[0].url === 'https://agent-2.example'
+      && current.tabs[1].url === 'https://user.example',
+    'el agente navega en su pestaña mientras el usuario conserva la suya');
+    assert(mainChildren.has(userPage) && hostChildren.has(agentPage),
+      'la navegación del agente no cambia la pestaña visible del usuario');
+
+    browser.activateTab('agent');
+    assert(mainChildren.has(agentPage) && hostChildren.has(userPage),
+      'cambiar a la pestaña del agente devuelve su vista al panel');
+    browser.setUserControl(true, 'agent');
+    let controlBlocked = null;
+    try { await browser.run('web_read', {}); } catch (err) { controlBlocked = err; }
+    assert(controlBlocked?.code === 'USER_CONTROL', 'tomar el control de la pestaña del agente detiene al agente');
+    browser.setUserControl(false, 'agent');
+
+    const readA = await browser.run('web_read', {}, { sessionId: 'conversation-a' });
+    assert(readA.url === 'https://agent-2.example', 'la conversación propietaria lee su página');
+    let leaseBlocked = null;
+    try { await browser.run('web_read', {}, { sessionId: 'conversation-b' }); } catch (err) { leaseBlocked = err; }
+    assert(leaseBlocked?.code === 'BROWSER_BUSY' && leaseBlocked.recoverable === true,
+      'otra conversación no puede usar la pestaña del agente');
+    browser.release('conversation-a');
+    const readB = await browser.run('web_read', {}, { sessionId: 'conversation-b' });
+    assert(readB.url === 'https://agent-2.example', 'al liberar, otra conversación puede continuar');
+    browser.release('conversation-b');
     browser.close();
   }
   const { validateToolArguments } = await import('@earendil-works/pi-ai');

@@ -110,6 +110,21 @@ export interface AgentQuestion {
   questions: { id: string; prompt: string; options?: string[] }[];
 }
 
+export interface AgentBrowserTab {
+  id: 'agent' | 'user';
+  label: string;
+  open: boolean;
+  url: string;
+  title: string;
+  loading: boolean;
+  can_go_back: boolean;
+  can_go_forward: boolean;
+  user_control: boolean;
+  busy_until?: number;
+  busy_reason?: 'user_input' | 'control' | '';
+  active: boolean;
+}
+
 export interface AgentBrowserState {
   open: boolean;
   url: string;
@@ -119,7 +134,11 @@ export interface AgentBrowserState {
   can_go_forward: boolean;
   docked: boolean;
   user_control: boolean;
-  reason?: 'page' | 'agent-open' | 'control' | 'closed';
+  busy_until?: number;
+  busy_reason?: 'user_input' | 'control' | '';
+  active_tab?: 'agent' | 'user';
+  tabs?: AgentBrowserTab[];
+  reason?: 'page' | 'agent-open' | 'control' | 'closed' | 'busy';
 }
 
 export interface AgentBrowserBounds {
@@ -210,8 +229,8 @@ export const agentApi = {
       last_error: string | null;
     }>('agent_turn_status', { session_id }),
 
-  agentBrowser: (action: 'state' | 'bounds' | 'control' | 'open' | 'back' | 'forward' | 'reload',
-    extra: { url?: string; user?: boolean; bounds?: AgentBrowserBounds | null } = {}) =>
+  agentBrowser: (action: 'state' | 'bounds' | 'tab' | 'control' | 'allow' | 'open' | 'back' | 'forward' | 'reload',
+    extra: { url?: string; user?: boolean; tab?: 'agent' | 'user'; bounds?: AgentBrowserBounds | null } = {}) =>
     _invoke<AgentBrowserState>('agent_browser', { action, ...extra }),
   agentTurnCancel: (session_id: string) =>
     _invoke<{ cancelled: boolean }>('agent_turn_cancel', { session_id }),

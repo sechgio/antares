@@ -377,9 +377,12 @@ async function refreshTools() {
         afterTools: (_output, _task, api, context) => countRound(api, context),
         onYield: (answer, api) => planCheck(answer, api),
         afterResponse: async (message, api, context) => {
+          const sessionId = await sessionForConversation(api.conversationId, api, context);
+          if (message.stopReason !== 'toolUse') {
+            try { require('./agent-browser').release(sessionId); } catch { }
+          }
           if (message.stopReason === 'aborted') return;
           if (message.errorMessage) message.errorMessage = sanitizeProviderError(message.errorMessage);
-          const sessionId = await sessionForConversation(api.conversationId, api, context);
           await commitSessions((sessions) => {
             if (sessions[sessionId]) sessions[sessionId].last_error = message.errorMessage ? message.errorMessage.slice(0, 300) : null;
             if (sessions[sessionId] && !message.errorMessage && message.stopReason === 'stop'
@@ -465,6 +468,10 @@ function stableJson(value) {
   return JSON.stringify(value === undefined ? null : value);
 }
 
+function callSignature(name, args) {
+  return `${name}:${stableJson(args || {})}`;
+}
+
 // Una respuesta final con pasos del plan de este turno sin verificar recibe una
 // sola petición de seguir o de declarar el bloqueo; el aviso no se muestra en el chat.
 function planCheck(answer, api) {
@@ -485,12 +492,16 @@ async function beforeTool(call, api, context) {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   if (!await toolEnabled(sessionId, call.name, context)) return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
   const calls = turnState(api.conversationId).calls;
-  const signature = `${call.name}:${stableJson(call.arguments || {})}`;
-  const repeated = calls.get(signature) || { count: 0 };
-  repeated.count += 1;
-  calls.set(signature, repeated);
-  if (repeated.count > MAX_REPEATS) {
-    return { block: `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno con los mismos argumentos. No lo repitas: `
+  const signature = callSignature(call.name, call.arguments);
+  let repeated = calls.get(signature);
+  if (!repeated) {
+    repeated = { count: 0, outcome: undefined, exempt: false };
+    calls.set(signature, repeated);
+  }
+  if (repeated.count >= MAX_REPEATS && !repeated.exempt) {
+    const detail = spec.name === 'web_click' ? 'sin cambiar de página'
+      : !spec.gated || spec.name === 'desktop_observe' ? 'con el mismo resultado o error' : 'con los mismos argumentos';
+    return { block: `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno ${detail}. No la repitas: `
       + 'cambia de enfoque o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
   }
   const session = await requireSession(sessionId);
@@ -614,19 +625,41 @@ async function executeTool(spec, args, api, context) {
     turnState(api.conversationId).remaining = parsed.remaining.map(String);
   }
   const image = isError || !await acceptsImages(api, context) ? null : await resultImage(parsed);
-  if (!isError && (!spec.gated || spec.name === 'desktop_observe')) {
-    const repeated = turnState(api.conversationId).calls.get(`${spec.name}:${stableJson(args || {})}`);
-    if (repeated) {
-      let outcome = stableJson(parsed ?? text);
-      const capture = parsed && (parsed.image || (parsed.observation && parsed.observation.image));
-      if (capture && typeof capture.path === 'string') {
-        const fingerprint = image ? crypto.createHash('sha256').update(image.data).digest('hex') : 'captura';
-        outcome = outcome.replaceAll(JSON.stringify(capture.path), JSON.stringify(fingerprint));
-      }
-      if (repeated.result !== undefined && repeated.result !== outcome) repeated.count = 1;
-      repeated.result = outcome;
-    }
+  const calls = turnState(api.conversationId).calls;
+  const signature = callSignature(spec.name, args);
+  let repeated = calls.get(signature);
+  if (!repeated) {
+    repeated = { count: 0, outcome: undefined, exempt: false };
+    calls.set(signature, repeated);
   }
+  let outcome = stableJson(parsed ?? text);
+  const capture = parsed && (parsed.image || (parsed.observation && parsed.observation.image));
+  if (capture && typeof capture.path === 'string') {
+    const fingerprint = image ? crypto.createHash('sha256').update(image.data).digest('hex') : 'captura';
+    outcome = outcome.replaceAll(JSON.stringify(capture.path), JSON.stringify(fingerprint));
+  }
+  // El guard mide progreso, no llamadas: un fallo recuperable (espera, control
+  // o página cambiada) no consume intentos. Las lecturas, las observaciones y
+  // los clics que cambian de página progresan; el resto de efectos gated
+  // conserva su límite aunque el resultado cambie, para no repetir acciones.
+  const trackOutcome = !spec.gated || spec.name === 'desktop_observe' || spec.name === 'web_click';
+  const progress = spec.name === 'web_click'
+    ? stableJson({ url: parsed && parsed.page && parsed.page.url ? String(parsed.page.url) : '' })
+    : outcome;
+  const hash = crypto.createHash('sha256').update(progress).digest('hex');
+  const exempt = !!(isError && parsed && typeof parsed === 'object'
+    && (parsed.retryable === true || parsed.recoverable === true) && parsed.uncertain !== true);
+  if (exempt) {
+    repeated.exempt = true;
+    repeated.count = 0;
+  } else if (trackOutcome && repeated.outcome !== undefined && repeated.outcome !== hash) {
+    repeated.count = 1;
+    repeated.exempt = false;
+  } else {
+    repeated.count = (repeated.count || 0) + 1;
+    repeated.exempt = false;
+  }
+  if (trackOutcome) repeated.outcome = hash;
   return { content: [{ type: 'text', text }, ...(image ? [image] : [])], isError,
     ...(added && added.length ? { control: { addTools: added } } : {}) };
 }
@@ -736,7 +769,14 @@ async function dispatchNative(spec, request, context) {
     text = JSON.stringify(result === undefined ? null : result);
   } catch (err) {
     uncertain = err?.uncertain === true;
-    text = JSON.stringify({ error: String((err && err.message) || err).slice(0, 500), ...(uncertain ? { interrupted: true, uncertain: true } : {}) });
+    text = JSON.stringify({
+      error: String((err && err.message) || err).slice(0, 500),
+      ...(err?.code ? { code: String(err.code) } : {}),
+      ...(err?.retryable === true ? { retryable: true } : {}),
+      ...(err?.recoverable === true ? { recoverable: true } : {}),
+      ...(Number.isFinite(err?.retryAfterMs) ? { retry_after_ms: Math.max(0, Math.round(err.retryAfterMs)) } : {}),
+      ...(uncertain ? { interrupted: true, uncertain: true } : {}),
+    });
   }
   const finished = await bridge('agent_internal_dispatch_finish', {
     session_id: request.session_id,
