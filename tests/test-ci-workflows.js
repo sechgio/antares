@@ -80,7 +80,7 @@ function run() {
     'The frontend suite is split into two independent shards instead of one long job',
   );
   assert(
-    qualityStep === [...qualityCommands, ...['contracts', 'electron'].map((suite) => `node scripts/run-test-suites.js ${suite}`)].join(' && '),
+    qualityStep === [...qualityCommands, ...['contracts', 'electron', 'turns'].map((suite) => `node scripts/run-test-suites.js ${suite}`)].join(' && '),
     'Quality CI preserves every check from the shared quality gate in order and fails closed',
   );
   assert(
@@ -95,7 +95,7 @@ function run() {
   assert(job('backend').indexOf('Install and validate Pango') < job('backend').indexOf('Run backend tests'), 'Pango validation precedes backend tests');
   assert(ci.includes('C:\\msys64\\mingw64') && ci.includes('C:\\msys64\\var\\lib\\pacman\\local'), 'Pango cache preserves runtime files together with the installed package database');
   assert(ci.includes('$env:ImageOS-$env:ImageVersion') && ci.includes('steps.runner-image.outputs.version') && ci.includes("hashFiles('scripts/install-ci-pango.ps1')") && !job('backend').includes('restore-keys:'), 'Pango cache cannot cross runner images or installer versions');
-  for (const suite of ['contracts', 'backend', 'electron']) {
+  for (const suite of ['contracts', 'backend', 'electron', 'turns']) {
     const calls = ciJobs.match(new RegExp(`node scripts/run-test-suites\\.js ${suite}\\b`, 'g')) || [];
     assert(calls.length === 1, `Windows CI runs the ${suite} suite exactly once`);
   }

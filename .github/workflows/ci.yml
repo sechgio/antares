@@ -113,7 +113,8 @@ jobs:
           npm run lint:python && npm run typecheck:backend &&
           npm run check:any && npm run check:ratchet &&
           npm run audit:python && npm run audit:node &&
-          node scripts/run-test-suites.js contracts && node scripts/run-test-suites.js electron
+          node scripts/run-test-suites.js contracts && node scripts/run-test-suites.js electron &&
+          node scripts/run-test-suites.js turns
 
       - name: Build frontend and check budgets
         run: npm run build:frontend

@@ -19,6 +19,8 @@ const {
 const { compactMessages, requestBudget } = require('./agent-compaction');
 const { resolvePortableProfile, mergeProfileSkills, readProfileSkill } = require('./agent-profiles');
 
+const { appendTurn } = require('./turn-log');
+
 const MAX_TOOL_STEPS = 40;
 const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno. Conservé un punto de continuación; '
   + 'explica lo que queda pendiente y pide usar Reanudar para continuar.';
@@ -419,6 +421,7 @@ async function refreshTools() {
         beforeRequest: async ({ messages }, api, context) => {
           resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
           if (await toolBudget(api, context) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
+          await noteTurnStart(api, messages || []);
           const compacted = await compactRequest(messages, api, context);
           const next = compacted || messages;
           return leadingSystem(next) || (compacted ? { messages: next } : undefined);
@@ -426,14 +429,18 @@ async function refreshTools() {
         afterTools: (_output, _task, api, context) => countRound(api, context),
         onYield: (answer, api) => planCheck(answer, api),
         afterResponse: async (message, api, context) => {
-          if (message.stopReason === 'aborted') return;
-          if (message.errorMessage) message.errorMessage = sanitizeProviderError(message.errorMessage);
-          const sessionId = await sessionForConversation(api.conversationId, api, context);
-          await commitSessions((sessions) => {
-            if (sessions[sessionId]) sessions[sessionId].last_error = message.errorMessage ? message.errorMessage.slice(0, 300) : null;
-            if (sessions[sessionId] && !message.errorMessage && message.stopReason === 'stop'
-              && (shared.rounds.get(api.conversationId) || 0) < MAX_TOOL_STEPS) delete sessions[sessionId].continuation;
-          });
+          try {
+            if (message.stopReason === 'aborted') return;
+            if (message.errorMessage) message.errorMessage = sanitizeProviderError(message.errorMessage);
+            const sessionId = await sessionForConversation(api.conversationId, api, context);
+            await commitSessions((sessions) => {
+              if (sessions[sessionId]) sessions[sessionId].last_error = message.errorMessage ? message.errorMessage.slice(0, 300) : null;
+              if (sessions[sessionId] && !message.errorMessage && message.stopReason === 'stop'
+                && (shared.rounds.get(api.conversationId) || 0) < MAX_TOOL_STEPS) delete sessions[sessionId].continuation;
+            });
+          } finally {
+            await closeTurnLog(message, api);
+          }
         },
       }),
     ],
@@ -506,7 +513,13 @@ async function pauseForBudget(api, context) {
     } }, ctx());
   });
   // El aborto debe interrumpir esta espera: abortTask espera a que termine este mismo hook.
-  await shared.deps.chord.awaitWithContext(stopped, context);
+  try {
+    await shared.deps.chord.awaitWithContext(stopped, context);
+  } finally {
+    // El aborto no despacha afterResponse (pi-durable cierra el run antes): sin este
+    // cierre se perdería la entrada «failed» y el log abierto pasaría al turno siguiente.
+    await closeTurnLog({ stopReason: 'aborted', errorMessage: null, content: [] }, api);
+  }
 }
 
 function turnState(conversationId) {
@@ -516,6 +529,93 @@ function turnState(conversationId) {
     shared.turns.set(conversationId, turn);
   }
   return turn;
+}
+
+const TURN_SUMMARY_CHARS = 300;
+
+function boundedSummary(value) {
+  const collapsed = String(value || '').replace(/\s+/g, ' ').trim();
+  return collapsed.length > TURN_SUMMARY_CHARS ? `${collapsed.slice(0, TURN_SUMMARY_CHARS)}...` : collapsed;
+}
+
+function messageText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.filter((part) => part && part.type === 'text').map((part) => part.text).join(' ');
+  }
+  return '';
+}
+
+function noteTurnStart(api, messages) {
+  return (async () => {
+    const turn = turnState(api.conversationId);
+    if (turn.log) return;
+    const sessionId = await sessionForConversation(api.conversationId, api, null) || '';
+    let agent = '';
+    try {
+      const session = sessionId ? await requireSession(sessionId) : null;
+      agent = session ? `${session.provider || ''}/${session.model || ''}` : '';
+    } catch { }
+    turn.log = {
+      turn_id: `turn_${crypto.randomUUID()}`,
+      session_id: sessionId,
+      agent,
+      started_at: new Date().toISOString(),
+      input_summary: boundedSummary(messageText(lastUserContent(messages))),
+      tool_calls: [],
+    };
+  })().catch((err) => {
+    console.error('[agent] registro de turnos: inicio no registrado:', (err && err.message) || err);
+  });
+}
+
+function lastUserContent(messages) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i] && messages[i].role === 'user') return messages[i].content;
+  }
+  return '';
+}
+
+function noteToolResult(api, name, text, isError) {
+  try {
+    const turn = shared.turns.get(api.conversationId);
+    if (!turn || !turn.log) return;
+    turn.log.tool_calls.push({
+      name: String(name || ''),
+      applied: !isError,
+      verified: { kind: 'capture', value: boundedSummary(text) },
+    });
+  } catch (err) {
+    console.error('[agent] registro de turnos: llamada no registrada:', (err && err.message) || err);
+  }
+}
+
+// Cada segmento (turno, continuación de plan-check, reanudación) es una entrada propia:
+// fusionarlas exigiría retrasar la escritura y perder segmentos previos si el proceso muere.
+async function closeTurnLog(message, api) {
+  const turn = shared.turns.get(api.conversationId);
+  const record = turn && turn.log;
+  if (!record) return;
+  const stopReason = message && message.stopReason;
+  if (stopReason !== 'stop' && stopReason !== 'error' && stopReason !== 'aborted' && stopReason !== 'length') return;
+  turn.log = null;
+  const error = message && message.errorMessage ? String(message.errorMessage) : null;
+  try {
+    appendTurn({
+      turn_id: record.turn_id,
+      session_id: record.session_id,
+      agent: record.agent || '',
+      started_at: record.started_at,
+      ended_at: new Date().toISOString(),
+      status: stopReason === 'stop' && !error ? 'ok' : stopReason === 'aborted' ? 'failed' : 'error',
+      tool_calls: record.tool_calls,
+      input_summary: record.input_summary || '',
+      output_summary: boundedSummary(messageText(message && message.content)),
+      error: stopReason === 'length' && !error ? 'respuesta truncada por límite de longitud' : error,
+    });
+  } catch (err) {
+    console.error('[agent] registro de turnos: no se pudo escribir', record.turn_id, ':', (err && err.message) || err);
+  }
 }
 
 function stableJson(value) {
@@ -665,9 +765,18 @@ async function dispatchAndWait(request, context, api) {
 async function executeTool(spec, args, api, context) {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   if (!await toolEnabled(sessionId, spec.name, context)) {
-    return { content: [{ type: 'text', text: `Herramienta deshabilitada en esta conversación: ${spec.name}` }], isError: true };
+    const text = `Herramienta deshabilitada en esta conversación: ${spec.name}`;
+    noteToolResult(api, spec.name, text, true);
+    return { content: [{ type: 'text', text }], isError: true };
   }
-  const { text, added } = await dispatchTool(spec, args, sessionId, api, context);
+  let text;
+  let added;
+  try {
+    ({ text, added } = await dispatchTool(spec, args, sessionId, api, context));
+  } catch (err) {
+    noteToolResult(api, spec.name, `error: ${(err && err.message) || err}`, true);
+    throw err;
+  }
   let parsed = null;
   try { parsed = JSON.parse(text); } catch { }
   const isError = !!(parsed && typeof parsed === 'object' && (parsed.error !== undefined || parsed.isError === true));
@@ -688,6 +797,7 @@ async function executeTool(spec, args, api, context) {
       repeated.result = outcome;
     }
   }
+  noteToolResult(api, spec.name, text, isError);
   return { content: [{ type: 'text', text }, ...(image ? [image] : [])], isError,
     ...(added && added.length ? { control: { addTools: added } } : {}) };
 }

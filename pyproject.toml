@@ -58,7 +58,8 @@ ignore = ["E501"]
 "backend/main.py" = ["E402"]
 
 [tool.mypy]
-python_version = "3.11"
+# Stubs del venv (numpy sobre CPython 3.14) en sintaxis 3.12: un objetivo menor no parsea.
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 warn_unused_ignores = true
