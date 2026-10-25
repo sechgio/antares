@@ -275,8 +275,6 @@ async function _syncToSheetCore() {
     updates.push({ range: `BD_IMG!A${startRow}:M${endRow}`, values: chunk });
   }
 
-  // Si la hoja tenía más filas que el resultado actual, limpiar el remanente:
-  // filas viejas de NIS borrados reaparecerían en la próxima lectura.
   if (bdValues.length > rows.length) {
     const emptyTail = Array.from(
       { length: bdValues.length - rows.length },

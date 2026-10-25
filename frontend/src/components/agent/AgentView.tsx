@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, CornerDownLeft, CornerDownRight, FolderOpen, Globe, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
-import { agentApi, type AgentPermissionMode, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
+import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownRight, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { agentApi, type AgentPermissionMode, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
@@ -23,6 +23,8 @@ import ContextChips from './ContextChips';
 import AgentEditor from './AgentEditor';
 import ConversationMenu from './ConversationMenu';
 import AgentBrowserPanel from './AgentBrowserPanel';
+import AgentAuditPanel from './AgentAuditPanel';
+import ScheduledTasksPanel from './ScheduledTasksPanel';
 import { METHOD_LABELS } from './methodLabels';
 import { ApprovalCard, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel } from './AgentTimeline';
 
@@ -99,7 +101,7 @@ function SessionRow({
 }) {
   return (
     <div
-      className={`group relative flex h-8 shrink-0 items-center rounded-lg px-1.5 transition-colors ${
+      className={`group relative flex h-9 shrink-0 items-center rounded-lg px-2.5 transition-colors ${
         active
           ? 'bg-[var(--bg-input)]'
           : 'hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]'
@@ -148,7 +150,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [artifacts, setArtifacts] = useState<AgentArtifact[]>([]);
   const [questions, setQuestions] = useState<AgentQuestion[]>([]);
   const [context, setContext] = useState<AgentContext | null>(null);
-  const [usage, setUsage] = useState<{ input: number; output: number; context?: number; cached?: number; prompt?: number } | null>(null);
+  const [usage, setUsage] = useState<AgentUsage | null>(null);
   const [pending, setPending] = useState<AgentApproval[]>([]);
   const [running, setRunning] = useState(false);
   const [plan, setPlan] = useState<AgentPlan | null>(null);
@@ -185,6 +187,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const decisionRef = useRef<string | null>(null);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [browserOpen, setBrowserOpen] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);
   const [queued, setQueued] = useState<{ session: string; text: string; requestId: string; attachments?: string[]; failed?: boolean; correction?: boolean }[]>(() => {
     try {
       const saved: unknown = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
@@ -1004,6 +1008,24 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             <span className="min-w-0 flex-1" />
             <button
               type="button"
+              aria-label="Historial de aprobaciones"
+              title="Historial de aprobaciones"
+              onClick={() => setAuditOpen(true)}
+              className="flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+            >
+              <ShieldCheck size={14} />
+            </button>
+            <button
+              type="button"
+              aria-label="Encargos programados"
+              title="Encargos programados"
+              onClick={() => setTasksOpen(true)}
+              className="flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+            >
+              <CalendarClock size={14} />
+            </button>
+            <button
+              type="button"
               aria-label="Navegador del agente"
               aria-pressed={browserOpen}
               title={browserOpen ? 'Cerrar el navegador del agente' : 'Abrir el navegador del agente'}
@@ -1061,7 +1083,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           />
         )}
 
-        <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" tabIndex={-1} className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-4 pb-4 pt-3 [&>*]:mx-auto [&>*]:max-w-[720px]">
+        <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" tabIndex={-1} className="custom-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-4 pb-4 pt-3 [&>*]:mx-auto [&>*]:max-w-[720px]">
           {showHero ? (
             <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
               <AgentAvatar
@@ -1151,87 +1173,100 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           )}
           {readyProviders.length > 0 && (
             <div className="agent-suggestions" data-hidden={suggestionsHidden ? 'true' : undefined} inert={suggestionsHidden}>
-              <div role="group" aria-label="Sugerencias" className="agent-marquee min-h-0 pb-2" data-static={suggestionList.length < 2 ? 'true' : undefined}>
-                <div className="agent-marquee-track">
-                  {(suggestionList.length < 2 ? [false] : [false, true]).map((clone) => (
-                    <div key={String(clone)} className="agent-marquee-set" aria-hidden={clone || undefined} inert={clone}>
-                      {suggestionList.map((suggestion, i) => (
-                        <Button
-                          key={`${sessionId}-${suggestion}`}
-                          variant="none"
-                          size="none"
-                          className="agent-suggestion"
-                          style={{ animationDelay: `${i * 60}ms` }}
-                          disabled={sending || modelBusy || running || stopping || pending.length > 0}
-                          onClick={() => void sendSuggestion(suggestion)}
-                        >
-                          {suggestion}
-                        </Button>
-                      ))}
-                    </div>
-                  ))}
-                </div>
+              <div role="group" aria-label="Sugerencias" className="agent-suggestion-list min-h-0 pb-2">
+                {suggestionList.map((suggestion, i) => (
+                  <Button
+                    key={`${sessionId}-${suggestion}`}
+                    variant="none"
+                    size="none"
+                    className="agent-suggestion"
+                    style={{ animationDelay: `${i * 60}ms` }}
+                    disabled={sending || modelBusy || running || stopping || pending.length > 0}
+                    onClick={() => void sendSuggestion(suggestion)}
+                  >
+                    {suggestion}
+                  </Button>
+                ))}
               </div>
             </div>
           )}
           {queuedForSession.length > 0 && (
-            <div className="mb-2 flex flex-wrap items-center gap-2 px-3">
-              <span title="Se enviará al terminar el turno" className="text-[11px] font-medium text-[var(--text-muted)]">
-                En cola
-              </span>
-              {queuedForSession.map((item, idx) => (
-                <span
-                  key={`${idx}-${item.text}`}
-                  className="flex max-w-[70%] items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] py-0.5 pl-2.5 pr-1 text-[11px] text-[var(--text-secondary)]"
-                >
-                  {requestsInFlightRef.current.has(JSON.stringify([item.session, item.requestId])) ? (
-                    <span className="truncate">Enviando: {item.text}</span>
-                  ) : item.failed ? (
-                    <button
-                      type="button"
-                      className="truncate text-[var(--accent-yellow)]"
-                      title="Reintentar el envío pendiente"
-                      disabled={modelBusy || stopping}
-                      onClick={() => {
-                        const receipt = sendReceipts.find((entry) => entry.intent.session === item.session && entry.intent.requestId === item.requestId);
-                        if (receipt) void retrySend(receipt.intent);
-                        else void sendToSession({ session: item.session, text: item.text, requestId: item.requestId,
-                          attachments: item.attachments ?? [], correction: item.correction === true });
-                      }}
-                    >
-                      {item.text}
-                    </button>
-                  ) : (
-                    <span className="truncate">{item.text}</span>
-                  )}
-                  {(running || pending.length > 0) && !item.failed && (
-                    <button
-                      type="button"
-                      className="flex shrink-0 items-center rounded-full px-1 py-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-                      aria-label="Enviar como corrección"
-                      title="Enviar ahora como corrección del encargo en curso"
-                      disabled={sendingCorrection || stopping}
-                      onClick={() => void sendCorrection(item)}
-                    >
-                      <CornerDownRight size={10} />
-                      <span className="ml-1 text-[11px]">Indicar ahora</span>
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-                    aria-label="Quitar de la cola"
-                    title="Quitar de la cola"
-                    disabled={requestsInFlightRef.current.has(JSON.stringify([item.session, item.requestId]))}
-                    onClick={() => setQueued((q) => q.filter((i) => i !== item))}
+            <section aria-label="Mensajes en cola" className="agent-queue mb-2 overflow-hidden rounded-xl border border-[var(--border-subtle)]">
+              <div className="flex items-center gap-2 px-3 py-2 text-[12px] text-[var(--text-secondary)]">
+                <ListOrdered size={14} aria-hidden="true" />
+                <span className="font-medium">En cola</span>
+                <span className="tabular-nums" aria-label={`${queuedForSession.length} mensaje${queuedForSession.length === 1 ? '' : 's'} pendiente${queuedForSession.length === 1 ? '' : 's'}`}>{queuedForSession.length}</span>
+                <span className="ml-auto text-[11px] text-[var(--text-muted)]">Pendientes de envío</span>
+              </div>
+              <ol aria-label="Orden de envío" className="custom-scrollbar max-h-40 overflow-y-auto px-1 pb-1">
+                {queuedForSession.map((item, idx) => (
+                  <li
+                    key={item.requestId}
+                    className="agent-queue-item flex min-w-0 items-start gap-2 rounded-lg px-2 py-2 text-[12px] text-[var(--text-secondary)]"
                   >
-                    <X size={10} />
-                  </button>
-                </span>
-              ))}
-            </div>
+                    <span aria-hidden="true" className="w-4 shrink-0 pt-0.5 text-center text-[11px] tabular-nums text-[var(--text-muted)]">{idx + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      {requestsInFlightRef.current.has(JSON.stringify([item.session, item.requestId])) ? (
+                        <p className="line-clamp-2 break-words" title={item.text}>Enviando: {item.text}</p>
+                      ) : item.failed ? (
+                        <button
+                          type="button"
+                          className="line-clamp-2 break-words text-left text-[var(--accent-yellow)]"
+                          title="Reintentar el envío pendiente"
+                          disabled={modelBusy || stopping}
+                          onClick={() => {
+                            const receipt = sendReceipts.find((entry) => entry.intent.session === item.session && entry.intent.requestId === item.requestId);
+                            if (receipt) void retrySend(receipt.intent);
+                            else void sendToSession({ session: item.session, text: item.text, requestId: item.requestId,
+                              attachments: item.attachments ?? [], correction: item.correction === true });
+                          }}
+                        >
+                          {item.text}
+                        </button>
+                      ) : (
+                        <details className="group/queued">
+                          <summary className="flex cursor-pointer list-none items-start gap-1 rounded-sm" title="Ver mensaje completo">
+                            <span className="min-w-0 flex-1 line-clamp-2 break-words [overflow-wrap:anywhere] group-open/queued:line-clamp-none group-open/queued:whitespace-pre-wrap">{item.text}</span>
+                            <ChevronDown size={12} aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--text-muted)] transition-transform group-open/queued:rotate-180" />
+                          </summary>
+                        </details>
+                      )}
+                      <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
+                        <span>{requestsInFlightRef.current.has(JSON.stringify([item.session, item.requestId])) ? 'Enviando…' : item.failed ? 'Revisar envío' : item.correction ? 'Indicación pendiente' : idx === 0 ? 'A continuación' : 'En espera'}</span>
+                        {!!item.attachments?.length && <span className="inline-flex items-center gap-1"><Paperclip size={10} aria-hidden="true" />{item.attachments.length} adjunto{item.attachments.length === 1 ? '' : 's'}</span>}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      {(running || pending.length > 0) && !item.failed && (
+                        <button
+                          type="button"
+                          className="flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+                          aria-label="Enviar como corrección"
+                          title="Enviar ahora como corrección del encargo en curso"
+                          disabled={sendingCorrection || stopping}
+                          onClick={() => void sendCorrection(item)}
+                        >
+                          <CornerDownRight size={12} />
+                          <span className="hidden text-[11px] sm:inline">Indicar ahora</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="flex size-7 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+                        aria-label="Quitar de la cola"
+                        title="Quitar de la cola"
+                        disabled={requestsInFlightRef.current.has(JSON.stringify([item.session, item.requestId]))}
+                        onClick={() => setQueued((q) => q.filter((i) => i !== item))}
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </section>
           )}
-          <div className="agent-composer rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] transition-colors focus-within:border-[var(--border-medium)]">
+          <div role="group" aria-label="Redactar mensaje" className="agent-composer rounded-2xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] transition-colors">
             {mentionMatch && <div className="border-b border-[var(--border-subtle)] p-2">
               <p className="px-2 pb-1 text-[11px] text-[var(--text-secondary)]">Colaborar con un bot · solo lectura</p>
               <div ref={botMentionsRef} id="agent-bot-mentions" role="listbox" aria-label="Bots para mencionar" className="max-h-44 overflow-y-auto">
@@ -1267,27 +1302,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 ))}
               </div>
             )}
-            <div className="flex items-end gap-1 p-3">
-              <button
-                type="button"
-                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
-                onClick={() => void attach('files')}
-                disabled={!sessionId}
-                aria-label="Adjuntar archivos"
-                title="Adjuntar archivos (solo lectura para el agente)"
-              >
-                <Plus size={16} />
-              </button>
-              <button
-                type="button"
-                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
-                onClick={() => void attach('folder')}
-                disabled={!sessionId}
-                aria-label="Adjuntar carpeta"
-                title="Adjuntar una carpeta (el agente podrá leer sus archivos)"
-              >
-                <FolderOpen size={14} />
-              </button>
+            <div className="px-4 pb-1 pt-4">
               <textarea
                 ref={draftRef}
                 rows={1}
@@ -1318,12 +1333,63 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                     : 'Escribe un mensaje o @ para mencionar un bot…'
                 }
                 aria-label="Mensaje para el agente"
-                className="max-h-36 min-w-0 flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[14px] leading-5 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
+                className="block max-h-36 min-h-12 w-full min-w-0 resize-none bg-transparent py-0.5 text-[14px] leading-[22px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
               />
+            </div>
+            <div className="agent-composer-toolbar flex min-w-0 items-center gap-1 px-2.5 pb-2.5">
+              <button
+                type="button"
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                onClick={() => void attach('files')}
+                disabled={!sessionId}
+                aria-label="Adjuntar archivos"
+                title="Adjuntar archivos (solo lectura para el agente)"
+              >
+                <Plus size={16} />
+              </button>
+              <button
+                type="button"
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                onClick={() => void attach('folder')}
+                disabled={!sessionId}
+                aria-label="Adjuntar carpeta"
+                title="Adjuntar una carpeta (el agente podrá leer sus archivos)"
+              >
+                <FolderOpen size={14} />
+              </button>
+              <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1">
+                {readyProviders.length > 0 ? (
+                  <ModelPicker
+                    providers={readyProviders}
+                    value={{ provider: session?.provider ?? provider, model: session?.model ?? model }}
+                    onChange={(next) => void changeModel(next)}
+                    disabled={sending || modelBusy || running || stopping || pending.length > 0}
+                    className="min-w-0 max-w-[min(40vw,240px)]"
+                  />
+                ) : (
+                  <span className="hidden h-7 max-w-56 items-center gap-1.5 truncate px-2 sm:flex">
+                    <Sparkles size={11} className="shrink-0 text-[var(--accent-primary-hover)]" />
+                    {session?.model || model || providerLabel || 'Proveedor IA'}
+                  </span>
+                )}
+                <ContextUsage usage={usage} model={session?.model ?? model} />
+              </div>
+              {(running || pending.length > 0) && (
+                <div className="agent-turn-actions flex shrink-0 items-center gap-1">
+                  <Button variant="ghost" size="none" className="h-8 gap-1.5 rounded-lg px-2 text-[12px]" aria-label="Dejar para después"
+                    onClick={() => void send()} disabled={!draft.trim() || modelBusy || stopping || sending} title="Dejar para después (Intro)">
+                    <ListOrdered size={14} aria-hidden="true" /><span>Dejar para después</span>
+                  </Button>
+                  <Button variant="ghost" size="none" className="h-8 gap-1.5 rounded-lg px-2 text-[12px]" aria-label="Indicar ahora"
+                    onClick={() => void send(true)} disabled={!draft.trim() || modelBusy || stopping || sending || sendingCorrection} title="Indicar ahora">
+                    <CornerDownRight size={14} aria-hidden="true" /><span>Indicar ahora</span>
+                  </Button>
+                </div>
+              )}
               {(running || pending.length > 0) && (
                 <button
                   type="button"
-                  className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--accent-red)]"
+                  className="agent-stop flex size-8 shrink-0 items-center justify-center rounded-full text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--accent-red)]"
                   onClick={() => void cancelTurn()}
                   aria-label="Detener"
                   disabled={stopping}
@@ -1334,24 +1400,15 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               )}
               {!running && pending.length === 0 && <button
                 type="button"
-                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-primary)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--bg-input)] active:scale-[0.96] motion-reduce:transform-none disabled:bg-transparent disabled:text-[var(--text-muted)]"
+                className="agent-send flex size-8 shrink-0 items-center justify-center rounded-full transition-[background-color,color,transform] duration-150 active:scale-[0.96] motion-reduce:transform-none disabled:cursor-not-allowed"
                 onClick={() => void send()}
                 disabled={(!sessionId && !provider) || !draft.trim() || modelBusy || sending}
                 aria-label="Enviar"
                 title="Enviar (Intro)"
               >
-                <CornerDownLeft size={16} />
+                <ArrowUp size={17} aria-hidden="true" />
               </button>}
             </div>
-            {(running || pending.length > 0) && (
-              <div className="flex flex-wrap justify-end gap-2 px-3 pb-3">
-                <Button variant="ghost" size="sm" onClick={() => void send()} disabled={!draft.trim() || modelBusy || stopping || sending}
-                  title="Dejar para después (Intro)">Dejar para después</Button>
-                <Button size="sm" onClick={() => void send(true)} disabled={!draft.trim() || modelBusy || stopping || sending || sendingCorrection}>
-                  Indicar ahora
-                </Button>
-              </div>
-            )}
           </div>
           {visibleReceipts.length > 0 && (
             <div role="region" aria-label="Estado de los envíos" tabIndex={0} className="custom-scrollbar max-h-36 space-y-2 overflow-y-auto px-3 pt-2">
@@ -1397,27 +1454,19 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   Reanudar
                 </button>
               )}
-              {readyProviders.length > 0 ? (
-                <ModelPicker
-                  providers={readyProviders}
-                  value={{ provider: session?.provider ?? provider, model: session?.model ?? model }}
-                  onChange={(next) => void changeModel(next)}
-                  disabled={sending || modelBusy || running || stopping || pending.length > 0}
-                  className="min-w-0 max-w-[min(40vw,240px)]"
-                />
-              ) : (
-                <span className="hidden h-7 max-w-56 items-center gap-1.5 truncate px-2 sm:flex">
-                  <Sparkles size={11} className="shrink-0 text-[var(--accent-primary-hover)]" />
-                  {session?.model || model || providerLabel || 'Proveedor IA'}
-                </span>
-              )}
-              <ContextUsage usage={usage} model={session?.model ?? model} />
+              <span className="hidden text-[11px] sm:inline">Mayús + Intro para una nueva línea</span>
             </div>
           </div>
         </div>
       </main>
 
       {browserOpen && <AgentBrowserPanel onClose={() => setBrowserOpen(false)} />}
+      {auditOpen && session && (
+        <AgentAuditPanel sessions={sessions} sessionId={session.id} onClose={() => setAuditOpen(false)} />
+      )}
+      {tasksOpen && session && (
+        <ScheduledTasksPanel sessions={sessions} sessionId={session.id} onClose={() => setTasksOpen(false)} />
+      )}
 
       {toolsMenu.isOpen && createPortal(
         <div

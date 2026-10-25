@@ -1,4 +1,5 @@
 import json
+import threading
 import time
 from pathlib import Path
 
@@ -86,6 +87,50 @@ def test_subagente_no_ejecuta_efectos_ni_se_ofrece_a_si_mismo(tmp_path, monkeypa
     assert allowed == ["canvas_list"]
     assert "memory_remember" not in subagent.allowed_tool_names(None, None)
     assert "procedure_learn" not in subagent.allowed_tool_names(None, None)
+    assert "ask_user" not in subagent.allowed_tool_names(None, None)
+
+
+def test_roles_amplian_solo_el_worker_y_permiten_sustraer_herramientas():
+    explorer = set(subagent.allowed_tool_names(None, None))
+    reviewer = set(subagent.allowed_tool_names(None, None, role="reviewer"))
+    worker = set(subagent.allowed_tool_names(None, None, role="worker"))
+
+    assert explorer == reviewer
+    assert "canvas_list" in explorer
+    assert "canvas_create" not in explorer
+    assert "canvas_create" in worker
+    assert "artifact_print" not in worker
+    assert set(subagent.allowed_tool_names(None, None, exclude_tools=["canvas_list"])) == explorer - {"canvas_list"}
+
+
+def test_resolver_rol_exige_worker_opt_in():
+    assert subagent.resolve_role(None, None) == "explorer"
+    assert subagent.resolve_role("reviewer", None) == "reviewer"
+    assert subagent.resolve_role("worker", "worker") == "worker"
+    with pytest.raises(ValueError, match="configurado como worker"):
+        subagent.resolve_role("explorer", "worker")
+    with pytest.raises(ValueError, match="Rol de subagente no válido"):
+        subagent.normalize_role("admin")
+
+
+def test_agrupa_encargos_y_aplica_el_rol_del_perfil():
+    profile = _profile(role="reviewer")
+    tasks = subagent.normalize_tasks(profile, {"tasks": [
+        {"task": "Revisa A"},
+        {"task": "Revisa B", "role": "explorer", "exclude_tools": ["canvas_list"],
+         "output_schema": {"type": "object"}},
+    ]})
+
+    assert [task["role"] for task in tasks] == ["reviewer", "explorer"]
+    assert tasks[1]["exclude_tools"] == ["canvas_list"]
+    with pytest.raises(ValueError, match="task o tasks"):
+        subagent.normalize_tasks(profile, {"task": "A", "tasks": [{"task": "B"}]})
+    with pytest.raises(ValueError, match="entre 1 y 4"):
+        subagent.normalize_tasks(profile, {"tasks": [{"task": str(index)} for index in range(5)]})
+    with pytest.raises(ValueError, match="exclude_tools"):
+        subagent.normalize_tasks(profile, {"task": "A", "exclude_tools": "canvas_list"})
+    with pytest.raises(ValueError, match="worker"):
+        subagent.normalize_tasks(_profile(), {"task": "A", "role": "worker"})
 
 
 def test_subagente_respeta_herramientas_habilitadas_en_la_conversacion(tmp_path, monkeypatch):
@@ -111,6 +156,145 @@ def test_subagente_corta_al_llegar_al_limite(tmp_path, monkeypatch):
     assert receipt["status"] == "limit"
     assert len(receipt["steps"]) == subagent.MAX_STEPS
     assert len(json.dumps(receipt, ensure_ascii=False)) <= subagent.MAX_RECEIPT_CHARS
+
+def test_contrato_de_salida_valida_json_y_reintenta_una_vez(monkeypatch):
+    replies = [
+        {"text": "No es JSON", "calls": []},
+        {"text": "```json\n{\"total\": 3}\n```", "calls": []},
+    ]
+    monkeypatch.setattr(agent_chat, "chat", lambda *args, **kwargs: replies.pop(0))
+    receipt = subagent.run(
+        provider="faux", model="current", agent=_profile(), task="Cuenta",
+        tools=[], execute=lambda name, params: "{}",
+        output_schema={
+            "type": "object",
+            "properties": {"total": {"type": "integer"}},
+            "required": ["total"],
+            "additionalProperties": False,
+        },
+    )
+
+    assert replies == []
+    assert receipt["status"] == "done"
+    assert receipt["schema_valid"] is True
+    assert receipt["output"] == {"total": 3}
+
+
+def test_contrato_de_salida_marca_el_incumplimiento(monkeypatch):
+    replies = [
+        {"text": "Texto libre", "calls": []},
+        {"text": "{\"total\": \"tres\"}", "calls": []},
+    ]
+    monkeypatch.setattr(agent_chat, "chat", lambda *args, **kwargs: replies.pop(0))
+    receipt = subagent.run(
+        provider="faux", model="current", agent=_profile(), task="Cuenta",
+        tools=[], execute=lambda name, params: "{}",
+        output_schema={"type": "object", "properties": {"total": {"type": "integer"}}, "required": ["total"]},
+    )
+
+    assert receipt["status"] == "invalid"
+    assert receipt["schema_valid"] is False
+    assert receipt["schema_error"].startswith("total:")
+    assert "output" not in receipt
+
+
+def test_rechaza_un_json_schema_invalido():
+    with pytest.raises(ValueError, match="JSON Schema"):
+        subagent.validate_schema({"type": "no-existe"})
+
+
+def test_agrupa_recibos_y_marca_parciales():
+    done = {"status": "done", "ms": 10}
+    invalid = {"status": "invalid", "ms": 5}
+    group = subagent.group_receipt(_profile(), [done, invalid])
+
+    assert group["status"] == "partial"
+    assert group["results"] == [done, invalid]
+    assert group["ms"] == 15
+    assert group["depth"] == subagent.MAX_DEPTH
+    assert subagent.group_receipt(_profile(), [done, done])["status"] == "done"
+    assert subagent.group_receipt(_profile(), [invalid, invalid])["status"] == "invalid"
+
+
+def _execute_waiting_for_approval(runner, call, store, session_id):
+    outcome = {}
+
+    def target():
+        try:
+            outcome["result"] = runner._execute(call, None)
+        except BaseException as err:
+            outcome["error"] = err
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 5
+    pending = []
+    while time.monotonic() < deadline and not pending:
+        pending = store.pending_approvals(session_id)
+        time.sleep(0.02)
+    assert pending, "el subagente no pidió aprobación para una herramienta con efectos"
+    return thread, pending[0], outcome
+
+
+def _worker_call(session):
+    return _call(
+        session,
+        subagent=_profile(role="worker", tools=["canvas_create"]),
+        params={"agent": "Investigador", "task": "Crea el canvas"},
+    )
+
+
+def test_worker_devuelve_la_aprobacion_a_la_conversacion_principal(tmp_path, monkeypatch):
+    store, session = _session(tmp_path)
+    replies = [
+        {"text": "", "calls": [{"id": "t1", "name": "canvas_create", "params": {"name": "Demo"}}]},
+        {"text": "No pude crear el canvas.", "calls": []},
+    ]
+    monkeypatch.setattr(agent_chat, "chat", lambda *args, **kwargs: replies.pop(0))
+    monkeypatch.setattr(agent, "tool_specs", lambda: [{"name": "canvas_create", "gated": True}])
+    executed = []
+    runner = agent.AgentRunner(store, lambda name: lambda params: executed.append((name, params)) or {"ok": True})
+
+    thread, approval, outcome = _execute_waiting_for_approval(runner, _worker_call(session), store, session["id"])
+    assert approval["method"] == "canvas_create"
+    assert approval["context"] == {"subagent": "Investigador", "subagent_role": "worker"}
+    store.decide_approval(approval["id"], False)
+    thread.join(5)
+
+    assert not thread.is_alive()
+    assert "error" not in outcome
+    receipt = json.loads(outcome["result"])
+    assert executed == []
+    assert receipt["status"] == "done"
+    assert receipt["steps"] == [{
+        "name": "canvas_create",
+        "status": "failed",
+        "detail": "El usuario rechazó esta acción del subagente",
+    }]
+
+
+def test_worker_ejecuta_la_herramienta_aprobada_por_el_padre(tmp_path, monkeypatch):
+    store, session = _session(tmp_path)
+    replies = [
+        {"text": "", "calls": [{"id": "t1", "name": "canvas_create", "params": {"name": "Demo"}}]},
+        {"text": "Canvas creado.", "calls": []},
+    ]
+    monkeypatch.setattr(agent_chat, "chat", lambda *args, **kwargs: replies.pop(0))
+    monkeypatch.setattr(agent, "tool_specs", lambda: [{"name": "canvas_create", "gated": True}])
+    executed = []
+    runner = agent.AgentRunner(store, lambda name: lambda params: executed.append((name, params)) or {"ok": True})
+
+    thread, approval, outcome = _execute_waiting_for_approval(runner, _worker_call(session), store, session["id"])
+    store.decide_approval(approval["id"], True)
+    thread.join(5)
+
+    assert not thread.is_alive()
+    assert "error" not in outcome
+    receipt = json.loads(outcome["result"])
+    assert executed == [("canvas_create", {"name": "Demo"})]
+    assert receipt["steps"] == [{"name": "canvas_create", "status": "done"}]
+    assert receipt["text"] == "Canvas creado."
+
 
 def test_dispatch_exige_el_perfil_resuelto_por_electron():
     result = agent_internal._dispatch({"session_id": "s", "call_id": "c", "name": subagent.TOOL_NAME, "params": {}})

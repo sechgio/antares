@@ -46,10 +46,6 @@ const TOOLS = {
   }, true],
 };
 
-// La página vive en un WebContentsView. Sin el panel abierto se aloja en una
-// ventana anfitriona transparente fuera de pantalla (una ventana oculta no
-// pinta); con el panel abierto se monta en la ventana principal
-// sobre el hueco que el panel le deja, como el navegador de Claude Desktop.
 const HOST_SIZE = { width: 1280, height: 860 };
 const USER_CONTROL_ERROR = 'El usuario tiene el control del navegador ahora mismo; espera a que te lo devuelva o pídeselo';
 const USER_BUSY_ERROR = 'El usuario está usando el navegador en este momento; espera unos segundos antes de volver a actuar en la página';
@@ -205,8 +201,6 @@ function clampBounds(bounds, zoom, size) {
   return { x, y, width, height };
 }
 
-// Coloca la página en el panel de la ventana principal o la devuelve a la
-// ventana anfitriona; mover el view conserva la página, su historial y su sesión.
 function mount(electron) {
   if (!view) return;
   const main = require('./window-manager').getMainWindow();
@@ -223,9 +217,6 @@ function mount(electron) {
   fitPage();
 }
 
-// La página siempre se maqueta con el ancho de escritorio de la ventana
-// anfitriona y en un panel más estrecho se muestra reducida: el agente ve la
-// misma página, con los mismos elementos, sea cual sea el tamaño del panel.
 function fitPage() {
   if (!view || !alive(view.webContents)) return;
   const { width } = view.getBounds();

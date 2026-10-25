@@ -19,10 +19,13 @@ export interface AgentSession {
   profile?: { id: string; name: string };
 }
 
+export type AgentRole = 'explorer' | 'reviewer' | 'worker';
+
 export interface AgentProfile {
   id: string;
   name: string;
   description: string;
+  role?: AgentRole;
   instructions: string;
   starter: string;
   tools: string[] | null;
@@ -55,6 +58,29 @@ export interface AgentMessage {
   partial?: boolean;
 }
 
+export interface AgentUsageTurn {
+  input: number;
+  output: number;
+  cached?: number;
+  cost?: number;
+}
+
+export interface AgentUsage {
+  input: number;
+  output: number;
+  context?: number;
+  cached?: number;
+  prompt?: number;
+  /** Gasto acumulado de la conversación en dólares, según pi.usage. */
+  cost?: number;
+  /** Última respuesta del proveedor. */
+  turn?: AgentUsageTurn;
+  /** Ventana real del modelo que respondió, si se conoce. */
+  window?: number;
+  /** Resúmenes de contexto aplicados hasta ahora. */
+  compactions?: number;
+}
+
 interface AgentMessageFiles {
   granted: string[];
   rejected: { path: string; reason: string }[];
@@ -80,17 +106,72 @@ export interface AgentToolSpec {
   module?: string | null;
 }
 
+export type AgentApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired';
+export type AgentApprovalFilterStatus = AgentApprovalStatus | 'all' | 'uncertain';
+
 export interface AgentApproval {
   id: string;
   session_id: string;
   call_id: string;
   method: string;
   params: Record<string, unknown>;
-  status: 'pending' | 'approved' | 'denied' | 'expired';
+  fingerprint?: string;
+  status: AgentApprovalStatus;
   created_at: number;
   decided_at: number | null;
-  context?: { account?: string; sheet_id?: string; scopes?: string[]; filename?: string; computer?: { app?: string; window?: string; element?: string } };
+  consumed_by?: string;
+  context?: { account?: string; sheet_id?: string; scopes?: string[]; filename?: string; computer?: { app?: string; window?: string; element?: string }; subagent?: string; subagent_role?: AgentRole };
   resources?: { path: string; sha256?: string }[];
+  dispatch?: { status: string; finished_at?: number };
+}
+
+export interface AgentGrant {
+  path: string;
+  mode?: string;
+  request_id?: string;
+  size?: number;
+  mtime_ns?: number;
+}
+
+export type AgentTaskStatus = 'pending' | 'delivering' | 'delivered' | 'cancelled' | 'uncertain';
+export type AgentTaskKind = 'schedule' | 'queue';
+export type AgentQueuePauseReason = 'manual' | 'continuation' | 'failed' | 'cancelled';
+
+export interface AgentQueueState {
+  session_id: string;
+  paused: boolean;
+  paused_reason?: AgentQueuePauseReason;
+  pending: number;
+  running: number;
+}
+
+export interface AgentTaskRun {
+  at: number;
+  due_at: number;
+  status: 'delivered' | 'failed' | 'uncertain';
+  silent?: boolean;
+  error?: string;
+}
+
+export interface AgentTask {
+  id: string;
+  session_id: string;
+  kind?: AgentTaskKind;
+  seq?: number;
+  content: string;
+  due_at: number;
+  interval_ms: number;
+  status: AgentTaskStatus;
+  created_at: number;
+  updated_at?: number;
+  timezone?: string;
+  silent?: boolean;
+  origin_task_id?: string;
+  runs?: AgentTaskRun[];
+  last_run_at?: number;
+  last_status?: AgentTaskRun['status'];
+  last_error?: string;
+  retry_at?: number;
 }
 
 export interface AgentArtifact {
@@ -183,7 +264,7 @@ export const agentApi = {
       artifacts?: AgentArtifact[];
       questions?: AgentQuestion[];
       context?: AgentContext;
-      usage?: { input: number; output: number; context?: number; cached?: number; prompt?: number } | null;
+      usage?: AgentUsage | null;
     }>('agent_messages_list', { session_id }),
 
   agentContextRemoveFile: (session_id: string, path: string) =>
@@ -222,6 +303,32 @@ export const agentApi = {
   agentDeny: (approval_id: string) =>
     _invoke<{ approval: AgentApproval }>('agent_deny', { approval_id }),
 
+  agentApprovalsHistory: (params: { session_id?: string; method?: string; status?: AgentApprovalFilterStatus; limit?: number } = {}) =>
+    _invoke<{ approvals: AgentApproval[] }>('agent_approvals_history', params),
+
+  agentGrantsList: (session_id: string) =>
+    _invoke<{ grants: AgentGrant[] }>('agent_grants_list', { session_id }),
+
+  agentGrantsRevoke: (session_id: string, path?: string) =>
+    _invoke<{ revoked: number }>('agent_grants_revoke', { session_id, ...(path ? { path } : {}) }),
+
+  agentTasksList: (session_id?: string) =>
+    _invoke<{ tasks: AgentTask[]; queues: AgentQueueState[] }>('agent_tasks_list', session_id ? { session_id } : {}),
+
+  agentTasksSave: (p: {
+    session_id: string; id?: string; kind?: AgentTaskKind; content: string; due_at?: string;
+    every_minutes?: number | null; silent?: boolean; timezone?: string;
+  }) => _invoke<{ scheduled: AgentTask }>('agent_tasks_save', p),
+
+  agentTasksCancel: (id: string) =>
+    _invoke<{ cancelled: boolean; id: string }>('agent_tasks_cancel', { id }),
+
+  agentTasksRun: (id: string) =>
+    _invoke<{ scheduled: AgentTask }>('agent_tasks_run', { id }),
+
+  agentTasksQueue: (session_id: string, action: 'pause' | 'resume') =>
+    _invoke<{ queue: AgentQueueState }>('agent_tasks_queue', { session_id, action }),
+
   agentRendererResult: (id: string, result?: unknown, error?: string, uncertain = false) =>
     _invoke<{ accepted: boolean }>('agent_renderer_result', { id, result, error, ...(uncertain ? { uncertain: true } : {}) }),
 
@@ -241,7 +348,7 @@ export const agentApi = {
 
   agentProfilesList: () => _invoke<{ profiles: AgentProfile[] }>('agent_profiles_list'),
 
-  agentProfileSave: (p: { id?: string; name: string; description: string; instructions: string; starter: string; tools: string[] | null }) =>
+  agentProfileSave: (p: { id?: string; name: string; description: string; role?: AgentRole; instructions: string; starter: string; tools: string[] | null }) =>
     _invoke<{ profile: AgentProfile }>('agent_profile_save', p),
 
   agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),

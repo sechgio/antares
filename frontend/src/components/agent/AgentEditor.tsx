@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
-import { agentApi, type AgentProfile, type AgentToolSpec } from '../../api/agentApi';
+import { agentApi, type AgentProfile, type AgentRole, type AgentToolSpec } from '../../api/agentApi';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
+import { SegmentedControl } from '../ui/SegmentedControl';
 import Textarea from '../ui/Textarea';
 import Toggle from '../ui/Toggle';
 import AgentAvatar from './AgentAvatar';
@@ -13,6 +14,12 @@ import { METHOD_LABELS } from './methodLabels';
 
 const FIELD = 'grid grid-cols-[96px_1fr] items-start gap-3 px-3 py-2.5';
 const LABEL = 'pt-1.5 text-[13px] text-[var(--text-secondary)]';
+
+const ROLE_HINT: Record<AgentRole, string> = {
+  explorer: 'Solo lee datos; investiga y reúne evidencia.',
+  reviewer: 'Solo lee datos; revisa, contrasta y emite un veredicto.',
+  worker: 'Puede ejecutar efectos; cada acción pedirá tu aprobación en la conversación que delega.',
+};
 
 export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
   profile: AgentProfile | null;
@@ -24,6 +31,7 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
   const { confirm } = useDialog();
   const [name, setName] = useState(profile?.name ?? '');
   const [description, setDescription] = useState(profile?.description ?? '');
+  const [role, setRole] = useState<AgentRole>(profile?.role ?? 'explorer');
   const [instructions, setInstructions] = useState(profile?.instructions ?? '');
   const [starter, setStarter] = useState(profile?.starter ?? '');
   const [allTools, setAllTools] = useState(profile ? profile.tools === null : true);
@@ -48,7 +56,7 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
     try {
       const res = await agentApi.agentProfileSave({
         ...(profile ? { id: profile.id } : {}),
-        name, description, instructions, starter,
+        name, description, role, instructions, starter,
         tools: allTools ? null : [...selected],
       });
       addToast({ message: profile ? 'Agente actualizado. Los cambios se aplicarán a conversaciones nuevas.' : 'Agente creado', type: 'success' });
@@ -115,6 +123,24 @@ export default function AgentEditor({ profile, onClose, onSaved, onDeleted }: {
             <Input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={200}
               aria-label="Descripción del agente" placeholder="Para qué sirve" className="w-full" />
           </label>
+          <div className={FIELD}>
+            <span className={LABEL}>Rol</span>
+            <div className="space-y-1.5">
+              <SegmentedControl<AgentRole>
+                aria-label="Rol del agente"
+                value={role}
+                onChange={setRole}
+                options={[
+                  { value: 'explorer', label: 'Explorador' },
+                  { value: 'reviewer', label: 'Revisor' },
+                  { value: 'worker', label: 'Worker' },
+                ]}
+              />
+              <span className={`block text-[11px] leading-relaxed ${role === 'worker' ? 'text-[var(--accent-yellow)]' : 'text-[var(--text-muted)]'}`}>
+                {ROLE_HINT[role]}
+              </span>
+            </div>
+          </div>
           <label className={FIELD}>
             <span className={LABEL}>Indicaciones</span>
             <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} maxLength={4000} rows={6}
