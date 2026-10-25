@@ -7,7 +7,6 @@ interface ChannelInfo {
 }
 
 export const CHANNELS = catalog.channels as Record<AgentChannel, ChannelInfo>;
-export const CHANNEL_ORDER = Object.keys(CHANNELS) as AgentChannel[];
 
 export function channelLabel(channel?: string | null): string | null {
   return channel && Object.prototype.hasOwnProperty.call(CHANNELS, channel)

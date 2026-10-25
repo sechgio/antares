@@ -1,42 +1,28 @@
-import { useEffect, useId, useMemo, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Hand, ShieldAlert, ShieldCheck } from 'lucide-react';
-import type { AgentApprovalRules, AgentChannelRule, AgentPermissionMode, AgentRuleAudit } from '../../api/agentApi';
+import type { AgentApprovalRules, AgentPermissionMode } from '../../api/agentApi';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import Button from '../ui/Button';
-import { CHANNELS, CHANNEL_ORDER, channelLabel } from './channels';
-
-const RULE_LABELS: Record<AgentChannelRule, string> = { ask: 'Preguntar', allow: 'Permitir', deny: 'Bloquear' };
-
-function ruleLabel(rule: AgentChannelRule | null): string {
-  return rule ? RULE_LABELS[rule] : 'Heredar';
-}
 
 const MODES = [
-  { value: 'ask', label: 'Solicitar aprobación', description: 'Confirmar acciones sensibles y consultas web', Icon: Hand },
-  { value: 'auto', label: 'Aprobar por mí', description: 'Confirmar acciones sensibles; consultar la web sin preguntar', Icon: ShieldCheck },
-  { value: 'full', label: 'Acceso completo', description: 'Ejecutar acciones habilitadas sin confirmar salvo terminal', Icon: ShieldAlert },
+  { value: 'ask', label: 'Solicitar aprobación', description: 'Pregunta antes de acciones sensibles y webs', Icon: Hand },
+  { value: 'auto', label: 'Aprobar por mí', description: 'Pregunta lo sensible; la web va sola', Icon: ShieldCheck },
+  { value: 'full', label: 'Acceso completo', description: 'Sin preguntar, salvo el terminal', Icon: ShieldAlert },
 ] satisfies { value: AgentPermissionMode; label: string; description: string; Icon: typeof Hand }[];
 
-export default function PermissionPicker({ value, onChange, disabled, pending, rules, onRulesChange, rulesBusy, globalRules, audit, onGlobalRulesChange, scope, onScopeChange }: {
+export default function PermissionPicker({ value, onChange, disabled, pending, rules, globalRules }: {
   value: AgentPermissionMode;
   onChange: (mode: AgentPermissionMode) => void;
   disabled: boolean;
   pending: number;
   rules: AgentApprovalRules;
-  onRulesChange: (rules: AgentApprovalRules) => void;
-  rulesBusy: boolean;
   globalRules: AgentApprovalRules;
-  audit: AgentRuleAudit[];
-  onGlobalRulesChange: (rules: AgentApprovalRules) => void;
-  scope: 'session' | 'global';
-  onScopeChange: (scope: 'session' | 'global') => void;
 }) {
   const id = useId();
-  const [auditOpen, setAuditOpen] = useState(false);
   const menu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
-    estimatedWidth: 340,
-    estimatedHeight: 520,
+    estimatedWidth: 280,
+    estimatedHeight: 260,
     direction: 'up',
     maxHeightCap: 560,
   });
@@ -47,9 +33,6 @@ export default function PermissionPicker({ value, onChange, disabled, pending, r
   const ruleSummary = ruleCount ? `${ruleCount} regla${ruleCount === 1 ? '' : 's'} por canal` : '';
   const globalRuleCount = Object.keys(globalRules).length;
   const globalRuleSummary = globalRuleCount ? `${globalRuleCount} regla${globalRuleCount === 1 ? '' : 's'} global${globalRuleCount === 1 ? '' : 'es'}` : '';
-  const scopedRules = scope === 'global' ? globalRules : rules;
-  const changeScopedRules = scope === 'global' ? onGlobalRulesChange : onRulesChange;
-  const recentAudit = useMemo(() => [...audit].sort((a, b) => b.at - a.at).slice(0, 5), [audit]);
 
   useEffect(() => {
     if (disabled) close();
@@ -68,7 +51,6 @@ export default function PermissionPicker({ value, onChange, disabled, pending, r
       menu.triggerRef.current?.focus();
       return;
     }
-    if (event.target instanceof HTMLSelectElement) return;
     if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
       event.preventDefault();
       const items = Array.from(popupRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') ?? []);
@@ -109,15 +91,16 @@ export default function PermissionPicker({ value, onChange, disabled, pending, r
         id={id}
         role="menu"
         aria-label="Permisos del agente"
-        className="custom-scrollbar fixed z-[300] overflow-y-auto rounded-xl border border-[var(--border-medium)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_92%,var(--text-primary))] p-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.2)]"
-        style={{ top: menu.position?.top ?? -9999, left: menu.position?.left ?? -9999, width: menu.position?.width ?? 340, maxHeight: menu.position?.maxHeight, visibility: menu.position ? 'visible' : 'hidden' }}
+        className="custom-scrollbar fixed z-[300] overflow-y-auto rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1 shadow-[0_12px_32px_rgba(0,0,0,0.35)]"
+        style={{ top: menu.position?.top ?? -9999, left: menu.position?.left ?? -9999, width: menu.position?.width ?? 280, maxHeight: menu.position?.maxHeight, visibility: menu.position ? 'visible' : 'hidden' }}
         onKeyDown={handleKey}
         onBlur={(event) => {
           const next = event.relatedTarget;
           if (next instanceof Node && !event.currentTarget.contains(next) && next !== menu.triggerRef.current) close();
         }}
       >
-        {MODES.map(({ value: mode, label, description, Icon: ModeIcon }) => (
+        <p className="px-2.5 pb-1 pt-1.5 text-[12px] font-medium text-[var(--text-muted)]">Permisos · esta conversación</p>
+        {MODES.map(({ value: mode, label, description }) => (
           <Button
             key={mode}
             variant="none"
@@ -125,94 +108,20 @@ export default function PermissionPicker({ value, onChange, disabled, pending, r
             role="menuitemradio"
             aria-checked={value === mode}
             tabIndex={value === mode ? 0 : -1}
-            disabled={rulesBusy}
-            className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-normal transition-colors hover:bg-[color:color-mix(in_srgb,var(--bg-input)_85%,var(--text-primary))] focus-visible:bg-[color:color-mix(in_srgb,var(--bg-input)_85%,var(--text-primary))] focus-visible:outline-none disabled:opacity-50 ${value === mode ? 'bg-[color:color-mix(in_srgb,var(--bg-input)_85%,var(--text-primary))]' : ''} ${mode === 'full' ? 'text-orange-500' : 'text-[var(--text-primary)]'}`}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left font-normal transition-colors hover:bg-[var(--bg-input)] focus-visible:bg-[var(--bg-input)] focus-visible:outline-none disabled:opacity-50"
             onClick={() => {
               close();
               menu.triggerRef.current?.focus();
               if (mode !== value) onChange(mode);
             }}
           >
-            <ModeIcon size={14} className="shrink-0" aria-hidden="true" />
             <span className="min-w-0 flex-1">
-              <span className="block text-[12px] leading-4">{label}</span>
-              <span className={`block text-[11px] leading-4 ${mode === 'full' ? '' : 'text-[var(--text-secondary)]'}`}>{description}</span>
+              <span className={`block text-[13px] font-medium leading-5 ${mode === 'full' ? 'text-orange-500' : 'text-[var(--text-primary)]'}`}>{label}</span>
+              <span className="block text-[12px] leading-4 text-[var(--text-muted)]">{description}</span>
             </span>
-            <Check size={14} className={`shrink-0 ${value === mode ? '' : 'invisible'}`} aria-hidden="true" />
+            <Check size={16} className={`shrink-0 text-[var(--accent-blue)] ${value === mode ? '' : 'invisible'}`} aria-hidden="true" />
           </Button>
         ))}
-        <div role="group" aria-label="Reglas por canal" className="mt-1.5 border-t border-[var(--border-subtle)] px-2.5 pb-1.5 pt-2">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[12px] leading-4 text-[var(--text-primary)]">Reglas por canal</p>
-            <select
-              aria-label="Alcance de las reglas"
-              className="h-6 shrink-0 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-input)] px-1.5 text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
-              value={scope}
-              disabled={rulesBusy}
-              onChange={(event) => onScopeChange(event.target.value === 'global' ? 'global' : 'session')}
-            >
-              <option value="session">Esta conversación</option>
-              <option value="global">Todas las conversaciones</option>
-            </select>
-          </div>
-          <p className="mb-1.5 text-[11px] leading-4 text-[var(--text-secondary)]">
-            {scope === 'global'
-              ? 'Se aplican a todas las conversaciones; las reglas de cada chat tienen prioridad.'
-              : '«Heredar» usa el modo de arriba y no cambia nada. Las reglas se guardan con esta conversación.'}
-          </p>
-          <div className="space-y-1.5">
-            {CHANNEL_ORDER.map((channel) => (
-              <label key={channel} className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--text-secondary)]" title={CHANNELS[channel].description}>
-                  {CHANNELS[channel].label}
-                </span>
-                <select
-                  aria-label={`Regla para ${CHANNELS[channel].label}`}
-                  className="h-7 shrink-0 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-input)] px-1.5 text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
-                  value={scopedRules[channel] ?? ''}
-                  disabled={disabled || rulesBusy}
-                  onChange={(event) => {
-                    const next = { ...scopedRules };
-                    const rule = event.target.value as AgentChannelRule | '';
-                    if (rule) next[channel] = rule;
-                    else delete next[channel];
-                    changeScopedRules(next);
-                  }}
-                >
-                  <option value="">Heredar</option>
-                  <option value="ask">Preguntar</option>
-                  <option value="allow" disabled={channel === 'terminal' || channel === 'other'}>Permitir</option>
-                  <option value="deny">Bloquear</option>
-                </select>
-              </label>
-            ))}
-          </div>
-        </div>
-        {recentAudit.length > 0 && (
-          <div className="mt-1.5 border-t border-[var(--border-subtle)] px-2.5 pb-1.5 pt-2">
-            <button
-              type="button"
-              aria-expanded={auditOpen}
-              className="w-full text-left text-[12px] leading-4 text-[var(--text-primary)]"
-              onClick={() => setAuditOpen((open) => !open)}
-            >
-              Historial de reglas
-            </button>
-            {auditOpen && (
-              <ul className="mt-1 space-y-1">
-                {recentAudit.map((entry) => (
-                  <li key={entry.id} className="text-[11px] leading-4 text-[var(--text-secondary)]">
-                    {`${channelLabel(entry.channel) ?? entry.channel} · ${entry.scope === 'global' ? 'Todas las conversaciones' : 'Esta conversación'} · de «${ruleLabel(entry.from)}» a «${ruleLabel(entry.to)}»`}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-        <p className="mt-1.5 border-t border-[var(--border-subtle)] px-2.5 pb-1.5 pt-2 text-[11px] leading-4 text-[var(--text-secondary)]">
-          {scope === 'global' ? 'Para todas las conversaciones.' : 'Solo para este chat.'} Conserva las herramientas y accesos habilitados.
-          {' '}Acciones sensibles: comandos, escritorio y cambios en archivos o servicios.
-        </p>
       </div>, document.body,
     )}
   </>;
