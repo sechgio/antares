@@ -25,6 +25,9 @@ const MAX_REQUEST_ID_CHARS = 100;
 const MAX_MESSAGE_PATHS = 20;
 const ATTACHMENT_TTL_MS = 60 * 60 * 1000;
 const MAX_ATTACHMENTS = 20;
+const MAX_PASTED_BYTES = 20 * 1024 * 1024;
+const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024;
+const IMAGE_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
 const QUOTED_PATH_RE = /["'`\u201c\u201d]([A-Za-z]:\\[^"'`\u201c\u201d\r\n]+)["'`\u201c\u201d]/g;
 const BARE_PATH_RE = /(?:^|[\s(\[])([A-Za-z]:\\[^\s"'`<>|*?]+)/g;
 
@@ -575,8 +578,9 @@ async function messageSend(params) {
       + 'No amplíes herramientas ni permisos por una mención.'
     : '';
   const context = [mentions.context, memory.context, attachedNote, skillsNote, conversationNote, botsNote].filter(Boolean).join('\n\n');
-  const input = context
-    ? [{ type: 'text', text: content }, { type: 'text', text: `${shared.CONTEXT_MARKER}\n${context}` }]
+  const images = await _inlineImages(conv, attached, (files.rejected || []).map((item) => item.path));
+  const input = context || images.length
+    ? [{ type: 'text', text: content }, ...images, ...(context ? [{ type: 'text', text: `${shared.CONTEXT_MARKER}\n${context}` }] : [])]
     : content;
   if (!projection.isRunning(session.conversationId)) {
     shared.rounds.delete(session.conversationId);
@@ -618,23 +622,77 @@ async function messageSend(params) {
 
 async function attach(params) {
   const kind = params && params.kind === 'folder' ? 'folder' : 'files';
-  const dialog = shared.dialog || require('electron').dialog;
-  const win = shared.dialog ? undefined : require('./window-manager').getMainWindow();
-  const response = await dialog.showOpenDialog(win || undefined, {
-    title: kind === 'folder' ? 'Adjuntar carpeta para el agente' : 'Adjuntar archivos para el agente',
-    properties: kind === 'folder' ? ['openDirectory'] : ['openFile', 'multiSelections'],
-  });
-  if (!response || response.canceled || !Array.isArray(response.filePaths)) return { attachments: [] };
+  let filePaths;
+  if (Array.isArray(params && params.paths) || Array.isArray(params && params.data)) {
+    // Arrastrar y soltar trae rutas del explorador; pegar trae bytes sin ruta.
+    filePaths = [...await _droppedPaths(params.paths), ...await _pastedFiles(params.data)];
+  } else {
+    const dialog = shared.dialog || require('electron').dialog;
+    const win = shared.dialog ? undefined : require('./window-manager').getMainWindow();
+    const response = await dialog.showOpenDialog(win || undefined, {
+      title: kind === 'folder' ? 'Adjuntar carpeta para el agente' : 'Adjuntar archivos para el agente',
+      properties: kind === 'folder' ? ['openDirectory'] : ['openFile', 'multiSelections'],
+    });
+    if (!response || response.canceled || !Array.isArray(response.filePaths)) return { attachments: [] };
+    filePaths = response.filePaths;
+  }
   const now = Date.now();
   for (const [id, item] of shared.attachments) {
     if (now - item.created > ATTACHMENT_TTL_MS) shared.attachments.delete(id);
   }
-  const attachments = response.filePaths.slice(0, MAX_ATTACHMENTS).map((filePath) => {
+  const attachments = filePaths.slice(0, MAX_ATTACHMENTS).map((filePath) => {
     const id = crypto.randomBytes(9).toString('hex');
     shared.attachments.set(id, { path: filePath, kind, created: now });
     return { id, name: path.basename(filePath), kind };
   });
   return { attachments };
+}
+
+async function _droppedPaths(paths) {
+  const out = [];
+  for (const raw of Array.isArray(paths) ? paths.slice(0, MAX_ATTACHMENTS) : []) {
+    if (typeof raw !== 'string' || !path.isAbsolute(raw)) throw validation('Ruta de adjunto no válida');
+    const stat = await fs.promises.stat(raw).catch(() => null);
+    if (!stat || !stat.isFile()) throw validation(`No se puede adjuntar: ${path.basename(raw)}`);
+    out.push(raw);
+  }
+  return out;
+}
+
+async function _pastedFiles(data) {
+  const items = Array.isArray(data) ? data.slice(0, MAX_ATTACHMENTS) : [];
+  if (!items.length) return [];
+  const dir = path.join(_agentDir(), 'attachments');
+  await fs.promises.mkdir(dir, { recursive: true });
+  const out = [];
+  for (const item of items) {
+    const bytes = Buffer.from(typeof item?.data === 'string' ? item.data : '', 'base64');
+    if (!bytes.length || bytes.length > MAX_PASTED_BYTES) throw validation('El archivo pegado está vacío o supera 20 MB');
+    const name = path.basename(String(item.name || '')).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80) || 'pegado';
+    const target = path.join(dir, `${crypto.randomBytes(6).toString('hex')}-${name}`);
+    await fs.promises.writeFile(target, bytes);
+    out.push(target);
+  }
+  return out;
+}
+
+// Con modelos con visión las imágenes adjuntas viajan en el mensaje, como en
+// un chat; el resto de archivos se leen con herramientas desde su ruta.
+async function _inlineImages(conv, attached, rejected) {
+  const candidates = attached.filter((a) => a.kind === 'files' && !rejected.includes(a.path)
+    && IMAGE_MIME[path.extname(a.path).toLowerCase()]);
+  if (!candidates.length) return [];
+  const ref = (await conv.agent(ctx())).model;
+  const model = ref && shared.state.models.getModel(ref.provider, ref.modelId);
+  if (!model || !model.input.includes('image')) return [];
+  const images = [];
+  for (const item of candidates) {
+    const stat = await fs.promises.stat(item.path).catch(() => null);
+    if (!stat || !stat.isFile() || stat.size > MAX_INLINE_IMAGE_BYTES) continue;
+    images.push({ type: 'image', data: (await fs.promises.readFile(item.path)).toString('base64'),
+      mimeType: IMAGE_MIME[path.extname(item.path).toLowerCase()] });
+  }
+  return images;
 }
 
 function _takeAttachments(ids) {

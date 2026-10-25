@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent acepta archivos arrastrados al compositor y capturas pegadas con Ctrl+V, con miniatura para imágenes. Los modelos con visión reciben las imágenes adjuntas (PNG, JPG, GIF y WEBP de hasta 4 MB) dentro del mensaje; el resto de archivos se leen con herramientas como hasta ahora.
 - Agent admite perfiles portables en `agents/<slug>` con metadatos, instrucciones base y skills propias; `AGENTS_HOME` permite cambiar la raíz y las skills propias prevalecen sobre las compartidas de `_shared/skills`, conservando el catálogo autorizado y sin ejecutar scripts al cargarlas. Las lecturas y respuestas están acotadas; un perfil ausente al reabrir afecta solo a su conversación.
 - Nueva vista Complementos en la barra lateral: reúne el catálogo de conexiones que usa el agente con un diseño más limpio (búsqueda, filtro de conectados, agrupación por categoría y servidores MCP), la lista de complementos instalados y una sección Habilidades que muestra las skills disponibles para el agente sin cargar sus instrucciones. Conexiones deja de estar en Ajustes.
 - Agent resuelve skills compartidas en `skills/_shared/` y propias en `skills/<profile_id>/`, con prioridad de las propias y aviso de colisión. `SKILLS_HOME` y `ORBS_SHARED_HOME` permiten configurar sus rutas sin ejecutar scripts ni ampliar permisos de herramientas.
