@@ -29,11 +29,11 @@ assert(JSON.stringify(exportsSpecs.slice(0, 3).map((s) => s.module)) === JSON.st
   'cada exportación pertenece a su módulo');
 
 const web = specs.filter((s) => s.name.startsWith('web_'));
-assert(web.length === 10 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
+assert(web.length === 12 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
 assert(web.filter((s) => s.gated).map((s) => s.name).sort().join() === 'web_click,web_key,web_type',
   'leer páginas es automático; hacer clic, escribir o pulsar teclas requiere aprobación');
 assert(web.filter((s) => !s.gated).map((s) => s.name).sort().join()
-  === 'web_back,web_console,web_network,web_open,web_read,web_screenshot,web_text',
+  === 'web_back,web_console,web_forward,web_network,web_open,web_read,web_reload,web_screenshot,web_text',
   'texto, consola y red se leen sin aprobación');
 const browser = require('../electron/agent-browser');
 assert(browser.normalizeUrl('example.com/a') === 'https://example.com/a', 'un dominio sin esquema se abre por https');
@@ -67,6 +67,12 @@ for (const bad of ['', '..', 'sub/a.pdf', String.raw`C:\x\a.pdf`, 'a?.pdf']) {
 }
 
 async function exportTest() {
+  {
+    let localError = null;
+    try { await browser.run('web_open', { url: 'agents.md' }); } catch (error) { localError = error; }
+    assert(localError?.code === 'LOCAL_FILE' && /fs_read/.test(localError.message),
+      'web_open remite un archivo local a fs_read');
+  }
   {
     const isolatedCalls = [];
     const inputCommands = [];
@@ -329,12 +335,23 @@ async function exportTest() {
     const timers = installInertTimers();
     try { await browser.navigate('open', 'https://example.com'); } finally { timers.restore(); }
     contents.emit('before-mouse-event', {}, { type: 'mouseDown' });
+    assert(browser.state().busy_until > Date.now(), 'el estado expone cuándo termina la espera humana');
+    let blocked = null;
+    try { await browser.run('web_key', { keys: 'enter' }); } catch (err) { blocked = err; }
+    assert(blocked && blocked.code === 'USER_BUSY' && blocked.retryable === true && blocked.retryAfterMs > 0,
+      'una acción no navegable devuelve un error retryable con la espera restante');
+    browser.resetUserActivity();
+    assert(browser.state().busy_until === 0, 'enviar una instrucción reinicia la espera humana');
+    contents.emit('before-mouse-event', {}, { type: 'mouseDown' });
     const attempt = async () => { try { await browser.run('web_back', {}); return null; } catch (err) { return err.message; } };
-    assert(await attempt() === browser.USER_BUSY_ERROR, 'si el usuario acaba de usar la página, el agente no actúa sobre ella');
+    browser.allowAgent();
+    assert(browser.state().busy_until === 0, 'permitir al agente limpia la espera');
+    assert(await attempt() === 'No hay una página anterior', 'permitir al agente deja navegar de inmediato');
+    contents.emit('before-mouse-event', {}, { type: 'mouseDown' });
     const now = Date.now;
     Date.now = () => now() + 6_000;
     try {
-      assert(await attempt() === 'No hay una página anterior', 'pasados unos segundos sin actividad del usuario, el agente retoma la página');
+      assert(await attempt() === 'No hay una página anterior', 'pasado el tiempo de gracia, la navegación se reanuda');
     } finally { Date.now = now; }
     browser.close();
   }
