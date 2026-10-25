@@ -165,9 +165,17 @@ async function exportTest() {
         const item = {
           cancelled: 0, saved: null,
           getFilename: () => 'informe final?.pdf', setSavePath: (value) => { item.saved = value; },
+          getURLChain: () => ['https://files.example.com/informe.pdf'],
           on: () => {}, once: (event, handler) => { doneHandler = handler; },
           getTotalBytes: () => 4096, getReceivedBytes: () => 4096, cancel: () => { item.cancelled += 1; },
         };
+        let unrequestedCancelled = false;
+        downloadHandler({ preventDefault: () => {} }, { ...item,
+          getURLChain: () => ['https://files.example.com/no-solicitado.pdf'],
+          cancel: () => { unrequestedCancelled = true; },
+        });
+        assert(unrequestedCancelled && item.saved === null,
+          'una descarga ajena no escribe ni consume la descarga autorizada pendiente');
         let requestedCancelled = false;
         downloadHandler({ preventDefault: () => { requestedCancelled = true; } }, item);
         assert(!requestedCancelled, 'la descarga autorizada conserva el comportamiento nativo de Electron');
@@ -181,6 +189,7 @@ async function exportTest() {
         const bigItem = {
           cancelled: false, updated: null,
           getFilename: () => 'grande.zip', setSavePath: () => {},
+          getURLChain: () => [downloads.at(-1)],
           on: (event, handler) => { bigItem.updated = handler; }, once: () => {},
           getTotalBytes: () => 150 * 1024 * 1024, getReceivedBytes: () => 150 * 1024 * 1024,
           cancel: () => { bigItem.cancelled = true; },

@@ -125,8 +125,8 @@ function prepareSession(electron) {
   // navegador del agente nunca escribe en el disco por decisión de una página.
   ses.on('will-download', (event, item) => {
     const slot = downloadSlot;
+    if (!slot || item.getURLChain()[0] !== slot.url) { event.preventDefault(); item.cancel(); return; }
     downloadSlot = null;
-    if (!slot) { event.preventDefault(); item.cancel(); return; }
     const name = downloadName(item.getFilename());
     const target = path.join(slot.dir, `${require('node:crypto').randomUUID().slice(0, 8)}-${name}`);
     item.setSavePath(target);
@@ -156,7 +156,9 @@ function startDownload(url, drafts) {
   if (policy.isBlocked(policy.hostOf(url))) {
     throw new Error('Dominio bloqueado por la política del navegador del agente');
   }
-  const slot = { dir: drafts };
+  const requested = new URL(url);
+  requested.hash = '';
+  const slot = { dir: drafts, url: requested.href };
   slot.wait = new Promise((resolve, reject) => {
     slot.settle = (error, saved) => {
       clearTimeout(slot.timeout);
@@ -169,7 +171,7 @@ function startDownload(url, drafts) {
     if (downloadSlot === slot) slot.settle(new Error('La descarga no comenzó; comprueba la dirección'), null);
   }, LOAD_TIMEOUT_MS);
   try {
-    require('electron').session.fromPartition(PARTITION).downloadURL(url);
+    require('electron').session.fromPartition(PARTITION).downloadURL(slot.url);
   } catch (error) {
     slot.settle(error, null);
   }
