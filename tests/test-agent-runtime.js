@@ -785,6 +785,8 @@ async function main() {
       state: () => ({ open: false, user_control: false }),
       dock: (bounds) => { calls.push(['dock', bounds]); return { docked: !!bounds }; },
       setUserControl: (user) => { calls.push(['control', user]); return { user_control: user }; },
+      allowAgent: () => { calls.push(['allow']); return { open: true, user_control: false }; },
+      activateTab: (tab) => { calls.push(['tab', tab]); return { active_tab: tab }; },
       navigate: async (action, url) => { calls.push([action, url]); return { open: true, url: url || '' }; },
     };
     const handle = runtime.handlers.agent_browser;
@@ -793,9 +795,11 @@ async function main() {
     assert((await handle({ action: 'bounds' })).docked === false, 'sin hueco la página vuelve a su ventana anfitriona');
     assert((await handle({ action: 'control', user: true })).user_control === true, 'el usuario puede tomar el control');
     assert((await handle({ action: 'open', url: 'example.com' })).url === 'example.com', 'la barra de dirección abre páginas');
+    assert((await handle({ action: 'allow' })).user_control === false, 'la UI puede liberar la espera del navegador');
+    assert((await handle({ action: 'tab', tab: 'user' })).active_tab === 'user', 'la UI cambia de pestaña');
     let rejected = false;
     try { await handle({ action: 'borrar' }); } catch { rejected = true; }
-    assert(rejected && calls.length === 4, 'una acción desconocida se rechaza sin tocar el navegador');
+    assert(rejected && calls.length === 6, 'una acción desconocida se rechaza sin tocar el navegador');
     const open = runtime.open;
     runtime.open = async () => { throw new Error('Motor del agente no disponible'); };
     try {
@@ -1951,6 +1955,182 @@ async function main() {
       'la petición interna de comprobación no aparece como mensaje del usuario');
     assert(listed.messages.filter((m) => m.role === 'user').length === 1, 'el chat solo muestra el mensaje del usuario');
     assert(faux.getPendingResponseCount() === 0, 'la comprobación se pide una sola vez');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    let probes = 0;
+    const retryBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'busy_probe', gated: false, kind: 'backend', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'busy_probe') {
+        probes += 1;
+        return { result: JSON.stringify(probes <= 3
+          ? { error: 'ocupado', code: 'USER_BUSY', retryable: true, retry_after_ms: 1200 }
+          : { ok: true }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      ...[1, 2, 3, 4].map(() => fauxAssistantMessage([fauxToolCall('busy_probe', {})], { stopReason: 'toolUse' })),
+      fauxAssistantMessage('Listo'),
+    ], retryBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'insiste' });
+    assert(await waitIdle(session.id), 'el turno con fallos retryable termina');
+    assert(probes === 4, 'un error retryable no consume el freno de repeticiones');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    let probes = 0;
+    const changingBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'changing_probe', gated: false, kind: 'backend', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'changing_probe') {
+        probes += 1;
+        return { result: JSON.stringify({ value: probes }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      ...[1, 2, 3, 4].map(() => fauxAssistantMessage([fauxToolCall('changing_probe', {})], { stopReason: 'toolUse' })),
+      fauxAssistantMessage('Listo'),
+    ], changingBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'avanza' });
+    assert(await waitIdle(session.id), 'el turno con resultados cambiantes termina');
+    assert(probes === 4, 'un resultado distinto no se bloquea como repetición');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    let probes = 0;
+    const gatedBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'gated_probe', gated: true, kind: 'backend', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'gated_probe') {
+        probes += 1;
+        return { result: JSON.stringify(probes <= 3
+          ? { error: 'ocupado', code: 'USER_BUSY', retryable: true, recoverable: true, retry_after_ms: 900 }
+          : { value: probes }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      ...[1, 2, 3, 4].map(() => fauxAssistantMessage([fauxToolCall('gated_probe', {})], { stopReason: 'toolUse' })),
+      fauxAssistantMessage('Listo'),
+    ], gatedBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'avanza con efecto' });
+    assert(await waitIdle(session.id), 'el turno con efecto gated termina');
+    assert(probes === 4, 'una acción gated con errores recuperables no se bloquea');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: { ref: { type: 'string' } }, required: ['ref'] };
+    let probes = 0;
+    let mode = 'changing';
+    const clickBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'web_click', gated: true, kind: 'backend', module: 'computer', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'web_click') {
+        probes += 1;
+        const url = mode === 'changing' ? `https://example.com/${probes}` : 'https://example.com/same';
+        return { result: JSON.stringify({ clicked: '1', page: { url, title: '', text: '', elements: [] } }) };
+      }
+      return bridge(method, params);
+    };
+    const previousNative = runtime._internal.shared.nativeTools;
+    runtime._internal.shared.nativeTools = { nativeToolSpecs: () => [] };
+    try {
+      await openFaux([
+        ...[1, 2, 3, 4].map(() => fauxAssistantMessage([fauxToolCall('web_click', { ref: '1' })], { stopReason: 'toolUse' })),
+        fauxAssistantMessage('Listo'),
+        ...[1, 2, 3, 4].map(() => fauxAssistantMessage([fauxToolCall('web_click', { ref: '1' })], { stopReason: 'toolUse' })),
+        fauxAssistantMessage('Listo'),
+      ], clickBridge);
+      const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+      await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'avanza' });
+      assert(await waitIdle(session.id), 'el turno con clics que avanzan termina');
+      assert(probes === 4, 'un clic que cambia de página no se bloquea');
+      let listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+      let calls = listed.messages.flatMap((m) => m.tool_calls || []).filter((c) => c.name === 'web_click');
+      assert(calls.length === 4 && calls.every((c) => c.status === 'done'), 'los cuatro clics de avance se ejecutan');
+
+      mode = 'same';
+      probes = 0;
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'repite' });
+      assert(await waitIdle(session.id), 'el turno con clics en la misma página termina');
+      assert(probes === 3, 'repetir en la misma página conserva el límite');
+      listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+      calls = listed.messages.flatMap((m) => m.tool_calls || []).filter((c) => c.name === 'web_click');
+      assert(/sin cambiar de página/.test(String(calls.at(-1).result || '')), 'el bloqueo explica que no hubo avance de página');
+      await runtime.shutdown();
+    } finally {
+      runtime._internal.shared.nativeTools = previousNative;
+    }
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const correctionBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'slow_correction_probe', gated: false, kind: 'backend', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'slow_correction_probe') {
+        await gate;
+        return { result: JSON.stringify({ ok: true }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('slow_correction_probe', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('hecho'),
+      fauxAssistantMessage('corregido'),
+    ], correctionBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'hazlo despacio' });
+    assert(await waitFor(async () => (await runtime.handlers.agent_turn_status({ session_id: session.id })).running),
+      'el turno lento sigue en curso');
+    const { shared, requireSession } = require('../electron/agent-shared');
+    const conversationId = (await requireSession(session.id)).conversationId;
+    shared.turns.set(conversationId, {
+      calls: new Map([['slow_correction_probe:{}', { count: 3, outcome: 'x', exempt: false }]]),
+      remaining: null,
+      checked: false,
+    });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'reintenta', correction: true });
+    assert(!shared.turns.get(conversationId)?.calls.size, 'una corrección reinicia el freno de repeticiones');
+    release();
+    assert(await waitIdle(session.id), 'el turno corregido termina');
     await runtime.shutdown();
   }
 

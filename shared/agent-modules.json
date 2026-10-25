@@ -157,7 +157,7 @@
         "shell_job_status", "shell_job_cancel", "task_plan",
         "desktop_observe", "desktop_click", "desktop_type", "desktop_key", "desktop_scroll", "desktop_launch", "desktop_focus",
         "ui_windows", "ui_observe", "ui_click", "ui_type", "ui_key", "ui_scroll", "ui_drag", "ui_set_value", "ui_launch",
-        "web_open", "web_read", "web_screenshot", "web_click", "web_type", "web_key", "web_back",
+        "web_open", "web_read", "web_screenshot", "web_click", "web_type", "web_key", "web_back", "web_forward", "web_reload",
         "web_text", "web_console", "web_network"],
       "native": true
     },
