@@ -111,6 +111,7 @@ _SW_RESTORE = 9
 _CACHE = targets.TargetCache()
 _GUARD = input_guard.InputGuard()
 _ACTION_LEASE_LOCK = threading.Lock()
+_worker_context = threading.local()
 
 
 def _user32() -> Any:
@@ -132,7 +133,21 @@ def _ensure_dpi() -> None:
         _dpi_ready = True
 
 
-def _send(*inputs: _Input) -> None:
+def _check_worker_active() -> None:
+    cancelled = getattr(_worker_context, "cancelled", None)
+    if cancelled is not None and cancelled.is_set():
+        raise DriverError("computer-use: la operación excedió el tiempo límite")
+
+
+def _check_action_active() -> None:
+    _check_worker_active()
+    if _GUARD.broken:
+        raise DriverRefused(input_guard.LEASE_MESSAGE)
+
+
+def _send(*inputs: _Input, _release: bool = False) -> None:
+    if not _release:
+        _check_action_active()
     array = (_Input * len(inputs))(*inputs)
     if _user32().SendInput(len(inputs), array, ctypes.sizeof(_Input)) != len(inputs):
         raise DriverError("Windows bloqueó la entrada simulada (¿hay una ventana de administrador en primer plano?)")
@@ -174,10 +189,15 @@ def _worker_loop() -> None:
     while True:
         fn, box = _worker_queue.get()
         try:
+            _worker_context.cancelled = box["cancelled"]
+            if box["cancelled"].is_set():
+                raise DriverError("computer-use: la operación excedió el tiempo límite")
             box["result"] = fn()
         except BaseException as exc:
             box["error"] = exc
-        box["done"].set()
+        finally:
+            del _worker_context.cancelled
+            box["done"].set()
 
 
 def _run_on_worker(fn: Callable[[], Any], timeout: float) -> Any:
@@ -186,9 +206,10 @@ def _run_on_worker(fn: Callable[[], Any], timeout: float) -> Any:
         if _worker_thread is None or not _worker_thread.is_alive():
             _worker_thread = threading.Thread(target=_worker_loop, name="computer-use-driver", daemon=True)
             _worker_thread.start()
-    box: dict[str, Any] = {"done": threading.Event(), "result": None, "error": None}  # allowlist
+    box: dict[str, Any] = {"done": threading.Event(), "cancelled": threading.Event(), "result": None, "error": None}  # allowlist
     _worker_queue.put((fn, box))
     if not box["done"].wait(timeout):
+        box["cancelled"].set()
         raise DriverError("computer-use: la operación excedió el tiempo límite")
     if box["error"] is not None:
         raise box["error"]
@@ -381,10 +402,12 @@ def _window_alive(hwnd: int) -> bool:
 
 
 def _ensure_foreground(hwnd: int) -> None:
+    _check_action_active()
     user32 = _user32()
     if user32.GetForegroundWindow() == hwnd:
         return
     _send(_key(0x12), _key(0x12, up=True))  # Alt: habilita robar el foco desde un proceso de fondo
+    _check_action_active()
     user32.SetForegroundWindow(hwnd)
     time.sleep(0.08)
 
@@ -396,12 +419,14 @@ def _prepare_window(window: JsonObject) -> int:
     if not _window_alive(hwnd):
         raise DriverError(f"La ventana «{window.get('title')}» ya no existe. Vuelve a llamar computer_use_enumerate.")
     if user32.IsIconic(hwnd):
+        _check_action_active()
         user32.ShowWindow(hwnd, _SW_RESTORE)
         time.sleep(0.4)
     return hwnd
 
 
 def _set_focus(raw: Any) -> None:
+    _check_action_active()
     try:
         raw.SetFocus()
         time.sleep(0.08)
@@ -410,6 +435,7 @@ def _set_focus(raw: Any) -> None:
 
 
 def _ensure_element_focus(ctx: _ActionContext, target: JsonObject) -> None:
+    _check_action_active()
     raw = ctx["raws"].get(str(target["runtime_id"]))
     if raw is None:
         raise DriverError("Elemento obsoleto; reintenta la observación")
@@ -438,14 +464,20 @@ def perform_action(window_id: str, action: str, element_id: str | None, params: 
         raise DriverRefused(classification["reason"])
 
     def run() -> JsonObject:
+        _check_action_active()
         hwnd = _prepare_window(window)
         elements, raws, _ = _walk_elements(hwnd, _MAX_ELEMENTS_CAP, _WALK_BUDGET_ACTION_S)
         by_runtime = {str(e["runtime_id"]): e for e in elements}
-        _CACHE.remember_elements(window_id, _CACHE.generation, elements)
         target = _CACHE.check_element(window_id, element_id, by_runtime) if element_id else None
+        current_policy = policy.classify_action(
+            action, target_password=bool(target and target.get("is_password")), window_elevated=bool(window.get("elevated"))
+        )
+        if current_policy["category"] == policy.HANDOFF:
+            raise DriverRefused(current_policy["reason"])
         ctx = {"window_id": window_id, "by_runtime": by_runtime, "raws": raws, "window_rect": _window_rect(hwnd)}
+        _check_action_active()
         result = _ACTION_IMPL[action](hwnd, target, element_id, params, ctx)
-        return {"action": action, "performed": True, "policy": classification, "window_rect": ctx["window_rect"], **result}
+        return {"action": action, "performed": True, "policy": current_policy, "window_rect": ctx["window_rect"], **result}
 
     with _ACTION_LEASE_LOCK:
         _GUARD.begin()
@@ -475,6 +507,7 @@ def _act_click(hwnd: int, target: JsonObject | None, element_id: str | None, par
     down, up = _MOUSE_FLAGS[button]
     cx, cy = _center(target, ctx["window_rect"])
     _ensure_foreground(hwnd)
+    _check_action_active()
     _user32().SetCursorPos(cx, cy)
     time.sleep(0.05)
     for _ in range(2 if params.get("double") is True else 1):
@@ -494,8 +527,7 @@ def _act_type_text(hwnd: int, target: JsonObject | None, element_id: str | None,
     _ensure_element_focus(ctx, target)
     sent = 0
     for char in text.replace("\r\n", "\n"):
-        if _GUARD.broken:
-            raise DriverRefused(input_guard.LEASE_MESSAGE)
+        _check_action_active()
         if char == "\n":
             _send(_key(0x0D), _key(0x0D, up=True))
         elif char == "\t":
@@ -516,8 +548,7 @@ def _act_press_key(hwnd: int, target: JsonObject | None, element_id: str | None,
     else:
         _ensure_foreground(hwnd)
     for combo in combos:
-        if _GUARD.broken:
-            raise DriverRefused(input_guard.LEASE_MESSAGE)
+        _check_action_active()
         codes = [_vk_for(t) for t in combo]
         _send(*[_key(c) for c in codes], *[_key(c, up=True) for c in reversed(codes)])
         time.sleep(0.12)
@@ -535,6 +566,7 @@ def _act_scroll(hwnd: int, target: JsonObject | None, element_id: str | None, pa
         wx, wy, ww, wh = ctx["window_rect"]
         cx, cy = wx + ww // 2, wy + wh // 2
     _ensure_foreground(hwnd)
+    _check_action_active()
     _user32().SetCursorPos(cx, cy)
     time.sleep(0.05)
     _send(_mouse(_WHEEL, ctypes.c_uint32(amount * 120).value))
@@ -557,21 +589,23 @@ def _act_drag(hwnd: int, target: JsonObject | None, element_id: str | None, para
         raise ValueError("Indica to_element_id o to_x/to_y")
     sx, sy = _center(target, ctx["window_rect"])
     _ensure_foreground(hwnd)
+    _check_action_active()
     _user32().SetCursorPos(sx, sy)
     time.sleep(0.05)
     _send(_mouse(_MOUSE_DOWN))
     steps = 12
-    for step in range(1, steps + 1):
-        if _GUARD.broken:
-            _send(_mouse(_MOUSE_UP))
-            raise DriverRefused(input_guard.LEASE_MESSAGE)
-        _user32().SetCursorPos(sx + (dx - sx) * step // steps, sy + (dy - sy) * step // steps)
-        time.sleep(0.015)
-    _send(_mouse(_MOUSE_UP))
+    try:
+        for step in range(1, steps + 1):
+            _check_action_active()
+            _user32().SetCursorPos(sx + (dx - sx) * step // steps, sy + (dy - sy) * step // steps)
+            time.sleep(0.015)
+    finally:
+        _send(_mouse(_MOUSE_UP), _release=True)
     return {"dragged": {"from": [sx, sy], "to": [dx, dy]}}
 
 
 def _act_set_value(hwnd: int, target: JsonObject | None, element_id: str | None, params: JsonObject, ctx: _ActionContext) -> JsonObject:
+    _check_action_active()
     value = params.get("value")
     if not isinstance(value, str):
         raise ValueError("Indica el valor de texto a establecer")
@@ -587,7 +621,9 @@ def _act_set_value(hwnd: int, target: JsonObject | None, element_id: str | None,
     pattern = raw.GetCurrentPattern(uia_client.UIA_ValuePatternId)
     if not pattern:
         raise DriverError("El elemento no admite el patrón Value; usa click + type_text")
-    pattern.QueryInterface(uia_client.IUIAutomationValuePattern).SetValue(value)
+    value_pattern = pattern.QueryInterface(uia_client.IUIAutomationValuePattern)
+    _check_action_active()
+    value_pattern.SetValue(value)
     return {"set_value": len(value)}
 
 
@@ -678,6 +714,7 @@ def launch_app(app: str, args: str | None = None) -> JsonObject:
         _ensure_dpi()
         if not hasattr(os, "startfile"):
             raise DriverError("Abrir aplicaciones solo está disponible en Windows")
+        _check_worker_active()
         os.startfile(_KNOWN_ALIASES[name], arguments=args or "")
         time.sleep(1.2)
         return {"launched": name, "policy": classification}

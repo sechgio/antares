@@ -6,6 +6,8 @@ import threading
 import time
 from contextlib import suppress
 
+from backend.core.computer_use.policy import DriverRefused
+
 # Clasificación validada con spike de hooks (Temp/rea-audit/phase0/probe_fase3_hooks.py):
 # SendInput marca cada evento inyectado con el flag INJECTED (0x10 teclado, 0x1 ratón),
 # y el movimiento puro del ratón es actividad ambiental constante (~192 eventos en unos
@@ -49,12 +51,10 @@ class _MouseHookStruct(ctypes.Structure):
                 ("time", wt.DWORD), ("dwExtraInfo", _PUL)]
 
 
-if hasattr(ctypes, "WINFUNCTYPE"):  # solo Windows
-    _KbdProc = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int, wt.WPARAM, ctypes.POINTER(_KbdHookStruct))
-    _MouseProc = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int, wt.WPARAM, ctypes.POINTER(_MouseHookStruct))
-else:  # pragma: no cover
-    _KbdProc = None
-    _MouseProc = None
+_KbdProc = (ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int, wt.WPARAM, ctypes.POINTER(_KbdHookStruct))
+            if hasattr(ctypes, "WINFUNCTYPE") else None)
+_MouseProc = (ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int, wt.WPARAM, ctypes.POINTER(_MouseHookStruct))
+              if hasattr(ctypes, "WINFUNCTYPE") else None)
 
 _win_dll: ctypes.WinDLL | None = None
 
@@ -93,7 +93,10 @@ class InputGuard:
         ready = threading.Event()
         self._thread = threading.Thread(target=self._pump, args=(ready, self._stop), daemon=True)
         self._thread.start()
-        ready.wait(2.0)
+        if not ready.wait(2.0) or self.broken:
+            self._mark()
+            self.end()
+            raise DriverRefused("No se pudo activar la protección de entrada física; la acción no se ejecutó.")
 
     def end(self) -> None:
         if self._stop is not None:
@@ -110,34 +113,44 @@ class InputGuard:
     def _pump(self, ready: threading.Event, stop: threading.Event) -> None:
         user32 = _user32()
         if user32 is None or _KbdProc is None or _MouseProc is None:  # pragma: no cover
+            self._mark()
             ready.set()
             return
 
-        def on_key(code: int, wparam: int, lparam: ctypes.POINTER(_KbdHookStruct)) -> int:
+        def on_key(code: int, wparam: int, lparam: ctypes._Pointer[_KbdHookStruct]) -> int:
             info = lparam[0]
             if key_breaks_lease(int(wparam), int(info.flags)):
                 self._mark()
-            return user32.CallNextHookEx(None, code, wparam, lparam)
+            return int(user32.CallNextHookEx(None, code, wparam, lparam))
 
-        def on_mouse(code: int, wparam: int, lparam: ctypes.POINTER(_MouseHookStruct)) -> int:
+        def on_mouse(code: int, wparam: int, lparam: ctypes._Pointer[_MouseHookStruct]) -> int:
             info = lparam[0]
             if mouse_breaks_lease(int(wparam), int(info.flags)):
                 self._mark()
-            return user32.CallNextHookEx(None, code, wparam, lparam)
+            return int(user32.CallNextHookEx(None, code, wparam, lparam))
 
         kbd_cb = _KbdProc(on_key)
         mouse_cb = _MouseProc(on_mouse)
-        hhk_k = user32.SetWindowsHookExW(WH_KEYBOARD_LL, kbd_cb, None, 0)
-        hhk_m = user32.SetWindowsHookExW(WH_MOUSE_LL, mouse_cb, None, 0)
-        ready.set()
-        msg = wt.MSG()
-        while not stop.is_set():
-            while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
-                user32.TranslateMessage(ctypes.byref(msg))
-                user32.DispatchMessageW(ctypes.byref(msg))
-            time.sleep(0.01)
-        with suppress(Exception):
-            if hhk_k:
-                user32.UnhookWindowsHookEx(hhk_k)
-            if hhk_m:
-                user32.UnhookWindowsHookEx(hhk_m)
+        hhk_k = hhk_m = 0
+        try:
+            hhk_k = user32.SetWindowsHookExW(WH_KEYBOARD_LL, kbd_cb, None, 0)
+            hhk_m = user32.SetWindowsHookExW(WH_MOUSE_LL, mouse_cb, None, 0)
+            if not hhk_k or not hhk_m:
+                self._mark()
+                return
+            ready.set()
+            msg = wt.MSG()
+            while not stop.is_set():
+                while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
+                    user32.TranslateMessage(ctypes.byref(msg))
+                    user32.DispatchMessageW(ctypes.byref(msg))
+                time.sleep(0.01)
+        except Exception:
+            self._mark()
+        finally:
+            with suppress(Exception):
+                if hhk_k:
+                    user32.UnhookWindowsHookEx(hhk_k)
+                if hhk_m:
+                    user32.UnhookWindowsHookEx(hhk_m)
+            ready.set()
