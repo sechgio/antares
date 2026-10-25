@@ -29,7 +29,7 @@ jobs:
         uses: ./.github/actions/setup-ci
         with:
           python: 'false'
-          root: 'false'
+          root: 'true'
 
       - name: Run frontend tests (shard 1 of 2)
         run: node scripts/run-test-suites.js frontend 1/2
@@ -48,7 +48,7 @@ jobs:
         uses: ./.github/actions/setup-ci
         with:
           python: 'false'
-          root: 'false'
+          root: 'true'
 
       - name: Run frontend tests (shard 2 of 2)
         run: node scripts/run-test-suites.js frontend 2/2
@@ -113,7 +113,8 @@ jobs:
           npm run lint:python && npm run typecheck:backend &&
           npm run check:any && npm run check:ratchet &&
           npm run audit:python && npm run audit:node &&
-          node scripts/run-test-suites.js contracts && node scripts/run-test-suites.js electron
+          node scripts/run-test-suites.js contracts && node scripts/run-test-suites.js electron &&
+          node scripts/run-test-suites.js turns
 
       - name: Build frontend and check budgets
         run: npm run build:frontend

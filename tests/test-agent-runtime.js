@@ -136,11 +136,11 @@ function makeBridge() {
   return { bridge, state };
 }
 
-async function openFaux(responses, bridge) {
+async function openFaux(responses, bridge, { faux: fauxOptions = {}, settings } = {}) {
   const { MemoryStorage } = await import('@earendil-works/pi-durable');
   const { fauxProvider } = await import('@earendil-works/pi-ai');
-  await runtime.open({ storage: new MemoryStorage(), bridge, skipImport: true });
-  const faux = fauxProvider();
+  await runtime.open({ storage: new MemoryStorage(), bridge, skipImport: true, settings });
+  const faux = fauxProvider(fauxOptions);
   runtime._internal._providerOverrides.set('faux', faux.provider);
   faux.setResponses(responses);
   return faux;
@@ -195,6 +195,20 @@ async function main() {
       .cacheControlFormat === 'anthropic', 'Claude vía OpenRouter lleva cache_control aunque el proveedor sea propio');
     assert(define({ custom: true, base_url: 'http://x.local/v1', capabilities: { vision: true } }, 'mi-modelo').input.includes('image'),
       'un modelo personalizado puede declarar visión aunque su nombre no la sugiera');
+    const { OPENAI_MODELS } = await import('@earendil-works/pi-ai/providers/openai.models');
+    const openai = { provider: 'openai', style: 'openai_chat', base_url: 'https://api.openai.com/v1' };
+    const priced = modelDefinition(openai, 'gpt-4o', 'openai-completions', undefined, OPENAI_MODELS['gpt-4o']);
+    assert(priced.cost.input === 2.5 && priced.cost.output === 10 && priced.cost.cacheRead === 1.25,
+      'un modelo del catálogo lleva sus precios reales por millón de tokens');
+    assert(priced.contextWindow === 128000
+      && modelDefinition(openai, 'gpt-4.1', 'openai-completions', undefined, OPENAI_MODELS['gpt-4.1']).contextWindow === 1047576,
+      'la ventana del catálogo sustituye al valor por defecto');
+    const declared = modelDefinition({ ...openai, capabilities: { context_window: 32000 } }, 'gpt-4o',
+      'openai-completions', undefined, OPENAI_MODELS['gpt-4o']);
+    assert(declared.contextWindow === 32000 && declared.maxTokens === 8000,
+      'la ventana declarada por el usuario manda sobre el catálogo');
+    assert(!define({ custom: true, base_url: 'http://127.0.0.1:11434/v1' }, 'gpt-4o').cost.input,
+      'un endpoint propio no hereda los precios del catálogo');
   }
   {
     const { MemoryStorage } = await import('@earendil-works/pi-durable');
@@ -292,6 +306,7 @@ async function main() {
   for (const legacy of [false, true]) {
     const { bridge } = makeBridge();
     const calls = [];
+    const scopes = [];
     const skillId = 'abcdef0123456789abcdef01';
     const skillsBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
@@ -304,6 +319,7 @@ async function main() {
       }
       if (method === 'agent_internal_dispatch' && params.name.startsWith('skills_')) {
         calls.push(params.name);
+        scopes.push(params.context?.profile_id);
         return { result: JSON.stringify(params.name === 'skills_list'
           ? { skills: [{ id: skillId, name: 'pdf-review', description: 'Revisa firmas' }] }
           : { name: 'pdf-review', content: 'Revisa cada firma', next_offset: null }) };
@@ -315,7 +331,12 @@ async function main() {
       fauxAssistantMessage([fauxToolCall('skills_read', { skill_id: skillId })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('Leí las instrucciones de revisión de firmas'),
     ], skillsBridge);
-    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const profile = legacy ? (await runtime.handlers.agent_profile_save({
+      name: 'Revisor de skills', instructions: 'Revisa firmas', tools: ['skills_list', 'skills_read'],
+    })).profile : null;
+    const { session } = await runtime.handlers.agent_session_create({
+      provider: 'faux', model: 'faux-1', ...(profile ? { profile_id: profile.id } : {}),
+    });
     const context = runtime._internal.shared.deps.chord.BACKGROUND_CONTEXT;
     const state = runtime._internal.state();
     const map = await state.harness.snapshot(state.SessionsDoc, context);
@@ -327,6 +348,8 @@ async function main() {
     const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(calls.join() === 'skills_list,skills_read' && listed.messages.some((message) => message.content.includes('Leí las instrucciones')),
       'la skill se carga bajo demanda sin pedir aprobación para leer');
+    assert(scopes.length === 2 && scopes.every((id) => id === (profile?.id || null)),
+      'el runtime identifica las skills por perfil guardado y usa compartidas sin perfil');
     if (legacy) {
       const entries = await conv.entries({}, 500, undefined, context);
       assert(entries.items.some((entry) => entry.kind === 'pi.user' && JSON.stringify(entry.model).includes('skills_list')),
@@ -546,6 +569,74 @@ async function main() {
     assert(executed === 0 && JSON.parse(state.dispatches[0].result).error.includes('deshabilitada'), 'se registra el bloqueo sin ejecutar el efecto reservado');
     runtime._internal.shared.nativeTools = null;
     await runtime.shutdown();
+  }
+
+  {
+    const policyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-agent-policy-'));
+    fs.mkdirSync(path.join(policyRoot, 'Antares', 'ai-agent'), { recursive: true });
+    const policyFile = path.join(policyRoot, 'Antares', 'ai-agent', 'browser-policy.json');
+    fs.writeFileSync(policyFile, JSON.stringify({ always_allowed: ['www.bcp.pe'] }));
+    const realLocalAppData = process.env.LOCALAPPDATA;
+    process.env.LOCALAPPDATA = policyRoot;
+    try {
+      const { bridge, state } = makeBridge();
+      let executed = 0;
+      runtime._internal.shared.nativeTools = {
+        nativeToolContext: async () => ({ tool_version: 'fake-v1', page_url: 'https://www.bcp.pe/panel', domain: 'www.bcp.pe', policy_blocked: false }),
+        nativeToolSpecs: () => [{ name: 'web_click', description: 'Clic web', gated: true, kind: 'native', inputSchema: { type: 'object', properties: {} } }],
+        runNativeTool: async () => { executed += 1; return { ok: true }; },
+      };
+      await openFaux([
+        fauxAssistantMessage([fauxToolCall('web_click', {})], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('hecho'),
+      ], bridge);
+      const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'haz clic' });
+      assert(await waitIdle(session.id), 'el turno termina cuando el dominio está permitido siempre');
+      assert(executed === 1, 'la acción web sobre un dominio permitido siempre se ejecuta sin preguntar');
+      const decided = [...state.approvals.values()];
+      assert(decided.length === 1 && decided[0].status === 'approved', 'la aprobación del dominio autorizado se resuelve sola');
+      runtime._internal.shared.nativeTools = null;
+      await runtime.shutdown();
+
+      const ajeno = makeBridge();
+      let rechazado = 0;
+      runtime._internal.shared.nativeTools = {
+        nativeToolContext: async () => ({ tool_version: 'fake-v1', page_url: 'https://panel.banco-ajeno.pe/f', domain: 'panel.banco-ajeno.pe', policy_blocked: false }),
+        nativeToolSpecs: () => [{ name: 'web_click', description: 'Clic web', gated: true, kind: 'native', inputSchema: { type: 'object', properties: {} } }],
+        runNativeTool: async () => { rechazado += 1; return { ok: true }; },
+      };
+      await openFaux([
+        fauxAssistantMessage([fauxToolCall('web_click', {})], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('bloqueada'),
+      ], ajeno.bridge);
+      const sesionAjena = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+      await runtime.handlers.agent_message_send({ session_id: sesionAjena.session.id, content: 'haz clic' });
+      assert(await waitFor(() => ajeno.state.approvals.size > 0), 'un dominio sin permiso sigue pidiendo aprobación');
+      const pending = [...ajeno.state.approvals.values()].find((a) => a.status === 'pending');
+      await runtime.handlers.agent_deny({ approval_id: pending.id });
+      assert(await waitIdle(sesionAjena.session.id), 'el turno continúa tras rechazar la acción web');
+      assert(rechazado === 0, 'la acción web rechazada no se ejecuta');
+      runtime._internal.shared.nativeTools = null;
+      await runtime.shutdown();
+
+      const recordar = makeBridge();
+      await openFaux([], recordar.bridge);
+      recordar.state.approvals.set('ap-rec', { id: 'ap-rec', session_id: 'ses-recordar', call_id: 'call-rec', method: 'web_type', status: 'pending',
+        context: { page_url: 'https://forms.miejemplo.pe/paso-2' } });
+      recordar.state.approvals.set('ap-bloq', { id: 'ap-bloq', session_id: 'ses-recordar', call_id: 'call-bloq', method: 'web_click', status: 'pending',
+        context: { page_url: 'https://operaciones.sunat.gob.pe/ruc' } });
+      await runtime.handlers.agent_approve({ approval_id: 'ap-rec', remember: true });
+      await runtime.handlers.agent_approve({ approval_id: 'ap-bloq', remember: true });
+      const written = JSON.parse(fs.readFileSync(policyFile, 'utf8'));
+      assert(written.always_allowed.includes('forms.miejemplo.pe'), 'Permitir siempre persiste el dominio de la página aprobada');
+      assert(!written.always_allowed.includes('operaciones.sunat.gob.pe'), 'un dominio bloqueado nunca entra en Permitir siempre');
+      await runtime.shutdown();
+    } finally {
+      process.env.LOCALAPPDATA = realLocalAppData;
+      delete require.cache[require.resolve('../electron/agent-browser-policy')];
+      fs.rmSync(policyRoot, { recursive: true, force: true });
+    }
   }
 
   for (const name of PUBLIC_METHODS) {
@@ -922,6 +1013,41 @@ async function main() {
 
   {
     const { bridge, state } = makeBridge();
+    const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-drop-'));
+    const previousAppData = process.env.LOCALAPPDATA;
+    process.env.LOCALAPPDATA = appData;
+    const dropped = path.join(appData, 'foto.png');
+    fs.writeFileSync(dropped, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const grantAll = async (method, params) => (method === 'agent_internal_grants_add'
+      ? (state.grants.push(params), { granted: params.paths, rejected: [] }) : bridge(method, params));
+    const seen = [];
+    await openFaux([(context) => { seen.push(context.messages); return fauxAssistantMessage('ok'); }], grantAll);
+    runtime._internal.shared.dialog = { showOpenDialog: async () => { throw new Error('soltar no abre diálogo'); } };
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    let invalid = null;
+    try { await runtime.handlers.agent_attach({ kind: 'files', paths: ['relativo.png'] }); } catch (err) { invalid = err; }
+    assert(invalid && /no válida/.test(invalid.message), 'una ruta soltada debe ser absoluta');
+    const res = await runtime.handlers.agent_attach({ kind: 'files', paths: [dropped],
+      data: [{ name: 'captura.png', data: Buffer.from('png').toString('base64') }] });
+    assert(res.attachments.map((a) => a.name)[0] === 'foto.png' && res.attachments[1].name.endsWith('-captura.png'),
+      'soltar y pegar adjuntan sin diálogo');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'mira esto', attachments: res.attachments.map((a) => a.id) });
+    const pasted = state.grants.at(-1).paths[1];
+    assert(pasted.startsWith(path.join(appData, 'Antares', 'ai-agent', 'attachments')) && fs.readFileSync(pasted, 'utf8') === 'png',
+      'lo pegado se guarda en la carpeta de adjuntos del agente');
+    assert(await waitIdle(session.id), 'el turno con imágenes termina');
+    const images = seen[0].find((m) => m.role === 'user').content.filter((block) => block.type === 'image');
+    assert(images.length === 2 && images.every((block) => block.mimeType === 'image/png'), 'un modelo con visión recibe las imágenes');
+    const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(messages[0].content === 'mira esto', 'el transcript solo muestra el texto');
+    runtime._internal.shared.dialog = null;
+    await runtime.shutdown();
+    process.env.LOCALAPPDATA = previousAppData;
+    fs.rmSync(appData, { recursive: true, force: true });
+  }
+
+  {
+    const { bridge, state } = makeBridge();
     await openFaux([
       fauxAssistantMessage([fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
       fauxAssistantMessage('vale, no lo hago'),
@@ -1066,6 +1192,71 @@ async function main() {
     assert(usage.context < first.context + first.input, 'el contexto no acumula los turnos anteriores');
     assert(first.cached === 0 && usage.cached > 0 && usage.cached < usage.prompt,
       'el segundo turno reutiliza el prefijo cacheado y se informa frente al prompt total');
+    assert(usage.window === 128000 && usage.turn && usage.turn.input > 0,
+      'el medidor conoce la ventana del modelo y el gasto del último turno');
+    assert(usage.cost === 0, 'un proveedor sin precios no inventa un coste');
+    const { requireSession } = require('../electron/agent-shared');
+    const conversationId = (await requireSession(session.id)).conversationId;
+    const state = runtime._internal.state();
+    await state.harness.commit(async (tx) => {
+      const doc = await tx.doc(runtime._internal.shared.deps.pi.UsageDoc, conversationId);
+      doc.models['openai/gpt-4o'] = {
+        input: 1000, output: 500, cacheRead: 0, cacheWrite: 0, totalTokens: 1500,
+        cost: { input: 0.0025, output: 0.005, cacheRead: 0, cacheWrite: 0, total: 0.0075 },
+      };
+    }, state.ctx);
+    const billed = (await runtime.handlers.agent_messages_list({ session_id: session.id })).usage;
+    assert(Math.abs(billed.cost - 0.0075) < 1e-9 && billed.input >= 1000,
+      'el coste acumulado sale del libro pi.usage de la conversación');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const seen = [];
+    const reply = (text) => (context) => {
+      seen.push(context.messages);
+      return fauxAssistantMessage(text);
+    };
+    await openFaux([reply('primero'), reply('segundo'), reply('tercero')], bridge, {
+      faux: { models: [{ id: 'faux-1', contextWindow: 8192, maxTokens: 2048 }] },
+    });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'primer turno ' + 'a'.repeat(30000) });
+    assert(await waitIdle(session.id), 'el turno largo termina');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'segundo turno' });
+    assert(await waitIdle(session.id), 'el segundo turno compacta el historial');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'tercer turno' });
+    assert(await waitIdle(session.id), 'el tercer turno termina');
+    const last = seen[seen.length - 1];
+    assert(last.some((message) => typeof message.content === 'string'
+      && message.content.includes('[Contexto compactado por Antares')),
+      'una ventana pequeña recibe un resumen estructurado en lugar del historial completo');
+    assert(last.some((message) => message.role === 'user' && String(message.content).includes('tercer turno')),
+      'el mensaje actual viaja intacto');
+    assert(!JSON.stringify(last).includes('a'.repeat(500)), 'el texto antiguo ya no consume la ventana');
+    const { usage } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(usage && usage.window === 8192, 'el medidor usa la ventana real del modelo pequeño');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    await openFaux([fauxAssistantMessage('listo'), fauxAssistantMessage('Resumen del encargo')], bridge, {
+      settings: { compaction: { enabled: true, reserveTokens: 1024, keepRecentTokens: 100, backgroundTokens: 0 } },
+    });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'organiza el encargo' });
+    assert(await waitIdle(session.id), 'el turno previo a la compactación termina');
+    const { requireSession } = require('../electron/agent-shared');
+    const state = runtime._internal.state();
+    const conv = await state.harness.conversation((await requireSession(session.id)).conversationId, state.ctx);
+    const taskId = await conv.compact(undefined, state.ctx);
+    const settled = await state.harness.waitForTask(taskId, state.ctx);
+    assert(settled.state.outcome.status === 'completed', 'la compactación manual de pi-durable termina');
+    await conv.waitForIdle(state.ctx);
+    const { usage } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(usage && usage.compactions === 1, 'el medidor informa de la compactación aplicada');
     await runtime.shutdown();
   }
 
@@ -1779,7 +1970,7 @@ async function main() {
       checked: false,
     });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'reintenta', correction: true });
-    assert(!shared.turns.has(conversationId), 'una corrección reinicia el freno de repeticiones');
+    assert(!shared.turns.get(conversationId)?.calls.size, 'una corrección reinicia el freno de repeticiones');
     release();
     assert(await waitIdle(session.id), 'el turno corregido termina');
     await runtime.shutdown();

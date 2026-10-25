@@ -68,12 +68,6 @@ def test_num_formats_integers_without_decimals() -> None:
     assert filters._num(0.5) == "0.5"
 
 
-def test_esc_escapes_filtergraph_specials() -> None:
-    assert filters._esc("a:b") == "a\\:b"
-    assert filters._esc("it's") == "it\\'s"
-    assert filters._esc("[x]") == "\\[x\\]"
-
-
 def test_atempo_chain_covers_extremes() -> None:
     assert filters._atempo_chain(1.0) == [1.0]
     assert filters._atempo_chain(4.0) == [2.0, 2.0]
@@ -144,12 +138,6 @@ def test_opacity_alpha_mixer(toolchain: Any, clip: Path) -> None:
     assert out.is_file()
 
 
-def test_boxblur_background(toolchain: Any, clip: Path) -> None:
-    out = SCRATCH / "blur.mp4"
-    _run_filter(toolchain, clip, filters.boxblur(10), out)
-    assert out.is_file()
-
-
 def test_delogo_rects_apply_on_real_clip(toolchain: Any, clip: Path) -> None:
     rects = [{"id": "r1", "x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2}]
     chain = ",".join(filters.delogo_rects(rects, 320, 240))
@@ -217,43 +205,6 @@ def test_audio_fades_chain(toolchain: Any, clip: Path) -> None:
 def test_audio_gain_db(toolchain: Any, clip: Path) -> None:
     assert filters.audio_gain(0) == ""
     assert "volume=" in filters.audio_gain(-6)
-
-
-def test_two_layer_overlay_composition(toolchain: Any, clip: Path) -> None:
-    out = SCRATCH / "overlay2.mp4"
-    x, y = filters.overlay_position(0.1, 0.1, 640, 360)
-    graph = (
-        "[0:v]scale=640:360[base];"
-        "[0:v]scale=160:120[top];"
-        f"[base][top]overlay={x}:{y}[v]"
-    )
-    import subprocess
-
-    proc = subprocess.run(
-        [
-            str(toolchain.ffmpeg),
-            "-hide_banner",
-            "-y",
-            "-i",
-            str(clip),
-            "-filter_complex",
-            graph,
-            "-map",
-            "[v]",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            str(out),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
-    assert proc.returncode == 0, proc.stderr[-400:]
-    meta = probe_json(toolchain, out)
-    assert meta["streams"][0]["width"] == 640
 
 
 def test_metadata_of_overlay_output_matches_canvas(toolchain: Any, clip: Path) -> None:

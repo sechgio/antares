@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AppWindow, ArrowLeft, Ban, BookOpen, Camera, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Copy, FilePen, FileText, FolderOpen, Globe, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Package, Route, Search, ShieldCheck, Terminal, Wrench, X } from 'lucide-react';
+import { AppWindow, ArrowLeft, Ban, BookOpen, Camera, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Copy, FilePen, FileText, FolderOpen, Globe, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Network, Package, Route, Search, ShieldCheck, Terminal, Wrench, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AgentApproval, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
@@ -58,6 +58,9 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   web_read: BookOpen,
   web_screenshot: Camera,
   web_back: ArrowLeft,
+  web_text: FileText,
+  web_console: Terminal,
+  web_network: Network,
   web_click: MousePointerClick,
   web_type: Keyboard,
   web_key: Keyboard,
@@ -84,8 +87,6 @@ function keyArgument(params: Record<string, unknown>): string | null {
   return null;
 }
 
-// Los textos largos (páginas, archivos) se leen con sus saltos de línea reales
-// en vez de «\n» escapados; una barra invertida escapada se respeta.
 function prettyJson(text: string): string {
   try {
     const value: unknown = JSON.parse(text);
@@ -192,7 +193,6 @@ function shellOutput(result: string | null | undefined) {
     return {
       exit: typeof data.exit_code === 'number' ? data.exit_code : null,
       text: [stdout, errors].filter(Boolean).join('\n'),
-      // Las líneas desde aquí son stderr o el error de la herramienta y se pintan en rojo.
       errorFrom: errors ? (stdout ? stdout.split('\n').length : 0) : Infinity,
       duration: typeof data.duration_s === 'number' ? data.duration_s : null,
     };
@@ -201,7 +201,6 @@ function shellOutput(result: string | null | undefined) {
   }
 }
 
-// Segundos que lleva en curso una herramienta, desde el inicio que marca el motor.
 function Elapsed({ since }: { since?: number }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -229,7 +228,6 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
   const failed = call.status === 'failed' || call.status === 'denied' || exitFailed;
   const text = output ? output.text : (call.output ?? '').replace(/\n+$/, '');
   const lines = text ? text.split('\n') : [];
-  // Como una terminal, se ve el final de la salida: ahí suelen estar el error o el resumen.
   const logRef = useRef<HTMLDivElement>(null);
   const followOutputRef = useRef(true);
   useEffect(() => {
@@ -319,8 +317,8 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
 function UserBubble({ msg }: { msg: AgentMessage }) {
   return (
     <div className="agent-trace-in flex justify-end">
-      <div className="agent-message-user max-w-[min(600px,85%)] rounded-[18px] bg-[var(--bg-input)] px-4 py-2.5 text-[14px] leading-[21px] text-[var(--text-primary)]">
-        <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+      <div className="agent-message-user min-w-0 max-w-[min(600px,88%)] rounded-2xl px-4 py-3 text-[14px] leading-[22px] text-[var(--text-primary)]">
+        <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
       </div>
     </div>
   );
@@ -383,7 +381,7 @@ function AssistantBlock({ msg, agent }: { msg: AgentMessage; agent?: AgentIdenti
         )}
         {msg.reasoning && <Reasoning text={msg.reasoning} streaming={!!msg.partial && !msg.content} ms={msg.reasoning_ms} />}
         {msg.content && (
-          <div className="agent-message-answer w-fit max-w-[min(620px,100%)] rounded-[18px] bg-[var(--bg-input)] px-4 py-3 text-[14px] leading-[22px] text-[var(--text-primary)]">
+          <div className="agent-message-answer min-w-0 max-w-full py-1 text-[14px] leading-[23px] text-[var(--text-primary)]">
             <MessageMarkdown text={msg.content} streaming={!!msg.partial} />
           </div>
         )}
@@ -411,9 +409,12 @@ export function ApprovalCard({
   approval: AgentApproval;
   busy: boolean;
   decision?: 'approve' | 'deny';
-  onDecide: (id: string, ok: boolean) => void;
+  onDecide: (id: string, ok: boolean, remember?: boolean) => void;
 }) {
   const { params, context } = approval;
+  const [remember, setRemember] = useState(false);
+  const alwaysDomain = approval.method.startsWith('web_') && context?.policy_blocked === false
+    && typeof context?.domain === 'string' && context.domain ? context.domain : null;
   const label = Object.prototype.hasOwnProperty.call(METHOD_LABELS, approval.method) ? METHOD_LABELS[approval.method] : undefined;
   const filename = typeof params.filename === 'string' && params.filename ? params.filename : params.name;
   const action = approval.method === 'drafts_save' && typeof filename === 'string'
@@ -443,8 +444,10 @@ export function ApprovalCard({
     typeof params.text === 'string' && `Texto: ${params.text.slice(0, 200)}`,
     typeof params.x === 'number' && typeof params.y === 'number' && `Punto: (${params.x}, ${params.y})`,
     typeof params.ref === 'string' && `Elemento de la página: ${params.ref}`,
+    typeof context?.page_url === 'string' && context.page_url !== params.url && `Página actual: ${context.page_url}`,
     context?.account && `Cuenta: ${context.account}`,
     context?.sheet_id && `Hoja: ${context.sheet_id}`,
+    context?.subagent && `Solicitada por el subagente: ${context.subagent}${context.subagent_role === 'worker' ? ' (worker)' : ''}`,
     ...(approval.resources ?? []).map((resource) => `Archivo: ${resource.path}`),
   ].filter((fact): fact is string => !!fact);
   const Icon = approval.method === 'shell_run' ? Terminal
@@ -491,12 +494,20 @@ export function ApprovalCard({
           </details>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border-subtle)] px-3 py-2.5 sm:px-4">
-          <span className="mr-auto basis-full text-[11.5px] leading-5 text-[var(--text-secondary)] sm:basis-auto">Solo esta acción</span>
+          {alwaysDomain ? (
+            <label className="mr-auto flex basis-full cursor-pointer items-center gap-2 text-[11.5px] leading-5 text-[var(--text-secondary)] sm:basis-auto">
+              <Toggle checked={remember} disabled={busy} aria-label={`Permitir siempre en ${alwaysDomain}`}
+                onChange={setRemember} />
+              Permitir siempre en {alwaysDomain}
+            </label>
+          ) : (
+            <span className="mr-auto basis-full text-[11.5px] leading-5 text-[var(--text-secondary)] sm:basis-auto">Solo esta acción</span>
+          )}
           <Button size="sm" variant="ghost" aria-label="Rechazar esta acción" disabled={busy} onClick={() => onDecide(approval.id, false)}>
             {decision === 'deny' ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <X size={13} aria-hidden="true" />}
             Rechazar
           </Button>
-          <Button size="sm" aria-label="Permitir esta acción" disabled={busy} onClick={() => onDecide(approval.id, true)}>
+          <Button size="sm" aria-label="Permitir esta acción" disabled={busy} onClick={() => onDecide(approval.id, true, remember)}>
             {decision === 'approve' ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Check size={13} aria-hidden="true" />}
             Permitir
           </Button>

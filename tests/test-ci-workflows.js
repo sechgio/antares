@@ -80,7 +80,7 @@ function run() {
     'The frontend suite is split into two independent shards instead of one long job',
   );
   assert(
-    qualityStep === [...qualityCommands, ...['contracts', 'electron'].map((suite) => `node scripts/run-test-suites.js ${suite}`)].join(' && '),
+    qualityStep === [...qualityCommands, ...['contracts', 'electron', 'turns'].map((suite) => `node scripts/run-test-suites.js ${suite}`)].join(' && '),
     'Quality CI preserves every check from the shared quality gate in order and fails closed',
   );
   assert(
@@ -95,7 +95,7 @@ function run() {
   assert(job('backend').indexOf('Install and validate Pango') < job('backend').indexOf('Run backend tests'), 'Pango validation precedes backend tests');
   assert(ci.includes('C:\\msys64\\mingw64') && ci.includes('C:\\msys64\\var\\lib\\pacman\\local'), 'Pango cache preserves runtime files together with the installed package database');
   assert(ci.includes('$env:ImageOS-$env:ImageVersion') && ci.includes('steps.runner-image.outputs.version') && ci.includes("hashFiles('scripts/install-ci-pango.ps1')") && !job('backend').includes('restore-keys:'), 'Pango cache cannot cross runner images or installer versions');
-  for (const suite of ['contracts', 'backend', 'electron']) {
+  for (const suite of ['contracts', 'backend', 'electron', 'turns']) {
     const calls = ciJobs.match(new RegExp(`node scripts/run-test-suites\\.js ${suite}\\b`, 'g')) || [];
     assert(calls.length === 1, `Windows CI runs the ${suite} suite exactly once`);
   }
@@ -146,7 +146,10 @@ function run() {
   for (const input of ['python', 'root', 'frontend']) {
     assert(new RegExp(`  ${input}:[\\s\\S]*?default: 'true'`).test(setupCi), `Release setup keeps ${input} enabled by default`);
   }
-  assert(job('frontend').includes("python: 'false'") && job('frontend').includes("root: 'false'"), 'Frontend setup skips Python and root npm dependencies');
+  assert(
+    ['frontend', 'frontend-shard-2'].every((name) => job(name).includes("python: 'false'") && job(name).includes("root: 'true'")),
+    'Frontend shards skip Python and install root dependencies for Electron-backed Vitest tests',
+  );
   assert(job('backend').includes("frontend: 'false'") && job('backend').includes("root: 'false'"), 'Backend setup skips both npm installs');
   assert(packageJson.scripts['audit:python'].endsWith('python scripts/audit_python.py'), 'The shared audit uses the tested lock exporter');
 

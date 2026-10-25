@@ -44,6 +44,7 @@ def replay_safe(method: str) -> bool:
     return method in readonly_methods() and (
         is_idempotent(method) or method in {
             "fs_list", "fs_read", "fs_search", "skills_list", "skills_read", "memory_search", "mcp_status", "shell_output",
+            "shell_job_status",
         }
     )
 
@@ -298,13 +299,6 @@ def _post_json(
 
 
 def _with_synthetic_results(messages: list[JsonObject]) -> list[JsonObject]:
-    """Completa con tool_results sintéticos las calls quedadas sin respuesta.
-
-    Si un turno se interrumpió tras persistir las tool_calls pero antes de sus
-    resultados, el historial queda inválido: las APIs rechazan la request por
-    calls sin result. Sintetizarlos aquí repara también sesiones antiguas sin
-    tocar el historial persistido.
-    """
     answered = {str(m.get("tool_use_id")) for m in messages if m.get("role") == "tool_result"}
     out: list[JsonObject] = []
     for msg in messages:

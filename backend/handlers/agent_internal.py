@@ -7,7 +7,17 @@ from pathlib import Path
 
 from backend.core.agent import agent as _agent
 from backend.core.agent import agent_chat as _agent_chat
-from backend.core.agent import agent_tools, artifacts, canvas_edit, computer_files, documents, drafts, resource_grants
+from backend.core.agent import (
+    agent_tools,
+    artifacts,
+    canvas_edit,
+    computer_files,
+    computer_jobs,
+    documents,
+    drafts,
+    resource_grants,
+    skills,
+)
 from backend.core.agent import memory as _memory_store
 from backend.core.agent import modules as _agent_modules
 from backend.core.agent import subagent as _subagent
@@ -225,6 +235,34 @@ def _grants_add(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+@validate_params("session_id", "path")
+def _path_status(params: JsonObject) -> JsonObject:
+    store = _store()
+    session_id = str(params["session_id"])
+    try:
+        return computer_files.stat_path(params["path"], store.grants_for(session_id), store.drafts_dir(session_id))
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("session_id", "job_id")
+def _shell_job_status(params: JsonObject) -> JsonObject:
+    store = _store()
+    session_id = str(params["session_id"])
+    try:
+        return computer_jobs.status({"job_id": params["job_id"]}, store.drafts_dir(session_id), session_id)
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("session_id")
+def _shell_jobs_cancel_session(params: JsonObject) -> JsonObject:
+    return {"cancelled": computer_jobs.cancel_session(str(params["session_id"]))}
+
+
+@with_locale
 @validate_params("text")
 def _mentions(params: JsonObject) -> JsonObject:
     result = _agent_modules.resolve_mentions(str(params["text"]))
@@ -240,7 +278,20 @@ def _mentions(params: JsonObject) -> JsonObject:
 @with_locale
 @validate_params("session_id")
 def _grants_revoke(params: JsonObject) -> JsonObject:
+    path = params.get("path")
+    if isinstance(path, str) and path:
+        return {"revoked": _store().revoke_grant(str(params["session_id"]), path)}
     return {"revoked": _store().revoke_grants(str(params["session_id"]))}
+
+
+@with_locale
+@validate_params("session_id")
+def _grants_list(params: JsonObject) -> JsonObject:
+    grants = sorted(_store().grants_for(str(params["session_id"])).values(), key=lambda record: str(record.get("path") or ""))
+    return {"grants": [
+        {key: record.get(key) for key in ("path", "mode", "request_id", "size", "mtime_ns") if record.get(key) is not None}
+        for record in grants
+    ]}
 
 
 def _approval_error(approval: JsonObject | None) -> ValidationError:
@@ -290,6 +341,24 @@ def _approval_decide(params: JsonObject) -> JsonObject:
 @validate_params("session_id")
 def _approvals_pending(params: JsonObject) -> JsonObject:
     return {"approvals": _store().pending_approvals(str(params["session_id"]))}
+
+
+@with_locale
+def _approvals_history(params: JsonObject) -> JsonObject:
+    status = params.get("status")
+    if status is not None and status not in {"all", "pending", "approved", "denied", "expired", "uncertain"}:
+        raise ValidationError("Estado de aprobación no válido")
+    method = params.get("method")
+    session_id = params.get("session_id")
+    limit = params.get("limit", 500)
+    if not isinstance(limit, int) or isinstance(limit, bool):
+        raise ValidationError("El límite del historial no es válido")
+    return {"approvals": _store().approval_history(
+        session_id=str(session_id) if isinstance(session_id, str) and session_id else None,
+        method=str(method) if isinstance(method, str) and method else None,
+        status=str(status) if isinstance(status, str) and status != "all" else None,
+        limit=limit,
+    )}
 
 
 @with_locale
@@ -386,7 +455,8 @@ def _dispatch(params: JsonObject) -> JsonObject:
                 raise ValidationError("Los parámetros o recursos cambiaron después de reservar la operación")
             result = _agent.get_agent_runner()._execute(
                 {"id": call_id, "name": name, "params": call_params, "session_id": session_id, "op_id": op_id,
-                 "approved_context": intent["context"], **({"subagent": subagent_profile} if subagent_profile else {})},
+                 "approved_context": intent["context"], "profile_id": intent["context"].get("profile_id"),
+                 **({"subagent": subagent_profile} if subagent_profile else {})},
                 token,
             )
             status = "failed" if _agent.result_failed(result) else "submitted" if name == "artifact_print" else "succeeded"
@@ -520,6 +590,11 @@ def _memory_list(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+def _skills_list(params: JsonObject) -> JsonObject:
+    return skills.library_catalog(_store().base_dir / "skills")
+
+
+@with_locale
 @validate_params("id", "action")
 def _memory_update(params: JsonObject) -> JsonObject:
     try:
@@ -591,13 +666,18 @@ HANDLERS = {
     "agent_internal_approval_status": _approval_status,
     "agent_internal_approval_decide": _approval_decide,
     "agent_internal_approvals_pending": _approvals_pending,
+    "agent_internal_approvals_history": _approvals_history,
     "agent_internal_approvals_deny_session": _approvals_deny_session,
     "agent_internal_dispatch": _dispatch,
     "agent_internal_dispatch_result": _dispatch_result,
     "agent_internal_dispatch_cancel": _dispatch_cancel,
     "agent_internal_dispatch_finish": _dispatch_finish,
     "agent_internal_grants_add": _grants_add,
+    "agent_internal_grants_list": _grants_list,
     "agent_internal_grants_revoke": _grants_revoke,
+    "agent_internal_path_status": _path_status,
+    "agent_internal_shell_job_status": _shell_job_status,
+    "agent_internal_shell_jobs_cancel_session": _shell_jobs_cancel_session,
     "agent_internal_mentions": _mentions,
     "agent_internal_document_plan": _document_plan,
     "agent_canvas_fill": canvas_edit.fill_fields,
@@ -610,6 +690,7 @@ HANDLERS = {
     "agent_internal_memory_context": _memory_context,
     "agent_internal_grant_remove": _grant_remove,
     "agent_memory_list": _memory_list,
+    "agent_skills_list": _skills_list,
     "agent_memory_update": _memory_update,
     "agent_memory_delete": _memory_delete,
 }
