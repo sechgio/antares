@@ -1335,7 +1335,18 @@ it('confirma la recepción solo tras la admisión y conserva ese recibo si falla
   list.mockRejectedValue(new Error('No se pudo leer el historial'));
   await act(async () => { admitted.resolve({ accepted: true }); });
   expect(receipts.getByText('Mensaje recibido.')).toBeVisible();
+  expect(screen.getByRole('region', { name: 'Estado de los envíos' })).toHaveClass('sr-only');
   expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText(/El estado mostrado puede estar desactualizado/)).toBeVisible();
+});
+
+it('el composer muestra los permisos en su barra y sin pista de teclado', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  render(<AgentView />);
+  await act(async () => {});
+  const composer = within(screen.getByRole('group', { name: 'Redactar mensaje' }));
+  expect(composer.getByRole('button', { name: 'Permisos: Aprobar por mí' })).toBeVisible();
+  expect(screen.queryByText('Mayús + Intro para una nueva línea')).not.toBeInTheDocument();
 });
 
 it('un mensaje sin aceptación conserva su borrador y ofrece recuperar la misma petición', async () => {

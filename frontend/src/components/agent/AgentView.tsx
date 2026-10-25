@@ -471,6 +471,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const receiptsForSession = sendReceipts.filter((receipt) => receipt.intent.session === sessionId);
   const latestReceipt = receiptsForSession[receiptsForSession.length - 1];
   const visibleReceipts = receiptsForSession.filter((receipt) => receipt.phase !== 'received' || receipt === latestReceipt);
+  // Un recibo confirmado solo se anuncia: el mensaje ya aparece en la conversación.
+  const receiptsQuiet = visibleReceipts.every((receipt) => receipt.phase === 'received');
   const readyProviders = providers.filter((p) => p.configured && (!p.needs_key || p.has_key));
   const providerLabel = providers.find((p) => p.id === provider)?.label ?? provider;
   const filteredTools = useMemo(() => {
@@ -1357,6 +1359,15 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               >
                 <FolderOpen size={14} />
               </button>
+              {session && (
+                <PermissionPicker
+                  key={session.id}
+                  value={session.permission_mode ?? 'auto'}
+                  onChange={(mode) => void changePermissions(mode)}
+                  disabled={permissionsBusy || modelBusy || running || stopping || pending.length > 0}
+                  pending={pending.length}
+                />
+              )}
               <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1">
                 {readyProviders.length > 0 ? (
                   <ModelPicker
@@ -1411,7 +1422,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             </div>
           </div>
           {visibleReceipts.length > 0 && (
-            <div role="region" aria-label="Estado de los envíos" tabIndex={0} className="custom-scrollbar max-h-36 space-y-2 overflow-y-auto px-3 pt-2">
+            <div role="region" aria-label="Estado de los envíos" tabIndex={receiptsQuiet ? undefined : 0} className={`${receiptsQuiet ? 'sr-only ' : ''}custom-scrollbar max-h-36 space-y-2 overflow-y-auto px-3 pt-2`}>
               {visibleReceipts.map((receipt) => (
                 <div key={receipt.intent.requestId} className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[12px] leading-5 text-[var(--text-secondary)]">
                   <p role="status" aria-live="polite" aria-atomic="true" className="min-w-0 flex-1">
@@ -1431,18 +1442,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               ))}
             </div>
           )}
-          <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 text-[12px] text-[var(--text-muted)]">
-            {session ? (
-              <PermissionPicker
-                key={session.id}
-                value={session.permission_mode ?? 'auto'}
-                onChange={(mode) => void changePermissions(mode)}
-                disabled={permissionsBusy || modelBusy || running || stopping || pending.length > 0}
-                pending={pending.length}
-              />
-            ) : <span />}
-            <div className="flex min-w-0 items-center gap-1">
-              {resumable && !running && pending.length === 0 && (
+          {resumable && !running && pending.length === 0 && (
+            <div className="mt-1.5 flex min-w-0 items-center justify-end gap-2 text-[12px] text-[var(--text-muted)]">
                 <button
                   type="button"
                   className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
@@ -1453,10 +1454,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   <Play size={11} aria-hidden="true" />
                   Reanudar
                 </button>
-              )}
-              <span className="hidden text-[11px] sm:inline">Mayús + Intro para una nueva línea</span>
             </div>
-          </div>
+          )}
         </div>
       </main>
 
