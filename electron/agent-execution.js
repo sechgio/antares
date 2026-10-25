@@ -16,8 +16,10 @@ const {
   dispatchCallId,
   ctx,
 } = require('./agent-shared');
-const { compactMessages, requestBudget } = require('./agent-compaction');
+const { compactMessages, requestBudget } = require('./agent-request-budget');
 const { resolvePortableProfile, mergeProfileSkills, readProfileSkill } = require('./agent-profiles');
+
+const compaction = require('./agent-compaction');
 
 const { appendTurn } = require('./turn-log');
 
@@ -421,6 +423,15 @@ function nativeTools() {
   return shared.nativeTools || require('./agent-native-tools');
 }
 
+function contextWindowFor(session) {
+  const model = shared.state && shared.state.models
+    && shared.state.models.getModel(session && session.provider, session && session.model);
+  if (model && Number(model.contextWindow) > 0) return Number(model.contextWindow);
+  const record = shared.providers.get(session && session.provider);
+  const window = Number(record && record.info && record.info.capabilities && record.info.capabilities.context_window);
+  return window > 0 ? window : DEFAULT_CONTEXT_WINDOW;
+}
+
 async function refreshTools() {
   const { pi } = shared.deps;
   const tools = await allToolSpecs();
@@ -442,6 +453,7 @@ async function refreshTools() {
     tools: registrations,
     hooks: [
       pi.hook(pi.ToolTask, { beforeTool }),
+      pi.hook(pi.CompactionTask, { beforeCompact: (c, r, context) => compaction.beforeCompact(c, r, context) }),
       pi.hook(pi.GenerationTask, {
         beforeRequest: async ({ messages }, api, context) => {
           resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
@@ -1125,4 +1137,5 @@ module.exports = {
   notifyDecision,
   dispatchApproved,
   sanitizeProviderError,
+  contextWindowFor,
 };
