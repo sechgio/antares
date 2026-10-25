@@ -38,9 +38,10 @@ const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD]);
 // Acciones ui_ que inyectan entrada: el marco ámbar del lease humano cubre la
 // ventana objetivo durante su despacho (ui_windows/ui_observe/ui_launch no inyectan).
 const UI_ACTION_TOOLS = new Set(['ui_click', 'ui_type', 'ui_key', 'ui_scroll', 'ui_drag', 'ui_set_value']);
-// En Acceso completo siguen exigiendo decisión humana: el shell y las acciones
-// de Equipo que inyectan entrada o abren aplicaciones.
-const NEVER_AUTO_APPROVE = new Set(['shell_run', 'ui_launch', ...UI_ACTION_TOOLS]);
+// En Acceso completo siguen exigiendo decisión humana: el shell (incluidos los
+// jobs en segundo plano) y las acciones de Equipo que inyectan entrada o abren
+// aplicaciones.
+const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'ui_launch', ...UI_ACTION_TOOLS]);
 // Acciones con efecto que el techo desatendido contabiliza por encargo programado.
 const UNATTENDED_ACTION_TOOLS = new Set(['ui_launch', ...UI_ACTION_TOOLS]);
 const MAX_UNATTENDED_ACTIONS = 25;
@@ -205,6 +206,8 @@ async function allToolSpecs() {
   const merged = new Map(tools.map((tool) => [tool.name, tool]));
   const scheduleTool = require('./agent-tasks').TOOL;
   merged.set(scheduleTool.name, scheduleTool);
+  const eventTool = require('./agent-events').TOOL;
+  merged.set(eventTool.name, eventTool);
   for (const tool of nativeTools().nativeToolSpecs()) {
     const current = merged.get(tool.name);
     merged.set(tool.name, { ...current, ...tool, ...(tool.inheritSchema && current ? { inputSchema: current.inputSchema } : {}) });
@@ -355,7 +358,7 @@ async function loadTools(args, sessionId, context) {
   const conv = await conversation(sessionId);
   const enabled = new Set((await conv.agent(context)).tools.map((tool) => tool.name));
   const specs = [...shared.toolSpecs.values()].filter((spec) => spec.kind !== 'meta'
-    || spec.name === 'task_schedule' || spec.name === 'agent_delegate');
+    || ['task_schedule', 'agent_delegate', 'wait_event'].includes(spec.name));
   const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
   const words = normal(args.query).split(/[^a-z0-9_]+/).filter((word) => word.length > 2);
   if (!modules.length && !words.length) {
@@ -851,6 +854,7 @@ async function dispatchTool(spec, args, sessionId, api, context) {
       return { text: JSON.stringify(await require('./agent-tasks').delegate(profile, args, sessionId, api, context)) };
     }
     if (spec.name === 'task_schedule') return { text: JSON.stringify(await require('./agent-tasks').schedule(args || {}, sessionId, api)) };
+    if (spec.name === 'wait_event') return { text: JSON.stringify(await require('./agent-events').wait(args || {}, sessionId, api, context)) };
     if (spec.name === 'sessions_search') return { text: JSON.stringify(await searchSessions(args || {}, sessionId, context)) };
     return loadTools(args || {}, sessionId, context);
   }

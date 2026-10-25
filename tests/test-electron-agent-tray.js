@@ -82,6 +82,13 @@ async function main() {
   state.activity[0].status = 'uncertain';
   await intervals.get(2000)();
   assert.equal(state.notifications[2].options.body, 'El encargo requiere revisión');
+  state.activity = [{ id: 's2', title: 'Espera', status: 'waiting_event' }];
+  await intervals.get(2000)();
+  assert.equal(state.notifications.length, 3, 'entrar en waiting_event no notifica');
+  state.activity[0].status = 'completed';
+  await intervals.get(2000)();
+  assert.equal(state.notifications.length, 4, 'salir de waiting_event sí notifica el cierre');
+  assert.equal(state.notifications[3].options.body, 'El encargo terminó');
   state.tray.menu[2].click();
   assert.equal(state.lastSend[1], 'app.flush-canvas-before-quit');
   assert.equal(state.killed, 0);

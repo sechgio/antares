@@ -25,6 +25,9 @@ const MAX_REQUEST_ID_CHARS = 100;
 const MAX_MESSAGE_PATHS = 20;
 const ATTACHMENT_TTL_MS = 60 * 60 * 1000;
 const MAX_ATTACHMENTS = 20;
+const MAX_PASTED_BYTES = 20 * 1024 * 1024;
+const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024;
+const IMAGE_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
 const QUOTED_PATH_RE = /["'`\u201c\u201d]([A-Za-z]:\\[^"'`\u201c\u201d\r\n]+)["'`\u201c\u201d]/g;
 const BARE_PATH_RE = /(?:^|[\s(\[])([A-Za-z]:\\[^\s"'`<>|*?]+)/g;
 
@@ -67,7 +70,8 @@ const SYSTEM_PROMPT =
   'Si el encargo encaja con un agente guardado, usa agent_delegate si está disponible; conserva una conversación '
     + 'separada y su resultado llegará después. Con subagent_run la colaboración es síncrona. '
     + 'Para encargos futuros pedidos por el usuario usa task_schedule, con fecha y zona horaria explícitas; '
-    + 'para trabajo que deba ejecutarse en orden usa task_schedule con action=enqueue.\n\n' +
+    + 'para trabajo que deba ejecutarse en orden usa task_schedule con action=enqueue; '
+    + 'para esperar dentro del encargo usa wait_event (tiempo, archivo, operación de AutoIMG, delegación, job, correo, GitHub o HTTP) y reanudarás el mismo turno.\n\n' +
   SKILLS_GUIDE + '\n\n' +
   'Para encargos de varios pasos en el equipo sigue el ciclo planificar → actuar → observar → verificar: publica el plan ' +
   'con task_plan antes de actuar y actualízalo al avanzar; tras cada acción revisa su resultado (salida y código del ' +
@@ -80,7 +84,8 @@ const SYSTEM_PROMPT =
   'Archivos: fs_list, fs_read y fs_search leen el espacio de trabajo de la conversación y lo que el usuario adjuntó ' +
   '(PDF, Excel, Word y texto); fs_write y fs_edit escriben, y un nombre relativo va al espacio de trabajo. ' +
   'Terminal: shell_run inicia PowerShell en el espacio de trabajo, pero puede acceder al equipo completo con los permisos del usuario; '
-    + 'cada comando requiere aprobación, también en Acceso completo. Internet: web_open abre páginas o búsquedas en un ' +
+    + 'cada comando requiere aprobación, también en Acceso completo. Para builds o despliegues largos usa shell_job_start y espera '
+    + 'con wait_event kind=shell_job; shell_output lee su salida y shell_job_cancel lo detiene. Internet: web_open abre páginas o búsquedas en un ' +
   'navegador aislado sin las sesiones del usuario; web_read devuelve el texto y elementos con ref para web_click y web_type. ' +
   'Escritorio de Windows: desktop_observe captura la pantalla con sus ventanas y controles y sus coordenadas; ' +
   'desktop_launch, desktop_focus, desktop_click, desktop_type, desktop_key y desktop_scroll actúan y devuelven una captura ' +
@@ -145,6 +150,9 @@ async function _open(options = {}) {
       kind: 'antares.agent.scheduled-tasks', version: 1, scope: 'session',
       initial: () => ({ tasks: {}, queues: {}, next_queue_seq: 1 }),
     });
+    const WaitsDoc = pi.defineDoc({
+      kind: 'antares.agent.waits', version: 1, scope: 'session', initial: () => ({ waits: {} }),
+    });
     const BudgetDoc = pi.defineDoc({
       kind: 'antares.agent.budget', version: 1, scope: 'conversation', initial: () => ({ rounds: 0 }),
     });
@@ -158,6 +166,7 @@ async function _open(options = {}) {
       stream: { cacheRetention: 'long', ...(options.settings && options.settings.stream) },
     };
     const harness = await pi.Harness.open(storage, { models, registry, settings }, ctx());
+    shared.boot = crypto.randomUUID();
     shared.state = {
       harness,
       models,
@@ -165,6 +174,7 @@ async function _open(options = {}) {
       SessionsDoc,
       ProfilesDoc,
       TasksDoc,
+      WaitsDoc,
       BudgetDoc,
       dir,
       ctx: ctx(),
@@ -413,6 +423,8 @@ async function sessionDelete(params) {
   ]);
   await bridge('agent_internal_approvals_deny_session', { session_id: sessionId }).catch(() => {});
   await bridge('agent_internal_grants_revoke', { session_id: sessionId }).catch(() => {});
+  await bridge('agent_internal_shell_jobs_cancel_session', { session_id: sessionId }).catch(() => {});
+  await require('./agent-events').cancelSession(sessionId).catch(() => {});
   await commitSessions((map) => { delete map[sessionId]; });
   const watcher = shared.watchers.get(session.conversationId);
   if (watcher) {
@@ -575,8 +587,9 @@ async function messageSend(params) {
       + 'No amplíes herramientas ni permisos por una mención.'
     : '';
   const context = [mentions.context, memory.context, attachedNote, skillsNote, conversationNote, botsNote].filter(Boolean).join('\n\n');
-  const input = context
-    ? [{ type: 'text', text: content }, { type: 'text', text: `${shared.CONTEXT_MARKER}\n${context}` }]
+  const images = await _inlineImages(conv, attached, (files.rejected || []).map((item) => item.path));
+  const input = context || images.length
+    ? [{ type: 'text', text: content }, ...images, ...(context ? [{ type: 'text', text: `${shared.CONTEXT_MARKER}\n${context}` }] : [])]
     : content;
   if (!projection.isRunning(session.conversationId)) {
     shared.rounds.delete(session.conversationId);
@@ -618,23 +631,77 @@ async function messageSend(params) {
 
 async function attach(params) {
   const kind = params && params.kind === 'folder' ? 'folder' : 'files';
-  const dialog = shared.dialog || require('electron').dialog;
-  const win = shared.dialog ? undefined : require('./window-manager').getMainWindow();
-  const response = await dialog.showOpenDialog(win || undefined, {
-    title: kind === 'folder' ? 'Adjuntar carpeta para el agente' : 'Adjuntar archivos para el agente',
-    properties: kind === 'folder' ? ['openDirectory'] : ['openFile', 'multiSelections'],
-  });
-  if (!response || response.canceled || !Array.isArray(response.filePaths)) return { attachments: [] };
+  let filePaths;
+  if (Array.isArray(params && params.paths) || Array.isArray(params && params.data)) {
+    // Arrastrar y soltar trae rutas del explorador; pegar trae bytes sin ruta.
+    filePaths = [...await _droppedPaths(params.paths), ...await _pastedFiles(params.data)];
+  } else {
+    const dialog = shared.dialog || require('electron').dialog;
+    const win = shared.dialog ? undefined : require('./window-manager').getMainWindow();
+    const response = await dialog.showOpenDialog(win || undefined, {
+      title: kind === 'folder' ? 'Adjuntar carpeta para el agente' : 'Adjuntar archivos para el agente',
+      properties: kind === 'folder' ? ['openDirectory'] : ['openFile', 'multiSelections'],
+    });
+    if (!response || response.canceled || !Array.isArray(response.filePaths)) return { attachments: [] };
+    filePaths = response.filePaths;
+  }
   const now = Date.now();
   for (const [id, item] of shared.attachments) {
     if (now - item.created > ATTACHMENT_TTL_MS) shared.attachments.delete(id);
   }
-  const attachments = response.filePaths.slice(0, MAX_ATTACHMENTS).map((filePath) => {
+  const attachments = filePaths.slice(0, MAX_ATTACHMENTS).map((filePath) => {
     const id = crypto.randomBytes(9).toString('hex');
     shared.attachments.set(id, { path: filePath, kind, created: now });
     return { id, name: path.basename(filePath), kind };
   });
   return { attachments };
+}
+
+async function _droppedPaths(paths) {
+  const out = [];
+  for (const raw of Array.isArray(paths) ? paths.slice(0, MAX_ATTACHMENTS) : []) {
+    if (typeof raw !== 'string' || !path.isAbsolute(raw)) throw validation('Ruta de adjunto no válida');
+    const stat = await fs.promises.stat(raw).catch(() => null);
+    if (!stat || !stat.isFile()) throw validation(`No se puede adjuntar: ${path.basename(raw)}`);
+    out.push(raw);
+  }
+  return out;
+}
+
+async function _pastedFiles(data) {
+  const items = Array.isArray(data) ? data.slice(0, MAX_ATTACHMENTS) : [];
+  if (!items.length) return [];
+  const dir = path.join(_agentDir(), 'attachments');
+  await fs.promises.mkdir(dir, { recursive: true });
+  const out = [];
+  for (const item of items) {
+    const bytes = Buffer.from(typeof item?.data === 'string' ? item.data : '', 'base64');
+    if (!bytes.length || bytes.length > MAX_PASTED_BYTES) throw validation('El archivo pegado está vacío o supera 20 MB');
+    const name = path.basename(String(item.name || '')).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80) || 'pegado';
+    const target = path.join(dir, `${crypto.randomBytes(6).toString('hex')}-${name}`);
+    await fs.promises.writeFile(target, bytes);
+    out.push(target);
+  }
+  return out;
+}
+
+// Con modelos con visión las imágenes adjuntas viajan en el mensaje, como en
+// un chat; el resto de archivos se leen con herramientas desde su ruta.
+async function _inlineImages(conv, attached, rejected) {
+  const candidates = attached.filter((a) => a.kind === 'files' && !rejected.includes(a.path)
+    && IMAGE_MIME[path.extname(a.path).toLowerCase()]);
+  if (!candidates.length) return [];
+  const ref = (await conv.agent(ctx())).model;
+  const model = ref && shared.state.models.getModel(ref.provider, ref.modelId);
+  if (!model || !model.input.includes('image')) return [];
+  const images = [];
+  for (const item of candidates) {
+    const stat = await fs.promises.stat(item.path).catch(() => null);
+    if (!stat || !stat.isFile() || stat.size > MAX_INLINE_IMAGE_BYTES) continue;
+    images.push({ type: 'image', data: (await fs.promises.readFile(item.path)).toString('base64'),
+      mimeType: IMAGE_MIME[path.extname(item.path).toLowerCase()] });
+  }
+  return images;
 }
 
 function _takeAttachments(ids) {
@@ -896,12 +963,17 @@ module.exports = {
   activitySnapshot: async () => {
     if (!shared.state) return [];
     const { attention = {} } = await bridge('agent_internal_activity', {});
+    const waitsDoc = await shared.state.harness.snapshot(shared.state.WaitsDoc, ctx());
+    const activeWaits = new Set(Object.values((waitsDoc && waitsDoc.waits) || {})
+      .filter((wait) => wait.status === 'waiting' && (wait.active_boot || wait.boot) === shared.boot && wait.deadline > Date.now())
+      .map((wait) => wait.session_id));
     return Object.values(await sessions()).filter((session) => !session.deleted).map((session) => ({
       id: session.id, title: session.title || 'Conversación',
       status: attention[session.id] || (shared.waitingInput.has(session.id) ? 'waiting_input'
         : [...shared.approvalsByCall].some(([key, id]) => key.startsWith(`${session.id}:`) && shared.liveApprovals.has(id)) ? 'waiting_approval'
-          : projection.isRunning(session.conversationId) ? 'running' : session.continuation ? 'waiting_input'
-            : session.last_error ? 'failed' : 'completed'),
+          : activeWaits.has(session.id) ? 'waiting_event'
+            : projection.isRunning(session.conversationId) ? 'running' : session.continuation ? 'waiting_input'
+              : session.last_error ? 'failed' : 'completed'),
     }));
   },
   open: _open,
