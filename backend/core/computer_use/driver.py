@@ -633,6 +633,11 @@ def window_state(window_id: str, screenshot: bool = False, max_elements: int = _
     return cast(JsonObject, _run_on_worker(run, 25.0))
 
 
+def normalize_app(name: str) -> str:
+    lowered = str(name or "").strip().lower()
+    return _KNOWN_ALIASES.get(lowered, lowered)
+
+
 def approval_context(params: JsonObject) -> JsonObject:
     """Contexto legible para la tarjeta de aprobación: app, ventana y elemento objetivo."""
     info: JsonObject = {}

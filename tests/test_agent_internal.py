@@ -669,3 +669,19 @@ def test_grant_app_ignora_metodos_que_no_son_ui(store):
         {"approval_id": first["id"], "approve": True, "grant_app": True})["approval"]
     assert decided["status"] == "approved"
     assert store.grants_for("s1") == {}
+
+
+def test_ui_approval_desatendida_permite_solo_las_apps_declaradas(store, monkeypatch):
+    monkeypatch.setattr(agent_internal._computer_driver, "approval_context",
+                        lambda params: {"app": "notepad.exe"})
+    store.add_grants("s1", [{"kind": "computer_app", "app": "Calc",
+                             "key": f"app:{os.path.normcase('Calc')}"}])
+
+    def _ensure(call_id, **extra):
+        return agent_internal.HANDLERS["agent_internal_approval_ensure"](
+            {"session_id": "s1", "call_id": call_id, "method": "ui_click",
+             "params": {"window_id": "w1a2b", "element_id": "e3"}, **extra})["approval"]
+
+    assert _ensure("c-a1", unattended_apps=["notepad"])["status"] == "approved"
+    with pytest.raises(ValidationError, match="lista blanca"):
+        _ensure("c-a2", unattended_apps=["calc"])

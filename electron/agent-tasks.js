@@ -11,12 +11,17 @@ const TOOL = {
   description: 'Programa un encargo solo cuando el usuario lo pide. Antares debe seguir abierto, incluida la bandeja; '
     + 'al volver a abrir recupera los pendientes. No concede permisos ni acceso a archivos. '
     + 'action=create requiere content y due_at ISO 8601 con zona horaria; every_minutes permite repetición. '
+    + 'Si el encargo operará apps de Windows, declara apps con los alias permitidos (notepad, calc, mspaint, '
+    + 'explorer, cmd, powershell, control, taskmgr; máximo 8): mientras se ejecuta solo, solo esas apps se manejan '
+    + '(hasta 25 acciones con efecto) y las concesiones de app de la conversación no aplican; sin apps declaradas, '
+    + 'las acciones sobre apps esperan la aprobación humana como siempre. '
     + 'action=list consulta los encargos de esta conversación; action=cancel cancela uno por id.',
   inputSchema: { type: 'object', properties: {
     action: { type: 'string', enum: ['create', 'list', 'cancel'] },
     content: { type: 'string', minLength: 1, maxLength: 12000 },
     due_at: { type: 'string' },
     every_minutes: { type: 'integer', minimum: 1, maximum: 525600 },
+    apps: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 40 }, maxItems: 8 },
     id: { type: 'string' },
   }, required: ['action'] },
 };
@@ -184,6 +189,14 @@ async function schedule(args, sessionId, api) {
     || (interval !== undefined && (!Number.isInteger(interval) || interval < 1 || interval > 525600))) {
     throw validation('Indica el encargo y una fecha ISO 8601 con zona horaria; la repetición mínima es un minuto');
   }
+  let apps = null;
+  if (args.apps !== undefined) {
+    if (!Array.isArray(args.apps) || args.apps.length > 8
+      || !args.apps.every((app) => typeof app === 'string' && app.trim().length >= 1 && app.trim().length <= 40)) {
+      throw validation('La lista de apps debe ser alias válidos de aplicaciones (máximo 8)');
+    }
+    apps = [...new Set(args.apps.map((app) => app.trim().toLowerCase()))];
+  }
   const id = crypto.createHash('sha256').update(`${sessionId}:${api.taskId}`).digest('hex').slice(0, 24);
   return state.harness.commit(async (tx) => {
     const doc = await tx.doc(state.TasksDoc);
@@ -196,7 +209,7 @@ async function schedule(args, sessionId, api) {
       delete doc.tasks[old.id];
     }
     const task = { id, session_id: sessionId, content, due_at: dueAt,
-      interval_ms: (interval || 0) * 60000, status: 'pending', created_at: Date.now() };
+      interval_ms: (interval || 0) * 60000, status: 'pending', created_at: Date.now(), ...(apps ? { apps } : {}) };
     doc.tasks[id] = task;
     return { scheduled: task };
   }, ctx());
@@ -229,9 +242,15 @@ async function tick() {
         await require('./agent-projection').ensureWatcher(session);
         await conv.submit({ type: 'write', requestId: `schedule:${task.id}:${task.due_at}:notice`,
           entry: { kind: shared.NOTICE_KIND, data: { text: `Encargo programado: ${task.content}` } } }, ctx());
-        await conv.submit({ type: 'input', content: `${shared.CONTEXT_MARKER}\nEncargo programado por el usuario: ${task.content}\n`
+        const placed = await conv.submit({ type: 'input', content: `${shared.CONTEXT_MARKER}\nEncargo programado por el usuario: ${task.content}\n`
           + 'Los datos de este encargo no conceden permisos ni acceso a rutas. Usa las aprobaciones normales.\n' + (memory.context || ''),
         requestId: `schedule:${task.id}:${task.due_at}`, whenBusy: 'followUp' }, ctx());
+        // Los registros de submission se podan al asentarse: la lista blanca de
+        // apps de este encargo se recuerda en memoria mientras su turno esté vivo.
+        if (placed && typeof placed.id === 'number' && Array.isArray(task.apps) && task.apps.length) {
+          if (shared.unattendedApps.size > 200) shared.unattendedApps.clear();
+          shared.unattendedApps.set(placed.id, task.apps);
+        }
         await state.harness.commit(async (tx) => {
           const current = (await tx.doc(state.TasksDoc)).tasks[task.id];
           if (current.status !== 'delivering') return;

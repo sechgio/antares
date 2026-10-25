@@ -226,3 +226,9 @@ def test_approval_context_vacio_si_no_hay_nada_conocido(monkeypatch):
     monkeypatch.setattr(driver, "_CACHE", _ContextCache())
     assert driver.approval_context({"window_id": "wf", "element_id": "e9"}) == {}
     assert driver.approval_context({}) == {}
+
+
+def test_normalize_app_resuelve_alias():
+    assert driver.normalize_app(" Notepad ") == "notepad.exe"
+    assert driver.normalize_app("CALC") == "calc.exe"
+    assert driver.normalize_app("MiApp.EXE") == "miapp.exe"

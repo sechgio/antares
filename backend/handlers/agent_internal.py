@@ -271,9 +271,18 @@ def _approval_ensure(params: JsonObject) -> JsonObject:
     )
     if approval.get("method") != method or approval.get("fingerprint") != intent:
         raise ValidationError("Esta llamada ya tiene una aprobación con otros parámetros o archivos")
+    unattended_apps = params.get("unattended_apps")
     if method.startswith("ui_") and approval.get("status") == "pending":
         app = str(((approval.get("context") or {}).get("computer") or {}).get("app") or "")
-        if app and f"app:{os.path.normcase(app)}" in store.grants_for(session_id):
+        if isinstance(unattended_apps, list) and unattended_apps:
+            # Desatendido: las concesiones de la conversación no aplican; solo
+            # las apps declaradas al programar, normalizadas por alias.
+            allowed = {os.path.normcase(_computer_driver.normalize_app(str(raw))) for raw in unattended_apps}
+            if app and os.path.normcase(_computer_driver.normalize_app(app)) in allowed:
+                approval = store.decide_approval(str(approval["id"]), True) or approval
+            else:
+                raise ValidationError("Esta aplicación no está en la lista blanca del encargo programado")
+        elif app and f"app:{os.path.normcase(app)}" in store.grants_for(session_id):
             approval = store.decide_approval(str(approval["id"]), True) or approval
     return {"approval": approval}
 

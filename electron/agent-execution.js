@@ -40,6 +40,9 @@ const UI_ACTION_TOOLS = new Set(['ui_click', 'ui_type', 'ui_key', 'ui_scroll', '
 // En Acceso completo siguen exigiendo decisión humana: el shell y las acciones
 // de Equipo que inyectan entrada o abren aplicaciones.
 const NEVER_AUTO_APPROVE = new Set(['shell_run', 'ui_launch', ...UI_ACTION_TOOLS]);
+// Acciones con efecto que el techo desatendido contabiliza por encargo programado.
+const UNATTENDED_ACTION_TOOLS = new Set(['ui_launch', ...UI_ACTION_TOOLS]);
+const MAX_UNATTENDED_ACTIONS = 25;
 const MAX_LOADED_TOOLS = 25;
 const MAX_DEFAULT_TOOLS = 100;
 
@@ -415,7 +418,7 @@ async function countRound(api, context) {
 
 async function toolBudget(api, context, completed = false) {
   const { harness, BudgetDoc } = shared.state;
-  const rounds = await harness.commit(async (tx) => {
+  const { rounds, submission_id } = await harness.commit(async (tx) => {
     const live = await tx.doc(shared.deps.pi.LiveDoc, api.conversationId);
     const budget = await tx.doc(BudgetDoc, api.conversationId);
     const run = live.run?.inputs[0];
@@ -428,9 +431,10 @@ async function toolBudget(api, context, completed = false) {
       budget.rounds += 1;
       budget.lastRound = api.taskId;
     }
-    return budget.rounds;
+    return { rounds: budget.rounds, submission_id: typeof run === 'number' ? run : null };
   }, context);
   shared.rounds.set(api.conversationId, rounds);
+  shared.turnRuns.set(api.conversationId, submission_id);
   return rounds;
 }
 
@@ -505,6 +509,15 @@ async function beforeTool(call, api, context) {
   }
   const mode = session.permission_mode || 'auto';
   if (!spec.gated && !(mode === 'ask' && call.name.startsWith('web_'))) return undefined;
+  const unattendedApps = await unattendedAllowlist(api, context, mode, spec);
+  if (unattendedApps && UNATTENDED_ACTION_TOOLS.has(call.name)) {
+    const turn = turnState(api.conversationId);
+    turn.uiActions = (turn.uiActions || 0) + 1;
+    if (turn.uiActions > MAX_UNATTENDED_ACTIONS) {
+      return { block: `Alcanzaste el techo de ${MAX_UNATTENDED_ACTIONS} acciones sobre apps de este encargo programado. `
+        + 'Detente e informa de lo hecho y de lo que quedó pendiente.' };
+    }
+  }
 
   const callId = dispatchCallId(call.id, api.taskId);
   let approval;
@@ -516,6 +529,7 @@ async function beforeTool(call, api, context) {
       method: call.name,
       params: call.arguments || {},
       ...(approvedContext ? { context: approvedContext } : {}),
+      ...(unattendedApps ? { unattended_apps: unattendedApps } : {}),
     }));
     if (mode === 'full' && !NEVER_AUTO_APPROVE.has(call.name) && approval.status === 'pending') {
       ({ approval } = await bridge('agent_internal_approval_decide', { approval_id: approval.id, approve: true }));
@@ -547,6 +561,16 @@ async function beforeTool(call, api, context) {
 
 function callKey(sessionId, callId) {
   return `${sessionId}:${callId}`;
+}
+
+// Un turno desatendido es el que arrancó con un encargo programado; tick()
+// registra su lista blanca de apps por id de submission y el projection la
+// limpia al terminar el run (los registros de submission se podan al asentarse).
+async function unattendedAllowlist(api, context, mode, spec) {
+  if (mode === 'ask' || !spec.gated) return null;
+  const submissionId = shared.turnRuns.get(api.conversationId);
+  if (!submissionId) return null;
+  return shared.unattendedApps.get(submissionId) || null;
 }
 
 function waitForDecision(approvalId, context) {
