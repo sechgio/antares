@@ -8,12 +8,16 @@ const { assert, finish } = require('./helpers/harness');
 const cloud = require('../electron/cloud-connector-common');
 const google = require('../electron/google-workspace-service');
 const microsoft = require('../electron/microsoft-files-service');
+const gmail = require('../electron/gmail-service');
+const outlook = require('../electron/microsoft-mail-service');
+const github = require('../electron/github-service');
 const { nativeToolSpecs } = require('../electron/agent-native-tools');
 
 const TOKEN = 'token-secreto-123';
 const SCOPES = {
-  google: 'openid https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets',
-  microsoft: 'User.Read Files.ReadWrite',
+  google: 'openid https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.readonly',
+  microsoft: 'User.Read Files.ReadWrite Mail.Read',
+  github: 'repo read:user workflow',
 };
 
 function setup(routes, scopes = SCOPES) {
@@ -46,21 +50,92 @@ async function main() {
   const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-cloud-')));
   try {
     const specs = nativeToolSpecs().filter((spec) => spec.module === 'connections');
-    assert(specs.length === 15, 'quince herramientas cloud registradas en Conexiones');
+    assert(specs.length === 21, 'veintiuna herramientas cloud registradas en Conexiones');
     assert(specs.filter((spec) => spec.gated).map((spec) => spec.name).sort().join() ===
       'excel_update_range,gdrive_upload,gsheets_append,gsheets_update_range,onedrive_upload', 'solo las escrituras requieren aprobación');
 
     setup([]);
     const ctx = await google.context('gsheets_update_range');
-    assert(ctx.account === 'google@example.com' && ctx.scopes.length === 4, 'el contexto lleva cuenta y permisos concedidos');
+    assert(ctx.account === 'google@example.com' && ctx.scopes.length === 5, 'el contexto lleva cuenta y permisos concedidos');
     assert(!JSON.stringify(ctx).includes(TOKEN), 'el contexto no contiene el token');
     setup([], { ...SCOPES, google: 'openid https://www.googleapis.com/auth/drive.readonly' });
     assert(/spreadsheets/.test((await rejects(google.context('gsheets_update_range')))?.message || ''), 'sin permiso de escritura no hay contexto ni aprobación');
     assert((await google.context('gdrive_search')).account, 'la lectura sigue disponible con drive.readonly');
     setup([], { ...SCOPES, microsoft: 'User.Read' });
     assert(!!(await rejects(microsoft.context('onedrive_get'))), 'OneDrive exige Files.Read o Files.ReadWrite');
+    setup([], { ...SCOPES, google: 'openid https://www.googleapis.com/auth/drive.readonly' });
+    assert(/gmail/.test((await rejects(gmail.context('gmail_search')))?.message || ''), 'Gmail exige su permiso de solo lectura');
 
     let calls = setup([
+      [has('/gmail/v1/users/me/messages?'), () => json({ messages: [{ id: 'msg01', threadId: 't1' }], nextPageToken: 'p2' })],
+      [has('/messages/msg01?format=metadata'), () => json({
+        id: 'msg01', threadId: 't1', internalDate: '1700000000000', snippet: 'Hola', labelIds: ['INBOX'],
+        payload: { headers: [{ name: 'From', value: 'Banco <banco@example.com>' }, { name: 'Subject', value: 'Estado' }] },
+      })],
+      [has('/messages/msg01?format=full'), () => json({
+        id: 'msg01', threadId: 't1', internalDate: '1700000000000', snippet: 'Hola',
+        payload: { mimeType: 'multipart/mixed', headers: [{ name: 'Subject', value: 'Estado' }], parts: [
+          { mimeType: 'text/plain', body: { data: Buffer.from('Cuerpo del correo').toString('base64url') } },
+          { mimeType: 'application/pdf', filename: 'estado.pdf', body: { attachmentId: 'a1' } },
+        ] },
+      })],
+    ]);
+    const foundMail = await gmail.run('gmail_search', { query: 'from:banco', max_results: 5 });
+    assert(foundMail.messages[0].subject === 'Estado' && foundMail.messages[0].internal_date === 1_700_000_000_000,
+      'la búsqueda devuelve metadatos y fecha interna');
+    assert(new URL(calls[0].url).searchParams.get('q') === 'from:banco'
+      && calls[0].headers.Authorization === `Bearer ${TOKEN}`, 'la consulta viaja como q y el token solo en la cabecera');
+    const mail = await gmail.run('gmail_get', { id: 'msg01' });
+    assert(mail.body === 'Cuerpo del correo' && mail.has_attachments === true, 'el cuerpo se lee y el adjunto solo se anuncia');
+    assert(!JSON.stringify([foundMail, mail]).includes(TOKEN), 'los correos no contienen el token');
+
+    setup([], { ...SCOPES, microsoft: 'User.Read Files.ReadWrite' });
+    assert(/Mail.Read/.test((await rejects(outlook.context('outlook_search')))?.message || ''),
+      'Microsoft Mail exige su permiso de solo lectura');
+
+    const outlookMessage = {
+      id: 'AAMkAD01', conversationId: 'c1', subject: 'Estado', from: { emailAddress: { name: 'Banco', address: 'banco@example.com' } },
+      toRecipients: [{ emailAddress: { address: 'yo@example.com' } }], receivedDateTime: '2026-01-01T00:00:00Z',
+      bodyPreview: 'Hola', hasAttachments: true, isRead: false,
+    };
+    calls = setup([
+      [has('/me/messages?'), () => json({ value: [outlookMessage] })],
+      [has('/me/messages/AAMkAD01?'), () => json({ ...outlookMessage, body: { contentType: 'html', content: '<p>Cuerpo <b>del</b> correo</p>' } })],
+    ]);
+    const foundOutlook = await outlook.run('outlook_search', { from: 'banco@example.com', since: '2026-01-01T00:00:00Z' });
+    assert(foundOutlook.messages[0].subject === 'Estado' && foundOutlook.messages[0].received_ms === Date.parse('2026-01-01T00:00:00Z'),
+      'la búsqueda de Microsoft devuelve metadatos y fecha');
+    assert(new URL(calls[0].url).searchParams.get('$filter')?.includes('receivedDateTime ge')
+      && new URL(calls[0].url).searchParams.get('$filter')?.includes("'banco@example.com'"),
+      'la búsqueda filtra por remitente y fecha en Graph');
+    const outlookMail = await outlook.run('outlook_get', { id: 'AAMkAD01' });
+    assert(outlookMail.body === 'Cuerpo del correo' && outlookMail.has_attachments === true,
+      'el cuerpo HTML se convierte a texto y el adjunto solo se anuncia');
+    assert(!JSON.stringify([foundOutlook, outlookMail]).includes(TOKEN), 'los correos de Microsoft no contienen el token');
+
+    setup([], { ...SCOPES, github: 'read:user' });
+    assert(/repo|public_repo/.test((await rejects(github.context('github_run_get')))?.message || ''),
+      'GitHub Actions exige su permiso de lectura de repositorios');
+
+    const workflowRun = {
+      id: 42, name: 'CI', workflow_id: 7, head_branch: 'main', head_sha: 'abc', event: 'push',
+      status: 'completed', conclusion: 'success', html_url: 'https://github.com/acme/app/actions/runs/42',
+      created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:05:00Z', run_attempt: 1,
+    };
+    calls = setup([
+      [has('/repos/acme/app/actions/runs?'), () => json({ workflow_runs: [workflowRun] })],
+      [has('/repos/acme/app/actions/runs/42'), () => json(workflowRun)],
+    ]);
+    const workflowRuns = await github.run('github_workflow_runs', { repo: 'acme/app', limit: 5 });
+    assert(workflowRuns.runs[0].id === 42 && workflowRuns.runs[0].conclusion === 'success',
+      'las ejecuciones de GitHub devuelven estado y conclusión');
+    assert(calls[0].headers.Authorization === `Bearer ${TOKEN}` && calls[0].headers['X-GitHub-Api-Version'] === '2022-11-28',
+      'GitHub recibe el token y la versión de API en cabeceras');
+    const workflowRunGet = await github.run('github_run_get', { repo: 'acme/app', run_id: '42' });
+    assert(workflowRunGet.run.html_url.endsWith('/42') && !JSON.stringify(workflowRunGet).includes(TOKEN),
+      'una ejecución concreta se consulta sin secretos');
+
+    calls = setup([
       [has('/drive/v3/files?'), () => json({ files: [{ id: 'abcde1', name: 'datos.xlsx' }], nextPageToken: 'p2' })],
     ]);
     const found = await google.run('gdrive_search', { query: "it's", folder_id: 'folder01', page_size: 500 });

@@ -70,7 +70,8 @@ const SYSTEM_PROMPT =
   'Si el encargo encaja con un agente guardado, usa agent_delegate si está disponible; conserva una conversación '
     + 'separada y su resultado llegará después. Con subagent_run la colaboración es síncrona. '
     + 'Para encargos futuros pedidos por el usuario usa task_schedule, con fecha y zona horaria explícitas; '
-    + 'para trabajo que deba ejecutarse en orden usa task_schedule con action=enqueue.\n\n' +
+    + 'para trabajo que deba ejecutarse en orden usa task_schedule con action=enqueue; '
+    + 'para esperar dentro del encargo usa wait_event (tiempo, archivo, operación de AutoIMG, delegación, job, correo, GitHub o HTTP) y reanudarás el mismo turno.\n\n' +
   SKILLS_GUIDE + '\n\n' +
   'Para encargos de varios pasos en el equipo sigue el ciclo planificar → actuar → observar → verificar: publica el plan ' +
   'con task_plan antes de actuar y actualízalo al avanzar; tras cada acción revisa su resultado (salida y código del ' +
@@ -83,7 +84,8 @@ const SYSTEM_PROMPT =
   'Archivos: fs_list, fs_read y fs_search leen el espacio de trabajo de la conversación y lo que el usuario adjuntó ' +
   '(PDF, Excel, Word y texto); fs_write y fs_edit escriben, y un nombre relativo va al espacio de trabajo. ' +
   'Terminal: shell_run inicia PowerShell en el espacio de trabajo, pero puede acceder al equipo completo con los permisos del usuario; '
-    + 'cada comando requiere aprobación, también en Acceso completo. Internet: web_open abre páginas o búsquedas en un ' +
+    + 'cada comando requiere aprobación, también en Acceso completo. Para builds o despliegues largos usa shell_job_start y espera '
+    + 'con wait_event kind=shell_job; shell_output lee su salida y shell_job_cancel lo detiene. Internet: web_open abre páginas o búsquedas en un ' +
   'navegador aislado sin las sesiones del usuario; web_read devuelve el texto y elementos con ref para web_click y web_type. ' +
   'Escritorio de Windows: desktop_observe captura la pantalla con sus ventanas y controles y sus coordenadas; ' +
   'desktop_launch, desktop_focus, desktop_click, desktop_type, desktop_key y desktop_scroll actúan y devuelven una captura ' +
@@ -148,6 +150,9 @@ async function _open(options = {}) {
       kind: 'antares.agent.scheduled-tasks', version: 1, scope: 'session',
       initial: () => ({ tasks: {}, queues: {}, next_queue_seq: 1 }),
     });
+    const WaitsDoc = pi.defineDoc({
+      kind: 'antares.agent.waits', version: 1, scope: 'session', initial: () => ({ waits: {} }),
+    });
     const BudgetDoc = pi.defineDoc({
       kind: 'antares.agent.budget', version: 1, scope: 'conversation', initial: () => ({ rounds: 0 }),
     });
@@ -161,6 +166,7 @@ async function _open(options = {}) {
       stream: { cacheRetention: 'long', ...(options.settings && options.settings.stream) },
     };
     const harness = await pi.Harness.open(storage, { models, registry, settings }, ctx());
+    shared.boot = crypto.randomUUID();
     shared.state = {
       harness,
       models,
@@ -168,6 +174,7 @@ async function _open(options = {}) {
       SessionsDoc,
       ProfilesDoc,
       TasksDoc,
+      WaitsDoc,
       BudgetDoc,
       dir,
       ctx: ctx(),
@@ -416,6 +423,8 @@ async function sessionDelete(params) {
   ]);
   await bridge('agent_internal_approvals_deny_session', { session_id: sessionId }).catch(() => {});
   await bridge('agent_internal_grants_revoke', { session_id: sessionId }).catch(() => {});
+  await bridge('agent_internal_shell_jobs_cancel_session', { session_id: sessionId }).catch(() => {});
+  await require('./agent-events').cancelSession(sessionId).catch(() => {});
   await commitSessions((map) => { delete map[sessionId]; });
   const watcher = shared.watchers.get(session.conversationId);
   if (watcher) {
@@ -952,12 +961,17 @@ module.exports = {
   activitySnapshot: async () => {
     if (!shared.state) return [];
     const { attention = {} } = await bridge('agent_internal_activity', {});
+    const waitsDoc = await shared.state.harness.snapshot(shared.state.WaitsDoc, ctx());
+    const activeWaits = new Set(Object.values((waitsDoc && waitsDoc.waits) || {})
+      .filter((wait) => wait.status === 'waiting' && (wait.active_boot || wait.boot) === shared.boot && wait.deadline > Date.now())
+      .map((wait) => wait.session_id));
     return Object.values(await sessions()).filter((session) => !session.deleted).map((session) => ({
       id: session.id, title: session.title || 'Conversación',
       status: attention[session.id] || (shared.waitingInput.has(session.id) ? 'waiting_input'
         : [...shared.approvalsByCall].some(([key, id]) => key.startsWith(`${session.id}:`) && shared.liveApprovals.has(id)) ? 'waiting_approval'
-          : projection.isRunning(session.conversationId) ? 'running' : session.continuation ? 'waiting_input'
-            : session.last_error ? 'failed' : 'completed'),
+          : activeWaits.has(session.id) ? 'waiting_event'
+            : projection.isRunning(session.conversationId) ? 'running' : session.continuation ? 'waiting_input'
+              : session.last_error ? 'failed' : 'completed'),
     }));
   },
   open: _open,

@@ -196,6 +196,8 @@ async function allToolSpecs() {
   const merged = new Map(tools.map((tool) => [tool.name, tool]));
   const scheduleTool = require('./agent-tasks').TOOL;
   merged.set(scheduleTool.name, scheduleTool);
+  const eventTool = require('./agent-events').TOOL;
+  merged.set(eventTool.name, eventTool);
   for (const tool of nativeTools().nativeToolSpecs()) {
     const current = merged.get(tool.name);
     merged.set(tool.name, { ...current, ...tool, ...(tool.inheritSchema && current ? { inputSchema: current.inputSchema } : {}) });
@@ -346,7 +348,7 @@ async function loadTools(args, sessionId, context) {
   const conv = await conversation(sessionId);
   const enabled = new Set((await conv.agent(context)).tools.map((tool) => tool.name));
   const specs = [...shared.toolSpecs.values()].filter((spec) => spec.kind !== 'meta'
-    || spec.name === 'task_schedule' || spec.name === 'agent_delegate');
+    || ['task_schedule', 'agent_delegate', 'wait_event'].includes(spec.name));
   const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
   const words = normal(args.query).split(/[^a-z0-9_]+/).filter((word) => word.length > 2);
   if (!modules.length && !words.length) {
@@ -674,7 +676,7 @@ async function beforeTool(call, api, context) {
       ...(approvedContext ? { context: approvedContext } : {}),
     }));
     if (approval.status === 'pending'
-      && ((mode === 'full' && call.name !== 'shell_run') || webAlwaysAllowed(call.name, approvedContext))) {
+      && ((mode === 'full' && !['shell_run', 'shell_job_start'].includes(call.name)) || webAlwaysAllowed(call.name, approvedContext))) {
       ({ approval } = await bridge('agent_internal_approval_decide', { approval_id: approval.id, approve: true }));
     }
   } catch (err) {
@@ -814,6 +816,7 @@ async function dispatchTool(spec, args, sessionId, api, context) {
       return { text: JSON.stringify(await require('./agent-tasks').delegate(profile, args, sessionId, api, context)) };
     }
     if (spec.name === 'task_schedule') return { text: JSON.stringify(await require('./agent-tasks').schedule(args || {}, sessionId, api)) };
+    if (spec.name === 'wait_event') return { text: JSON.stringify(await require('./agent-events').wait(args || {}, sessionId, api, context)) };
     if (spec.name === 'sessions_search') return { text: JSON.stringify(await searchSessions(args || {}, sessionId, context)) };
     return loadTools(args || {}, sessionId, context);
   }
