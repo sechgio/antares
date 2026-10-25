@@ -152,7 +152,8 @@ RENDERER_TOOLS.espacios_comment_create = ['espacios', 'Añadir un comentario a u
 }, true];
 
 const CLOUD = {};
-for (const service of [require('./google-workspace-service'), require('./microsoft-files-service')]) {
+for (const service of [require('./google-workspace-service'), require('./microsoft-files-service'),
+  require('./gmail-service'), require('./microsoft-mail-service'), require('./github-service')]) {
   for (const name of Object.keys(service.TOOLS)) CLOUD[name] = service;
 }
 

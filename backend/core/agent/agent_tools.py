@@ -7,6 +7,7 @@ from backend.core.agent import (
     canvas_edit,
     computer_desktop,
     computer_files,
+    computer_jobs,
     computer_shell,
     documents,
     drafts,
@@ -25,7 +26,8 @@ SPECS: dict[str, JsonObject] = {
     spec["name"]: spec
     for spec in (*drafts.TOOL_SPECS, *({**s, "module": "documents"} for s in documents.TOOL_SPECS),
                  *canvas_edit.TOOL_SPECS, *artifacts.TOOL_SPECS, *questions.TOOL_SPECS, *memory.TOOL_SPECS,
-                 *computer_files.TOOL_SPECS, *computer_shell.TOOL_SPECS, *computer_desktop.TOOL_SPECS,
+                 *computer_files.TOOL_SPECS, *computer_shell.TOOL_SPECS, *computer_jobs.TOOL_SPECS,
+                 *computer_desktop.TOOL_SPECS,
                  *task_plan.TOOL_SPECS, *skills.TOOL_SPECS)
 }
 SPECS["mcp_status"] = {
@@ -73,6 +75,12 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
         return computer_files.fit(computer_shell.run(args, store.grants_for(session_id), root, token))
     if name == "shell_output":
         return computer_shell.read_output(args, root)
+    if name == "shell_job_start":
+        return computer_jobs.start(args, store.grants_for(session_id), root, session_id, token)
+    if name == "shell_job_status":
+        return computer_jobs.status(args, root, session_id)
+    if name == "shell_job_cancel":
+        return computer_jobs.cancel(args, root, session_id)
     if name.startswith("desktop_"):
         return computer_desktop.run(name, args, root, token)
     if name == "task_plan":

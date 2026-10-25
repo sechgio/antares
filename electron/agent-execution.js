@@ -20,6 +20,7 @@ const {
   ctx,
 } = require('./agent-shared');
 const { compactMessages, requestBudget } = require('./agent-compaction');
+const { resolvePortableProfile, mergeProfileSkills, readProfileSkill } = require('./agent-profiles');
 
 const { appendTurn } = require('./turn-log');
 
@@ -198,6 +199,8 @@ async function allToolSpecs() {
   const merged = new Map(tools.map((tool) => [tool.name, tool]));
   const scheduleTool = require('./agent-tasks').TOOL;
   merged.set(scheduleTool.name, scheduleTool);
+  const eventTool = require('./agent-events').TOOL;
+  merged.set(eventTool.name, eventTool);
   for (const tool of nativeTools().nativeToolSpecs()) {
     const current = merged.get(tool.name);
     merged.set(tool.name, { ...current, ...tool, ...(tool.inheritSchema && current ? { inputSchema: current.inputSchema } : {}) });
@@ -348,7 +351,7 @@ async function loadTools(args, sessionId, context) {
   const conv = await conversation(sessionId);
   const enabled = new Set((await conv.agent(context)).tools.map((tool) => tool.name));
   const specs = [...shared.toolSpecs.values()].filter((spec) => spec.kind !== 'meta'
-    || spec.name === 'task_schedule' || spec.name === 'agent_delegate');
+    || ['task_schedule', 'agent_delegate', 'wait_event'].includes(spec.name));
   const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
   const words = normal(args.query).split(/[^a-z0-9_]+/).filter((word) => word.length > 2);
   if (!modules.length && !words.length) {
@@ -416,6 +419,7 @@ async function refreshTools() {
       pi.hook(pi.ToolTask, { beforeTool }),
       pi.hook(pi.GenerationTask, {
         beforeRequest: async ({ messages }, api, context) => {
+          resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
           if (await toolBudget(api, context) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
           await noteTurnStart(api, messages || []);
           const compacted = await compactRequest(messages, api, context);
@@ -684,8 +688,8 @@ async function beforeTool(call, api, context) {
       channel,
       ...(approvedContext ? { context: approvedContext } : {}),
     }));
-    const autoSource = rule === 'allow' && call.name !== 'shell_run' ? 'rule'
-      : mode === 'full' && call.name !== 'shell_run' && rule !== 'ask' ? 'full'
+    const autoSource = rule === 'allow' && !['shell_run', 'shell_job_start'].includes(call.name) ? 'rule'
+      : mode === 'full' && !['shell_run', 'shell_job_start'].includes(call.name) && rule !== 'ask' ? 'full'
         : rule !== 'ask' && webAlwaysAllowed(call.name, approvedContext) ? 'web' : null;
     if (autoSource && approval.status === 'pending') {
       ({ approval } = await bridge('agent_internal_approval_decide', {
@@ -818,6 +822,10 @@ async function executeTool(spec, args, api, context) {
 }
 
 async function dispatchTool(spec, args, sessionId, api, context) {
+  const portableProfile = resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
+  if (portableProfile && spec.name === 'skills_read' && typeof args?.skill_id === 'string' && args.skill_id.startsWith('profile:')) {
+    return { text: JSON.stringify(readProfileSkill(portableProfile, args)) };
+  }
   if (spec.kind === 'meta') {
     if (spec.name === 'agent_delegate') {
       const profile = await resolveProfile(args?.agent);
@@ -830,6 +838,7 @@ async function dispatchTool(spec, args, sessionId, api, context) {
       }
       return { text: JSON.stringify(await require('./agent-tasks').schedule(args || {}, sessionId, api)) };
     }
+    if (spec.name === 'wait_event') return { text: JSON.stringify(await require('./agent-events').wait(args || {}, sessionId, api, context)) };
     if (spec.name === 'sessions_search') return { text: JSON.stringify(await searchSessions(args || {}, sessionId, context)) };
     return loadTools(args || {}, sessionId, context);
   }
@@ -871,7 +880,7 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     const text = spec.kind === 'native'
       ? await dispatchNative(spec, request, context)
       : await dispatchAndWait(request, context, api);
-    return { text };
+    return { text: portableProfile && spec.name === 'skills_list' ? mergeProfileSkills(portableProfile, args, text) : text };
   } finally {
     if (spec.name === 'ask_user') shared.waitingInput.delete(sessionId);
   }

@@ -750,6 +750,36 @@ it('adjunta archivos y carpetas y los envía por id con el mensaje', async () =>
   expect(screen.queryByText('clientes.xlsx')).not.toBeInTheDocument();
 });
 
+it('adjunta archivos soltados por ruta y capturas pegadas por contenido', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const attach = vi.spyOn(agentApi, 'agentAttach')
+    .mockResolvedValueOnce({ attachments: [{ id: 'a1', name: 'informe.pdf', kind: 'files' }] })
+    .mockResolvedValueOnce({ attachments: [{ id: 'a2', name: 'x-captura.png', kind: 'files' }] });
+  const previousApi = window.electronAPI;
+  window.electronAPI = { ...window.electronAPI!, getPathForFile: (file: File) => (file.name === 'informe.pdf' ? 'C:\\docs\\informe.pdf' : '') };
+  const createObjectURL = vi.fn(() => 'blob:captura');
+  vi.stubGlobal('URL', Object.assign(URL, { createObjectURL }));
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  const pdf = new File(['%PDF'], 'informe.pdf', { type: 'application/pdf' });
+  await act(async () => { fireEvent.drop(screen.getByRole('group', { name: 'Redactar mensaje' }), { dataTransfer: { files: [pdf], types: ['Files'] } }); });
+  const shot = new File(['png'], 'captura.png', { type: 'image/png' });
+  await act(async () => { fireEvent.paste(screen.getByLabelText('Mensaje para el agente'), { clipboardData: { files: [shot] } }); });
+  await waitFor(() => expect(screen.getByText('x-captura.png')).toBeInTheDocument());
+  expect(attach.mock.calls).toEqual([
+    ['files', { paths: ['C:\\docs\\informe.pdf'], data: [] }],
+    ['files', { paths: [], data: [{ name: 'captura.png', data: btoa('png') }] }],
+  ]);
+  expect(screen.getByText('informe.pdf')).toBeInTheDocument();
+  expect(createObjectURL).toHaveBeenCalledWith(shot);
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Revisa' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Revisa', expect.any(String), ['a1', 'a2']);
+  window.electronAPI = previousApi;
+  vi.unstubAllGlobals();
+});
+
 it('avisa de las rutas escritas que no se autorizaron', async () => {
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   vi.mocked(agentApi.agentMessageSend).mockResolvedValue({

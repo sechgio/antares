@@ -12,6 +12,7 @@ from backend.core.agent import (
     agent_tools,
     computer_desktop,
     computer_files,
+    computer_jobs,
     computer_shell,
     resource_grants,
     task_plan,
@@ -40,9 +41,11 @@ def test_computer_tools_are_registered_with_their_permission_level():
         assert specs[name]["gated"] is False
         assert specs[name]["module"] == "computer"
     for name in ("fs_write", "fs_edit", "shell_run", "desktop_observe", "desktop_click", "desktop_type",
-                 "desktop_key", "desktop_scroll", "desktop_launch", "desktop_focus"):
+                 "desktop_key", "desktop_scroll", "desktop_launch", "desktop_focus", "shell_job_start", "shell_job_cancel"):
         assert specs[name]["gated"] is True
         assert name in agent_chat.gated_methods()
+    assert specs["shell_job_status"]["gated"] is False
+    assert "shell_job_status" not in agent_chat.gated_methods()
 
 
 def test_workspace_write_read_edit_and_search_round_trip(store):
@@ -170,6 +173,51 @@ def test_shell_reports_output_while_the_command_runs(store):
     assert token.progress == "uno\ndos\ntres\n" and seen[0]["stdout"] == "uno\ndos\ntres\n"
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_job_runs_in_background_and_exposes_paged_output(store):
+    job = _run(store, "shell_job_start", command="'uno'; Start-Sleep -Milliseconds 700; 'dos'", timeout_s=20)
+    assert job["status"] == "running" and len(job["job_id"]) == 32
+    finished = _wait_job(store, job["job_id"], {"exited"}, timeout=20)
+    assert finished["exit_code"] == 0 and finished["output_id"] == job["job_id"]
+    page = agent_tools.run("shell_output", {"output_id": job["output_id"]}, store, "s1")
+    assert page["content"] == "uno\ndos\n"
+    stderr_page = agent_tools.run("shell_output", {"output_id": job["output_id"], "stream": "stderr"}, store, "s1")
+    assert stderr_page["content"] == ""
+    with pytest.raises(ValueError, match="no existe"):
+        agent_tools.run("shell_job_status", {"job_id": job["job_id"]}, store, "s2")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_job_cancel_timeout_concurrency_and_cleanup(store):
+    try:
+        slow = _run(store, "shell_job_start", command="Start-Sleep -Seconds 30", timeout_s=60)
+        cancelled = _run(store, "shell_job_cancel", job_id=slow["job_id"])
+        assert cancelled["cancelled"] is True
+        assert _wait_job(store, slow["job_id"], {"cancelled"}, timeout=15)["status"] == "cancelled"
+        timed = _run(store, "shell_job_start", command="Start-Sleep -Seconds 10", timeout_s=1)
+        assert _wait_job(store, timed["job_id"], {"timed_out"}, timeout=15)["timed_out"] is True
+        first = _run(store, "shell_job_start", command="Start-Sleep -Seconds 10", timeout_s=30)
+        second = _run(store, "shell_job_start", command="Start-Sleep -Seconds 10", timeout_s=30)
+        with pytest.raises(ValueError, match="jobs en marcha"):
+            _run(store, "shell_job_start", command="'tercero'", timeout_s=30)
+        computer_jobs.cancel_session("s1")
+        _wait_job(store, first["job_id"], {"cancelled"}, timeout=15)
+        _wait_job(store, second["job_id"], {"cancelled"}, timeout=15)
+        assert _run(store, "shell_job_status", job_id=first["job_id"])["status"] == "cancelled"
+    finally:
+        computer_jobs.kill_all()
+
+
+def _wait_job(store, job_id, expected, timeout=15):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        status = _run(store, "shell_job_status", job_id=job_id)
+        if status["status"] in expected:
+            return status
+        time.sleep(0.05)
+    raise AssertionError(f"El job {job_id} no llegó a {expected}")
+
+
 def test_cancel_event_keeps_the_start_of_long_progress():
     token = _CancelEvent()
     token.report("a" * 70_000)
@@ -293,3 +341,29 @@ def test_desktop_validates_all_shortcuts_before_sending_input(store, monkeypatch
     with pytest.raises(ValueError, match="Tecla desconocida"):
         _run(store, "desktop_key", keys="ctrl+s hiper")
     assert sent == []
+
+
+def test_path_status_reuses_workspace_and_grant_resolution(store, tmp_path):
+    root = store.drafts_dir("s1")
+    build = root / "build"
+    build.mkdir(parents=True)
+    out = build / "resultado.txt"
+    out.write_text("ok", encoding="utf-8")
+    status = computer_files.stat_path("build/resultado.txt", {}, root)
+    assert status["exists"] is True and status["type"] == "file" and status["size"] == 2
+    assert status["path"] == str(out)
+    assert computer_files.stat_path("build/pendiente.txt", {}, root) == {
+        "path": str(build / "pendiente.txt"), "exists": False,
+    }
+    outside = tmp_path / "otra"
+    outside.mkdir()
+    with pytest.raises(ValueError, match="autoriza"):
+        computer_files.stat_path(str(outside / "nuevo.txt"), {}, root)
+    store.add_grants("s1", [resource_grants.folder_record(str(outside), None)])
+    assert computer_files.stat_path(str(outside / "nuevo.txt"), store.grants_for("s1"), root)["exists"] is False
+    existing = outside / "existente.txt"
+    existing.write_text("x", encoding="utf-8")
+    with pytest.raises(ValueError, match="autoriza"):
+        computer_files.stat_path(str(existing), {}, root)
+    store.add_grants("s1", [resource_grants.grant_record(str(existing), None)])
+    assert computer_files.stat_path(str(existing), store.grants_for("s1"), root)["exists"] is True
