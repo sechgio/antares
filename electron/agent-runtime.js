@@ -542,8 +542,10 @@ async function browserAction(params) {
   const action = String((params && params.action) || 'state');
   if (action === 'state') return browser.state();
   if (action === 'bounds') return browser.dock(params.bounds || null);
-  if (action === 'control') return browser.setUserControl(params.user === true);
-  if (['open', 'back', 'forward', 'reload'].includes(action)) return browser.navigate(action, params.url);
+  if (action === 'tab') return browser.activateTab(params.tab);
+  if (action === 'control') return browser.setUserControl(params.user === true, params.tab);
+  if (action === 'allow') return browser.allowAgent(params.tab);
+  if (['open', 'back', 'forward', 'reload'].includes(action)) return browser.navigate(action, params.url, params.tab);
   throw validation(`Acción del navegador no válida: ${action}`);
 }
 
@@ -653,6 +655,12 @@ async function messageSend(params) {
       await Promise.race([conv.waitForIdle(ctx()), new Promise((r) => setTimeout(r, 5000))]);
     }
   }
+  // Una corrección es una instrucción nueva: no debe heredar el freno de
+  // repeticiones del turno que está corrigiendo.
+  if (correction) shared.turns.get(session.conversationId)?.calls.clear();
+  // Enviar una instrucción nueva también libera la pausa por actividad
+  // reciente del usuario en la pestaña del agente.
+  try { require('./agent-browser').resetUserActivity(); } catch { }
   if (pending.length) {
     const { denied } = await bridge('agent_internal_approvals_deny_session', { session_id: sessionId });
     for (const id of denied || []) execution.notifyDecision(id);
@@ -913,8 +921,12 @@ async function _settleRecoveredApproval(approval) {
   let isError = false;
   let diagnostics;
   if (approval.status === 'approved') {
-    text = await execution.dispatchApproved(approval, ctx());
-    try { isError = !!JSON.parse(text).error; } catch {}
+    try {
+      text = await execution.dispatchApproved(approval, ctx());
+      try { isError = !!JSON.parse(text).error; } catch {}
+    } finally {
+      try { require('./agent-browser').release(sessionId); } catch { }
+    }
   } else {
     text = JSON.stringify({ error: 'El usuario rechazó esta acción' });
     isError = true;
