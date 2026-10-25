@@ -3,11 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from backend.core.agent import agent, agent_chat, agent_tools, resource_grants
+from backend.core.agent import agent, agent_chat, agent_tools, computer_files, resource_grants, skills
 
 
 @pytest.fixture()
-def store(tmp_path):
+def store(tmp_path, monkeypatch):
+    monkeypatch.setenv("SKILLS_HOME", str(tmp_path / "configured-skills"))
+    monkeypatch.delenv("ORBS_SHARED_HOME", raising=False)
     return agent.AgentStore(tmp_path / "agent")
 
 
@@ -208,11 +210,99 @@ def test_skills_list_handler_lists_library_metadata_for_the_ui(store, monkeypatc
     from backend.handlers import agent_internal
 
     install(store.base_dir / "skills", body="INSTRUCCION_PRIVADA")
+    install(store.base_dir.parent / "configured-skills/_shared", name="compartida", description="Skill compartida")
     (store.base_dir / "skills/rota").mkdir()
     (store.base_dir / "skills/rota/SKILL.md").write_text("sin encabezado", encoding="utf-8")
     monkeypatch.setattr(agent_internal, "_store", lambda: store)
     result = agent_internal.HANDLERS["agent_skills_list"]({})
-    assert [skill["name"] for skill in result["skills"]] == ["pdf-review"]
-    assert result["skills"][0]["description"] == "Revisa documentos PDF"
+    assert [skill["name"] for skill in result["skills"]] == ["compartida", "pdf-review"]
+    assert result["skills"][1]["description"] == "Revisa documentos PDF"
     assert result["library"] == str(store.base_dir / "skills") and result["warnings"]
     assert "INSTRUCCION_PRIVADA" not in json.dumps(result)
+
+
+def test_layered_skills_do_not_grant_general_file_access(store, tmp_path, monkeypatch):
+    home = tmp_path / "configured-skills"
+    target = install(home / "_shared")
+    monkeypatch.setenv("SKILLS_HOME", str(home))
+    workspace = store.drafts_dir("skills-session")
+    result = skills.run("skills_list", {}, {}, workspace, store.base_dir / "skills", agent_id="reader")
+    assert [entry["location"] for entry in result["skills"]] == [str(target)]
+    with pytest.raises(ValueError, match="autorizad"):
+        computer_files.resolve(str(target), {}, workspace)
+    assert store.grants_for("skills-session") == {}
+
+
+def test_shadowed_shared_id_cannot_be_read(store, tmp_path):
+    home = tmp_path / "configured-skills"
+    install(home / "_shared", body="Compartida")
+    workspace = store.drafts_dir("skills-session")
+    library = store.base_dir / "skills"
+    shared_id = skills.run("skills_list", {}, {}, workspace, library, agent_id="reader")["skills"][0]["id"]
+    install(home / "reader", body="Propia")
+    with pytest.raises(ValueError, match="disponible"):
+        skills.run("skills_read", {"skill_id": shared_id}, {}, workspace, library, agent_id="reader")
+
+
+@pytest.mark.parametrize("agent_id", ["../writer", "reader/writer", "reader\\writer", "C:writer", "_shared", ""])
+def test_layered_skills_reject_agent_path_traversal(store, agent_id):
+    with pytest.raises(ValueError, match="identificador"):
+        skills.run("skills_list", {}, {}, store.drafts_dir("skills-session"), store.base_dir / "skills", agent_id=agent_id)
+
+
+def test_loading_does_not_create_missing_skill_roots(store, tmp_path):
+    home = tmp_path / "configured-skills"
+    skills.run("skills_list", {}, {}, store.drafts_dir("skills-session"), store.base_dir / "skills", agent_id="reader")
+    assert not home.exists()
+
+
+@pytest.mark.parametrize("attach_folder", [False, True])
+def test_attached_shared_skill_still_cannot_override_agent_skill(store, tmp_path, attach_folder):
+    home = tmp_path / "configured-skills"
+    shared = install(home / "_shared")
+    own = install(home / "reader")
+    grant = resource_grants.folder_record(str(shared.parent.parent), "request") if attach_folder \
+        else resource_grants.grant_record(str(shared), "request")
+    result = skills.run("skills_list", {}, {"attached": grant}, store.drafts_dir("skills-session"),
+                        store.base_dir / "skills", agent_id="reader")
+    assert [entry["location"] for entry in result["skills"]] == [str(own)]
+    assert len(result["warnings"]) == 1
+
+
+@pytest.mark.parametrize("attach_file", [False, True])
+def test_full_shared_catalog_preserves_attached_skill_priority(store, tmp_path, attach_file):
+    home = tmp_path / "configured-skills"
+    for index in range(256):
+        install(home / "_shared", name=f"shared-{index:03}")
+    target = install(tmp_path / "attached/.agents/skills", name="attached-only")
+    grant = resource_grants.grant_record(str(target), "request") if attach_file \
+        else resource_grants.folder_record(str(tmp_path / "attached"), "request")
+    store.add_grants("skills-session", [grant])
+    grants = store.grants_for("skills-session")
+    workspace, library = store.drafts_dir("skills-session"), store.base_dir / "skills"
+    result = skills.run("skills_list", {"query": "attached-only"}, grants, workspace, library, agent_id="reader")
+    assert result["total"] == 1 and result["truncated"] is True
+    skill_id = result["skills"][0]["id"]
+    assert skills.run("skills_read", {"skill_id": skill_id}, grants, workspace, library, agent_id="reader")["name"] == "attached-only"
+
+
+def test_full_shared_catalog_keeps_agent_override_with_attached_shared_root(store, tmp_path, monkeypatch):
+    home = tmp_path / "configured-skills"
+    own = install(home / "reader", name="review", body="Propia")
+    install(home / "_shared", name="review", body="Compartida")
+    for index in range(255):
+        install(home / "_shared", name=f"shared-{index:03}")
+    grant = resource_grants.folder_record(str(home / "_shared"), "request")
+    scans = []
+    original_iterdir = Path.iterdir
+
+    def track_iterdir(folder):
+        scans.append(folder)
+        return original_iterdir(folder)
+
+    monkeypatch.setattr(Path, "iterdir", track_iterdir)
+    result = skills.run("skills_list", {"query": "review"}, {"attached": grant}, store.drafts_dir("skills-session"),
+                        store.base_dir / "skills", agent_id="reader")
+    assert [entry["location"] for entry in result["skills"]] == [str(own)]
+    assert len(result["warnings"]) == 1
+    assert scans.count(home / "_shared") == 1 and scans.count(home / "reader") == 1

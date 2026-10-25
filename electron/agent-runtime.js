@@ -472,8 +472,6 @@ function _latestPlan(messages) {
   return null;
 }
 
-// Panel del navegador del agente: la UI lo coloca, lo maneja y puede tomar el
-// control para que el agente no actúe mientras el usuario usa la página.
 async function browserAction(params) {
   const browser = shared.browser || require('./agent-browser');
   const action = String((params && params.action) || 'state');
@@ -732,7 +730,6 @@ async function turnCancel(params) {
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: sessionId })).approvals;
   const busy = !!live.run || (live.inbox || []).length > 0;
   const conv = await conversation(sessionId);
-  // Detén el turno activo y cierra también las entregas admitidas durante el drenaje.
   const [children] = await Promise.all([
     require('./agent-tasks').cancelDelegations(sessionId).then(async (count) => { await conv.abort(ctx()); return count; }),
     conv.abort(ctx()),
@@ -750,6 +747,15 @@ async function approve(params, approved) {
   const approvalId = String(params && params.approval_id || '');
   const { approval } = await bridge('agent_internal_approval_decide', { approval_id: approvalId, approve: !!approved });
   execution.notifyDecision(approvalId);
+  if (approved && params && params.remember === true && approval
+    && String(approval.method || '').startsWith('web_')) {
+    // La acción ya quedó aprobada; persistir el dominio es un favor añadido que no debe romperla.
+    try {
+      const policy = require('./agent-browser-policy');
+      const domain = policy.hostOf(approval.context && approval.context.page_url);
+      if (domain && !policy.isBlocked(domain)) policy.addAlwaysAllowed(domain);
+    } catch { }
+  }
   const approvalCall = approval && execution.callKey(String(approval.session_id), String(approval.call_id));
   const approvalSession = approval && (await sessions())[String(approval.session_id)];
   const approvalLive = approvalSession && shared.live.get(approvalSession.conversationId);

@@ -426,7 +426,8 @@ def _dispatch(params: JsonObject) -> JsonObject:
                 raise ValidationError("Los parámetros o recursos cambiaron después de reservar la operación")
             result = _agent.get_agent_runner()._execute(
                 {"id": call_id, "name": name, "params": call_params, "session_id": session_id, "op_id": op_id,
-                 "approved_context": intent["context"], **({"subagent": subagent_profile} if subagent_profile else {})},
+                 "approved_context": intent["context"], "profile_id": intent["context"].get("profile_id"),
+                 **({"subagent": subagent_profile} if subagent_profile else {})},
                 token,
             )
             status = "failed" if _agent.result_failed(result) else "submitted" if name == "artifact_print" else "succeeded"
