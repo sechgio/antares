@@ -94,9 +94,11 @@ it('muestra cuenta y recursos revisados antes de una decisión explícita', () =
   render(<ApprovalCard busy={false} onDecide={decide} approval={{
     id: 'approval', session_id: 'session', call_id: 'call', method: 'autoimg_sheets_write_range',
     params: { range: 'CONFIG!A1', values: [['dato']] }, status: 'pending', created_at: 1, decided_at: null,
+    channel: 'cloud',
     context: { account: 'prueba@example.com', sheet_id: 'hoja-de-prueba' },
     resources: [{ path: 'C:\\trabajos\\informe.pdf', sha256: 'revision' }],
   }} />);
+  expect(screen.getByText('Canal: Nube y conexiones')).toBeInTheDocument();
   expect(screen.getByText('Cuenta: prueba@example.com')).toBeInTheDocument();
   expect(screen.getByText('Hoja: hoja-de-prueba')).toBeInTheDocument();
   expect(screen.getByText('Rango: CONFIG!A1')).toBeInTheDocument();
@@ -105,6 +107,7 @@ it('muestra cuenta y recursos revisados antes de una decisión explícita', () =
   fireEvent.click(screen.getByRole('button', { name: 'Permitir esta acción' }));
   expect(decide).toHaveBeenCalledWith('approval', true);
 });
+
 
 it('resume más de dos pasos de herramientas y los abre si alguno necesita atención', () => {
   const step = (id: string, status: string) => ({ id, name: 'templates_catalog', params: {}, status, gated: false });
@@ -475,6 +478,7 @@ it.each([false, true])('conserva la elección de mostrar los pasos al actualizar
   rerender(<MessageRow msg={message('done')} />);
   expect(container.querySelector('details')?.open).toBe(open);
 });
+
 
 it('pregunta por la acción concreta y permite rechazarla o aprobarla', () => {
   const decide = vi.fn();

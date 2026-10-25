@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { channelFor, channelLabel } = require('./agent-channels');
 
 const {
   shared,
@@ -14,6 +15,8 @@ const {
   commitSessions,
   requireSession,
   dispatchCallId,
+  providerCallId,
+  dispatchTaskId,
   ctx,
 } = require('./agent-shared');
 const { compactMessages, requestBudget } = require('./agent-request-budget');
@@ -36,7 +39,7 @@ const SUBAGENT_MAX_DEPTH = 1;
 const SUBAGENT_MAX_TASKS = 4;
 const TOOLS_LOAD = 'tools_load';
 const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent']);
-const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD]);
+const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD, 'task_schedule']);
 // Acciones ui_ que inyectan entrada: el marco ámbar del lease humano cubre la
 // ventana objetivo durante su despacho (ui_windows/ui_observe/ui_launch no inyectan).
 const UI_ACTION_TOOLS = new Set(['ui_click', 'ui_type', 'ui_key', 'ui_scroll', 'ui_drag', 'ui_set_value']);
@@ -308,7 +311,7 @@ async function allToolSpecs() {
       required: ['query'],
     },
   });
-  return [...merged.values()];
+  return [...merged.values()].map((spec) => ({ ...spec, channel: channelFor(spec.name, spec.module) }));
 }
 
 async function searchSessions(args, currentSessionId, context) {
@@ -714,7 +717,16 @@ async function beforeTool(call, api, context) {
     return { block: 'El agente delegado solo puede usar lecturas idempotentes autorizadas' };
   }
   const mode = session.permission_mode || 'auto';
-  if (!spec.gated && !(mode === 'ask' && call.name.startsWith('web_'))) return undefined;
+  const rules = { ...shared.globalRules, ...(session.approval_rules || {}) };
+  const channel = spec.channel || channelFor(call.name, spec.module);
+  const rule = rules[channel];
+  const web = call.name.startsWith('web_');
+  const reading = spec.name === 'task_schedule' && (call.arguments || {}).action === 'list';
+  if (reading || (!spec.gated && !(web && (mode === 'ask' || rule !== undefined)))) return undefined;
+  if (rule === 'deny') {
+    return { block: `El usuario bloqueó el canal «${channelLabel(channel)}» en esta conversación. `
+      + 'No repitas esta acción: pide permiso, cambia la regla en Permisos o propone otra vía.' };
+  }
   const unattendedApps = await unattendedAllowlist(api, context, mode, spec);
   if (unattendedApps && UNATTENDED_ACTION_TOOLS.has(call.name)) {
     const turn = turnState(api.conversationId);
@@ -734,12 +746,17 @@ async function beforeTool(call, api, context) {
       call_id: callId,
       method: call.name,
       params: call.arguments || {},
+      channel,
       ...(approvedContext ? { context: approvedContext } : {}),
       ...(unattendedApps ? { unattended_apps: unattendedApps } : {}),
     }));
-    if (approval.status === 'pending'
-      && ((mode === 'full' && !NEVER_AUTO_APPROVE.has(call.name)) || webAlwaysAllowed(call.name, approvedContext))) {
-      ({ approval } = await bridge('agent_internal_approval_decide', { approval_id: approval.id, approve: true }));
+    const autoSource = rule === 'allow' && !NEVER_AUTO_APPROVE.has(call.name) ? 'rule'
+      : mode === 'full' && !NEVER_AUTO_APPROVE.has(call.name) && rule !== 'ask' ? 'full'
+        : rule !== 'ask' && webAlwaysAllowed(call.name, approvedContext) ? 'web' : null;
+    if (autoSource && approval.status === 'pending') {
+      ({ approval } = await bridge('agent_internal_approval_decide', {
+        approval_id: approval.id, approve: true, source: autoSource,
+      }));
     }
   } catch (err) {
     return { block: String((err && err.message) || err) };
@@ -916,7 +933,12 @@ async function dispatchTool(spec, args, sessionId, api, context) {
       if (!profile) throw validation('No se encontró un agente único; usa su identificador');
       return { text: JSON.stringify(await require('./agent-tasks').delegate(profile, args, sessionId, api, context)) };
     }
-    if (spec.name === 'task_schedule') return { text: JSON.stringify(await require('./agent-tasks').schedule(args || {}, sessionId, api)) };
+    if (spec.name === 'task_schedule') {
+      if (spec.gated && (args || {}).action !== 'list') {
+        return { text: await dispatchMeta(spec, args, sessionId, api, context) };
+      }
+      return { text: JSON.stringify(await require('./agent-tasks').schedule(args || {}, sessionId, api)) };
+    }
     if (spec.name === 'wait_event') return { text: JSON.stringify(await require('./agent-events').wait(args || {}, sessionId, api, context)) };
     if (spec.name === 'sessions_search') return { text: JSON.stringify(await searchSessions(args || {}, sessionId, context)) };
     return loadTools(args || {}, sessionId, context);
@@ -929,6 +951,7 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     name: spec.name,
     params: args || {},
     approval_id: approvalId,
+    channel: spec.channel || channelFor(spec.name, spec.module),
     ...(spec.kind === 'native' ? { context: await nativeTools().nativeToolContext(spec.name) } : {}),
   };
   if (spec.name === 'skills_list' || spec.name === 'skills_read') {
@@ -990,6 +1013,44 @@ async function resultImage(parsed) {
   }
 }
 
+// task_schedule se ejecuta en Electron sobre TasksDoc: el backend reserva la
+// llamada y su recibo, el proceso principal crea el encargo y cierra el op_id.
+async function dispatchMeta(spec, args, sessionId, api, context, options = {}) {
+  const callId = options.callId || dispatchCallId(api.callId, api.taskId);
+  const approvalId = options.approvalId || shared.approvalsByCall.get(callKey(sessionId, callId));
+  const request = {
+    session_id: sessionId,
+    call_id: callId,
+    name: spec.name,
+    params: args || {},
+    approval_id: approvalId,
+    meta: true,
+    gated: true,
+    channel: spec.channel || channelFor(spec.name, spec.module),
+  };
+  const first = await bridge('agent_internal_dispatch', request);
+  if (first.execute !== 'meta') {
+    let result = first.result;
+    if (result === null || result === undefined) {
+      result = await pollDispatch(sessionId, callId, context);
+    }
+    return String(result);
+  }
+  let text;
+  try {
+    text = JSON.stringify(await require('./agent-tasks').schedule(args || {}, sessionId, api));
+  } catch (err) {
+    text = JSON.stringify({ error: String((err && err.message) || err).slice(0, 500) });
+  }
+  const finished = await bridge('agent_internal_dispatch_finish', {
+    session_id: sessionId,
+    call_id: callId,
+    op_id: first.dispatch.op_id,
+    result: text,
+  });
+  return String(finished.result);
+}
+
 async function dispatchNative(spec, request, context) {
   let first = await bridge('agent_internal_dispatch', { ...request, native: true, gated: !!spec.gated });
   while (first.busy) {
@@ -1048,10 +1109,17 @@ async function dispatchApproved(approval, context) {
     const request = {
       session_id: approval.session_id, call_id: approval.call_id, name: approval.method,
       params: approval.params || {}, approval_id: approval.id,
+      channel: approval.channel || spec.channel || channelFor(spec.name, spec.module),
     };
     if (spec.kind === 'native') {
       request.context = await nativeTools().nativeToolContext(spec.name);
       return dispatchNative(spec, request, context);
+    }
+    if (spec.kind === 'meta' && spec.name === 'task_schedule' && spec.gated) {
+      const taskId = dispatchTaskId(approval.call_id) || approval.call_id;
+      return dispatchMeta(spec, approval.params || {}, approval.session_id,
+        { callId: providerCallId(approval.call_id), taskId }, context,
+        { callId: approval.call_id, approvalId: approval.id });
     }
     return dispatchAndWait(request, context);
   } catch (err) {

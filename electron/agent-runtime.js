@@ -18,6 +18,7 @@ const {
 } = require('./agent-shared');
 const execution = require('./agent-execution');
 const projection = require('./agent-projection');
+const { validateRules } = require('./agent-channels');
 const compactionPolicy = require('./agent-compaction');
 const { loadAgentProfile, resolvePortableProfile } = require('./agent-profiles');
 
@@ -151,6 +152,9 @@ async function _open(options = {}) {
       kind: 'antares.agent.scheduled-tasks', version: 1, scope: 'session',
       initial: () => ({ tasks: {}, queues: {}, next_queue_seq: 1 }),
     });
+    const PolicyDoc = pi.defineDoc({
+      kind: 'antares.agent.policy', version: 1, scope: 'session', initial: () => ({ rules: {}, audit: [] }),
+    });
     const WaitsDoc = pi.defineDoc({
       kind: 'antares.agent.waits', version: 1, scope: 'session', initial: () => ({ waits: {} }),
     });
@@ -179,6 +183,7 @@ async function _open(options = {}) {
       SessionsDoc,
       ProfilesDoc,
       TasksDoc,
+      PolicyDoc,
       WaitsDoc,
       BudgetDoc,
       compaction: settings.compaction,
@@ -187,6 +192,8 @@ async function _open(options = {}) {
       convIndex: shared.convToSession,
       portableProfiles: new Map(),
     };
+    const policy = await harness.snapshot(PolicyDoc, ctx());
+    shared.globalRules = { ...(policy && policy.rules ? policy.rules : {}) };
     await _indexConversations();
     await _restoreExecutionContext();
     if (!options.skipImport) {
@@ -237,11 +244,27 @@ async function _indexConversations() {
 // Sesiones anteriores al selector: se sincronizan con el modelo en su próximo turno.
 const LEGACY_REASONING = ['minimal', 'low', 'medium', 'high'];
 
+function toPublicSession(current) {
+  const { conversationId, style, modules, ...rest } = current;
+  if (rest.approval_rules && typeof rest.approval_rules === 'object') {
+    rest.approval_rules = { ...rest.approval_rules };
+  }
+  rest.reasoning_levels = rest.reasoning_levels
+    ? [...rest.reasoning_levels]
+    : (execution.supportsReasoning(style, rest.model) ? LEGACY_REASONING : []);
+  return rest;
+}
+
 async function sessionsList() {
   const result = Object.values(await sessions())
     .filter((s) => !s.deleted)
     .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))
-    .map(({ conversationId, legacy_id, deleted, import: _import, style, modules, ...rest }) => ({ ...rest, reasoning_levels: rest.reasoning_levels ?? (execution.supportsReasoning(style, rest.model) ? LEGACY_REASONING : []) }));
+    .map(({ conversationId, legacy_id, deleted, import: _import, style, modules, ...rest }) => {
+      if (rest.approval_rules && typeof rest.approval_rules === 'object') {
+        rest.approval_rules = { ...rest.approval_rules };
+      }
+      return { ...rest, reasoning_levels: rest.reasoning_levels ?? (execution.supportsReasoning(style, rest.model) ? LEGACY_REASONING : []) };
+    });
   return { sessions: result };
 }
 
@@ -361,8 +384,7 @@ async function sessionCreate(params) {
   });
   if (portableProfile) shared.state.portableProfiles.set(conv.id, { kind: 'loaded', profile: portableProfile });
   shared.convToSession.set(conv.id, session.id);
-  const { conversationId, style, ...publicSession } = session;
-  return { session: publicSession };
+  return { session: toPublicSession(session) };
 }
 
 async function sessionRename(params) {
@@ -373,8 +395,7 @@ async function sessionRename(params) {
   let renamed;
   await commitSessions((map) => {
     map[sessionId].title = title;
-    const { conversationId, style, modules, ...rest } = map[sessionId];
-    renamed = rest;
+    renamed = toPublicSession(map[sessionId]);
   });
   return { session: renamed };
 }
@@ -401,8 +422,7 @@ async function sessionModelSet(params) {
     current.style = info.style || 'openai_chat';
     current.reasoning_levels = levels;
     current.updated_at = Date.now();
-    const { conversationId, style, modules, ...publicSession } = current;
-    return { session: { ...publicSession, reasoning_levels: [...levels] } };
+    return { session: toPublicSession(current) };
   }, ctx());
 }
 
@@ -425,8 +445,7 @@ async function sessionReasoningSet(params) {
     current.reasoning_effort = effort;
     current.reasoning_levels = levels;
     current.updated_at = Date.now();
-    const { conversationId, style, modules, ...publicSession } = current;
-    return { session: { ...publicSession, reasoning_levels: [...levels] } };
+    return { session: toPublicSession(current) };
   }, ctx());
 }
 
@@ -445,8 +464,111 @@ async function sessionPermissionsSet(params) {
     if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
     current.permission_mode = mode;
     current.updated_at = Date.now();
-    const { conversationId, style, modules, ...publicSession } = current;
-    return { session: publicSession };
+    return { session: toPublicSession(current) };
+  }, ctx());
+}
+
+function auditRules(audit, before, after, scope, sessionId) {
+  const list = Array.isArray(audit) ? audit : [];
+  const channels = new Set([...Object.keys(before || {}), ...Object.keys(after || {})]);
+  for (const channel of channels) {
+    const from = before && before[channel] ? before[channel] : null;
+    const to = after && after[channel] ? after[channel] : null;
+    if (from === to) continue;
+    list.push({
+      id: crypto.randomUUID(), at: Date.now(), scope, channel, from, to,
+      ...(sessionId ? { session_id: sessionId } : {}),
+    });
+  }
+  return list.slice(-200);
+}
+
+async function policyState() {
+  const doc = await shared.state.harness.snapshot(shared.state.PolicyDoc, ctx());
+  return {
+    rules: { ...((doc && doc.rules) || {}) },
+    audit: Array.isArray(doc && doc.audit) ? doc.audit.slice(-50).map((entry) => ({ ...entry })) : [],
+  };
+}
+
+async function policyRulesSet(params) {
+  let rules;
+  try {
+    rules = validateRules(params.rules);
+  } catch (err) {
+    throw validation(String((err && err.message) || err));
+  }
+  if ([...shared.live.values()].some((live) => live.run || (live.inbox || []).length)) {
+    throw validation('Espera a que terminen los turnos para cambiar las reglas globales');
+  }
+  const result = await shared.state.harness.commit(async (tx) => {
+    const doc = await tx.doc(shared.state.PolicyDoc);
+    const before = { ...(doc.rules || {}) };
+    doc.rules = Object.keys(rules).length ? { ...rules } : {};
+    doc.audit = auditRules(doc.audit, before, doc.rules, 'global');
+    return { rules: { ...doc.rules }, audit: doc.audit.slice(-50).map((entry) => ({ ...entry })) };
+  }, ctx());
+  shared.globalRules = { ...result.rules };
+  return result;
+}
+
+async function saveSessionRule(sessionId, channel, rule) {
+  let nextRules;
+  try {
+    nextRules = validateRules({ [channel]: rule });
+  } catch (err) {
+    throw validation(String((err && err.message) || err));
+  }
+  const { pi } = shared.deps;
+  const result = await shared.state.harness.commit(async (tx) => {
+    const doc = await tx.doc(shared.state.SessionsDoc);
+    const current = doc.sessions[sessionId];
+    if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
+    const before = { ...(current.approval_rules || {}) };
+    const merged = { ...before, ...nextRules };
+    let validated;
+    try {
+      validated = validateRules(merged);
+    } catch (err) {
+      throw validation(String((err && err.message) || err));
+    }
+    current.approval_rules = validated;
+    current.updated_at = Date.now();
+    const policy = await tx.doc(shared.state.PolicyDoc);
+    policy.audit = auditRules(policy.audit, before, validated, 'session', sessionId);
+    return { audit: policy.audit.slice(-50).map((entry) => ({ ...entry })) };
+  }, ctx());
+  return result.audit;
+}
+
+async function sessionRulesSet(params) {
+  const sessionId = _text(params.id, 'la conversación', 120, true);
+  let rules;
+  try {
+    rules = validateRules(params.rules);
+  } catch (err) {
+    throw validation(String((err && err.message) || err));
+  }
+  const session = await requireSession(sessionId);
+  const { pi } = shared.deps;
+  return shared.state.harness.commit(async (tx) => {
+    const live = await tx.doc(pi.LiveDoc, session.conversationId);
+    const inbox = await tx.doc(pi.InboxDoc, session.conversationId);
+    if (live.run || inbox.items.length) throw validation('Espera a que termine el turno para cambiar los permisos');
+    const doc = await tx.doc(shared.state.SessionsDoc);
+    const current = doc.sessions[sessionId];
+    if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
+    const before = { ...(current.approval_rules || {}) };
+    const savedRules = Object.keys(rules).length ? { ...rules } : null;
+    if (savedRules) current.approval_rules = savedRules;
+    else delete current.approval_rules;
+    const policy = await tx.doc(shared.state.PolicyDoc);
+    policy.audit = auditRules(policy.audit, before, savedRules || {}, 'session', sessionId);
+    current.updated_at = Date.now();
+    return {
+      session: toPublicSession(current),
+      audit: policy.audit.slice(-50).map((entry) => ({ ...entry })),
+    };
   }, ctx());
 }
 
@@ -886,8 +1008,22 @@ async function turnCancel(params) {
 
 async function approve(params, approved) {
   const approvalId = String(params && params.approval_id || '');
+  const channel = typeof params.channel === 'string' ? params.channel : '';
+  const rule = params.rule === 'allow' || params.rule === 'deny' ? params.rule : null;
+  if ((channel && !rule) || (rule && !channel)) throw validation('Indica el canal y la regla juntos');
+  if (rule) {
+    if (rule !== (approved ? 'allow' : 'deny')) throw validation('La regla no coincide con la decisión');
+    const { approval: current } = await bridge('agent_internal_approval_status', { approval_id: approvalId });
+    if (!current || current.status !== 'pending') {
+      throw validation(current && current.status === 'expired'
+        ? 'La aprobación expiró; vuelve a pedírselo al agente'
+        : 'La aprobación ya no está pendiente');
+    }
+    await saveSessionRule(String(current.session_id), channel, rule);
+  }
   const { approval } = await bridge('agent_internal_approval_decide', {
-    approval_id: approvalId, approve: !!approved, ...(params.grant_app ? { grant_app: true } : {}),
+    approval_id: approvalId, approve: !!approved, source: 'manual',
+    ...(params.grant_app ? { grant_app: true } : {}),
   });
   execution.notifyDecision(approvalId);
   if (approved && params && params.remember === true && approval
@@ -914,6 +1050,24 @@ async function approve(params, approved) {
     if (!stillLive) void _settleRecoveredApproval(approval).catch(() => {});
   }
   return { approval };
+}
+
+async function effectUndo(params) {
+  const sessionId = _text(params.session_id, 'la conversación', 120, true);
+  const callId = _text(params.call_id, 'la acción', 200, true);
+  await requireSession(sessionId);
+  const result = await bridge('agent_internal_effect_undo', { session_id: sessionId, call_id: callId });
+  // El modelo debe saber que el disco ya no coincide con lo que creyó escribir;
+  // un fallo al avisar no invalida un Undo que ya quedó aplicado.
+  try {
+    const conv = await conversation(sessionId);
+    const name = path.basename(String((result && result.path) || '')) || 'el archivo';
+    await conv.submit({ type: 'write', requestId: `undo:${callId}`, entry: {
+      kind: NOTICE_KIND, data: { text: `El usuario deshizo la acción sobre «${name}». `
+        + 'No asumas que el archivo conserva el contenido escrito: vuelve a leerlo antes de usarlo o de repetir la acción.' },
+    } }, ctx());
+  } catch { }
+  return result;
 }
 
 async function _settleRecoveredApproval(approval) {
@@ -1054,6 +1208,9 @@ module.exports = {
     agent_session_rename: sessionRename,
     agent_session_model_set: sessionModelSet,
     agent_session_permissions_set: sessionPermissionsSet,
+    agent_session_rules_set: sessionRulesSet,
+    agent_policy_get: policyState,
+    agent_policy_rules_set: policyRulesSet,
     agent_session_reasoning_set: sessionReasoningSet,
     agent_messages_list: messagesList,
     agent_message_send: messageSend,
@@ -1069,6 +1226,7 @@ module.exports = {
     agent_profile_delete: profileDelete,
     agent_approve: (p) => approve(p, true),
     agent_deny: (p) => approve(p, false),
+    agent_effect_undo: effectUndo,
     agent_approvals_history: approvalHistory,
     agent_grants_list: grantsList,
     agent_grants_revoke: grantsRevoke,

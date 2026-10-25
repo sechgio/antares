@@ -133,6 +133,13 @@
       "handlers": [],
       "methods": ["memory_search", "memory_remember", "procedure_learn"]
     },
+    "agenda": {
+      "label": "Agenda",
+      "aliases": ["agenda", "encargos", "programados", "recordatorios"],
+      "handlers": [],
+      "methods": ["task_schedule"],
+      "native": true
+    },
     "connections": {
       "label": "Conexiones",
       "aliases": ["conexiones", "drive", "google-drive", "sheets", "hojas-de-google", "onedrive", "excel"],

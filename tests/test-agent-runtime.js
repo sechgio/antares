@@ -18,7 +18,8 @@ const PUBLIC_METHODS = [
   'agent_turn_status', 'agent_turn_cancel', 'agent_approve', 'agent_deny', 'agent_attach', 'agent_context_remove_file',
   'agent_profiles_list', 'agent_profile_save', 'agent_profile_delete', 'agent_session_rename', 'agent_session_model_set',
   'agent_browser',
-  'agent_session_permissions_set', 'agent_session_reasoning_set',
+  'agent_session_permissions_set', 'agent_session_rules_set', 'agent_policy_get', 'agent_policy_rules_set',
+  'agent_effect_undo', 'agent_session_reasoning_set',
 ];
 const INTERNAL_RPCS = [
   'agent_internal_tools', 'agent_internal_provider',
@@ -29,6 +30,7 @@ const INTERNAL_RPCS = [
   'agent_internal_grants_add', 'agent_internal_grants_revoke', 'agent_internal_mentions',
   'agent_internal_dispatch_finish',
   'agent_internal_activity', 'agent_internal_memory_context', 'agent_internal_grant_remove',
+  'agent_internal_effects', 'agent_internal_effect_undo',
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -60,8 +62,8 @@ function makeBridge() {
         if (!found) {
           found = {
             id: `ap-${++state.seq}`, session_id: params.session_id, call_id: params.call_id,
-            method: params.method, params: params.params, status: 'pending',
-            created_at: Date.now(), decided_at: null,
+            method: params.method, params: params.params, status: 'pending', channel: params.channel || null,
+            created_at: Date.now(), decided_at: null, source: null,
           };
           state.approvals.set(found.id, found);
         }
@@ -75,6 +77,7 @@ function makeBridge() {
         const a = state.approvals.get(params.approval_id);
         if (!a || a.status !== 'pending') throw new Error('Aprobación inexistente o ya decidida');
         a.status = params.approve ? 'approved' : 'denied';
+        a.source = params.source || 'manual';
         a.decided_at = Date.now();
         return { approval: { ...a } };
       }
@@ -93,15 +96,28 @@ function makeBridge() {
           const known = state.dispatches.find((d) => d.session_id === params.session_id && d.call_id === params.call_id);
           if (known) return { result: known.result, dispatch: known };
           if (params.gated && !params.approval_id) return { result: JSON.stringify({ error: 'requiere aprobación' }) };
-          const record = { session_id: params.session_id, call_id: params.call_id, op_id: `op-${params.call_id}`, status: 'running', result: null };
+          const record = { session_id: params.session_id, call_id: params.call_id, op_id: `op-${params.call_id}`, status: 'running', result: null, channel: params.channel || null };
           state.dispatches.push(record);
           return { result: null, dispatch: record, execute: 'native' };
         }
         const existing = state.dispatches.find((d) => d.session_id === params.session_id && d.call_id === params.call_id);
         if (existing) return { result: existing.result, dispatch: existing };
-        const record = { session_id: params.session_id, call_id: params.call_id, status: 'succeeded', result: JSON.stringify({ ok: true, tool: params.name }) };
+        const approval = params.approval_id ? state.approvals.get(params.approval_id) : null;
+        const record = {
+          session_id: params.session_id, call_id: params.call_id, method: params.name,
+          channel: params.channel || (approval && approval.channel) || null,
+          approval_source: (approval && approval.source) || 'none',
+          status: 'succeeded', result: JSON.stringify({ ok: true, tool: params.name }),
+        };
         state.dispatches.push(record);
         return { result: record.result, dispatch: record };
+      }
+      case 'agent_internal_effects':
+        return { dispatches: state.dispatches.filter((d) => d.session_id === params.session_id)
+          .map(({ result, ...rest }) => rest) };
+      case 'agent_internal_effect_undo': {
+        state.undoCalls = [...(state.undoCalls || []), params];
+        return { undone: true, call_id: params.call_id, path: 'C:\\tmp\\archivo.txt' };
       }
       case 'agent_internal_dispatch_result': {
         assert(params.session_id, 'dispatch_result identifica la conversación');
@@ -291,6 +307,14 @@ async function main() {
     // El backend real auto-aprueba en desatendido las apps declaradas al programar;
     // el puente falso replica ese contrato y registra la lista recibida.
     const uiBridge = async (method, params) => {
+      if (method === 'agent_internal_dispatch' && params.meta) {
+        // Contrato del broker: el meta-dispacho vuelve a Electron, que ejecuta
+        // schedule() y cierra la operación con dispatch_finish.
+        return { execute: 'meta', dispatch: { op_id: `op-${params.call_id}`, status: 'running' } };
+      }
+      if (method === 'agent_internal_dispatch_finish' && !state.dispatches.some((d) => d.op_id === params.op_id)) {
+        return { result: params.result };
+      }
       if (method === 'agent_internal_approval_ensure' && Array.isArray(params.unattended_apps) && params.unattended_apps.length) {
         state.unattendedApps = params.unattended_apps;
         const response = await bridge(method, params);
@@ -320,6 +344,8 @@ async function main() {
       fauxAssistantMessage('Encargo desatendido terminado'),
     ], uiBridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    // El broker exige aprobación para programar; el modo de acceso completo la aplica sola.
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Programa el encargo' });
     assert(await waitFor(() => state.dispatches.length >= 25, 20000), 'el encargo desatendido auto-aprueba las apps declaradas');
     assert(JSON.stringify(state.unattendedApps) === JSON.stringify(['notepad']), 'la lista blanca declarada llega a la aprobación');

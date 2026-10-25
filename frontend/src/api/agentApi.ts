@@ -6,6 +6,27 @@ export type CanvasLayersResult = Required<Pick<CanvasDocument, 'id' | 'updatedAt
 };
 
 export type AgentPermissionMode = 'ask' | 'auto' | 'full';
+export type AgentChannel = 'terminal' | 'files' | 'desktop' | 'cloud' | 'mcp' | 'documents' | 'memory' | 'agenda' | 'other';
+export type AgentChannelRule = 'ask' | 'allow' | 'deny';
+export type AgentApprovalRules = Partial<Record<AgentChannel, AgentChannelRule>>;
+export type AgentApprovalSource = 'manual' | 'rule' | 'full' | 'web' | 'cancel';
+
+export interface AgentUndo {
+  available: boolean;
+  kind?: 'restore' | 'delete';
+  reason?: string;
+  undone_at?: number | null;
+}
+
+export interface AgentRuleAudit {
+  id: string;
+  at: number;
+  scope: 'session' | 'global';
+  session_id?: string;
+  channel: AgentChannel;
+  from: AgentChannelRule | null;
+  to: AgentChannelRule | null;
+}
 
 export type AgentReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -18,6 +39,7 @@ export interface AgentSession {
   updated_at: number;
   last_error: string | null;
   permission_mode?: AgentPermissionMode;
+  approval_rules?: AgentApprovalRules;
   reasoning_effort?: AgentReasoningEffort;
   /** Niveles de razonamiento que admite el modelo actual; vacío si no razona. */
   reasoning_levels?: AgentReasoningEffort[];
@@ -49,6 +71,11 @@ export interface AgentToolCall {
   output?: string;
   /** Epoch ms en que empezó a ejecutarse, mientras sigue en curso. */
   started_at?: number;
+  dispatch_id?: string | null;
+  channel?: AgentChannel | null;
+  approval_source?: AgentApprovalSource | null;
+  recovered?: boolean;
+  undo?: AgentUndo | null;
 }
 
 export interface AgentMessage {
@@ -124,6 +151,8 @@ export interface AgentApproval {
   status: AgentApprovalStatus;
   created_at: number;
   decided_at: number | null;
+  channel?: AgentChannel | null;
+  source?: AgentApprovalSource | null;
   consumed_by?: string;
   context?: { account?: string; sheet_id?: string; scopes?: string[]; filename?: string;
     page_url?: string; page_time_origin?: number; domain?: string; policy_blocked?: boolean;
@@ -189,6 +218,11 @@ export interface AgentArtifact {
   module?: string;
   sources?: { ids?: string[]; kind: string }[];
   reviewed?: Record<string, string>;
+  receipt?: {
+    channel?: AgentChannel | null;
+    approval_source?: AgentApprovalSource | null;
+    status?: string | null;
+  };
   files: { name: string; sha256: string; pages: number; mime: string; size: number }[];
 }
 
@@ -283,6 +317,15 @@ export const agentApi = {
   agentSessionPermissionsSet: (id: string, permission_mode: AgentPermissionMode) =>
     _invoke<{ session: AgentSession }>('agent_session_permissions_set', { id, permission_mode }),
 
+  agentSessionRulesSet: (id: string, rules: AgentApprovalRules) =>
+    _invoke<{ session: AgentSession; audit?: AgentRuleAudit[] }>('agent_session_rules_set', { id, rules }),
+
+  agentPolicyGet: () =>
+    _invoke<{ rules: AgentApprovalRules; audit: AgentRuleAudit[] }>('agent_policy_get'),
+
+  agentPolicyRulesSet: (rules: AgentApprovalRules) =>
+    _invoke<{ rules: AgentApprovalRules; audit: AgentRuleAudit[] }>('agent_policy_rules_set', { rules }),
+
   agentSessionReasoningSet: (id: string, reasoning_effort: AgentReasoningEffort) =>
     _invoke<{ session: AgentSession }>('agent_session_reasoning_set', { id, reasoning_effort }),
 
@@ -337,12 +380,23 @@ export const agentApi = {
   agentTurnCancel: (session_id: string) =>
     _invoke<{ cancelled: boolean }>('agent_turn_cancel', { session_id }),
 
-  agentApprove: (approval_id: string, options?: { remember?: boolean; grantApp?: boolean }) =>
-    _invoke<{ approval: AgentApproval }>('agent_approve', { approval_id,
-      ...(options?.remember ? { remember: true } : {}), ...(options?.grantApp ? { grant_app: true } : {}) }),
+  agentApprove: (approval_id: string, options?: boolean | { remember?: boolean; grantApp?: boolean; channel?: AgentChannel; rule?: 'allow' | 'deny' }) =>
+    _invoke<{ approval: AgentApproval }>('agent_approve', {
+      approval_id,
+      ...(typeof options === 'object' && options
+        ? {
+          ...(options.remember ? { remember: true } : {}),
+          ...(options.grantApp ? { grant_app: true } : {}),
+          ...(options.channel && options.rule ? { channel: options.channel, rule: options.rule } : {}),
+        }
+        : (options ? { remember: true } : {})),
+    }),
 
-  agentDeny: (approval_id: string) =>
-    _invoke<{ approval: AgentApproval }>('agent_deny', { approval_id }),
+  agentDeny: (approval_id: string, rule?: { channel: AgentChannel; rule: 'allow' | 'deny' }) =>
+    _invoke<{ approval: AgentApproval }>('agent_deny', { approval_id, ...(rule ? { channel: rule.channel, rule: rule.rule } : {}) }),
+
+  agentEffectUndo: (session_id: string, call_id: string) =>
+    _invoke<{ undone: boolean; path: string; call_id: string }>('agent_effect_undo', { session_id, call_id }),
 
   agentApprovalsHistory: (params: { session_id?: string; method?: string; status?: AgentApprovalFilterStatus; limit?: number } = {}) =>
     _invoke<{ approvals: AgentApproval[] }>('agent_approvals_history', params),

@@ -304,6 +304,17 @@ def test_dispatch_gated_requires_bound_approved_approval(store, monkeypatch):
     assert executed == ["db_clear"]
 
 
+def test_artifacts_expose_the_effect_receipt(store):
+    store.add_artifact("s1", {"id": "art", "family": "documents", "template_id": "t",
+                              "template_revision": "r", "files": []})
+    outcome, record = store.dispatch_claim("s1", "c1", "document_generate", {}, None, channel="documents")
+    assert outcome == "new"
+    store.dispatch_note("s1", record["op_id"], {"artifact_id": "art"})
+    store.dispatch_finish("s1", "c1", record["op_id"], "succeeded", "{}")
+    [artifact] = store.artifacts_for("s1")
+    assert artifact["receipt"] == {"channel": "documents", "approval_source": "none", "status": "succeeded"}
+
+
 def test_dispatch_running_at_restart_becomes_uncertain(store, tmp_path):
     outcome, record = store.dispatch_claim("s1", "c9", "db_clear", {}, None)
     assert outcome == "new" and record["status"] == "running"
@@ -351,11 +362,13 @@ def test_dispatch_result_unknown_and_cancel(store):
     assert out == {"cancelled": False}
 
 
-def _approve(session_id, call_id, method, params):
-    approval = agent_internal.HANDLERS["agent_internal_approval_ensure"](
-        {"session_id": session_id, "call_id": call_id, "method": method, "params": params}
-    )["approval"]
-    agent_internal.HANDLERS["agent_internal_approval_decide"]({"approval_id": approval["id"], "approve": True})
+def _approve(session_id, call_id, method, params, *, channel=None, source="manual"):
+    request = {"session_id": session_id, "call_id": call_id, "method": method, "params": params}
+    if channel:
+        request["channel"] = channel
+    approval = agent_internal.HANDLERS["agent_internal_approval_ensure"](request)["approval"]
+    agent_internal.HANDLERS["agent_internal_approval_decide"]({"approval_id": approval["id"], "approve": True,
+                                                               "source": source})
     return approval["id"]
 
 
@@ -528,6 +541,53 @@ def test_native_tools_are_claimed_in_python_and_finished_by_electron(store):
     assert store.get_dispatch("s1", "n1")["status"] == "succeeded"
     assert json.loads(_dispatch(session_id="s1", call_id="n1", name="autoimg_status", params={},
                                 native=True, gated=False)["result"]) == {"ok": True}
+
+
+def test_memory_write_is_gated_and_keeps_its_receipt(store):
+    params = {"kind": "fact", "title": "Papel", "content": "El usuario usa A4"}
+    blocked = _dispatch(session_id="s1", call_id="mem1", name="memory_remember", params=params)
+    assert "aprobación" in json.loads(blocked["result"])["error"]
+    assert store.get_dispatch("s1", "mem1") is None
+
+    approval_id = _approve("s1", "mem1", "memory_remember", params)
+    started = _dispatch(session_id="s1", call_id="mem1", name="memory_remember", params=params,
+                        approval_id=approval_id)
+    assert started["result"] is None
+    receipt = json.loads(_wait_result("mem1")["result"])
+    assert receipt["remembered"]["title"] == "Papel"
+    assert store.get_dispatch("s1", "mem1")["status"] == "succeeded"
+
+
+def test_task_schedule_is_a_gated_meta_dispatch_finished_by_electron(store):
+    params = {"action": "create", "content": "Revisar el cierre", "due_at": "2026-10-20T09:00:00+02:00"}
+    blocked = _dispatch(session_id="s1", call_id="task1", name="task_schedule", params=params,
+                        meta=True, gated=True, channel="agenda")
+    assert "aprobación" in json.loads(blocked["result"])["error"]
+    assert store.get_dispatch("s1", "task1") is None
+
+    approval_id = _approve("s1", "task1", "task_schedule", params, channel="agenda", source="rule")
+    started = _dispatch(session_id="s1", call_id="task1", name="task_schedule", params=params,
+                        meta=True, gated=True, approval_id=approval_id, channel="agenda")
+    assert started["execute"] == "meta" and started["result"] is None
+    record = started["dispatch"]
+    assert record["channel"] == "agenda" and record["approval_source"] == "rule"
+    assert agent_internal._native_leases == {}
+    assert _dispatch_result("task1")["result"] is None
+
+    finished = _finish("s1", "task1", started, result=json.dumps({"scheduled": {"id": "task-1"}}))
+    assert json.loads(finished["result"]) == {"scheduled": {"id": "task-1"}}
+    assert store.get_dispatch("s1", "task1")["status"] == "succeeded"
+    again = _dispatch(session_id="s1", call_id="task1", name="task_schedule", params=params,
+                      meta=True, gated=True, approval_id=approval_id, channel="agenda")
+    assert "execute" not in again and json.loads(again["result"]) == {"scheduled": {"id": "task-1"}}
+    [receipt] = agent_internal.HANDLERS["agent_internal_effects"]({"session_id": "s1"})["dispatches"]
+    assert receipt["channel"] == "agenda" and receipt["approval_source"] == "rule"
+
+
+def test_meta_dispatch_only_accepts_declared_meta_methods(store):
+    out = _dispatch(session_id="s1", call_id="meta-x", name="fs_write", params={"path": "a.txt"}, meta=True)
+    assert "no disponible" in json.loads(out["result"])["error"]
+    assert store.get_dispatch("s1", "meta-x") is None
 
 
 def test_native_effects_need_approval_and_unknown_native_names_are_rejected(store):

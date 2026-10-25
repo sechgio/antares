@@ -35,9 +35,10 @@ function nextOccurrence(task, dueAt, now) {
 }
 
 const TOOL = {
-  name: 'task_schedule', kind: 'meta', module: 'agent', gated: false, replay_safe: true,
+  name: 'task_schedule', kind: 'meta', module: 'agenda', gated: true, replay_safe: true,
   description: 'Gestiona encargos propios de esta conversación solo cuando el usuario lo pide. Antares debe seguir '
     + 'abierto, incluida la bandeja; al volver a abrir recupera los pendientes. No concede permisos ni acceso a archivos. '
+    + 'Sus acciones con efecto requieren aprobación; action=list es solo lectura. '
     + 'action=create requiere content y due_at ISO 8601 con zona horaria; every_minutes permite repetición. '
     + 'Si el encargo operará apps de Windows, declara apps con los alias permitidos (notepad, calc, mspaint, '
     + 'explorer, cmd, powershell, control, taskmgr; máximo 8): mientras se ejecuta solo, solo esas apps se manejan '

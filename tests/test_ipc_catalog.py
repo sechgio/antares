@@ -85,6 +85,29 @@ def test_agent_permission_selection_is_a_renderer_command_not_an_agent_tool():
     assert "agent_session_permissions_set" not in ORCHESTRATABLE_METHODS
 
 
+def test_agent_broker_rules_and_undo_have_explicit_contracts():
+    methods = _catalog()["methods"]
+    rules = methods["agent_session_rules_set"]
+    assert rules["handler"] == "native:agent"
+    assert rules["inputSchema"]["required"] == ["id", "rules"]
+    rule_props = rules["inputSchema"]["properties"]["rules"]["properties"]
+    assert rule_props["terminal"]["enum"] == ["ask", "deny"]
+    assert rule_props["other"]["enum"] == ["ask", "deny"]
+    assert rule_props["mcp"]["enum"] == ["ask", "allow", "deny"]
+    assert rule_props["memory"]["enum"] == ["ask", "allow", "deny"]
+    assert rule_props["agenda"]["enum"] == ["ask", "allow", "deny"]
+    assert set(rule_props).issuperset({"terminal", "files", "desktop", "cloud", "mcp", "documents", "memory", "agenda", "other"})
+
+    undo = methods["agent_effect_undo"]
+    assert undo["handler"] == "native:agent"
+    assert undo["inputSchema"]["required"] == ["session_id", "call_id"]
+
+    for name in ("agent_internal_effects", "agent_internal_effect_undo"):
+        assert methods[name]["handler"] == "backend:agent_internal"
+        assert methods[name]["internal"] is True
+        assert methods[name]["inputSchema"]["required"]
+
+
 def test_agent_reasoning_selection_is_a_renderer_command_not_an_agent_tool():
     from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
 

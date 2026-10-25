@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownRight, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
-import { agentApi, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
+import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentRuleAudit, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
@@ -163,6 +163,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [model, setModel] = useState('');
   const [modelBusy, setModelBusy] = useState(false);
   const [permissionsBusy, setPermissionsBusy] = useState(false);
+  const [rulesBusy, setRulesBusy] = useState(false);
+  const [rulesScope, setRulesScope] = useState<'session' | 'global'>('session');
+  const [globalRules, setGlobalRules] = useState<AgentApprovalRules>({});
+  const [audit, setAudit] = useState<AgentRuleAudit[]>([]);
   const [reasoningBusy, setReasoningBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const sendInFlightRef = useRef(false);
@@ -186,6 +190,15 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   useEffect(() => {
     let cancelled = false;
     agentApi.agentProfilesList().then((res) => { if (!cancelled) setProfiles(res.profiles); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    agentApi.agentPolicyGet().then((res) => {
+      if (cancelled) return;
+      setGlobalRules(res.rules);
+      setAudit(res.audit);
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
   const [deciding, setDeciding] = useState<{ id: string; approved: boolean } | null>(null);
@@ -477,6 +490,43 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       addToast({ message: errorMessage(err, 'No se pudieron guardar los permisos'), type: 'error' });
     } finally {
       setPermissionsBusy(false);
+    }
+  };
+  const changeRules = async (rules: AgentApprovalRules) => {
+    if (!sessionId || rulesBusy) return;
+    setRulesBusy(true);
+    try {
+      const { session: updated, audit: entries } = await agentApi.agentSessionRulesSet(sessionId, rules);
+      setSessions((list) => list.map((item) => item.id === updated.id ? updated : item));
+      if (entries) setAudit(entries);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudieron guardar las reglas por canal'), type: 'error' });
+    } finally {
+      setRulesBusy(false);
+    }
+  };
+  const changeGlobalRules = async (rules: AgentApprovalRules) => {
+    if (rulesBusy) return;
+    setRulesBusy(true);
+    try {
+      const { rules: saved, audit: entries } = await agentApi.agentPolicyRulesSet(rules);
+      setGlobalRules(saved);
+      setAudit(entries);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudieron guardar las reglas globales'), type: 'error' });
+    } finally {
+      setRulesBusy(false);
+    }
+  };
+  const undoEffect = async (callId: string) => {
+    const id = sessionId;
+    if (!id) return;
+    try {
+      await agentApi.agentEffectUndo(id, callId);
+      addToast({ message: 'Acción deshecha.', type: 'success' });
+      await loadMessages(id, false);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo deshacer la acción'), type: 'error' });
     }
   };
   const changeReasoning = async (effort: AgentReasoningEffort) => {
@@ -811,6 +861,32 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       await loadMessages(sessionId);
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo aplicar la decisión'), type: 'error' });
+    } finally {
+      decisionRef.current = null;
+      setDeciding(null);
+    }
+  };
+  const decideWithRule = async (approval: AgentApproval, channel: AgentChannel, rule: 'allow' | 'deny') => {
+    if (!session || !channel || decisionRef.current) return;
+    decisionRef.current = approval.id;
+    setDeciding({ id: approval.id, approved: rule === 'allow' });
+    try {
+      const decision = { channel, rule };
+      if (rule === 'allow') await agentApi.agentApprove(approval.id, decision);
+      else await agentApi.agentDeny(approval.id, decision);
+      setSessions((list) => list.map((item) => item.id === session.id
+        ? { ...item, approval_rules: { ...(item.approval_rules ?? {}), [channel]: rule } }
+        : item));
+      try {
+        const policy = await agentApi.agentPolicyGet();
+        setGlobalRules(policy.rules);
+        setAudit(policy.audit);
+      } catch { /* la decisión ya se aplicó; el historial se refrescará al reabrir */ }
+      await loadMessages(sessionId);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo aplicar la decisión'), type: 'error' });
+      const listed = await agentApi.agentSessionsList().catch(() => null);
+      if (listed) setSessions(listed.sessions);
     } finally {
       decisionRef.current = null;
       setDeciding(null);
@@ -1162,7 +1238,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               return (
                 <div key={`${sessionId}-${m.role}-${i}`} className="space-y-4">
                   {newDay && <DaySeparator label={label} />}
-                  <MessageRow msg={m} agent={agentIdentity} />
+                  <MessageRow msg={m} agent={agentIdentity} onUndo={undoEffect} />
                 </div>
               );
             })
@@ -1172,7 +1248,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             <div key={a.id} id={`agent-approval-${a.id}`}>
               <ApprovalCard approval={a} busy={!!deciding}
                 decision={deciding?.id === a.id ? deciding.approved ? 'approve' : 'deny' : undefined}
-                onDecide={(id, ok, opts) => void decide(id, ok, opts)} />
+                onDecide={(id, ok, opts) => void decide(id, ok, opts)}
+                onRule={(channel, rule) => void decideWithRule(a, channel, rule)} />
             </div>
           ))}
           {artifacts.map((artifact) => <div key={artifact.id} id={`agent-artifact-${artifact.id}`}>
@@ -1417,8 +1494,16 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   key={session.id}
                   value={session.permission_mode ?? 'auto'}
                   onChange={(mode) => void changePermissions(mode)}
-                  disabled={permissionsBusy || modelBusy || running || stopping || pending.length > 0}
+                  disabled={permissionsBusy || rulesBusy || modelBusy || running || stopping || pending.length > 0}
                   pending={pending.length}
+                  rules={session.approval_rules ?? {}}
+                  onRulesChange={(rules) => void changeRules(rules)}
+                  rulesBusy={rulesBusy}
+                  globalRules={globalRules}
+                  onGlobalRulesChange={(rules) => void changeGlobalRules(rules)}
+                  audit={audit}
+                  scope={rulesScope}
+                  onScopeChange={setRulesScope}
                 />
               )}
               <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1">

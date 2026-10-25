@@ -44,7 +44,7 @@ TOOL_SPECS: list[JsonObject] = [
         "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
     },
     {
-        "name": "memory_remember", "module": "agent", "gated": False,
+        "name": "memory_remember", "module": "agent", "gated": True,
         "description": (
             "Memoria · memory_remember: guardar una preferencia o un hecho duradero que el usuario indicó. "
             "Nunca guardes contraseñas, claves ni tokens"
@@ -55,7 +55,7 @@ TOOL_SPECS: list[JsonObject] = [
         }, "required": ["kind", "title", "content"]},
     },
     {
-        "name": "procedure_learn", "module": "agent", "gated": False,
+        "name": "procedure_learn", "module": "agent", "gated": True,
         "description": (
             "Memoria · procedure_learn: guardar los pasos de un encargo repetible que ya terminó con comprobante "
             "en esta conversación; solo acepta herramientas con resultado verificado"

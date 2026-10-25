@@ -10,8 +10,10 @@ import uuid
 from collections.abc import Callable
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
+from typing import cast
 
 from backend.core.agent import agent_tools, drafts, resource_grants, subagent
+from backend.core.agent import undo as undo_journal
 from backend.core.agent.agent_chat import chat, gated_methods, readonly_methods, replay_safe, scrub_secrets, tool_specs
 from backend.core.agent.cancel import RunCancelled, _CancelEvent, await_or_cancel
 from backend.core.integrations import mcp_servers
@@ -128,6 +130,7 @@ class AgentStore:
         self._approvals_path = base / "approvals.json"
         self._grants_path = base / "grants.json"
         self._drafts_root = base / "drafts"
+        self._undo = undo_journal.UndoJournal(base)
         self._dispatches_path = base / "dispatches.json"
         self._messages_dir = base / "messages"
         self._messages_dir.mkdir(parents=True, exist_ok=True)
@@ -167,6 +170,42 @@ class AgentStore:
                         record["summary"] = record["result"]
                     except Exception:
                         logger.warning("No se pudo verificar el trabajo de impresión %s", record.get("op_id"), exc_info=True)
+                dirty = True
+        # Retención de copias previas: lo podado deja de ser recuperable y los
+        # dispatches que quedaron a medias se reconcilian con el archivo actual.
+        self._undo.prune()
+        for record in self._dispatches.values():
+            undo = record.get("undo")
+            if not isinstance(undo, dict) or not undo.get("available"):
+                continue
+            directory = undo.get("dir")
+            if not isinstance(directory, str) or not Path(directory).is_dir():
+                undo["available"] = False
+                undo["reason"] = "La copia de seguridad expiró"
+                dirty = True
+        for record in self._dispatches.values():
+            if record.get("status") != "uncertain":
+                continue
+            undo = record.get("undo")
+            if not isinstance(undo, dict) or not undo.get("available"):
+                continue
+            if self._undo.matches_after(undo):
+                record["status"] = "succeeded"
+                recovered_result = json.dumps(
+                    {"recovered": True, "detail": "La escritura terminó antes de que la aplicación se cerrara"},
+                    ensure_ascii=False,
+                )
+                record["result"] = recovered_result
+                record["summary"] = recovered_result
+                record.setdefault("finished_at", _now_ms())
+                dirty = True
+            else:
+                undo["available"] = False
+                undo["reason"] = (
+                    "La escritura quedó sin confirmar; no hay un resultado verificado que deshacer"
+                    if not undo.get("after_sha256")
+                    else "El archivo no coincide con el resultado esperado; no se puede deshacer con seguridad"
+                )
                 dirty = True
         if dirty:
             self._write_dispatches()
@@ -267,6 +306,9 @@ class AgentStore:
             self._questions = {key: item for key, item in self._questions.items() if item["session_id"] != session_id}
             atomic_write_json(self._questions_path, self._questions)
             self._messages_path(session_id).unlink(missing_ok=True)
+            for record in self._dispatches.values():
+                if record.get("session_id") == session_id:
+                    self._undo.discard(record.get("undo"))
         return removed
 
     def messages(self, session_id: str) -> list[JsonObject]:
@@ -403,7 +445,20 @@ class AgentStore:
 
     def artifacts_for(self, session_id: str) -> list[JsonObject]:
         with self._lock:
-            return [dict(item) for item in (self._artifacts.get(session_id) or {}).get("items", [])]
+            items = [dict(item) for item in (self._artifacts.get(session_id) or {}).get("items", [])]
+            for item in items:
+                match = next(
+                    (record for record in self._dispatches.values()
+                     if record.get("session_id") == session_id and record.get("artifact_id") == item.get("id")),
+                    None,
+                )
+                if match is not None:
+                    item["receipt"] = {
+                        "channel": match.get("channel"),
+                        "approval_source": match.get("approval_source"),
+                        "status": match.get("status"),
+                    }
+            return items
 
     def review_artifact(self, session_id: str, artifact_id: str, index: int, sha256: str) -> None:
         with self._lock:
@@ -467,6 +522,7 @@ class AgentStore:
             "status": "pending",
             "created_at": _now_ms(),
             "decided_at": None,
+            "channel": call.get("channel") or None,
             "context": call.get("context") or {},
             "resources": call.get("resources") or [],
         }
@@ -539,13 +595,14 @@ class AgentStore:
         records.sort(key=lambda item: float(item.get("created_at") or 0), reverse=True)
         return records[: max(1, min(int(limit), 1000))]
 
-    def decide_approval(self, approval_id: str, approved: bool) -> JsonObject | None:
+    def decide_approval(self, approval_id: str, approved: bool, source: str = "manual") -> JsonObject | None:
         self._expire_stale_approvals()
         with self._lock:
             approval = self._approvals.get(approval_id)
             if approval is None or approval.get("status") != "pending":
                 return None
             approval["status"] = "approved" if approved else "denied"
+            approval["source"] = source
             approval["decided_at"] = _now_ms()
             self._write_approvals()
             return dict(approval)
@@ -577,6 +634,7 @@ class AgentStore:
             for approval in self._approvals.values():
                 if approval.get("session_id") == session_id and approval.get("status") == "pending":
                     approval["status"] = "denied"
+                    approval["source"] = "cancel"
                     approval["decided_at"] = _now_ms()
                     denied.append(str(approval["id"]))
             if denied:
@@ -595,6 +653,7 @@ class AgentStore:
 
     def dispatch_claim(
         self, session_id: str, call_id: str, method: str, params: JsonObject, approval_id: str | None,
+        *, channel: str | None = None, approval_source: str | None = None,
     ) -> tuple[str, JsonObject]:
         intent = fingerprint(method, params)
         key = dispatch_key(session_id, call_id)
@@ -627,6 +686,10 @@ class AgentStore:
                 "method": method,
                 "fingerprint": intent,
                 "approval_id": approval_id,
+                "approval_source": approval_source
+                or (approval.get("source") if approval is not None else None)
+                or ("manual" if approval is not None else "none"),
+                "channel": channel or (approval.get("channel") if approval is not None else None),
                 "status": "running",
                 "started_at": _now_ms(),
                 "result": None,
@@ -655,6 +718,44 @@ class AgentStore:
             record["summary"] = summarize_result(result)
             record["finished_at"] = _now_ms()
             self._write_dispatches()
+
+    def undo_prepare(self, session_id: str, call_id: str, op_id: str, method: str, resources: list[JsonObject]) -> None:
+        undo = self._undo.prepare(op_id, method, resources)
+        if undo is None:
+            return
+        with self._lock:
+            record = self._dispatches.get(dispatch_key(session_id, call_id))
+            if record is None or record.get("op_id") != op_id:
+                self._undo.discard(undo)
+                return
+            record["undo"] = undo
+            self._write_dispatches()
+
+    def undo_finish(self, session_id: str, call_id: str, op_id: str) -> None:
+        with self._lock:
+            record = self._dispatches.get(dispatch_key(session_id, call_id))
+            if record is None or record.get("op_id") != op_id or record.get("undo") is None:
+                return
+            record["undo"] = self._undo.finish(record.get("undo"))
+            self._write_dispatches()
+
+    def undo_effect(self, session_id: str, call_id: str) -> JsonObject:
+        with self._lock:
+            record = self._dispatches.get(dispatch_key(session_id, call_id))
+            if record is None:
+                raise ValueError("La acción ya no está disponible en esta conversación")
+            undo = record.get("undo")
+            if not isinstance(undo, dict) or not undo.get("available"):
+                raise ValueError((undo or {}).get("reason") or "Esta acción no se puede deshacer")
+            if undo.get("undone_at"):
+                raise ValueError("Esta acción ya se deshizo")
+            if record.get("status") != "succeeded":
+                raise ValueError("Solo se pueden deshacer acciones completadas")
+            self._undo.restore(undo)
+            undo["undone_at"] = _now_ms()
+            self._undo.discard(undo)
+            self._write_dispatches()
+            return {"undone": True, "path": undo.get("path"), "call_id": call_id}
 
 
 class AgentRunner:
@@ -723,13 +824,13 @@ class AgentRunner:
             self._store.append_message(session_id, {"role": "user", "content": content})
             self._spawn(session_id, f"agent-turn-{session_id}")
 
-    def decide(self, approval_id: str, approved: bool) -> JsonObject:
+    def decide(self, approval_id: str, approved: bool, source: str = "manual") -> JsonObject:
         with self._lock:
             prior = self._store.get_approval(approval_id)
             token = self._cancel.get(str(prior["session_id"])) if prior else None
             if prior is not None and token is not None and token.cancelled and self.is_running(str(prior["session_id"])):
                 raise ValueError("El turno se está deteniendo; espera antes de decidir")
-            approval = self._store.decide_approval(approval_id, approved)
+            approval = self._store.decide_approval(approval_id, approved, source)
             if approval is None:
                 prior = self._store.get_approval(approval_id)
                 if prior and prior.get("status") == "expired":
@@ -746,6 +847,40 @@ class AgentRunner:
             {"role": "tool_result", "tool_use_id": call_id, "name": name, "content": result},
         )
 
+    def _dispatch_approved(self, approval: JsonObject, method: str, params: JsonObject) -> str:
+        session_id = str(approval["session_id"])
+        call_id = str(approval["call_id"])
+        outcome, record = self._store.dispatch_claim(
+            session_id, call_id, method, params, str(approval["id"]), channel=approval.get("channel"),
+        )
+        if outcome == "existing":
+            return str(record.get("result") or record.get("summary") or "")
+        if outcome in {"rejected", "conflict"}:
+            return json.dumps({"error": str(record.get("error") or "No se pudo reservar la operación")}, ensure_ascii=False)
+        op_id = str(record["op_id"])
+        raw_resources = approval.get("resources")
+        resources = (
+            [cast(JsonObject, item) for item in raw_resources if isinstance(item, dict)]
+            if isinstance(raw_resources, list) else []
+        )
+        try:
+            self._store.undo_prepare(session_id, call_id, op_id, method, resources)
+        except Exception:
+            logger.warning("No se pudo preparar el Undo de %s", method, exc_info=True)
+        try:
+            result = self._execute_call(session_id, {"id": call_id, "name": method, "params": params})
+            status = "failed" if result_failed(result) else "succeeded"
+        except Exception as err:
+            result = json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
+            status = "failed"
+        finally:
+            try:
+                self._store.undo_finish(session_id, call_id, op_id)
+            except Exception:
+                logger.warning("No se pudo cerrar el Undo de %s", method, exc_info=True)
+        self._store.dispatch_finish(session_id, call_id, op_id, status, result)
+        return result
+
     def _apply_decision(self, approval: JsonObject) -> None:
         session_id = str(approval["session_id"])
         call_id = str(approval["call_id"])
@@ -757,9 +892,8 @@ class AgentRunner:
                 or method in readonly_methods()
             )
             if invocable:
-                result = self._execute_call(
-                    session_id, {"id": call_id, "name": method, "params": approval.get("params") or {}}
-                )
+                params = approval.get("params") or {}
+                result = self._dispatch_approved(approval, method, params if isinstance(params, dict) else {})
             else:
                 result = json.dumps(
                     {"error": f"Herramienta no disponible para el agente: {method}"},

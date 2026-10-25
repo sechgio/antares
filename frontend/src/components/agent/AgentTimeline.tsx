@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { AppWindow, ArrowLeft, Ban, BookOpen, Camera, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Copy, FilePen, FileText, FolderOpen, Globe, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Network, Package, Route, Search, ShieldCheck, Terminal, Wrench, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { agentApi, AgentApproval, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
+import type { agentApi, AgentApproval, AgentChannel, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
 import Toggle from '../ui/Toggle';
 import AgentAvatar from './AgentAvatar';
+import BrokerReceipt from './BrokerReceipt';
 import MessageMarkdown from './MessageMarkdown';
 import Reasoning from './Reasoning';
 import SubagentTrace from './SubagentTrace';
+import { channelLabel } from './channels';
 import { METHOD_LABELS } from './methodLabels';
 
 interface AgentIdentity {
@@ -353,11 +355,20 @@ function CopyButton({ text, label = 'Copiar respuesta', className = 'group-hover
   );
 }
 
-function ToolSteps({ calls }: { calls: AgentToolCall[] }) {
+function ToolSteps({ calls, onUndo }: {
+  calls: AgentToolCall[];
+  onUndo?: (callId: string) => Promise<void>;
+}) {
   const [expanded, setExpanded] = useState<boolean | null>(null);
   const attention = calls.some((c) => !['done', 'submitted'].includes(c.status));
   const open = expanded ?? attention;
-  if (calls.length <= 2) return <>{calls.map((c) => <ToolCallStep key={c.id} call={c} />)}</>;
+  const item = (call: AgentToolCall) => (
+    <div key={call.id}>
+      <ToolCallStep call={call} />
+      {call.gated && <BrokerReceipt call={call} onUndo={onUndo} />}
+    </div>
+  );
+  if (calls.length <= 2) return <>{calls.map((c) => item(c))}</>;
   const done = calls.filter((c) => c.status === 'done').length;
   const review = calls.filter((c) => c.status === 'failed' || c.status === 'interrupted').length;
   return (
@@ -369,12 +380,16 @@ function ToolSteps({ calls }: { calls: AgentToolCall[] }) {
         {review > 0 && <span className="text-[var(--accent-red)]">· {review} por revisar</span>}
         <ChevronRight size={14} className="shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open/steps:rotate-90" aria-hidden="true" />
       </summary>
-      <div className={`${TASK_BODY} mt-0.5`}>{calls.map((c) => <ToolCallStep key={c.id} call={c} />)}</div>
+      <div className={`${TASK_BODY} mt-0.5`}>{calls.map((c) => item(c))}</div>
     </details>
   );
 }
 
-function AssistantBlock({ msg, agent }: { msg: AgentMessage; agent?: AgentIdentity }) {
+function AssistantBlock({ msg, agent, onUndo }: {
+  msg: AgentMessage;
+  agent?: AgentIdentity;
+  onUndo?: (callId: string) => Promise<void>;
+}) {
   const calls = msg.tool_calls ?? [];
   return (
     <div className="agent-trace-in group flex items-start gap-2.5" data-tools-only={!msg.content && !msg.reasoning && calls.length > 0 ? '' : undefined}>
@@ -396,7 +411,7 @@ function AssistantBlock({ msg, agent }: { msg: AgentMessage; agent?: AgentIdenti
         )}
         {calls.length > 0 && (
           <div className="w-full max-w-[min(620px,100%)] space-y-0.5">
-            <ToolSteps calls={calls} />
+            <ToolSteps calls={calls} onUndo={onUndo} />
           </div>
         )}
       </div>
@@ -404,9 +419,13 @@ function AssistantBlock({ msg, agent }: { msg: AgentMessage; agent?: AgentIdenti
   );
 }
 
-export function MessageRow({ msg, agent }: { msg: AgentMessage; agent?: AgentIdentity }) {
+export function MessageRow({ msg, agent, onUndo }: {
+  msg: AgentMessage;
+  agent?: AgentIdentity;
+  onUndo?: (callId: string) => Promise<void>;
+}) {
   if (msg.role === 'tool_result') return null;
-  return msg.role === 'user' ? <UserBubble msg={msg} /> : <AssistantBlock msg={msg} agent={agent} />;
+  return msg.role === 'user' ? <UserBubble msg={msg} /> : <AssistantBlock msg={msg} agent={agent} onUndo={onUndo} />;
 }
 
 export function ApprovalCard({
@@ -414,11 +433,13 @@ export function ApprovalCard({
   busy,
   decision,
   onDecide,
+  onRule,
 }: {
   approval: AgentApproval;
   busy: boolean;
   decision?: 'approve' | 'deny';
   onDecide: (id: string, ok: boolean, opts?: Parameters<typeof agentApi.agentApprove>[1]) => void;
+  onRule?: (channel: AgentChannel, rule: 'allow' | 'deny') => void;
 }) {
   const { params, context } = approval;
   const [remember, setRemember] = useState(false);
@@ -429,6 +450,8 @@ export function ApprovalCard({
   const appGrant = typeof context?.computer?.app === 'string' ? context.computer.app : null;
   const action = approval.method === 'drafts_save' && typeof filename === 'string'
     ? `Guardar ${filename}` : label;
+  const ruleChannel = approval.channel ?? null;
+  const channel = channelLabel(ruleChannel);
   const facts = [
     typeof params.id === 'string' && `Elemento: ${params.id}`,
     typeof params.name === 'string' && `Nombre: ${params.name}`,
@@ -477,6 +500,7 @@ export function ApprovalCard({
                 {decision === 'approve' ? 'Aprobando…' : decision === 'deny' ? 'Rechazando…' : 'Aprobación necesaria'}
               </p>
               <p className="text-[13px] font-medium leading-5 text-[var(--text-primary)]">{action ?? 'Acción sin descripción disponible'}</p>
+              {channel && <p className="text-[11px] leading-4 text-[var(--text-muted)]">Canal: {channel}</p>}
               <p className="text-[12px] leading-[18px] text-[var(--text-secondary)]">
                 {action ? 'Permitir autoriza solo esta acción.' : 'Revisa los detalles antes de permitir esta acción.'}
                 {' '}Rechazar la omite e informa al agente.
@@ -507,6 +531,22 @@ export function ApprovalCard({
           </details>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border-subtle)] px-3 py-2.5 sm:px-4">
+          {onRule && ruleChannel && channel && (
+            <>
+              {ruleChannel !== 'terminal' && ruleChannel !== 'other' && (
+                <Button size="sm" variant="ghost" aria-label={`Permitir siempre este canal en esta conversación: ${channel}`}
+                  disabled={busy || !!decision} onClick={() => onRule(ruleChannel, 'allow')}>
+                  <ShieldCheck size={13} aria-hidden="true" />
+                  Permitir siempre en este chat: {channel}
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" aria-label="Bloquear este canal en esta conversación"
+                disabled={busy || !!decision} onClick={() => onRule(ruleChannel, 'deny')}>
+                <Ban size={13} aria-hidden="true" />
+                Bloquear en este chat
+              </Button>
+            </>
+          )}
           {alwaysDomain ? (
             <label className="mr-auto flex basis-full cursor-pointer items-center gap-2 text-[11.5px] leading-5 text-[var(--text-secondary)] sm:basis-auto">
               <Toggle checked={remember} disabled={busy} aria-label={`Permitir siempre en ${alwaysDomain}`}
