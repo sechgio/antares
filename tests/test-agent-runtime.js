@@ -571,6 +571,74 @@ async function main() {
     await runtime.shutdown();
   }
 
+  {
+    const policyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-agent-policy-'));
+    fs.mkdirSync(path.join(policyRoot, 'Antares', 'ai-agent'), { recursive: true });
+    const policyFile = path.join(policyRoot, 'Antares', 'ai-agent', 'browser-policy.json');
+    fs.writeFileSync(policyFile, JSON.stringify({ always_allowed: ['www.bcp.pe'] }));
+    const realLocalAppData = process.env.LOCALAPPDATA;
+    process.env.LOCALAPPDATA = policyRoot;
+    try {
+      const { bridge, state } = makeBridge();
+      let executed = 0;
+      runtime._internal.shared.nativeTools = {
+        nativeToolContext: async () => ({ tool_version: 'fake-v1', page_url: 'https://www.bcp.pe/panel', domain: 'www.bcp.pe', policy_blocked: false }),
+        nativeToolSpecs: () => [{ name: 'web_click', description: 'Clic web', gated: true, kind: 'native', inputSchema: { type: 'object', properties: {} } }],
+        runNativeTool: async () => { executed += 1; return { ok: true }; },
+      };
+      await openFaux([
+        fauxAssistantMessage([fauxToolCall('web_click', {})], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('hecho'),
+      ], bridge);
+      const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'haz clic' });
+      assert(await waitIdle(session.id), 'el turno termina cuando el dominio está permitido siempre');
+      assert(executed === 1, 'la acción web sobre un dominio permitido siempre se ejecuta sin preguntar');
+      const decided = [...state.approvals.values()];
+      assert(decided.length === 1 && decided[0].status === 'approved', 'la aprobación del dominio autorizado se resuelve sola');
+      runtime._internal.shared.nativeTools = null;
+      await runtime.shutdown();
+
+      const ajeno = makeBridge();
+      let rechazado = 0;
+      runtime._internal.shared.nativeTools = {
+        nativeToolContext: async () => ({ tool_version: 'fake-v1', page_url: 'https://panel.banco-ajeno.pe/f', domain: 'panel.banco-ajeno.pe', policy_blocked: false }),
+        nativeToolSpecs: () => [{ name: 'web_click', description: 'Clic web', gated: true, kind: 'native', inputSchema: { type: 'object', properties: {} } }],
+        runNativeTool: async () => { rechazado += 1; return { ok: true }; },
+      };
+      await openFaux([
+        fauxAssistantMessage([fauxToolCall('web_click', {})], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('bloqueada'),
+      ], ajeno.bridge);
+      const sesionAjena = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+      await runtime.handlers.agent_message_send({ session_id: sesionAjena.session.id, content: 'haz clic' });
+      assert(await waitFor(() => ajeno.state.approvals.size > 0), 'un dominio sin permiso sigue pidiendo aprobación');
+      const pending = [...ajeno.state.approvals.values()].find((a) => a.status === 'pending');
+      await runtime.handlers.agent_deny({ approval_id: pending.id });
+      assert(await waitIdle(sesionAjena.session.id), 'el turno continúa tras rechazar la acción web');
+      assert(rechazado === 0, 'la acción web rechazada no se ejecuta');
+      runtime._internal.shared.nativeTools = null;
+      await runtime.shutdown();
+
+      const recordar = makeBridge();
+      await openFaux([], recordar.bridge);
+      recordar.state.approvals.set('ap-rec', { id: 'ap-rec', session_id: 'ses-recordar', call_id: 'call-rec', method: 'web_type', status: 'pending',
+        context: { page_url: 'https://forms.miejemplo.pe/paso-2' } });
+      recordar.state.approvals.set('ap-bloq', { id: 'ap-bloq', session_id: 'ses-recordar', call_id: 'call-bloq', method: 'web_click', status: 'pending',
+        context: { page_url: 'https://operaciones.sunat.gob.pe/ruc' } });
+      await runtime.handlers.agent_approve({ approval_id: 'ap-rec', remember: true });
+      await runtime.handlers.agent_approve({ approval_id: 'ap-bloq', remember: true });
+      const written = JSON.parse(fs.readFileSync(policyFile, 'utf8'));
+      assert(written.always_allowed.includes('forms.miejemplo.pe'), 'Permitir siempre persiste el dominio de la página aprobada');
+      assert(!written.always_allowed.includes('operaciones.sunat.gob.pe'), 'un dominio bloqueado nunca entra en Permitir siempre');
+      await runtime.shutdown();
+    } finally {
+      process.env.LOCALAPPDATA = realLocalAppData;
+      delete require.cache[require.resolve('../electron/agent-browser-policy')];
+      fs.rmSync(policyRoot, { recursive: true, force: true });
+    }
+  }
+
   for (const name of PUBLIC_METHODS) {
     assert(nativeDispatchFor(name) === 'agent', `${name} → native:agent`);
   }
