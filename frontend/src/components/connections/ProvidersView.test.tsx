@@ -231,6 +231,7 @@ it('declara visión y ventana de contexto de un modelo local para el agente', as
   fireEvent.change(within(dialog).getByRole('combobox', { name: 'Modelo personalizado' }), { target: { value: 'qwen3:8b' } });
   fireEvent.click(within(dialog).getByRole('button', { name: 'Opciones avanzadas' }));
   pick('Si el modelo acepta imágenes', 2);
+  pick('Si el modelo admite razonamiento', 1);
   const context = within(dialog).getByLabelText('Ventana de contexto del modelo personalizado');
   fireEvent.change(context, { target: { value: '500' } });
   fireEvent.click(within(dialog).getByRole('button', { name: 'Añadir modelo' }));
@@ -240,7 +241,7 @@ it('declara visión y ventana de contexto de un modelo local para el agente', as
   fireEvent.change(context, { target: { value: '32.768' } });
   fireEvent.click(within(dialog).getByRole('button', { name: 'Añadir modelo' }));
   await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
-    base_url: 'http://localhost:11434/v1', model: 'qwen3:8b', vision: false, context_window: 32768,
+    base_url: 'http://localhost:11434/v1', model: 'qwen3:8b', vision: false, reasoning: true, context_window: 32768,
   })));
 });
 

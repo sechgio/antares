@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownRight, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
-import { agentApi, type AgentPermissionMode, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
+import { agentApi, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
@@ -15,6 +15,7 @@ import { SegmentedControl } from '../ui/SegmentedControl';
 import AgentAvatar from './AgentAvatar';
 import ModelPicker from './ModelPicker';
 import PermissionPicker from './PermissionPicker';
+import ReasoningPicker from './ReasoningPicker';
 import ContextUsage from './ContextUsage';
 import ArtifactCard from './ArtifactCard';
 import QuestionCard from './QuestionCard';
@@ -162,6 +163,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [model, setModel] = useState('');
   const [modelBusy, setModelBusy] = useState(false);
   const [permissionsBusy, setPermissionsBusy] = useState(false);
+  const [reasoningBusy, setReasoningBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const sendInFlightRef = useRef(false);
   const [messagesStale, setMessagesStale] = useState(false);
@@ -188,7 +190,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   }, []);
   const [deciding, setDeciding] = useState<{ id: string; approved: boolean } | null>(null);
   const decisionRef = useRef<string | null>(null);
-  const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
+  const [attachments, setAttachments] = useState<(AgentAttachment & { preview?: string })[]>([]);
+  const [dragging, setDragging] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
@@ -476,10 +479,24 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       setPermissionsBusy(false);
     }
   };
+  const changeReasoning = async (effort: AgentReasoningEffort) => {
+    if (!sessionId || reasoningBusy) return;
+    setReasoningBusy(true);
+    try {
+      const { session: updated } = await agentApi.agentSessionReasoningSet(sessionId, effort);
+      setSessions((list) => list.map((item) => item.id === updated.id ? updated : item));
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo cambiar el razonamiento'), type: 'error' });
+    } finally {
+      setReasoningBusy(false);
+    }
+  };
   const queuedForSession = queued.filter((i) => i.session === sessionId);
   const receiptsForSession = sendReceipts.filter((receipt) => receipt.intent.session === sessionId);
   const latestReceipt = receiptsForSession[receiptsForSession.length - 1];
   const visibleReceipts = receiptsForSession.filter((receipt) => receipt.phase !== 'received' || receipt === latestReceipt);
+  // Un recibo confirmado solo se anuncia: el mensaje ya aparece en la conversación.
+  const receiptsQuiet = visibleReceipts.every((receipt) => receipt.phase === 'received');
   const readyProviders = providers.filter((p) => p.configured && (!p.needs_key || p.has_key));
   const providerLabel = providers.find((p) => p.id === provider)?.label ?? provider;
   const filteredTools = useMemo(() => {
@@ -742,6 +759,29 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
 
+  // Soltar o pegar archivos: con ruta se adjuntan tal cual; sin ruta
+  // (capturas del portapapeles) se envían los bytes para guardarlos.
+  const attachFiles = async (files: File[]) => {
+    if (!sessionId || !files.length) return;
+    const withPath = files.map((file) => ({ file, path: window.electronAPI?.getPathForFile?.(file) || '' }));
+    const pasted = withPath.filter((item) => !item.path).map((item) => item.file);
+    try {
+      const data = await Promise.all(pasted.map((file) => new Promise<{ name: string; data: string }>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name || 'captura.png', data: String(reader.result).split(',')[1] ?? '' });
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      })));
+      const ordered = [...withPath.filter((item) => item.path).map((item) => item.file), ...pasted];
+      const res = await agentApi.agentAttach('files', { paths: withPath.filter((item) => item.path).map((item) => item.path), data });
+      if (res.attachments.length) draftVersionRef.current += 1;
+      setAttachments((prev) => [...prev, ...res.attachments.map((item, index) => (ordered[index]?.type.startsWith('image/')
+        ? { ...item, preview: URL.createObjectURL(ordered[index]) } : item))]);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo adjuntar'), type: 'error' });
+    }
+  };
+
   const sendSuggestion = async (text: string) => {
     if (running || pending.length > 0) return;
     await send(false, text);
@@ -761,12 +801,12 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
 
-  const decide = async (id: string, ok: boolean, remember = false) => {
+  const decide = async (id: string, ok: boolean, opts?: Parameters<typeof agentApi.agentApprove>[1]) => {
     if (decisionRef.current) return;
     decisionRef.current = id;
     setDeciding({ id, approved: ok });
     try {
-      if (ok) await agentApi.agentApprove(id, remember);
+      if (ok) await agentApi.agentApprove(id, opts);
       else await agentApi.agentDeny(id);
       await loadMessages(sessionId);
     } catch (err) {
@@ -1132,7 +1172,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             <div key={a.id} id={`agent-approval-${a.id}`}>
               <ApprovalCard approval={a} busy={!!deciding}
                 decision={deciding?.id === a.id ? deciding.approved ? 'approve' : 'deny' : undefined}
-                onDecide={(id, ok, remember) => void decide(id, ok, remember)} />
+                onDecide={(id, ok, opts) => void decide(id, ok, opts)} />
             </div>
           ))}
           {artifacts.map((artifact) => <div key={artifact.id} id={`agent-artifact-${artifact.id}`}>
@@ -1275,7 +1315,11 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               </ol>
             </section>
           )}
-          <div role="group" aria-label="Redactar mensaje" className="agent-composer rounded-2xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] transition-colors">
+          <div role="group" aria-label="Redactar mensaje"
+            className={`agent-composer rounded-2xl border bg-[var(--bg-elevated)] transition-colors ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
+            onDragOver={(event) => { if (!sessionId || !event.dataTransfer.types.includes('Files')) return; event.preventDefault(); setDragging(true); }}
+            onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
+            onDrop={(event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); void attachFiles([...event.dataTransfer.files]); }}>
             {mentionMatch && <div className="border-b border-[var(--border-subtle)] p-2">
               <p className="px-2 pb-1 text-[11px] text-[var(--text-secondary)]">Colaborar con un bot · solo lectura</p>
               <div ref={botMentionsRef} id="agent-bot-mentions" role="listbox" aria-label="Bots para mencionar" className="max-h-44 overflow-y-auto">
@@ -1297,7 +1341,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                     key={item.id}
                     className="flex max-w-[60%] items-center gap-1 rounded-full bg-[var(--bg-input)] py-0.5 pl-2 pr-1 text-[11px] text-[var(--text-secondary)]"
                   >
-                    {item.kind === 'folder' ? <FolderOpen size={11} /> : <Paperclip size={11} />}
+                    {item.preview ? <img src={item.preview} alt="" className="size-5 rounded object-cover" />
+                      : item.kind === 'folder' ? <FolderOpen size={11} /> : <Paperclip size={11} />}
                     <span className="truncate">{item.name}</span>
                     <button
                       type="button"
@@ -1318,6 +1363,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 value={draft}
                 onChange={(event) => { draftVersionRef.current += 1; setDraft(event.target.value); setMentionCursor(event.target.selectionStart); setMentionIndex(0); setMentionsHidden(false); }}
                 onSelect={(event) => setMentionCursor(event.currentTarget.selectionStart)}
+                onPaste={(event) => { if (!sessionId || !event.clipboardData.files.length) return; event.preventDefault(); void attachFiles([...event.clipboardData.files]); }}
                 aria-autocomplete="list"
                 aria-controls={mentionMatch ? 'agent-bot-mentions' : undefined}
                 aria-activedescendant={selectedMention ? `agent-mention-${selectedMention.id}` : undefined}
@@ -1366,6 +1412,15 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               >
                 <FolderOpen size={14} />
               </button>
+              {session && (
+                <PermissionPicker
+                  key={session.id}
+                  value={session.permission_mode ?? 'auto'}
+                  onChange={(mode) => void changePermissions(mode)}
+                  disabled={permissionsBusy || modelBusy || running || stopping || pending.length > 0}
+                  pending={pending.length}
+                />
+              )}
               <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1">
                 {readyProviders.length > 0 ? (
                   <ModelPicker
@@ -1380,6 +1435,15 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                     <Sparkles size={11} className="shrink-0 text-[var(--accent-primary-hover)]" />
                     {session?.model || model || providerLabel || 'Proveedor IA'}
                   </span>
+                )}
+                {!!session?.reasoning_levels?.length && (
+                  <ReasoningPicker
+                    key={session.id}
+                    levels={session.reasoning_levels}
+                    value={session.reasoning_effort ?? 'low'}
+                    onChange={(effort) => void changeReasoning(effort)}
+                    disabled={reasoningBusy || modelBusy || running || stopping || pending.length > 0}
+                  />
                 )}
                 <ContextUsage usage={usage} model={session?.model ?? model} contextWindow={contextWindow} thresholds={compactionThresholds} compacting={compacting} />
               </div>
@@ -1420,7 +1484,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             </div>
           </div>
           {visibleReceipts.length > 0 && (
-            <div role="region" aria-label="Estado de los envíos" tabIndex={0} className="custom-scrollbar max-h-36 space-y-2 overflow-y-auto px-3 pt-2">
+            <div role="region" aria-label="Estado de los envíos" tabIndex={receiptsQuiet ? undefined : 0} className={`${receiptsQuiet ? 'sr-only ' : ''}custom-scrollbar max-h-36 space-y-2 overflow-y-auto px-3 pt-2`}>
               {visibleReceipts.map((receipt) => (
                 <div key={receipt.intent.requestId} className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[12px] leading-5 text-[var(--text-secondary)]">
                   <p role="status" aria-live="polite" aria-atomic="true" className="min-w-0 flex-1">
@@ -1440,18 +1504,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               ))}
             </div>
           )}
-          <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 text-[12px] text-[var(--text-muted)]">
-            {session ? (
-              <PermissionPicker
-                key={session.id}
-                value={session.permission_mode ?? 'auto'}
-                onChange={(mode) => void changePermissions(mode)}
-                disabled={permissionsBusy || modelBusy || running || stopping || pending.length > 0}
-                pending={pending.length}
-              />
-            ) : <span />}
-            <div className="flex min-w-0 items-center gap-1">
-              {resumable && !running && pending.length === 0 && (
+          {resumable && !running && pending.length === 0 && (
+            <div className="mt-1.5 flex min-w-0 items-center justify-end gap-2 text-[12px] text-[var(--text-muted)]">
                 <button
                   type="button"
                   className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
@@ -1462,10 +1516,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   <Play size={11} aria-hidden="true" />
                   Reanudar
                 </button>
-              )}
-              <span className="hidden text-[11px] sm:inline">Mayús + Intro para una nueva línea</span>
             </div>
-          </div>
+          )}
         </div>
       </main>
 

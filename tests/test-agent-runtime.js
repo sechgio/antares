@@ -18,7 +18,7 @@ const PUBLIC_METHODS = [
   'agent_turn_status', 'agent_turn_cancel', 'agent_approve', 'agent_deny', 'agent_attach', 'agent_context_remove_file',
   'agent_profiles_list', 'agent_profile_save', 'agent_profile_delete', 'agent_session_rename', 'agent_session_model_set',
   'agent_browser',
-  'agent_session_permissions_set',
+  'agent_session_permissions_set', 'agent_session_reasoning_set',
 ];
 const INTERNAL_RPCS = [
   'agent_internal_tools', 'agent_internal_provider',
@@ -257,6 +257,78 @@ async function main() {
     await runtime.shutdown();
   }
 
+  {
+    const { bridge, state } = makeBridge();
+    const uiBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools') {
+        result.tools.push(
+          { name: 'ui_click', kind: 'backend', gated: true, inputSchema: { type: 'object', properties: {} } },
+          { name: 'ui_observe', kind: 'backend', gated: true, inputSchema: { type: 'object', properties: {} } },
+        );
+      }
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('ui_click', { window_id: 'w1a2b', element_id: 'e3' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('ui_observe', { window_id: 'w1a2b' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Acciones de equipo terminadas'),
+    ], uiBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Opera el Bloc de notas' });
+    assert(await waitFor(() => state.approvals.size === 1), 'el clic en apps pide aprobación también en Acceso completo');
+    assert(state.dispatches.length === 0, 'no inyecta entrada en la app antes de la aprobación humana');
+    const approval = [...state.approvals.values()][0];
+    await runtime.handlers.agent_approve({ approval_id: approval.id });
+    assert(await waitIdle(session.id), 'las acciones ui continúan después de la aprobación humana');
+    assert(state.dispatches.length === 2, 'la aprobación ejecuta el clic; la observación de lectura sigue sola');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    // El backend real auto-aprueba en desatendido las apps declaradas al programar;
+    // el puente falso replica ese contrato y registra la lista recibida.
+    const uiBridge = async (method, params) => {
+      if (method === 'agent_internal_approval_ensure' && Array.isArray(params.unattended_apps) && params.unattended_apps.length) {
+        state.unattendedApps = params.unattended_apps;
+        const response = await bridge(method, params);
+        const approval = state.approvals.get(response.approval.id);
+        if (approval && approval.status === 'pending') { approval.status = 'approved'; approval.decided_at = Date.now(); }
+        return { approval: { ...approval } };
+      }
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools') {
+        result.tools.push(
+          { name: 'ui_click', kind: 'backend', gated: true, inputSchema: { type: 'object', properties: {} } },
+        );
+      }
+      return result;
+    };
+    // Elementos distintos: el guardia de repetición bloquearía la 4.ª llamada
+    // idéntica antes de alcanzar el techo desatendido.
+    const clicks = Array.from({ length: 27 }, (_, i) =>
+      fauxAssistantMessage([fauxToolCall('ui_click', { window_id: 'w1a2b', element_id: `e${i}` })], { stopReason: 'toolUse' }));
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('task_schedule', {
+        action: 'create', content: 'Saca el informe del ERP', due_at: new Date(Date.now() + 1500).toISOString(),
+        apps: ['notepad'],
+      })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Encargo programado'),
+      ...clicks,
+      fauxAssistantMessage('Encargo desatendido terminado'),
+    ], uiBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Programa el encargo' });
+    assert(await waitFor(() => state.dispatches.length >= 25, 20000), 'el encargo desatendido auto-aprueba las apps declaradas');
+    assert(JSON.stringify(state.unattendedApps) === JSON.stringify(['notepad']), 'la lista blanca declarada llega a la aprobación');
+    assert([...state.approvals.values()].every((a) => a.status === 'approved'), 'las aprobaciones desatendidas quedan aprobadas con auditoría');
+    assert(state.dispatches.length === 25, 'el techo bloquea la acción 26 del encargo desatendido');
+    assert(await waitIdle(session.id), 'el encargo desatendido termina tras el techo');
+    await runtime.shutdown();
+  }
+
   for (const legacy of [false, true]) {
     const { bridge } = makeBridge();
     let seen = '';
@@ -395,6 +467,45 @@ async function main() {
     const map = await runtime._internal.state().harness.snapshot(runtime._internal.state().SessionsDoc, context);
     const conv = await runtime._internal.state().harness.conversation(map.sessions[session.id].conversationId, context);
     assert((await conv.agent(context)).model.modelId === 'otro-modelo', 'la configuración durable del runtime conserva el modelo');
+    await runtime.shutdown();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
+    const { fauxProvider } = await import('@earendil-works/pi-ai');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-reasoning-'));
+    const dbPath = path.join(dir, 'agent.sqlite');
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    runtime._internal._providerOverrides.set('faux', fauxProvider().provider);
+    const thinking = fauxProvider({ provider: 'razona', models: [{ id: 'razonador', reasoning: true }] });
+    runtime._internal._providerOverrides.set('razona', thinking.provider);
+    const context = runtime._internal.shared.deps.chord.BACKGROUND_CONTEXT;
+    const thinkingLevel = async (id) => {
+      const map = await runtime._internal.state().harness.snapshot(runtime._internal.state().SessionsDoc, context);
+      const conv = await runtime._internal.state().harness.conversation(map.sessions[id].conversationId, context);
+      return (await conv.agent(context)).thinkingLevel;
+    };
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    assert(Array.isArray(session.reasoning_levels) && session.reasoning_levels.length === 0, 'un modelo sin razonamiento no ofrece el control');
+    const changed = await runtime.handlers.agent_session_reasoning_set({ id: session.id, reasoning_effort: 'high' });
+    assert(changed.session.reasoning_effort === 'high' && !changed.session.conversationId, 'devuelve el nivel guardado sin datos privados');
+    assert(await thinkingLevel(session.id) === 'off', 'un modelo sin razonamiento sigue sin razonar');
+    const switched = await runtime.handlers.agent_session_model_set({ id: session.id, provider: 'razona', model: 'razonador' });
+    assert(switched.session.reasoning_levels.includes('high'), 'un modelo con razonamiento ofrece sus niveles');
+    assert(await thinkingLevel(session.id) === 'high', 'el nivel elegido se aplica al cambiar a un modelo que razona');
+    await runtime.handlers.agent_session_reasoning_set({ id: session.id, reasoning_effort: 'minimal' });
+    assert(await thinkingLevel(session.id) === 'minimal', 'el nivel se aplica al modelo actual');
+    for (const effort of ['off', 'max', '', null, undefined]) {
+      let rejected;
+      try { await runtime.handlers.agent_session_reasoning_set({ id: session.id, reasoning_effort: effort }); } catch (err) { rejected = err; }
+      assert(rejected, `rechaza un nivel inválido: ${effort}`);
+    }
+    await runtime.shutdown();
+    await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const restored = (await runtime.handlers.agent_sessions_list()).sessions.find((item) => item.id === session.id);
+    assert(restored.reasoning_effort === 'minimal' && restored.reasoning_levels.includes('minimal'), 'el nivel sobrevive al reinicio de SQLite');
     await runtime.shutdown();
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -726,11 +837,28 @@ async function main() {
   }
 
   {
-    const { thinkingLevelFor } = require('../electron/agent-execution');
-    assert(thinkingLevelFor('anthropic_messages', 'claude-sonnet-4-5') === 'low' && thinkingLevelFor('anthropic_messages', 'claude-3-5-haiku') === 'off',
+    const { supportsReasoning, thinkingLevelFor, modelDefinition } = require('../electron/agent-execution');
+    assert(supportsReasoning('anthropic_messages', 'claude-sonnet-4-5') && !supportsReasoning('anthropic_messages', 'claude-3-5-haiku'),
       'Anthropic pide razonamiento solo a modelos que lo admiten');
-    assert(thinkingLevelFor('openai_chat', 'deepseek-r1:8b') === 'low' && thinkingLevelFor('openai_chat', 'gpt-4o') === 'off' && thinkingLevelFor('openai_chat', 'llama3.1') === 'off',
+    assert(supportsReasoning('openai_chat', 'deepseek-r1:8b') && !supportsReasoning('openai_chat', 'gpt-4o') && !supportsReasoning('openai_chat', 'llama3.1'),
       'los modelos compatibles genéricos no reciben parámetros de razonamiento');
+    assert(thinkingLevelFor([], 'high') === 'off' && thinkingLevelFor(['minimal', 'low', 'medium', 'high']) === 'low'
+      && thinkingLevelFor(['minimal', 'low', 'medium', 'high'], 'xhigh') === 'high' && thinkingLevelFor(['low', 'medium'], 'minimal') === 'low',
+      'el nivel elegido se ajusta al más cercano que admite el modelo');
+    const { OPENAI_MODELS } = await import('@earendil-works/pi-ai/providers/openai.models');
+    const { ANTHROPIC_MODELS } = await import('@earendil-works/pi-ai/providers/anthropic.models');
+    const openaiInfo = { provider: 'openai', style: 'openai_chat', base_url: 'https://api.openai.com/v1' };
+    const gpt5 = modelDefinition(openaiInfo, 'gpt-5', 'openai-completions', undefined, OPENAI_MODELS['gpt-5']);
+    assert(gpt5.reasoning === true && gpt5.thinkingLevelMap && gpt5.thinkingLevelMap.xhigh === null,
+      'el catálogo de pi-ai marca el razonamiento y los niveles de los modelos conocidos');
+    const fable = ANTHROPIC_MODELS['claude-fable-5'];
+    const anthropicInfo = { provider: 'anthropic', style: 'anthropic_messages', base_url: 'https://api.anthropic.com' };
+    assert(modelDefinition(anthropicInfo, fable.id, 'anthropic-messages', fable, fable).compat.forceAdaptiveThinking === true,
+      'los Claude con pensamiento adaptativo lo reciben del catálogo');
+    const custom = (reasoning) => ({ provider: 'custom-glm', style: 'openai_chat', base_url: 'http://127.0.0.1:8000/v1', custom: true, capabilities: { reasoning } });
+    assert(modelDefinition(custom(true), 'zai-org/GLM-5.3-Flash', 'openai-completions').reasoning === true
+      && modelDefinition(custom(false), 'deepseek-r1', 'openai-completions').reasoning === false,
+      'la capacidad declarada en el proveedor personalizado prevalece sobre el nombre');
   }
 
   {
@@ -1005,6 +1133,41 @@ async function main() {
     assert(reused && /ya no está disponible/.test(reused.message), 'un adjunto se usa una sola vez');
     runtime._internal.shared.dialog = null;
     await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-drop-'));
+    const previousAppData = process.env.LOCALAPPDATA;
+    process.env.LOCALAPPDATA = appData;
+    const dropped = path.join(appData, 'foto.png');
+    fs.writeFileSync(dropped, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const grantAll = async (method, params) => (method === 'agent_internal_grants_add'
+      ? (state.grants.push(params), { granted: params.paths, rejected: [] }) : bridge(method, params));
+    const seen = [];
+    await openFaux([(context) => { seen.push(context.messages); return fauxAssistantMessage('ok'); }], grantAll);
+    runtime._internal.shared.dialog = { showOpenDialog: async () => { throw new Error('soltar no abre diálogo'); } };
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    let invalid = null;
+    try { await runtime.handlers.agent_attach({ kind: 'files', paths: ['relativo.png'] }); } catch (err) { invalid = err; }
+    assert(invalid && /no válida/.test(invalid.message), 'una ruta soltada debe ser absoluta');
+    const res = await runtime.handlers.agent_attach({ kind: 'files', paths: [dropped],
+      data: [{ name: 'captura.png', data: Buffer.from('png').toString('base64') }] });
+    assert(res.attachments.map((a) => a.name)[0] === 'foto.png' && res.attachments[1].name.endsWith('-captura.png'),
+      'soltar y pegar adjuntan sin diálogo');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'mira esto', attachments: res.attachments.map((a) => a.id) });
+    const pasted = state.grants.at(-1).paths[1];
+    assert(pasted.startsWith(path.join(appData, 'Antares', 'ai-agent', 'attachments')) && fs.readFileSync(pasted, 'utf8') === 'png',
+      'lo pegado se guarda en la carpeta de adjuntos del agente');
+    assert(await waitIdle(session.id), 'el turno con imágenes termina');
+    const images = seen[0].find((m) => m.role === 'user').content.filter((block) => block.type === 'image');
+    assert(images.length === 2 && images.every((block) => block.mimeType === 'image/png'), 'un modelo con visión recibe las imágenes');
+    const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(messages[0].content === 'mira esto', 'el transcript solo muestra el texto');
+    runtime._internal.shared.dialog = null;
+    await runtime.shutdown();
+    process.env.LOCALAPPDATA = previousAppData;
+    fs.rmSync(appData, { recursive: true, force: true });
   }
 
   {
@@ -1533,6 +1696,10 @@ async function main() {
     assert(answer.content === 'Listo' && answer.reasoning === 'Pienso la respuesta' && !answer.partial, 'la respuesta final conserva el razonamiento');
     assert(typeof answer.reasoning_ms === 'number' && answer.reasoning_ms >= 150, 'el razonamiento lleva el tiempo que tardó el modelo');
     assert(hits[0].reasoning_effort === 'low', 'los modelos de razonamiento conocidos piden esfuerzo bajo');
+    await runtime.handlers.agent_session_reasoning_set({ id: session.id, reasoning_effort: 'high' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'piensa más' });
+    assert(await waitIdle(session.id), 'el turno con más razonamiento termina');
+    assert(hits[1].reasoning_effort === 'high', 'el nivel elegido viaja en la petición al proveedor');
     server.close();
     await runtime.shutdown();
   }

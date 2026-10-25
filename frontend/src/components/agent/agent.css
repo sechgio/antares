@@ -16,7 +16,7 @@
 .agent-workspace .agent-queue-item + .agent-queue-item { border-top: 1px solid var(--border-subtle); }
 .agent-workspace .agent-composer-toolbar > button { min-width: 32px; min-height: 32px; }
 @container (max-width: 560px) {
-  .agent-workspace .agent-turn-actions span { display: none; }
+  .agent-workspace :is(.agent-turn-actions span, .agent-permission-label) { display: none; }
 }
 @media (max-height: 640px) {
   .agent-workspace .agent-queue ol { max-height: 96px; }

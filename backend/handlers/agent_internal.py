@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from backend.core.agent import (
     artifacts,
     canvas_edit,
     computer_files,
+    computer_jobs,
     documents,
     drafts,
     resource_grants,
@@ -21,6 +23,7 @@ from backend.core.agent import memory as _memory_store
 from backend.core.agent import modules as _agent_modules
 from backend.core.agent import subagent as _subagent
 from backend.core.agent.cancel import RunCancelled, _CancelEvent
+from backend.core.computer_use import driver as _computer_driver
 from backend.core.exceptions import NotFoundError, ValidationError
 from backend.core.integrations import ai_providers as _ai_providers
 from backend.core.integrations import mcp_servers as _mcp_servers
@@ -193,6 +196,8 @@ def _intent(session_id: str, method: str, params: JsonObject, context: JsonObjec
         tool = agent_tools.SPECS.get(method) or {"inputSchema": input_schema_for(method)}
         current_context = dict(context or {})
         current_context.update(artifact_context)
+        if method.startswith("ui_"):
+            current_context["computer"] = _computer_driver.approval_context(params)
         mcp = _mcp_servers.parse_agent_tool(method)
         if mcp is not None:
             current_context = _mcp_servers.approval_context(mcp[0], method)
@@ -231,6 +236,34 @@ def _grants_add(params: JsonObject) -> JsonObject:
     if records:
         _store().add_grants(session_id, records)
     return {"granted": granted, "rejected": rejected}
+
+
+@with_locale
+@validate_params("session_id", "path")
+def _path_status(params: JsonObject) -> JsonObject:
+    store = _store()
+    session_id = str(params["session_id"])
+    try:
+        return computer_files.stat_path(params["path"], store.grants_for(session_id), store.drafts_dir(session_id))
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("session_id", "job_id")
+def _shell_job_status(params: JsonObject) -> JsonObject:
+    store = _store()
+    session_id = str(params["session_id"])
+    try:
+        return computer_jobs.status({"job_id": params["job_id"]}, store.drafts_dir(session_id), session_id)
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("session_id")
+def _shell_jobs_cancel_session(params: JsonObject) -> JsonObject:
+    return {"cancelled": computer_jobs.cancel_session(str(params["session_id"]))}
 
 
 @with_locale
@@ -289,6 +322,19 @@ def _approval_ensure(params: JsonObject) -> JsonObject:
     )
     if approval.get("method") != method or approval.get("fingerprint") != intent:
         raise ValidationError("Esta llamada ya tiene una aprobación con otros parámetros o archivos")
+    unattended_apps = params.get("unattended_apps")
+    if method.startswith("ui_") and approval.get("status") == "pending":
+        app = str(((approval.get("context") or {}).get("computer") or {}).get("app") or "")
+        if isinstance(unattended_apps, list) and unattended_apps:
+            # Desatendido: las concesiones de la conversación no aplican; solo
+            # las apps declaradas al programar, normalizadas por alias.
+            allowed = {os.path.normcase(_computer_driver.normalize_app(str(raw))) for raw in unattended_apps}
+            if app and os.path.normcase(_computer_driver.normalize_app(app)) in allowed:
+                approval = store.decide_approval(str(approval["id"]), True) or approval
+            else:
+                raise ValidationError("Esta aplicación no está en la lista blanca del encargo programado")
+        elif app and f"app:{os.path.normcase(app)}" in store.grants_for(session_id):
+            approval = store.decide_approval(str(approval["id"]), True) or approval
     return {"approval": approval}
 
 
@@ -305,6 +351,13 @@ def _approval_decide(params: JsonObject) -> JsonObject:
     approval = _store().decide_approval(approval_id, bool(params["approve"]))
     if approval is None:
         raise _approval_error(_store().get_approval(approval_id))
+    if params.get("grant_app") is True and approval.get("status") == "approved" \
+            and str(approval.get("method") or "").startswith("ui_"):
+        app = str(((approval.get("context") or {}).get("computer") or {}).get("app") or "")
+        if app:
+            _store().add_grants(str(approval["session_id"]), [
+                {"kind": "computer_app", "app": app, "key": f"app:{os.path.normcase(app)}"},
+            ])
     return {"approval": approval}
 
 
@@ -646,6 +699,9 @@ HANDLERS = {
     "agent_internal_grants_add": _grants_add,
     "agent_internal_grants_list": _grants_list,
     "agent_internal_grants_revoke": _grants_revoke,
+    "agent_internal_path_status": _path_status,
+    "agent_internal_shell_job_status": _shell_job_status,
+    "agent_internal_shell_jobs_cancel_session": _shell_jobs_cancel_session,
     "agent_internal_mentions": _mentions,
     "agent_internal_document_plan": _document_plan,
     "agent_canvas_fill": canvas_edit.fill_fields,

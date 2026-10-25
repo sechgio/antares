@@ -106,7 +106,7 @@ def _ai_provider_delete(params: JsonObject) -> JsonObject:
 @with_locale
 @validate_params("label", "api", "base_url", "model")
 def _ai_provider_custom_save(params: JsonObject) -> JsonObject:
-    fields = ("id", "label", "api", "base_url", "model", "api_key", "remove_key", "vision", "context_window")
+    fields = ("id", "label", "api", "base_url", "model", "api_key", "remove_key", "vision", "reasoning", "context_window")
     try:
         return _ai_providers.upsert_custom({k: params[k] for k in fields if k in params})
     except ValueError as exc:

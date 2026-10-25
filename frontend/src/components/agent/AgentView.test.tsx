@@ -61,6 +61,16 @@ afterEach(() => {
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
 });
 
+it.each([
+  { options: { remember: true }, payload: { approval_id: 'a1', remember: true } },
+  { options: { grantApp: true }, payload: { approval_id: 'a1', grant_app: true } },
+  { options: {}, payload: { approval_id: 'a1' } },
+])('conserva separados los permisos de dominio y aplicación: $options', async ({ options, payload }) => {
+  const invoke = vi.spyOn(window.electronAPI, 'invoke').mockResolvedValue({});
+  await agentApi.agentApprove('a1', options);
+  expect(invoke).toHaveBeenCalledWith('agent_approve', payload);
+});
+
 it('sugiere bots con @ y permite elegir con teclado sin enviar el mensaje', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
@@ -318,6 +328,29 @@ it('permite ocultar la barra sin conversación activa y Ctrl+K la recupera para 
   fireEvent.click(hide);
   fireEvent.keyDown(screen.getByRole('main'), { key: 'k', ctrlKey: true });
   expect(within(sidebar).getByRole('textbox', { name: 'Buscar conversaciones' })).toHaveFocus();
+});
+
+it('regula el razonamiento con los niveles del modelo y lo guarda al soltar', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const reasoning_levels = ['low', 'medium', 'high'] as const;
+  const plain = { ...session, id: 's2', title: 'Segunda', reasoning_levels: [] };
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [{ ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'xhigh' }, plain] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const save = vi.spyOn(agentApi, 'agentSessionReasoningSet')
+    .mockResolvedValueOnce({ session: { ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'medium' } });
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Alto' }));
+  const slider = within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByRole('slider', { name: 'Nivel de razonamiento' });
+  expect(slider).toHaveAttribute('max', '2');
+  fireEvent.change(slider, { target: { value: '1' } });
+  expect(slider).toHaveAttribute('aria-valuetext', 'Medio');
+  expect(save).not.toHaveBeenCalled();
+  await act(async () => { fireEvent.keyUp(slider, { key: 'ArrowLeft' }); });
+  expect(save).toHaveBeenCalledWith(session.id, 'medium');
+  expect(screen.getByRole('button', { name: 'Razonamiento: Medio' })).toBeEnabled();
+  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
+  expect(screen.queryByRole('button', { name: /^Razonamiento:/ })).not.toBeInTheDocument();
 });
 
 it('cambia los permisos por conversación y conserva el modo si falla el guardado', async () => {
@@ -596,6 +629,36 @@ it('adjunta archivos y carpetas y los envía por id con el mensaje', async () =>
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Genera el informe', expect.any(String), ['a1', 'a2']);
   expect(screen.queryByText('clientes.xlsx')).not.toBeInTheDocument();
+});
+
+it('adjunta archivos soltados por ruta y capturas pegadas por contenido', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const attach = vi.spyOn(agentApi, 'agentAttach')
+    .mockResolvedValueOnce({ attachments: [{ id: 'a1', name: 'informe.pdf', kind: 'files' }] })
+    .mockResolvedValueOnce({ attachments: [{ id: 'a2', name: 'x-captura.png', kind: 'files' }] });
+  const previousApi = window.electronAPI;
+  window.electronAPI = { ...window.electronAPI!, getPathForFile: (file: File) => (file.name === 'informe.pdf' ? 'C:\\docs\\informe.pdf' : '') };
+  const createObjectURL = vi.fn(() => 'blob:captura');
+  vi.stubGlobal('URL', Object.assign(URL, { createObjectURL }));
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  const pdf = new File(['%PDF'], 'informe.pdf', { type: 'application/pdf' });
+  await act(async () => { fireEvent.drop(screen.getByRole('group', { name: 'Redactar mensaje' }), { dataTransfer: { files: [pdf], types: ['Files'] } }); });
+  const shot = new File(['png'], 'captura.png', { type: 'image/png' });
+  await act(async () => { fireEvent.paste(screen.getByLabelText('Mensaje para el agente'), { clipboardData: { files: [shot] } }); });
+  await waitFor(() => expect(screen.getByText('x-captura.png')).toBeInTheDocument());
+  expect(attach.mock.calls).toEqual([
+    ['files', { paths: ['C:\\docs\\informe.pdf'], data: [] }],
+    ['files', { paths: [], data: [{ name: 'captura.png', data: btoa('png') }] }],
+  ]);
+  expect(screen.getByText('informe.pdf')).toBeInTheDocument();
+  expect(createObjectURL).toHaveBeenCalledWith(shot);
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Revisa' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Revisa', expect.any(String), ['a1', 'a2']);
+  window.electronAPI = previousApi;
+  vi.unstubAllGlobals();
 });
 
 it('avisa de las rutas escritas que no se autorizaron', async () => {
@@ -1335,7 +1398,18 @@ it('confirma la recepción solo tras la admisión y conserva ese recibo si falla
   list.mockRejectedValue(new Error('No se pudo leer el historial'));
   await act(async () => { admitted.resolve({ accepted: true }); });
   expect(receipts.getByText('Mensaje recibido.')).toBeVisible();
+  expect(screen.getByRole('region', { name: 'Estado de los envíos' })).toHaveClass('sr-only');
   expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText(/El estado mostrado puede estar desactualizado/)).toBeVisible();
+});
+
+it('el composer muestra los permisos en su barra y sin pista de teclado', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  render(<AgentView />);
+  await act(async () => {});
+  const composer = within(screen.getByRole('group', { name: 'Redactar mensaje' }));
+  expect(composer.getByRole('button', { name: 'Permisos: Aprobar por mí' })).toBeVisible();
+  expect(screen.queryByText('Mayús + Intro para una nueva línea')).not.toBeInTheDocument();
 });
 
 it('un mensaje sin aceptación conserva su borrador y ofrece recuperar la misma petición', async () => {

@@ -127,3 +127,25 @@ it('agrupa los modelos personalizados y los elige sin consultar su servicio', as
   fireEvent.click(option);
   expect(change).toHaveBeenCalledWith({ provider: custom.id, model: 'mi-modelo' });
 });
+
+it('busca bajo demanda los modelos activos de un modelo personalizado y elige uno', async () => {
+  const custom: AiProviderSpec = {
+    ...providers[1], id: 'custom-inferencia-1a2b3c', label: 'Inferencia', default_model: 'zai-org/GLM-5.3-Flash', custom: true, api: 'openai',
+  };
+  const list = vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockImplementation(async (id: string) => (
+    id === custom.id
+      ? { provider: { ...custom, reachable: true, models_count: 2, models: ['zai-org/GLM-5.3-Flash', 'deepseek-ai/DeepSeek-V4'], error: null } }
+      : status(id, [])
+  ));
+  const change = vi.fn();
+  render(<ModelPicker providers={[...providers, custom]} value={{ provider: custom.id, model: custom.default_model }} onChange={change} />);
+  fireEvent.click(screen.getByLabelText('Elegir proveedor y modelo'));
+  const group = within(screen.getByRole('dialog', { name: 'Modelos disponibles' })).getByRole('group', { name: 'Personalizados' });
+  expect(list).not.toHaveBeenCalledWith(custom.id);
+  fireEvent.click(within(group).getByRole('button', { name: 'Buscar modelos activos de Inferencia' }));
+  const fetched = await within(group).findByRole('option', { name: /DeepSeek-V4/ });
+  expect(list).toHaveBeenCalledWith(custom.id);
+  expect(within(group).getAllByRole('option')).toHaveLength(2);
+  fireEvent.click(fetched);
+  expect(change).toHaveBeenCalledWith({ provider: custom.id, model: 'deepseek-ai/DeepSeek-V4' });
+});

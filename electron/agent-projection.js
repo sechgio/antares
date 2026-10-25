@@ -114,6 +114,7 @@ function applyEvent(convId, event) {
       delete live.run;
       delete live.generation;
       live.tools = [];
+      for (const id of event.inputs || []) shared.unattendedApps.delete(id);
       break;
     case 'message_start':
       if (event.message && event.message.role === 'assistant') {
