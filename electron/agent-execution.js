@@ -17,6 +17,7 @@ const {
   ctx,
 } = require('./agent-shared');
 const { compactMessages, requestBudget } = require('./agent-compaction');
+const { resolvePortableProfile, mergeProfileSkills, readProfileSkill } = require('./agent-profiles');
 
 const { appendTurn } = require('./turn-log');
 
@@ -413,6 +414,7 @@ async function refreshTools() {
       pi.hook(pi.ToolTask, { beforeTool }),
       pi.hook(pi.GenerationTask, {
         beforeRequest: async ({ messages }, api, context) => {
+          resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
           if (await toolBudget(api, context) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
           await noteTurnStart(api, messages || []);
           const compacted = await compactRequest(messages, api, context);
@@ -801,6 +803,10 @@ async function executeTool(spec, args, api, context) {
 }
 
 async function dispatchTool(spec, args, sessionId, api, context) {
+  const portableProfile = resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
+  if (portableProfile && spec.name === 'skills_read' && typeof args?.skill_id === 'string' && args.skill_id.startsWith('profile:')) {
+    return { text: JSON.stringify(readProfileSkill(portableProfile, args)) };
+  }
   if (spec.kind === 'meta') {
     if (spec.name === 'agent_delegate') {
       const profile = await resolveProfile(args?.agent);
@@ -848,7 +854,7 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     const text = spec.kind === 'native'
       ? await dispatchNative(spec, request, context)
       : await dispatchAndWait(request, context, api);
-    return { text };
+    return { text: portableProfile && spec.name === 'skills_list' ? mergeProfileSkills(portableProfile, args, text) : text };
   } finally {
     if (spec.name === 'ask_user') shared.waitingInput.delete(sessionId);
   }
