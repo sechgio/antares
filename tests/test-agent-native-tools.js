@@ -29,12 +29,12 @@ assert(JSON.stringify(exportsSpecs.slice(0, 3).map((s) => s.module)) === JSON.st
   'cada exportación pertenece a su módulo');
 
 const web = specs.filter((s) => s.name.startsWith('web_'));
-assert(web.length === 15 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
+assert(web.length === 16 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
 assert(web.filter((s) => s.gated).map((s) => s.name).sort().join() === 'web_click,web_download,web_key,web_type,web_upload',
   'leer y navegar es automático; clic, escribir, teclas, descargar y subir requieren aprobación');
 assert(web.filter((s) => !s.gated).map((s) => s.name).sort().join()
-  === 'web_back,web_console,web_forward,web_handover,web_network,web_open,web_read,web_reload,web_screenshot,web_text',
-  'texto, consola, red, captura y navegación se usan sin aprobación');
+  === 'web_back,web_console,web_forward,web_handover,web_network,web_open,web_read,web_reload,web_screenshot,web_tab,web_text',
+  'texto, consola, red, captura, pestañas y navegación se usan sin aprobación');
 const browser = require('../electron/agent-browser');
 assert(browser.normalizeUrl('example.com/a') === 'https://example.com/a', 'un dominio sin esquema se abre por https');
 assert(browser.normalizeUrl('http://localhost:5173') === 'http://localhost:5173', 'una URL http se conserva');
@@ -488,6 +488,102 @@ async function exportTest() {
       assert(await attempt() === 'No hay una página anterior', 'pasados unos segundos sin actividad del usuario, el agente retoma la página');
     } finally { Date.now = now; }
     browser.close();
+  }
+  {
+    const { EventEmitter: Emitter } = require('node:events');
+    const { mkdtempSync, rmSync } = require('node:fs');
+    const { tmpdir } = require('node:os');
+    const { join } = require('node:path');
+    const moves = [];
+    const pages = [];
+    let hostDestroyed = 0;
+    let pageSeq = 0;
+    const makeParent = (name) => ({
+      isDestroyed: () => false,
+      contentView: {
+        addChildView: (child) => moves.push([name, 'add', child]),
+        removeChildView: (child) => moves.push([name, 'remove', child]),
+      },
+    });
+    const main = { ...makeParent('main'), getContentSize: () => [1000, 700], webContents: { getZoomFactor: () => 1, send: () => {} } };
+    const host = { ...makeParent('host'), on: () => {}, showInactive: () => {}, setIgnoreMouseEvents: () => {},
+      destroy: () => { hostDestroyed += 1; } };
+    stubModule('electron/window-manager.js', { getMainWindow: () => main });
+    stubModule('electron', {
+      BrowserWindow: function () { return host; },
+      WebContentsView: function () {
+        const url = `https://tab-${pageSeq += 1}.example.com`;
+        const contents = Object.assign(new Emitter(), {
+          isDestroyed: () => false, getURL: () => url, getTitle: () => `Título ${url}`, isLoading: () => false,
+          getZoomFactor: () => 1, setZoomFactor: () => {}, setWindowOpenHandler: () => {}, loadURL: async () => {},
+          navigationHistory: { canGoBack: () => false, canGoForward: () => false }, close: () => contents.emit('destroyed'),
+          executeJavaScript: async () => ({ url, title: `Título ${url}`, text: `Texto de ${url}`, elements: [] }),
+          executeJavaScriptInIsolatedWorld: async () => ({ url, time_origin: 1 }),
+          debugger: Object.assign(new Emitter(), { isAttached: () => false, attach: () => {}, sendCommand: async () => ({}) }),
+        });
+        const page = { webContents: contents, setBounds: () => {}, getBounds: () => ({ width: 1280 }) };
+        pages.push(page);
+        return page;
+      },
+      session: { fromPartition: () => ({ setPermissionRequestHandler: () => {}, setPermissionCheckHandler: () => {}, on: () => {},
+        getUserAgent: () => 'Mozilla/5.0 Chrome/1 Electron/1', setUserAgent: () => {} }) },
+    });
+    const realNow = Date.now;
+    Date.now = () => realNow() + 60_000;
+    const timers = installInertTimers();
+    try {
+      browser.dock({ x: 0, y: 0, width: 400, height: 500 });
+      await browser.navigate('open', 'https://tab-1.example.com');
+      const first = (await browser.run('web_tab', { action: 'list' })).tabs[0].id;
+      moves.length = 0;
+      const opened = await browser.run('web_tab', { action: 'open', url: 'https://tab-2.example.com' });
+      const second = opened.tab;
+      assert(second && second !== first && opened.text === 'Texto de https://tab-2.example.com',
+        'web_tab abre una pestaña nueva y devuelve su página');
+      let st = browser.state();
+      assert(st.tabs.length === 2 && st.tabs[0].id === first && st.tabs[0].active === false
+        && st.tabs[1].id === second && st.tabs[1].active === true, 'la pestaña nueva queda activa y listada con la original');
+      assert(moves[0]?.[0] === 'main' && moves[0]?.[2] === pages[0] && moves[1]?.[0] === 'host' && moves[1]?.[2] === pages[0]
+        && moves[3]?.[0] === 'main' && moves[3]?.[2] === pages[1],
+      'la pestaña de fondo queda en la anfitriona y la activa se añade la última, encima en el panel');
+      moves.length = 0;
+      const selected = await browser.run('web_tab', { action: 'select', id: first });
+      assert(selected.selected === first && selected.tabs[0].active === true && selected.tabs[1].active === false,
+        'web_tab selecciona otra pestaña');
+      assert(moves[1]?.[0] === 'host' && moves[1]?.[2] === pages[1] && moves[3]?.[0] === 'main' && moves[3]?.[2] === pages[0],
+        'al seleccionar, la pestaña activa vuelve al panel y la anterior pasa al anfitrión');
+      moves.length = 0;
+      const again = await browser.run('web_tab', { action: 'select', id: first });
+      assert(again.selected === first && moves.length === 0, 'seleccionar la pestaña ya activa no remonta nada');
+      await browser.run('web_open', { url: 'https://tab-1b.example.com' });
+      assert(browser.state().tabs.length === 2, 'web_open navega en la pestaña activa sin crear otra');
+      const closed = await browser.run('web_tab', { action: 'close', id: second });
+      assert(closed.closed === second && closed.open === true && closed.tabs.length === 1 && closed.tabs[0].id === first,
+        'cerrar una pestaña de fondo conserva el navegador y la activa');
+      const last = await browser.run('web_tab', { action: 'close', id: first });
+      assert(last.closed === first && last.open === false && last.tabs.length === 0 && last.docked === false,
+        'cerrar la última pestaña cierra el navegador y desacopla el panel');
+      assert(hostDestroyed === 1, 'cerrar la última pestaña destruye también la ventana anfitriona');
+      let missingTab = null;
+      try { await browser.run('web_tab', { action: 'close', id: '9' }); } catch (error) { missingTab = error.message; }
+      assert(missingTab === 'No existe esa pestaña; usa web_tab con «list» para verlas',
+        'seleccionar o cerrar una pestaña inexistente avisa con la salida');
+      let badAction = null;
+      try { await browser.run('web_tab', { action: 'zoom' }); } catch (error) { badAction = error.message; }
+      assert(badAction === 'Acción de pestaña no válida: zoom', 'web_tab rechaza acciones desconocidas');
+      const empty = await browser.run('web_tab', { action: 'list' });
+      assert(JSON.stringify(empty.tabs) === '[]' && empty.active === null, 'listar sin navegador devuelve una lista vacía');
+      const reopened = await browser.run('web_tab', { action: 'open', url: 'https://tab-3.example.com' });
+      assert(reopened.tab && browser.state().open === true, 'abrir una pestaña recrea el navegador sin página previa');
+      const policyRoot = mkdtempSync(join(tmpdir(), 'antares-agent-tabs-'));
+      const realLocalAppData = process.env.LOCALAPPDATA;
+      process.env.LOCALAPPDATA = policyRoot;
+      let blockedTab = null;
+      try { await browser.run('web_tab', { action: 'open', url: 'bcp.pe/panel' }); } catch (error) { blockedTab = error.message; }
+      assert(blockedTab && blockedTab.includes('Dominio bloqueado'), 'web_tab open respeta la política de dominios');
+      process.env.LOCALAPPDATA = realLocalAppData;
+      rmSync(policyRoot, { recursive: true, force: true });
+    } finally { Date.now = realNow; timers.restore(); browser.close(); }
   }
   const { validateToolArguments } = await import('@earendil-works/pi-ai');
   const taskSpec = specs.find((s) => s.name === 'espacios_tarea_update');

@@ -29,6 +29,15 @@ const TOOLS = {
   web_open: ['Abrir una página web en el navegador del agente', {
     type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s) o búsqueda' } }, required: ['url'],
   }, false],
+  web_tab: ['Gestionar las pestañas del navegador del agente', {
+    type: 'object',
+    properties: {
+      action: { type: 'string', enum: ['list', 'open', 'select', 'close'], description: 'Listar, abrir, seleccionar o cerrar una pestaña' },
+      url: { type: 'string', description: 'Dirección http(s) o búsqueda, para «open»' },
+      id: { type: 'string', description: 'Identificador de la pestaña, para «select» y «close»' },
+    },
+    required: ['action'],
+  }, false],
   web_read: ['Leer el texto y los elementos interactivos de la página actual', {
     type: 'object', properties: { offset: { type: 'integer', minimum: 0, description: 'Carácter inicial del texto' } },
   }, false],
@@ -199,6 +208,15 @@ function hostWindow(electron) {
   return host;
 }
 
+function tabState(tab) {
+  const contents = tab.view.webContents;
+  return { id: tab.id, url: contents.getURL(), title: contents.getTitle(), active: tab.id === activeTabId };
+}
+
+function tabsState() {
+  return [...tabs.values()].filter((tab) => alive(tab.view && tab.view.webContents)).map(tabState);
+}
+
 function state() {
   const tab = activeTab();
   const contents = tab ? tab.view.webContents : null;
@@ -211,6 +229,7 @@ function state() {
     can_go_forward: contents ? contents.navigationHistory.canGoForward() : false,
     docked: !!docked,
     user_control: userControl,
+    tabs: tabsState(),
   };
 }
 
@@ -319,22 +338,30 @@ function clampBounds(bounds, zoom, size) {
   return { x, y, width, height };
 }
 
-// Coloca la página en el panel de la ventana principal o la devuelve a la
-// ventana anfitriona; mover el view conserva la página, su historial y su sesión.
+// Coloca cada página en su sitio: la activa se monta en el panel de la ventana
+// principal cuando está acoplado y las de fondo permanecen en la ventana
+// anfitriona, donde siguen cargando fuera de pantalla; mover un view conserva
+// su página, su historial y su sesión. La activa se añade la última para que
+// quede encima.
 function mount(electron) {
   const active = activeTab();
   if (!active) return;
-  const view = active.view;
   const main = require('./window-manager').getMainWindow();
-  const target = docked && alive(main) ? main : hostWindow(electron);
-  const parent = target === main ? host : main;
-  if (alive(parent)) parent.contentView.removeChildView(view);
-  target.contentView.addChildView(view);
-  if (target === main) {
-    const [width, height] = main.getContentSize();
-    view.setBounds(clampBounds(docked, main.webContents.getZoomFactor(), { width, height }));
-  } else {
-    view.setBounds({ x: 0, y: 0, ...HOST_SIZE });
+  const dockedMain = !!docked && alive(main);
+  const ordered = [...tabs.values()].filter((tab) => alive(tab.view && tab.view.webContents))
+    .sort((a, b) => (a === active ? 1 : b === active ? -1 : 0));
+  for (const tab of ordered) {
+    const view = tab.view;
+    if (tab === active && dockedMain) {
+      if (alive(host)) host.contentView.removeChildView(view);
+      main.contentView.addChildView(view);
+      const [width, height] = main.getContentSize();
+      view.setBounds(clampBounds(docked, main.webContents.getZoomFactor(), { width, height }));
+    } else {
+      if (alive(main)) main.contentView.removeChildView(view);
+      hostWindow(electron).contentView.addChildView(view);
+      view.setBounds({ x: 0, y: 0, ...HOST_SIZE });
+    }
   }
   fitPage();
 }
@@ -376,6 +403,43 @@ function setUserControl(value) {
   userControl = !!value;
   notify('control');
   return state();
+}
+
+async function tabAction(params) {
+  const action = String(params.action || '');
+  if (action === 'list') return fit({ tabs: tabsState(), active: activeTabId });
+  if (action === 'open') {
+    const policy = require('./agent-browser-policy');
+    const target = normalizeUrl(params.url);
+    if (policy.isBlocked(policy.hostOf(target))) {
+      throw new Error('Dominio bloqueado por la política del navegador del agente');
+    }
+    const tab = createTab(require('electron'));
+    notify('agent-open');
+    await load(tab.view.webContents, target);
+    return { ...(await snapshot(tab.view.webContents)), tab: tab.id };
+  }
+  if (action !== 'select' && action !== 'close') throw new Error(`Acción de pestaña no válida: ${action}`);
+  const id = String(params.id || '').replace(/[^0-9]/g, '');
+  const tab = tabs.get(id);
+  if (!tab || !alive(tab.view && tab.view.webContents)) throw new Error('No existe esa pestaña; usa web_tab con «list» para verlas');
+  if (action === 'select') {
+    if (id !== activeTabId) {
+      activeTabId = id;
+      mount(require('electron'));
+      notify('page');
+    }
+    return { selected: id, ...state() };
+  }
+  if (action === 'close') {
+    if (tabs.size === 1) {
+      close();
+      return { closed: id, ...state() };
+    }
+    if (alive(tab.view && tab.view.webContents)) tab.view.webContents.close();
+    releaseTab(tab);
+    return { closed: id, ...state() };
+  }
 }
 
 async function navigate(action, url) {
@@ -634,6 +698,7 @@ async function run(name, params = {}, { dir, drafts, approvedContext } = {}) {
     return { handed_over: true, ...state() };
   }
   if (name === 'web_download') return startDownload(String(params.url || '').trim(), drafts);
+  if (name === 'web_tab') return tabAction(params);
   const contents = current();
   const tab = activeTab();
   if (name === 'web_read') return snapshot(contents, params.offset);
