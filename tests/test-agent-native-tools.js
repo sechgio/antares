@@ -166,9 +166,11 @@ async function exportTest() {
           cancelled: 0, saved: null,
           getFilename: () => 'informe final?.pdf', setSavePath: (value) => { item.saved = value; },
           on: () => {}, once: (event, handler) => { doneHandler = handler; },
-          getTotalBytes: () => 4096, cancel: () => { item.cancelled += 1; },
+          getTotalBytes: () => 4096, getReceivedBytes: () => 4096, cancel: () => { item.cancelled += 1; },
         };
-        downloadHandler({ preventDefault: () => {} }, item);
+        let requestedCancelled = false;
+        downloadHandler({ preventDefault: () => { requestedCancelled = true; } }, item);
+        assert(!requestedCancelled, 'la descarga autorizada conserva el comportamiento nativo de Electron');
         assert(item.saved && item.saved.startsWith(downloadRoot) && item.saved.endsWith('-informe final_.pdf'),
           'la descarga pedida se guarda en los borradores con nombre saneado');
         doneHandler({}, 'completed');
@@ -180,7 +182,8 @@ async function exportTest() {
           cancelled: false, updated: null,
           getFilename: () => 'grande.zip', setSavePath: () => {},
           on: (event, handler) => { bigItem.updated = handler; }, once: () => {},
-          getTotalBytes: () => 150 * 1024 * 1024, cancel: () => { bigItem.cancelled = true; },
+          getTotalBytes: () => 150 * 1024 * 1024, getReceivedBytes: () => 150 * 1024 * 1024,
+          cancel: () => { bigItem.cancelled = true; },
         };
         let bigDone = null;
         bigItem.once = (event, handler) => { bigDone = handler; };
@@ -191,6 +194,20 @@ async function exportTest() {
         let bigError = null;
         try { await bigPending; } catch (error) { bigError = error.message; }
         assert(bigError && bigError.includes('excede el límite'), 'web_download falla cuando el archivo excede el límite de tamaño');
+        bigItem.getTotalBytes = () => 0;
+        for (const state of ['interrupted', 'completed']) {
+          const unknownPending = browser.run('web_download', { url: 'https://files.example.com/stream' }, { drafts: downloadRoot });
+          bigItem.cancelled = false;
+          downloadHandler({ preventDefault: () => {} }, bigItem);
+          if (state === 'interrupted') {
+            bigItem.updated({}, 'progressing');
+            assert(bigItem.cancelled, 'los bytes recibidos limitan también las descargas sin Content-Length');
+          }
+          bigDone({}, state);
+          let unknownError = null;
+          try { await unknownPending; } catch (error) { unknownError = error.message; }
+          assert(unknownError && unknownError.includes('excede el límite'), `el tamaño desconocido no evita el límite al terminar ${state}`);
+        }
         const stray = { cancelled: 0, cancel: () => { stray.cancelled += 1; } };
         downloadHandler({ preventDefault: () => {} }, stray);
         assert(stray.cancelled === 1, 'las descargas que no pidió el agente se cancelan como antes');

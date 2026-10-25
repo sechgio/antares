@@ -126,17 +126,18 @@ function prepareSession(electron) {
   ses.on('will-download', (event, item) => {
     const slot = downloadSlot;
     downloadSlot = null;
-    event.preventDefault();
-    if (!slot) { item.cancel(); return; }
+    if (!slot) { event.preventDefault(); item.cancel(); return; }
     const name = downloadName(item.getFilename());
     const target = path.join(slot.dir, `${require('node:crypto').randomUUID().slice(0, 8)}-${name}`);
     item.setSavePath(target);
-    item.on('updated', () => { if (item.getTotalBytes() > MAX_DOWNLOAD_BYTES) item.cancel(); });
+    const tooLarge = () => Math.max(item.getTotalBytes(), item.getReceivedBytes()) > MAX_DOWNLOAD_BYTES;
+    item.on('updated', () => { if (tooLarge()) item.cancel(); });
     item.once('done', (_event, state) => {
-      slot.settle(state === 'completed' ? null : new Error(item.getTotalBytes() > MAX_DOWNLOAD_BYTES
+      const completed = state === 'completed' && !tooLarge();
+      slot.settle(completed ? null : new Error(tooLarge()
         ? `El archivo excede el límite de ${Math.round(MAX_DOWNLOAD_BYTES / (1024 * 1024))} MB`
         : 'La descarga no se completó'),
-      state === 'completed' ? { saved_path: target, filename: name, bytes: item.getTotalBytes() } : null);
+      completed ? { saved_path: target, filename: name, bytes: item.getReceivedBytes() } : null);
     });
   });
   sessionReady = true;
