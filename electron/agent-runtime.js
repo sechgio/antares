@@ -750,7 +750,8 @@ async function messageSend(params) {
   const mentions = await bridge('agent_internal_mentions', { text: mentionText, native_tools: nativeNames });
   if ((mentions.modules || []).length) {
     const current = (await conv.agent(ctx())).tools.map((tool) => tool.name);
-    const extra = execution.moduleToolNames(mentions.modules).filter((name) => !current.includes(name));
+    const allows = await execution.profileToolFilter(session);
+    const extra = execution.moduleToolNames(mentions.modules).filter((name) => !current.includes(name) && (!allows || allows(name)));
     if (current.includes(execution.TOOLS_LOAD) && extra.length) {
       await conv.configure({ tools: [...current, ...extra].map((name) => ({ name })) }, ctx());
     }
@@ -970,8 +971,14 @@ async function toolsSet(params) {
   }
   const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
   if (names && names.some((name) => !available.has(name))) throw validation('La selección contiene herramientas no disponibles');
+  const allows = await execution.profileToolFilter(await requireSession(String(params.session_id || '')));
+  if (allows && names && names.some((name) => !allows(name))) {
+    throw validation('El agente guardado de esta conversación no permite alguna de esas herramientas');
+  }
   await execution.refreshTools();
-  const selected = names === null ? execution.defaultToolNames([...shared.toolSpecs.values()]) : [...new Set(names)];
+  const specs = [...shared.toolSpecs.values()];
+  const selected = names !== null ? [...new Set(names)]
+    : allows ? specs.filter((spec) => allows(spec.name)).map((spec) => spec.name) : execution.defaultToolNames(specs);
   await conv.configure({ tools: selected && selected.map((name) => ({ name })) }, ctx());
   return toolsList(params);
 }

@@ -119,6 +119,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 
 ### Fixed
+- La lista de herramientas de un agente guardado limita su conversación en todo momento: `tools_load`, las menciones de módulos y la selección manual ya no la amplían, restablecer la selección vuelve a las herramientas del agente y una herramienta retirada de su ficha deja de ejecutarse en las conversaciones existentes.
 - El navegador del Agent espera de forma acotada antes de abrir una página o volver atrás cuando el usuario acaba de usar la suya, muestra la espera con cuenta atrás y permite liberarla. Un fallo transitorio ya no consume el freno de repeticiones: las lecturas y observaciones avanzan cuando cambia el resultado, los clics que cambian de página también progresan, los errores recuperables no consumen intentos, otros efectos con aprobación conservan su límite y una corrección o un mensaje nuevo reinician el freno y la pausa de actividad. `web_open` rechaza nombres de archivos locales y remite a `fs_read`.
 - Agent conserva la prioridad de las skills adjuntas aunque el catálogo compartido esté lleno; la identidad del perfil se propaga como metadato de ejecución y las pruebas de skills usan el entorno Python seleccionado por `uv`.
 - Se actualizan DOMPurify a 3.4.17 y Brotli a 1.2.1 para corregir las vulnerabilidades que bloqueaban la auditoría de dependencias.

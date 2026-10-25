@@ -1827,6 +1827,49 @@ async function main() {
 
   {
     const { bridge, state } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    const bigBridge = async (method, params) => {
+      if (method !== 'agent_internal_tools') return bridge(method, params);
+      const result = await bridge(method, params);
+      for (let i = 0; i < 3; i += 1) {
+        result.tools.push({ name: `formatos_t${i}`, module: 'formatos', description: `Formatos PDF ${i}`, gated: false, kind: 'backend', inputSchema: schema });
+        result.tools.push({ name: `sellador_t${i}`, module: 'sellador', description: `Sellar ${i}`, gated: false, kind: 'backend', inputSchema: schema });
+      }
+      result.tools.push({ name: 'fs_read', module: 'computer', description: 'Leer archivo', gated: false, kind: 'backend', inputSchema: schema });
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('tools_load', { modules: ['formatos', 'sellador'] })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('módulos revisados'),
+      fauxAssistantMessage('sellador revisado'),
+      fauxAssistantMessage([fauxToolCall('fs_read', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('lectura bloqueada'),
+    ], bigBridge);
+    const tools = ['fs_read', 'tools_load', 'formatos_t0'];
+    const { profile } = await runtime.handlers.agent_profile_save({ name: 'Lector', instructions: 'Solo lee', tools });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
+    const enabledNames = async () => (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools
+      .filter((t) => t.enabled).map((t) => t.name).sort();
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'necesito formatos y sellos' });
+    assert(await waitIdle(session.id), 'el turno con tools_load del bot termina');
+    assert(JSON.stringify(await enabledNames()) === JSON.stringify([...tools].sort()), 'tools_load no amplía las herramientas del bot');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'usa @sellador' });
+    assert(await waitIdle(session.id), 'el turno con mención del bot termina');
+    assert(!(await enabledNames()).some((name) => name.startsWith('sellador_')), 'mencionar un módulo no amplía las herramientas del bot');
+    let error;
+    try { await runtime.handlers.agent_tools_set({ session_id: session.id, names: ['sellador_t0'] }); } catch (err) { error = err; }
+    assert(!!error, 'la selección manual no supera la lista del bot');
+    await runtime.handlers.agent_tools_set({ session_id: session.id, names: null });
+    assert(JSON.stringify(await enabledNames()) === JSON.stringify([...tools].sort()), 'restablecer vuelve a las herramientas del bot');
+    await runtime.handlers.agent_profile_save({ ...profile, tools: ['tools_load', 'formatos_t0'] });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'lee el archivo' });
+    assert(await waitIdle(session.id), 'el turno con una herramienta retirada del bot termina');
+    assert(state.dispatchLog.length === 0, 'una herramienta retirada del bot no se ejecuta aunque siga en la conversación');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
     await openFaux([
       fauxAssistantMessage([fauxToolCall('db_clear', { turno: 1 }, { id: 'call_0' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('primero'),

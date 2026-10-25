@@ -380,8 +380,9 @@ function normal(text) {
 async function loadTools(args, sessionId, context) {
   const conv = await conversation(sessionId);
   const enabled = new Set((await conv.agent(context)).tools.map((tool) => tool.name));
-  const specs = [...shared.toolSpecs.values()].filter((spec) => spec.kind !== 'meta'
-    || ['task_schedule', 'agent_delegate', 'wait_event'].includes(spec.name));
+  const allows = await profileToolFilter(await requireSession(sessionId));
+  const specs = [...shared.toolSpecs.values()].filter((spec) => (spec.kind !== 'meta'
+    || ['task_schedule', 'agent_delegate', 'wait_event'].includes(spec.name)) && (!allows || allows(spec.name)));
   const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
   const words = normal(args.query).split(/[^a-z0-9_]+/).filter((word) => word.length > 2);
   if (!modules.length && !words.length) {
@@ -1128,7 +1129,19 @@ async function dispatchApproved(approval, context) {
   }
 }
 
+// La lista de herramientas de un agente guardado (null = todas) limita la
+// conversación durante toda su vida, no solo al crearla.
+async function profileToolFilter(session) {
+  const id = session && session.profile && !session.profile.portable ? session.profile.id : null;
+  const profile = id ? (await profiles())[id] : null;
+  if (!profile || !Array.isArray(profile.tools)) return null;
+  const allowed = new Set(profile.tools);
+  return (name) => allowed.has(name);
+}
+
 async function toolEnabled(sessionId, name, context) {
+  const allows = await profileToolFilter((await sessions())[sessionId]);
+  if (allows && !allows(name)) return false;
   const conv = await conversation(sessionId);
   return (await conv.agent(context)).tools.some((tool) => tool.name === name);
 }
@@ -1191,6 +1204,7 @@ module.exports = {
   allToolSpecs,
   defaultToolNames,
   moduleToolNames,
+  profileToolFilter,
   TOOLS_LOAD,
   supportsVision,
   modelDefinition,
