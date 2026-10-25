@@ -1,11 +1,10 @@
 import React, { Suspense, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { History, Palette, X, Users, PawPrint, Puzzle, Plug, Cpu, type LucideIcon } from 'lucide-react';
+import { History, Palette, X, Users, PawPrint, Puzzle, Cpu, type LucideIcon } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { CONFIG_SECTION_DEFINITIONS, type ConfigSectionId } from '../../navigation';
 import { useAuth } from '../../auth/AuthContext';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
-import { useDialog } from '../../hooks/useDialog';
 import Button from '@/components/ui/Button';
 
 const AppearanceView = React.lazy(() => import('./AppearanceView'));
@@ -13,7 +12,6 @@ const HistoryView = React.lazy(() => import('../history/HistoryView'));
 const PanelView = React.lazy(() => import('./PanelView'));
 const PetdexView = React.lazy(() => import('./PetdexView'));
 const PluginsView = React.lazy(() => import('./PluginsView'));
-const ConnectionsView = React.lazy(() => import('../connections/ConnectionsView'));
 const ProvidersView = React.lazy(() => import('../connections/ProvidersView'));
 
 const sectionFallback = (
@@ -35,7 +33,6 @@ const SECTION_ICONS: Record<ConfigSectionId, LucideIcon> = {
   panel: Users,
   petdex: PawPrint,
   plugins: Puzzle,
-  connections: Plug,
   providers: Cpu,
 };
 
@@ -45,7 +42,6 @@ const SECTION_LABEL_KEYS: Record<ConfigSectionId, string> = {
   panel: 'tab.panel',
   petdex: 'tab.petdex',
   plugins: 'tab.plugins',
-  connections: 'tab.connections',
   providers: 'tab.providers',
 };
 
@@ -55,7 +51,6 @@ const SECTION_HINTS: Record<ConfigSectionId, string> = {
   panel: 'Gestiona usuarios y permisos',
   petdex: 'Colecciona y activa mascotas animadas',
   plugins: 'Activa y desactiva plugins',
-  connections: 'Gestiona cuentas externas y servidores MCP',
   providers: 'Configura claves y modelos de IA',
 };
 
@@ -65,7 +60,6 @@ const SECTION_OVERFLOW: Record<ConfigSectionId, string> = {
   panel: 'h-full overflow-y-auto',
   petdex: 'h-full overflow-y-auto',
   plugins: 'h-full overflow-y-auto',
-  connections: 'h-full overflow-hidden',
   providers: 'h-full overflow-hidden',
 };
 
@@ -75,18 +69,15 @@ const SECTION_VIEWS: Record<ConfigSectionId, React.LazyExoticComponent<React.Com
   panel: PanelView,
   petdex: PetdexView,
   plugins: PluginsView,
-  connections: ConnectionsView,
   providers: ProvidersView,
 };
 
 export default function SettingsModal({ isOpen, section, onSectionChange, onClose }: SettingsModalProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const { isOpen: dialogOpen } = useDialog();
-  const connectionsDialogOpen = section === 'connections' && dialogOpen;
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  useFocusTrap(overlayRef, isOpen && !connectionsDialogOpen);
+  useFocusTrap(overlayRef, isOpen);
 
   const visibleSectionDefs = useMemo(
     () => CONFIG_SECTION_DEFINITIONS.filter((def) => def.id !== 'panel' || user?.isAdmin),
@@ -94,7 +85,7 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
   );
 
   useEffect(() => {
-    if (!isOpen || connectionsDialogOpen) return;
+    if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -114,7 +105,7 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [isOpen, connectionsDialogOpen, onClose, section, onSectionChange, visibleSectionDefs]);
+  }, [isOpen, onClose, section, onSectionChange, visibleSectionDefs]);
 
   const sections = useMemo(
     () => visibleSectionDefs.map((def) => ({
@@ -144,7 +135,7 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
     <div
       ref={overlayRef}
       data-testid="settings-modal-overlay"
-      className={`fixed inset-0 ${connectionsDialogOpen ? 'z-[90]' : 'z-[120]'} flex items-center justify-center p-3 sm:p-6 animate-fade-in`}
+      className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-6 animate-fade-in"
       style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 85%, transparent)' }}
       onClick={handleOverlayClick}
     >

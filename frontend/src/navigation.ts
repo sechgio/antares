@@ -12,6 +12,7 @@ export const TAB_DEFINITIONS = [
   { id: 'previewPanel', label: 'Generador Reportes', fullBleed: true },
   { id: 'canvas', label: 'Canvas', fullBleed: true },
   { id: 'agent', label: 'Agent', fullBleed: true },
+  { id: 'complementos', label: 'Complementos', fullBleed: true },
   { id: 'panelAvisoCorte', label: 'Aviso de Corte', fullBleed: true },
   { id: 'ubicaciones', label: 'Ubicaciones', fullBleed: true },
   { id: 'evidenciaVolanteo', label: 'Evidencia Volanteo', fullBleed: true },
@@ -29,7 +30,7 @@ export const FULL_BLEED_TABS = new Set<TabId>(
   TAB_DEFINITIONS.filter((tab) => tab.fullBleed).map((tab) => tab.id),
 );
 
-export type ConfigSectionId = 'appearance' | 'history' | 'panel' | 'petdex' | 'plugins' | 'connections' | 'providers';
+export type ConfigSectionId = 'appearance' | 'history' | 'panel' | 'petdex' | 'plugins' | 'providers';
 
 interface ConfigSectionDefinition {
   id: ConfigSectionId;
@@ -42,6 +43,5 @@ export const CONFIG_SECTION_DEFINITIONS: readonly ConfigSectionDefinition[] = [
   { id: 'panel', label: 'Panel' },
   { id: 'petdex', label: 'Petdex' },
   { id: 'plugins', label: 'Plugins' },
-  { id: 'connections', label: 'Conexiones' },
   { id: 'providers', label: 'Proveedores' },
 ] as const;
