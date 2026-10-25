@@ -2,6 +2,8 @@
 
 const crypto = require('node:crypto');
 const { shared, ctx, conversation, requireSession, sessions, validation } = require('./agent-shared');
+const { isActiveTask, pruneTasks, recordRun } = require('./agent-task-utils');
+const queue = require('./agent-queue');
 
 let timer = null;
 let ticking = null;
@@ -9,7 +11,6 @@ let claimToken = null;
 let reconciled = false;
 let reconciling = null;
 
-const MAX_RUNS = 10;
 const MAX_DELEGATION_DEPTH = 1;
 const PROFILE_ROLES = new Set(['explorer', 'reviewer', 'worker']);
 
@@ -29,28 +30,21 @@ function resolveTimezone(value) {
   return value;
 }
 
-function recordRun(task, entry) {
-  task.runs = Array.isArray(task.runs) ? task.runs.slice(-(MAX_RUNS - 1)) : [];
-  task.runs.push(entry);
-  task.last_run_at = entry.at;
-  task.last_status = entry.status;
-  task.updated_at = entry.at;
-  if (entry.error) task.last_error = entry.error;
-  else if (entry.status === 'delivered') delete task.last_error;
-}
-
 function nextOccurrence(task, dueAt, now) {
   return dueAt + (Math.floor((now - dueAt) / task.interval_ms) + 1) * task.interval_ms;
 }
 
 const TOOL = {
   name: 'task_schedule', kind: 'meta', module: 'agent', gated: false, replay_safe: true,
-  description: 'Programa un encargo solo cuando el usuario lo pide. Antares debe seguir abierto, incluida la bandeja; '
-    + 'al volver a abrir recupera los pendientes. No concede permisos ni acceso a archivos. '
+  description: 'Gestiona encargos propios de esta conversación solo cuando el usuario lo pide. Antares debe seguir '
+    + 'abierto, incluida la bandeja; al volver a abrir recupera los pendientes. No concede permisos ni acceso a archivos. '
     + 'action=create requiere content y due_at ISO 8601 con zona horaria; every_minutes permite repetición. '
-    + 'action=list consulta los encargos de esta conversación; action=cancel cancela uno por id.',
+    + 'action=enqueue añade content a una cola FIFO por conversación que se ejecuta en orden, un encargo a la vez, '
+    + 'cuando el turno actual termina. action=pause y action=resume pausan o reanudan esa cola entre encargos. '
+    + 'action=list consulta encargos y estado de la cola; action=cancel cancela uno por id. '
+    + 'No encoles trabajo por iniciativa propia ni para sortear aprobaciones.',
   inputSchema: { type: 'object', properties: {
-    action: { type: 'string', enum: ['create', 'list', 'cancel'] },
+    action: { type: 'string', enum: ['create', 'list', 'cancel', 'enqueue', 'pause', 'resume'] },
     content: { type: 'string', minLength: 1, maxLength: 12000 },
     due_at: { type: 'string' },
     every_minutes: { type: 'integer', minimum: 1, maximum: 525600 },
@@ -222,10 +216,10 @@ async function cancelDelegations(sessionId) {
 async function schedule(args, sessionId, api) {
   await requireSession(sessionId);
   const state = shared.state;
-  if (args.action === 'list') {
-    const doc = await state.harness.snapshot(state.TasksDoc, ctx());
-    return { tasks: Object.values(doc?.tasks || {}).filter((task) => task.session_id === sessionId) };
-  }
+  if (args.action === 'enqueue') return queue.enqueue(args.content, sessionId, api?.taskId);
+  if (args.action === 'pause') return queue.setQueuePaused(sessionId, true);
+  if (args.action === 'resume') return queue.setQueuePaused(sessionId, false);
+  if (args.action === 'list') return listTasks({ session_id: sessionId });
   if (args.action === 'cancel') {
     return state.harness.commit(async (tx) => {
       const doc = await tx.doc(state.TasksDoc);
@@ -266,13 +260,9 @@ async function schedule(args, sessionId, api) {
       delete task.last_error;
       return { scheduled: { ...task } };
     }
-    if (doc.tasks[id]) return { scheduled: doc.tasks[id] };
-    const tasks = Object.values(doc.tasks);
-    const active = (task) => ['pending', 'delivering'].includes(task.status);
-    if (tasks.filter(active).length >= 100) throw validation('Ya hay 100 encargos pendientes');
-    for (const old of tasks.filter((task) => !active(task)).slice(0, Math.max(0, tasks.length - 199))) {
-      delete doc.tasks[old.id];
-    }
+    if (doc.tasks[id]) return { scheduled: { ...doc.tasks[id] } };
+    if (Object.values(doc.tasks).filter(isActiveTask).length >= 100) throw validation('Ya hay 100 encargos pendientes');
+    pruneTasks(doc);
     const now = Date.now();
     const task = { id, session_id: sessionId, content, due_at: dueAt,
       interval_ms: (interval || 0) * 60000, status: 'pending', created_at: now, updated_at: now,
@@ -283,21 +273,17 @@ async function schedule(args, sessionId, api) {
 }
 
 async function listTasks(params = {}) {
-  const state = shared.state;
-  if (!state) return { tasks: [] };
-  await ensureReconciled(state);
-  const sessionId = typeof params.session_id === 'string' && params.session_id ? params.session_id : null;
-  const doc = await state.harness.snapshot(state.TasksDoc, ctx());
-  const tasks = Object.values(doc?.tasks || {})
-    .filter((task) => !sessionId || task.session_id === sessionId)
-    .sort((a, b) => Number(a.due_at || 0) - Number(b.due_at || 0))
-    .map((task) => ({ ...task, runs: Array.isArray(task.runs) ? task.runs.slice(-MAX_RUNS) : [] }));
-  return { tasks };
+  return queue.listTasks(params, ensureReconciled);
 }
 
 async function saveTask(params = {}) {
   const sessionId = String(params.session_id || '');
   await requireSession(sessionId);
+  if (params.kind === 'queue') {
+    if (params.id) throw validation('Un encargo en cola no se puede editar; cancélalo y crea otro');
+    return queue.enqueue(params.content, sessionId, crypto.randomUUID());
+  }
+  if (params.kind !== undefined && params.kind !== 'schedule') throw validation('Tipo de encargo no válido');
   const id = typeof params.id === 'string' && params.id ? params.id.slice(0, 64) : undefined;
   return schedule({ ...params, id, action: id ? 'update' : 'create' }, sessionId,
     { taskId: crypto.randomUUID() });
@@ -328,6 +314,7 @@ async function runTaskNow(params = {}) {
     const doc = await tx.doc(state.TasksDoc);
     const task = doc.tasks[id];
     if (!task) throw validation('El encargo programado no existe');
+    if (task.kind === 'queue') throw validation('Un encargo en cola se ejecuta en orden; no se puede adelantar');
     if (task.status === 'delivering') throw validation('El encargo ya se está entregando; detén el turno para interrumpirlo');
     if (task.status === 'cancelled') throw validation('El encargo está cancelado');
     if (task.status === 'delivered') throw validation('El encargo ya se entregó');
@@ -348,7 +335,7 @@ async function reconcileStale(state) {
   await state.harness.commit(async (tx) => {
     const doc = await tx.doc(state.TasksDoc);
     for (const task of Object.values(doc.tasks)) {
-      if (task.status !== 'delivering' || (claimToken && task.claim_id === claimToken)) continue;
+      if (task.kind === 'queue' || task.status !== 'delivering' || (claimToken && task.claim_id === claimToken)) continue;
       const dueAt = Number(task.due_at) || now;
       const error = 'La entrega se interrumpió al cerrar Antares; no se repite automáticamente.';
       if (task.interval_ms) {
@@ -383,7 +370,7 @@ async function tick() {
     await ensureReconciled(state);
     const doc = await state.harness.snapshot(state.TasksDoc, ctx());
     for (const task of Object.values(doc?.tasks || {})) {
-      if (task.status !== 'pending' || task.due_at > Date.now() || task.retry_at > Date.now()) continue;
+      if (task.kind === 'queue' || task.status !== 'pending' || task.due_at > Date.now() || task.retry_at > Date.now()) continue;
       const sessionDoc = await state.harness.snapshot(state.SessionsDoc, ctx());
       const session = sessionDoc.sessions[task.session_id];
       if (!session || session.deleted) {
@@ -451,6 +438,7 @@ async function tick() {
         }
       }
     }
+    await queue.tickQueue(state, claimToken);
     await collectDelegations(state);
   })();
   try { await ticking; } finally { ticking = null; }
@@ -476,5 +464,5 @@ async function stop() {
 
 module.exports = {
   TOOL, DELEGATE_TOOL, schedule, delegate, cancelDelegations, start, stop,
-  listTasks, saveTask, cancelTask, runTaskNow,
+  listTasks, saveTask, cancelTask, runTaskNow, queueControl: queue.queueControl,
 };
