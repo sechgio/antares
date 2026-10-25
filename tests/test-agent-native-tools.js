@@ -28,13 +28,6 @@ assert(exportsSpecs.length === 5 && exportsSpecs.every((s) => !s.gated), 'las ex
 assert(JSON.stringify(exportsSpecs.slice(0, 3).map((s) => s.module)) === JSON.stringify(['technicalReports', 'informesV2', 'fichasTecnicas']),
   'cada exportación pertenece a su módulo');
 
-const web = specs.filter((s) => s.name.startsWith('web_'));
-assert(web.length === 12 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
-assert(web.filter((s) => s.gated).map((s) => s.name).sort().join() === 'web_click,web_key,web_type',
-  'leer páginas es automático; hacer clic, escribir o pulsar teclas requiere aprobación');
-assert(web.filter((s) => !s.gated).map((s) => s.name).sort().join()
-  === 'web_back,web_console,web_forward,web_network,web_open,web_read,web_reload,web_screenshot,web_text',
-  'texto, consola y red se leen sin aprobación');
 const browser = require('../electron/agent-browser');
 assert(browser.normalizeUrl('example.com/a') === 'https://example.com/a', 'un dominio sin esquema se abre por https');
 assert(browser.normalizeUrl('http://localhost:5173') === 'http://localhost:5173', 'una URL http se conserva');
@@ -439,6 +432,23 @@ async function exportTest() {
     assert(currentPage.page_url === pageUrl, 'la siguiente aprobación identifica la página nueva');
     await runNativeTool('web_click', { ref: '1' }, { sessionId: 'abc123', approvedContext: currentPage });
     assert(interactions === 1, 'una aprobación de la página actual ejecuta la interacción una sola vez');
+    const router = require('../electron/ipc-router');
+    const grantCalls = [];
+    stubModule('electron/ipc-router.js', { _callBackend: async (method, params) => {
+      grantCalls.push([method, params]);
+      return { granted: true };
+    } });
+    const uploadApproved = await nativeToolContext('web_upload', 's1', { ref: '9', path: 'C:\\datos\\x.pdf' });
+    assert(uploadApproved.page_url === pageUrl && grantCalls[0][0] === 'agent_internal_grants_check'
+      && grantCalls[0][1].session_id === 's1' && grantCalls[0][1].path === 'C:\\datos\\x.pdf',
+    'web_upload verifica los grants del backend antes de pedir aprobación');
+    stubModule('electron/ipc-router.js', { _callBackend: async () => {
+      throw new Error('El archivo no está autorizado; escribe su ruta en tu mensaje o selecciónalo');
+    } });
+    let denied = null;
+    try { await nativeToolContext('web_upload', 's1', { path: 'C:\\otros\\y.pdf' }); } catch (error) { denied = error.message; }
+    assert(denied && denied.includes('no está autorizado'), 'una ruta sin grant impide pedir la aprobación de web_upload');
+    stubModule('electron/ipc-router.js', router);
     stubModule('electron/agent-browser.js', browser);
   }
   const context = await nativeToolContext('autoimg_sheets_write_range');

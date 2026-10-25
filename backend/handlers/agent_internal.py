@@ -300,6 +300,16 @@ def _grants_revoke(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+@validate_params("session_id", "path")
+def _grants_check(params: JsonObject) -> JsonObject:
+    try:
+        info = resource_grants.check(str(params["path"]), _store().grants_for(str(params["session_id"])))
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+    return {"granted": True, **info}
+
+
+@with_locale
 @validate_params("session_id")
 def _grants_list(params: JsonObject) -> JsonObject:
     grants = sorted(_store().grants_for(str(params["session_id"])).values(), key=lambda record: str(record.get("path") or ""))
@@ -803,6 +813,7 @@ HANDLERS = {
     "agent_internal_effects": _effects,
     "agent_internal_effect_undo": _effect_undo,
     "agent_internal_grants_add": _grants_add,
+    "agent_internal_grants_check": _grants_check,
     "agent_internal_grants_list": _grants_list,
     "agent_internal_grants_revoke": _grants_revoke,
     "agent_internal_path_status": _path_status,

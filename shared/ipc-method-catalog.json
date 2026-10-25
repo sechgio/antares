@@ -53,6 +53,7 @@
     "agent_internal_effects": { "handler": "backend:agent_internal", "internal": true, "idempotent": true, "inputSchema": {"type":"object","properties":{"session_id":{"type":"string"}},"required":["session_id"]} },
     "agent_internal_effect_undo": { "handler": "backend:agent_internal", "internal": true, "timeout": "long", "inputSchema": {"type":"object","properties":{"session_id":{"type":"string"},"call_id":{"type":"string"}},"required":["session_id","call_id"]} },
     "agent_internal_grants_add": { "handler": "backend:agent_internal", "internal": true },
+    "agent_internal_grants_check": { "handler": "backend:agent_internal", "internal": true },
     "agent_internal_grants_list": { "handler": "backend:agent_internal", "internal": true },
     "agent_internal_grants_revoke": { "handler": "backend:agent_internal", "internal": true },
     "agent_internal_mentions": { "handler": "backend:agent_internal", "internal": true },

@@ -249,7 +249,7 @@ async function main() {
     const shellBridge = async (method, params) => {
       const result = await bridge(method, params);
       if (method === 'agent_internal_tools') result.tools.push({
-        name: 'shell_run', kind: 'backend', gated: true, inputSchema: { type: 'object', properties: {} },
+        name: 'shell_run', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} },
       });
       return result;
     };
@@ -279,8 +279,8 @@ async function main() {
       const result = await bridge(method, params);
       if (method === 'agent_internal_tools') {
         result.tools.push(
-          { name: 'ui_click', kind: 'backend', gated: true, inputSchema: { type: 'object', properties: {} } },
-          { name: 'ui_observe', kind: 'backend', gated: true, inputSchema: { type: 'object', properties: {} } },
+          { name: 'ui_click', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
+          { name: 'ui_observe', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
         );
       }
       return result;
@@ -325,7 +325,7 @@ async function main() {
       const result = await bridge(method, params);
       if (method === 'agent_internal_tools') {
         result.tools.push(
-          { name: 'ui_click', kind: 'backend', gated: true, inputSchema: { type: 'object', properties: {} } },
+          { name: 'ui_click', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
         );
       }
       return result;
@@ -1289,7 +1289,10 @@ async function main() {
     assert(String(instructions).includes('plantilla de cortes') && String(instructions).includes('no amplían los permisos elegidos'),
       'las indicaciones del agente se suman sin ampliar los permisos elegidos');
     const plain = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
-    assert((await runtime.handlers.agent_tools_list({ session_id: plain.session.id })).tools.every((t) => t.enabled), 'una conversación normal no hereda el agente');
+    const plainTools = (await runtime.handlers.agent_tools_list({ session_id: plain.session.id })).tools;
+    const defaults = require('../electron/agent-execution').defaultToolNames([...runtime._internal.shared.toolSpecs.values()]);
+    const expected = new Set(defaults || plainTools.map((t) => t.name));
+    assert(plainTools.every((t) => t.enabled === expected.has(t.name)), 'una conversación normal no hereda el agente');
     await runtime.handlers.agent_profile_delete({ id: profile.id });
     assert((await runtime.handlers.agent_profiles_list()).profiles.length === 0, 'el agente se borra');
     assert((await runtime.handlers.agent_sessions_list()).sessions.some((s) => s.id === session.id), 'sus conversaciones se conservan');
@@ -1316,6 +1319,9 @@ async function main() {
       starter: '', tools: ['canvas_list'],
     });
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const initial = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools;
+    await runtime.handlers.agent_tools_set({ session_id: session.id,
+      names: [...new Set([...initial.filter((tool) => tool.enabled).map((tool) => tool.name), 'canvas_list'])] });
     const listed = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools;
     const spec = listed.find((tool) => tool.name === 'subagent_run');
     assert(spec && spec.kind === 'backend' && !spec.gated, 'la delegación aparece como herramienta de lectura');
@@ -1858,8 +1864,8 @@ async function main() {
     const computerBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'task_plan', gated: false, kind: 'backend', inputSchema: schema },
-          { name: 'desktop_peek', gated: false, kind: 'backend', inputSchema: schema });
+        result.tools.push({ name: 'task_plan', gated: false, kind: 'backend', module: 'computer', inputSchema: schema },
+          { name: 'desktop_peek', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
         return result;
       }
       if (method === 'agent_internal_dispatch' && params.name === 'desktop_peek') {
@@ -1920,8 +1926,8 @@ async function main() {
     const loopBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'task_plan', gated: false, kind: 'backend', inputSchema: schema },
-          { name: 'page_probe', gated: false, kind: 'backend', inputSchema: schema });
+        result.tools.push({ name: 'task_plan', gated: false, kind: 'backend', module: 'computer', inputSchema: schema },
+          { name: 'page_probe', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
         return result;
       }
       if (method === 'agent_internal_dispatch' && params.name === 'page_probe') {
@@ -1971,7 +1977,7 @@ async function main() {
     const retryBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'busy_probe', gated: false, kind: 'backend', inputSchema: schema });
+        result.tools.push({ name: 'busy_probe', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
         return result;
       }
       if (method === 'agent_internal_dispatch' && params.name === 'busy_probe') {
@@ -2000,7 +2006,7 @@ async function main() {
     const changingBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'changing_probe', gated: false, kind: 'backend', inputSchema: schema });
+        result.tools.push({ name: 'changing_probe', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
         return result;
       }
       if (method === 'agent_internal_dispatch' && params.name === 'changing_probe') {
@@ -2027,7 +2033,7 @@ async function main() {
     const gatedBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'gated_probe', gated: true, kind: 'backend', inputSchema: schema });
+        result.tools.push({ name: 'gated_probe', gated: true, kind: 'backend', module: 'computer', inputSchema: schema });
         return result;
       }
       if (method === 'agent_internal_dispatch' && params.name === 'gated_probe') {
@@ -2108,7 +2114,7 @@ async function main() {
     const correctionBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'slow_correction_probe', gated: false, kind: 'backend', inputSchema: schema });
+        result.tools.push({ name: 'slow_correction_probe', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
         return result;
       }
       if (method === 'agent_internal_dispatch' && params.name === 'slow_correction_probe') {
@@ -2148,7 +2154,7 @@ async function main() {
     const slowBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'slow_probe', gated: false, kind: 'backend', inputSchema: schema });
+        result.tools.push({ name: 'slow_probe', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
         return result;
       }
       if (method === 'agent_internal_dispatch' && params.name === 'slow_probe') {
@@ -2184,7 +2190,7 @@ async function main() {
     const streamBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'stream_probe', gated: false, kind: 'backend', inputSchema: schema });
+        result.tools.push({ name: 'stream_probe', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
         return result;
       }
       if (method === 'agent_internal_dispatch' && params.name === 'stream_probe') return { result: null, dispatch: { op_id: 'op-stream' } };
@@ -2225,7 +2231,7 @@ async function main() {
     const stopBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'stop_probe', gated: false, kind: 'backend', inputSchema: schema });
+        result.tools.push({ name: 'stop_probe', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
         return result;
       }
       if (method === 'agent_internal_dispatch' && params.name === 'stop_probe') return { result: null, dispatch: { op_id: 'op-stop' } };
@@ -2746,6 +2752,9 @@ for line in sys.stdin:
       const { profile } = await runtime.handlers.agent_profile_save({ name: 'Investigador real',
         instructions: 'Lee Canvas y resume.', tools: ['canvas_list', 'db_clear'] });
       const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+      const initial = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools;
+      await runtime.handlers.agent_tools_set({ session_id: session.id,
+        names: [...new Set([...initial.filter((tool) => tool.enabled).map((tool) => tool.name), 'canvas_list'])] });
       const responses = (task) => [
         fauxAssistantMessage([fauxToolCall('subagent_run', { agent: profile.id, task })], { stopReason: 'toolUse' }),
         fauxAssistantMessage('Recibí el resultado del subagente'),

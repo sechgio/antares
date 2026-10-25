@@ -203,7 +203,7 @@ function nativeToolSpecs() {
   return SPECS.map((s) => ({ ...s, channel: channelFor(s.name, s.module) }));
 }
 
-async function nativeToolContext(name) {
+async function nativeToolContext(name, sessionId, params = {}) {
   const selected = SPECS.find((item) => item.name === name);
   if (!selected) throw new Error(`Herramienta nativa no disponible: ${name}`);
   const { createHash } = require('node:crypto');
@@ -213,7 +213,13 @@ async function nativeToolContext(name) {
     const policy = require('./agent-browser-policy');
     const browserContext = await require('./agent-browser').approvalContext();
     const domain = policy.hostOf(browserContext.page_url);
-    return Object.assign(context, browserContext, { domain, policy_blocked: policy.isBlocked(domain) });
+    Object.assign(context, browserContext, { domain, policy_blocked: policy.isBlocked(domain) });
+  }
+  if (name === 'web_upload') {
+    // El backend es la única fuente de archivos autorizados de la conversación;
+    // falla aquí para no pedir al usuario una aprobación imposible de cumplir.
+    await require('./ipc-router')._callBackend('agent_internal_grants_check',
+      { session_id: sessionId, path: String(params.path || '') });
   }
   if (CLOUD[name]) return Object.assign(context, await CLOUD[name].context(name));
   if (selected.module === 'espacios') {
@@ -318,14 +324,17 @@ async function runNativeTool(name, params, { sessionId, approvedContext } = {}) 
   if (!SPECS.some((s) => s.name === name)) throw new Error(`Herramienta nativa no disponible: ${name}`);
   if (REPORT_EXPORTS[name]) return exportReportPdf(REPORT_EXPORTS[name], params || {}, sessionId);
   if (SPECS.find((s) => s.name === name).gated) {
-    const current = await nativeToolContext(name);
+    const current = await nativeToolContext(name, sessionId, params || {});
     if (!approvedContext || JSON.stringify(current) !== JSON.stringify(approvedContext)) {
       if (WEB[name]) throw new Error('La página cambió después de aprobar; vuelve a leerla con web_read y solicita una nueva aprobación');
       throw new Error('La cuenta, los permisos o la hoja cambiaron después de aprobar; solicita una nueva aprobación');
     }
   }
   if (CLOUD[name]) return CLOUD[name].run(name, params || {}, { dir: draftsDir(sessionId) });
-  if (WEB[name]) return require('./agent-browser').run(name, params || {}, { dir: `${draftsDir(sessionId)}.screens`, approvedContext, sessionId });
+  if (WEB[name]) {
+    return require('./agent-browser').run(name, params || {},
+      { dir: `${draftsDir(sessionId)}.screens`, drafts: draftsDir(sessionId), approvedContext, sessionId });
+  }
   if (name === 'document_generate') return generateDocument(params, sessionId);
   if ((name === 'canvas_fill_fields' || name === 'canvas_apply_layers')
     && !require('./agent-renderer-tools').isRendererAvailable()) {

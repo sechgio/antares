@@ -756,6 +756,20 @@ def test_context_lists_granted_files_and_accounts_and_removes_one_file(store, tm
     assert agent_internal.HANDLERS["agent_internal_artifacts"]({"session_id": "s2"})["context"] == {"files": [], "accounts": []}
 
 
+def test_grants_check_accepts_granted_files_and_rejects_the_rest(store, tmp_path):
+    granted = tmp_path / "informe.pdf"
+    granted.write_bytes(b"%PDF-1.4")
+    secret = tmp_path / "secreto.txt"
+    secret.write_text("clave", encoding="utf-8")
+    agent_internal.HANDLERS["agent_internal_grants_add"]({"session_id": "s1", "paths": [str(granted)]})
+    checked = agent_internal.HANDLERS["agent_internal_grants_check"]({"session_id": "s1", "path": str(granted)})
+    assert checked["granted"] is True and checked["path"] == str(granted.resolve())
+    with pytest.raises(ValidationError, match="no está autorizado"):
+        agent_internal.HANDLERS["agent_internal_grants_check"]({"session_id": "s1", "path": str(secret)})
+    with pytest.raises(ValidationError, match="no está autorizado"):
+        agent_internal.HANDLERS["agent_internal_grants_check"]({"session_id": "s2", "path": str(granted)})
+
+
 def _ui_ensure(call_id, method, session_id="s1"):
     params = {"session_id": session_id, "call_id": call_id, "method": method,
               "params": {"window_id": "w1a2b", "element_id": "e3"}}
