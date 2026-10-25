@@ -251,7 +251,6 @@ export function createEmptyInforme(informeId = 0): InformeV2 {
   };
 }
 
-/** Informes guardados antes de la plantilla Reservorios 2 llegan sin esos campos. */
 export function normalizeInforme(raw: InformeV2): InformeV2 {
   const base = createEmptyInforme();
   return {

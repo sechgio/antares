@@ -482,8 +482,6 @@ function _latestPlan(messages) {
   return null;
 }
 
-// Panel del navegador del agente: la UI lo coloca, lo maneja y puede tomar el
-// control para que el agente no actúe mientras el usuario usa la página.
 async function browserAction(params) {
   const browser = shared.browser || require('./agent-browser');
   const action = String((params && params.action) || 'state');
@@ -743,7 +741,6 @@ async function turnCancel(params) {
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: sessionId })).approvals;
   const busy = !!live.run || (live.inbox || []).length > 0;
   const conv = await conversation(sessionId);
-  // Detén el turno activo y cierra también las entregas admitidas durante el drenaje.
   const [children] = await Promise.all([
     require('./agent-tasks').cancelDelegations(sessionId).then(async (count) => { await conv.abort(ctx()); return count; }),
     conv.abort(ctx()),

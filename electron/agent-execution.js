@@ -25,8 +25,6 @@ const { appendTurn } = require('./turn-log');
 const MAX_TOOL_STEPS = 40;
 const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno. Conservé un punto de continuación; '
   + 'explica lo que queda pendiente y pide usar Reanudar para continuar.';
-// Repetir la misma llamada sin cambios no aporta información nueva: a partir
-// de aquí se bloquea para que el agente cambie de vía o informe del bloqueo.
 const MAX_REPEATS = 3;
 const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, sigue con '
   + 'el siguiente y compruébalo; si no puedes completarlo, márcalo como failed en task_plan con la causa y di qué necesitas.';
@@ -36,9 +34,6 @@ const SUBAGENT_DESCRIPTION_MAX = 80;
 const SUBAGENT_MAX_DEPTH = 1;
 const SUBAGENT_MAX_TASKS = 4;
 const TOOLS_LOAD = 'tools_load';
-// Núcleo que reciben las conversaciones nuevas: el resto del catálogo se carga
-// con tools_load o al mencionar un módulo, para no superar el límite de
-// herramientas por petición de los proveedores ni saturar modelos pequeños.
 const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent']);
 const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD]);
 const MAX_LOADED_TOOLS = 25;
@@ -636,8 +631,6 @@ function stableJson(value) {
   return JSON.stringify(value === undefined ? null : value);
 }
 
-// Una respuesta final con pasos del plan de este turno sin verificar recibe una
-// sola petición de seguir o de declarar el bloqueo; el aviso no se muestra en el chat.
 function planCheck(answer, api) {
   const turn = shared.turns.get(api.conversationId);
   if (!turn || turn.checked || !turn.remaining || !turn.remaining.length) return undefined;
@@ -749,8 +742,6 @@ function notifyDecision(approvalId) {
   for (const resolve of [...waiters]) resolve();
 }
 
-// El backend devuelve la salida en curso completa desde el principio (p. ej. la
-// de shell_run); a pi-durable solo se le pasa lo nuevo para que la UI la vea crecer.
 async function dispatchAndWait(request, context, api) {
   const signal = context && context.abortSignal;
   if (signal && signal.aborted) throw aborted();

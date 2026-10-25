@@ -95,7 +95,7 @@ assert(fs.readFileSync(logFile, 'utf8').includes('pendiente en cierre sincrono')
 console.log('flushSync en cierre sincrono: OK');
 
 fs.unlinkSync(logFile);
-fs.mkdirSync(logFile, { recursive: true }); // appendFile sobre un directorio falla (EISDIR/EPERM)
+fs.mkdirSync(logFile, { recursive: true });
 l.appendLogLine('INFO', 'linea hacia destino roto');
 await l.flushLogQueue();
 fs.rmdirSync(logFile);
