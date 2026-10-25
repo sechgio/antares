@@ -16,6 +16,7 @@ from backend.core.agent import (
     documents,
     drafts,
     resource_grants,
+    skills,
 )
 from backend.core.agent import memory as _memory_store
 from backend.core.agent import modules as _agent_modules
@@ -589,6 +590,11 @@ def _memory_list(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+def _skills_list(params: JsonObject) -> JsonObject:
+    return skills.library_catalog(_store().base_dir / "skills")
+
+
+@with_locale
 @validate_params("id", "action")
 def _memory_update(params: JsonObject) -> JsonObject:
     try:
@@ -684,6 +690,7 @@ HANDLERS = {
     "agent_internal_memory_context": _memory_context,
     "agent_internal_grant_remove": _grant_remove,
     "agent_memory_list": _memory_list,
+    "agent_skills_list": _skills_list,
     "agent_memory_update": _memory_update,
     "agent_memory_delete": _memory_delete,
 }

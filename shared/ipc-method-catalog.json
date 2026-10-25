@@ -69,6 +69,7 @@
     "agent_profile_delete": { "handler": "native:agent", "inputSchema": {"type":"object","properties":{"id":{"type":"string"}},"required":["id"]} },
     "agent_context_remove_file": { "handler": "native:agent", "inputSchema": {"type":"object","properties":{"session_id":{"type":"string"},"path":{"type":"string"}},"required":["session_id","path"]} },
     "agent_memory_list": { "handler": "backend:agent_internal", "idempotent": true },
+    "agent_skills_list": { "handler": "backend:agent_internal", "idempotent": true, "inputSchema": {"type":"object","properties":{}} },
     "agent_memory_update": { "handler": "backend:agent_internal", "inputSchema": {"type":"object","properties":{"id":{"type":"string"},"action":{"type":"string","enum":["edit","disable","enable","revert"]},"title":{"type":"string"},"content":{"type":"string"},"when":{"type":"string"},"steps":{"type":"array","items":{"type":"object"}},"version":{"type":"integer"}},"required":["id","action"]} },
     "agent_memory_delete": { "handler": "backend:agent_internal", "inputSchema": {"type":"object","properties":{"id":{"type":"string"}},"required":["id"]} },
     "agent_internal_artifact_action": { "handler": "backend:agent_internal", "internal": true, "timeout": "long" },

@@ -206,6 +206,21 @@ def test_skill_metadata_does_not_grant_tools_or_permissions(store):
     assert "shell_run" not in agent_tools.READ_TOOLS
 
 
+def test_skills_list_handler_lists_library_metadata_for_the_ui(store, monkeypatch):
+    from backend.handlers import agent_internal
+
+    install(store.base_dir / "skills", body="INSTRUCCION_PRIVADA")
+    install(store.base_dir.parent / "configured-skills/_shared", name="compartida", description="Skill compartida")
+    (store.base_dir / "skills/rota").mkdir()
+    (store.base_dir / "skills/rota/SKILL.md").write_text("sin encabezado", encoding="utf-8")
+    monkeypatch.setattr(agent_internal, "_store", lambda: store)
+    result = agent_internal.HANDLERS["agent_skills_list"]({})
+    assert [skill["name"] for skill in result["skills"]] == ["compartida", "pdf-review"]
+    assert result["skills"][1]["description"] == "Revisa documentos PDF"
+    assert result["library"] == str(store.base_dir / "skills") and result["warnings"]
+    assert "INSTRUCCION_PRIVADA" not in json.dumps(result)
+
+
 def test_layered_skills_do_not_grant_general_file_access(store, tmp_path, monkeypatch):
     home = tmp_path / "configured-skills"
     target = install(home / "_shared")
