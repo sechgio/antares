@@ -22,6 +22,7 @@ export interface AiProviderSpec {
 
 export interface AiModelCapabilities {
   vision?: boolean;
+  reasoning?: boolean;
   context_window?: number;
 }
 
@@ -36,6 +37,7 @@ interface AiProviderCustomInput {
   api_key?: string;
   remove_key?: boolean;
   vision?: boolean | null;
+  reasoning?: boolean | null;
   context_window?: number | null;
 }
 

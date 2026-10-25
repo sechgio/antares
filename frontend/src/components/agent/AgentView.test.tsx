@@ -51,6 +51,7 @@ beforeEach(() => {
   vi.spyOn(agentApi, 'agentToolsList').mockResolvedValue({ tools: [] });
   vi.spyOn(agentApi, 'agentSessionsList').mockResolvedValue({ sessions: [session] });
   vi.spyOn(agentApi, 'agentMessageSend').mockResolvedValue({ accepted: true });
+  vi.spyOn(agentApi, 'agentPolicyGet').mockResolvedValue({ rules: {}, audit: [] });
 });
 
 afterEach(() => {
@@ -59,6 +60,59 @@ afterEach(() => {
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo');
   if (scrollIntoViewDescriptor) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', scrollIntoViewDescriptor);
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
+});
+
+it('crea el agente y abre su conversación sin enviar mensajes ni duplicarla al editar', async () => {
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const profile = { id: 'revisor', name: 'Revisor', color: '#0E7490', description: '', instructions: 'Revisa informes', starter: '', tools: null, created_at: 1, updated_at: 1 };
+  vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile });
+  const create = vi.spyOn(agentApi, 'agentSessionCreate').mockResolvedValue({ session: { ...session, profile: { id: profile.id, name: profile.name } } });
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Nuevo agente' }));
+  const editor = within(screen.getByRole('dialog', { name: 'Crear agente' }));
+  fireEvent.change(editor.getByLabelText('Nombre del agente'), { target: { value: profile.name } });
+  fireEvent.change(editor.getByLabelText('Indicaciones del agente'), { target: { value: profile.instructions } });
+  fireEvent.click(editor.getByRole('radio', { name: 'Color Verde' }));
+  await act(async () => { fireEvent.click(editor.getByRole('button', { name: 'Crear y chatear' })); });
+  expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba', profile_id: profile.id });
+  expect(screen.queryByRole('dialog', { name: 'Crear agente' })).not.toBeInTheDocument();
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Agentes' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Editar agente Revisor' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(create).toHaveBeenCalledTimes(1);
+});
+
+it('guarda el agente sin proveedor y muestra el perfil sin intentar abrir un chat', async () => {
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const profile = { id: 'revisor', name: 'Revisor', description: '', instructions: 'Revisa informes', starter: '', tools: null, created_at: 1, updated_at: 1 };
+  vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile });
+  const create = vi.spyOn(agentApi, 'agentSessionCreate');
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Nuevo agente' }));
+  const editor = within(screen.getByRole('dialog', { name: 'Crear agente' }));
+  fireEvent.change(editor.getByLabelText('Nombre del agente'), { target: { value: profile.name } });
+  fireEvent.change(editor.getByLabelText('Indicaciones del agente'), { target: { value: profile.instructions } });
+  await act(async () => { fireEvent.click(editor.getByRole('button', { name: 'Crear agente' })); });
+  expect(create).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Agentes' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: 'Editar agente Revisor' })).toBeInTheDocument();
+  expect(addToast).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
+});
+
+it.each([
+  { options: { remember: true }, payload: { approval_id: 'a1', remember: true } },
+  { options: { grantApp: true }, payload: { approval_id: 'a1', grant_app: true } },
+  { options: {}, payload: { approval_id: 'a1' } },
+])('conserva separados los permisos de dominio y aplicación: $options', async ({ options, payload }) => {
+  const invoke = vi.spyOn(window.electronAPI, 'invoke').mockResolvedValue({});
+  await agentApi.agentApprove('a1', options);
+  expect(invoke).toHaveBeenCalledWith('agent_approve', payload);
 });
 
 it('sugiere bots con @ y permite elegir con teclado sin enviar el mensaje', async () => {
@@ -320,6 +374,29 @@ it('permite ocultar la barra sin conversación activa y Ctrl+K la recupera para 
   expect(within(sidebar).getByRole('textbox', { name: 'Buscar conversaciones' })).toHaveFocus();
 });
 
+it('regula el razonamiento con los niveles del modelo y lo guarda al soltar', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const reasoning_levels = ['low', 'medium', 'high'] as const;
+  const plain = { ...session, id: 's2', title: 'Segunda', reasoning_levels: [] };
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [{ ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'xhigh' }, plain] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const save = vi.spyOn(agentApi, 'agentSessionReasoningSet')
+    .mockResolvedValueOnce({ session: { ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'medium' } });
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Alto' }));
+  const slider = within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByRole('slider', { name: 'Nivel de razonamiento' });
+  expect(slider).toHaveAttribute('max', '2');
+  fireEvent.change(slider, { target: { value: '1' } });
+  expect(slider).toHaveAttribute('aria-valuetext', 'Medio');
+  expect(save).not.toHaveBeenCalled();
+  await act(async () => { fireEvent.keyUp(slider, { key: 'ArrowLeft' }); });
+  expect(save).toHaveBeenCalledWith(session.id, 'medium');
+  expect(screen.getByRole('button', { name: 'Razonamiento: Medio' })).toBeEnabled();
+  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
+  expect(screen.queryByRole('button', { name: /^Razonamiento:/ })).not.toBeInTheDocument();
+});
+
 it('cambia los permisos por conversación y conserva el modo si falla el guardado', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   const second = { ...session, id: 's2', title: 'Segunda', permission_mode: 'ask' as const };
@@ -350,6 +427,157 @@ it('cambia los permisos por conversación y conserva el modo si falla el guardad
   await act(async () => { fireEvent.click(screen.getByRole('menuitemradio', { name: /^Solicitar aprobación/ })); });
   expect(screen.getByRole('button', { name: 'Permisos: Acceso completo' })).toBeEnabled();
   expect(addToast).toHaveBeenCalledWith({ message: 'No se pudieron guardar los permisos', type: 'error' });
+});
+
+it('guarda las reglas por canal y las refleja en el selector', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const save = vi.spyOn(agentApi, 'agentSessionRulesSet')
+    .mockResolvedValue({ session: { ...session, approval_rules: { files: 'allow' } } });
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' }));
+  const menu = screen.getByRole('menu', { name: 'Permisos del agente' });
+  const select = within(menu).getByRole('combobox', { name: 'Regla para Archivos' });
+  fireEvent.change(select, { target: { value: 'allow' } });
+  expect(save).toHaveBeenCalledWith(session.id, { files: 'allow' });
+  await act(async () => {});
+  expect(screen.getByRole('button', { name: /1 regla por canal/ })).toBeEnabled();
+});
+
+it('guarda una regla en el alcance global sin tocar las reglas de la conversación', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const sessionSave = vi.spyOn(agentApi, 'agentSessionRulesSet');
+  const globalSave = vi.spyOn(agentApi, 'agentPolicyRulesSet')
+    .mockResolvedValue({ rules: { files: 'deny' }, audit: [] });
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' }));
+  const menu = screen.getByRole('menu', { name: 'Permisos del agente' });
+  fireEvent.change(within(menu).getByRole('combobox', { name: 'Alcance de las reglas' }), { target: { value: 'global' } });
+  expect(menu).toBeVisible();
+  fireEvent.change(within(menu).getByRole('combobox', { name: 'Regla para Archivos' }), { target: { value: 'deny' } });
+  expect(globalSave).toHaveBeenCalledWith({ files: 'deny' });
+  expect(sessionSave).not.toHaveBeenCalled();
+  await act(async () => {});
+});
+
+it('muestra las reglas globales al elegir el alcance de todas las conversaciones', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.mocked(agentApi.agentPolicyGet).mockResolvedValue({ rules: { files: 'allow', cloud: 'deny' }, audit: [] });
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' }));
+  const menu = screen.getByRole('menu', { name: 'Permisos del agente' });
+  expect(within(menu).getByRole('combobox', { name: 'Regla para Archivos' })).toHaveValue('');
+  fireEvent.change(within(menu).getByRole('combobox', { name: 'Alcance de las reglas' }), { target: { value: 'global' } });
+  expect(within(menu).getByRole('combobox', { name: 'Regla para Archivos' })).toHaveValue('allow');
+  expect(within(menu).getByRole('combobox', { name: 'Regla para Nube y conexiones' })).toHaveValue('deny');
+  expect(within(menu).getByText('Se aplican a todas las conversaciones; las reglas de cada chat tienen prioridad.')).toBeInTheDocument();
+});
+
+it('muestra el historial de reglas con las entradas de auditoría más recientes primero', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.mocked(agentApi.agentPolicyGet).mockResolvedValue({
+    rules: {},
+    audit: [
+      { id: 'r1', at: 1, scope: 'session', channel: 'cloud', from: 'deny', to: 'ask' },
+      { id: 'r2', at: 3, scope: 'global', channel: 'files', from: null, to: 'allow' },
+    ],
+  });
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' }));
+  const menu = screen.getByRole('menu', { name: 'Permisos del agente' });
+  fireEvent.click(within(menu).getByRole('button', { name: 'Historial de reglas' }));
+  const entries = within(menu).getAllByRole('listitem');
+  expect(entries[0]).toHaveTextContent('Archivos · Todas las conversaciones · de «Heredar» a «Permitir»');
+  expect(entries[1]).toHaveTextContent('Nube y conexiones · Esta conversación · de «Bloquear» a «Preguntar»');
+});
+
+it('sigue guardando las reglas de la conversación al volver del alcance global', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.mocked(agentApi.agentPolicyGet).mockResolvedValue({ rules: { files: 'deny' }, audit: [] });
+  const sessionSave = vi.spyOn(agentApi, 'agentSessionRulesSet')
+    .mockResolvedValue({ session: { ...session, approval_rules: { files: 'ask' } } });
+  const globalSave = vi.spyOn(agentApi, 'agentPolicyRulesSet');
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' }));
+  const menu = screen.getByRole('menu', { name: 'Permisos del agente' });
+  const scope = within(menu).getByRole('combobox', { name: 'Alcance de las reglas' });
+  fireEvent.change(scope, { target: { value: 'global' } });
+  expect(within(menu).getByRole('combobox', { name: 'Regla para Archivos' })).toHaveValue('deny');
+  fireEvent.change(scope, { target: { value: 'session' } });
+  expect(within(menu).getByRole('combobox', { name: 'Regla para Archivos' })).toHaveValue('');
+  fireEvent.change(within(menu).getByRole('combobox', { name: 'Regla para Archivos' }), { target: { value: 'ask' } });
+  expect(sessionSave).toHaveBeenCalledWith(session.id, { files: 'ask' });
+  expect(globalSave).not.toHaveBeenCalled();
+  await act(async () => {});
+  expect(screen.getByRole('button', { name: /1 regla por canal/ })).toBeEnabled();
+});
+
+it.each([
+  { rule: 'allow', label: 'Permitir siempre este canal en esta conversación: Nube y conexiones', choice: 'allow' },
+  { rule: 'deny', label: 'Bloquear este canal en esta conversación', choice: 'deny' },
+] as const)('envía la regla rápida $rule junto con la decisión de la aprobación', async ({ rule, label, choice }) => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const approval: AgentApproval = {
+    id: 'a1', session_id: session.id, call_id: 'c1', method: 'gdrive_upload', params: {},
+    status: 'pending', created_at: 1, decided_at: null, channel: 'cloud',
+  };
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, pending_approvals: [approval] });
+  const approve = vi.spyOn(agentApi, 'agentApprove')
+    .mockResolvedValue({ approval: { ...approval, status: 'approved' } });
+  const deny = vi.spyOn(agentApi, 'agentDeny')
+    .mockResolvedValue({ approval: { ...approval, status: 'denied' } });
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: label })); });
+  const decided = choice === 'allow' ? approve : deny;
+  expect(decided).toHaveBeenCalledExactlyOnceWith('a1', { channel: 'cloud', rule });
+  expect(choice === 'allow' ? deny : approve).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: /1 regla por canal/ })).toBeInTheDocument();
+});
+
+it('no decide la aprobación si falla la decisión con regla rápida', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const approval: AgentApproval = {
+    id: 'a1', session_id: session.id, call_id: 'c1', method: 'gdrive_upload', params: {},
+    status: 'pending', created_at: 1, decided_at: null, channel: 'cloud',
+  };
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, pending_approvals: [approval] });
+  const approve = vi.spyOn(agentApi, 'agentApprove');
+  const deny = vi.spyOn(agentApi, 'agentDeny').mockRejectedValue(new Error('Sin conexión'));
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Bloquear este canal en esta conversación' })); });
+  expect(approve).not.toHaveBeenCalled();
+  expect(deny).toHaveBeenCalledWith('a1', { channel: 'cloud', rule: 'deny' });
+  expect(addToast).toHaveBeenCalledWith({ message: 'Sin conexión', type: 'error' });
+});
+
+it('deshace una acción reversible y refresca su recibo', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const call = {
+    id: 'c1', dispatch_id: 'c1@task:t1', name: 'fs_write', params: {}, gated: true, status: 'done' as const,
+    result: '{"saved_path":"a.txt"}', channel: 'files' as const, approval_source: 'manual' as const,
+    undo: { available: true, kind: 'delete' as const },
+  };
+  const list = vi.spyOn(agentApi, 'agentMessagesList')
+    .mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: '', ts: 1, tool_calls: [call] }] });
+  const undo = vi.spyOn(agentApi, 'agentEffectUndo')
+    .mockResolvedValue({ undone: true, path: 'C:\\a.txt', call_id: call.dispatch_id });
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: /Deshacer/ }));
+  await waitFor(() => expect(undo).toHaveBeenCalledWith(session.id, 'c1@task:t1'));
+  await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+  expect(addToast).toHaveBeenCalledWith({ message: 'Acción deshecha.', type: 'success' });
 });
 
 it('permite navegar los permisos con el teclado y cierra con Escape o un clic fuera', async () => {
@@ -596,6 +824,36 @@ it('adjunta archivos y carpetas y los envía por id con el mensaje', async () =>
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Genera el informe', expect.any(String), ['a1', 'a2']);
   expect(screen.queryByText('clientes.xlsx')).not.toBeInTheDocument();
+});
+
+it('adjunta archivos soltados por ruta y capturas pegadas por contenido', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const attach = vi.spyOn(agentApi, 'agentAttach')
+    .mockResolvedValueOnce({ attachments: [{ id: 'a1', name: 'informe.pdf', kind: 'files' }] })
+    .mockResolvedValueOnce({ attachments: [{ id: 'a2', name: 'x-captura.png', kind: 'files' }] });
+  const previousApi = window.electronAPI;
+  window.electronAPI = { ...window.electronAPI!, getPathForFile: (file: File) => (file.name === 'informe.pdf' ? 'C:\\docs\\informe.pdf' : '') };
+  const createObjectURL = vi.fn(() => 'blob:captura');
+  vi.stubGlobal('URL', Object.assign(URL, { createObjectURL }));
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  const pdf = new File(['%PDF'], 'informe.pdf', { type: 'application/pdf' });
+  await act(async () => { fireEvent.drop(screen.getByRole('group', { name: 'Redactar mensaje' }), { dataTransfer: { files: [pdf], types: ['Files'] } }); });
+  const shot = new File(['png'], 'captura.png', { type: 'image/png' });
+  await act(async () => { fireEvent.paste(screen.getByLabelText('Mensaje para el agente'), { clipboardData: { files: [shot] } }); });
+  await waitFor(() => expect(screen.getByText('x-captura.png')).toBeInTheDocument());
+  expect(attach.mock.calls).toEqual([
+    ['files', { paths: ['C:\\docs\\informe.pdf'], data: [] }],
+    ['files', { paths: [], data: [{ name: 'captura.png', data: btoa('png') }] }],
+  ]);
+  expect(screen.getByText('informe.pdf')).toBeInTheDocument();
+  expect(createObjectURL).toHaveBeenCalledWith(shot);
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Revisa' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Revisa', expect.any(String), ['a1', 'a2']);
+  window.electronAPI = previousApi;
+  vi.unstubAllGlobals();
 });
 
 it('avisa de las rutas escritas que no se autorizaron', async () => {
@@ -1335,7 +1593,18 @@ it('confirma la recepción solo tras la admisión y conserva ese recibo si falla
   list.mockRejectedValue(new Error('No se pudo leer el historial'));
   await act(async () => { admitted.resolve({ accepted: true }); });
   expect(receipts.getByText('Mensaje recibido.')).toBeVisible();
+  expect(screen.getByRole('region', { name: 'Estado de los envíos' })).toHaveClass('sr-only');
   expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText(/El estado mostrado puede estar desactualizado/)).toBeVisible();
+});
+
+it('el composer muestra los permisos en su barra y sin pista de teclado', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  render(<AgentView />);
+  await act(async () => {});
+  const composer = within(screen.getByRole('group', { name: 'Redactar mensaje' }));
+  expect(composer.getByRole('button', { name: 'Permisos: Aprobar por mí' })).toBeVisible();
+  expect(screen.queryByText('Mayús + Intro para una nueva línea')).not.toBeInTheDocument();
 });
 
 it('un mensaje sin aceptación conserva su borrador y ofrece recuperar la misma petición', async () => {

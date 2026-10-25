@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownRight, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
-import { agentApi, type AgentPermissionMode, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
+import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentRuleAudit, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
@@ -15,6 +15,7 @@ import { SegmentedControl } from '../ui/SegmentedControl';
 import AgentAvatar from './AgentAvatar';
 import ModelPicker from './ModelPicker';
 import PermissionPicker from './PermissionPicker';
+import ReasoningPicker from './ReasoningPicker';
 import ContextUsage from './ContextUsage';
 import ArtifactCard from './ArtifactCard';
 import QuestionCard from './QuestionCard';
@@ -151,6 +152,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [questions, setQuestions] = useState<AgentQuestion[]>([]);
   const [context, setContext] = useState<AgentContext | null>(null);
   const [usage, setUsage] = useState<AgentUsage | null>(null);
+  const [contextWindow, setContextWindow] = useState<number | null>(null);
+  const [compactionThresholds, setCompactionThresholds] = useState<{ warn: number; compact: number } | null>(null);
+  const [compacting, setCompacting] = useState(false);
   const [pending, setPending] = useState<AgentApproval[]>([]);
   const [running, setRunning] = useState(false);
   const [plan, setPlan] = useState<AgentPlan | null>(null);
@@ -159,6 +163,11 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [model, setModel] = useState('');
   const [modelBusy, setModelBusy] = useState(false);
   const [permissionsBusy, setPermissionsBusy] = useState(false);
+  const [rulesBusy, setRulesBusy] = useState(false);
+  const [rulesScope, setRulesScope] = useState<'session' | 'global'>('session');
+  const [globalRules, setGlobalRules] = useState<AgentApprovalRules>({});
+  const [audit, setAudit] = useState<AgentRuleAudit[]>([]);
+  const [reasoningBusy, setReasoningBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const sendInFlightRef = useRef(false);
   const [messagesStale, setMessagesStale] = useState(false);
@@ -183,9 +192,19 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     agentApi.agentProfilesList().then((res) => { if (!cancelled) setProfiles(res.profiles); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
+  useEffect(() => {
+    let cancelled = false;
+    agentApi.agentPolicyGet().then((res) => {
+      if (cancelled) return;
+      setGlobalRules(res.rules);
+      setAudit(res.audit);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [deciding, setDeciding] = useState<{ id: string; approved: boolean } | null>(null);
   const decisionRef = useRef<string | null>(null);
-  const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
+  const [attachments, setAttachments] = useState<(AgentAttachment & { preview?: string })[]>([]);
+  const [dragging, setDragging] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
@@ -291,6 +310,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           setQuestions(res.questions ?? []);
           setContext(res.context ?? null);
           setUsage(res.usage ?? null);
+          setContextWindow(res.context_window ?? null);
+          setCompactionThresholds(res.compaction_thresholds ?? null);
+          setCompacting(!!res.compacting);
           setPending(res.pending_approvals);
           setRunning(res.running);
           setPlan(res.plan ?? null);
@@ -365,6 +387,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     setQuestions([]);
     setContext(null);
     setUsage(null);
+    setContextWindow(null);
+    setCompactionThresholds(null);
+    setCompacting(false);
     setPending([]);
     setPlan(null);
     setResumable(false);
@@ -467,10 +492,61 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       setPermissionsBusy(false);
     }
   };
+  const changeRules = async (rules: AgentApprovalRules) => {
+    if (!sessionId || rulesBusy) return;
+    setRulesBusy(true);
+    try {
+      const { session: updated, audit: entries } = await agentApi.agentSessionRulesSet(sessionId, rules);
+      setSessions((list) => list.map((item) => item.id === updated.id ? updated : item));
+      if (entries) setAudit(entries);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudieron guardar las reglas por canal'), type: 'error' });
+    } finally {
+      setRulesBusy(false);
+    }
+  };
+  const changeGlobalRules = async (rules: AgentApprovalRules) => {
+    if (rulesBusy) return;
+    setRulesBusy(true);
+    try {
+      const { rules: saved, audit: entries } = await agentApi.agentPolicyRulesSet(rules);
+      setGlobalRules(saved);
+      setAudit(entries);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudieron guardar las reglas globales'), type: 'error' });
+    } finally {
+      setRulesBusy(false);
+    }
+  };
+  const undoEffect = async (callId: string) => {
+    const id = sessionId;
+    if (!id) return;
+    try {
+      await agentApi.agentEffectUndo(id, callId);
+      addToast({ message: 'Acción deshecha.', type: 'success' });
+      await loadMessages(id, false);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo deshacer la acción'), type: 'error' });
+    }
+  };
+  const changeReasoning = async (effort: AgentReasoningEffort) => {
+    if (!sessionId || reasoningBusy) return;
+    setReasoningBusy(true);
+    try {
+      const { session: updated } = await agentApi.agentSessionReasoningSet(sessionId, effort);
+      setSessions((list) => list.map((item) => item.id === updated.id ? updated : item));
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo cambiar el razonamiento'), type: 'error' });
+    } finally {
+      setReasoningBusy(false);
+    }
+  };
   const queuedForSession = queued.filter((i) => i.session === sessionId);
   const receiptsForSession = sendReceipts.filter((receipt) => receipt.intent.session === sessionId);
   const latestReceipt = receiptsForSession[receiptsForSession.length - 1];
   const visibleReceipts = receiptsForSession.filter((receipt) => receipt.phase !== 'received' || receipt === latestReceipt);
+  // Un recibo confirmado solo se anuncia: el mensaje ya aparece en la conversación.
+  const receiptsQuiet = visibleReceipts.every((receipt) => receipt.phase === 'received');
   const readyProviders = providers.filter((p) => p.configured && (!p.needs_key || p.has_key));
   const providerLabel = providers.find((p) => p.id === provider)?.label ?? provider;
   const filteredTools = useMemo(() => {
@@ -733,6 +809,29 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
 
+  // Soltar o pegar archivos: con ruta se adjuntan tal cual; sin ruta
+  // (capturas del portapapeles) se envían los bytes para guardarlos.
+  const attachFiles = async (files: File[]) => {
+    if (!sessionId || !files.length) return;
+    const withPath = files.map((file) => ({ file, path: window.electronAPI?.getPathForFile?.(file) || '' }));
+    const pasted = withPath.filter((item) => !item.path).map((item) => item.file);
+    try {
+      const data = await Promise.all(pasted.map((file) => new Promise<{ name: string; data: string }>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name || 'captura.png', data: String(reader.result).split(',')[1] ?? '' });
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      })));
+      const ordered = [...withPath.filter((item) => item.path).map((item) => item.file), ...pasted];
+      const res = await agentApi.agentAttach('files', { paths: withPath.filter((item) => item.path).map((item) => item.path), data });
+      if (res.attachments.length) draftVersionRef.current += 1;
+      setAttachments((prev) => [...prev, ...res.attachments.map((item, index) => (ordered[index]?.type.startsWith('image/')
+        ? { ...item, preview: URL.createObjectURL(ordered[index]) } : item))]);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo adjuntar'), type: 'error' });
+    }
+  };
+
   const sendSuggestion = async (text: string) => {
     if (running || pending.length > 0) return;
     await send(false, text);
@@ -752,16 +851,42 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
 
-  const decide = async (id: string, ok: boolean, remember = false) => {
+  const decide = async (id: string, ok: boolean, opts?: Parameters<typeof agentApi.agentApprove>[1]) => {
     if (decisionRef.current) return;
     decisionRef.current = id;
     setDeciding({ id, approved: ok });
     try {
-      if (ok) await agentApi.agentApprove(id, remember);
+      if (ok) await agentApi.agentApprove(id, opts);
       else await agentApi.agentDeny(id);
       await loadMessages(sessionId);
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo aplicar la decisión'), type: 'error' });
+    } finally {
+      decisionRef.current = null;
+      setDeciding(null);
+    }
+  };
+  const decideWithRule = async (approval: AgentApproval, channel: AgentChannel, rule: 'allow' | 'deny') => {
+    if (!session || !channel || decisionRef.current) return;
+    decisionRef.current = approval.id;
+    setDeciding({ id: approval.id, approved: rule === 'allow' });
+    try {
+      const decision = { channel, rule };
+      if (rule === 'allow') await agentApi.agentApprove(approval.id, decision);
+      else await agentApi.agentDeny(approval.id, decision);
+      setSessions((list) => list.map((item) => item.id === session.id
+        ? { ...item, approval_rules: { ...(item.approval_rules ?? {}), [channel]: rule } }
+        : item));
+      try {
+        const policy = await agentApi.agentPolicyGet();
+        setGlobalRules(policy.rules);
+        setAudit(policy.audit);
+      } catch { /* la decisión ya se aplicó; el historial se refrescará al reabrir */ }
+      await loadMessages(sessionId);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo aplicar la decisión'), type: 'error' });
+      const listed = await agentApi.agentSessionsList().catch(() => null);
+      if (listed) setSessions(listed.sessions);
     } finally {
       decisionRef.current = null;
       setDeciding(null);
@@ -773,7 +898,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const suggestionList = activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS;
   const suggestionsHidden = !!draft.trim() || running || pending.length > 0;
   const agentIdentity = session
-    ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? 'Antares' }
+    ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? 'Antares', color: activeProfile?.color }
     : undefined;
 
   const changeModel = async (next: { provider: string; model: string }) => {
@@ -813,10 +938,15 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         <AgentEditor
           key={editing === 'new' ? 'new' : editing.id}
           profile={editing === 'new' ? null : editing}
+          canStartChat={Boolean(provider)}
           onClose={() => setEditing(null)}
           onSaved={(saved) => {
             setProfiles((prev) => [...prev.filter((p) => p.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, 'es')));
             setEditing(null);
+            if (editing === 'new') {
+              if (provider) void newSession(saved);
+              else setSidebarView('agents');
+            }
           }}
           onDeleted={(id) => {
             setProfiles((prev) => prev.filter((p) => p.id !== id));
@@ -920,7 +1050,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           </p>}
           {visibleProfiles.map((profile) => (
             <div key={profile.id} className={`group flex h-[50px] shrink-0 items-center gap-2 rounded-xl p-1.5 transition-colors ${activeProfile?.id === profile.id ? 'bg-[var(--bg-input)]' : 'hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]'}`}>
-              <AgentAvatar seed={profile.id} name={profile.name} size={32} className="shrink-0" />
+              <AgentAvatar seed={profile.id} color={profile.color} name={profile.name} size={32} className="shrink-0" />
               <button
                 type="button"
                 className="flex min-w-0 flex-1 flex-col text-left"
@@ -1088,6 +1218,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
               <AgentAvatar
                 seed={agentIdentity?.seed ?? 'antares-agent'}
+                color={activeProfile?.color}
                 name={agentIdentity?.name ?? 'Agente de Antares'}
                 size={64}
               />
@@ -1113,7 +1244,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               return (
                 <div key={`${sessionId}-${m.role}-${i}`} className="space-y-4">
                   {newDay && <DaySeparator label={label} />}
-                  <MessageRow msg={m} agent={agentIdentity} />
+                  <MessageRow msg={m} agent={agentIdentity} onUndo={undoEffect} />
                 </div>
               );
             })
@@ -1123,7 +1254,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             <div key={a.id} id={`agent-approval-${a.id}`}>
               <ApprovalCard approval={a} busy={!!deciding}
                 decision={deciding?.id === a.id ? deciding.approved ? 'approve' : 'deny' : undefined}
-                onDecide={(id, ok, remember) => void decide(id, ok, remember)} />
+                onDecide={(id, ok, opts) => void decide(id, ok, opts)}
+                onRule={(channel, rule) => void decideWithRule(a, channel, rule)} />
             </div>
           ))}
           {artifacts.map((artifact) => <div key={artifact.id} id={`agent-artifact-${artifact.id}`}>
@@ -1266,7 +1398,11 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               </ol>
             </section>
           )}
-          <div role="group" aria-label="Redactar mensaje" className="agent-composer rounded-2xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] transition-colors">
+          <div role="group" aria-label="Redactar mensaje"
+            className={`agent-composer rounded-2xl border bg-[var(--bg-elevated)] transition-colors ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
+            onDragOver={(event) => { if (!sessionId || !event.dataTransfer.types.includes('Files')) return; event.preventDefault(); setDragging(true); }}
+            onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
+            onDrop={(event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); void attachFiles([...event.dataTransfer.files]); }}>
             {mentionMatch && <div className="border-b border-[var(--border-subtle)] p-2">
               <p className="px-2 pb-1 text-[11px] text-[var(--text-secondary)]">Colaborar con un bot · solo lectura</p>
               <div ref={botMentionsRef} id="agent-bot-mentions" role="listbox" aria-label="Bots para mencionar" className="max-h-44 overflow-y-auto">
@@ -1274,7 +1410,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   aria-selected={selectedMention?.id === profile.id} tabIndex={-1} variant="none" size="none"
                   className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--bg-input)] ${selectedMention?.id === profile.id ? 'bg-[var(--bg-input)]' : ''}`}
                   onMouseDown={(event) => event.preventDefault()} onClick={() => insertBotMention(profile)}>
-                  <AgentAvatar seed={profile.id} name={profile.name} size={24} />
+                  <AgentAvatar seed={profile.id} color={profile.color} name={profile.name} size={24} />
                   <span className="min-w-0 flex-1"><span className="block truncate text-[12px]">{profile.name}</span>
                     <span className="block truncate text-[11px] text-[var(--text-secondary)]">{profile.description || 'Agente guardado'} · {profile.id}</span></span>
                 </Button>)}
@@ -1288,7 +1424,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                     key={item.id}
                     className="flex max-w-[60%] items-center gap-1 rounded-full bg-[var(--bg-input)] py-0.5 pl-2 pr-1 text-[11px] text-[var(--text-secondary)]"
                   >
-                    {item.kind === 'folder' ? <FolderOpen size={11} /> : <Paperclip size={11} />}
+                    {item.preview ? <img src={item.preview} alt="" className="size-5 rounded object-cover" />
+                      : item.kind === 'folder' ? <FolderOpen size={11} /> : <Paperclip size={11} />}
                     <span className="truncate">{item.name}</span>
                     <button
                       type="button"
@@ -1309,6 +1446,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 value={draft}
                 onChange={(event) => { draftVersionRef.current += 1; setDraft(event.target.value); setMentionCursor(event.target.selectionStart); setMentionIndex(0); setMentionsHidden(false); }}
                 onSelect={(event) => setMentionCursor(event.currentTarget.selectionStart)}
+                onPaste={(event) => { if (!sessionId || !event.clipboardData.files.length) return; event.preventDefault(); void attachFiles([...event.clipboardData.files]); }}
                 aria-autocomplete="list"
                 aria-controls={mentionMatch ? 'agent-bot-mentions' : undefined}
                 aria-activedescendant={selectedMention ? `agent-mention-${selectedMention.id}` : undefined}
@@ -1357,6 +1495,23 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               >
                 <FolderOpen size={14} />
               </button>
+              {session && (
+                <PermissionPicker
+                  key={session.id}
+                  value={session.permission_mode ?? 'auto'}
+                  onChange={(mode) => void changePermissions(mode)}
+                  disabled={permissionsBusy || rulesBusy || modelBusy || running || stopping || pending.length > 0}
+                  pending={pending.length}
+                  rules={session.approval_rules ?? {}}
+                  onRulesChange={(rules) => void changeRules(rules)}
+                  rulesBusy={rulesBusy}
+                  globalRules={globalRules}
+                  onGlobalRulesChange={(rules) => void changeGlobalRules(rules)}
+                  audit={audit}
+                  scope={rulesScope}
+                  onScopeChange={setRulesScope}
+                />
+              )}
               <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1">
                 {readyProviders.length > 0 ? (
                   <ModelPicker
@@ -1372,7 +1527,16 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                     {session?.model || model || providerLabel || 'Proveedor IA'}
                   </span>
                 )}
-                <ContextUsage usage={usage} model={session?.model ?? model} />
+                {!!session?.reasoning_levels?.length && (
+                  <ReasoningPicker
+                    key={session.id}
+                    levels={session.reasoning_levels}
+                    value={session.reasoning_effort ?? 'low'}
+                    onChange={(effort) => void changeReasoning(effort)}
+                    disabled={reasoningBusy || modelBusy || running || stopping || pending.length > 0}
+                  />
+                )}
+                <ContextUsage usage={usage} model={session?.model ?? model} contextWindow={contextWindow} thresholds={compactionThresholds} compacting={compacting} />
               </div>
               {(running || pending.length > 0) && (
                 <div className="agent-turn-actions flex shrink-0 items-center gap-1">
@@ -1411,7 +1575,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             </div>
           </div>
           {visibleReceipts.length > 0 && (
-            <div role="region" aria-label="Estado de los envíos" tabIndex={0} className="custom-scrollbar max-h-36 space-y-2 overflow-y-auto px-3 pt-2">
+            <div role="region" aria-label="Estado de los envíos" tabIndex={receiptsQuiet ? undefined : 0} className={`${receiptsQuiet ? 'sr-only ' : ''}custom-scrollbar max-h-36 space-y-2 overflow-y-auto px-3 pt-2`}>
               {visibleReceipts.map((receipt) => (
                 <div key={receipt.intent.requestId} className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[12px] leading-5 text-[var(--text-secondary)]">
                   <p role="status" aria-live="polite" aria-atomic="true" className="min-w-0 flex-1">
@@ -1431,18 +1595,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               ))}
             </div>
           )}
-          <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 text-[12px] text-[var(--text-muted)]">
-            {session ? (
-              <PermissionPicker
-                key={session.id}
-                value={session.permission_mode ?? 'auto'}
-                onChange={(mode) => void changePermissions(mode)}
-                disabled={permissionsBusy || modelBusy || running || stopping || pending.length > 0}
-                pending={pending.length}
-              />
-            ) : <span />}
-            <div className="flex min-w-0 items-center gap-1">
-              {resumable && !running && pending.length === 0 && (
+          {resumable && !running && pending.length === 0 && (
+            <div className="mt-1.5 flex min-w-0 items-center justify-end gap-2 text-[12px] text-[var(--text-muted)]">
                 <button
                   type="button"
                   className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
@@ -1453,10 +1607,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   <Play size={11} aria-hidden="true" />
                   Reanudar
                 </button>
-              )}
-              <span className="hidden text-[11px] sm:inline">Mayús + Intro para una nueva línea</span>
             </div>
-          </div>
+          )}
         </div>
       </main>
 

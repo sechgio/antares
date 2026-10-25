@@ -56,6 +56,19 @@ def test_agent_model_selection_is_a_renderer_command_not_an_agent_tool():
     assert "agent_session_model_set" not in ORCHESTRATABLE_METHODS
 
 
+def test_agent_profile_color_accepts_legacy_calls_and_rejects_non_hex_colors():
+    import jsonschema
+
+    schema = _catalog()["methods"]["agent_profile_save"]["inputSchema"]
+    params = {"name": "Revisor", "instructions": "Revisa documentos"}
+    jsonschema.validate(params, schema)
+    for color in ("", "#0E7490", "#aabbCC"):
+        jsonschema.validate({**params, "color": color}, schema)
+    for color in (None, 12, "#fff", "red", "url(https://example.com)", "#0E7490\n"):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({**params, "color": color}, schema)
+
+
 def test_agent_approve_accepts_optional_remember_for_always_allow():
     import jsonschema
 
@@ -64,8 +77,13 @@ def test_agent_approve_accepts_optional_remember_for_always_allow():
     schema = entry["inputSchema"]
     assert schema["required"] == ["approval_id"]
     assert schema["properties"]["remember"] == {"type": "boolean"}
+    assert schema["properties"]["grant_app"] == {"type": "boolean"}
     jsonschema.validate({"approval_id": "ap-1"}, schema)
     jsonschema.validate({"approval_id": "ap-1", "remember": True}, schema)
+    jsonschema.validate({"approval_id": "ap-1", "grant_app": True}, schema)
+    for field in ("remember", "grant_app"):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({"approval_id": "ap-1", field: "true"}, schema)
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate({}, schema)
 
@@ -78,6 +96,39 @@ def test_agent_permission_selection_is_a_renderer_command_not_an_agent_tool():
     assert entry["inputSchema"]["required"] == ["id", "permission_mode"]
     assert entry["inputSchema"]["properties"]["permission_mode"]["enum"] == ["ask", "auto", "full"]
     assert "agent_session_permissions_set" not in ORCHESTRATABLE_METHODS
+
+
+def test_agent_broker_rules_and_undo_have_explicit_contracts():
+    methods = _catalog()["methods"]
+    rules = methods["agent_session_rules_set"]
+    assert rules["handler"] == "native:agent"
+    assert rules["inputSchema"]["required"] == ["id", "rules"]
+    rule_props = rules["inputSchema"]["properties"]["rules"]["properties"]
+    assert rule_props["terminal"]["enum"] == ["ask", "deny"]
+    assert rule_props["other"]["enum"] == ["ask", "deny"]
+    assert rule_props["mcp"]["enum"] == ["ask", "allow", "deny"]
+    assert rule_props["memory"]["enum"] == ["ask", "allow", "deny"]
+    assert rule_props["agenda"]["enum"] == ["ask", "allow", "deny"]
+    assert set(rule_props).issuperset({"terminal", "files", "desktop", "cloud", "mcp", "documents", "memory", "agenda", "other"})
+
+    undo = methods["agent_effect_undo"]
+    assert undo["handler"] == "native:agent"
+    assert undo["inputSchema"]["required"] == ["session_id", "call_id"]
+
+    for name in ("agent_internal_effects", "agent_internal_effect_undo"):
+        assert methods[name]["handler"] == "backend:agent_internal"
+        assert methods[name]["internal"] is True
+        assert methods[name]["inputSchema"]["required"]
+
+
+def test_agent_reasoning_selection_is_a_renderer_command_not_an_agent_tool():
+    from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
+
+    entry = _catalog()["methods"]["agent_session_reasoning_set"]
+    assert entry["handler"] == "native:agent"
+    assert entry["inputSchema"]["required"] == ["id", "reasoning_effort"]
+    assert entry["inputSchema"]["properties"]["reasoning_effort"]["enum"] == ["minimal", "low", "medium", "high", "xhigh"]
+    assert "agent_session_reasoning_set" not in ORCHESTRATABLE_METHODS
 
 
 def test_agent_methods_have_explicit_schemas_and_internal_refresh_hides_client_secrets(monkeypatch):
@@ -101,6 +152,22 @@ def test_agent_methods_have_explicit_schemas_and_internal_refresh_hides_client_s
     result = integrations.HANDLERS["connections_token_refresh"]({"provider": "demo"})
     assert result["tokens"]["refresh_token"] == "rotated"
     assert "client_secret" not in result["tokens"] and "client_id" not in result["tokens"]
+
+
+def test_computer_use_methods_are_internal_and_never_retryable():
+    from backend.core.ipc_catalog import IDEMPOTENT_METHODS, ORCHESTRATABLE_METHODS, handler_module_for
+
+    methods = _catalog()["methods"]
+    for name in ("computer_use_enumerate", "computer_use_window_state", "computer_use_action", "computer_use_launch_app"):
+        assert methods[name]["handler"] == "backend:computer_use"
+        assert methods[name]["internal"] is True
+        assert name not in ORCHESTRATABLE_METHODS
+    assert handler_module_for("computer_use_action") == "backend.handlers.computer_use"
+    assert {"computer_use_enumerate", "computer_use_window_state"} <= IDEMPOTENT_METHODS
+    assert "computer_use_action" not in IDEMPOTENT_METHODS
+    assert methods["computer_use_action"]["inputSchema"]["properties"]["action"]["enum"] == [
+        "click", "type_text", "press_key", "scroll", "drag", "set_value"
+    ]
 
 
 def test_flujos_methods_are_retired_and_kept_services_move_to_their_handlers() -> None:

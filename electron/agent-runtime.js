@@ -18,12 +18,18 @@ const {
 } = require('./agent-shared');
 const execution = require('./agent-execution');
 const projection = require('./agent-projection');
+const { validateRules } = require('./agent-channels');
+const compactionPolicy = require('./agent-compaction');
+const { loadAgentProfile, resolvePortableProfile } = require('./agent-profiles');
 
 const MAX_MESSAGE_CHARS = 12_000;
 const MAX_REQUEST_ID_CHARS = 100;
 const MAX_MESSAGE_PATHS = 20;
 const ATTACHMENT_TTL_MS = 60 * 60 * 1000;
 const MAX_ATTACHMENTS = 20;
+const MAX_PASTED_BYTES = 20 * 1024 * 1024;
+const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024;
+const IMAGE_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
 const QUOTED_PATH_RE = /["'`\u201c\u201d]([A-Za-z]:\\[^"'`\u201c\u201d\r\n]+)["'`\u201c\u201d]/g;
 const BARE_PATH_RE = /(?:^|[\s(\[])([A-Za-z]:\\[^\s"'`<>|*?]+)/g;
 
@@ -66,7 +72,8 @@ const SYSTEM_PROMPT =
   'Si el encargo encaja con un agente guardado, usa agent_delegate si está disponible; conserva una conversación '
     + 'separada y su resultado llegará después. Con subagent_run la colaboración es síncrona. '
     + 'Para encargos futuros pedidos por el usuario usa task_schedule, con fecha y zona horaria explícitas; '
-    + 'para trabajo que deba ejecutarse en orden usa task_schedule con action=enqueue.\n\n' +
+    + 'para trabajo que deba ejecutarse en orden usa task_schedule con action=enqueue; '
+    + 'para esperar dentro del encargo usa wait_event (tiempo, archivo, operación de AutoIMG, delegación, job, correo, GitHub o HTTP) y reanudarás el mismo turno.\n\n' +
   SKILLS_GUIDE + '\n\n' +
   'Para encargos de varios pasos en el equipo sigue el ciclo planificar → actuar → observar → verificar: publica el plan ' +
   'con task_plan antes de actuar y actualízalo al avanzar; tras cada acción revisa su resultado (salida y código del ' +
@@ -79,7 +86,8 @@ const SYSTEM_PROMPT =
   'Archivos: fs_list, fs_read y fs_search leen el espacio de trabajo de la conversación y lo que el usuario adjuntó ' +
   '(PDF, Excel, Word y texto); fs_write y fs_edit escriben, y un nombre relativo va al espacio de trabajo. ' +
   'Terminal: shell_run inicia PowerShell en el espacio de trabajo, pero puede acceder al equipo completo con los permisos del usuario; '
-    + 'cada comando requiere aprobación, también en Acceso completo. Internet: web_open abre páginas o búsquedas en un ' +
+    + 'cada comando requiere aprobación, también en Acceso completo. Para builds o despliegues largos usa shell_job_start y espera '
+    + 'con wait_event kind=shell_job; shell_output lee su salida y shell_job_cancel lo detiene. Internet: web_open abre páginas o búsquedas en un ' +
   'navegador aislado sin las sesiones del usuario; web_read devuelve el texto y elementos con ref para web_click y web_type. ' +
   'Escritorio de Windows: desktop_observe captura la pantalla con sus ventanas y controles y sus coordenadas; ' +
   'desktop_launch, desktop_focus, desktop_click, desktop_type, desktop_key y desktop_scroll actúan y devuelven una captura ' +
@@ -144,19 +152,30 @@ async function _open(options = {}) {
       kind: 'antares.agent.scheduled-tasks', version: 1, scope: 'session',
       initial: () => ({ tasks: {}, queues: {}, next_queue_seq: 1 }),
     });
+    const PolicyDoc = pi.defineDoc({
+      kind: 'antares.agent.policy', version: 1, scope: 'session', initial: () => ({ rules: {}, audit: [] }),
+    });
+    const WaitsDoc = pi.defineDoc({
+      kind: 'antares.agent.waits', version: 1, scope: 'session', initial: () => ({ waits: {} }),
+    });
     const BudgetDoc = pi.defineDoc({
       kind: 'antares.agent.budget', version: 1, scope: 'conversation', initial: () => ({ rounds: 0 }),
     });
     const registry = pi.createRegistry();
     // Retención larga: una aprobación o una pausa de más de 5 minutos no vacía
     // la caché del prefijo (solo la reciben las APIs oficiales, ver modelDefinition).
-    // La compactación automática conserva los valores por defecto de pi-durable;
-    // agent-compaction cubre las ventanas donde su corte no llega a activarse.
+    // Compactación en dos capas: los umbrales de ai-agent/compaction.json con
+    // la política sagrada de resumen en agent-compaction.beforeCompact, y el
+    // guardián mecánico por petición en agent-execution.compactRequest.
     const settings = {
       ...(options.settings || {}),
       stream: { cacheRetention: 'long', ...(options.settings && options.settings.stream) },
+      // La política del llamante gana; si no, la de ai-agent/compaction.json.
+      compaction: options.compaction || (options.settings && options.settings.compaction) || compactionPolicy.loadPolicy(dir),
+      ...(options.retry ? { retry: options.retry } : {}),
     };
     const harness = await pi.Harness.open(storage, { models, registry, settings }, ctx());
+    shared.boot = crypto.randomUUID();
     shared.state = {
       harness,
       models,
@@ -164,11 +183,17 @@ async function _open(options = {}) {
       SessionsDoc,
       ProfilesDoc,
       TasksDoc,
+      PolicyDoc,
+      WaitsDoc,
       BudgetDoc,
+      compaction: settings.compaction,
       dir,
       ctx: ctx(),
       convIndex: shared.convToSession,
+      portableProfiles: new Map(),
     };
+    const policy = await harness.snapshot(PolicyDoc, ctx());
+    shared.globalRules = { ...(policy && policy.rules ? policy.rules : {}) };
     await _indexConversations();
     await _restoreExecutionContext();
     if (!options.skipImport) {
@@ -194,6 +219,9 @@ async function _restoreExecutionContext() {
   const { pi } = shared.deps;
   for (const session of Object.values(await sessions())) {
     if (session.deleted) continue;
+    if (session.profile?.portable) {
+      shared.state.portableProfiles.set(session.conversationId, { kind: 'unloaded', slug: session.profile.id });
+    }
     const live = await harness.snapshot(pi.LiveDoc, session.conversationId, ctx());
     const inbox = await harness.snapshot(pi.InboxDoc, session.conversationId, ctx());
     const pending = !!live?.run || !!inbox?.items.length;
@@ -213,11 +241,30 @@ async function _indexConversations() {
   }
 }
 
+// Sesiones anteriores al selector: se sincronizan con el modelo en su próximo turno.
+const LEGACY_REASONING = ['minimal', 'low', 'medium', 'high'];
+
+function toPublicSession(current) {
+  const { conversationId, style, modules, ...rest } = current;
+  if (rest.approval_rules && typeof rest.approval_rules === 'object') {
+    rest.approval_rules = { ...rest.approval_rules };
+  }
+  rest.reasoning_levels = rest.reasoning_levels
+    ? [...rest.reasoning_levels]
+    : (execution.supportsReasoning(style, rest.model) ? LEGACY_REASONING : []);
+  return rest;
+}
+
 async function sessionsList() {
   const result = Object.values(await sessions())
     .filter((s) => !s.deleted)
     .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))
-    .map(({ conversationId, legacy_id, deleted, import: _import, style, modules, ...rest }) => rest);
+    .map(({ conversationId, legacy_id, deleted, import: _import, style, modules, ...rest }) => {
+      if (rest.approval_rules && typeof rest.approval_rules === 'object') {
+        rest.approval_rules = { ...rest.approval_rules };
+      }
+      return { ...rest, reasoning_levels: rest.reasoning_levels ?? (execution.supportsReasoning(style, rest.model) ? LEGACY_REASONING : []) };
+    });
   return { sessions: result };
 }
 
@@ -244,6 +291,9 @@ async function profilesList() {
 }
 
 async function profileSave(params = {}) {
+  if (params.color !== undefined && (typeof params.color !== 'string' || !/^(?:#[0-9a-fA-F]{6})?(?![\s\S])/.test(params.color))) {
+    throw validation('El color debe ser hexadecimal o automático');
+  }
   const tools = params.tools;
   if (tools !== null && tools !== undefined && (!Array.isArray(tools) || tools.some((name) => typeof name !== 'string'))) {
     throw validation('Las herramientas deben ser una lista o «todas»');
@@ -260,6 +310,7 @@ async function profileSave(params = {}) {
   const profile = {
     id: existing ? existing.id : crypto.randomBytes(6).toString('hex'),
     name: _text(params.name, 'un nombre', 60, true),
+    ...((params.color ?? existing?.color) ? { color: params.color ?? existing.color } : {}),
     description: _text(params.description, 'la descripción', 200),
     role,
     instructions: _text(params.instructions, 'las instrucciones', 4000, true),
@@ -295,12 +346,14 @@ async function sessionCreate(params) {
   if (typeof provider !== 'string' || !provider) throw validation('Falta el parámetro provider');
   const info = await execution.providerInfo(provider);
   const requested = typeof params.model === 'string' ? params.model : '';
-  const model = (requested || String(info.default_model || '')).slice(0, 120);
-  const profile = params.profile_id ? (await _profiles())[String(params.profile_id)] : null;
-  if (params.profile_id && !profile) throw notFound('El agente ya no existe');
+  const savedProfile = params.profile_id ? (await _profiles())[String(params.profile_id)] : null;
+  const portableProfile = params.profile_id && !savedProfile ? loadAgentProfile(String(params.profile_id)) : null;
+  const profile = savedProfile || (portableProfile && { ...portableProfile, id: portableProfile.slug });
+  const model = (requested || portableProfile?.model || String(info.default_model || '')).slice(0, 120);
   const title = String(params.title || (profile && profile.name) || '').slice(0, 120);
   await execution.refreshTools();
   await execution.ensureProvider(provider, model);
+  const levels = await execution.reasoningLevels(provider, model);
   const instructions = profile
     ? `${SYSTEM_PROMPT}\n\nEres el agente «${profile.name}» que el usuario configuró para una tarea repetitiva. `
       + 'Sus indicaciones orientan el trabajo, pero no amplían los permisos elegidos para la conversación.\n'
@@ -308,7 +361,7 @@ async function sessionCreate(params) {
     : SYSTEM_PROMPT;
   const conv = await shared.state.harness.createConversation({
     ownership: { kind: 'ownerless' },
-    agent: { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(info.style, model), instructions },
+    agent: { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(levels), instructions },
   }, ctx());
   const specs = [...shared.toolSpecs.values()];
   const available = new Set(specs.map((tool) => tool.name));
@@ -327,14 +380,15 @@ async function sessionCreate(params) {
     created_at: now,
     updated_at: now,
     last_error: null,
-    ...(profile ? { profile: { id: profile.id, name: profile.name } } : {}),
+    reasoning_levels: levels,
+    ...(profile ? { profile: { id: profile.id, name: profile.name, ...(portableProfile ? { portable: true } : {}) } } : {}),
   };
   await commitSessions((map) => {
     map[session.id] = session;
   });
+  if (portableProfile) shared.state.portableProfiles.set(conv.id, { kind: 'loaded', profile: portableProfile });
   shared.convToSession.set(conv.id, session.id);
-  const { conversationId, style, ...publicSession } = session;
-  return { session: publicSession };
+  return { session: toPublicSession(session) };
 }
 
 async function sessionRename(params) {
@@ -345,8 +399,7 @@ async function sessionRename(params) {
   let renamed;
   await commitSessions((map) => {
     map[sessionId].title = title;
-    const { conversationId, style, modules, ...rest } = map[sessionId];
-    renamed = rest;
+    renamed = toPublicSession(map[sessionId]);
   });
   return { session: renamed };
 }
@@ -358,6 +411,7 @@ async function sessionModelSet(params) {
   const session = await requireSession(sessionId);
   const info = await execution.providerInfo(provider);
   await execution.ensureProvider(provider, model);
+  const levels = await execution.reasoningLevels(provider, model);
   const { pi } = shared.deps;
   return shared.state.harness.commit(async (tx) => {
     const live = await tx.doc(pi.LiveDoc, session.conversationId);
@@ -366,13 +420,36 @@ async function sessionModelSet(params) {
     const doc = await tx.doc(shared.state.SessionsDoc);
     const current = doc.sessions[sessionId];
     if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
-    await pi.configure(tx, session.conversationId, { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(info.style, model) });
+    await pi.configure(tx, session.conversationId, { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(levels, current.reasoning_effort) });
     current.provider = provider;
     current.model = model;
     current.style = info.style || 'openai_chat';
+    current.reasoning_levels = levels;
     current.updated_at = Date.now();
-    const { conversationId, style, modules, ...publicSession } = current;
-    return { session: publicSession };
+    return { session: toPublicSession(current) };
+  }, ctx());
+}
+
+async function sessionReasoningSet(params) {
+  const sessionId = _text(params.id, 'la conversación', 120, true);
+  const effort = params.reasoning_effort;
+  if (!execution.REASONING_EFFORTS.includes(effort)) throw validation('Nivel de razonamiento no válido');
+  const session = await requireSession(sessionId);
+  await execution.ensureProvider(session.provider, session.model);
+  const levels = await execution.reasoningLevels(session.provider, session.model);
+  const { pi } = shared.deps;
+  return shared.state.harness.commit(async (tx) => {
+    const live = await tx.doc(pi.LiveDoc, session.conversationId);
+    const inbox = await tx.doc(pi.InboxDoc, session.conversationId);
+    if (live.run || inbox.items.length) throw validation('Espera a que termine el turno para cambiar el razonamiento');
+    const doc = await tx.doc(shared.state.SessionsDoc);
+    const current = doc.sessions[sessionId];
+    if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
+    await pi.configure(tx, session.conversationId, { thinkingLevel: execution.thinkingLevelFor(levels, effort) });
+    current.reasoning_effort = effort;
+    current.reasoning_levels = levels;
+    current.updated_at = Date.now();
+    return { session: toPublicSession(current) };
   }, ctx());
 }
 
@@ -391,8 +468,125 @@ async function sessionPermissionsSet(params) {
     if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
     current.permission_mode = mode;
     current.updated_at = Date.now();
-    const { conversationId, style, modules, ...publicSession } = current;
-    return { session: publicSession };
+    return { session: toPublicSession(current) };
+  }, ctx());
+}
+
+function auditRules(audit, before, after, scope, sessionId) {
+  const list = Array.isArray(audit) ? audit : [];
+  const channels = new Set([...Object.keys(before || {}), ...Object.keys(after || {})]);
+  for (const channel of channels) {
+    const from = before && before[channel] ? before[channel] : null;
+    const to = after && after[channel] ? after[channel] : null;
+    if (from === to) continue;
+    list.push({
+      id: crypto.randomUUID(), at: Date.now(), scope, channel, from, to,
+      ...(sessionId ? { session_id: sessionId } : {}),
+    });
+  }
+  return list.slice(-200);
+}
+
+async function policyState() {
+  const doc = await shared.state.harness.snapshot(shared.state.PolicyDoc, ctx());
+  return {
+    rules: { ...((doc && doc.rules) || {}) },
+    audit: Array.isArray(doc && doc.audit) ? doc.audit.slice(-50).map((entry) => ({ ...entry })) : [],
+  };
+}
+
+async function policyRulesSet(params) {
+  let rules;
+  try {
+    rules = validateRules(params.rules);
+  } catch (err) {
+    throw validation(String((err && err.message) || err));
+  }
+  if ([...shared.live.values()].some((live) => live.run || (live.inbox || []).length)) {
+    throw validation('Espera a que terminen los turnos para cambiar las reglas globales');
+  }
+  const result = await shared.state.harness.commit(async (tx) => {
+    const doc = await tx.doc(shared.state.PolicyDoc);
+    const before = { ...(doc.rules || {}) };
+    doc.rules = Object.keys(rules).length ? { ...rules } : {};
+    doc.audit = auditRules(doc.audit, before, doc.rules, 'global');
+    return { rules: { ...doc.rules }, audit: doc.audit.slice(-50).map((entry) => ({ ...entry })) };
+  }, ctx());
+  shared.globalRules = { ...result.rules };
+  return result;
+}
+
+async function saveSessionRule(sessionId, channel, rule) {
+  let nextRules;
+  try {
+    nextRules = validateRules({ [channel]: rule });
+  } catch (err) {
+    throw validation(String((err && err.message) || err));
+  }
+  const { pi } = shared.deps;
+  const result = await shared.state.harness.commit(async (tx) => {
+    const doc = await tx.doc(shared.state.SessionsDoc);
+    const current = doc.sessions[sessionId];
+    if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
+    const before = { ...(current.approval_rules || {}) };
+    const merged = { ...before, ...nextRules };
+    let validated;
+    try {
+      validated = validateRules(merged);
+    } catch (err) {
+      throw validation(String((err && err.message) || err));
+    }
+    current.approval_rules = validated;
+    current.updated_at = Date.now();
+    const policy = await tx.doc(shared.state.PolicyDoc);
+    policy.audit = auditRules(policy.audit, before, validated, 'session', sessionId);
+    return { audit: policy.audit.slice(-50).map((entry) => ({ ...entry })) };
+  }, ctx());
+  return result.audit;
+}
+
+async function sessionRulesSet(params) {
+  const sessionId = _text(params.id, 'la conversación', 120, true);
+  let rules;
+  try {
+    rules = validateRules(params.rules);
+  } catch (err) {
+    throw validation(String((err && err.message) || err));
+  }
+  const session = await requireSession(sessionId);
+  const { pi } = shared.deps;
+  return shared.state.harness.commit(async (tx) => {
+    const live = await tx.doc(pi.LiveDoc, session.conversationId);
+    const inbox = await tx.doc(pi.InboxDoc, session.conversationId);
+    if (live.run || inbox.items.length) throw validation('Espera a que termine el turno para cambiar los permisos');
+    const doc = await tx.doc(shared.state.SessionsDoc);
+    const current = doc.sessions[sessionId];
+    if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
+    const before = { ...(current.approval_rules || {}) };
+    const savedRules = Object.keys(rules).length ? { ...rules } : null;
+    if (savedRules) current.approval_rules = savedRules;
+    else delete current.approval_rules;
+    const policy = await tx.doc(shared.state.PolicyDoc);
+    policy.audit = auditRules(policy.audit, before, savedRules || {}, 'session', sessionId);
+    current.updated_at = Date.now();
+    return {
+      session: toPublicSession(current),
+      audit: policy.audit.slice(-50).map((entry) => ({ ...entry })),
+    };
+  }, ctx());
+}
+
+// La configuración del proveedor (p. ej. un modelo personalizado que ahora
+// declara razonamiento) puede cambiar entre turnos: el turno usa la vigente.
+async function _syncReasoning(session) {
+  const levels = await execution.reasoningLevels(session.provider, session.model);
+  if (JSON.stringify(levels) === JSON.stringify(session.reasoning_levels)) return;
+  const { pi } = shared.deps;
+  await shared.state.harness.commit(async (tx) => {
+    const current = (await tx.doc(shared.state.SessionsDoc)).sessions[session.id];
+    if (!current || current.deleted) return;
+    await pi.configure(tx, session.conversationId, { thinkingLevel: execution.thinkingLevelFor(levels, current.reasoning_effort) });
+    current.reasoning_levels = levels;
   }, ctx());
 }
 
@@ -406,6 +600,8 @@ async function sessionDelete(params) {
   ]);
   await bridge('agent_internal_approvals_deny_session', { session_id: sessionId }).catch(() => {});
   await bridge('agent_internal_grants_revoke', { session_id: sessionId }).catch(() => {});
+  await bridge('agent_internal_shell_jobs_cancel_session', { session_id: sessionId }).catch(() => {});
+  await require('./agent-events').cancelSession(sessionId).catch(() => {});
   await commitSessions((map) => { delete map[sessionId]; });
   const watcher = shared.watchers.get(session.conversationId);
   if (watcher) {
@@ -414,6 +610,7 @@ async function sessionDelete(params) {
   }
   shared.live.delete(session.conversationId);
   shared.convToSession.delete(session.conversationId);
+  shared.state.portableProfiles.delete(session.conversationId);
   return { deleted: true, id: sessionId };
 }
 
@@ -440,6 +637,7 @@ async function messagesList(params) {
   const running = projection.isRunning(session.conversationId);
   const plan = _latestPlan(messages);
   const stopped = messages.length > 0 && messages[messages.length - 1].content === CANCELLED_NOTE;
+  const contextWindow = execution.contextWindowFor(session);
   return {
     messages,
     running,
@@ -450,6 +648,9 @@ async function messagesList(params) {
     questions,
     context: { modules: session.modules || [], files: (context && context.files) || [], accounts: (context && context.accounts) || [] },
     usage: usage || null,
+    context_window: contextWindow,
+    compaction_thresholds: compactionPolicy.thresholdsFor(shared.state.compaction, contextWindow),
+    compacting: (projection.liveFor(session.conversationId).compactions || []).length > 0,
   };
 }
 
@@ -477,8 +678,10 @@ async function browserAction(params) {
   const action = String((params && params.action) || 'state');
   if (action === 'state') return browser.state();
   if (action === 'bounds') return browser.dock(params.bounds || null);
-  if (action === 'control') return browser.setUserControl(params.user === true);
-  if (['open', 'back', 'forward', 'reload'].includes(action)) return browser.navigate(action, params.url);
+  if (action === 'tab') return browser.activateTab(params.tab);
+  if (action === 'control') return browser.setUserControl(params.user === true, params.tab);
+  if (action === 'allow') return browser.allowAgent(params.tab);
+  if (['open', 'back', 'forward', 'reload'].includes(action)) return browser.navigate(action, params.url, params.tab);
   throw validation(`Acción del navegador no válida: ${action}`);
 }
 
@@ -507,10 +710,12 @@ async function messageSend(params) {
     }
     return { accepted: true, duplicate: true };
   }
+  resolvePortableProfile(shared.state.portableProfiles, session.conversationId);
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: sessionId })).approvals;
   if (pending.length && !correction) throw validation('Resuelve primero las aprobaciones pendientes de esta conversación');
   await execution.refreshTools();
   await execution.ensureProvider(session.provider, session.model);
+  await _syncReasoning(session);
   const conv = await conversation(sessionId);
   const saved = Object.values(await _profiles());
   const mentionedBots = new Map();
@@ -566,8 +771,9 @@ async function messageSend(params) {
       + 'No amplíes herramientas ni permisos por una mención.'
     : '';
   const context = [mentions.context, memory.context, attachedNote, skillsNote, conversationNote, botsNote].filter(Boolean).join('\n\n');
-  const input = context
-    ? [{ type: 'text', text: content }, { type: 'text', text: `${shared.CONTEXT_MARKER}\n${context}` }]
+  const images = await _inlineImages(conv, attached, (files.rejected || []).map((item) => item.path));
+  const input = context || images.length
+    ? [{ type: 'text', text: content }, ...images, ...(context ? [{ type: 'text', text: `${shared.CONTEXT_MARKER}\n${context}` }] : [])]
     : content;
   if (!projection.isRunning(session.conversationId)) {
     shared.rounds.delete(session.conversationId);
@@ -585,6 +791,12 @@ async function messageSend(params) {
       await Promise.race([conv.waitForIdle(ctx()), new Promise((r) => setTimeout(r, 5000))]);
     }
   }
+  // Una corrección es una instrucción nueva: no debe heredar el freno de
+  // repeticiones del turno que está corrigiendo.
+  if (correction) shared.turns.get(session.conversationId)?.calls.clear();
+  // Enviar una instrucción nueva también libera la pausa por actividad
+  // reciente del usuario en la pestaña del agente.
+  try { require('./agent-browser').resetUserActivity(); } catch { }
   if (pending.length) {
     const { denied } = await bridge('agent_internal_approvals_deny_session', { session_id: sessionId });
     for (const id of denied || []) execution.notifyDecision(id);
@@ -609,23 +821,77 @@ async function messageSend(params) {
 
 async function attach(params) {
   const kind = params && params.kind === 'folder' ? 'folder' : 'files';
-  const dialog = shared.dialog || require('electron').dialog;
-  const win = shared.dialog ? undefined : require('./window-manager').getMainWindow();
-  const response = await dialog.showOpenDialog(win || undefined, {
-    title: kind === 'folder' ? 'Adjuntar carpeta para el agente' : 'Adjuntar archivos para el agente',
-    properties: kind === 'folder' ? ['openDirectory'] : ['openFile', 'multiSelections'],
-  });
-  if (!response || response.canceled || !Array.isArray(response.filePaths)) return { attachments: [] };
+  let filePaths;
+  if (Array.isArray(params && params.paths) || Array.isArray(params && params.data)) {
+    // Arrastrar y soltar trae rutas del explorador; pegar trae bytes sin ruta.
+    filePaths = [...await _droppedPaths(params.paths), ...await _pastedFiles(params.data)];
+  } else {
+    const dialog = shared.dialog || require('electron').dialog;
+    const win = shared.dialog ? undefined : require('./window-manager').getMainWindow();
+    const response = await dialog.showOpenDialog(win || undefined, {
+      title: kind === 'folder' ? 'Adjuntar carpeta para el agente' : 'Adjuntar archivos para el agente',
+      properties: kind === 'folder' ? ['openDirectory'] : ['openFile', 'multiSelections'],
+    });
+    if (!response || response.canceled || !Array.isArray(response.filePaths)) return { attachments: [] };
+    filePaths = response.filePaths;
+  }
   const now = Date.now();
   for (const [id, item] of shared.attachments) {
     if (now - item.created > ATTACHMENT_TTL_MS) shared.attachments.delete(id);
   }
-  const attachments = response.filePaths.slice(0, MAX_ATTACHMENTS).map((filePath) => {
+  const attachments = filePaths.slice(0, MAX_ATTACHMENTS).map((filePath) => {
     const id = crypto.randomBytes(9).toString('hex');
     shared.attachments.set(id, { path: filePath, kind, created: now });
     return { id, name: path.basename(filePath), kind };
   });
   return { attachments };
+}
+
+async function _droppedPaths(paths) {
+  const out = [];
+  for (const raw of Array.isArray(paths) ? paths.slice(0, MAX_ATTACHMENTS) : []) {
+    if (typeof raw !== 'string' || !path.isAbsolute(raw)) throw validation('Ruta de adjunto no válida');
+    const stat = await fs.promises.stat(raw).catch(() => null);
+    if (!stat || !stat.isFile()) throw validation(`No se puede adjuntar: ${path.basename(raw)}`);
+    out.push(raw);
+  }
+  return out;
+}
+
+async function _pastedFiles(data) {
+  const items = Array.isArray(data) ? data.slice(0, MAX_ATTACHMENTS) : [];
+  if (!items.length) return [];
+  const dir = path.join(_agentDir(), 'attachments');
+  await fs.promises.mkdir(dir, { recursive: true });
+  const out = [];
+  for (const item of items) {
+    const bytes = Buffer.from(typeof item?.data === 'string' ? item.data : '', 'base64');
+    if (!bytes.length || bytes.length > MAX_PASTED_BYTES) throw validation('El archivo pegado está vacío o supera 20 MB');
+    const name = path.basename(String(item.name || '')).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80) || 'pegado';
+    const target = path.join(dir, `${crypto.randomBytes(6).toString('hex')}-${name}`);
+    await fs.promises.writeFile(target, bytes);
+    out.push(target);
+  }
+  return out;
+}
+
+// Con modelos con visión las imágenes adjuntas viajan en el mensaje, como en
+// un chat; el resto de archivos se leen con herramientas desde su ruta.
+async function _inlineImages(conv, attached, rejected) {
+  const candidates = attached.filter((a) => a.kind === 'files' && !rejected.includes(a.path)
+    && IMAGE_MIME[path.extname(a.path).toLowerCase()]);
+  if (!candidates.length) return [];
+  const ref = (await conv.agent(ctx())).model;
+  const model = ref && shared.state.models.getModel(ref.provider, ref.modelId);
+  if (!model || !model.input.includes('image')) return [];
+  const images = [];
+  for (const item of candidates) {
+    const stat = await fs.promises.stat(item.path).catch(() => null);
+    if (!stat || !stat.isFile() || stat.size > MAX_INLINE_IMAGE_BYTES) continue;
+    images.push({ type: 'image', data: (await fs.promises.readFile(item.path)).toString('base64'),
+      mimeType: IMAGE_MIME[path.extname(item.path).toLowerCase()] });
+  }
+  return images;
 }
 
 function _takeAttachments(ids) {
@@ -719,6 +985,7 @@ async function turnStatus(params) {
     running: projection.isRunning(session.conversationId),
     pending_approvals: pending,
     last_error: session.last_error || null,
+    compacting: (projection.liveFor(session.conversationId).compactions || []).length > 0,
   };
 }
 
@@ -745,7 +1012,23 @@ async function turnCancel(params) {
 
 async function approve(params, approved) {
   const approvalId = String(params && params.approval_id || '');
-  const { approval } = await bridge('agent_internal_approval_decide', { approval_id: approvalId, approve: !!approved });
+  const channel = typeof params.channel === 'string' ? params.channel : '';
+  const rule = params.rule === 'allow' || params.rule === 'deny' ? params.rule : null;
+  if ((channel && !rule) || (rule && !channel)) throw validation('Indica el canal y la regla juntos');
+  if (rule) {
+    if (rule !== (approved ? 'allow' : 'deny')) throw validation('La regla no coincide con la decisión');
+    const { approval: current } = await bridge('agent_internal_approval_status', { approval_id: approvalId });
+    if (!current || current.status !== 'pending') {
+      throw validation(current && current.status === 'expired'
+        ? 'La aprobación expiró; vuelve a pedírselo al agente'
+        : 'La aprobación ya no está pendiente');
+    }
+    await saveSessionRule(String(current.session_id), channel, rule);
+  }
+  const { approval } = await bridge('agent_internal_approval_decide', {
+    approval_id: approvalId, approve: !!approved, source: 'manual',
+    ...(params.grant_app ? { grant_app: true } : {}),
+  });
   execution.notifyDecision(approvalId);
   if (approved && params && params.remember === true && approval
     && String(approval.method || '').startsWith('web_')) {
@@ -773,6 +1056,24 @@ async function approve(params, approved) {
   return { approval };
 }
 
+async function effectUndo(params) {
+  const sessionId = _text(params.session_id, 'la conversación', 120, true);
+  const callId = _text(params.call_id, 'la acción', 200, true);
+  await requireSession(sessionId);
+  const result = await bridge('agent_internal_effect_undo', { session_id: sessionId, call_id: callId });
+  // El modelo debe saber que el disco ya no coincide con lo que creyó escribir;
+  // un fallo al avisar no invalida un Undo que ya quedó aplicado.
+  try {
+    const conv = await conversation(sessionId);
+    const name = path.basename(String((result && result.path) || '')) || 'el archivo';
+    await conv.submit({ type: 'write', requestId: `undo:${callId}`, entry: {
+      kind: NOTICE_KIND, data: { text: `El usuario deshizo la acción sobre «${name}». `
+        + 'No asumas que el archivo conserva el contenido escrito: vuelve a leerlo antes de usarlo o de repetir la acción.' },
+    } }, ctx());
+  } catch { }
+  return result;
+}
+
 async function _settleRecoveredApproval(approval) {
   const sessionId = String(approval.session_id || '');
   const session = (await sessions())[sessionId];
@@ -789,8 +1090,12 @@ async function _settleRecoveredApproval(approval) {
   let isError = false;
   let diagnostics;
   if (approval.status === 'approved') {
-    text = await execution.dispatchApproved(approval, ctx());
-    try { isError = !!JSON.parse(text).error; } catch {}
+    try {
+      text = await execution.dispatchApproved(approval, ctx());
+      try { isError = !!JSON.parse(text).error; } catch {}
+    } finally {
+      try { require('./agent-browser').release(sessionId); } catch { }
+    }
   } else {
     text = JSON.stringify({ error: 'El usuario rechazó esta acción' });
     isError = true;
@@ -885,12 +1190,17 @@ module.exports = {
   activitySnapshot: async () => {
     if (!shared.state) return [];
     const { attention = {} } = await bridge('agent_internal_activity', {});
+    const waitsDoc = await shared.state.harness.snapshot(shared.state.WaitsDoc, ctx());
+    const activeWaits = new Set(Object.values((waitsDoc && waitsDoc.waits) || {})
+      .filter((wait) => wait.status === 'waiting' && (wait.active_boot || wait.boot) === shared.boot && wait.deadline > Date.now())
+      .map((wait) => wait.session_id));
     return Object.values(await sessions()).filter((session) => !session.deleted).map((session) => ({
       id: session.id, title: session.title || 'Conversación',
       status: attention[session.id] || (shared.waitingInput.has(session.id) ? 'waiting_input'
         : [...shared.approvalsByCall].some(([key, id]) => key.startsWith(`${session.id}:`) && shared.liveApprovals.has(id)) ? 'waiting_approval'
-          : projection.isRunning(session.conversationId) ? 'running' : session.continuation ? 'waiting_input'
-            : session.last_error ? 'failed' : 'completed'),
+          : activeWaits.has(session.id) ? 'waiting_event'
+            : projection.isRunning(session.conversationId) ? 'running' : session.continuation ? 'waiting_input'
+              : session.last_error ? 'failed' : 'completed'),
     }));
   },
   open: _open,
@@ -902,6 +1212,10 @@ module.exports = {
     agent_session_rename: sessionRename,
     agent_session_model_set: sessionModelSet,
     agent_session_permissions_set: sessionPermissionsSet,
+    agent_session_rules_set: sessionRulesSet,
+    agent_policy_get: policyState,
+    agent_policy_rules_set: policyRulesSet,
+    agent_session_reasoning_set: sessionReasoningSet,
     agent_messages_list: messagesList,
     agent_message_send: messageSend,
     agent_tools_list: toolsList,
@@ -916,6 +1230,7 @@ module.exports = {
     agent_profile_delete: profileDelete,
     agent_approve: (p) => approve(p, true),
     agent_deny: (p) => approve(p, false),
+    agent_effect_undo: effectUndo,
     agent_approvals_history: approvalHistory,
     agent_grants_list: grantsList,
     agent_grants_revoke: grantsRevoke,

@@ -94,17 +94,20 @@ it('muestra cuenta y recursos revisados antes de una decisión explícita', () =
   render(<ApprovalCard busy={false} onDecide={decide} approval={{
     id: 'approval', session_id: 'session', call_id: 'call', method: 'autoimg_sheets_write_range',
     params: { range: 'CONFIG!A1', values: [['dato']] }, status: 'pending', created_at: 1, decided_at: null,
+    channel: 'cloud',
     context: { account: 'prueba@example.com', sheet_id: 'hoja-de-prueba' },
     resources: [{ path: 'C:\\trabajos\\informe.pdf', sha256: 'revision' }],
   }} />);
+  expect(screen.getByText('Canal: Nube y conexiones')).toBeInTheDocument();
   expect(screen.getByText('Cuenta: prueba@example.com')).toBeInTheDocument();
   expect(screen.getByText('Hoja: hoja-de-prueba')).toBeInTheDocument();
   expect(screen.getByText('Rango: CONFIG!A1')).toBeInTheDocument();
   expect(screen.getByText('Archivo: C:\\trabajos\\informe.pdf')).toBeInTheDocument();
   expect(decide).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Permitir esta acción' }));
-  expect(decide).toHaveBeenCalledWith('approval', true, false);
+  expect(decide).toHaveBeenCalledWith('approval', true);
 });
+
 
 it('resume más de dos pasos de herramientas y los abre si alguno necesita atención', () => {
   const step = (id: string, status: string) => ({ id, name: 'templates_catalog', params: {}, status, gated: false });
@@ -310,14 +313,16 @@ it('dibuja la delegación en otro agente como una traza con sus pasos', () => {
 });
 
 it('anima al agente solo durante la respuesta y mantiene un estado textual de trabajo', () => {
-  const agent = { seed: 'antares', name: 'Antares' };
+  const agent = { seed: 'antares', name: 'Antares', color: '#0E7490' };
   const { rerender } = render(<MessageRow agent={agent} msg={{ role: 'assistant', content: 'Preparando', partial: true, ts: 1 }} />);
   expect(screen.getByRole('img', { name: 'Antares' })).toHaveAttribute('data-working', 'true');
   rerender(<MessageRow agent={agent} msg={{ role: 'assistant', content: 'Listo', ts: 1 }} />);
   expect(screen.getByRole('img', { name: 'Antares' })).toHaveAttribute('data-working', 'false');
+  expect(screen.getByRole('img', { name: 'Antares' }).querySelector('path')).toHaveAttribute('stroke', agent.color);
   rerender(<ThinkingRow agent={agent} elapsedSeconds={61} />);
   expect(screen.getByRole('status')).toHaveTextContent('El agente está trabajando');
   expect(screen.getByRole('status')).toHaveTextContent('1m 1s');
+  expect(screen.getByRole('img', { name: 'Antares' }).querySelector('path')).toHaveAttribute('stroke', agent.color);
 });
 
 it('muestra el razonamiento abierto mientras piensa y lo pliega al responder sin pisar la elección del usuario', () => {
@@ -377,7 +382,7 @@ it('ofrece permitir siempre en el dominio de una acción web y manda la elecció
   expect(screen.getByText('Página actual: https://tienda.miejemplo.pe/checkout')).toBeInTheDocument();
   expect(screen.queryByText('Solo esta acción')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Permitir esta acción' }));
-  expect(decide).toHaveBeenCalledWith('a2', true, false);
+  expect(decide).toHaveBeenCalledWith('a2', true, { remember: false });
 });
 
 it('manda recordar cuando el usuario activa permitir siempre', () => {
@@ -389,7 +394,7 @@ it('manda recordar cuando el usuario activa permitir siempre', () => {
   }} />);
   fireEvent.click(screen.getByRole('switch', { name: 'Permitir siempre en tienda.miejemplo.pe' }));
   fireEvent.click(screen.getByRole('button', { name: 'Permitir esta acción' }));
-  expect(decide).toHaveBeenCalledWith('a5', true, true);
+  expect(decide).toHaveBeenCalledWith('a5', true, { remember: true });
 });
 
 it('no ofrece permitir siempre en un dominio bloqueado ni fuera del navegador', () => {
@@ -475,6 +480,7 @@ it.each([false, true])('conserva la elección de mostrar los pasos al actualizar
   rerender(<MessageRow msg={message('done')} />);
   expect(container.querySelector('details')?.open).toBe(open);
 });
+
 
 it('pregunta por la acción concreta y permite rechazarla o aprobarla', () => {
   const decide = vi.fn();

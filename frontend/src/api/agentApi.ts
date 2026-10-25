@@ -6,6 +6,29 @@ export type CanvasLayersResult = Required<Pick<CanvasDocument, 'id' | 'updatedAt
 };
 
 export type AgentPermissionMode = 'ask' | 'auto' | 'full';
+export type AgentChannel = 'terminal' | 'files' | 'desktop' | 'cloud' | 'mcp' | 'documents' | 'memory' | 'agenda' | 'other';
+export type AgentChannelRule = 'ask' | 'allow' | 'deny';
+export type AgentApprovalRules = Partial<Record<AgentChannel, AgentChannelRule>>;
+export type AgentApprovalSource = 'manual' | 'rule' | 'full' | 'web' | 'cancel';
+
+export interface AgentUndo {
+  available: boolean;
+  kind?: 'restore' | 'delete';
+  reason?: string;
+  undone_at?: number | null;
+}
+
+export interface AgentRuleAudit {
+  id: string;
+  at: number;
+  scope: 'session' | 'global';
+  session_id?: string;
+  channel: AgentChannel;
+  from: AgentChannelRule | null;
+  to: AgentChannelRule | null;
+}
+
+export type AgentReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface AgentSession {
   id: string;
@@ -16,6 +39,10 @@ export interface AgentSession {
   updated_at: number;
   last_error: string | null;
   permission_mode?: AgentPermissionMode;
+  approval_rules?: AgentApprovalRules;
+  reasoning_effort?: AgentReasoningEffort;
+  /** Niveles de razonamiento que admite el modelo actual; vacío si no razona. */
+  reasoning_levels?: AgentReasoningEffort[];
   profile?: { id: string; name: string };
 }
 
@@ -24,6 +51,7 @@ export type AgentRole = 'explorer' | 'reviewer' | 'worker';
 export interface AgentProfile {
   id: string;
   name: string;
+  color?: string;
   description: string;
   role?: AgentRole;
   instructions: string;
@@ -44,6 +72,11 @@ export interface AgentToolCall {
   output?: string;
   /** Epoch ms en que empezó a ejecutarse, mientras sigue en curso. */
   started_at?: number;
+  dispatch_id?: string | null;
+  channel?: AgentChannel | null;
+  approval_source?: AgentApprovalSource | null;
+  recovered?: boolean;
+  undo?: AgentUndo | null;
 }
 
 export interface AgentMessage {
@@ -119,10 +152,12 @@ export interface AgentApproval {
   status: AgentApprovalStatus;
   created_at: number;
   decided_at: number | null;
+  channel?: AgentChannel | null;
+  source?: AgentApprovalSource | null;
   consumed_by?: string;
   context?: { account?: string; sheet_id?: string; scopes?: string[]; filename?: string;
     page_url?: string; page_time_origin?: number; domain?: string; policy_blocked?: boolean;
-    subagent?: string; subagent_role?: AgentRole };
+    computer?: { app?: string; window?: string; element?: string }; subagent?: string; subagent_role?: AgentRole };
   resources?: { path: string; sha256?: string }[];
   dispatch?: { status: string; finished_at?: number };
 }
@@ -184,6 +219,11 @@ export interface AgentArtifact {
   module?: string;
   sources?: { ids?: string[]; kind: string }[];
   reviewed?: Record<string, string>;
+  receipt?: {
+    channel?: AgentChannel | null;
+    approval_source?: AgentApprovalSource | null;
+    status?: string | null;
+  };
   files: { name: string; sha256: string; pages: number; mime: string; size: number }[];
 }
 
@@ -191,6 +231,21 @@ export interface AgentQuestion {
   id: string;
   session_id: string;
   questions: { id: string; prompt: string; options?: string[] }[];
+}
+
+export interface AgentBrowserTab {
+  id: 'agent' | 'user';
+  label: string;
+  open: boolean;
+  url: string;
+  title: string;
+  loading: boolean;
+  can_go_back: boolean;
+  can_go_forward: boolean;
+  user_control: boolean;
+  busy_until?: number;
+  busy_reason?: 'user_input' | 'control' | '';
+  active: boolean;
 }
 
 export interface AgentBrowserState {
@@ -202,7 +257,11 @@ export interface AgentBrowserState {
   can_go_forward: boolean;
   docked: boolean;
   user_control: boolean;
-  reason?: 'page' | 'agent-open' | 'control' | 'closed';
+  busy_until?: number;
+  busy_reason?: 'user_input' | 'control' | '';
+  active_tab?: 'agent' | 'user';
+  tabs?: AgentBrowserTab[];
+  reason?: 'page' | 'agent-open' | 'control' | 'closed' | 'busy';
 }
 
 export interface AgentBrowserBounds {
@@ -259,6 +318,18 @@ export const agentApi = {
   agentSessionPermissionsSet: (id: string, permission_mode: AgentPermissionMode) =>
     _invoke<{ session: AgentSession }>('agent_session_permissions_set', { id, permission_mode }),
 
+  agentSessionRulesSet: (id: string, rules: AgentApprovalRules) =>
+    _invoke<{ session: AgentSession; audit?: AgentRuleAudit[] }>('agent_session_rules_set', { id, rules }),
+
+  agentPolicyGet: () =>
+    _invoke<{ rules: AgentApprovalRules; audit: AgentRuleAudit[] }>('agent_policy_get'),
+
+  agentPolicyRulesSet: (rules: AgentApprovalRules) =>
+    _invoke<{ rules: AgentApprovalRules; audit: AgentRuleAudit[] }>('agent_policy_rules_set', { rules }),
+
+  agentSessionReasoningSet: (id: string, reasoning_effort: AgentReasoningEffort) =>
+    _invoke<{ session: AgentSession }>('agent_session_reasoning_set', { id, reasoning_effort }),
+
   agentSessionDelete: (id: string) =>
     _invoke<{ deleted: boolean; id: string }>('agent_session_delete', { id }),
 
@@ -273,6 +344,9 @@ export const agentApi = {
       questions?: AgentQuestion[];
       context?: AgentContext;
       usage?: AgentUsage | null;
+      context_window?: number;
+      compaction_thresholds?: { warn: number; compact: number } | null;
+      compacting?: boolean;
     }>('agent_messages_list', { session_id }),
 
   agentContextRemoveFile: (session_id: string, path: string) =>
@@ -284,8 +358,9 @@ export const agentApi = {
       { session_id, content, request_id, ...(attachments.length ? { attachments } : {}), ...(correction ? { correction: true } : {}) },
     ),
 
-  agentAttach: (kind: 'files' | 'folder') =>
-    _invoke<{ attachments: AgentAttachment[] }>('agent_attach', { kind }),
+  /** Sin `dropped` abre el diálogo; con él adjunta rutas soltadas o bytes pegados (base64). */
+  agentAttach: (kind: 'files' | 'folder', dropped?: { paths?: string[]; data?: { name: string; data: string }[] }) =>
+    _invoke<{ attachments: AgentAttachment[] }>('agent_attach', { kind, ...dropped }),
 
   agentToolsList: (session_id?: string) => _invoke<{ tools: AgentToolSpec[] }>('agent_tools_list', session_id ? { session_id } : {}),
 
@@ -297,19 +372,32 @@ export const agentApi = {
       running: boolean;
       pending_approvals: AgentApproval[];
       last_error: string | null;
+      compacting?: boolean;
     }>('agent_turn_status', { session_id }),
 
-  agentBrowser: (action: 'state' | 'bounds' | 'control' | 'open' | 'back' | 'forward' | 'reload',
-    extra: { url?: string; user?: boolean; bounds?: AgentBrowserBounds | null } = {}) =>
+  agentBrowser: (action: 'state' | 'bounds' | 'tab' | 'control' | 'allow' | 'open' | 'back' | 'forward' | 'reload',
+    extra: { url?: string; user?: boolean; tab?: 'agent' | 'user'; bounds?: AgentBrowserBounds | null } = {}) =>
     _invoke<AgentBrowserState>('agent_browser', { action, ...extra }),
   agentTurnCancel: (session_id: string) =>
     _invoke<{ cancelled: boolean }>('agent_turn_cancel', { session_id }),
 
-  agentApprove: (approval_id: string, remember = false) =>
-    _invoke<{ approval: AgentApproval }>('agent_approve', { approval_id, ...(remember ? { remember: true } : {}) }),
+  agentApprove: (approval_id: string, options?: boolean | { remember?: boolean; grantApp?: boolean; channel?: AgentChannel; rule?: 'allow' | 'deny' }) =>
+    _invoke<{ approval: AgentApproval }>('agent_approve', {
+      approval_id,
+      ...(typeof options === 'object' && options
+        ? {
+          ...(options.remember ? { remember: true } : {}),
+          ...(options.grantApp ? { grant_app: true } : {}),
+          ...(options.channel && options.rule ? { channel: options.channel, rule: options.rule } : {}),
+        }
+        : (options ? { remember: true } : {})),
+    }),
 
-  agentDeny: (approval_id: string) =>
-    _invoke<{ approval: AgentApproval }>('agent_deny', { approval_id }),
+  agentDeny: (approval_id: string, rule?: { channel: AgentChannel; rule: 'allow' | 'deny' }) =>
+    _invoke<{ approval: AgentApproval }>('agent_deny', { approval_id, ...(rule ? { channel: rule.channel, rule: rule.rule } : {}) }),
+
+  agentEffectUndo: (session_id: string, call_id: string) =>
+    _invoke<{ undone: boolean; path: string; call_id: string }>('agent_effect_undo', { session_id, call_id }),
 
   agentApprovalsHistory: (params: { session_id?: string; method?: string; status?: AgentApprovalFilterStatus; limit?: number } = {}) =>
     _invoke<{ approvals: AgentApproval[] }>('agent_approvals_history', params),
@@ -356,7 +444,7 @@ export const agentApi = {
 
   agentProfilesList: () => _invoke<{ profiles: AgentProfile[] }>('agent_profiles_list'),
 
-  agentProfileSave: (p: { id?: string; name: string; description: string; role?: AgentRole; instructions: string; starter: string; tools: string[] | null }) =>
+  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; role?: AgentRole; instructions: string; starter: string; tools: string[] | null }) =>
     _invoke<{ profile: AgentProfile }>('agent_profile_save', p),
 
   agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),

@@ -6,7 +6,9 @@ from backend.core.agent import (
     artifacts,
     canvas_edit,
     computer_desktop,
+    computer_elements,
     computer_files,
+    computer_jobs,
     computer_shell,
     documents,
     drafts,
@@ -25,7 +27,8 @@ SPECS: dict[str, JsonObject] = {
     spec["name"]: spec
     for spec in (*drafts.TOOL_SPECS, *({**s, "module": "documents"} for s in documents.TOOL_SPECS),
                  *canvas_edit.TOOL_SPECS, *artifacts.TOOL_SPECS, *questions.TOOL_SPECS, *memory.TOOL_SPECS,
-                 *computer_files.TOOL_SPECS, *computer_shell.TOOL_SPECS, *computer_desktop.TOOL_SPECS,
+                 *computer_files.TOOL_SPECS, *computer_shell.TOOL_SPECS, *computer_jobs.TOOL_SPECS,
+                 *computer_desktop.TOOL_SPECS, *computer_elements.TOOL_SPECS,
                  *task_plan.TOOL_SPECS, *skills.TOOL_SPECS)
 }
 SPECS["mcp_status"] = {
@@ -33,6 +36,28 @@ SPECS["mcp_status"] = {
     "description": "Conexiones · mcp_status (solo lectura): consulta servidores MCP configurados, última comprobación y errores sin secretos. "
                    "refresh=true vuelve a consultar sus catálogos; no modifica configuración ni credenciales.",
     "inputSchema": {"type": "object", "properties": {"refresh": {"type": "boolean"}}},
+}
+# El efecto lo ejecuta Electron sobre TasksDoc; aquí solo se anuncia para que la
+# aprobación y el recibo se reserven en el backend. run() no lo implementa.
+SPECS["task_schedule"] = {
+    "name": "task_schedule", "module": "agenda", "gated": True,
+    "description": "Gestiona encargos propios de esta conversación solo cuando el usuario lo pide. Antares debe seguir "
+                   "abierto, incluida la bandeja; al volver a abrir recupera los pendientes. No concede permisos ni acceso "
+                   "a archivos. Sus acciones con efecto requieren aprobación; action=list es solo lectura. "
+                   "action=create requiere content y due_at ISO 8601 con zona horaria; every_minutes permite repetición. "
+                   "action=enqueue añade content a una cola FIFO por conversación; action=pause y action=resume pausan "
+                   "o reanudan esa cola. action=list consulta encargos y cola; action=cancel cancela uno por id.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["create", "list", "cancel", "enqueue", "pause", "resume"]},
+            "content": {"type": "string", "minLength": 1, "maxLength": 12000},
+            "due_at": {"type": "string"},
+            "every_minutes": {"type": "integer", "minimum": 1, "maximum": 525600},
+            "id": {"type": "string"},
+        },
+        "required": ["action"],
+    },
 }
 READ_TOOLS = frozenset(name for name, spec in SPECS.items() if not spec["gated"])
 EFFECT_TOOLS = frozenset(name for name, spec in SPECS.items() if spec["gated"])
@@ -51,8 +76,16 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
         return computer_files.fit(computer_shell.run(args, store.grants_for(session_id), root, token))
     if name == "shell_output":
         return computer_shell.read_output(args, root)
+    if name == "shell_job_start":
+        return computer_jobs.start(args, store.grants_for(session_id), root, session_id, token)
+    if name == "shell_job_status":
+        return computer_jobs.status(args, root, session_id)
+    if name == "shell_job_cancel":
+        return computer_jobs.cancel(args, root, session_id)
     if name.startswith("desktop_"):
         return computer_desktop.run(name, args, root, token)
+    if name.startswith("ui_"):
+        return computer_elements.run(name, args, root)
     if name == "task_plan":
         return task_plan.update(args)
     if name == "drafts_list":

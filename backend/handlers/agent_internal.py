@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from backend.core.agent import (
     artifacts,
     canvas_edit,
     computer_files,
+    computer_jobs,
     documents,
     drafts,
     resource_grants,
@@ -21,6 +23,7 @@ from backend.core.agent import memory as _memory_store
 from backend.core.agent import modules as _agent_modules
 from backend.core.agent import subagent as _subagent
 from backend.core.agent.cancel import RunCancelled, _CancelEvent
+from backend.core.computer_use import driver as _computer_driver
 from backend.core.exceptions import NotFoundError, ValidationError
 from backend.core.integrations import ai_providers as _ai_providers
 from backend.core.integrations import mcp_servers as _mcp_servers
@@ -54,6 +57,7 @@ _NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_exp
                     "document_generate", "padron_", "volantes_", "espacios_", "canvas_fill_fields", "canvas_apply_layers",
                     "gdrive_", "gsheets_", "onedrive_", "excel_", "web_")
 _CLOUD_UPLOADS = frozenset({"gdrive_upload", "onedrive_upload"})
+_META_METHODS = frozenset({"task_schedule"})
 
 
 def _resource_keys(params: JsonObject) -> list[str]:
@@ -67,6 +71,16 @@ def _resource_keys(params: JsonObject) -> list[str]:
         value = params.get(name)
         if isinstance(value, str) and value:
             keys.add(f"path:{value.casefold()}")
+    return sorted(keys)
+
+
+def _resource_lock_keys(params: JsonObject, resources: object) -> list[str]:
+    keys = set(_resource_keys(params))
+    if isinstance(resources, list):
+        for resource in resources:
+            path = resource.get("path") if isinstance(resource, dict) else None
+            if isinstance(path, str) and path:
+                keys.add(f"path:{path.casefold()}")
     return sorted(keys)
 
 
@@ -193,6 +207,8 @@ def _intent(session_id: str, method: str, params: JsonObject, context: JsonObjec
         tool = agent_tools.SPECS.get(method) or {"inputSchema": input_schema_for(method)}
         current_context = dict(context or {})
         current_context.update(artifact_context)
+        if method.startswith("ui_"):
+            current_context["computer"] = _computer_driver.approval_context(params)
         mcp = _mcp_servers.parse_agent_tool(method)
         if mcp is not None:
             current_context = _mcp_servers.approval_context(mcp[0], method)
@@ -231,6 +247,34 @@ def _grants_add(params: JsonObject) -> JsonObject:
     if records:
         _store().add_grants(session_id, records)
     return {"granted": granted, "rejected": rejected}
+
+
+@with_locale
+@validate_params("session_id", "path")
+def _path_status(params: JsonObject) -> JsonObject:
+    store = _store()
+    session_id = str(params["session_id"])
+    try:
+        return computer_files.stat_path(params["path"], store.grants_for(session_id), store.drafts_dir(session_id))
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("session_id", "job_id")
+def _shell_job_status(params: JsonObject) -> JsonObject:
+    store = _store()
+    session_id = str(params["session_id"])
+    try:
+        return computer_jobs.status({"job_id": params["job_id"]}, store.drafts_dir(session_id), session_id)
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("session_id")
+def _shell_jobs_cancel_session(params: JsonObject) -> JsonObject:
+    return {"cancelled": computer_jobs.cancel_session(str(params["session_id"]))}
 
 
 @with_locale
@@ -295,10 +339,24 @@ def _approval_ensure(params: JsonObject) -> JsonObject:
     intent = _agent.fingerprint(method, snapshot)
     approval = store.ensure_approval(
         session_id, {"id": call_id, "name": method, "params": snapshot["params"], "fingerprint": intent,
+                     "channel": str(params.get("channel") or "")[:24] or None,
                      "context": snapshot["context"], "resources": snapshot["resources"]},
     )
     if approval.get("method") != method or approval.get("fingerprint") != intent:
         raise ValidationError("Esta llamada ya tiene una aprobación con otros parámetros o archivos")
+    unattended_apps = params.get("unattended_apps")
+    if method.startswith("ui_") and approval.get("status") == "pending":
+        app = str(((approval.get("context") or {}).get("computer") or {}).get("app") or "")
+        if isinstance(unattended_apps, list) and unattended_apps:
+            # Desatendido: las concesiones de la conversación no aplican; solo
+            # las apps declaradas al programar, normalizadas por alias.
+            allowed = {os.path.normcase(_computer_driver.normalize_app(str(raw))) for raw in unattended_apps}
+            if app and os.path.normcase(_computer_driver.normalize_app(app)) in allowed:
+                approval = store.decide_approval(str(approval["id"]), True) or approval
+            else:
+                raise ValidationError("Esta aplicación no está en la lista blanca del encargo programado")
+        elif app and f"app:{os.path.normcase(app)}" in store.grants_for(session_id):
+            approval = store.decide_approval(str(approval["id"]), True) or approval
     return {"approval": approval}
 
 
@@ -312,9 +370,17 @@ def _approval_status(params: JsonObject) -> JsonObject:
 @validate_params("approval_id", "approve")
 def _approval_decide(params: JsonObject) -> JsonObject:
     approval_id = str(params["approval_id"])
-    approval = _store().decide_approval(approval_id, bool(params["approve"]))
+    source = str(params.get("source") or "manual")[:16]
+    approval = _store().decide_approval(approval_id, bool(params["approve"]), source)
     if approval is None:
         raise _approval_error(_store().get_approval(approval_id))
+    if params.get("grant_app") is True and approval.get("status") == "approved" \
+            and str(approval.get("method") or "").startswith("ui_"):
+        app = str(((approval.get("context") or {}).get("computer") or {}).get("app") or "")
+        if app:
+            _store().add_grants(str(approval["session_id"]), [
+                {"kind": "computer_app", "app": app, "key": f"app:{os.path.normcase(app)}"},
+            ])
     return {"approval": approval}
 
 
@@ -363,7 +429,12 @@ def _dispatch(params: JsonObject) -> JsonObject:
         call_params = {}
 
     native = params.get("native") is True
-    if native:
+    meta = params.get("meta") is True
+    if meta:
+        if name not in _META_METHODS:
+            return _dispatch_error(f"Herramienta no disponible para el agente: {name}")
+        gated = params.get("gated") is not False
+    elif native:
         if not name.startswith(_NATIVE_PREFIXES):
             return _dispatch_error(f"Herramienta no disponible para el agente: {name}")
         gated = params.get("gated") is not False
@@ -385,6 +456,7 @@ def _dispatch(params: JsonObject) -> JsonObject:
     if gated and not isinstance(approval_id, str):
         return _dispatch_error("La herramienta requiere una aprobación aprobada para esta llamada")
 
+    channel = str(params.get("channel") or "")[:24] or None
     store = _store()
     leased: list[threading.Lock] = []
     if native and gated and store.get_dispatch(session_id, call_id) is None:
@@ -395,7 +467,7 @@ def _dispatch(params: JsonObject) -> JsonObject:
     try:
         intent = _intent(session_id, name, call_params, params.get("context"))
         outcome, record = store.dispatch_claim(
-            session_id, call_id, name, intent, str(approval_id) if gated else None,
+            session_id, call_id, name, intent, str(approval_id) if gated else None, channel=channel,
         )
     except ValidationError as err:
         _release(leased)
@@ -418,12 +490,16 @@ def _dispatch(params: JsonObject) -> JsonObject:
                 "dispatch": record}
 
     op_id = str(record["op_id"])
+    if meta:
+        # task_schedule se ejecuta en Electron: el backend solo reserva la
+        # llamada y su recibo para que la aprobación valga una sola vez.
+        return {"result": None, "dispatch": record, "execute": "meta"}
     if native:
         return {"result": None, "dispatch": record, "execute": "native"}
     token = _CancelEvent()
     with _inflight_lock:
         _inflight[op_id] = token
-    locks = _locks_for(_resource_keys(call_params)) if gated else []
+    locks = _locks_for(_resource_lock_keys(call_params, intent.get("resources"))) if gated else []
     call_params = intent["params"]
 
     def _run() -> None:
@@ -434,13 +510,33 @@ def _dispatch(params: JsonObject) -> JsonObject:
                 acquired.append(lock)
             if _intent_fingerprint(session_id, name, call_params, params.get("context")) != _agent.fingerprint(name, intent):
                 raise ValidationError("Los parámetros o recursos cambiaron después de reservar la operación")
-            result = _agent.get_agent_runner()._execute(
-                {"id": call_id, "name": name, "params": call_params, "session_id": session_id, "op_id": op_id,
-                 "approved_context": intent["context"], "profile_id": intent["context"].get("profile_id"),
-                 **({"subagent": subagent_profile} if subagent_profile else {})},
-                token,
-            )
-            status = "failed" if _agent.result_failed(result) else "submitted" if name == "artifact_print" else "succeeded"
+            resources = intent.get("resources")
+            try:
+                store.undo_prepare(session_id, call_id, op_id, name, resources if isinstance(resources, list) else [])
+            except Exception:
+                logger.warning("No se pudo preparar el Undo de %s", name, exc_info=True)
+            try:
+                result = _agent.get_agent_runner()._execute(
+                    {"id": call_id, "name": name, "params": call_params, "session_id": session_id, "op_id": op_id,
+                     "approved_context": intent["context"], "profile_id": intent["context"].get("profile_id"),
+                     **({"subagent": subagent_profile} if subagent_profile else {})},
+                    token,
+                )
+                status = "failed" if _agent.result_failed(result) else "submitted" if name == "artifact_print" else "succeeded"
+                if status == "succeeded":
+                    try:
+                        payload = json.loads(result)
+                        artifact = payload.get("artifact") if isinstance(payload, dict) else None
+                        artifact_id = artifact.get("id") if isinstance(artifact, dict) else None
+                        if isinstance(artifact_id, str) and artifact_id:
+                            store.dispatch_note(session_id, op_id, {"artifact_id": artifact_id})
+                    except (ValueError, TypeError):
+                        pass
+            finally:
+                try:
+                    store.undo_finish(session_id, call_id, op_id)
+                except Exception:
+                    logger.warning("No se pudo cerrar el Undo de %s", name, exc_info=True)
         except RunCancelled:
             result = _agent._INTERRUPTED_RESULT
             status = "uncertain"
@@ -475,6 +571,65 @@ def _dispatch_result(params: JsonObject) -> JsonObject:
     return response
 
 
+def _undo_summary(record: JsonObject) -> JsonObject | None:
+    raw = record.get("undo")
+    if not isinstance(raw, dict):
+        return None
+    return {key: raw[key] for key in ("available", "kind", "reason", "undone_at") if key in raw}
+
+
+def _recovered(record: JsonObject) -> bool:
+    raw = record.get("result") or record.get("summary")
+    if not isinstance(raw, str):
+        return False
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(data, dict) and data.get("recovered") is True
+
+
+@with_locale
+@validate_params("session_id")
+def _effects(params: JsonObject) -> JsonObject:
+    receipts = []
+    for record in _store().dispatches_for(str(params["session_id"])):
+        receipts.append({
+            "call_id": record.get("call_id"),
+            "method": record.get("method"),
+            "channel": record.get("channel"),
+            "approval_source": None if record.get("approval_source") == "none" else record.get("approval_source"),
+            "status": record.get("status"),
+            "recovered": _recovered(record),
+            "undo": _undo_summary(record),
+        })
+    return {"dispatches": receipts}
+
+
+@with_locale
+@validate_params("session_id", "call_id")
+def _effect_undo(params: JsonObject) -> JsonObject:
+    session_id, call_id = str(params["session_id"]), str(params["call_id"])
+    record = _store().get_dispatch(session_id, call_id)
+    if record is None:
+        raise NotFoundError(f"Acción no encontrada: {call_id}")
+    raw_undo = record.get("undo")
+    undo = raw_undo if isinstance(raw_undo, dict) else {}
+    locks = _locks_for(_resource_lock_keys({}, [undo] if undo.get("path") else []))
+    acquired: list[threading.Lock] = []
+    try:
+        for lock in locks:
+            lock.acquire()
+            acquired.append(lock)
+        return _store().undo_effect(session_id, call_id)
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+    except OSError as err:
+        raise ValidationError(f"No se pudo deshacer la acción: {err}") from err
+    finally:
+        _release(acquired)
+
+
 @with_locale
 @validate_params("session_id", "call_id", "op_id", "result")
 def _dispatch_finish(params: JsonObject) -> JsonObject:
@@ -499,7 +654,9 @@ def _finish_native(params: JsonObject) -> JsonObject:
             if isinstance(payload, dict) and not _agent.result_failed(result):
                 artifact = documents.native_artifact(payload, store.drafts_dir(session_id), str(params["op_id"]))
                 if artifact is not None:
-                    payload["artifact"] = store.add_artifact(session_id, artifact)
+                    added = store.add_artifact(session_id, artifact)
+                    payload["artifact"] = added
+                    store.dispatch_note(session_id, str(params["op_id"]), {"artifact_id": added["id"]})
                     result = json.dumps(payload, ensure_ascii=False)
         except (ValueError, OSError) as err:
             result = json.dumps({"error": str(err)}, ensure_ascii=False)
@@ -625,7 +782,7 @@ def _artifact_effect(params: JsonObject) -> JsonObject:
             artifacts.validate_print(_store(), str(params["session_id"]), params["params"])
         except ValueError as err:
             raise ValidationError(str(err)) from err
-    return {"approval": _approval_ensure(params)["approval"]}
+    return {"approval": _approval_ensure({**params, "channel": "documents"})["approval"]}
 
 
 @with_locale
@@ -653,10 +810,15 @@ HANDLERS = {
     "agent_internal_dispatch_result": _dispatch_result,
     "agent_internal_dispatch_cancel": _dispatch_cancel,
     "agent_internal_dispatch_finish": _dispatch_finish,
+    "agent_internal_effects": _effects,
+    "agent_internal_effect_undo": _effect_undo,
     "agent_internal_grants_add": _grants_add,
     "agent_internal_grants_check": _grants_check,
     "agent_internal_grants_list": _grants_list,
     "agent_internal_grants_revoke": _grants_revoke,
+    "agent_internal_path_status": _path_status,
+    "agent_internal_shell_job_status": _shell_job_status,
+    "agent_internal_shell_jobs_cancel_session": _shell_jobs_cancel_session,
     "agent_internal_mentions": _mentions,
     "agent_internal_document_plan": _document_plan,
     "agent_canvas_fill": canvas_edit.fill_fields,

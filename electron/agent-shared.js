@@ -10,6 +10,7 @@ const CHECK_MARKER = '[Comprobación de Antares]';
 const shared = {
   deps: null,
   state: null,
+  boot: null,
   live: new Map(),
   convToSession: new Map(),
   watchers: new Map(),
@@ -19,10 +20,14 @@ const shared = {
   decisionWaiters: new Map(),
   rounds: new Map(),
   turns: new Map(),
+  turnRuns: new Map(),
+  unattendedApps: new Map(),
   waitingInput: new Set(),
+  wakers: new Set(),
   providers: new Map(),
   providerOverrides: new Map(),
   nativeTools: null,
+  globalRules: {},
   attachments: new Map(),
   dialog: null,
   notify: null,
@@ -44,6 +49,12 @@ function providerCallId(dispatchId) {
   const value = String(dispatchId || '');
   const at = value.lastIndexOf(TASK_SUFFIX);
   return at === -1 ? value : value.slice(0, at);
+}
+
+function dispatchTaskId(dispatchId) {
+  const value = String(dispatchId || '');
+  const at = value.lastIndexOf(TASK_SUFFIX);
+  return at === -1 ? '' : value.slice(at + TASK_SUFFIX.length);
 }
 
 function bridge(method, params) {
@@ -97,6 +108,12 @@ async function requireSession(sessionId) {
   return session;
 }
 
+function wakeWaiters() {
+  for (const wake of [...shared.wakers]) {
+    try { wake(); } catch { }
+  }
+}
+
 async function conversation(sessionId) {
   const session = await requireSession(sessionId);
   const conv = await shared.state.harness.conversation(session.conversationId, ctx());
@@ -132,4 +149,6 @@ module.exports = {
   sessionForConversation,
   dispatchCallId,
   providerCallId,
+  dispatchTaskId,
+  wakeWaiters,
 };

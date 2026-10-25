@@ -133,6 +133,13 @@
       "handlers": [],
       "methods": ["memory_search", "memory_remember", "procedure_learn"]
     },
+    "agenda": {
+      "label": "Agenda",
+      "aliases": ["agenda", "encargos", "programados", "recordatorios"],
+      "handlers": [],
+      "methods": ["task_schedule"],
+      "native": true
+    },
     "connections": {
       "label": "Conexiones",
       "aliases": ["conexiones", "drive", "google-drive", "sheets", "hojas-de-google", "onedrive", "excel"],
@@ -146,9 +153,11 @@
       "label": "Equipo",
       "aliases": ["equipo", "pc", "computadora", "archivos", "terminal", "powershell", "navegador", "web", "internet", "escritorio", "windows"],
       "handlers": [],
-      "methods": ["fs_list", "fs_read", "fs_search", "fs_write", "fs_edit", "shell_run", "task_plan",
+      "methods": ["fs_list", "fs_read", "fs_search", "fs_write", "fs_edit", "shell_run", "shell_job_start",
+        "shell_job_status", "shell_job_cancel", "task_plan",
         "desktop_observe", "desktop_click", "desktop_type", "desktop_key", "desktop_scroll", "desktop_launch", "desktop_focus",
-        "web_open", "web_read", "web_screenshot", "web_click", "web_type", "web_key", "web_back",
+        "ui_windows", "ui_observe", "ui_click", "ui_type", "ui_key", "ui_scroll", "ui_drag", "ui_set_value", "ui_launch",
+        "web_open", "web_read", "web_screenshot", "web_click", "web_type", "web_key", "web_back", "web_forward", "web_reload",
         "web_text", "web_console", "web_network"],
       "native": true
     },

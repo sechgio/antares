@@ -22,10 +22,50 @@ async function main() {
   const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-scheduler-'));
   const dbPath = path.join(dir, 'agent.sqlite');
-  const bridge = async (method) => {
+  const approvals = new Map();
+  let approvalSeq = 0;
+  const bridge = async (method, params) => {
     if (method === 'agent_internal_tools') return { tools: [] };
     if (method === 'agent_internal_provider') return { style: 'openai_chat', base_url: 'http://unused', api_key: 'test' };
     if (method === 'agent_internal_approvals_pending') return { approvals: pendingApprovals };
+    if (method === 'agent_internal_approval_ensure') {
+      let found = [...approvals.values()].find((item) => item.call_id === params.call_id);
+      if (!found) {
+        found = {
+          id: `ap-${++approvalSeq}`, session_id: params.session_id, call_id: params.call_id,
+          method: params.method, params: params.params, status: 'pending', channel: params.channel || null,
+          source: null, created_at: Date.now(), decided_at: null,
+        };
+        approvals.set(found.id, found);
+      }
+      return { approval: { ...found } };
+    }
+    if (method === 'agent_internal_approval_status') {
+      const approval = approvals.get(params.approval_id);
+      return { approval: approval ? { ...approval } : null };
+    }
+    if (method === 'agent_internal_approval_decide') {
+      const approval = approvals.get(params.approval_id);
+      if (!approval || approval.status !== 'pending') throw new Error('Aprobación inexistente o ya decidida');
+      approval.status = params.approve ? 'approved' : 'denied';
+      approval.source = params.source || 'manual';
+      approval.decided_at = Date.now();
+      return { approval: { ...approval } };
+    }
+    if (method === 'agent_internal_approvals_deny_session') return { denied: [] };
+    if (method === 'agent_internal_dispatch') {
+      if (params.meta) {
+        return {
+          execute: 'meta',
+          dispatch: {
+            session_id: params.session_id, call_id: params.call_id, method: params.name,
+            op_id: `op-${params.call_id}`, status: 'running', result: null, channel: params.channel || null,
+          },
+        };
+      }
+      return { result: '{}' };
+    }
+    if (method === 'agent_internal_dispatch_finish') return { result: params.result };
     if (method === 'agent_internal_memory_context') return { context: '' };
     if (method === 'agent_internal_mentions') return { modules: [], unknown: [], ambiguous: [], context: '' };
     if (method === 'agent_internal_artifacts') return { artifacts: [], questions: [], context: {} };
@@ -306,6 +346,7 @@ async function main() {
     await until(async () => (await queueItems()).find((task) => task.id === afterFailure.scheduled.id)?.status === 'delivered');
 
     const { session: toolSession } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: toolSession.id, permission_mode: 'full' });
     faux.setResponses([
       fauxAssistantMessage([
         fauxToolCall('task_schedule', { action: 'enqueue', content: 'Encolado desde el turno' }),

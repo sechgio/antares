@@ -85,7 +85,7 @@ def _clip(text: str) -> str:
     return f"{text[:half]}\n… [{len(text) - _MAX_OUTPUT_CHARS} caracteres omitidos] …\n{text[-half:]}"
 
 
-def _kill_tree(process: subprocess.Popen[bytes]) -> None:
+def kill_tree(process: subprocess.Popen[bytes]) -> None:
     subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, check=False,
                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
@@ -127,12 +127,12 @@ def run(params: JsonObject, grants: dict[str, JsonObject], root: Path, token: An
     cancelled = False
     while process.poll() is None:
         if token is not None and getattr(token, "cancelled", False):
-            _kill_tree(process)
+            kill_tree(process)
             cancelled = True
             break
         if time.monotonic() - started > timeout:
             timed_out = True
-            _kill_tree(process)
+            kill_tree(process)
             break
         time.sleep(0.1)
     process.wait()

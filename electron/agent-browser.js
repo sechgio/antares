@@ -27,16 +27,7 @@ const VIRTUAL_KEYS = { Enter: 13, Tab: 9, Escape: 27, Space: 32, Backspace: 8, D
 const REF = { type: 'string', description: 'Referencia «ref» de un elemento devuelto por web_read' };
 const TOOLS = {
   web_open: ['Abrir una página web en el navegador del agente', {
-    type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s) o búsqueda' } }, required: ['url'],
-  }, false],
-  web_tab: ['Gestionar las pestañas del navegador del agente', {
-    type: 'object',
-    properties: {
-      action: { type: 'string', enum: ['list', 'open', 'select', 'close'], description: 'Listar, abrir, seleccionar o cerrar una pestaña' },
-      url: { type: 'string', description: 'Dirección http(s) o búsqueda, para «open»' },
-      id: { type: 'string', description: 'Identificador de la pestaña, para «select» y «close»' },
-    },
-    required: ['action'],
+    type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s) o búsqueda; para un archivo local usa fs_read' } }, required: ['url'],
   }, false],
   web_read: ['Leer el texto y los elementos interactivos de la página actual', {
     type: 'object', properties: { offset: { type: 'integer', minimum: 0, description: 'Carácter inicial del texto' } },
@@ -84,18 +75,77 @@ const HOST_SIZE = { width: 1280, height: 860 };
 const USER_CONTROL_ERROR = 'El usuario tiene el control del navegador ahora mismo; espera a que te lo devuelva o pídeselo';
 const USER_BUSY_ERROR = 'El usuario está usando el navegador en este momento; espera unos segundos antes de volver a actuar en la página';
 const USER_INPUT_GRACE_MS = 5_000;
+const USER_WAIT_MAX_MS = 10_000;
+const READ_TOOLS = new Set(['web_read', 'web_screenshot', 'web_text', 'web_console', 'web_network']);
+const NAVIGATION_TOOLS = new Set(['web_open', 'web_back', 'web_forward', 'web_reload']);
+const AGENT_TAB = 'agent';
+const USER_TAB = 'user';
+const TAB_IDS = [AGENT_TAB, USER_TAB];
+const TAB_LABELS = { [AGENT_TAB]: 'Agente', [USER_TAB]: 'Tú' };
+const AGENT_LEASE_MS = 10 * 60_000;
 const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
+const LOCAL_DOCUMENT = /^(?![a-z][a-z0-9+.-]*:)[^\s/\\]+\.(?:md|markdown|txt|pdf|docx?|csv|xlsx?|json)$/i;
 
 let host = null;
 let docked = null;
-let userControl = false;
-let lastUserInputAt = 0;
+let activeTab = AGENT_TAB;
+let agentOwner = null;
+const tabs = new Map();
 const pendingMouseInputs = new Set();
+let consoleLog = [];
+const netLog = new Map();
 let sessionReady = false;
 let downloadSlot = null;
-const tabs = new Map();
-let activeTabId = null;
-let tabSeq = 0;
+
+function browserError(message, code, extra = {}) {
+  const error = new Error(message);
+  error.code = code;
+  Object.assign(error, extra);
+  return error;
+}
+
+function userControlError() {
+  return browserError(USER_CONTROL_ERROR, 'USER_CONTROL', { retryable: false, recoverable: true });
+}
+
+function userBusyError(retryAfterMs) {
+  return browserError(USER_BUSY_ERROR, 'USER_BUSY', {
+    retryable: true,
+    recoverable: true,
+    retryAfterMs: Math.max(0, Math.round(Number(retryAfterMs) || 0)),
+  });
+}
+
+function busyRemaining(tab) {
+  return tab ? Math.max(0, tab.lastUserInputAt + USER_INPUT_GRACE_MS - Date.now()) : 0;
+}
+
+function acquireAgent(sessionId) {
+  if (!sessionId) return;
+  const now = Date.now();
+  if (!agentOwner || agentOwner.sessionId === sessionId || now - agentOwner.at >= AGENT_LEASE_MS) {
+    agentOwner = { sessionId, at: now };
+    return;
+  }
+  throw browserError('Otra conversación está usando el navegador del agente; espera a que termine o pide al usuario que cierre esa tarea',
+    'BROWSER_BUSY', {
+      retryable: false,
+      recoverable: true,
+      retryAfterMs: Math.max(0, AGENT_LEASE_MS - (now - agentOwner.at)),
+    });
+}
+
+function release(sessionId) {
+  if (!agentOwner || !sessionId || agentOwner.sessionId !== sessionId) return;
+  agentOwner = null;
+}
+
+function assertAgentTarget(raw) {
+  const value = String(raw || '').trim();
+  if (!LOCAL_DOCUMENT.test(value)) return;
+  throw browserError(`«${value}» parece un archivo local; usa fs_read con la ruta o escribe https:// si querías abrir una web`,
+    'LOCAL_FILE', { recoverable: false });
+}
 
 function isWeb(url) {
   try {
@@ -189,7 +239,7 @@ function alive(item) {
 
 function hostWindow(electron) {
   if (alive(host)) return host;
-  host = new electron.BrowserWindow({
+  const created = new electron.BrowserWindow({
     ...HOST_SIZE,
     x: -32000,
     y: -32000,
@@ -201,34 +251,55 @@ function hostWindow(electron) {
     title: 'Navegador del agente · Antares',
     webPreferences: { backgroundThrottling: false },
   });
-  host.on('closed', () => { host = null; });
-  host.setIgnoreMouseEvents(true);
-  host.showInactive();
-  return host;
+  host = created;
+  created.on('closed', () => {
+    for (const tab of tabs.values()) if (tab.parent === created) tab.parent = null;
+    if (host === created) host = null;
+  });
+  created.setIgnoreMouseEvents(true);
+  created.showInactive();
+  return created;
 }
 
-function tabState(tab) {
-  const contents = tab.view.webContents;
-  return { id: tab.id, url: contents.getURL(), title: contents.getTitle(), active: tab.id === activeTabId };
+function tabContents(tab) {
+  return tab && tab.view && alive(tab.view.webContents) ? tab.view.webContents : null;
 }
 
-function tabsState() {
-  return [...tabs.values()].filter((tab) => alive(tab.view && tab.view.webContents)).map(tabState);
-}
-
-function state() {
-  const tab = activeTab();
-  const contents = tab ? tab.view.webContents : null;
+function tabState(id) {
+  const tab = tabs.get(id);
+  const contents = tabContents(tab);
+  const remaining = tab && !tab.userControl ? busyRemaining(tab) : 0;
   return {
+    id,
+    label: TAB_LABELS[id],
     open: !!contents,
     url: contents ? contents.getURL() : '',
     title: contents ? contents.getTitle() : '',
     loading: contents ? contents.isLoading() : false,
     can_go_back: contents ? contents.navigationHistory.canGoBack() : false,
     can_go_forward: contents ? contents.navigationHistory.canGoForward() : false,
+    user_control: !!(tab && tab.userControl),
+    busy_until: remaining > 0 ? Date.now() + remaining : 0,
+    busy_reason: tab && tab.userControl ? 'control' : remaining > 0 ? 'user_input' : '',
+    active: id === activeTab,
+  };
+}
+
+function state() {
+  const current = tabState(activeTab);
+  return {
+    open: current.open,
+    url: current.url,
+    title: current.title,
+    loading: current.loading,
+    can_go_back: current.can_go_back,
+    can_go_forward: current.can_go_forward,
     docked: !!docked,
-    user_control: userControl,
-    tabs: tabsState(),
+    user_control: current.user_control,
+    busy_until: current.busy_until,
+    busy_reason: current.busy_reason,
+    active_tab: activeTab,
+    tabs: TAB_IDS.map((id) => tabState(id)),
   };
 }
 
@@ -239,20 +310,26 @@ function notify(reason) {
   } catch { }
 }
 
-function activeTab() {
-  const tab = tabs.get(activeTabId);
-  return tab && alive(tab.view && tab.view.webContents) ? tab : null;
+// La rueda puede emitir decenas de eventos por segundo; la UI solo necesita
+// enterarse de que el bloqueo sigue vigente, no de cada píxel desplazado.
+function noteUserInput(tab) {
+  if (!tab || tab.userControl) return;
+  tab.lastUserInputAt = Date.now();
+  if (tab.lastUserInputAt - tab.lastBusyNotifyAt < 500) return;
+  tab.lastBusyNotifyAt = tab.lastUserInputAt;
+  notify('busy');
 }
 
-function browser() {
-  const existing = activeTab();
-  if (existing) return existing.view;
-  return createTab(require('electron')).view;
-}
-
-function createTab(electron) {
+function ensureTab(id) {
+  let tab = tabs.get(id);
+  if (!tab) {
+    tab = { id, view: null, parent: null, userControl: false, lastUserInputAt: 0, lastBusyNotifyAt: 0 };
+    tabs.set(id, tab);
+  }
+  if (tab.view && alive(tab.view.webContents)) return tab;
+  const electron = require('electron');
   const ses = prepareSession(electron);
-  const view = new electron.WebContentsView({
+  tab.view = new electron.WebContentsView({
     webPreferences: {
       session: ses,
       sandbox: true,
@@ -263,10 +340,13 @@ function createTab(electron) {
       backgroundThrottling: false,
     },
   });
-  const tab = { id: String(tabSeq += 1), view, consoleLog: [], netLog: new Map() };
-  tabs.set(tab.id, tab);
-  activeTabId = tab.id;
-  const contents = view.webContents;
+  const ownedView = tab.view;
+  tab.parent = null;
+  const contents = tab.view.webContents;
+  if (id === AGENT_TAB) {
+    consoleLog = [];
+    netLog.clear();
+  }
   contents.setWindowOpenHandler(({ url }) => {
     if (isWeb(url)) setImmediate(() => contents.loadURL(url).catch(() => {}));
     return { action: 'deny' };
@@ -284,46 +364,61 @@ function createTab(electron) {
         && pending.button === input.button && pending.clickCount === input.clickCount);
       if (own) { pendingMouseInputs.delete(own); return; }
     }
-    if (['mouseDown', 'mouseWheel', 'keyDown', 'rawKeyDown'].includes(input.type)) lastUserInputAt = Date.now();
+    if (['mouseDown', 'mouseWheel', 'keyDown', 'rawKeyDown'].includes(input.type)) noteUserInput(tab);
   };
   contents.on('before-input-event', userInput);
   contents.on('before-mouse-event', userInput);
   contents.on('input-event', (event, input) => { if (input.type === 'mouseWheel') userInput(event, input); });
-  contents.on('console-message', ({ level, message }) => {
-    tab.consoleLog.push({ level: String(level || 'info'), text: String(message || '') });
-    if (tab.consoleLog.length > CONSOLE_KEEP) tab.consoleLog.shift();
-  });
-  // El debugger se adjunta al crear la página para que Network capture las
-  // peticiones desde la primera carga, no solo desde la primera interacción.
-  contents.debugger.on('message', (_event, method, params) => noteNetwork(tab, method, params));
-  ensureDebugger(contents).catch(() => { });
+  if (id === AGENT_TAB) {
+    contents.on('console-message', ({ level, message }) => {
+      consoleLog.push({ level: String(level || 'info'), text: String(message || '') });
+      if (consoleLog.length > CONSOLE_KEEP) consoleLog.shift();
+    });
+    // El debugger se adjunta al crear la página para que Network capture las
+    // peticiones desde la primera carga, no solo desde la primera interacción.
+    contents.debugger.on('message', (_event, method, params) => noteNetwork(method, params));
+    ensureDebugger(contents).catch(() => { });
+  }
   contents.on('did-navigate', () => fitPage(tab));
   for (const event of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) {
     contents.on(event, () => notify('page'));
   }
-  contents.once('destroyed', () => releaseTab(tab));
+  contents.once('destroyed', () => {
+    for (const pending of [...pendingMouseInputs]) {
+      if (pending.contents === contents) pendingMouseInputs.delete(pending);
+    }
+    const current = tabs.get(id);
+    if (current && current.view === ownedView) {
+      current.view = null;
+      current.parent = null;
+      current.userControl = false;
+      current.lastUserInputAt = 0;
+      current.lastBusyNotifyAt = 0;
+    }
+    notify(TAB_IDS.some((tabId) => tabContents(tabs.get(tabId))) ? 'page' : 'closed');
+  });
   mount(electron);
   return tab;
 }
 
 // Sin cabeceras, cookies ni cuerpos: el registro solo describe el tráfico.
-function recordNet(tab, id, entry) {
-  tab.netLog.set(id, entry);
-  if (tab.netLog.size > NET_KEEP) tab.netLog.delete(tab.netLog.keys().next().value);
+function recordNet(id, entry) {
+  netLog.set(id, entry);
+  if (netLog.size > NET_KEEP) netLog.delete(netLog.keys().next().value);
 }
 
-function noteNetwork(tab, method, params = {}) {
+function noteNetwork(method, params = {}) {
   if (method === 'Network.requestWillBeSent') {
     const request = params.request || {};
-    recordNet(tab, params.requestId, { method: request.method || '', url: String(request.url || ''), type: params.type || '', status: null });
+    recordNet(params.requestId, { method: request.method || '', url: String(request.url || ''), type: params.type || '', status: null });
   } else if (method === 'Network.responseReceived') {
-    const existing = tab.netLog.get(params.requestId);
+    const existing = netLog.get(params.requestId);
     const response = params.response || {};
     const entry = existing || { method: '', url: String(response.url || ''), type: params.type || '', status: null };
     entry.status = response.status ?? entry.status;
-    if (!existing) recordNet(tab, params.requestId, entry);
+    if (!existing) recordNet(params.requestId, entry);
   } else if (method === 'Network.loadingFailed') {
-    const entry = tab.netLog.get(params.requestId);
+    const entry = netLog.get(params.requestId);
     if (entry) entry.error = params.errorText || 'cancelada';
   }
 }
@@ -337,117 +432,99 @@ function clampBounds(bounds, zoom, size) {
   return { x, y, width, height };
 }
 
-// Coloca cada página en su sitio: la activa se monta en el panel de la ventana
-// principal cuando está acoplado y las de fondo permanecen en la ventana
-// anfitriona, donde siguen cargando fuera de pantalla; mover un view conserva
-// su página, su historial y su sesión. La activa se añade la última para que
-// quede encima.
 function mount(electron) {
-  const active = activeTab();
-  if (!active) return;
   const main = require('./window-manager').getMainWindow();
-  const dockedMain = !!docked && alive(main);
-  const ordered = [...tabs.values()].filter((tab) => alive(tab.view && tab.view.webContents))
-    .sort((a, b) => (a === active ? 1 : b === active ? -1 : 0));
-  for (const tab of ordered) {
-    const view = tab.view;
-    if (tab === active && dockedMain) {
-      if (alive(host)) host.contentView.removeChildView(view);
-      main.contentView.addChildView(view);
-      const [width, height] = main.getContentSize();
-      view.setBounds(clampBounds(docked, main.webContents.getZoomFactor(), { width, height }));
-    } else {
-      if (alive(main)) main.contentView.removeChildView(view);
-      hostWindow(electron).contentView.addChildView(view);
-      view.setBounds({ x: 0, y: 0, ...HOST_SIZE });
+  for (const tab of tabs.values()) {
+    if (!tabContents(tab)) continue;
+    if (tab.parent && !alive(tab.parent)) tab.parent = null;
+    const target = docked && alive(main) && tab.id === activeTab ? main : hostWindow(electron);
+    if (tab.parent && tab.parent !== target && alive(tab.parent)) tab.parent.contentView.removeChildView(tab.view);
+    if (tab.parent !== target) {
+      target.contentView.addChildView(tab.view);
+      tab.parent = target;
     }
+    if (target === main) {
+      const [width, height] = main.getContentSize();
+      tab.view.setBounds(clampBounds(docked, main.webContents.getZoomFactor(), { width, height }));
+    } else {
+      tab.view.setBounds({ x: 0, y: 0, ...HOST_SIZE });
+    }
+    fitPage(tab);
   }
-  fitPage();
 }
 
-// Retira una pestaña del registro; si era la activa, activa otra; al
-// desaparecer la última el navegador queda cerrado y sin acoplar.
-function releaseTab(tab) {
-  if (!tabs.has(tab.id)) return;
-  tabs.delete(tab.id);
-  if (activeTabId === tab.id) {
-    const next = [...tabs.values()].find((candidate) => alive(candidate.view && candidate.view.webContents));
-    activeTabId = next ? next.id : null;
-    if (next) mount(require('electron'));
-  }
-  if (!tabs.size) docked = null;
-  notify(tabs.size ? 'page' : 'closed');
-}
-
-// La página siempre se maqueta con el ancho de escritorio de la ventana
-// anfitriona y en un panel más estrecho se muestra reducida: el agente ve la
-// misma página, con los mismos elementos, sea cual sea el tamaño del panel.
-function fitPage(tab = null) {
-  const target = tab || activeTab();
-  if (!target || !alive(target.view && target.view.webContents)) return;
-  const { width } = target.view.getBounds();
+function fitPage(tab) {
+  const contents = tabContents(tab);
+  if (!contents) return;
+  const { width } = tab.view.getBounds();
   const zoom = width > 0 && width < HOST_SIZE.width ? width / HOST_SIZE.width : 1;
-  if (Math.abs(target.view.webContents.getZoomFactor() - zoom) > 0.001) target.view.webContents.setZoomFactor(zoom);
+  if (Math.abs(contents.getZoomFactor() - zoom) > 0.001) contents.setZoomFactor(zoom);
 }
 
 function dock(bounds) {
   const valid = bounds && ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(Number(bounds[key])))
     && Number(bounds.width) > 0 && Number(bounds.height) > 0;
   docked = valid ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null;
-  if (tabs.size) mount(require('electron'));
+  mount(require('electron'));
   return state();
 }
 
-function setUserControl(value) {
-  userControl = !!value;
+function setUserControl(value, id = activeTab) {
+  if (!TAB_IDS.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
+  let tab = tabs.get(id);
+  if (!tab) {
+    if (!value) return state();
+    tab = { id, view: null, parent: null, userControl: true, lastUserInputAt: 0, lastBusyNotifyAt: 0 };
+    tabs.set(id, tab);
+    notify('control');
+    return state();
+  }
+  const returning = tab.userControl && !value;
+  tab.userControl = !!value;
+  if (returning) {
+    tab.lastUserInputAt = 0;
+    tab.lastBusyNotifyAt = 0;
+  }
   notify('control');
   return state();
 }
 
-async function tabAction(params) {
-  const action = String(params.action || '');
-  if (action === 'list') return fit({ tabs: tabsState(), active: activeTabId });
-  if (action === 'open') {
-    const policy = require('./agent-browser-policy');
-    const target = normalizeUrl(params.url);
-    if (policy.isBlocked(policy.hostOf(target))) {
-      throw new Error('Dominio bloqueado por la política del navegador del agente');
-    }
-    const tab = createTab(require('electron'));
-    notify('agent-open');
-    await load(tab.view.webContents, target);
-    return { ...(await snapshot(tab.view.webContents)), tab: tab.id };
-  }
-  if (action !== 'select' && action !== 'close') throw new Error(`Acción de pestaña no válida: ${action}`);
-  const id = String(params.id || '').replace(/[^0-9]/g, '');
+function allowAgent(id = activeTab) {
+  if (!TAB_IDS.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
   const tab = tabs.get(id);
-  if (!tab || !alive(tab.view && tab.view.webContents)) throw new Error('No existe esa pestaña; usa web_tab con «list» para verlas');
-  if (action === 'select') {
-    if (id !== activeTabId) {
-      activeTabId = id;
-      mount(require('electron'));
-      notify('page');
-    }
-    return { selected: id, ...state() };
+  if (tab) {
+    tab.userControl = false;
+    tab.lastUserInputAt = 0;
+    tab.lastBusyNotifyAt = 0;
   }
-  if (action === 'close') {
-    if (tabs.size === 1) {
-      close();
-      return { closed: id, ...state() };
-    }
-    if (alive(tab.view && tab.view.webContents)) tab.view.webContents.close();
-    releaseTab(tab);
-    return { closed: id, ...state() };
-  }
+  notify('control');
+  return state();
 }
 
-async function navigate(action, url) {
+function resetUserActivity(id = AGENT_TAB) {
+  if (!TAB_IDS.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
+  const tab = tabs.get(id);
+  if (!tab) return;
+  tab.lastUserInputAt = 0;
+  tab.lastBusyNotifyAt = 0;
+  notify('page');
+}
+
+function activateTab(id) {
+  if (!TAB_IDS.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
+  activeTab = id;
+  mount(require('electron'));
+  notify('page');
+  return state();
+}
+
+async function navigate(action, url, id = activeTab) {
   if (action === 'open') {
-    const contents = browser().webContents;
-    await load(contents, normalizeUrl(url));
+    const tab = ensureTab(id);
+    await load(tab.view.webContents, normalizeUrl(url));
     return state();
   }
-  const contents = current();
+  const contents = current(id);
   if (action === 'back' && contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack();
   else if (action === 'forward' && contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward();
   else if (action === 'reload') contents.reload();
@@ -456,6 +533,28 @@ async function navigate(action, url) {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Abrir o volver atrás espera a que el usuario deje la página; el clic o la
+// escritura no, porque ya podrían haber enviado entrada. La espera ocurre antes
+// de navegar, así que no repite ningún efecto.
+async function waitForHumanIdle(name, tab) {
+  if (tab && tab.userControl) throw userControlError();
+  if (READ_TOOLS.has(name)) return;
+  if (!NAVIGATION_TOOLS.has(name)) {
+    const remaining = busyRemaining(tab);
+    if (remaining > 0) throw userBusyError(remaining);
+    return;
+  }
+  const deadline = Date.now() + USER_WAIT_MAX_MS;
+  let remaining = busyRemaining(tab);
+  while (remaining > 0) {
+    if (tab && tab.userControl) throw userControlError();
+    if (Date.now() + remaining > deadline) throw userBusyError(remaining);
+    await delay(Math.min(remaining, 200));
+    remaining = busyRemaining(tab);
+  }
+  if (tab && tab.userControl) throw userControlError();
 }
 
 async function settle(contents) {
@@ -536,10 +635,12 @@ async function snapshot(contents, offset = 0, budget = RESULT_BUDGET) {
   return { ...result, text_offset: start, text_total: text.length, ...(end < text.length ? { next_offset: end } : {}) };
 }
 
-function current() {
-  const tab = activeTab();
-  if (!tab) throw new Error('El navegador del agente no tiene ninguna página abierta; usa web_open');
-  return tab.view.webContents;
+function current(id = AGENT_TAB) {
+  const contents = tabContents(tabs.get(id));
+  if (!contents) throw new Error(id === AGENT_TAB
+    ? 'El navegador del agente no tiene ninguna página abierta; usa web_open'
+    : 'Esta pestaña no tiene ninguna página abierta');
+  return contents;
 }
 
 const PAGE_TEXT = `(() => ({
@@ -580,16 +681,20 @@ async function locate(contents, ref) {
 }
 
 async function assertInteraction(input) {
+  const agent = tabs.get(AGENT_TAB);
   let samePage = false;
   try {
     const page = await approvalContext(input.contents);
-    samePage = current() === input.contents && page.page_url === input.expected.page_url
+    samePage = tabContents(agent) === input.contents && page.page_url === input.expected.page_url
       && page.page_time_origin === input.expected.page_time_origin;
   } catch {}
-  if (samePage && !userControl && Date.now() - lastUserInputAt >= USER_INPUT_GRACE_MS) return;
-  const error = new Error(!samePage
-    ? 'La página cambió o ya no se puede comprobar; vuelve a leerla con web_read y solicita una nueva aprobación'
-    : userControl ? USER_CONTROL_ERROR : USER_BUSY_ERROR);
+  const control = !!(agent && agent.userControl);
+  const remaining = control ? 0 : busyRemaining(agent);
+  if (samePage && !control && remaining === 0) return;
+  const error = !samePage
+    ? browserError('La página cambió o ya no se puede comprobar; vuelve a leerla con web_read y solicita una nueva aprobación',
+      'PAGE_CHANGED', { recoverable: true })
+    : control ? userControlError() : userBusyError(remaining);
   if (input.sent) error.uncertain = true;
   throw error;
 }
@@ -617,7 +722,7 @@ async function send(input, method, event) {
     input.sent = true;
     await target.debugger.sendCommand(method, event);
   } catch (error) {
-    if (mouseInput && !pendingMouseInputs.has(mouseInput)) lastUserInputAt = Date.now();
+    if (mouseInput && !pendingMouseInputs.has(mouseInput)) noteUserInput(tabs.get(AGENT_TAB));
     if (input.sent) error.uncertain = true;
     throw error;
   } finally {
@@ -677,29 +782,32 @@ async function observeAfter(contents) {
   return snapshot(contents, 0, RESULT_BUDGET - 400);
 }
 
-async function run(name, params = {}, { dir, drafts, approvedContext } = {}) {
-  if (userControl) throw new Error(USER_CONTROL_ERROR);
-  if (!['web_read', 'web_screenshot', 'web_text', 'web_console', 'web_network'].includes(name)
-    && Date.now() - lastUserInputAt < USER_INPUT_GRACE_MS) throw new Error(USER_BUSY_ERROR);
+async function run(name, params = {}, { dir, drafts, approvedContext, sessionId } = {}) {
   if (name === 'web_open') {
+    assertAgentTarget(params.url);
     const policy = require('./agent-browser-policy');
-    const target = normalizeUrl(params.url);
-    if (policy.isBlocked(policy.hostOf(target))) {
+    if (policy.isBlocked(policy.hostOf(normalizeUrl(params.url)))) {
       throw new Error('Dominio bloqueado por la política del navegador del agente');
     }
-    const contents = browser().webContents;
-    notify('agent-open');
-    await load(contents, target);
-    return snapshot(contents);
   }
+  acquireAgent(sessionId);
+  let tab = tabs.get(AGENT_TAB);
+  if (tab && tab.userControl) throw userControlError();
+  await waitForHumanIdle(name, tab);
   if (name === 'web_handover') {
-    setUserControl(true);
+    setUserControl(true, AGENT_TAB);
     return { handed_over: true, ...state() };
   }
   if (name === 'web_download') return startDownload(String(params.url || '').trim(), drafts);
-  if (name === 'web_tab') return tabAction(params);
-  const contents = current();
-  const tab = activeTab();
+  if (name === 'web_open') {
+    if (!docked) activeTab = AGENT_TAB;
+    tab = ensureTab(AGENT_TAB);
+    notify('agent-open');
+    const contents = tab.view.webContents;
+    await load(contents, normalizeUrl(params.url));
+    return snapshot(contents);
+  }
+  const contents = current(AGENT_TAB);
   if (name === 'web_read') return snapshot(contents, params.offset);
   if (name === 'web_screenshot') return screenshot(contents, dir, params.full_page === true);
   if (name === 'web_back') {
@@ -718,13 +826,13 @@ async function run(name, params = {}, { dir, drafts, approvedContext } = {}) {
   }
   if (name === 'web_text') return pageText(contents, params.offset);
   if (name === 'web_console') {
-    return fit({ url: contents.getURL(), messages: tab.consoleLog.map((item) => `[${item.level}] ${item.text}`) });
+    return fit({ url: contents.getURL(), messages: consoleLog.map((item) => `[${item.level}] ${item.text}`) });
   }
   if (name === 'web_network') {
     await ensureDebugger(contents);
     return fit({
       url: contents.getURL(),
-      requests: [...tab.netLog.values()].map((item) => `${item.status ?? '·'} ${item.method || '·'}${item.type ? ` ${item.type}` : ''} ${item.url}${item.error ? ` (falló: ${item.error})` : ''}`),
+      requests: [...netLog.values()].map((item) => `${item.status ?? '·'} ${item.method || '·'}${item.type ? ` ${item.type}` : ''} ${item.url}${item.error ? ` (falló: ${item.error})` : ''}`),
     });
   }
   const input = { contents, expected: approvedContext || await approvalContext(contents), sent: false };
@@ -787,14 +895,16 @@ async function uploadFile(input, ref, filePath) {
 }
 
 function close() {
-  for (const tab of [...tabs.values()]) {
-    if (alive(tab.view && tab.view.webContents)) tab.view.webContents.close();
+  for (const tab of tabs.values()) {
+    if (tab.view && alive(tab.view.webContents)) tab.view.webContents.close();
   }
   if (alive(host)) host.destroy();
+  tabs.clear();
   host = null;
   docked = null;
-  tabs.clear();
-  activeTabId = null;
+  activeTab = AGENT_TAB;
+  agentOwner = null;
+  pendingMouseInputs.clear();
 }
 
-module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, run, close, normalizeUrl, isWeb, state, dock, navigate, setUserControl, clampBounds, siteUserAgent, approvalContext };
+module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, state, dock, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, clampBounds, siteUserAgent, approvalContext };

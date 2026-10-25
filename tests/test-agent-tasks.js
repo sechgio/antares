@@ -23,12 +23,26 @@ async function main() {
   const granted = [];
   let slow = false;
   let reads = 0;
+  let approvalSeq = 0;
   const bridge = async (method, params) => {
     if (method === 'agent_internal_tools') return { tools: [
       { name: 'canvas_list', kind: 'backend', gated: false, replay_safe: true, inputSchema: { type: 'object', properties: {} } },
       { name: 'fs_write', kind: 'backend', gated: true, inputSchema: { type: 'object', properties: {} } },
     ] };
-    if (method === 'agent_internal_dispatch') { reads += 1; return { result: slow ? null : JSON.stringify({ documents: ['Comprobante'] }) }; }
+    if (method === 'agent_internal_approval_ensure') {
+      return { approval: { id: `ap-${++approvalSeq}`, session_id: params.session_id, call_id: params.call_id,
+        method: params.method, params: params.params, status: 'pending', channel: params.channel || null } };
+    }
+    if (method === 'agent_internal_approval_decide') {
+      return { approval: { id: params.approval_id, session_id: params.session_id, call_id: params.call_id,
+        status: params.approve ? 'approved' : 'denied', source: params.source || 'manual' } };
+    }
+    if (method === 'agent_internal_dispatch') {
+      if (params.meta) return { execute: 'meta', dispatch: { op_id: `op-${params.call_id}`, status: 'running' } };
+      reads += 1;
+      return { result: slow ? null : JSON.stringify({ documents: ['Comprobante'] }) };
+    }
+    if (method === 'agent_internal_dispatch_finish') return { result: params.result };
     if (method === 'agent_internal_dispatch_result') return { result: slow ? null : JSON.stringify({ documents: ['Comprobante'] }) };
     if (method === 'agent_internal_provider') return { style: 'openai_chat', base_url: 'http://unused', api_key: 'test' };
     if (method === 'agent_internal_approvals_pending') return { approvals: [] };
@@ -112,6 +126,7 @@ async function main() {
     await until(async () => (await runtime.handlers.agent_messages_list({ session_id: initialSession.id })).messages
       .some((message) => message.content === 'Recibí la comprobación inicial'));
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
     const scheduled = { action: 'create', content: 'Consulta C:\\fuera\\dato.txt sin ampliar accesos', due_at: new Date(Date.now() + 2500).toISOString() };
     faux.setResponses([
       fauxAssistantMessage([fauxToolCall('task_schedule', scheduled)], { stopReason: 'toolUse' }),
@@ -165,7 +180,7 @@ async function main() {
     });
     await runtime.handlers.agent_tools_set({ session_id: session.id, names: ['tools_load', 'canvas_list'] });
     faux.setResponses([
-      fauxAssistantMessage([fauxToolCall('tools_load', { modules: ['agent'] })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('tools_load', { modules: ['agent', 'agenda'] })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('Herramientas de encargos cargadas'),
     ]);
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Carga las herramientas de encargos', request_id: 'load-agent' });
@@ -173,6 +188,7 @@ async function main() {
     const enabled = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools.filter((tool) => tool.enabled);
     assert.ok(enabled.some((tool) => tool.name === 'task_schedule'), 'las conversaciones existentes pueden cargar programación');
     assert.ok(enabled.some((tool) => tool.name === 'agent_delegate'), 'las conversaciones existentes pueden cargar delegación');
+    assert.ok(enabled.some((tool) => tool.name === 'wait_event'), 'las conversaciones existentes pueden cargar esperas');
     await require('../electron/agent-tasks').stop();
     const respond = (context) => {
       const source = JSON.stringify(context.messages);
