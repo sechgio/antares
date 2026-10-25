@@ -187,7 +187,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   }, []);
   const [deciding, setDeciding] = useState<{ id: string; approved: boolean } | null>(null);
   const decisionRef = useRef<string | null>(null);
-  const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
+  const [attachments, setAttachments] = useState<(AgentAttachment & { preview?: string })[]>([]);
+  const [dragging, setDragging] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
@@ -749,6 +750,29 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
 
+  // Soltar o pegar archivos: con ruta se adjuntan tal cual; sin ruta
+  // (capturas del portapapeles) se envían los bytes para guardarlos.
+  const attachFiles = async (files: File[]) => {
+    if (!sessionId || !files.length) return;
+    const withPath = files.map((file) => ({ file, path: window.electronAPI?.getPathForFile?.(file) || '' }));
+    const pasted = withPath.filter((item) => !item.path).map((item) => item.file);
+    try {
+      const data = await Promise.all(pasted.map((file) => new Promise<{ name: string; data: string }>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name || 'captura.png', data: String(reader.result).split(',')[1] ?? '' });
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      })));
+      const ordered = [...withPath.filter((item) => item.path).map((item) => item.file), ...pasted];
+      const res = await agentApi.agentAttach('files', { paths: withPath.filter((item) => item.path).map((item) => item.path), data });
+      if (res.attachments.length) draftVersionRef.current += 1;
+      setAttachments((prev) => [...prev, ...res.attachments.map((item, index) => (ordered[index]?.type.startsWith('image/')
+        ? { ...item, preview: URL.createObjectURL(ordered[index]) } : item))]);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo adjuntar'), type: 'error' });
+    }
+  };
+
   const sendSuggestion = async (text: string) => {
     if (running || pending.length > 0) return;
     await send(false, text);
@@ -1282,7 +1306,11 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               </ol>
             </section>
           )}
-          <div role="group" aria-label="Redactar mensaje" className="agent-composer rounded-2xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] transition-colors">
+          <div role="group" aria-label="Redactar mensaje"
+            className={`agent-composer rounded-2xl border bg-[var(--bg-elevated)] transition-colors ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
+            onDragOver={(event) => { if (!sessionId || !event.dataTransfer.types.includes('Files')) return; event.preventDefault(); setDragging(true); }}
+            onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
+            onDrop={(event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); void attachFiles([...event.dataTransfer.files]); }}>
             {mentionMatch && <div className="border-b border-[var(--border-subtle)] p-2">
               <p className="px-2 pb-1 text-[11px] text-[var(--text-secondary)]">Colaborar con un bot · solo lectura</p>
               <div ref={botMentionsRef} id="agent-bot-mentions" role="listbox" aria-label="Bots para mencionar" className="max-h-44 overflow-y-auto">
@@ -1304,7 +1332,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                     key={item.id}
                     className="flex max-w-[60%] items-center gap-1 rounded-full bg-[var(--bg-input)] py-0.5 pl-2 pr-1 text-[11px] text-[var(--text-secondary)]"
                   >
-                    {item.kind === 'folder' ? <FolderOpen size={11} /> : <Paperclip size={11} />}
+                    {item.preview ? <img src={item.preview} alt="" className="size-5 rounded object-cover" />
+                      : item.kind === 'folder' ? <FolderOpen size={11} /> : <Paperclip size={11} />}
                     <span className="truncate">{item.name}</span>
                     <button
                       type="button"
@@ -1325,6 +1354,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 value={draft}
                 onChange={(event) => { draftVersionRef.current += 1; setDraft(event.target.value); setMentionCursor(event.target.selectionStart); setMentionIndex(0); setMentionsHidden(false); }}
                 onSelect={(event) => setMentionCursor(event.currentTarget.selectionStart)}
+                onPaste={(event) => { if (!sessionId || !event.clipboardData.files.length) return; event.preventDefault(); void attachFiles([...event.clipboardData.files]); }}
                 aria-autocomplete="list"
                 aria-controls={mentionMatch ? 'agent-bot-mentions' : undefined}
                 aria-activedescendant={selectedMention ? `agent-mention-${selectedMention.id}` : undefined}

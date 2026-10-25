@@ -514,6 +514,11 @@ def main() -> None:
         if warm_thread is not None and warm_thread.is_alive():
             warm_thread.join(timeout=5.0)
         scheduler.shutdown(wait=True)
+        try:
+            from backend.core.agent import computer_jobs
+            computer_jobs.kill_all()
+        except Exception:
+            logger.warning("No se pudieron detener los jobs de shell", exc_info=True)
         close_connection()
         logger.info(t("info.backend_shutdown"))
 

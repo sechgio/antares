@@ -137,7 +137,7 @@ export function createAutoimgApi(invoke: IpcInvoke) {
     ),
     autoimgCancelOperation: () => invoke<{ success: boolean; operation?: string; reason?: string }>('autoimg_cancel_operation'),
     autoimgOperationStatus: () =>
-      invoke<{ active: string | null; cancellable: boolean }>('autoimg_operation_status'),
+      invoke<{ active: string | null; operation_id: string | null; cancellable: boolean }>('autoimg_operation_status'),
     autoimgStatus: () => invoke<AutoImgStatus>('autoimg_status'),
   };
 }

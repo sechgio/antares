@@ -243,6 +243,12 @@ export interface AgentMemoryItem {
   versions: { version: number; created_at: number; source: AgentMemoryItem['source'] }[];
 }
 
+export interface AgentSkill {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export const agentApi = {
   agentSessionsList: () => _invoke<{ sessions: AgentSession[] }>('agent_sessions_list'),
 
@@ -286,8 +292,9 @@ export const agentApi = {
       { session_id, content, request_id, ...(attachments.length ? { attachments } : {}), ...(correction ? { correction: true } : {}) },
     ),
 
-  agentAttach: (kind: 'files' | 'folder') =>
-    _invoke<{ attachments: AgentAttachment[] }>('agent_attach', { kind }),
+  /** Sin `dropped` abre el diálogo; con él adjunta rutas soltadas o bytes pegados (base64). */
+  agentAttach: (kind: 'files' | 'folder', dropped?: { paths?: string[]; data?: { name: string; data: string }[] }) =>
+    _invoke<{ attachments: AgentAttachment[] }>('agent_attach', { kind, ...dropped }),
 
   agentToolsList: (session_id?: string) => _invoke<{ tools: AgentToolSpec[] }>('agent_tools_list', session_id ? { session_id } : {}),
 
@@ -364,6 +371,8 @@ export const agentApi = {
   agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),
 
   agentMemoryList: () => _invoke<{ items: AgentMemoryItem[] }>('agent_memory_list'),
+  agentSkillsList: () =>
+    _invoke<{ skills: AgentSkill[]; library: string; warnings: string[]; truncated: boolean }>('agent_skills_list'),
 
   agentMemoryUpdate: (params: { id: string; action: 'edit' | 'disable' | 'enable' | 'revert'; content?: string; when?: string; version?: number }) =>
     _invoke<{ item: AgentMemoryItem }>('agent_memory_update', params),

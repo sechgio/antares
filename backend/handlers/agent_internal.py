@@ -7,7 +7,17 @@ from pathlib import Path
 
 from backend.core.agent import agent as _agent
 from backend.core.agent import agent_chat as _agent_chat
-from backend.core.agent import agent_tools, artifacts, canvas_edit, computer_files, documents, drafts, resource_grants
+from backend.core.agent import (
+    agent_tools,
+    artifacts,
+    canvas_edit,
+    computer_files,
+    computer_jobs,
+    documents,
+    drafts,
+    resource_grants,
+    skills,
+)
 from backend.core.agent import memory as _memory_store
 from backend.core.agent import modules as _agent_modules
 from backend.core.agent import subagent as _subagent
@@ -222,6 +232,34 @@ def _grants_add(params: JsonObject) -> JsonObject:
     if records:
         _store().add_grants(session_id, records)
     return {"granted": granted, "rejected": rejected}
+
+
+@with_locale
+@validate_params("session_id", "path")
+def _path_status(params: JsonObject) -> JsonObject:
+    store = _store()
+    session_id = str(params["session_id"])
+    try:
+        return computer_files.stat_path(params["path"], store.grants_for(session_id), store.drafts_dir(session_id))
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("session_id", "job_id")
+def _shell_job_status(params: JsonObject) -> JsonObject:
+    store = _store()
+    session_id = str(params["session_id"])
+    try:
+        return computer_jobs.status({"job_id": params["job_id"]}, store.drafts_dir(session_id), session_id)
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("session_id")
+def _shell_jobs_cancel_session(params: JsonObject) -> JsonObject:
+    return {"cancelled": computer_jobs.cancel_session(str(params["session_id"]))}
 
 
 @with_locale
@@ -552,6 +590,11 @@ def _memory_list(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+def _skills_list(params: JsonObject) -> JsonObject:
+    return skills.library_catalog(_store().base_dir / "skills")
+
+
+@with_locale
 @validate_params("id", "action")
 def _memory_update(params: JsonObject) -> JsonObject:
     try:
@@ -632,6 +675,9 @@ HANDLERS = {
     "agent_internal_grants_add": _grants_add,
     "agent_internal_grants_list": _grants_list,
     "agent_internal_grants_revoke": _grants_revoke,
+    "agent_internal_path_status": _path_status,
+    "agent_internal_shell_job_status": _shell_job_status,
+    "agent_internal_shell_jobs_cancel_session": _shell_jobs_cancel_session,
     "agent_internal_mentions": _mentions,
     "agent_internal_document_plan": _document_plan,
     "agent_canvas_fill": canvas_edit.fill_fields,
@@ -644,6 +690,7 @@ HANDLERS = {
     "agent_internal_memory_context": _memory_context,
     "agent_internal_grant_remove": _grant_remove,
     "agent_memory_list": _memory_list,
+    "agent_skills_list": _skills_list,
     "agent_memory_update": _memory_update,
     "agent_memory_delete": _memory_delete,
 }
