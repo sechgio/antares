@@ -44,6 +44,45 @@ def test_tool_specs_cover_readonly_and_gated():
     assert by_name[agent_chat.gated_methods()[0]]["gated"] is True
 
 
+def test_memory_writes_are_gated_effects():
+    from backend.core.agent import agent_tools
+
+    gated = set(agent_chat.gated_methods())
+    for name in ("memory_remember", "procedure_learn"):
+        assert agent_tools.SPECS[name]["gated"] is True
+        assert name in agent_tools.EFFECT_TOOLS
+        assert name in gated
+    assert "memory_search" in agent_tools.READ_TOOLS
+    assert "memory_search" not in gated
+
+
+def test_task_schedule_is_a_gated_meta_tool_with_the_electron_schema():
+    from backend.core.agent import agent_tools
+
+    spec = agent_tools.SPECS["task_schedule"]
+    assert spec["gated"] is True and spec["module"] == "agenda"
+    assert spec["inputSchema"] == {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["create", "list", "cancel"]},
+            "content": {"type": "string", "minLength": 1, "maxLength": 12000},
+            "due_at": {"type": "string"},
+            "every_minutes": {"type": "integer", "minimum": 1, "maximum": 525600},
+            "id": {"type": "string"},
+        },
+        "required": ["action"],
+    }
+    assert "task_schedule" in agent_chat.gated_methods()
+
+
+def test_task_schedule_has_no_backend_execution(tmp_path):
+    from backend.core.agent import agent_tools
+
+    store = _store(tmp_path)
+    with pytest.raises(ValueError, match="no disponible"):
+        agent_tools.run("task_schedule", {"action": "list"}, store, "s1")
+
+
 @pytest.mark.parametrize("style", ["openai", "anthropic"])
 def test_provider_receives_native_and_mcp_argument_contracts(monkeypatch, style):
     from backend.core.integrations import mcp_servers
@@ -87,6 +126,25 @@ def test_tools_list_projection(monkeypatch):
     assert by_name["flows_list"] == {"name": "flows_list", "gated": False, "kind": "backend"}
     assert by_name["canvas_save"]["gated"] is True
     assert by_name["mcp__srv1__search"]["kind"] == "mcp"
+
+
+def test_backend_approval_records_a_dispatch_receipt(tmp_path):
+    store = _store(tmp_path)
+    session = store.create_session("ollama", "llama3.1", "Prueba")
+    calls = []
+    runner = agent.AgentRunner(store, lambda method: lambda params: calls.append(method) or {"ok": True})
+    approval = store.create_approval(session["id"], {
+        "id": "backend-call", "name": "db_export", "params": {}, "channel": "documents",
+    })
+    store.decide_approval(approval["id"], True, "manual")
+    runner._apply_decision(store.get_approval(approval["id"]))
+
+    record = store.get_dispatch(session["id"], "backend-call")
+    assert calls == ["db_export"]
+    assert record["status"] == "succeeded"
+    assert record["channel"] == "documents"
+    assert record["approval_source"] == "manual"
+    assert store.messages(session["id"])[-1]["tool_use_id"] == "backend-call"
 
 
 def test_approval_flow(tmp_path):

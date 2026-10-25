@@ -34,6 +34,26 @@ SPECS["mcp_status"] = {
                    "refresh=true vuelve a consultar sus catálogos; no modifica configuración ni credenciales.",
     "inputSchema": {"type": "object", "properties": {"refresh": {"type": "boolean"}}},
 }
+# El efecto lo ejecuta Electron sobre TasksDoc; aquí solo se anuncia para que la
+# aprobación y el recibo se reserven en el backend. run() no lo implementa.
+SPECS["task_schedule"] = {
+    "name": "task_schedule", "module": "agenda", "gated": True,
+    "description": "Programa un encargo solo cuando el usuario lo pide. Antares debe seguir abierto, incluida la bandeja; "
+                   "al volver a abrir recupera los pendientes. No concede permisos ni acceso a archivos. "
+                   "action=create requiere content y due_at ISO 8601 con zona horaria; every_minutes permite repetición. "
+                   "action=list consulta los encargos de esta conversación; action=cancel cancela uno por id.",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["create", "list", "cancel"]},
+            "content": {"type": "string", "minLength": 1, "maxLength": 12000},
+            "due_at": {"type": "string"},
+            "every_minutes": {"type": "integer", "minimum": 1, "maximum": 525600},
+            "id": {"type": "string"},
+        },
+        "required": ["action"],
+    },
+}
 READ_TOOLS = frozenset(name for name, spec in SPECS.items() if not spec["gated"])
 EFFECT_TOOLS = frozenset(name for name, spec in SPECS.items() if spec["gated"])
 
