@@ -76,6 +76,9 @@ function runSuite(name, shard = null) {
     case 'electron':
       runNodeTests(ELECTRON_TESTS);
       return;
+    case 'turns':
+      run(npmCommand, ['run', 'test:turns'], ROOT);
+      return;
     case 'frontend':
       runFrontendSuite(shard);
       return;
@@ -89,7 +92,7 @@ const requestedShard = process.argv[3];
 if (requestedShard && !/^\d+\/\d+$/.test(requestedShard)) {
   throw new Error(`Invalid shard (expected <index>/<count>): ${requestedShard}`);
 }
-const suites = requestedSuite ? [requestedSuite] : ['contracts', 'backend', 'electron', 'frontend'];
+const suites = requestedSuite ? [requestedSuite] : ['contracts', 'backend', 'electron', 'turns', 'frontend'];
 
 try {
   for (const suite of suites) runSuite(suite, requestedShard);

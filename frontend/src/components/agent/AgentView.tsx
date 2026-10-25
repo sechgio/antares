@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp, ChevronDown, CornerDownRight, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
-import { agentApi, type AgentPermissionMode, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec } from '../../api/agentApi';
+import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownRight, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { agentApi, type AgentPermissionMode, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
@@ -23,6 +23,8 @@ import ContextChips from './ContextChips';
 import AgentEditor from './AgentEditor';
 import ConversationMenu from './ConversationMenu';
 import AgentBrowserPanel from './AgentBrowserPanel';
+import AgentAuditPanel from './AgentAuditPanel';
+import ScheduledTasksPanel from './ScheduledTasksPanel';
 import { METHOD_LABELS } from './methodLabels';
 import { ApprovalCard, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel } from './AgentTimeline';
 
@@ -148,7 +150,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [artifacts, setArtifacts] = useState<AgentArtifact[]>([]);
   const [questions, setQuestions] = useState<AgentQuestion[]>([]);
   const [context, setContext] = useState<AgentContext | null>(null);
-  const [usage, setUsage] = useState<{ input: number; output: number; context?: number; cached?: number; prompt?: number } | null>(null);
+  const [usage, setUsage] = useState<AgentUsage | null>(null);
   const [pending, setPending] = useState<AgentApproval[]>([]);
   const [running, setRunning] = useState(false);
   const [plan, setPlan] = useState<AgentPlan | null>(null);
@@ -185,6 +187,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const decisionRef = useRef<string | null>(null);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [browserOpen, setBrowserOpen] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);
   const [queued, setQueued] = useState<{ session: string; text: string; requestId: string; attachments?: string[]; failed?: boolean; correction?: boolean }[]>(() => {
     try {
       const saved: unknown = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
@@ -1004,6 +1008,24 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             <span className="min-w-0 flex-1" />
             <button
               type="button"
+              aria-label="Historial de aprobaciones"
+              title="Historial de aprobaciones"
+              onClick={() => setAuditOpen(true)}
+              className="flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+            >
+              <ShieldCheck size={14} />
+            </button>
+            <button
+              type="button"
+              aria-label="Encargos programados"
+              title="Encargos programados"
+              onClick={() => setTasksOpen(true)}
+              className="flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+            >
+              <CalendarClock size={14} />
+            </button>
+            <button
+              type="button"
               aria-label="Navegador del agente"
               aria-pressed={browserOpen}
               title={browserOpen ? 'Cerrar el navegador del agente' : 'Abrir el navegador del agente'}
@@ -1439,6 +1461,12 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       </main>
 
       {browserOpen && <AgentBrowserPanel onClose={() => setBrowserOpen(false)} />}
+      {auditOpen && session && (
+        <AgentAuditPanel sessions={sessions} sessionId={session.id} onClose={() => setAuditOpen(false)} />
+      )}
+      {tasksOpen && session && (
+        <ScheduledTasksPanel sessions={sessions} sessionId={session.id} onClose={() => setTasksOpen(false)} />
+      )}
 
       {toolsMenu.isOpen && createPortal(
         <div

@@ -440,6 +440,7 @@ export function ApprovalCard({
     typeof params.ref === 'string' && `Elemento de la página: ${params.ref}`,
     context?.account && `Cuenta: ${context.account}`,
     context?.sheet_id && `Hoja: ${context.sheet_id}`,
+    context?.subagent && `Solicitada por el subagente: ${context.subagent}${context.subagent_role === 'worker' ? ' (worker)' : ''}`,
     ...(approval.resources ?? []).map((resource) => `Archivo: ${resource.path}`),
   ].filter((fact): fact is string => !!fact);
   const Icon = approval.method === 'shell_run' ? Terminal
