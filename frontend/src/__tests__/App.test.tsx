@@ -173,7 +173,7 @@ describe('App', () => {
     }
   }, 90000);
 
-  it('opens connections and providers as independent sections below plugins in settings', async () => {
+  it('opens providers below plugins in settings and keeps connections in Complementos', async () => {
     vi.spyOn(connectionsApi, 'connectionsProviders').mockResolvedValue({ providers: [], categories: [] });
     vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [] });
     vi.spyOn(mcpApi, 'mcpServersList').mockResolvedValue({ servers: [{
@@ -192,27 +192,21 @@ describe('App', () => {
 
     const sections = within(screen.getByTestId('settings-modal-sidebar')).getAllByRole('button');
     const pluginsIndex = sections.indexOf(screen.getByTestId('settings-section-plugins'));
-    expect(sections[pluginsIndex + 1]).toBe(screen.getByTestId('settings-section-connections'));
-    expect(sections[pluginsIndex + 2]).toBe(screen.getByTestId('settings-section-providers'));
-
-    fireEvent.click(screen.getByTestId('settings-section-plugins'));
-    fireEvent.keyDown(screen.getByTestId('settings-section-plugins'), { key: 'ArrowDown' });
-    expect(screen.getByTestId('settings-section-connections')).toHaveAttribute('aria-current', 'page');
-    expect(await screen.findByRole('textbox', { name: 'Buscar conexiones' }, { timeout: 8000 })).toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: 'Servidores MCP' })).toBeInTheDocument();
-    expect(screen.queryByRole('group', { name: 'Secciones de Conexiones' })).not.toBeInTheDocument();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar Servidor de prueba' }));
-    const confirmation = await screen.findByRole('alertdialog', { name: 'Eliminar servidor' });
-    expect(screen.getByTestId('settings-modal-overlay')).toHaveClass('z-[90]');
-    fireEvent.keyDown(confirmation, { key: 'Escape' });
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    expect(screen.getByTestId('settings-modal')).toBeInTheDocument();
-    expect(screen.getByTestId('settings-modal-overlay')).toHaveClass('z-[120]');
-    expect(deleteServer).not.toHaveBeenCalled();
+    expect(sections[pluginsIndex + 1]).toBe(screen.getByTestId('settings-section-providers'));
+    expect(screen.queryByTestId('settings-section-connections')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('settings-section-providers'));
     expect(await screen.findByText('Elige un servicio')).toBeInTheDocument();
-    expect(screen.queryByRole('textbox', { name: 'Buscar conexiones' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('settings-modal-close'));
+
+    fireEvent.click(screen.getByTestId('sidebar-group-complementos'));
+    expect(await screen.findByRole('textbox', { name: 'Buscar complementos' }, { timeout: 8000 })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Servidores MCP' })).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar Servidor de prueba' }));
+    const confirmation = await screen.findByRole('alertdialog', { name: 'Eliminar servidor' });
+    fireEvent.keyDown(confirmation, { key: 'Escape' });
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(deleteServer).not.toHaveBeenCalled();
   });
 });

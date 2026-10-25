@@ -272,6 +272,12 @@ export interface AgentMemoryItem {
   versions: { version: number; created_at: number; source: AgentMemoryItem['source'] }[];
 }
 
+export interface AgentSkill {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export const agentApi = {
   agentSessionsList: () => _invoke<{ sessions: AgentSession[] }>('agent_sessions_list'),
 
@@ -407,6 +413,8 @@ export const agentApi = {
   agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),
 
   agentMemoryList: () => _invoke<{ items: AgentMemoryItem[] }>('agent_memory_list'),
+  agentSkillsList: () =>
+    _invoke<{ skills: AgentSkill[]; library: string; warnings: string[]; truncated: boolean }>('agent_skills_list'),
 
   agentMemoryUpdate: (params: { id: string; action: 'edit' | 'disable' | 'enable' | 'revert'; content?: string; when?: string; version?: number }) =>
     _invoke<{ item: AgentMemoryItem }>('agent_memory_update', params),
