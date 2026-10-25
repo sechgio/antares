@@ -278,8 +278,9 @@ export const agentApi = {
       { session_id, content, request_id, ...(attachments.length ? { attachments } : {}), ...(correction ? { correction: true } : {}) },
     ),
 
-  agentAttach: (kind: 'files' | 'folder') =>
-    _invoke<{ attachments: AgentAttachment[] }>('agent_attach', { kind }),
+  /** Sin `dropped` abre el diálogo; con él adjunta rutas soltadas o bytes pegados (base64). */
+  agentAttach: (kind: 'files' | 'folder', dropped?: { paths?: string[]; data?: { name: string; data: string }[] }) =>
+    _invoke<{ attachments: AgentAttachment[] }>('agent_attach', { kind, ...dropped }),
 
   agentToolsList: (session_id?: string) => _invoke<{ tools: AgentToolSpec[] }>('agent_tools_list', session_id ? { session_id } : {}),
 

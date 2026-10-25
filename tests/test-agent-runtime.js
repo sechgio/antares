@@ -1009,6 +1009,41 @@ async function main() {
 
   {
     const { bridge, state } = makeBridge();
+    const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-drop-'));
+    const previousAppData = process.env.LOCALAPPDATA;
+    process.env.LOCALAPPDATA = appData;
+    const dropped = path.join(appData, 'foto.png');
+    fs.writeFileSync(dropped, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const grantAll = async (method, params) => (method === 'agent_internal_grants_add'
+      ? (state.grants.push(params), { granted: params.paths, rejected: [] }) : bridge(method, params));
+    const seen = [];
+    await openFaux([(context) => { seen.push(context.messages); return fauxAssistantMessage('ok'); }], grantAll);
+    runtime._internal.shared.dialog = { showOpenDialog: async () => { throw new Error('soltar no abre diálogo'); } };
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    let invalid = null;
+    try { await runtime.handlers.agent_attach({ kind: 'files', paths: ['relativo.png'] }); } catch (err) { invalid = err; }
+    assert(invalid && /no válida/.test(invalid.message), 'una ruta soltada debe ser absoluta');
+    const res = await runtime.handlers.agent_attach({ kind: 'files', paths: [dropped],
+      data: [{ name: 'captura.png', data: Buffer.from('png').toString('base64') }] });
+    assert(res.attachments.map((a) => a.name)[0] === 'foto.png' && res.attachments[1].name.endsWith('-captura.png'),
+      'soltar y pegar adjuntan sin diálogo');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'mira esto', attachments: res.attachments.map((a) => a.id) });
+    const pasted = state.grants.at(-1).paths[1];
+    assert(pasted.startsWith(path.join(appData, 'Antares', 'ai-agent', 'attachments')) && fs.readFileSync(pasted, 'utf8') === 'png',
+      'lo pegado se guarda en la carpeta de adjuntos del agente');
+    assert(await waitIdle(session.id), 'el turno con imágenes termina');
+    const images = seen[0].find((m) => m.role === 'user').content.filter((block) => block.type === 'image');
+    assert(images.length === 2 && images.every((block) => block.mimeType === 'image/png'), 'un modelo con visión recibe las imágenes');
+    const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(messages[0].content === 'mira esto', 'el transcript solo muestra el texto');
+    runtime._internal.shared.dialog = null;
+    await runtime.shutdown();
+    process.env.LOCALAPPDATA = previousAppData;
+    fs.rmSync(appData, { recursive: true, force: true });
+  }
+
+  {
+    const { bridge, state } = makeBridge();
     await openFaux([
       fauxAssistantMessage([fauxToolCall('db_clear', {})], { stopReason: 'toolUse' }),
       fauxAssistantMessage('vale, no lo hago'),
