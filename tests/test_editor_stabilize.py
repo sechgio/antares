@@ -32,13 +32,6 @@ def toolchain() -> Any:
 
 
 def _shaky_clip(toolchain: Any, output: Path, amplitude: int = 12) -> Path:
-    """Clip con desplazamiento sintético (simula cámara temblorosa).
-
-    El fuente es más ancho que el recuadro visible: vid.stab necesita
-    margen alrededor para mover la ventana sin perder bordes. Sin ese
-    margen el recuadre de la propia herramienta introduce más
-    desplazamiento del que elimina y la métrica empeora.
-    """
     import subprocess
 
     proc = subprocess.run(
@@ -139,13 +132,6 @@ def test_stabilize_runs_and_preserves_source(toolchain: Any) -> None:
 
 
 def test_stabilize_reduces_motion_on_trackable_clip(toolchain: Any) -> None:
-    """Criterio del hito con un clip donde vid.stab logra trackear.
-
-    ``testsrc2`` tiene la textura que vid.stab necesita (los clips de
-    color plano dan «too low contrast» y no se estabilizan). Se aplica
-    un desplazamiento horizontal amplio y se mide el borde izquierdo
-    de la escena: tras estabilizar debe variar menos entre cuadros.
-    """
     import subprocess
 
     source = SCRATCH / "trackeable.mp4"

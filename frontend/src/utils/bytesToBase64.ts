@@ -1,5 +1,3 @@
-
-// Múltiplo de 3 para concatenar bloques base64 sin padding intermedio.
 const CHUNK = 0x6000;
 
 export function bytesToBase64(bytes: Uint8Array): string {

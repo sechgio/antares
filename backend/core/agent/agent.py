@@ -925,8 +925,8 @@ class AgentRunner:
                     if rejected is not None:
                         return rejected
                 return self._execute(
-                    {"id": f"sub-{uuid.uuid4().hex[:12]}", "name": name, "params": args, "session_id": session_id},
-                    token,
+                    {"id": f"sub-{uuid.uuid4().hex[:12]}", "name": name, "params": args,
+                     "session_id": session_id, "profile_id": profile.get("id")}, token,
                 )
 
             try:
@@ -1005,7 +1005,7 @@ class AgentRunner:
                     raise ValueError("Esta herramienta requiere una conversación")
                 raw_params = call.get("params")
                 tool_args: JsonObject = dict(raw_params) if isinstance(raw_params, dict) else {}
-                result = agent_tools.run(name, tool_args, self._store, str(session_id), token)
+                result = agent_tools.run(name, tool_args, self._store, str(session_id), token, profile_id=call.get("profile_id"))
                 return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str)
             except RunCancelled:
                 raise

@@ -13,8 +13,6 @@ const crypto = require('crypto');
 const NOTICE_KIND = shared.NOTICE_KIND;
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
 
-// La UI recarga al recibir agent.changed en vez de esperar al sondeo; se agrupan
-// los eventos de cada conversación para no saturar el IPC con cada delta.
 const NOTIFY_MS = 90;
 const notifyTimers = new Map();
 
@@ -178,8 +176,6 @@ function applyEvent(convId, event) {
   shared.live.set(convId, live);
 }
 
-// Las llamadas de una ronda nueva no vienen en la instantánea: su primer evento
-// crea el slot para que la UI las vea en curso en vez de interrumpidas.
 function upsertSlot(tools, event, change) {
   const slots = tools || [];
   if (!slots.some((slot) => slot.callId === event.toolCallId)) {

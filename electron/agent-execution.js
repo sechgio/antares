@@ -24,8 +24,6 @@ const { appendTurn } = require('./turn-log');
 const MAX_TOOL_STEPS = 40;
 const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno. Conservé un punto de continuación; '
   + 'explica lo que queda pendiente y pide usar Reanudar para continuar.';
-// Repetir la misma llamada sin cambios no aporta información nueva: a partir
-// de aquí se bloquea para que el agente cambie de vía o informe del bloqueo.
 const MAX_REPEATS = 3;
 const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, sigue con '
   + 'el siguiente y compruébalo; si no puedes completarlo, márcalo como failed en task_plan con la causa y di qué necesitas.';
@@ -35,9 +33,6 @@ const SUBAGENT_DESCRIPTION_MAX = 80;
 const SUBAGENT_MAX_DEPTH = 1;
 const SUBAGENT_MAX_TASKS = 4;
 const TOOLS_LOAD = 'tools_load';
-// Núcleo que reciben las conversaciones nuevas: el resto del catálogo se carga
-// con tools_load o al mencionar un módulo, para no superar el límite de
-// herramientas por petición de los proveedores ni saturar modelos pequeños.
 const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent']);
 const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD]);
 const MAX_LOADED_TOOLS = 25;
@@ -626,8 +621,6 @@ function stableJson(value) {
   return JSON.stringify(value === undefined ? null : value);
 }
 
-// Una respuesta final con pasos del plan de este turno sin verificar recibe una
-// sola petición de seguir o de declarar el bloqueo; el aviso no se muestra en el chat.
 function planCheck(answer, api) {
   const turn = shared.turns.get(api.conversationId);
   if (!turn || turn.checked || !turn.remaining || !turn.remaining.length) return undefined;
@@ -636,6 +629,14 @@ function planCheck(answer, api) {
   turn.checked = true;
   const steps = turn.remaining.map((title) => `«${title}»`).join(', ');
   return { continue: `${shared.CHECK_MARKER} ${PLAN_CHECK_TEXT.replace('{steps}', steps)}` };
+}
+
+// El backend exige una aprobación aprobada para despachar gated: "permitir
+// siempre" se resuelve aprobándola sola, como el modo completo.
+function webAlwaysAllowed(name, context) {
+  if (!String(name || '').startsWith('web_') || !context || context.policy_blocked) return false;
+  const domain = String(context.domain || '');
+  return !!domain && require('./agent-browser-policy').isAlwaysAllowed(domain);
 }
 
 async function beforeTool(call, api, context) {
@@ -672,7 +673,8 @@ async function beforeTool(call, api, context) {
       params: call.arguments || {},
       ...(approvedContext ? { context: approvedContext } : {}),
     }));
-    if (mode === 'full' && call.name !== 'shell_run' && approval.status === 'pending') {
+    if (approval.status === 'pending'
+      && ((mode === 'full' && call.name !== 'shell_run') || webAlwaysAllowed(call.name, approvedContext))) {
       ({ approval } = await bridge('agent_internal_approval_decide', { approval_id: approval.id, approve: true }));
     }
   } catch (err) {
@@ -739,8 +741,6 @@ function notifyDecision(approvalId) {
   for (const resolve of [...waiters]) resolve();
 }
 
-// El backend devuelve la salida en curso completa desde el principio (p. ej. la
-// de shell_run); a pi-durable solo se le pasa lo nuevo para que la UI la vea crecer.
 async function dispatchAndWait(request, context, api) {
   const signal = context && context.abortSignal;
   if (signal && signal.aborted) throw aborted();
@@ -827,6 +827,9 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     approval_id: approvalId,
     ...(spec.kind === 'native' ? { context: await nativeTools().nativeToolContext(spec.name) } : {}),
   };
+  if (spec.name === 'skills_list' || spec.name === 'skills_read') {
+    request.context = { profile_id: (await requireSession(sessionId)).profile?.id || null };
+  }
   if (spec.kind === 'subagent') {
     const profile = await resolveProfile(args && args.agent);
     if (!profile) return { text: JSON.stringify({ error: 'No se encontró un agente único con esa referencia; usa el identificador de un bot disponible' }) };
