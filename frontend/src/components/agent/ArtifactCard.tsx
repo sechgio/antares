@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, FileText, FolderOpen, Printer, Save } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileText, FolderOpen, Printer, Save, ShieldCheck } from 'lucide-react';
 import { agentApi, type AgentArtifact } from '../../api/agentApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import ThemedSelect from '../ui/ThemedSelect';
+import { channelLabel } from './channels';
 
 export default function ArtifactCard({ artifact, sessionId, onRefresh, onOpenModule }: {
   artifact: AgentArtifact; sessionId: string; onRefresh: () => void; onOpenModule?: (module: string, id?: string) => void;
@@ -26,6 +27,16 @@ export default function ArtifactCard({ artifact, sessionId, onRefresh, onOpenMod
   const failedPrepare = useRef<{ key: string; requestId: string } | null>(null);
   const file = artifact.files[fileIndex];
   const isReviewed = (reviewed || artifact.reviewed?.[String(fileIndex)]) === file.sha256;
+  const receipt = artifact.receipt;
+  const receiptText = receipt
+    ? receipt.status === 'failed' ? 'Falló'
+      : receipt.status === 'submitted' ? 'Enviado'
+        : receipt.status === 'uncertain' ? 'Incierto'
+          : receipt.approval_source === 'rule' ? 'Permitido por regla'
+            : receipt.approval_source === 'full' ? 'Permitido por acceso completo'
+              : receipt.approval_source === 'manual' ? 'Permitido por ti'
+                : receipt.approval_source === 'cancel' ? 'Cancelado' : 'Ejecutado'
+    : '';
 
   const action = async (operation: 'preview' | 'review' | 'open' | 'save' | 'print', requestedPage = page) => {
     if (busy) return;
@@ -72,6 +83,16 @@ export default function ArtifactCard({ artifact, sessionId, onRefresh, onOpenMod
         options={artifact.files.map((item, index) => ({ value: String(index), label: item.name }))}
         onChange={(value) => { setFileIndex(Number(value)); setPage(0); setPreview(''); setReviewed(''); }} />}
       <p className="text-xs text-[var(--text-secondary)]">{isReviewed ? 'PDF revisado' : 'Pendiente de revisión'} · {Math.ceil(file.size / 1024)} KB</p>
+      {receipt && (
+        <div role="group" aria-label="Recibo de la acción"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-4 text-[var(--text-muted)]">
+          <ShieldCheck size={11} className="shrink-0" aria-hidden="true" />
+          <span>{channelLabel(receipt.channel) ?? 'Documentos'}</span>
+          <span aria-hidden="true">·</span>
+          <span>{receiptText}</span>
+          <span>· No reversible</span>
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="secondary" disabled={busy} onClick={() => void action('preview')}>Vista previa</Button>
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => void action('open')}><FolderOpen size={13} className="mr-1" />Abrir PDF</Button>

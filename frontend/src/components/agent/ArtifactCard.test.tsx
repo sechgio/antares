@@ -11,6 +11,16 @@ const artifact: AgentArtifact = { id: 'a1', family: 'canvas', template_id: 'doc1
 
 beforeEach(() => { vi.restoreAllMocks(); addToast.mockClear(); });
 
+it('muestra el recibo de la acción y su fuente de aprobación', () => {
+  render(<ArtifactCard artifact={{ ...artifact,
+    receipt: { channel: 'documents', approval_source: 'manual', status: 'succeeded' } }}
+    sessionId="s1" onRefresh={vi.fn()} />);
+  const receipt = screen.getByRole('group', { name: 'Recibo de la acción' });
+  expect(receipt).toHaveTextContent('Documentos');
+  expect(receipt).toHaveTextContent('Permitido por ti');
+  expect(receipt).toHaveTextContent('No reversible');
+});
+
 it.each([['html', 'previewPanel', 'report.html'], ['formato', 'formatos', 'template-d']])('abre la plantilla %s que produjo el documento', (family, module, id) => {
   const onOpen = vi.fn();
   render(<ArtifactCard artifact={{ ...artifact, family, template_id: id }} sessionId="s1" onRefresh={vi.fn()} onOpenModule={onOpen} />);
