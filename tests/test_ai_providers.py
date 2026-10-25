@@ -238,17 +238,17 @@ def test_custom_model_capabilities_reach_the_list_and_the_agent(tmp_path, monkey
 
     monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
     provider = integrations.HANDLERS["ai_provider_custom_save"](
-        {**_custom(api_key="", base_url="http://127.0.0.1:11434/v1"), "vision": False, "context_window": 32_768})["id"]
+        {**_custom(api_key="", base_url="http://127.0.0.1:11434/v1"), "vision": False, "reasoning": True, "context_window": 32_768})["id"]
     entry = next(p for p in integrations.HANDLERS["ai_providers_list"]({})["providers"] if p["id"] == provider)
-    assert entry["capabilities"] == {"vision": False, "context_window": 32_768}
+    assert entry["capabilities"] == {"vision": False, "reasoning": True, "context_window": 32_768}
     info = agent_internal.HANDLERS["agent_internal_provider"]({"provider": provider})
-    assert info["custom"] is True and info["capabilities"] == {"vision": False, "context_window": 32_768}
+    assert info["custom"] is True and info["capabilities"] == {"vision": False, "reasoning": True, "context_window": 32_768}
 
     ai_providers.upsert_custom(_custom(id=provider, api_key=""))
-    assert ai_providers.get_provider(provider)["capabilities"] == {"vision": False, "context_window": 32_768}
-    ai_providers.upsert_custom({**_custom(id=provider, api_key=""), "vision": None, "context_window": None})
+    assert ai_providers.get_provider(provider)["capabilities"] == {"vision": False, "reasoning": True, "context_window": 32_768}
+    ai_providers.upsert_custom({**_custom(id=provider, api_key=""), "vision": None, "reasoning": None, "context_window": None})
     assert ai_providers.get_provider(provider)["capabilities"] == {}
-    for bad, message in (({"vision": "sí"}, "vision"), ({"context_window": 10}, "ventana"),
+    for bad, message in (({"vision": "sí"}, "vision"), ({"reasoning": "sí"}, "reasoning"), ({"context_window": 10}, "ventana"),
                          ({"context_window": True}, "ventana")):
         with pytest.raises(ValueError, match=message):
             ai_providers.upsert_custom({**_custom(id=provider, api_key=""), **bad})

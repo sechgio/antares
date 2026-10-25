@@ -53,8 +53,22 @@ function supportsReasoning(style, modelId) {
   return (style === 'anthropic_messages' ? REASONING_ANTHROPIC_MODEL : REASONING_OPENAI_MODEL).test(String(modelId || ''));
 }
 
-function thinkingLevelFor(style, modelId) {
-  return supportsReasoning(style, modelId) ? 'low' : 'off';
+const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'];
+
+// Niveles que admite el modelo ya registrado (ensureProvider), según su
+// definición: capacidad declarada en el proveedor, catálogo de pi-ai o nombre.
+async function reasoningLevels(providerId, modelId) {
+  const model = shared.state.models.getModel(providerId, modelId);
+  if (!model) return [];
+  const { getSupportedThinkingLevels } = await import('@earendil-works/pi-ai');
+  return getSupportedThinkingLevels(model).filter((level) => REASONING_EFFORTS.includes(level));
+}
+
+// El nivel elegido, o el más cercano por debajo que el modelo admita.
+function thinkingLevelFor(levels, effort) {
+  if (!levels.length) return 'off';
+  const wanted = REASONING_EFFORTS.indexOf(REASONING_EFFORTS.includes(effort) ? effort : 'low');
+  return levels.filter((level) => REASONING_EFFORTS.indexOf(level) <= wanted).at(-1) ?? levels[0];
 }
 
 async function providerInfo(provider) {
@@ -121,7 +135,10 @@ function modelDefinition(info, id, api, verified, catalogModel) {
     ...(api === 'openai-completions' && /(^|\.)openrouter\.ai$/i.test(host) && id.startsWith('anthropic/')
       ? { cacheControlFormat: 'anthropic' } : {}),
     ...(classic ? { supportsStore: false, supportsDeveloperRole: false, maxTokensField: 'max_tokens' } : {}),
+    ...(flags.forceAdaptiveThinking ? { forceAdaptiveThinking: true } : {}),
   };
+  const reasoning = typeof capabilities.reasoning === 'boolean' ? capabilities.reasoning
+    : typeof catalog.reasoning === 'boolean' ? catalog.reasoning : supportsReasoning(info.style, id);
   return {
     id,
     name: id,
@@ -138,7 +155,8 @@ function modelDefinition(info, id, api, verified, catalogModel) {
     },
     contextWindow,
     maxTokens: Math.min(DEFAULT_MAX_TOKENS, Math.floor(contextWindow / 4)),
-    reasoning: supportsReasoning(info.style, id),
+    reasoning,
+    ...(reasoning && catalog.thinkingLevelMap ? { thinkingLevelMap: catalog.thinkingLevelMap } : {}),
     ...(Object.keys(compat).length ? { compat } : {}),
   };
 }
@@ -1061,6 +1079,9 @@ module.exports = {
   callKey,
   providerInfo,
   thinkingLevelFor,
+  reasoningLevels,
+  supportsReasoning,
+  REASONING_EFFORTS,
   ensureProvider,
   refreshTools,
   notifyDecision,

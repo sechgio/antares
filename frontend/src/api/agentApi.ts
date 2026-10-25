@@ -7,6 +7,8 @@ export type CanvasLayersResult = Required<Pick<CanvasDocument, 'id' | 'updatedAt
 
 export type AgentPermissionMode = 'ask' | 'auto' | 'full';
 
+export type AgentReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+
 export interface AgentSession {
   id: string;
   title: string;
@@ -16,6 +18,9 @@ export interface AgentSession {
   updated_at: number;
   last_error: string | null;
   permission_mode?: AgentPermissionMode;
+  reasoning_effort?: AgentReasoningEffort;
+  /** Niveles de razonamiento que admite el modelo actual; vacío si no razona. */
+  reasoning_levels?: AgentReasoningEffort[];
   profile?: { id: string; name: string };
 }
 
@@ -277,6 +282,9 @@ export const agentApi = {
 
   agentSessionPermissionsSet: (id: string, permission_mode: AgentPermissionMode) =>
     _invoke<{ session: AgentSession }>('agent_session_permissions_set', { id, permission_mode }),
+
+  agentSessionReasoningSet: (id: string, reasoning_effort: AgentReasoningEffort) =>
+    _invoke<{ session: AgentSession }>('agent_session_reasoning_set', { id, reasoning_effort }),
 
   agentSessionDelete: (id: string) =>
     _invoke<{ deleted: boolean; id: string }>('agent_session_delete', { id }),
