@@ -795,6 +795,15 @@ def test_ui_approval_grant_permite_el_resto_de_la_sesion(store, monkeypatch):
     assert agent_internal.HANDLERS["agent_internal_approvals_pending"]({"session_id": "s1"})["approvals"] == []
 
 
+def test_ui_approval_remember_concede_la_app_como_grant_app(store, monkeypatch):
+    monkeypatch.setattr(agent_internal._computer_driver, "approval_context",
+                        lambda params: {"app": "Notepad"})
+    first = _ui_ensure("c-ui", "ui_click")
+    agent_internal.HANDLERS["agent_internal_approval_decide"](
+        {"approval_id": first["id"], "approve": True, "remember": True})
+    assert _ui_ensure("c-ui-2", "ui_type")["status"] == "approved"
+
+
 def test_ui_approval_sin_grant_sigue_pidiendo_aprobacion(store, monkeypatch):
     monkeypatch.setattr(agent_internal._computer_driver, "approval_context",
                         lambda params: {"app": "Calc"})

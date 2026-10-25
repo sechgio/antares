@@ -299,6 +299,52 @@ async function main() {
 
   {
     const { state } = await open([
+      fauxAssistantMessage([fauxToolCall('fs_write', { path: 'remember.txt', content: 'x' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('hecho'),
+      fauxAssistantMessage([fauxToolCall('fs_write', { path: 'remember-2.txt', content: 'y' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('hecho otra vez'),
+    ]);
+    const session = await createSession();
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'primero' });
+    assert(await waitFor(() => [...state.approvals.values()].some((a) => a.status === 'pending')),
+      'la primera acción pide aprobación antes de recordar');
+    const [first] = [...state.approvals.values()];
+    await runtime.handlers.agent_approve({ approval_id: first.id, remember: true });
+    assert(await waitIdle(session.id), 'la aprobación recordada termina');
+    const listed = await runtime.handlers.agent_sessions_list({});
+    assert(listed.sessions.find((item) => item.id === session.id).approval_rules.files === 'allow',
+      'recordar guarda la regla de sesión del canal de la herramienta');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'segundo' });
+    assert(await waitIdle(session.id), 'el segundo turno termina sin decisión manual');
+    const approvals = [...state.approvals.values()];
+    assert(approvals.filter((a) => a.source === 'manual').length === 1
+      && approvals.every((a) => a.status === 'approved'),
+      'recordar evita una segunda aprobación manual del mismo método');
+    assert(state.dispatches.length === 2 && state.dispatches[1].approval_source === 'rule',
+      'la segunda llamada se ejecuta por la regla recordada');
+    await runtime.shutdown();
+  }
+
+  {
+    const { state } = await open([
+      fauxAssistantMessage([fauxToolCall('fs_write', { path: 'remember-deny.txt', content: 'x' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('rechazado'),
+    ]);
+    const session = await createSession();
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'escribe' });
+    assert(await waitFor(() => [...state.approvals.values()].some((a) => a.status === 'pending')),
+      'la acción pide aprobación');
+    const [approval] = [...state.approvals.values()];
+    await runtime.handlers.agent_deny({ approval_id: approval.id, remember: true });
+    assert(await waitIdle(session.id), 'el turno rechazado termina');
+    const listed = await runtime.handlers.agent_sessions_list({});
+    assert(!listed.sessions.find((item) => item.id === session.id).approval_rules,
+      'recordar un rechazo no guarda ninguna regla de permiso');
+    await runtime.shutdown();
+  }
+
+  {
+    const { state } = await open([
       fauxAssistantMessage([fauxToolCall('shell_run', { command: 'echo hola' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('hecho'),
     ]);
