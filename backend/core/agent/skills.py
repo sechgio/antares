@@ -138,6 +138,12 @@ def _catalog(grants: dict[str, JsonObject], workspace: Path, library: Path) -> t
     return sorted(found, key=lambda skill: (skill.name, str(skill.path))), warnings, truncated
 
 
+def library_catalog(library: Path) -> JsonObject:
+    catalog, warnings, truncated = _catalog({}, library, library)
+    return {"skills": [{"id": skill.id, "name": skill.name, "description": skill.description} for skill in catalog],
+            "library": str(library), "warnings": warnings, "truncated": truncated}
+
+
 def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace: Path, library: Path) -> JsonObject:
     if name == "skills_list":
         query, limit = params.get("query", ""), params.get("limit", 8)

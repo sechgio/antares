@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useRef, useState, type Componen
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import {
+  Blocks,
   Bot,
   Camera,
   ClipboardList,
@@ -74,6 +75,7 @@ const ICONS: Record<TabId, IconComponent> = {
   previewPanel: LayoutDashboard,
   canvas: Paintbrush,
   agent: Bot,
+  complementos: Blocks,
   panelAvisoCorte: FileStack,
   ubicaciones: MapPin,
   evidenciaVolanteo: Grid2X2,
@@ -119,9 +121,15 @@ const NAV_GROUPS: { id: string; label: string; icon: IconComponent; tabs: TabId[
     icon: Bot,
     tabs: ['agent'],
   },
+  {
+    id: 'complementos',
+    label: 'Complementos',
+    icon: Blocks,
+    tabs: ['complementos'],
+  },
 ];
 
-const RAIL_DIRECT_TABS: Partial<Record<string, TabId>> = { agent: 'agent' };
+const RAIL_DIRECT_TABS: Partial<Record<string, TabId>> = { agent: 'agent', complementos: 'complementos' };
 
 const TAB_BY_ID = Object.fromEntries(TAB_DEFINITIONS.map((tab) => [tab.id, tab])) as Record<
   TabId,

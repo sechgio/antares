@@ -202,3 +202,17 @@ def test_skill_metadata_does_not_grant_tools_or_permissions(store):
     assert set(agent_tools.EFFECT_TOOLS) == before
     assert store.grants_for("skills-session") == {}
     assert "shell_run" not in agent_tools.READ_TOOLS
+
+
+def test_skills_list_handler_lists_library_metadata_for_the_ui(store, monkeypatch):
+    from backend.handlers import agent_internal
+
+    install(store.base_dir / "skills", body="INSTRUCCION_PRIVADA")
+    (store.base_dir / "skills/rota").mkdir()
+    (store.base_dir / "skills/rota/SKILL.md").write_text("sin encabezado", encoding="utf-8")
+    monkeypatch.setattr(agent_internal, "_store", lambda: store)
+    result = agent_internal.HANDLERS["agent_skills_list"]({})
+    assert [skill["name"] for skill in result["skills"]] == ["pdf-review"]
+    assert result["skills"][0]["description"] == "Revisa documentos PDF"
+    assert result["library"] == str(store.base_dir / "skills") and result["warnings"]
+    assert "INSTRUCCION_PRIVADA" not in json.dumps(result)
