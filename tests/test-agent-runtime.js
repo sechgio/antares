@@ -257,6 +257,78 @@ async function main() {
     await runtime.shutdown();
   }
 
+  {
+    const { bridge, state } = makeBridge();
+    const uiBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools') {
+        result.tools.push(
+          { name: 'ui_click', kind: 'backend', gated: true, inputSchema: { type: 'object', properties: {} } },
+          { name: 'ui_observe', kind: 'backend', gated: true, inputSchema: { type: 'object', properties: {} } },
+        );
+      }
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('ui_click', { window_id: 'w1a2b', element_id: 'e3' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('ui_observe', { window_id: 'w1a2b' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Acciones de equipo terminadas'),
+    ], uiBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Opera el Bloc de notas' });
+    assert(await waitFor(() => state.approvals.size === 1), 'el clic en apps pide aprobación también en Acceso completo');
+    assert(state.dispatches.length === 0, 'no inyecta entrada en la app antes de la aprobación humana');
+    const approval = [...state.approvals.values()][0];
+    await runtime.handlers.agent_approve({ approval_id: approval.id });
+    assert(await waitIdle(session.id), 'las acciones ui continúan después de la aprobación humana');
+    assert(state.dispatches.length === 2, 'la aprobación ejecuta el clic; la observación de lectura sigue sola');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    // El backend real auto-aprueba en desatendido las apps declaradas al programar;
+    // el puente falso replica ese contrato y registra la lista recibida.
+    const uiBridge = async (method, params) => {
+      if (method === 'agent_internal_approval_ensure' && Array.isArray(params.unattended_apps) && params.unattended_apps.length) {
+        state.unattendedApps = params.unattended_apps;
+        const response = await bridge(method, params);
+        const approval = state.approvals.get(response.approval.id);
+        if (approval && approval.status === 'pending') { approval.status = 'approved'; approval.decided_at = Date.now(); }
+        return { approval: { ...approval } };
+      }
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools') {
+        result.tools.push(
+          { name: 'ui_click', kind: 'backend', gated: true, inputSchema: { type: 'object', properties: {} } },
+        );
+      }
+      return result;
+    };
+    // Elementos distintos: el guardia de repetición bloquearía la 4.ª llamada
+    // idéntica antes de alcanzar el techo desatendido.
+    const clicks = Array.from({ length: 27 }, (_, i) =>
+      fauxAssistantMessage([fauxToolCall('ui_click', { window_id: 'w1a2b', element_id: `e${i}` })], { stopReason: 'toolUse' }));
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('task_schedule', {
+        action: 'create', content: 'Saca el informe del ERP', due_at: new Date(Date.now() + 1500).toISOString(),
+        apps: ['notepad'],
+      })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Encargo programado'),
+      ...clicks,
+      fauxAssistantMessage('Encargo desatendido terminado'),
+    ], uiBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Programa el encargo' });
+    assert(await waitFor(() => state.dispatches.length >= 25, 20000), 'el encargo desatendido auto-aprueba las apps declaradas');
+    assert(JSON.stringify(state.unattendedApps) === JSON.stringify(['notepad']), 'la lista blanca declarada llega a la aprobación');
+    assert([...state.approvals.values()].every((a) => a.status === 'approved'), 'las aprobaciones desatendidas quedan aprobadas con auditoría');
+    assert(state.dispatches.length === 25, 'el techo bloquea la acción 26 del encargo desatendido');
+    assert(await waitIdle(session.id), 'el encargo desatendido termina tras el techo');
+    await runtime.shutdown();
+  }
+
   for (const legacy of [false, true]) {
     const { bridge } = makeBridge();
     let seen = '';

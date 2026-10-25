@@ -61,6 +61,16 @@ afterEach(() => {
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
 });
 
+it.each([
+  { options: { remember: true }, payload: { approval_id: 'a1', remember: true } },
+  { options: { grantApp: true }, payload: { approval_id: 'a1', grant_app: true } },
+  { options: {}, payload: { approval_id: 'a1' } },
+])('conserva separados los permisos de dominio y aplicación: $options', async ({ options, payload }) => {
+  const invoke = vi.spyOn(window.electronAPI, 'invoke').mockResolvedValue({});
+  await agentApi.agentApprove('a1', options);
+  expect(invoke).toHaveBeenCalledWith('agent_approve', payload);
+});
+
 it('sugiere bots con @ y permite elegir con teclado sin enviar el mensaje', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);

@@ -867,7 +867,9 @@ async function turnCancel(params) {
 
 async function approve(params, approved) {
   const approvalId = String(params && params.approval_id || '');
-  const { approval } = await bridge('agent_internal_approval_decide', { approval_id: approvalId, approve: !!approved });
+  const { approval } = await bridge('agent_internal_approval_decide', {
+    approval_id: approvalId, approve: !!approved, ...(params.grant_app ? { grant_app: true } : {}),
+  });
   execution.notifyDecision(approvalId);
   if (approved && params && params.remember === true && approval
     && String(approval.method || '').startsWith('web_')) {

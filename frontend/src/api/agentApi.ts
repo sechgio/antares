@@ -127,7 +127,7 @@ export interface AgentApproval {
   consumed_by?: string;
   context?: { account?: string; sheet_id?: string; scopes?: string[]; filename?: string;
     page_url?: string; page_time_origin?: number; domain?: string; policy_blocked?: boolean;
-    subagent?: string; subagent_role?: AgentRole };
+    computer?: { app?: string; window?: string; element?: string }; subagent?: string; subagent_role?: AgentRole };
   resources?: { path: string; sha256?: string }[];
   dispatch?: { status: string; finished_at?: number };
 }
@@ -314,8 +314,9 @@ export const agentApi = {
   agentTurnCancel: (session_id: string) =>
     _invoke<{ cancelled: boolean }>('agent_turn_cancel', { session_id }),
 
-  agentApprove: (approval_id: string, remember = false) =>
-    _invoke<{ approval: AgentApproval }>('agent_approve', { approval_id, ...(remember ? { remember: true } : {}) }),
+  agentApprove: (approval_id: string, options?: { remember?: boolean; grantApp?: boolean }) =>
+    _invoke<{ approval: AgentApproval }>('agent_approve', { approval_id,
+      ...(options?.remember ? { remember: true } : {}), ...(options?.grantApp ? { grant_app: true } : {}) }),
 
   agentDeny: (approval_id: string) =>
     _invoke<{ approval: AgentApproval }>('agent_deny', { approval_id }),
