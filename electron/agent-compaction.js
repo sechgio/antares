@@ -187,7 +187,7 @@ function serializeTranscript(messages) {
       const blocks = Array.isArray(message.content) ? message.content : [];
       const text = blocks.filter((block) => block.type === 'text').map((block) => block.text || '').join('\n').trim();
       const calls = blocks.filter((block) => block.type === 'toolCall')
-        .map((block) => `${block.name}(${clip(JSON.stringify(block.arguments ?? {}), 200)})`);
+        .map((block) => `${block.name}(${clip(redactSecrets(JSON.stringify(block.arguments ?? {})), 200)})`);
       if (text) parts.push(`[Agente]: ${redactSecrets(text)}`);
       if (calls.length) parts.push(`[Agente · herramientas]: ${calls.join('; ')}`);
     } else if (message.role === 'toolResult') {

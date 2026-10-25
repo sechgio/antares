@@ -24,6 +24,13 @@ const BIG_WINDOW = 32768;
 const POLICY = { enabled: true, reserveTokens: 1024, keepRecentTokens: 512, backgroundTokens: 0 };
 const SUMMARIZER_MARKER = 'Eres el asistente que resume el contexto';
 
+const toolSecret = `sk-${'a'.repeat(24)}`;
+const toolTranscript = compactionModule.serializeTranscript([{ role: 'assistant', content: [
+  { type: 'toolCall', name: 'fs_write', arguments: { content: toolSecret } },
+] }]);
+assert(!toolTranscript.includes(toolSecret) && toolTranscript.includes('[REDACTADO]')
+  && toolTranscript.includes('fs_write('), 'los argumentos de herramientas llegan redactados al resumidor');
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let fauxAssistantMessage;
