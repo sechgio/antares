@@ -5,6 +5,7 @@ const {
   bridge,
   ctx,
   commitSessions,
+  conversation,
   providerCallId,
 } = require('./agent-shared');
 
@@ -12,6 +13,12 @@ const crypto = require('crypto');
 
 const NOTICE_KIND = shared.NOTICE_KIND;
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
+
+const COMPACTION_REASONS = {
+  threshold: 'al alcanzar el umbral del contexto',
+  overflow: 'el proveedor rechazó el contexto por tamaño',
+  manual: 'manual',
+};
 
 const NOTIFY_MS = 90;
 const notifyTimers = new Map();
@@ -161,6 +168,12 @@ function applyEvent(convId, event) {
     case 'inbox_update':
       live.inbox = event.items;
       break;
+    case 'compaction_start':
+      live.compactions = [...(live.compactions || []), { taskId: event.taskId, reason: event.reason }];
+      break;
+    case 'compaction_end':
+      live.compactions = (live.compactions || []).filter((c) => c.taskId !== event.taskId);
+      break;
     case 'task_failed': {
       const sessionId = shared.convToSession.get(convId);
       if (sessionId) {
@@ -168,6 +181,16 @@ function applyEvent(convId, event) {
           const session = sessions[sessionId];
           if (session) session.last_error = require('./agent-execution').sanitizeProviderError(event.message).slice(0, 300) || session.last_error;
         }).catch(() => {});
+        // Un fallo de compactación detiene el turno (generación bloqueante);
+        // el aviso queda en la conversación: nunca continuar con contexto a medias.
+        if (event.kind === 'pi.compaction') {
+          conversation(sessionId).then((conv) => conv.submit({
+            type: 'write',
+            requestId: `compaction-failed:${event.taskId}`,
+            entry: { kind: NOTICE_KIND, data: { text: `⚠ La compactación del contexto falló: ${event.message}. `
+              + 'El turno se detuvo para no continuar con un contexto incompleto; al reanudar se volverá a intentar.' } },
+          }, ctx())).catch(() => {});
+        }
       }
       break;
     }
@@ -323,6 +346,22 @@ async function projectMessages(conv, session) {
     }
     if (entry.kind === NOTICE_KIND) {
       messages.push({ role: 'assistant', content: String((entry.data && entry.data.text) || ''), ts: entryTs(entry, msg) });
+      continue;
+    }
+    if (entry.kind === 'pi.compaction') {
+      // El envoltorio lo añade pi-durable; aquí solo queda el resumen legible.
+      // Si el envoltorio cambia de formato, se muestra el texto crudo: la
+      // compactación nunca desaparece silenciosamente del chat.
+      const raw = textOf(msg);
+      const summary = require('./agent-compaction').unwrapCompactionSummary(raw) || raw.trim();
+      if (summary) {
+        const reason = COMPACTION_REASONS[(entry.data && entry.data.reason)] || 'contexto comprimido';
+        messages.push({
+          role: 'assistant',
+          content: `🗜 Contexto compactado — ${reason}\n\n${summary}`,
+          ts: entryTs(entry, msg),
+        });
+      }
       continue;
     }
     if (entry.kind === 'pi.tool-result' && msg) {
