@@ -4,7 +4,7 @@
 // coloca el resumen en un punto seguro (nunca entre una llamada y su resultado);
 // este módulo aporta la política de Antares: umbrales configurables, el resumen
 // «sagrado» en español, la redacción de secretos, la barrera dato/directriz y
-// el registro auditable. Ver docs/adr/0001-compaccion-contexto-agente.md.
+// el registro auditable. Ver docs/adr/0002-compaccion-contexto-agente.md.
 
 const fs = require('node:fs');
 const path = require('node:path');

@@ -1,6 +1,6 @@
 'use strict';
 
-// Las nueve garantías de compactación de contexto del agente (docs/adr/0001):
+// Las nueve garantías de compactación de contexto del agente (docs/adr/0002):
 // medición con ventana real, umbrales antes del límite duro, lista sagrada en el
 // resumen, punto seguro sin aprobaciones ni herramientas en vuelo, sin repetir
 // acciones ejecutadas, pausa visible ante fallo, barrera dato/directriz y

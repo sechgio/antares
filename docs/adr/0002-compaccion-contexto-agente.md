@@ -1,4 +1,4 @@
-# 0001. Compactación de contexto del agente
+# 0002. Compactación de contexto del agente
 
 - Fecha: 2026-10-24
 - Estado: propuesto
