@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AppWindow, ArrowLeft, ArrowRight, Ban, BookOpen, Camera, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Copy, Download, FilePen, FileText, FolderOpen, Globe, Hand, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Network, Package, RotateCw, Route, Search, ShieldCheck, Terminal, Upload, Wrench, X } from 'lucide-react';
+import { AppWindow, ArrowLeft, ArrowRight, Ban, BookOpen, Camera, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Copy, Download, FilePen, FileText, FolderOpen, Globe, Hand, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Network, Package, RotateCw, Route, Search, ShieldCheck, Terminal, TriangleAlert, Upload, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { agentApi, AgentApproval, AgentChannel, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
@@ -494,40 +494,47 @@ export function ApprovalCard({
   ].filter((fact): fact is string => !!fact);
   const Icon = approval.method === 'shell_run' ? Terminal
     : Object.prototype.hasOwnProperty.call(TOOL_ICONS, approval.method) ? TOOL_ICONS[approval.method] : ShieldCheck;
+  const ruleButtons = !!(onRule && ruleChannel && channel);
   return (
     <div role="group" aria-label="Confirmación de acción" className="agent-approval agent-trace-in">
       <div className="w-full max-w-[min(620px,100%)] overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)]">
-        <div className="min-w-0 space-y-3 p-3 sm:p-4">
+        <div className="min-w-0 space-y-2.5 p-3 pb-2">
           <div className="flex items-start gap-2.5">
-            <Icon size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--text-secondary)]" />
-            <div className="min-w-0">
-              <p role={decision ? 'status' : undefined} aria-label={decision ? 'Estado de la aprobación' : undefined}
-                className="text-[12px] leading-[18px] text-[var(--text-secondary)]">
-                {decision === 'approve' ? 'Aprobando…' : decision === 'deny' ? 'Rechazando…' : 'Aprobación necesaria'}
-              </p>
-              <p className="text-[13px] font-medium leading-5 text-[var(--text-primary)]">{action ?? 'Acción sin descripción disponible'}</p>
-              {channel && <p className="text-[11px] leading-4 text-[var(--text-muted)]">Canal: {channel}</p>}
-              <p className="text-[12px] leading-[18px] text-[var(--text-secondary)]">
-                {action ? 'Permitir autoriza solo esta acción.' : 'Revisa los detalles antes de permitir esta acción.'}
-                {' '}Rechazar la omite e informa al agente.
+            <Icon size={16} strokeWidth={1.75} aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--text-secondary)]" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-medium leading-5 text-[var(--text-primary)]">{action ?? 'Acción sin descripción disponible'}</p>
+              <p className="flex min-w-0 items-center gap-1.5 text-[11.5px] leading-4 text-[var(--text-muted)]">
+                <span role={decision ? 'status' : undefined} aria-label={decision ? 'Estado de la aprobación' : undefined} className="shrink-0">
+                  {decision === 'approve' ? 'Aprobando…' : decision === 'deny' ? 'Rechazando…' : 'Aprobación necesaria'}
+                </span>
+                {channel && <><span aria-hidden="true">·</span><span className="truncate">{channel}</span></>}
               </p>
             </div>
           </div>
-          {approval.method === 'shell_run' && <p className="border-l-2 border-[var(--accent-yellow)] pl-3 text-[12px] leading-[18px] text-[var(--text-secondary)]">
-            Este comando puede acceder al equipo completo con tus permisos, fuera de las carpetas adjuntas.
-            Requiere tu aprobación también en Acceso completo.
+          {approval.method === 'shell_run' && <p className="flex gap-2 text-[12px] leading-[18px] text-[var(--text-secondary)]">
+            <TriangleAlert size={13} strokeWidth={1.75} aria-hidden="true" className="mt-[3px] shrink-0 text-[var(--accent-yellow)]" />
+            <span>
+              Este comando puede acceder al equipo completo con tus permisos, fuera de las carpetas adjuntas.
+              Requiere tu aprobación también en Acceso completo.
+            </span>
           </p>}
-          {typeof params.command === 'string' && <ToolCode label="Comando">{params.command}</ToolCode>}
-          {facts.length > 0 && (
-            <ul className="space-y-1 font-mono text-[11.5px] leading-[17px] text-[var(--text-secondary)]">
+          {(typeof params.command === 'string' || facts.length > 0) && (
+            <ul className="space-y-0.5 rounded-lg bg-[var(--bg-base)] px-3 py-2 font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)]">
+              {typeof params.command === 'string' && (
+                <li className="break-all text-[var(--text-primary)]"><span aria-hidden="true" className="select-none text-[var(--text-muted)]">$ </span><span>{params.command}</span></li>
+              )}
               {facts.map((fact) => <li key={fact} className="break-all">{fact}</li>)}
             </ul>
           )}
-          <details className="group text-[11.5px] text-[var(--text-secondary)]">
+          <details className="group text-[11.5px] text-[var(--text-muted)]">
             <summary aria-label="Ver detalles de la acción" className="flex w-fit cursor-pointer list-none items-center gap-1 transition-colors hover:text-[var(--text-secondary)]">
-              Detalles
               <ChevronRight size={12} className="transition-transform duration-200 group-open:rotate-90" />
+              Detalles
             </summary>
+            <p className="mt-1.5 leading-[17px] text-[var(--text-secondary)]">
+              {action ? 'Permitir autoriza solo esta acción.' : 'Revisa los detalles antes de permitir esta acción.'}
+              {' '}Rechazar la omite e informa al agente.
+            </p>
             <code className="mt-1 block text-[11px]">{approval.method}</code>
             {Object.keys(params).length > 0 && (
               <pre className="agent-terminal mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-[var(--border-subtle)] p-2 text-[11px] text-[var(--text-secondary)]">
@@ -536,48 +543,52 @@ export function ApprovalCard({
             )}
           </details>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border-subtle)] px-3 py-2.5 sm:px-4">
-          {onRule && ruleChannel && channel && (
-            <>
-              {ruleChannel !== 'terminal' && ruleChannel !== 'other' && (
-                <Button size="sm" variant="ghost" aria-label={`Permitir siempre este canal en esta conversación: ${channel}`}
-                  disabled={busy || !!decision} onClick={() => onRule(ruleChannel, 'allow')}>
-                  <ShieldCheck size={13} aria-hidden="true" />
-                  Permitir siempre en este chat: {channel}
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 px-3 pb-3">
+          <div className="mr-auto flex min-w-0 flex-wrap items-center gap-1 text-[var(--text-muted)]">
+            {ruleButtons && ruleChannel && (
+              <>
+                {ruleChannel !== 'terminal' && ruleChannel !== 'other' && (
+                  <Button size="sm" variant="ghost" className="!text-[11.5px] !text-[var(--text-muted)] hover:!text-[var(--text-primary)]"
+                    aria-label={`Permitir siempre este canal en esta conversación: ${channel}`}
+                    disabled={busy || !!decision} onClick={() => onRule?.(ruleChannel, 'allow')}>
+                    Siempre en este chat
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" className="!text-[11.5px] !text-[var(--text-muted)] hover:!text-[var(--text-primary)]"
+                  aria-label="Bloquear este canal en esta conversación"
+                  disabled={busy || !!decision} onClick={() => onRule?.(ruleChannel, 'deny')}>
+                  Bloquear en este chat
                 </Button>
-              )}
-              <Button size="sm" variant="ghost" aria-label="Bloquear este canal en esta conversación"
-                disabled={busy || !!decision} onClick={() => onRule(ruleChannel, 'deny')}>
-                <Ban size={13} aria-hidden="true" />
-                Bloquear en este chat
-              </Button>
-            </>
-          )}
-          {alwaysDomain ? (
-            <label className="mr-auto flex basis-full cursor-pointer items-center gap-2 text-[11.5px] leading-5 text-[var(--text-secondary)] sm:basis-auto">
-              <Toggle checked={remember} disabled={busy} aria-label={`Permitir siempre en ${alwaysDomain}`}
-                onChange={setRemember} />
-              Permitir siempre en {alwaysDomain}
-            </label>
-          ) : (
-            <span className="mr-auto basis-full text-[11.5px] leading-5 text-[var(--text-secondary)] sm:basis-auto">{appGrant ? 'Solo esta acción · o siempre en esta app' : 'Solo esta acción'}</span>
-          )}
-          <Button size="sm" variant="ghost" aria-label="Rechazar esta acción" disabled={busy} onClick={() => onDecide(approval.id, false)}>
-            {decision === 'deny' ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <X size={13} aria-hidden="true" />}
-            Rechazar
-          </Button>
-          {appGrant && (
-            <Button size="sm" variant="ghost" aria-label={`Permitir esta acción y las siguientes sobre ${appGrant} durante la sesión`} disabled={busy}
-              onClick={() => onDecide(approval.id, true, { grantApp: true })}>
-              {decision === 'approve' ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <AppWindow size={13} aria-hidden="true" />}
-              Siempre esta app
+              </>
+            )}
+            {alwaysDomain ? (
+              <label className="flex cursor-pointer items-center gap-2 px-1 text-[11.5px] leading-5 text-[var(--text-secondary)]">
+                <Toggle checked={remember} disabled={busy} aria-label={`Permitir siempre en ${alwaysDomain}`}
+                  onChange={setRemember} />
+                Permitir siempre en {alwaysDomain}
+              </label>
+            ) : !ruleButtons && (
+              <span className="px-1 text-[11.5px] leading-5">{appGrant ? 'Solo esta acción · o siempre en esta app' : 'Solo esta acción'}</span>
+            )}
+          </div>
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button size="sm" variant="ghost" aria-label="Rechazar esta acción" disabled={busy} onClick={() => onDecide(approval.id, false)}>
+              {decision === 'deny' && <Loader2 size={13} className="animate-spin" aria-hidden="true" />}
+              Rechazar
             </Button>
-          )}
-          <Button size="sm" aria-label="Permitir esta acción" disabled={busy}
-            onClick={() => alwaysDomain ? onDecide(approval.id, true, { remember }) : onDecide(approval.id, true)}>
-            {decision === 'approve' ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Check size={13} aria-hidden="true" />}
-            Permitir
-          </Button>
+            {appGrant && (
+              <Button size="sm" variant="secondary" aria-label={`Permitir esta acción y las siguientes sobre ${appGrant} durante la sesión`} disabled={busy}
+                onClick={() => onDecide(approval.id, true, { grantApp: true })}>
+                {decision === 'approve' && <Loader2 size={13} className="animate-spin" aria-hidden="true" />}
+                Siempre esta app
+              </Button>
+            )}
+            <Button size="sm" aria-label="Permitir esta acción" disabled={busy}
+              onClick={() => alwaysDomain ? onDecide(approval.id, true, { remember }) : onDecide(approval.id, true)}>
+              {decision === 'approve' && <Loader2 size={13} className="animate-spin" aria-hidden="true" />}
+              Permitir
+            </Button>
+          </div>
         </div>
       </div>
     </div>
