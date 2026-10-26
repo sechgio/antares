@@ -240,6 +240,24 @@ async function main() {
     assert(catalogFor({ provider: 'custom-local', style: 'openai_chat', base_url: 'http://127.0.0.1:11434/v1' }) === null
       && catalogFor({ provider: 'custom-x', style: 'openai_chat', base_url: 'https://api.anthropic.com' }) === null,
       'un endpoint propio o con otro formato de API no hereda el catálogo');
+    const { rankTools } = require('../electron/agent-execution');
+    const searchable = [
+      { name: 'task_schedule', module: 'agenda', description: 'Programa encargos futuros para el usuario' },
+      { name: 'ui_type', module: 'computer', description: 'Escribe texto en una ventana; requiere aprobación del usuario' },
+      { name: 'desktop_key', module: 'computer', description: 'Pulsa una tecla para el usuario' },
+      { name: 'artifact_print', module: 'printing', description: 'Envía un artefacto a la impresora' },
+      { name: 'printers_list', module: 'printing', description: 'Lista impresoras (solo lectura)' },
+      { name: 'document_generate', module: 'documents', description: 'Genera un documento desde una plantilla' },
+      { name: 'canvas_apply_layers', module: 'canvas', description: 'Aplica capas al lienzo' },
+    ];
+    const ranked = (query) => rankTools(searchable, { query }).map((spec) => spec.name);
+    assert(JSON.stringify(ranked('programar un recordatorio para mañana')) === '["task_schedule"]',
+      'los alias del módulo encuentran la herramienta y las palabras vacías no cargan herramientas ajenas');
+    assert(JSON.stringify(ranked('imprimir el documento').sort()) === '["artifact_print","document_generate","printers_list"]',
+      'cada módulo nombrado por su alias entra y las coincidencias sueltas quedan fuera');
+    assert(JSON.stringify(ranked('canvas_apply_layers')) === '["canvas_apply_layers"]' && ranked('para el usuario').length === 0,
+      'el nombre exacto selecciona una sola herramienta y una consulta sin términos útiles no carga nada');
+    assert(rankTools(searchable, { modules: ['printing'] }).length === 2, 'pedir un módulo sigue cargando todas sus herramientas');
   }
   {
     const { MemoryStorage } = await import('@earendil-works/pi-durable');

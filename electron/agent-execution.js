@@ -399,6 +399,36 @@ function normal(text) {
   return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
 
+// Palabras que aparecen en casi cualquier petición o descripción y no
+// distinguen herramientas («para», «usuario», «requiere aprobación»…).
+const SEARCH_STOPWORDS = new Set(['para', 'con', 'los', 'las', 'del', 'una', 'uno', 'unos', 'unas', 'que', 'por', 'como',
+  'mas', 'quiero', 'necesito', 'hacer', 'este', 'esta', 'esto', 'ese', 'esa', 'sus', 'mis', 'sobre', 'desde', 'hasta',
+  'entre', 'cuando', 'donde', 'todo', 'todos', 'toda', 'todas', 'muy', 'sin', 'hay', 'puedes', 'favor', 'usuario',
+  'requiere', 'aprobacion', 'solo', 'lectura', 'efecto', 'the', 'and', 'for', 'with']);
+
+// Como el searchHint de las herramientas de sistema de Claude Desktop: el
+// nombre exacto manda, y la etiqueta y los alias del módulo (agent-modules.json)
+// cuentan más que la descripción. Solo se cargan las que se acercan a la mejor.
+function rankTools(specs, args) {
+  const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
+  const query = normal(args.query);
+  const words = query.split(/[^a-z0-9_]+/).filter((word) => word.length > 2 && !SEARCH_STOPWORDS.has(word));
+  const catalog = require('../shared/agent-modules.json').modules;
+  const hints = (module) => normal([module, catalog[module]?.label, ...(catalog[module]?.aliases || [])].join(' '));
+  const score = (spec) => {
+    if (modules.includes(spec.module)) return 100;
+    if (words.includes(normal(spec.name))) return 50;
+    const name = normal(spec.name);
+    const hint = hints(spec.module);
+    const description = normal(`${spec.label || ''} ${spec.description || ''}`);
+    return words.reduce((total, word) => total
+      + (name.includes(word) ? 3 : 0) + (hint.includes(word) ? 2 : 0) + (description.includes(word) ? 1 : 0), 0);
+  };
+  const scored = specs.map((spec) => [spec, score(spec)]).filter(([, value]) => value > 0).sort((a, b) => b[1] - a[1]);
+  const floor = scored.length ? Math.ceil(scored[0][1] / 2) : 0;
+  return scored.filter(([, value]) => value >= floor).slice(0, MAX_LOADED_TOOLS).map(([spec]) => spec);
+}
+
 async function loadTools(args, sessionId, context) {
   const conv = await conversation(sessionId);
   const enabled = new Set((await conv.agent(context)).tools.map((tool) => tool.name));
@@ -418,13 +448,7 @@ async function loadTools(args, sessionId, context) {
     }
     return { text: JSON.stringify({ modules: [...catalog.values()].sort((a, b) => a.module.localeCompare(b.module)) }) };
   }
-  const score = (spec) => {
-    if (modules.includes(spec.module)) return 100;
-    const haystack = normal(`${spec.name} ${spec.module || ''} ${spec.label || ''} ${spec.description || ''}`);
-    return words.filter((word) => haystack.includes(word)).length;
-  };
-  const found = specs.map((spec) => [spec, score(spec)]).filter(([, value]) => value > 0)
-    .sort((a, b) => b[1] - a[1]).slice(0, MAX_LOADED_TOOLS).map(([spec]) => spec);
+  const found = rankTools(specs, args);
   const added = found.filter((spec) => !enabled.has(spec.name)).map((spec) => spec.name);
   const text = JSON.stringify({
     loaded: added,
@@ -1313,6 +1337,7 @@ module.exports = {
   allToolSpecs,
   defaultToolNames,
   moduleToolNames,
+  rankTools,
   localDay,
   profileBudget,
   profileFilter,
