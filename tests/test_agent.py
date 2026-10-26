@@ -109,44 +109,6 @@ def test_provider_receives_native_and_mcp_argument_contracts(monkeypatch, style)
     assert "connections_token_refresh" not in wire
 
 
-def test_tools_list_projection(monkeypatch):
-    from backend.handlers import agent as agent_handler
-
-    monkeypatch.setattr(
-        agent_chat,
-        "tool_specs",
-        lambda: [
-            {"name": "flows_list", "gated": False},
-            {"name": "canvas_save", "gated": True},
-            {"name": "mcp__srv1__search", "gated": True},
-        ],
-    )
-    tools = agent_handler._tools_list({})["tools"]
-    by_name = {t["name"]: t for t in tools}
-    assert by_name["flows_list"] == {"name": "flows_list", "gated": False, "kind": "backend"}
-    assert by_name["canvas_save"]["gated"] is True
-    assert by_name["mcp__srv1__search"]["kind"] == "mcp"
-
-
-def test_backend_approval_records_a_dispatch_receipt(tmp_path):
-    store = _store(tmp_path)
-    session = store.create_session("ollama", "llama3.1", "Prueba")
-    calls = []
-    runner = agent.AgentRunner(store, lambda method: lambda params: calls.append(method) or {"ok": True})
-    approval = store.create_approval(session["id"], {
-        "id": "backend-call", "name": "db_export", "params": {}, "channel": "documents",
-    })
-    store.decide_approval(approval["id"], True, "manual")
-    runner._apply_decision(store.get_approval(approval["id"]))
-
-    record = store.get_dispatch(session["id"], "backend-call")
-    assert calls == ["db_export"]
-    assert record["status"] == "succeeded"
-    assert record["channel"] == "documents"
-    assert record["approval_source"] == "manual"
-    assert store.messages(session["id"])[-1]["tool_use_id"] == "backend-call"
-
-
 def test_approval_flow(tmp_path):
     store = _store(tmp_path)
     s = store.create_session("ollama", "m", "t")
@@ -208,20 +170,6 @@ def test_agent_rejects_ungranted_paths_and_forged_grants_before_dispatch(tmp_pat
     assert calls == []
 
 
-def test_approval_does_not_grant_disk_access(tmp_path, monkeypatch):
-    store, runner, executed = _fake_runner(tmp_path, monkeypatch, [{"calls": [{
-        "id": "export", "name": "db_export", "params": {"path": "C:/unauthorized/export.xlsx"},
-    }]}])
-    session = store.create_session("ollama", "m", "Prueba")
-    runner._run_loop(session["id"])
-    approval = store.pending_approvals(session["id"])[0]
-    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
-    runner.decide(approval["id"], True)
-    assert executed == []
-    result = next(m for m in store.messages(session["id"]) if m["role"] == "tool_result")
-    assert json.loads(result["content"]).get("error")
-
-
 @pytest.mark.parametrize("method,lane", [("formats", "light"), ("canvas_export_cmyk_pdf", "heavy")])
 def test_agent_dispatch_uses_catalog_lane_and_timeout(tmp_path, monkeypatch, method, lane):
     from concurrent.futures import Future
@@ -273,84 +221,6 @@ def test_update_tool_call(tmp_path):
     store.update_tool_call(s["id"], "c9", "done", "resultado")
     call = store.messages(s["id"])[0]["tool_calls"][0]
     assert call["status"] == "done" and call["result"] == "resultado"
-
-
-def _fake_runner(tmp_path, monkeypatch, replies):
-    store = _store(tmp_path)
-    executed = []
-    monkeypatch.setattr(
-        agent,
-        "chat",
-        lambda provider, model, messages, on_delta=None: replies.pop(0) if replies else {"text": "fin", "calls": []},
-    )
-    runner = agent.AgentRunner(store, lambda name: lambda params: executed.append((name, params)) or {"ok": True})
-    return store, runner, executed
-
-
-def test_turn_runs_safe_tool_then_answers(tmp_path, monkeypatch):
-    safe_method = sorted(ORCHESTRATABLE_METHODS)[0]
-    store, runner, executed = _fake_runner(
-        tmp_path,
-        monkeypatch,
-        [
-            {"text": "consulto", "calls": [{"id": "t1", "name": safe_method, "params": {}}]},
-            {"text": "respuesta final", "calls": []},
-        ],
-    )
-    s = store.create_session("ollama", "m", "t")
-    runner._run_loop(s["id"])
-    assert executed == [(safe_method, {})]
-    roles = [m["role"] for m in store.messages(s["id"])]
-    assert roles == ["assistant", "tool_result", "assistant"]
-    assert store.messages(s["id"])[-1]["content"] == "respuesta final"
-    assert store.pending_approvals(s["id"]) == []
-
-
-def test_turn_pauses_on_gated_tool_and_decide_resumes(tmp_path, monkeypatch):
-    gated = "canvas_duplicate"
-    store, runner, executed = _fake_runner(
-        tmp_path,
-        monkeypatch,
-        [
-            {"text": "", "calls": [{"id": "g1", "name": gated, "params": {"k": 1}}]},
-            {"text": "hecho", "calls": []},
-        ],
-    )
-    s = store.create_session("ollama", "m", "t")
-    runner._run_loop(s["id"])
-    assert executed == []
-    pending = store.pending_approvals(s["id"])
-    assert len(pending) == 1 and pending[0]["method"] == gated
-
-    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
-    runner.decide(pending[0]["id"], True)
-    assert executed == [(gated, {"k": 1})]
-    msgs = store.messages(s["id"])
-    assert msgs[-1]["content"] == "hecho"
-    tool_call = next(c for m in msgs for c in (m.get("tool_calls") or []))
-    assert tool_call["status"] == "done"
-
-
-def test_deny_appends_denied_result_and_resumes(tmp_path, monkeypatch):
-    gated = agent_chat.gated_methods()[0]
-    store, runner, executed = _fake_runner(
-        tmp_path,
-        monkeypatch,
-        [
-            {"text": "", "calls": [{"id": "g1", "name": gated, "params": {}}]},
-            {"text": "entendido", "calls": []},
-        ],
-    )
-    s = store.create_session("ollama", "m", "t")
-    runner._run_loop(s["id"])
-    pending = store.pending_approvals(s["id"])
-    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
-    runner.decide(pending[0]["id"], False)
-    assert executed == []
-    msgs = store.messages(s["id"])
-    result_msg = next(m for m in msgs if m["role"] == "tool_result")
-    assert "rechaz" in result_msg["content"]
-    assert msgs[-1]["content"] == "entendido"
 
 
 def test_openai_wire_and_parse():
@@ -442,116 +312,6 @@ def test_first_user_message_titles_session(tmp_path):
     assert store.get_session(s["id"])["title"] == "lista mis formatos"
 
 
-def test_approval_accepts_without_waiting_and_serializes_session_tools(tmp_path, monkeypatch):
-    from backend.handlers import agent as handlers
-
-    store = _store(tmp_path)
-    session = store.create_session("ollama", "m", "Principal")
-    other = store.create_session("ollama", "other", "Otra")
-    method = sorted(ORCHESTRATABLE_METHODS)[0]
-    calls = [{"id": f"c{i}", "name": method, "params": {"index": i}, "status": "pending"} for i in (1, 2)]
-    store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": calls})
-    approvals = [store.create_approval(session["id"], call) for call in calls]
-    entered, release, accepted, probed = (threading.Event() for _ in range(4))
-    executed, replies, responses, states = [], {}, [], []
-
-    def execute(params):
-        executed.append(params["index"])
-        if params["index"] == 1:
-            entered.set()
-            assert release.wait(5)
-        return {"ok": True}
-
-    def chat(provider, model, messages, on_delta=None):
-        replies.setdefault(model, []).append(messages)
-        return {"text": "fin", "calls": []}
-
-    monkeypatch.setattr(agent, "chat", chat)
-    runner = agent.AgentRunner(store, lambda name: execute)
-    monkeypatch.setattr(handlers, "_runner", lambda: runner)
-
-    def approve():
-        responses.append(handlers._approve({"approval_id": approvals[0]["id"]}))
-        accepted.set()
-
-    def probe():
-        states.append((runner.is_running(session["id"]), runner.is_running(other["id"])))
-        probed.set()
-
-    caller, reader = threading.Thread(target=approve), threading.Thread(target=probe)
-    caller.start()
-    try:
-        assert entered.wait(3)
-        assert accepted.wait(1), "agent_approve esperó a que terminara la herramienta"
-        reader.start()
-        assert probed.wait(1), "Las consultas de otra conversación quedaron bloqueadas"
-        assert states == [(True, False)]
-        assert responses[0]["approval"]["status"] == "approved"
-        runner.start_turn(other["id"], "otra conversación")
-        other_worker = runner._running.get(other["id"])
-        if other_worker:
-            other_worker.join(timeout=3)
-        assert replies["other"][-1][-1]["content"] == "otra conversación"
-        runner.decide(approvals[1]["id"], True)
-        with pytest.raises(ValueError, match="Ya hay un turno"):
-            runner.start_turn(session["id"], "duplicado")
-        with pytest.raises(ValueError, match="ya decidida"):
-            runner.decide(approvals[0]["id"], True)
-        assert replies.get("m") is None
-    finally:
-        release.set()
-        caller.join(timeout=3)
-        if reader.ident is not None:
-            reader.join(timeout=3)
-        worker = runner._running.get(session["id"])
-        if worker:
-            worker.join(timeout=3)
-    assert not runner.is_running(session["id"])
-    assert executed == [1, 2]
-    results = [message for message in replies["m"][0] if message["role"] == "tool_result"]
-    assert [message["tool_use_id"] for message in results] == ["c1", "c2"]
-
-
-def test_cancel_turn_stops_turn_and_marks_session(tmp_path, monkeypatch):
-    import time
-
-    store = _store(tmp_path)
-    session = store.create_session("ollama", "m", "Lenta")
-    entered = threading.Event()
-
-    def slow_chat(provider, model, messages, on_delta=None):
-        entered.set()
-        time.sleep(30)
-        return {"text": "nunca", "calls": []}
-
-    monkeypatch.setattr(agent, "chat", slow_chat)
-    runner = agent.AgentRunner(store, lambda name: lambda params: {})
-
-    from backend.handlers import agent as handlers
-
-    monkeypatch.setattr(handlers, "_runner", lambda: runner)
-    monkeypatch.setattr(handlers, "_store", lambda: store)
-    assert handlers._turn_cancel({"session_id": session["id"]}) == {"cancelled": False}
-
-    runner.start_turn(session["id"], "hola")
-    assert entered.wait(3)
-    assert handlers._turn_cancel({"session_id": session["id"]}) == {"cancelled": True}
-
-    deadline = time.time() + 5
-    while runner.is_running(session["id"]) and time.time() < deadline:
-        time.sleep(0.05)
-    assert not runner.is_running(session["id"])
-    messages = store.messages(session["id"])
-    assert "detenido" in messages[-1]["content"]
-    monkeypatch.setattr(agent, "chat", lambda *a, **k: {"text": "listo", "calls": []})
-    runner.start_turn(session["id"], "otra vez")
-    worker = runner._running.get(session["id"])
-    if worker:
-        worker.join(timeout=5)
-    assert not runner.is_running(session["id"])
-    assert store.messages(session["id"])[-1]["content"] == "listo"
-
-
 def test_interrupted_turn_gets_marked_once_on_runner_init(tmp_path):
     store = _store(tmp_path)
     interrupted = store.create_session("ollama", "m", "A medias")
@@ -572,18 +332,6 @@ def test_interrupted_turn_gets_marked_once_on_runner_init(tmp_path):
     store3 = _store(tmp_path)
     agent.AgentRunner(store3, lambda name: lambda params: {})
     assert sum("interrumpido" in m["content"] for m in store3.messages(interrupted["id"])) == 1
-
-
-def test_stale_approval_expires_and_cannot_be_decided(tmp_path):
-    store = _store(tmp_path)
-    session = store.create_session("ollama", "m", "S")
-    approval = store.create_approval(session["id"], {"id": "c1", "name": "flows_delete", "params": {}})
-    store._approvals[approval["id"]]["created_at"] = agent._now_ms() - agent._APPROVAL_TTL_MS - 1
-    assert store.pending_approvals(session["id"]) == []
-    assert store.get_approval(approval["id"])["status"] == "expired"
-    runner = agent.AgentRunner(store, lambda name: lambda params: {})
-    with pytest.raises(ValueError, match="expir"):
-        runner.decide(approval["id"], True)
 
 
 def test_stream_response_emits_accumulated_deltas():
@@ -617,157 +365,6 @@ def test_stream_response_emits_deltas_for_native_protocol():
     assert res["content"][0]["text"] == "Hola"
 
 
-def test_partial_text_checkpoint_survives_restart(tmp_path):
-    store = _store(tmp_path)
-    session = store.create_session("ollama", "m", "S")
-    runner = agent.AgentRunner(store, lambda name: lambda params: {})
-    runner._set_partial(session["id"], "escribiendo…")
-    assert runner.partial_text(session["id"]) == "escribiendo…"
-    runner._partial.pop(session["id"], None)
-    assert runner.partial_text(session["id"]) is None
-    restored = _store(tmp_path)
-    agent.AgentRunner(restored, lambda name: pytest.fail("No debe ejecutar herramientas al recuperar"))
-    assert "escribiendo…" in restored.messages(session["id"])[-1]["content"]
-    assert "interrumpido" in restored.messages(session["id"])[-1]["content"]
-    assert "_partial_text" not in restored.get_session(session["id"])
-
-
-@pytest.mark.parametrize("status", ["queued", "running", "pending", "done"])
-def test_recovery_never_replays_a_tool_or_a_decided_approval(tmp_path, status):
-    store = _store(tmp_path)
-    session = store.create_session("ollama", "m", "Tarea")
-    call = {"id": "effect", "name": "flows_run", "params": {}, "status": status, "result": "resultado"}
-    store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
-    approval = store.create_approval(session["id"], call)
-    store.decide_approval(approval["id"], True)
-    restored = _store(tmp_path)
-    runner = agent.AgentRunner(restored, lambda name: pytest.fail("No repetir efectos"))
-    messages = restored.messages(session["id"])
-    assert messages[0]["tool_calls"][0]["status"] == ("done" if status == "done" else "interrupted")
-    assert "interrumpido" in messages[-1]["content"]
-    assert not runner.is_running(session["id"])
-    with pytest.raises(ValueError, match="ya decidida"):
-        runner.decide(approval["id"], True)
-    agent.AgentRunner(_store(tmp_path), lambda name: None)
-    assert _store(tmp_path).messages(session["id"]) == messages
-
-
-def test_pending_approval_recovers_and_still_requires_one_explicit_decision(tmp_path, monkeypatch):
-    store = _store(tmp_path)
-    session = store.create_session("ollama", "m", "Tarea")
-    method = "canvas_duplicate"
-    call = {"id": "effect", "name": method, "params": {}, "status": "pending"}
-    store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
-    approval = store.create_approval(session["id"], call)
-    restored = _store(tmp_path)
-    executed = []
-    monkeypatch.setattr(agent, "chat", lambda *a, **k: {"text": "fin", "calls": []})
-    runner = agent.AgentRunner(restored, lambda name: lambda params: executed.append(name) or {"ok": True})
-    assert executed == []
-    assert restored.pending_approvals(session["id"])[0]["id"] == approval["id"]
-    with pytest.raises(ValueError, match="aprobaciones pendientes"):
-        runner.start_turn(session["id"], "otra tarea")
-    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
-    runner.decide(approval["id"], True)
-    assert executed == [method]
-    with pytest.raises(ValueError, match="ya decidida"):
-        runner.decide(approval["id"], True)
-
-
-def test_cancel_running_tool_discards_late_result_and_queued_approved_effect(tmp_path, monkeypatch):
-    store = _store(tmp_path)
-    session = store.create_session("ollama", "m", "Tarea")
-    method = agent_chat.gated_methods()[0]
-    calls = [{"id": f"c{i}", "name": method, "params": {"i": i}, "status": "pending"} for i in (1, 2)]
-    store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": calls})
-    approvals = [store.create_approval(session["id"], call) for call in calls]
-    entered, release, finished = (threading.Event() for _ in range(3))
-    executed = []
-
-    def execute(call, token=None):
-        executed.append(call["params"]["i"])
-        entered.set()
-        assert release.wait(5)
-        finished.set()
-        return '{"ok": true}'
-
-    monkeypatch.setattr(agent, "chat", lambda *a, **k: pytest.fail("No continuar tras cancelar"))
-    runner = agent.AgentRunner(store, lambda name: None)
-    monkeypatch.setattr(runner, "_execute", execute)
-    runner.decide(approvals[0]["id"], True)
-    try:
-        assert entered.wait(3)
-        assert store.messages(session["id"])[0]["tool_calls"][0]["status"] == "running"
-        runner.decide(approvals[1]["id"], True)
-        worker = runner._running[session["id"]]
-        assert runner.cancel_turn(session["id"])
-        worker.join(3)
-        assert not runner.is_running(session["id"])
-        assert executed == [1]
-        assert [c["status"] for c in store.messages(session["id"])[0]["tool_calls"]] == ["interrupted"] * 2
-        release.set()
-        assert finished.wait(3)
-        assert store.messages(session["id"])[0]["tool_calls"][0]["status"] == "interrupted"
-    finally:
-        release.set()
-
-
-def test_cancel_turn_waiting_for_approval_does_not_execute(tmp_path):
-    store = _store(tmp_path)
-    session = store.create_session("ollama", "m", "Tarea")
-    call = {"id": "c1", "name": "flows_run", "params": {}, "status": "pending"}
-    store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
-    approval = store.create_approval(session["id"], call)
-    runner = agent.AgentRunner(store, lambda name: pytest.fail("No ejecutar al cancelar"))
-    assert runner.cancel_turn(session["id"])
-    worker = runner._running.get(session["id"])
-    if worker:
-        worker.join(3)
-    assert not runner.is_running(session["id"])
-    assert store.pending_approvals(session["id"]) == []
-    with pytest.raises(ValueError, match="ya decidida"):
-        runner.decide(approval["id"], True)
-
-
-def test_cancelled_provider_cannot_publish_deltas_to_a_new_turn(tmp_path):
-    store = _store(tmp_path)
-    session = store.create_session("ollama", "m", "Tarea")
-    runner = agent.AgentRunner(store, lambda name: None)
-    old = agent._CancelEvent()
-    old.cancel()
-    runner._cancel[session["id"]] = agent._CancelEvent()
-    runner._set_partial(session["id"], "tardío", old)
-    assert runner.partial_text(session["id"]) is None
-    assert "_partial_text" not in store.get_session(session["id"])
-
-
-@pytest.mark.parametrize("result", ['{"error": "falló"}', '{"isError": true}', '{"ok": true}'])
-def test_tool_failures_have_distinct_status(tmp_path, monkeypatch, result):
-    store = _store(tmp_path)
-    session = store.create_session("ollama", "m", "Tarea")
-    call = {"id": "c1", "name": "flows_run", "params": {}, "status": "queued"}
-    store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
-    runner = agent.AgentRunner(store, lambda name: None)
-    monkeypatch.setattr(runner, "_execute", lambda call, token=None: result)
-    assert runner._execute_call(session["id"], call) == result
-    assert store.messages(session["id"])[0]["tool_calls"][0]["status"] == ("done" if "ok" in result else "failed")
-
-
-def test_first_messages_snapshot_includes_restart_recovery(tmp_path, monkeypatch):
-    from backend.handlers import agent as handlers
-
-    store = _store(tmp_path)
-    session = store.create_session("ollama", "m", "Tarea")
-    store.append_message(session["id"], {"role": "user", "content": "pendiente"})
-    restored = _store(tmp_path)
-    monkeypatch.setattr(handlers, "_store", lambda: restored)
-    monkeypatch.setattr(agent, "_store_singleton", restored)
-    monkeypatch.setattr(agent, "_runner_singleton", None)
-    snapshot = handlers._messages_list({"session_id": session["id"]})
-    assert "interrumpido" in snapshot["messages"][-1]["content"]
-    assert not snapshot["running"]
-
-
 def test_recovery_does_not_duplicate_a_response_written_before_checkpoint_cleanup(tmp_path):
     store = _store(tmp_path)
     session = store.create_session("ollama", "m", "Tarea")
@@ -779,37 +376,6 @@ def test_recovery_does_not_duplicate_a_response_written_before_checkpoint_cleanu
     assert "_partial_text" not in restored.get_session(session["id"])
 
 
-def test_cancel_removes_a_tool_still_queued_in_the_scheduler(tmp_path, monkeypatch):
-    from concurrent.futures import Future
-    from unittest.mock import Mock
-
-    store = _store(tmp_path)
-    session = store.create_session("ollama", "m", "Tarea")
-    method = sorted(ORCHESTRATABLE_METHODS)[0]
-    call = {"id": "queued", "name": method, "params": {}, "status": "pending"}
-    store.append_message(session["id"], {"role": "assistant", "content": "", "tool_calls": [call]})
-    approval = store.create_approval(session["id"], call)
-    future = Future()
-    submitted, cancelled = threading.Event(), threading.Event()
-    future.add_done_callback(lambda result: cancelled.set())
-
-    def submit(fn, params):
-        submitted.set()
-        return future
-
-    monkeypatch.setattr(agent, "lane_for", lambda name: "light")
-    monkeypatch.setattr(agent, "get_scheduler", lambda: Mock(submit_light=submit))
-    runner = agent.AgentRunner(store, lambda name: lambda params: pytest.fail("No ejecutar trabajo en cola"))
-    runner.decide(approval["id"], True)
-    assert submitted.wait(3)
-    worker = runner._running[session["id"]]
-    assert runner.cancel_turn(session["id"])
-    worker.join(3)
-    assert cancelled.wait(3)
-    assert future.cancelled()
-    assert store.messages(session["id"])[0]["tool_calls"][0]["status"] == "interrupted"
-
-
 def test_tool_results_scrub_secrets():
     scrubbed = agent_chat.scrub_secrets({"config": {
         "secret": "s3cr3t",
@@ -818,41 +384,3 @@ def test_tool_results_scrub_secrets():
         "name": "visible",
     }})
     assert scrubbed["config"] == {"secret": "…", "headers": "…", "_file_grants": "…", "name": "visible"}
-
-
-def test_agent_decide_never_runs_denied_method(tmp_path, monkeypatch):
-    store = _store(tmp_path)
-    session = store.create_session("provider-x", "model", "t")
-    calls: list = []
-    runner = agent.AgentRunner(store, lambda m: calls.append(m) or (lambda p: {}))
-    monkeypatch.setattr(runner, "_run_loop", lambda sid: None)
-    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
-
-    approval = store.create_approval(session["id"], {"id": "c1", "name": "db_clear", "params": {}})
-    runner.decide(approval["id"], True)
-
-    assert calls == []
-    last = store.messages(session["id"])[-1]
-    assert last["role"] == "tool_result"
-    assert "no disponible" in last["content"]
-
-
-def test_agent_decide_runs_approved_mcp_tool(tmp_path, monkeypatch):
-    from backend.core.integrations import mcp_servers
-
-    store = _store(tmp_path)
-    session = store.create_session("provider-x", "model", "t")
-    runner = agent.AgentRunner(store, lambda m: None)
-    monkeypatch.setattr(runner, "_run_loop", lambda sid: None)
-    monkeypatch.setattr(runner, "_spawn", lambda sid, name: runner._turn_main(sid))
-    seen: dict = {}
-    monkeypatch.setattr(
-        mcp_servers,
-        "call_tool",
-        lambda srv, tool, args, **kw: seen.update(srv=srv, tool=tool, args=args, **kw) or {"ok": True},
-    )
-
-    approval = store.create_approval(session["id"], {"id": "c2", "name": "mcp__srv__do", "params": {"a": 1}})
-    runner.decide(approval["id"], True)
-
-    assert seen == {"srv": "srv", "tool": "mcp__srv__do", "args": {"a": 1}, "advertised": True}

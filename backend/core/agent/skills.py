@@ -48,6 +48,7 @@ class _Skill:
     name: str
     description: str
     path: Path
+    content: str | None = None
 
 
 def _authorized(path: Path, grants: dict[str, JsonObject], workspace: Path, library: Path,
@@ -65,6 +66,10 @@ def _authorized(path: Path, grants: dict[str, JsonObject], workspace: Path, libr
 def _read(path: Path, grants: dict[str, JsonObject], workspace: Path, library: Path,
           levels: tuple[Path, ...] = ()) -> str:
     target = _authorized(path, grants, workspace, library, levels)
+    return _read_text(target)
+
+
+def _read_text(target: Path) -> str:
     with target.open("rb") as handle:
         content = handle.read(_MAX_BYTES + 1)
     if len(content) > _MAX_BYTES:
@@ -185,8 +190,10 @@ def library_catalog(library: Path) -> JsonObject:
 
 
 def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace: Path, library: Path,
-        *, agent_id: str | None = None) -> JsonObject:
+        *, agent_id: str | None = None, profile_skills: list[JsonObject] | None = None) -> JsonObject:
     levels = _levels(agent_id)
+    portable = [_Skill(item["id"], item["name"], item["description"], Path(item["location"]), item.get("content"))
+                for item in profile_skills or []]
     if name == "skills_list":
         query, limit = params.get("query", ""), params.get("limit", 8)
         if not isinstance(query, str) or len(query) > 200:
@@ -195,7 +202,8 @@ def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace:
             raise ValueError("El límite debe estar entre 1 y 20")
         catalog, warnings, truncated = _catalog(grants, workspace, library, levels)
         words = query.casefold().split()
-        matches = [skill for skill in catalog if all(word in f"{skill.name} {skill.description}".casefold() for word in words)]
+        matches = [skill for skill in [*portable, *catalog]
+                   if all(word in f"{skill.name} {skill.description}".casefold() for word in words)]
         return computer_files.fit({
             "skills": [{"id": skill.id, "name": skill.name, "description": skill.description[:240], "location": str(skill.path)}
                        for skill in matches[:limit]],
@@ -206,25 +214,39 @@ def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace:
         skill_id = params.get("skill_id")
         relative = params.get("file_path", "SKILL.md")
         offset = params.get("offset", 0)
-        if not isinstance(skill_id, str) or not re.fullmatch(r"[a-f0-9]{24}", skill_id):
+        if not isinstance(skill_id, str) or not (re.fullmatch(r"[a-f0-9]{24}", skill_id) or skill_id.startswith("profile:")):
             raise ValueError("Indica el id devuelto por skills_list")
         if not isinstance(relative, str) or not relative or len(relative) > 240 or "\x00" in relative \
                 or ":" in relative or ntpath.isabs(relative) or ".." in relative.replace("\\", "/").split("/"):
             raise ValueError("El archivo debe ser una ruta relativa dentro de la skill")
         if type(offset) is not int or offset < 0:
             raise ValueError("El offset debe ser un entero no negativo")
-        candidates, _, _ = _candidates(grants, workspace, library, levels)
-        try:
-            candidate = next((item for item in candidates if _skill_id(item) == skill_id), None)
-            if candidate is None:
-                raise ValueError("Skill no encontrada")
-            skill = _skill(candidate, grants, workspace, library, levels)
-        except (OSError, ValueError):
-            raise ValueError("La skill ya no está disponible; consulta skills_list y comprueba sus permisos") from None
-        text = _read(skill.path.parent / relative.replace("\\", "/"), grants, workspace, library, levels)
+        if skill_id.startswith("profile:"):
+            skill = next((item for item in portable if item.id == skill_id), None)
+            if skill is None:
+                raise ValueError("Skill no encontrada en el perfil; consulta skills_list")
+            if relative == "SKILL.md" and skill.content is not None:
+                text = skill.content
+            else:
+                root = skill.path.parent.resolve(strict=True)
+                target = (skill.path.parent / relative.replace("\\", "/")).resolve(strict=True)
+                if not target.is_relative_to(root):
+                    raise ValueError("La ruta sale de la carpeta de la skill")
+                text = _read_text(target)
+        else:
+            candidates, _, _ = _candidates(grants, workspace, library, levels)
+            try:
+                candidate = next((item for item in candidates if _skill_id(item) == skill_id), None)
+                if candidate is None:
+                    raise ValueError("Skill no encontrada")
+                skill = _skill(candidate, grants, workspace, library, levels)
+            except (OSError, ValueError):
+                raise ValueError("La skill ya no está disponible; consulta skills_list y comprueba sus permisos") from None
+            text = _read(skill.path.parent / relative.replace("\\", "/"), grants, workspace, library, levels)
         end = min(len(text), offset + _PAGE_CHARS)
         result = {"id": skill.id, "name": skill.name, "file_path": relative, "content": text[offset:end],
-                  "offset": offset, "total_chars": len(text), "next_offset": end if end < len(text) else None, "notice": _NOTICE}
+                  "offset": offset, "total_chars": len(text), "next_offset": end if end < len(text) else None,
+                  **({} if skill_id.startswith("profile:") else {"notice": _NOTICE})}
         while len(json.dumps(result, ensure_ascii=False)) > 5600:
             end = offset + (end - offset) * 3 // 4
             result.update(content=text[offset:end], next_offset=end if end < len(text) else None)

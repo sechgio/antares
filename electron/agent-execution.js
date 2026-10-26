@@ -20,7 +20,7 @@ const {
   ctx,
 } = require('./agent-shared');
 const { compactMessages, requestBudget } = require('./agent-request-budget');
-const { resolvePortableProfile, mergeProfileSkills, readProfileSkill } = require('./agent-profiles');
+const { resolvePortableProfile } = require('./agent-profiles');
 
 const compaction = require('./agent-compaction');
 
@@ -934,9 +934,6 @@ async function executeTool(spec, args, api, context) {
 
 async function dispatchTool(spec, args, sessionId, api, context) {
   const portableProfile = resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
-  if (portableProfile && spec.name === 'skills_read' && typeof args?.skill_id === 'string' && args.skill_id.startsWith('profile:')) {
-    return { text: JSON.stringify(readProfileSkill(portableProfile, args)) };
-  }
   if (spec.kind === 'meta') {
     if (spec.name === 'agent_delegate') {
       const profile = await resolveProfile(args?.agent);
@@ -966,6 +963,12 @@ async function dispatchTool(spec, args, sessionId, api, context) {
   };
   if (spec.name === 'skills_list' || spec.name === 'skills_read') {
     request.context = { profile_id: (await requireSession(sessionId)).profile?.id || null };
+    if (portableProfile) {
+      request.context.profile_skills = [...portableProfile.skills.values()].map(({ content, ...skill }) => ({
+        ...skill,
+        ...(skill.id === args?.skill_id && (!args.file_path || args.file_path === 'SKILL.md') ? { content } : {}),
+      }));
+    }
   }
   if (spec.kind === 'subagent') {
     const profile = await resolveProfile(args && args.agent);
@@ -994,7 +997,7 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     const text = spec.kind === 'native'
       ? await dispatchNative(spec, request, context)
       : await dispatchAndWait(request, context, api);
-    return { text: portableProfile && spec.name === 'skills_list' ? mergeProfileSkills(portableProfile, args, text) : text };
+    return { text };
   } finally {
     if (spec.name === 'ask_user') shared.waitingInput.delete(sessionId);
   }

@@ -64,12 +64,13 @@ EFFECT_TOOLS = frozenset(name for name, spec in SPECS.items() if spec["gated"])
 
 
 def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: Any = None,
-        *, profile_id: str | None = None) -> JsonObject:
+        *, profile_id: str | None = None, profile_skills: list[JsonObject] | None = None) -> JsonObject:
     root = store.drafts_dir(session_id)
     if name == "mcp_status":
         return {"servers": mcp_servers.server_statuses(refresh=args.get("refresh") is True)}
     if name in {"skills_list", "skills_read"}:
-        return skills.run(name, args, store.grants_for(session_id), root, store.base_dir / "skills", agent_id=profile_id)
+        return skills.run(name, args, store.grants_for(session_id), root, store.base_dir / "skills",
+                          agent_id=profile_id, profile_skills=profile_skills)
     if name.startswith("fs_"):
         return computer_files.fit(computer_files.run(name, args, store.grants_for(session_id), root))
     if name == "shell_run":

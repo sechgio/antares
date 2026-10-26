@@ -4,10 +4,24 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
-const { loadAgentProfile, listProfileSkills, readProfileSkill, mergeProfileSkills } = require('../../../electron/agent-profiles');
+const { loadAgentProfile } = require('../../../electron/agent-profiles');
 let home;
+
+function runSkills(name, profile, params = {}, catalog = []) {
+  const root = path.resolve(import.meta.dirname, '../../..');
+  return JSON.parse(execFileSync('uv', ['run', '--project', root, '--locked', '--extra', 'dev',
+    'python', path.join(root, 'tests/helpers/agent_skills_probe.py')], {
+    cwd: root, encoding: 'utf8', windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, PYTHONPATH: root, PYTHONUTF8: '1' },
+    input: JSON.stringify({ root: home, name, params, catalog, profile_skills: [...profile.skills.values()] }),
+  }));
+}
+
+const listProfileSkills = (profile, params) => runSkills('skills_list', profile, params);
+const readProfileSkill = (profile, params) => runSkills('skills_read', profile, params);
 
 function write(relative, content) {
   const file = path.join(home, relative);
@@ -159,13 +173,8 @@ describe('perfiles portables', () => {
     const loaded = loadAgentProfile('reviewer');
     expect(listProfileSkills(loaded, { query: 'LONG documentos', limit: 1 }).total).toBe(1);
     expect(listProfileSkills(loaded, { query: 'inexistente' }).total).toBe(0);
-    let content = '';
-    let offset = 0;
-    do {
-      const page = readProfileSkill(loaded, { skill_id: 'profile:long', offset });
-      content += page.content;
-      offset = page.next_offset;
-    } while (offset !== null);
+    const pages = runSkills('skills_pages', loaded, { skill_id: 'profile:long' });
+    const content = pages.map((page) => page.content).join('');
     expect(content).toBe(loaded.skills.get('long').content);
   });
 
@@ -204,28 +213,22 @@ describe('perfiles portables', () => {
     const list = listProfileSkills(loaded, { limit: 20 });
     expect(JSON.stringify(list).length).toBeLessThanOrEqual(5600);
     expect(list).toMatchObject({ total: 20, truncated: true });
-    let content = '';
-    let offset = 0;
-    do {
-      const page = readProfileSkill(loaded, { skill_id: 'profile:item-0', offset });
+    const pages = runSkills('skills_pages', loaded, { skill_id: 'profile:item-0' });
+    for (const page of pages) {
       expect(JSON.stringify(page).length).toBeLessThanOrEqual(5600);
-      content += page.content;
-      offset = page.next_offset;
-    } while (offset !== null);
+    }
+    const content = pages.map((page) => page.content).join('');
     expect(content).toBe(loaded.skills.get('item-0').content);
   });
 
-  it('combina fuentes sin perder IDs, totales, límites ni errores del catálogo base', () => {
+  it('combina fuentes sin perder IDs, totales ni límites del catálogo base', () => {
     skill('reviewer/skills/review', 'review');
     const loaded = loadAgentProfile('reviewer');
-    const base = { skills: [{ id: 'abcdef', name: 'review', description: 'Biblioteca' }], total: 30, truncated: true, notice: 'Aviso' };
-    const merged = JSON.parse(mergeProfileSkills(loaded, { limit: 2 }, JSON.stringify(base)));
-    expect(merged.skills.map((item) => item.id)).toEqual(['profile:review', 'abcdef']);
-    expect(merged).toMatchObject({ total: 31, truncated: true, notice: 'Aviso' });
-    expect(JSON.parse(mergeProfileSkills(loaded, { query: 'Biblioteca', limit: 1 }, JSON.stringify(base))).total).toBe(30);
-    for (const text of ['respuesta sin JSON', '{"error":"No disponible"}']) {
-      expect(mergeProfileSkills(loaded, {}, text)).toBe(text);
-    }
+    const catalog = Array.from({ length: 30 }, (_, i) => ({ id: i.toString(16).padStart(24, '0'), name: `base-${i}`, description: 'Biblioteca' }));
+    const merged = runSkills('skills_list', loaded, { limit: 2 }, catalog);
+    expect(merged.skills.map((item) => item.id)).toEqual(['profile:review', catalog[0].id]);
+    expect(merged).toMatchObject({ total: 31, truncated: true });
+    expect(runSkills('skills_list', loaded, { query: 'Biblioteca', limit: 1 }, catalog).total).toBe(30);
   });
 
   it('rechaza traversal y enlaces hacia archivos fuera de la skill', () => {
@@ -265,10 +268,8 @@ describe('integración con el arranque del agente', () => {
       if (method === 'agent_internal_memory_context') return { context: '' };
       if (method === 'agent_internal_artifacts') return { artifacts: [], questions: [], context: {} };
       if (method === 'agent_internal_dispatch') {
-        if (params.name === 'skills_read') return { result: JSON.stringify({ content: 'Contenido de biblioteca', id: params.params.skill_id }) };
-        const matches = catalog.filter((item) => !params.params.query || `${item.name} ${item.description}`.includes(params.params.query));
-        const limit = params.params.limit ?? 8;
-        return { result: JSON.stringify({ skills: matches.slice(0, limit), total: matches.length, truncated: matches.length > limit }) };
+        return { result: JSON.stringify(runSkills(params.name,
+          { skills: new Map((params.context?.profile_skills || []).map((item) => [item.name, item])) }, params.params, catalog)) };
       }
       throw new Error(`Puente inesperado: ${method}`);
     });
@@ -313,7 +314,7 @@ describe('integración con el arranque del agente', () => {
       }, { timeout: 10000 });
     }
     expect(f.bridge.mock.calls.filter(([method, params]) => method === 'agent_internal_dispatch' && params.name === 'skills_list')).toHaveLength(2);
-    expect(f.bridge.mock.calls.filter(([method, params]) => method === 'agent_internal_dispatch' && params.name === 'skills_read')).toHaveLength(0);
+    expect(f.bridge.mock.calls.filter(([method, params]) => method === 'agent_internal_dispatch' && params.name === 'skills_read')).toHaveLength(2);
   }, 30000);
 
   it('conserva las skills de biblioteca y sus lecturas al seleccionar un perfil portable', async () => {

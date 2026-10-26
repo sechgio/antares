@@ -7,7 +7,6 @@ const yaml = require('js-yaml');
 
 const MAX_FILE_BYTES = 64 * 1024;
 const MAX_SKILLS = 256;
-const RESULT_BUDGET = 5600;
 
 function readText(file, root) {
   try {
@@ -125,65 +124,4 @@ function resolvePortableProfile(registry, conversationId) {
   return profile;
 }
 
-function fitSkillList(result) {
-  while (JSON.stringify(result).length > RESULT_BUDGET) {
-    const candidates = Object.keys(result).filter((key) =>
-      (typeof result[key] === 'string' || Array.isArray(result[key])) && result[key].length);
-    if (!candidates.length) throw new Error('El resultado de skills excede 5600 caracteres');
-    const key = candidates.reduce((largest, current) =>
-      JSON.stringify(result[current]).length > JSON.stringify(result[largest]).length ? current : largest);
-    result[key] = result[key].slice(0, Math.floor(result[key].length / 2));
-    result.truncated = true;
-  }
-  return result;
-}
-
-function listProfileSkills(profile, params = {}) {
-  const { query = '', limit = 8 } = params;
-  if (typeof query !== 'string' || query.length > 200) throw new Error('La búsqueda de skills admite hasta 200 caracteres');
-  if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error('El límite debe estar entre 1 y 20');
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const matches = [...profile.skills.values()].filter((skill) =>
-    words.every((word) => `${skill.name} ${skill.description}`.toLowerCase().includes(word)));
-  return fitSkillList({
-    skills: matches.slice(0, limit).map(({ content, ...metadata }) => ({ ...metadata, description: metadata.description.slice(0, 240) })),
-    total: matches.length, truncated: matches.length > limit,
-  });
-}
-
-function mergeProfileSkills(profile, params, text) {
-  let base;
-  try { base = JSON.parse(text); } catch { return text; }
-  if (!base || !Array.isArray(base.skills) || !Number.isInteger(base.total)) return text;
-  const local = listProfileSkills(profile, params);
-  const skills = [...local.skills, ...base.skills].slice(0, params?.limit ?? 8);
-  const total = local.total + base.total;
-  return JSON.stringify(fitSkillList({ ...base, skills, total,
-    truncated: !!(local.truncated || base.truncated || skills.length < total) }));
-}
-
-function readProfileSkill(profile, params = {}) {
-  const skill = [...profile.skills.values()].find((item) => item.id === params.skill_id);
-  if (!skill) throw new Error('Skill no encontrada en el perfil; consulta skills_list');
-  const { file_path: relative = 'SKILL.md', offset = 0 } = params;
-  if (typeof relative !== 'string' || !relative || relative.length > 240 || /[:\0]/.test(relative)
-    || path.isAbsolute(relative) || relative.replaceAll('\\', '/').split('/').includes('..')) {
-    throw new Error('El archivo debe ser una ruta relativa dentro de la skill');
-  }
-  if (!Number.isInteger(offset) || offset < 0) throw new Error('El offset debe ser un entero no negativo');
-  const directory = path.dirname(skill.location);
-  const content = relative === 'SKILL.md' ? skill.content : readText(path.join(directory, relative), directory);
-  let end = Math.min(content.length, offset + 4000);
-  const result = {
-    id: skill.id, name: skill.name, file_path: relative, content: content.slice(offset, end),
-    offset, total_chars: content.length, next_offset: end < content.length ? end : null,
-  };
-  while (JSON.stringify(result).length > RESULT_BUDGET) {
-    end = offset + Math.floor((end - offset) * 3 / 4);
-    result.content = content.slice(offset, end);
-    result.next_offset = end < content.length ? end : null;
-  }
-  return result;
-}
-
-module.exports = { loadAgentProfile, resolvePortableProfile, listProfileSkills, mergeProfileSkills, readProfileSkill };
+module.exports = { loadAgentProfile, resolvePortableProfile };

@@ -10,11 +10,10 @@ import uuid
 from collections.abc import Callable
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
-from typing import cast
 
 from backend.core.agent import agent_tools, drafts, resource_grants, subagent
 from backend.core.agent import undo as undo_journal
-from backend.core.agent.agent_chat import chat, gated_methods, readonly_methods, replay_safe, scrub_secrets, tool_specs
+from backend.core.agent.agent_chat import replay_safe, scrub_secrets, tool_specs
 from backend.core.agent.cancel import RunCancelled, _CancelEvent, await_or_cancel
 from backend.core.integrations import mcp_servers
 from backend.core.integrations.types import JsonObject
@@ -79,7 +78,6 @@ def _validate_action_paths(
         if not isinstance(value, str) or drafts_root is None or drafts.inside(drafts_root, value) is None:
             raise ValueError("El destino del paso no está autorizado; el agente escribe en sus borradores")
 
-_MAX_TOOL_STEPS = 12
 _MAX_TOOL_RESULT_CHARS = 6_000
 _MAX_RECEIPT_CHARS = 2 * 1024 * 1024
 _MAX_SESSIONS = 50
@@ -766,216 +764,7 @@ class AgentRunner:
     ) -> None:
         self._store = store
         self._handler_getter = handler_getter
-        self._running: dict[str, threading.Thread] = {}
-        self._decisions: dict[str, list[JsonObject]] = {}
-        self._cancel: dict[str, _CancelEvent] = {}
-        self._partial: dict[str, str] = {}
-        self._partial_saved_at: dict[str, float] = {}
-        self._lock = threading.RLock()
         self._store.mark_interrupted_turns()
-
-    def is_running(self, session_id: str) -> bool:
-        with self._lock:
-            thread = self._running.get(session_id)
-            return bool(thread and thread.is_alive())
-
-    def _spawn(self, session_id: str, name: str) -> None:
-        if self.is_running(session_id):
-            return
-        token = self._cancel.get(session_id)
-        if token is None or token.cancelled:
-            self._cancel[session_id] = _CancelEvent()
-        thread = threading.Thread(target=self._turn_main, args=(session_id,), name=name, daemon=True)
-        self._running[session_id] = thread
-        thread.start()
-
-    def cancel_turn(self, session_id: str) -> bool:
-        with self._lock:
-            if not self.is_running(session_id) and self._store.pending_approvals(session_id):
-                self._spawn(session_id, f"agent-cancel-{session_id}")
-            token = self._cancel.get(session_id)
-            if token is None or not self.is_running(session_id):
-                return False
-            token.cancel()
-            return True
-
-    def _set_partial(self, session_id: str, text: str, token: _CancelEvent | None = None) -> None:
-        with self._lock:
-            if token is not None and (token.cancelled or self._cancel.get(session_id) is not token):
-                return
-            self._partial[session_id] = text
-            now = time.monotonic()
-            if now - self._partial_saved_at.get(session_id, float("-inf")) >= 1:
-                self._store.save_partial(session_id, text)
-                self._partial_saved_at[session_id] = now
-
-    def partial_text(self, session_id: str) -> str | None:
-        with self._lock:
-            return self._partial.get(session_id) or None
-
-    def start_turn(self, session_id: str, content: str) -> None:
-        with self._lock:
-            if self.is_running(session_id):
-                raise ValueError("Ya hay un turno en curso en esta conversación")
-            if self._store.pending_approvals(session_id):
-                raise ValueError("Resuelve primero las aprobaciones pendientes de esta conversación")
-            self._partial.pop(session_id, None)
-            self._partial_saved_at.pop(session_id, None)
-            self._store.append_message(session_id, {"role": "user", "content": content})
-            self._spawn(session_id, f"agent-turn-{session_id}")
-
-    def decide(self, approval_id: str, approved: bool, source: str = "manual") -> JsonObject:
-        with self._lock:
-            prior = self._store.get_approval(approval_id)
-            token = self._cancel.get(str(prior["session_id"])) if prior else None
-            if prior is not None and token is not None and token.cancelled and self.is_running(str(prior["session_id"])):
-                raise ValueError("El turno se está deteniendo; espera antes de decidir")
-            approval = self._store.decide_approval(approval_id, approved, source)
-            if approval is None:
-                prior = self._store.get_approval(approval_id)
-                if prior and prior.get("status") == "expired":
-                    raise ValueError("La aprobación expiró; vuelve a pedírselo al agente")
-                raise ValueError("Aprobación inexistente o ya decidida")
-            session_id = str(approval["session_id"])
-            self._decisions.setdefault(session_id, []).append(approval)
-            self._spawn(session_id, f"agent-resume-{session_id}")
-            return approval
-
-    def _append_tool_result(self, session_id: str, call_id: str, name: str, result: str) -> None:
-        self._store.append_message(
-            session_id,
-            {"role": "tool_result", "tool_use_id": call_id, "name": name, "content": result},
-        )
-
-    def _dispatch_approved(self, approval: JsonObject, method: str, params: JsonObject) -> str:
-        session_id = str(approval["session_id"])
-        call_id = str(approval["call_id"])
-        outcome, record = self._store.dispatch_claim(
-            session_id, call_id, method, params, str(approval["id"]), channel=approval.get("channel"),
-        )
-        if outcome == "existing":
-            return str(record.get("result") or record.get("summary") or "")
-        if outcome in {"rejected", "conflict"}:
-            return json.dumps({"error": str(record.get("error") or "No se pudo reservar la operación")}, ensure_ascii=False)
-        op_id = str(record["op_id"])
-        raw_resources = approval.get("resources")
-        resources = (
-            [cast(JsonObject, item) for item in raw_resources if isinstance(item, dict)]
-            if isinstance(raw_resources, list) else []
-        )
-        try:
-            self._store.undo_prepare(session_id, call_id, op_id, method, resources)
-        except Exception:
-            logger.warning("No se pudo preparar el Undo de %s", method, exc_info=True)
-        try:
-            result = self._execute_call(session_id, {"id": call_id, "name": method, "params": params})
-            status = "failed" if result_failed(result) else "succeeded"
-        except Exception as err:
-            result = json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
-            status = "failed"
-        finally:
-            try:
-                self._store.undo_finish(session_id, call_id, op_id)
-            except Exception:
-                logger.warning("No se pudo cerrar el Undo de %s", method, exc_info=True)
-        self._store.dispatch_finish(session_id, call_id, op_id, status, result)
-        return result
-
-    def _apply_decision(self, approval: JsonObject) -> None:
-        session_id = str(approval["session_id"])
-        call_id = str(approval["call_id"])
-        if approval["status"] == "approved":
-            method = str(approval["method"])
-            invocable = (
-                mcp_servers.parse_agent_tool(method) is not None
-                or method in gated_methods()
-                or method in readonly_methods()
-            )
-            if invocable:
-                params = approval.get("params") or {}
-                result = self._dispatch_approved(approval, method, params if isinstance(params, dict) else {})
-            else:
-                result = json.dumps(
-                    {"error": f"Herramienta no disponible para el agente: {method}"},
-                    ensure_ascii=False,
-                )
-                self._store.update_tool_call(session_id, call_id, "denied", result)
-        else:
-            result = json.dumps({"error": "El usuario rechazó esta acción"}, ensure_ascii=False)
-            self._store.update_tool_call(session_id, call_id, "denied", result)
-        self._append_tool_result(session_id, call_id, approval["method"], result)
-
-    def _turn_main(self, session_id: str) -> None:
-        try:
-            while True:
-                with self._lock:
-                    token = self._cancel.get(session_id)
-                    if token is not None and token.cancelled:
-                        raise RunCancelled()
-                    decisions = self._decisions.get(session_id)
-                    approval = decisions.pop(0) if decisions else None
-                    if not decisions:
-                        self._decisions.pop(session_id, None)
-                if approval is not None:
-                    self._apply_decision(approval)
-                    continue
-                self._run_loop(session_id)
-                with self._lock:
-                    if not self._decisions.get(session_id):
-                        return
-        except RunCancelled:
-            with self._lock:
-                self._decisions.pop(session_id, None)
-            for message in self._store.messages(session_id):
-                for call in message.get("tool_calls") or []:
-                    if call.get("status") in ("queued", "running", "pending"):
-                        self._store.update_tool_call(session_id, call["id"], "interrupted", _INTERRUPTED_RESULT)
-            for approval in self._store.pending_approvals(session_id):
-                self._store.decide_approval(approval["id"], False)
-            self._store.touch_session(session_id)
-            partial = self.partial_text(session_id)
-            self._store.append_message(
-                session_id,
-                {"role": "assistant", "content": (f"{partial}\n\n" if partial else "") + (
-                    "⏹ Turno detenido por el usuario. Una herramienta ya iniciada puede seguir ejecutándose; "
-                    "comprueba su resultado antes de repetirla."
-                )},
-            )
-        except Exception as err:
-            logger.exception("agent turn failed")
-            partial = self.partial_text(session_id)
-            self._store.append_message(
-                session_id,
-                {"role": "assistant", "content": (f"{partial}\n\n" if partial else "")
-                 + f"⚠ Error del agente: {str(err)[:300]}"},
-            )
-            self._store.touch_session(session_id, error=str(err)[:300])
-        finally:
-            with self._lock:
-                self._partial.pop(session_id, None)
-                self._partial_saved_at.pop(session_id, None)
-                if self._running.get(session_id) is threading.current_thread():
-                    self._running.pop(session_id, None)
-                if self._decisions.get(session_id):
-                    self._spawn(session_id, f"agent-resume-{session_id}")
-
-    def _execute_call(self, session_id: str, call: JsonObject) -> str:
-        token = self._cancel.get(session_id)
-        if token is not None and token.cancelled:
-            raise RunCancelled()
-        self._store.update_tool_call(session_id, str(call["id"]), "running", "")
-        try:
-            result = await_or_cancel(lambda: self._execute(call, token), token)
-        except RunCancelled:
-            self._store.update_tool_call(session_id, str(call["id"]), "interrupted", _INTERRUPTED_RESULT)
-            raise
-        try:
-            data = json.loads(result)
-        except json.JSONDecodeError:
-            data = None
-        failed = isinstance(data, dict) and ("error" in data or data.get("isError") is True)
-        self._store.update_tool_call(session_id, str(call["id"]), "failed" if failed else "done", result)
-        return str(result)
 
     def _subagent_approval(
         self,
@@ -1140,7 +929,8 @@ class AgentRunner:
                     raise ValueError("Esta herramienta requiere una conversación")
                 raw_params = call.get("params")
                 tool_args: JsonObject = dict(raw_params) if isinstance(raw_params, dict) else {}
-                result = agent_tools.run(name, tool_args, self._store, str(session_id), token, profile_id=call.get("profile_id"))
+                result = agent_tools.run(name, tool_args, self._store, str(session_id), token, profile_id=call.get("profile_id"),
+                                         profile_skills=call.get("profile_skills"))
                 return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str)
             except RunCancelled:
                 raise
@@ -1198,75 +988,6 @@ class AgentRunner:
             raise
         except Exception as err:
             return json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
-
-    def _run_loop(self, session_id: str) -> None:
-        session = self._store.get_session(session_id)
-        if session is None:
-            raise ValueError("Sesión de agente no encontrada")
-        token = self._cancel.get(session_id)
-        gated = set(gated_methods())
-        for _ in range(_MAX_TOOL_STEPS):
-            if token is not None and token.cancelled:
-                raise RunCancelled()
-            with self._lock:
-                if self._store.pending_approvals(session_id) or self._decisions.get(session_id):
-                    return
-            reply = await_or_cancel(
-                lambda: chat(str(session["provider"]), str(session["model"]), self._store.messages(session_id),
-                             on_delta=lambda chunk: self._set_partial(session_id, chunk, token)),
-                token,
-            )
-            if token is not None and token.cancelled:
-                raise RunCancelled()
-            with self._lock:
-                self._partial.pop(session_id, None)
-                self._partial_saved_at.pop(session_id, None)
-            calls = reply.get("calls") or []
-            text = str(reply.get("text") or "")
-            if calls:
-                for call in calls:
-                    name = str(call.get("name") or "")
-                    is_mcp = mcp_servers.parse_agent_tool(name) is not None
-                    call["gated"] = is_mcp or name in gated
-                    call["allowed"] = call["gated"] or name in readonly_methods()
-                    call["status"] = "queued"
-                    call["result"] = None
-                self._store.append_message(
-                    session_id,
-                    {"role": "assistant", "content": text, "tool_calls": calls},
-                )
-            elif text:
-                self._store.append_message(session_id, {"role": "assistant", "content": text})
-                return
-            else:
-                return
-
-            for call in calls:
-                if token is not None and token.cancelled:
-                    raise RunCancelled()
-                call_id = str(call["id"])
-                if not call.get("allowed"):
-                    result = json.dumps(
-                        {"error": f"Herramienta no disponible para el agente: {call.get('name')}"},
-                        ensure_ascii=False,
-                    )
-                    self._store.update_tool_call(session_id, call_id, "denied", result)
-                    self._append_tool_result(session_id, call_id, call["name"], result)
-                    continue
-                if call.get("gated"):
-                    self._store.create_approval(session_id, call)
-                    self._store.update_tool_call(session_id, call_id, "pending", "")
-                    continue
-                result = self._execute_call(session_id, call)
-                self._append_tool_result(session_id, call_id, call["name"], result)
-        self._store.append_message(
-            session_id,
-            {
-                "role": "assistant",
-                "content": "Alcancé el límite de pasos de herramienta para este turno.",
-            },
-        )
-
 
 _store_lock = threading.RLock()
 _store_singleton: AgentStore | None = None

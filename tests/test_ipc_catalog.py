@@ -30,7 +30,7 @@ def test_approval_context_is_declared_only_on_private_agent_calls():
     methods = _catalog()["methods"]
     for method in ("agent_internal_approval_ensure", "agent_internal_dispatch"):
         assert methods[method]["internal"] is True
-        assert methods[method]["inputSchema"]["properties"]["context"] == {"type": "object"}
+        assert methods[method]["inputSchema"]["properties"]["context"]["type"] == "object"
 
 
 def test_private_memory_context_accepts_legacy_calls_and_checks_profile_scope():

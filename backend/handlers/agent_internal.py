@@ -519,6 +519,7 @@ def _dispatch(params: JsonObject) -> JsonObject:
                 result = _agent.get_agent_runner()._execute(
                     {"id": call_id, "name": name, "params": call_params, "session_id": session_id, "op_id": op_id,
                      "approved_context": intent["context"], "profile_id": intent["context"].get("profile_id"),
+                     "profile_skills": intent["context"].get("profile_skills"),
                      **({"subagent": subagent_profile} if subagent_profile else {})},
                     token,
                 )
