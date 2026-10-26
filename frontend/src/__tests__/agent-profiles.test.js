@@ -40,7 +40,7 @@ function profile(slug = 'reviewer', metadata = {}) {
 }
 
 beforeEach(() => {
-  home = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-profiles-'));
+  home = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'antares-profiles-')));
   vi.stubEnv('AGENTS_HOME', home);
   profile();
 });
