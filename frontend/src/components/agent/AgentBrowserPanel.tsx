@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Globe, Hand, Loader2, RotateCw, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Globe, Hand, Loader2, PenLine, RotateCw, X } from 'lucide-react';
 import { agentApi, type AgentBrowserState } from '../../api/agentApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
+import BrowserAnnotator from './BrowserAnnotator';
 
 const EMPTY: AgentBrowserState = {
   open: false, url: '', title: '', loading: false, can_go_back: false, can_go_forward: false, docked: false, user_control: false,
@@ -12,7 +13,10 @@ const EMPTY: AgentBrowserState = {
 
 const OVERLAY = '[role="menu"], [role="dialog"], [role="listbox"], [role="alertdialog"]';
 
-export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) {
+export default function AgentBrowserPanel({ onClose, onAnnotate }: {
+  onClose: () => void;
+  onAnnotate?: (file: File, url: string) => void;
+}) {
   const { addToast } = useToast();
   const [state, setState] = useState<AgentBrowserState>(EMPTY);
   const [address, setAddress] = useState('');
@@ -23,6 +27,10 @@ export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) 
   const [now, setNow] = useState(() => Date.now());
   const panelRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [shot, setShot] = useState<{ png_base64: string; width: number; height: number; url: string } | null>(null);
+  // Mientras se anota, la vista nativa se retira para que la captura y la barra queden visibles.
+  const annotatingRef = useRef(false);
+  const reportRef = useRef<() => void>(() => {});
   const minWidth = layout.available ? Math.min(340, layout.available / 2) : 340;
   const maxWidth = layout.available ? Math.max(minWidth, layout.available - 320) : 760;
   const clampWidth = (value: number) => Math.min(maxWidth, Math.max(minWidth, value));
@@ -71,7 +79,7 @@ export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) 
           const box = overlay.getBoundingClientRect();
           return box.width > 0 && box.height > 0 && box.left < rect.right && box.right > rect.left && box.top < rect.bottom && box.bottom > rect.top;
         });
-        const bounds = covered ? null : {
+        const bounds = covered || annotatingRef.current ? null : {
           x: rect.left + element.clientLeft,
           y: rect.top + element.clientTop,
           width: element.clientWidth || rect.width,
@@ -84,6 +92,7 @@ export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) 
       });
     };
     let sent = '';
+    reportRef.current = report;
     report();
     const observer = new ResizeObserver(report);
     observer.observe(element);
@@ -106,6 +115,23 @@ export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) 
       setState(await agentApi.agentBrowser(action, extra));
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo usar el navegador'), type: 'error' });
+    }
+  };
+
+  const annotate = async (open: boolean) => {
+    if (!open) {
+      annotatingRef.current = false;
+      setShot(null);
+      reportRef.current();
+      return;
+    }
+    try {
+      const capture = await agentApi.agentBrowserCapture();
+      annotatingRef.current = true;
+      setShot(capture);
+      reportRef.current();
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo capturar la página'), type: 'error' });
     }
   };
 
@@ -195,6 +221,19 @@ export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) 
             {state.user_control ? 'Devolver' : 'Tomar el control'}
           </button>
         )}
+        {onAnnotate && (
+          <button
+            type="button"
+            className={`${iconButton} ${shot ? 'bg-[var(--bg-input)] text-[var(--text-primary)]' : ''}`}
+            aria-label="Anotar la página"
+            aria-pressed={!!shot}
+            title="Dibuja sobre la página y envíala al chat"
+            disabled={!state.open && !shot}
+            onClick={() => void annotate(!shot)}
+          >
+            <PenLine size={14} />
+          </button>
+        )}
         <button type="button" className={iconButton} aria-label="Cerrar el navegador" onClick={onClose}>
           <X size={14} />
         </button>
@@ -252,6 +291,15 @@ export default function AgentBrowserPanel({ onClose }: { onClose: () => void }) 
                 : 'También puedes escribir una dirección arriba, por ejemplo para iniciar sesión en un sitio antes de pedirle algo.'}
             </p>
           </div>
+        )}
+        {shot && onAnnotate && (
+          <BrowserAnnotator
+            image={shot.png_base64}
+            width={shot.width}
+            height={shot.height}
+            onClose={() => void annotate(false)}
+            onSubmit={(file) => { onAnnotate(file, shot.url); void annotate(false); }}
+          />
         )}
       </div>
     </aside>

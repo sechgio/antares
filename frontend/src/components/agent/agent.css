@@ -82,9 +82,19 @@
 .agent-thinking-dots span:nth-child(3) { animation-delay: 320ms; }
 .agent-subagent-body[inert] { visibility: hidden; }
 .agent-workspace [aria-label="Mensajes"] > div:empty { display: none; }
-.agent-workspace [aria-label="Mensajes"] > div:has(> [data-tools-only]) + div:has(> [data-tools-only]:first-child),
-.agent-workspace [aria-label="Mensajes"] > div:has(> [data-tools-only]) + div:empty + div:has(> [data-tools-only]:first-child),
-.agent-workspace [aria-label="Mensajes"] > div:has(> [data-tools-only]) + div:empty + div:empty + div:has(> [data-tools-only]:first-child) { margin-top: 2px; }
+.agent-activity-icons > span + span { margin-left: -5px; box-shadow: 0 0 0 2px var(--agent-panel, var(--bg-surface)); }
+.agent-activity-body { animation: agentActivityIn 160ms var(--ease-out) both; }
+.agent-activity-note :is(p, ul, ol) { margin-block: 0; }
+.agent-artifact-icon {
+  background: color-mix(in srgb, var(--accent-red) 14%, transparent);
+  color: var(--accent-red);
+  gap: 1px;
+}
+.agent-artifact { transition: border-color 120ms var(--ease-out); }
+.agent-artifact:hover { border-color: var(--border-medium); }
+@keyframes agentActivityIn {
+  from { opacity: 0; transform: translateY(-2px); }
+}
 
 .agent-workspace .agent-suggestion {
   display: inline-flex;
@@ -226,6 +236,7 @@
   .agent-diff-line,
   .agent-diff[data-applied] .agent-diff-line[data-kind],
   .agent-diff-stats[data-applied] > span,
+  .agent-activity-body,
   .agent-model-menu,
   .agent-workspace .animate-spin,
   .agent-model-menu .animate-spin { animation: none; }

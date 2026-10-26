@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { agentApi, type AgentArtifact } from '../../api/agentApi';
-import ArtifactCard from './ArtifactCard';
+import ArtifactCard, { ArtifactList } from './ArtifactCard';
 import QuestionCard from './QuestionCard';
 
 const { addToast } = vi.hoisted(() => ({ addToast: vi.fn() }));
@@ -52,6 +52,16 @@ it('un guardado fallido se reintenta con la misma identidad', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
   await waitFor(() => expect(action).toHaveBeenCalledTimes(2));
   expect(action.mock.calls[1][0].request_id).toBe(action.mock.calls[0][0].request_id);
+});
+
+it('muestra los resultados recientes y pliega los anteriores en lugar de apilarlos', () => {
+  const items = ['1', '2', '3', '4'].map((n) => ({ ...artifact, id: `a${n}`,
+    files: [{ ...artifact.files[0], name: `Informe-${n}.pdf`, sha256: n }] }));
+  render(<ArtifactList artifacts={items} sessionId="s1" onRefresh={vi.fn()} />);
+  expect(screen.queryByRole('region', { name: 'Documento Informe-1.pdf' })).not.toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Documento Informe-4.pdf' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Mostrar 2 resultados anteriores' }));
+  expect(screen.getAllByRole('region', { name: /Documento Informe/ })).toHaveLength(4);
 });
 
 it('las respuestas se envían a la conversación y pregunta originales', async () => {
