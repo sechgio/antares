@@ -1660,7 +1660,13 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         </div>
       </main>
 
-      {browserOpen && <AgentBrowserPanel onClose={() => setBrowserOpen(false)} />}
+      {browserOpen && <AgentBrowserPanel
+        onClose={() => setBrowserOpen(false)}
+        onAnnotate={sessionId ? (file, url) => {
+          void attachFiles([file]);
+          if (!draft.trim()) { draftVersionRef.current += 1; setDraft(`Mira mi anotación sobre ${url}: `); }
+        } : undefined}
+      />}
       {auditOpen && session && (
         <AgentAuditPanel sessions={sessions} sessionId={session.id} onClose={() => setAuditOpen(false)} />
       )}
