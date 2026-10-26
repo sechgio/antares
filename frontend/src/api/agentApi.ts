@@ -357,10 +357,11 @@ export const agentApi = {
   agentContextRemoveFile: (session_id: string, path: string) =>
     _invoke<{ removed: number }>('agent_context_remove_file', { session_id, path }),
 
-  agentMessageSend: (session_id: string, content: string, request_id: string, attachments: string[] = [], correction = false) =>
+  agentMessageSend: (session_id: string, content: string, request_id: string, attachments: string[] = [], correction = false, skill_id?: string) =>
     _invoke<{ accepted: boolean; duplicate?: boolean; files?: AgentMessageFiles; mentions?: AgentMessageMentions }>(
       'agent_message_send',
-      { session_id, content, request_id, ...(attachments.length ? { attachments } : {}), ...(correction ? { correction: true } : {}) },
+      { session_id, content, request_id, ...(attachments.length ? { attachments } : {}), ...(correction ? { correction: true } : {}),
+        ...(skill_id ? { skill_id } : {}) },
     ),
 
   /** Sin `dropped` abre el diálogo; con él adjunta rutas soltadas o bytes pegados (base64). */

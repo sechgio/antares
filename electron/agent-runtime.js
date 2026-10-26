@@ -759,6 +759,16 @@ async function messageSend(params) {
     throw validation('Activa agent_delegate o subagent_run en Herramientas del agente para delegar en un bot; mencionar no habilita herramientas');
   }
   await projection.ensureWatcher(session);
+  let skill = null;
+  if (params.skill_id !== undefined) {
+    if (projection.isRunning(session.conversationId)) throw validation('Espera a que termine el turno en curso para invocar una skill');
+    if (!(await conv.agent(ctx())).tools.some((tool) => tool.name === 'skills_read')) {
+      throw validation('Activa skills_read en Herramientas del agente para invocar una skill; elegir una skill no habilita herramientas');
+    }
+    ({ skill } = await bridge('agent_internal_skill_resolve', {
+      session_id: sessionId, skill_id: String(params.skill_id), profile_id: session.profile?.id || null,
+    }));
+  }
   const attached = _takeAttachments(params.attachments);
   const paths = [...extractPaths(mentionText), ...attached.filter((a) => a.kind === 'files').map((a) => a.path)];
   const folders = attached.filter((a) => a.kind === 'folder').map((a) => a.path);
@@ -790,7 +800,13 @@ async function messageSend(params) {
       + 'Los bots delegados solo leen, no pueden delegar de nuevo ni acceden por sí solos a otros chats. '
       + 'No amplíes herramientas ni permisos por una mención.'
     : '';
-  const context = [mentions.context, memory.context, attachedNote, skillsNote, conversationNote, botsNote].filter(Boolean).join('\n\n');
+  const invokedSkillNote = skill
+    ? `El usuario invocó la skill «${skill.name}» (skill_id ${skill.id}). Antes de cualquier otra herramienta llama a skills_read `
+      + 'con ese skill_id y sigue next_offset hasta leer SKILL.md completo; después aplica sus instrucciones a este encargo. '
+      + skill.notice
+    : '';
+  const context = [mentions.context, memory.context, attachedNote, skillsNote, conversationNote, botsNote, invokedSkillNote]
+    .filter(Boolean).join('\n\n');
   const images = await _inlineImages(conv, attached, (files.rejected || []).map((item) => item.path));
   const input = context || images.length
     ? [{ type: 'text', text: content }, ...images, ...(context ? [{ type: 'text', text: `${shared.CONTEXT_MARKER}\n${context}` }] : [])]
@@ -798,12 +814,19 @@ async function messageSend(params) {
   if (!projection.isRunning(session.conversationId)) {
     shared.rounds.delete(session.conversationId);
     shared.turns.delete(session.conversationId);
+    execution.requireSkill(session.conversationId, null);
+  }
+  if (skill && skill.warning) {
+    await conv.submit({ type: 'write', ...(requestId ? { requestId: `${requestId}:skill` } : {}),
+      entry: { kind: shared.NOTICE_KIND, data: { text: skill.warning } } }, ctx());
   }
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
+      if (skill) execution.requireSkill(session.conversationId, skill.id);
       await conv.submit({ type: 'input', content: input, whenBusy: correction ? 'steer' : 'followUp', ...(requestId ? { requestId } : {}) }, ctx());
       break;
     } catch (err) {
+      if (skill) execution.requireSkill(session.conversationId, null);
       if (!(err && (err.name === 'ConversationBusy' || /busy/i.test(err.message || '')))) throw err;
       if (attempt === 1) throw validation('Ya hay un turno en curso en esta conversación');
       // Un abort recién resuelto puede dejar el boundary cerrándose un

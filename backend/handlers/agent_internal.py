@@ -737,6 +737,21 @@ def _skills_list(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+@validate_params("session_id", "skill_id")
+def _skill_resolve(params: JsonObject) -> JsonObject:
+    session_id = str(params["session_id"])
+    profile_id = params.get("profile_id")
+    if profile_id is not None and (not isinstance(profile_id, str) or not profile_id or len(profile_id) > 120):
+        raise ValidationError("El perfil del agente no es válido")
+    store = _store()
+    try:
+        return {"skill": skills.resolve(params["skill_id"], store.grants_for(session_id), store.drafts_dir(session_id),
+                                        store.base_dir / "skills", agent_id=profile_id)}
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
 @validate_params("id", "action")
 def _memory_update(params: JsonObject) -> JsonObject:
     try:
@@ -836,6 +851,7 @@ HANDLERS = {
     "agent_internal_grant_remove": _grant_remove,
     "agent_memory_list": _memory_list,
     "agent_skills_list": _skills_list,
+    "agent_internal_skill_resolve": _skill_resolve,
     "agent_memory_update": _memory_update,
     "agent_memory_delete": _memory_delete,
 }
