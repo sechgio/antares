@@ -50,6 +50,7 @@ async function main() {
     if (method === 'agent_internal_mentions') return { modules: [], unknown: [], ambiguous: [], context: '' };
     if (method === 'agent_internal_artifacts') return { artifacts: [], questions: [], context: {} };
     if (method === 'agent_internal_activity') return { attention: {} };
+    if (method === 'agent_internal_profile_usage') return { tokens: 0 };
     if (method === 'agent_internal_grants_add') { granted.push(params); return { granted: [], rejected: [] }; }
     throw new Error(`Puente inesperado: ${method}`);
   };

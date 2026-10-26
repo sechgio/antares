@@ -170,6 +170,12 @@ def _provider(params: JsonObject) -> JsonObject:
     }
 
 
+@with_locale
+@validate_params("profile_id", "day")
+def _profile_usage(params: JsonObject) -> JsonObject:
+    return {"tokens": _store().profile_usage(str(params["profile_id"]), str(params["day"]))}
+
+
 def _intent(session_id: str, method: str, params: JsonObject, context: JsonObject | None = None) -> JsonObject:
     try:
         artifact_context: JsonObject = {}
@@ -805,6 +811,7 @@ def _dispatch_cancel(params: JsonObject) -> JsonObject:
 HANDLERS = {
     "agent_internal_tools": _tools,
     "agent_internal_provider": _provider,
+    "agent_internal_profile_usage": _profile_usage,
     "agent_internal_approval_ensure": _approval_ensure,
     "agent_internal_approval_status": _approval_status,
     "agent_internal_approval_decide": _approval_decide,

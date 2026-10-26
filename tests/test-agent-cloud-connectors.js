@@ -108,10 +108,16 @@ async function main() {
     assert(new URL(calls[0].url).searchParams.get('$filter')?.includes('receivedDateTime ge')
       && new URL(calls[0].url).searchParams.get('$filter')?.includes("'banco@example.com'"),
       'la búsqueda filtra por remitente y fecha en Graph');
+    assert(new URL(calls[0].url).searchParams.get('$filter')?.startsWith('receivedDateTime ge '),
+      'Graph recibe primero la propiedad ordenada y después el remitente');
     const outlookMail = await outlook.run('outlook_get', { id: 'AAMkAD01' });
     assert(outlookMail.body === 'Cuerpo del correo' && outlookMail.has_attachments === true,
       'el cuerpo HTML se convierte a texto y el adjunto solo se anuncia');
     assert(!JSON.stringify([foundOutlook, outlookMail]).includes(TOKEN), 'los correos de Microsoft no contienen el token');
+    calls = setup([[has('/me/messages?'), () => json({ value: [outlookMessage] })]]);
+    await outlook.run('outlook_search', { from: 'banco@example.com' });
+    assert(new URL(calls[0].url).searchParams.get('$filter')?.startsWith('receivedDateTime ge '),
+      'filtrar solo por remitente conserva el orden cronológico con un filtro válido en Graph');
 
     setup([], { ...SCOPES, github: 'read:user' });
     assert(/repo|public_repo/.test((await rejects(github.context('github_run_get')))?.message || ''),

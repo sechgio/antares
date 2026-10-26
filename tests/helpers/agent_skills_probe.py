@@ -27,4 +27,4 @@ while True:
     if result["next_offset"] is None:
         break
     options["params"]["offset"] = result["next_offset"]
-print(json.dumps(pages if options["name"] == "skills_pages" else result, ensure_ascii=False))
+print(json.dumps(pages if options["name"] == "skills_pages" else result))

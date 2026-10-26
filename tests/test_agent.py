@@ -109,6 +109,17 @@ def test_provider_receives_native_and_mcp_argument_contracts(monkeypatch, style)
     assert "connections_token_refresh" not in wire
 
 
+@pytest.mark.parametrize("style", ["openai", "anthropic"])
+def test_chat_conserva_tokens_sin_contar_cache(monkeypatch, style):
+    response = ({"choices": [{"message": {"content": "ok"}}],
+                 "usage": {"prompt_tokens": 20, "completion_tokens": 3, "prompt_tokens_details": {"cached_tokens": 12}}}
+                if style == "openai" else {"content": [], "usage": {"input_tokens": 8, "output_tokens": 3,
+                                                                 "cache_read_input_tokens": 12}})
+    monkeypatch.setattr(agent_chat, "_post_json", lambda *args: response)
+    chat = agent_chat._chat_openai if style == "openai" else agent_chat._chat_anthropic
+    assert chat("https://example.com", {}, "model", [], False, None)["usage"] == {"input": 8, "output": 3}
+
+
 def test_approval_flow(tmp_path):
     store = _store(tmp_path)
     s = store.create_session("ollama", "m", "t")

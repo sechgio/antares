@@ -9,6 +9,7 @@ import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import TimeoutError as FutureTimeoutError
+from datetime import date
 from pathlib import Path
 
 from backend.core.agent import agent_tools, drafts, resource_grants, subagent
@@ -476,6 +477,13 @@ class AgentStore:
                     return
             raise ValueError("La operación de impresión no está reservada")
 
+    def profile_usage(self, profile_id: str, day: str) -> int:
+        with self._lock:
+            return sum(int((usage.get("days") or {}).get(day) or 0)
+                       for record in self._dispatches.values()
+                       if isinstance(usage := record.get("subagent_usage"), dict)
+                       and usage.get("profile_id") == profile_id)
+
     def add_question(self, session_id: str, op_id: str, params: JsonObject) -> JsonObject:
         from backend.core.agent.questions import validate
 
@@ -823,6 +831,19 @@ class AgentRunner:
             return json.dumps({"error": str(err)[:300]}, ensure_ascii=False)
         specs = tool_specs()
         results: list[JsonObject] = []
+        usage: JsonObject = {"input": 0, "output": 0}
+        usage_days: dict[str, int] = {}
+
+        def record_usage(current: JsonObject) -> None:
+            for key in usage:
+                usage[key] += int(current.get(key) or 0)
+            day = date.today().isoformat()
+            usage_days[day] = usage_days.get(day, 0) + sum(int(current.get(key) or 0) for key in usage)
+            if call.get("op_id"):
+                self._store.dispatch_note(session_id, str(call["op_id"]), {
+                    "subagent_usage": {"profile_id": profile.get("id"), "days": dict(usage_days)},
+                })
+
         for task in tasks:
             allowed = set(
                 subagent.allowed_tool_names(
@@ -850,7 +871,8 @@ class AgentRunner:
                         return rejected
                 return self._execute(
                     {"id": f"sub-{uuid.uuid4().hex[:12]}", "name": name, "params": args,
-                     "session_id": session_id, "profile_id": profile.get("id")}, token,
+                     "session_id": session_id, "profile_id": profile.get("id"),
+                     "memory_scope": profile.get("memory_scope")}, token,
                 )
 
             try:
@@ -865,13 +887,18 @@ class AgentRunner:
                         role=str(task["role"]),
                         output_schema=task.get("output_schema"),
                         cancelled=(lambda: token.cancelled) if token is not None else None,
+                        remaining_tokens=(max(0, int(profile["remaining_tokens"]) - sum(usage.values()))
+                                          if profile.get("remaining_tokens") is not None else None),
+                        on_usage=record_usage,
                     )
                 )
             except RunCancelled:
                 raise
             except Exception as err:
-                return json.dumps({"error": str(err)[:300]}, ensure_ascii=False)
+                return json.dumps({"error": str(err)[:300], **({"usage": usage} if any(usage.values()) else {})}, ensure_ascii=False)
         receipt = results[0] if params.get("tasks") is None else subagent.group_receipt(profile, results)
+        if any(usage.values()):
+            receipt["usage"] = usage
         return json.dumps(scrub_secrets(receipt), ensure_ascii=False)
 
     def _execute(self, call: JsonObject, token: _CancelEvent | None = None) -> str:
@@ -929,9 +956,11 @@ class AgentRunner:
                     raise ValueError("Esta herramienta requiere una conversación")
                 raw_params = call.get("params")
                 tool_args: JsonObject = dict(raw_params) if isinstance(raw_params, dict) else {}
-                result = agent_tools.run(name, tool_args, self._store, str(session_id), token, profile_id=call.get("profile_id"),
+                result = agent_tools.run(name, tool_args, self._store, str(session_id), token,
+                                         profile_id=call.get("profile_id"), memory_scope=call.get("memory_scope"),
                                          profile_skills=call.get("profile_skills"))
-                return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str)
+                return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str).encode(
+                    "utf-8", errors="backslashreplace").decode("utf-8")
             except RunCancelled:
                 raise
             except Exception as err:

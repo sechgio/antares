@@ -64,7 +64,8 @@ EFFECT_TOOLS = frozenset(name for name, spec in SPECS.items() if spec["gated"])
 
 
 def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: Any = None,
-        *, profile_id: str | None = None, profile_skills: list[JsonObject] | None = None) -> JsonObject:
+        *, profile_id: str | None = None, memory_scope: str | None = None,
+        profile_skills: list[JsonObject] | None = None) -> JsonObject:
     root = store.drafts_dir(session_id)
     if name == "mcp_status":
         return {"servers": mcp_servers.server_statuses(refresh=args.get("refresh") is True)}
@@ -114,5 +115,5 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
     if name == "artifacts_list":
         return {"artifacts": store.artifacts_for(session_id)}
     if name in {"memory_search", "memory_remember", "procedure_learn"}:
-        return memory.run(name, args, store, session_id)
+        return memory.run(name, args, store, session_id, profile_id=profile_id, memory_scope=memory_scope)
     raise ValueError(f"Herramienta no disponible para el agente: {name}")

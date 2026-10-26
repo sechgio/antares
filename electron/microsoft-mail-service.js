@@ -68,12 +68,12 @@ async function search(params = {}) {
   const max = Math.max(1, Math.min(MAX_RESULTS, Number(params.max_results) || 20));
   const query = new URLSearchParams({ '$top': String(max), '$orderby': 'receivedDateTime desc', '$select': FIELDS });
   const filters = [];
-  if (params.from) filters.push(`from/emailAddress/address eq '${_literal(params.from)}'`);
-  if (params.since) {
-    const since = new Date(String(params.since));
+  if (params.since || params.from) {
+    const since = new Date(String(params.since || '0001-01-01T00:00:00Z'));
     if (!Number.isFinite(since.getTime())) throw new Error('La fecha since no es válida');
     filters.push(`receivedDateTime ge ${since.toISOString()}`);
   }
+  if (params.from) filters.push(`from/emailAddress/address eq '${_literal(params.from)}'`);
   if (filters.length) query.set('$filter', filters.join(' and '));
   const body = await _request(`${GRAPH}/me/messages?${query}`);
   const wanted = String(params.subject_contains || '').trim().toLowerCase();

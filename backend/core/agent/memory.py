@@ -167,11 +167,13 @@ class MemoryStore:
         return next((item for item in self._items.values() if item["kind"] == kind and item["key"] == key
                      and item.get("profile_id") == profile_id), None)
 
-    def _visible(self, item: JsonObject, session_id: str) -> bool:
-        scope = self._scopes.get(session_id)
+    def _visible(self, item: JsonObject, session_id: str, *, profile_id: str | None = None,
+                 memory_scope: str | None = None) -> bool:
+        scope = memory_scope if profile_id is not None else self._scopes.get(session_id)
         if scope == "none":
             return False
-        profile_id = self._profiles.get(session_id)
+        if profile_id is None:
+            profile_id = self._profiles.get(session_id)
         if scope == "own":
             return bool(profile_id) and item.get("profile_id") == profile_id
         return not item.get("profile_id") or item["profile_id"] == profile_id
@@ -293,12 +295,14 @@ class MemoryStore:
                 self._write()
             return removed
 
-    def search(self, query: str, limit: int = 10, *, session_id: str | None = None) -> list[JsonObject]:
+    def search(self, query: str, limit: int = 10, *, session_id: str | None = None,
+               profile_id: str | None = None, memory_scope: str | None = None) -> list[JsonObject]:
         words = _words(query)
         with self._lock:
             scored = []
             for item in self._items.values():
-                if item["status"] != "active" or (session_id is not None and not self._visible(item, session_id)):
+                if item["status"] != "active" or (session_id is not None and not self._visible(
+                        item, session_id, profile_id=profile_id, memory_scope=memory_scope)):
                     continue
                 view = self._view(item)
                 text = " ".join(str(view.get(k) or "") for k in ("title", "content", "when"))
@@ -422,10 +426,12 @@ def memory_for(store: AgentStore) -> MemoryStore:
         return _stores[key]
 
 
-def run(name: str, args: JsonObject, store: AgentStore, session_id: str) -> JsonObject:
+def run(name: str, args: JsonObject, store: AgentStore, session_id: str, *, profile_id: str | None = None,
+        memory_scope: str | None = None) -> JsonObject:
     memory = memory_for(store)
     if name == "memory_search":
-        return {"items": memory.search(str(args.get("query") or ""), session_id=session_id)}
+        return {"items": memory.search(str(args.get("query") or ""), session_id=session_id,
+                                       profile_id=profile_id, memory_scope=memory_scope)}
     if name == "memory_remember":
         return {"remembered": memory.remember(session_id, args)}
     if name == "procedure_learn":

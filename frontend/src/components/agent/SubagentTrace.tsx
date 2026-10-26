@@ -88,6 +88,7 @@ const STATUS_LABEL: Record<string, string> = {
   done: 'completado',
   empty: 'sin resultados',
   limit: 'límite de pasos',
+  token_budget: 'presupuesto agotado',
   invalid: 'contrato incumplido',
   partial: 'parcial',
   failed: 'falló',
@@ -107,7 +108,7 @@ const ROLE_LABEL: Record<string, string> = {
 function statusTone(status: string, live: boolean): string {
   if (live) return 'text-[var(--text-secondary)]';
   if (status === 'done') return 'text-[var(--accent-green)]';
-  if (status === 'limit' || status === 'interrupted' || status === 'partial') return 'text-[var(--accent-yellow)]';
+  if (status === 'limit' || status === 'token_budget' || status === 'interrupted' || status === 'partial') return 'text-[var(--accent-yellow)]';
   if (status === 'failed' || status === 'denied' || status === 'invalid' || status === 'error') return 'text-[var(--accent-red)]';
   return 'text-[var(--text-muted)]';
 }

@@ -30,7 +30,7 @@ async function main() {
   const dbPath = path.join(dir, 'agent.sqlite');
   const workspace = path.join(dir, 'workspace');
   fs.mkdirSync(workspace, { recursive: true });
-  const state = { pathChecks: 0, jobPolls: 0, githubPolls: 0 };
+  const state = { pathChecks: 0, jobPolls: 0, githubPolls: 0, githubListPolls: 0 };
   const bridge = async (method, params) => {
     if (method === 'agent_internal_tools') return { tools: [
       { name: 'canvas_list', kind: 'backend', gated: false, replay_safe: true, inputSchema: { type: 'object', properties: {} } },
@@ -179,6 +179,15 @@ async function main() {
             receivedDateTime: new Date(future).toISOString(), bodyPreview: 'Nuevo estado', hasAttachments: false, isRead: false }] }),
           { status: 200, headers: { 'content-type': 'application/json' } });
         }
+        if (url.includes('/repos/acme/app/actions/runs?')) {
+          state.githubListPolls += 1;
+          const run = (id, age) => ({ id, name: 'CI', status: 'completed', conclusion: 'success',
+            created_at: new Date(Date.now() - age).toISOString() });
+          const runs = [run(100, 30000), run(99, 60000)];
+          if (state.githubListPolls >= 3) runs.unshift(run(101, 0));
+          return new Response(JSON.stringify({ workflow_runs: runs }),
+            { status: 200, headers: { 'content-type': 'application/json' } });
+        }
         if (url.includes('api.github.com/actions/runs/77') || url.includes('/actions/runs/77')) {
           state.githubPolls += 1;
           const completed = state.githubPolls > 1;
@@ -235,6 +244,18 @@ async function main() {
       assert.equal(JSON.parse(githubCall.result).event, 'completed');
       assert.equal(JSON.parse(githubCall.result).run.conclusion, 'success');
       await until(async () => (await messages(mailSession.id)).messages.some((message) => message.content === 'CI completada'));
+
+      faux.setResponses([
+        fauxAssistantMessage([fauxToolCall('wait_event', {
+          kind: 'github_run', repo: 'acme/app', branch: 'main', timeout_s: 10,
+        })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('CI nueva completada'),
+      ]);
+      await runtime.handlers.agent_message_send({ session_id: mailSession.id, content: 'Espera la próxima CI', request_id: 'github-new-wait' });
+      await idle(mailSession.id);
+      const nextGithubCall = await toolCall(mailSession.id, 'wait_event');
+      assert.equal(JSON.parse(nextGithubCall.result).run.id, 101,
+        'esperar la siguiente CI ignora todas las ejecuciones que ya existían al comenzar');
     } finally {
       cloud._setDeps(null);
     }

@@ -36,6 +36,15 @@ it('resume la delegación con sus pasos y la devolución del subagente', () => {
   expect(screen.queryByText('Contrato de salida')).toBeNull();
 });
 
+it('explica en español que se agotó el presupuesto de la delegación', () => {
+  render(<SubagentTrace call={call({ result: JSON.stringify({
+    agent: { id: 'p1', name: 'Investigador' }, status: 'token_budget',
+    text: 'Amplía el presupuesto o continúa mañana.', steps: [], ms: 20,
+  }) })} />);
+  expect(screen.getByText('presupuesto agotado')).toBeInTheDocument();
+  expect(screen.getByText('Amplía el presupuesto o continúa mañana.')).toBeInTheDocument();
+});
+
 it('muestra el rol del subagente y su contrato de salida validado', () => {
   render(<SubagentTrace call={call({ result: JSON.stringify({
     agent: { id: 'p1', name: 'Investigador' },

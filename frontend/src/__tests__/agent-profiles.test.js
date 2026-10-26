@@ -187,6 +187,13 @@ describe('perfiles portables', () => {
     expect(() => readProfileSkill(loaded, { skill_id: 'profile:large', file_path: 'scripts/large.txt' })).toThrow(/64 KiB/);
   });
 
+  it('conserva la búsqueda por minúsculas del formato portable', () => {
+    skill('reviewer/skills/street', 'Straße');
+    const loaded = loadAgentProfile('reviewer');
+    expect(listProfileSkills(loaded, { query: 'straße' }).total).toBe(1);
+    expect(listProfileSkills(loaded, { query: 'STRASSE' }).total).toBe(0);
+  });
+
   it.each([
     ['nombre', `name: ${'n'.repeat(65)}\ndescription: Texto`],
     ['descripción', `name: review\ndescription: ${'d'.repeat(1025)}`],
@@ -229,6 +236,20 @@ describe('perfiles portables', () => {
     expect(merged.skills.map((item) => item.id)).toEqual(['profile:review', catalog[0].id]);
     expect(merged).toMatchObject({ total: 31, truncated: true });
     expect(runSkills('skills_list', loaded, { query: 'Biblioteca', limit: 1 }, catalog).total).toBe(30);
+  });
+
+  it('conserva offsets UTF-16 y el techo serializado con emojis en contenido y metadatos', () => {
+    for (let i = 0; i < 12; i++) {
+      write(`reviewer/skills/emoji-${i}/SKILL.md`, `---\nname: emoji-${i}\ndescription: ${'😀'.repeat(480)}\n---\n${'😀'.repeat(4000)}`);
+    }
+    const loaded = loadAgentProfile('reviewer');
+    const list = listProfileSkills(loaded, { limit: 12 });
+    expect(JSON.stringify(list).length).toBeLessThanOrEqual(5600);
+    expect(list.skills.every((item) => item.description.length <= 240)).toBe(true);
+    const pages = runSkills('skills_pages', loaded, { skill_id: 'profile:emoji-0', offset: 4001 });
+    expect(pages[0].total_chars).toBe(loaded.skills.get('emoji-0').content.length);
+    expect(pages.every((page) => JSON.stringify(page).length <= 5600)).toBe(true);
+    expect(pages.map((page) => page.content).join('')).toBe(loaded.skills.get('emoji-0').content.slice(4001));
   });
 
   it('rechaza traversal y enlaces hacia archivos fuera de la skill', () => {

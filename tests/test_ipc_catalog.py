@@ -12,6 +12,25 @@ def _catalog() -> dict:
     return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
 
 
+def test_subagent_memory_scope_and_budget_are_private_dispatch_context():
+    import jsonschema
+
+    entry = _catalog()["methods"]["agent_internal_dispatch"]
+    assert entry["internal"] is True
+    schema = entry["inputSchema"]
+    request = {"session_id": "parent", "call_id": "c1", "name": "subagent_run",
+               "context": {"subagent": {"memory_scope": "own", "remaining_tokens": 10}}}
+    jsonschema.validate(request, schema)
+    request["context"]["subagent"]["remaining_tokens"] = -1
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(request, schema)
+    usage = _catalog()["methods"]["agent_internal_profile_usage"]
+    assert usage["internal"] is True and usage["idempotent"] is True
+    jsonschema.validate({"profile_id": "hijo", "day": "2026-10-25"}, usage["inputSchema"])
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"profile_id": "hijo", "day": "ayer"}, usage["inputSchema"])
+
+
 def test_canvas_layer_tool_uses_the_ipc_schema_and_is_not_retryable():
     from backend.core.agent import canvas_edit
     from backend.core.ipc_catalog import IDEMPOTENT_METHODS, ORCHESTRATABLE_METHODS

@@ -403,9 +403,21 @@ def resources(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> 
     return [{"path": str(path), "exists": False}]
 
 
-def fit(result: JsonObject, limit: int = _RESULT_BUDGET) -> JsonObject:
+def utf16_slice(text: str, start: int, end: int) -> str:
+    return text.encode("utf-16-le", errors="surrogatepass")[start * 2:end * 2].decode("utf-16-le", errors="surrogatepass")
+
+
+def serialized_size(value: object, *, utf16: bool = False) -> int:
+    text = json.dumps(value, ensure_ascii=False, default=str, separators=(",", ":") if utf16 else None)
+    if utf16:
+        text = text.encode("utf-8", errors="backslashreplace").decode("utf-8")
+        return len(text.encode("utf-16-le")) // 2
+    return len(text)
+
+
+def fit(result: JsonObject, limit: int = _RESULT_BUDGET, *, utf16: bool = False) -> JsonObject:
     def size(value: object) -> int:
-        return len(json.dumps(value, ensure_ascii=False, default=str))
+        return serialized_size(value, utf16=utf16)
 
     while size(result) > limit:
         candidates = [k for k, v in result.items() if isinstance(v, (str, list)) and v]
@@ -413,7 +425,8 @@ def fit(result: JsonObject, limit: int = _RESULT_BUDGET) -> JsonObject:
             break
         key = max(candidates, key=lambda k: size(result[k]))
         value = result[key]
-        result[key] = value[: len(value) // 2]
+        result[key] = (utf16_slice(value, 0, len(value.encode("utf-16-le", errors="surrogatepass")) // 4)
+                       if utf16 and isinstance(value, str) else value[: len(value) // 2])
         result["truncated"] = True
     return result
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import itertools
-import json
 import logging
 import ntpath
 import os
@@ -201,15 +200,20 @@ def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace:
         if type(limit) is not int or not 1 <= limit <= 20:
             raise ValueError("El límite debe estar entre 1 y 20")
         catalog, warnings, truncated = _catalog(grants, workspace, library, levels)
-        words = query.casefold().split()
-        matches = [skill for skill in [*portable, *catalog]
-                   if all(word in f"{skill.name} {skill.description}".casefold() for word in words)]
+        words = query.split()
+        matches = []
+        for candidate_skill in [*portable, *catalog]:
+            fold = str.lower if candidate_skill.id.startswith("profile:") else str.casefold
+            if all(fold(word) in fold(f"{candidate_skill.name} {candidate_skill.description}") for word in words):
+                matches.append(candidate_skill)
         return computer_files.fit({
-            "skills": [{"id": skill.id, "name": skill.name, "description": skill.description[:240], "location": str(skill.path)}
+            "skills": [{"id": skill.id, "name": skill.name,
+                        "description": (computer_files.utf16_slice(skill.description, 0, 240)
+                                        if skill.id.startswith("profile:") else skill.description[:240]), "location": str(skill.path)}
                        for skill in matches[:limit]],
             "total": len(matches), "truncated": truncated or len(matches) > limit,
             "library": str(library), "warnings": warnings, "notice": _NOTICE,
-        })
+        }, utf16=profile_skills is not None)
     if name == "skills_read":
         skill_id = params.get("skill_id")
         relative = params.get("file_path", "SKILL.md")
@@ -243,12 +247,18 @@ def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace:
             except (OSError, ValueError):
                 raise ValueError("La skill ya no está disponible; consulta skills_list y comprueba sus permisos") from None
             text = _read(skill.path.parent / relative.replace("\\", "/"), grants, workspace, library, levels)
-        end = min(len(text), offset + _PAGE_CHARS)
-        result = {"id": skill.id, "name": skill.name, "file_path": relative, "content": text[offset:end],
-                  "offset": offset, "total_chars": len(text), "next_offset": end if end < len(text) else None,
+        portable_page = skill_id.startswith("profile:")
+        total = len(text.encode("utf-16-le", errors="surrogatepass")) // 2 if portable_page else len(text)
+
+        def chunk(end: int) -> str:
+            return computer_files.utf16_slice(text, offset, end) if portable_page else text[offset:end]
+
+        end = min(total, offset + _PAGE_CHARS)
+        result = {"id": skill.id, "name": skill.name, "file_path": relative, "content": chunk(end),
+                  "offset": offset, "total_chars": total, "next_offset": end if end < total else None,
                   **({} if skill_id.startswith("profile:") else {"notice": _NOTICE})}
-        while len(json.dumps(result, ensure_ascii=False)) > 5600:
+        while computer_files.serialized_size(result, utf16=portable_page) > 5600:
             end = offset + (end - offset) * 3 // 4
-            result.update(content=text[offset:end], next_offset=end if end < len(text) else None)
+            result.update(content=chunk(end), next_offset=end if end < total else None)
         return result
     raise ValueError(f"Herramienta de skills desconocida: {name}")
