@@ -93,7 +93,10 @@ const SYSTEM_PROMPT =
   'desktop_launch, desktop_focus, desktop_click, desktop_type, desktop_key y desktop_scroll actúan y devuelven una captura ' +
   'nueva que debes revisar antes del siguiente paso. ' +
   'Empiezas con un núcleo de herramientas; si el encargo necesita un módulo de Antares que no tienes, cárgalo con ' +
-  'tools_load y úsalo desde la siguiente ronda.';
+  'tools_load y úsalo desde la siguiente ronda. ' +
+  'Cuando un gráfico o una interfaz expliquen mejor la respuesta, el chat los muestra en línea: usa un bloque ```chart con JSON ' +
+  '{"type":"bar|line|pie","title":"…","labels":["…"],"series":[{"name":"…","data":[1,2]}]} (cada serie con un valor por etiqueta), ' +
+  'o un bloque ```svg o ```html autocontenido con estilos en línea; no se ejecutan scripts ni se cargan recursos externos.';
 const CANCELLED_NOTE =
   '⏹ Turno detenido por el usuario. Una herramienta ya iniciada puede seguir ejecutándose; ' +
   'comprueba su resultado antes de repetirla.';
