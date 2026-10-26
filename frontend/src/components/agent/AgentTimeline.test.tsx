@@ -98,7 +98,7 @@ it('muestra cuenta y recursos revisados antes de una decisión explícita', () =
     context: { account: 'prueba@example.com', sheet_id: 'hoja-de-prueba' },
     resources: [{ path: 'C:\\trabajos\\informe.pdf', sha256: 'revision' }],
   }} />);
-  expect(screen.getByText('Canal: Nube y conexiones')).toBeInTheDocument();
+  expect(screen.getByText('Nube y conexiones')).toBeInTheDocument();
   expect(screen.getByText('Cuenta: prueba@example.com')).toBeInTheDocument();
   expect(screen.getByText('Hoja: hoja-de-prueba')).toBeInTheDocument();
   expect(screen.getByText('Rango: CONFIG!A1')).toBeInTheDocument();

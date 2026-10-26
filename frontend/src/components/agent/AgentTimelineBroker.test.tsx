@@ -11,6 +11,7 @@ it('ofrece reglas rápidas del canal desde la aprobación', () => {
     status: 'pending' as const, created_at: 1, decided_at: null, channel: 'cloud' as const,
   };
   const { rerender } = render(<ApprovalCard busy={false} onDecide={vi.fn()} onRule={onRule} approval={approval} />);
+  expect(screen.queryByText('Solo esta acción')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Permitir siempre este canal en esta conversación: Nube y conexiones' }));
   expect(onRule).toHaveBeenCalledWith('cloud', 'allow');
   fireEvent.click(screen.getByRole('button', { name: 'Bloquear este canal en esta conversación' }));
