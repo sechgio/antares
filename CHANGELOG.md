@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `ui_launch` abre cualquier aplicación por nombre (por ejemplo `firefox`, `chrome` o `spotify`) o ruta, no solo los alias fijos; si Windows no encuentra el ejecutable, el error sugiere abrirla vía shell con `Start-Process`. Abrir una aplicación sigue exigiendo aprobación humana.
 - Agent integra descargas autorizadas a borradores, subidas de archivos con permisos por conversación, captura de página completa y cesión del control del navegador. Las descargas ajenas se cancelan y las autorizadas verifican URL y límite de bytes recibidos.
 - Crear un agente muestra nombre, color e instrucción permanente en una tarjeta compacta y abre su conversación al guardar si hay un proveedor configurado. También permite guardarlo para después, usar Intro y evita envíos duplicados. La descripción, el mensaje inicial y las herramientas quedan en opciones avanzadas; el color elegido se conserva al reiniciar.
 - Agent aplica una política duradera de compactación sobre el resumen automático de pi-durable: umbrales de aviso y compactación configurables en `ai-agent/compaction.json`, rescate cuando el proveedor rechaza por tamaño, y resumen que conserva lo sagrado (encargo, correcciones del usuario, decisiones con su motivo, acciones ejecutadas, archivos generados y pendientes), redacta secretos y no convierte datos de herramientas en instrucciones. No se compacta con una herramienta en curso o una aprobación pendiente; si la compactación falla, el turno se detiene y queda reanudable. Cada compactación aparece en el chat con su motivo y resumen, queda registrada en un log auditable y el indicador de contexto avisa al acercarse el límite y muestra «Compactando…». Ver `docs/adr/0003-compaccion-contexto-agente.md`.
@@ -80,6 +81,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - La tarjeta de aprobación de Agent queda más limpia: icono sin recuadro, estado y canal en una sola línea, comando y datos en un único bloque, aviso del shell con icono, explicación de alcance dentro de «Detalles» y pie sin separador con las reglas del chat como texto y «Permitir» alineado a la derecha.
+- El menú de permisos de Agent se simplifica: solo muestra los tres modos con descripciones de una línea y un check en el activo, en un panel más estrecho. La edición de reglas por canal sale del menú; las reglas guardadas siguen aplicándose y las tarjetas de aprobación pueden crear reglas nuevas.
 - El compositor de Agent queda más limpio: el selector de permisos pasa a la barra inferior y se reduce a icono en paneles estrechos, desaparece la pista de Mayús + Intro y el recibo «Mensaje recibido» solo se anuncia a lectores de pantalla porque el mensaje ya aparece en la conversación.
 - La barra lateral adopta un riel neutro y limpio: íconos más grandes y espaciados, botón activo sin borde, avatar de color y sin separadores. El panel flotante deja el mismo margen en todos sus lados y su redondeo es concéntrico con el marco del contenido.
 - Agent simplifica los textos de envíos y aprobaciones, conserva sus detalles accesibles y unifica los márgenes del historial, el compositor y sus controles.
@@ -120,6 +122,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 
 ### Fixed
+- «Recordar» en una aprobación de Agent ya no se ignora fuera de las acciones web: en las herramientas de backend guarda la regla Permitir del canal en la conversación y en las apps de Windows concede la app como «Siempre esta app». Solo se guarda si la acción quedó aprobada y un fallo al guardarla no anula la aprobación.
 - El navegador del Agent espera de forma acotada antes de abrir una página o volver atrás cuando el usuario acaba de usar la suya, muestra la espera con cuenta atrás y permite liberarla. Un fallo transitorio ya no consume el freno de repeticiones: las lecturas y observaciones avanzan cuando cambia el resultado, los clics que cambian de página también progresan, los errores recuperables no consumen intentos, otros efectos con aprobación conservan su límite y una corrección o un mensaje nuevo reinician el freno y la pausa de actividad. `web_open` rechaza nombres de archivos locales y remite a `fs_read`.
 - Agent conserva la prioridad de las skills adjuntas aunque el catálogo compartido esté lleno; la identidad del perfil se propaga como metadato de ejecución y las pruebas de skills usan el entorno Python seleccionado por `uv`.
 - Se actualizan DOMPurify a 3.4.17 y Brotli a 1.2.1 para corregir las vulnerabilidades que bloqueaban la auditoría de dependencias.

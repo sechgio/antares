@@ -114,6 +114,9 @@ def test_ui_launch_validates_and_delegates(monkeypatch):
     assert result["pid"] == 42 and seen == {"app": "notepad", "args": "C:/x.txt"}
     with pytest.raises(ValueError, match="args"):
         computer_elements.run("ui_launch", {"app": "notepad", "args": 5}, None)
+    with pytest.raises(ValueError, match=r"^Indica app de ui_launch$"):
+        computer_elements.run("ui_launch", {}, None)
+    assert "pid" not in next(s for s in computer_elements.TOOL_SPECS if s["name"] == "ui_launch")["description"]
 
 
 def test_handoff_from_driver_propagates_clean(monkeypatch):
