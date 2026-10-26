@@ -374,7 +374,7 @@ def _approval_decide(params: JsonObject) -> JsonObject:
     approval = _store().decide_approval(approval_id, bool(params["approve"]), source)
     if approval is None:
         raise _approval_error(_store().get_approval(approval_id))
-    if params.get("grant_app") is True and approval.get("status") == "approved" \
+    if (params.get("grant_app") is True or params.get("remember") is True) and approval.get("status") == "approved" \
             and str(approval.get("method") or "").startswith("ui_"):
         app = str(((approval.get("context") or {}).get("computer") or {}).get("app") or "")
         if app:

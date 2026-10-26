@@ -426,10 +426,10 @@ it('cambia los permisos por conversación y conserva el modo si falla el guardad
   fireEvent.click(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' }));
   const menu = screen.getByRole('menu', { name: 'Permisos del agente' });
   expect(within(menu).getByRole('menuitemradio', { name: /Aprobar por mí/ })).toHaveAttribute('aria-checked', 'true');
-  expect(within(menu).getByRole('menuitemradio', { name: /Solicitar aprobación/ })).toHaveTextContent('Confirmar acciones sensibles y consultas web');
-  expect(within(menu).getByRole('menuitemradio', { name: /Aprobar por mí/ })).toHaveTextContent('consultar la web sin preguntar');
-  expect(within(menu).getByRole('menuitemradio', { name: /Acceso completo/ })).toHaveTextContent('sin confirmar salvo terminal');
-  expect(within(menu).getByText(/Solo para este chat. Conserva las herramientas y accesos habilitados/)).toBeInTheDocument();
+  expect(within(menu).getByRole('menuitemradio', { name: /Solicitar aprobación/ })).toHaveTextContent('Pregunta antes de acciones sensibles y webs');
+  expect(within(menu).getByRole('menuitemradio', { name: /Aprobar por mí/ })).toHaveTextContent('la web va sola');
+  expect(within(menu).getByRole('menuitemradio', { name: /Acceso completo/ })).toHaveTextContent('Sin preguntar, salvo el terminal');
+  expect(within(menu).queryByRole('combobox')).not.toBeInTheDocument();
   fireEvent.click(within(menu).getByRole('menuitemradio', { name: /Acceso completo/ }));
   expect(save).toHaveBeenLastCalledWith(session.id, 'full');
   expect(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' })).toBeDisabled();
@@ -442,98 +442,6 @@ it('cambia los permisos por conversación y conserva el modo si falla el guardad
   await act(async () => { fireEvent.click(screen.getByRole('menuitemradio', { name: /^Solicitar aprobación/ })); });
   expect(screen.getByRole('button', { name: 'Permisos: Acceso completo' })).toBeEnabled();
   expect(addToast).toHaveBeenCalledWith({ message: 'No se pudieron guardar los permisos', type: 'error' });
-});
-
-it('guarda las reglas por canal y las refleja en el selector', async () => {
-  localStorage.setItem('antares-agent-session', session.id);
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  const save = vi.spyOn(agentApi, 'agentSessionRulesSet')
-    .mockResolvedValue({ session: { ...session, approval_rules: { files: 'allow' } } });
-  render(<AgentView />);
-  await act(async () => {});
-  fireEvent.click(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' }));
-  const menu = screen.getByRole('menu', { name: 'Permisos del agente' });
-  const select = within(menu).getByRole('combobox', { name: 'Regla para Archivos' });
-  fireEvent.change(select, { target: { value: 'allow' } });
-  expect(save).toHaveBeenCalledWith(session.id, { files: 'allow' });
-  await act(async () => {});
-  expect(screen.getByRole('button', { name: /1 regla por canal/ })).toBeEnabled();
-});
-
-it('guarda una regla en el alcance global sin tocar las reglas de la conversación', async () => {
-  localStorage.setItem('antares-agent-session', session.id);
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  const sessionSave = vi.spyOn(agentApi, 'agentSessionRulesSet');
-  const globalSave = vi.spyOn(agentApi, 'agentPolicyRulesSet')
-    .mockResolvedValue({ rules: { files: 'deny' }, audit: [] });
-  render(<AgentView />);
-  await act(async () => {});
-  fireEvent.click(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' }));
-  const menu = screen.getByRole('menu', { name: 'Permisos del agente' });
-  fireEvent.change(within(menu).getByRole('combobox', { name: 'Alcance de las reglas' }), { target: { value: 'global' } });
-  expect(menu).toBeVisible();
-  fireEvent.change(within(menu).getByRole('combobox', { name: 'Regla para Archivos' }), { target: { value: 'deny' } });
-  expect(globalSave).toHaveBeenCalledWith({ files: 'deny' });
-  expect(sessionSave).not.toHaveBeenCalled();
-  await act(async () => {});
-});
-
-it('muestra las reglas globales al elegir el alcance de todas las conversaciones', async () => {
-  localStorage.setItem('antares-agent-session', session.id);
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.mocked(agentApi.agentPolicyGet).mockResolvedValue({ rules: { files: 'allow', cloud: 'deny' }, audit: [] });
-  render(<AgentView />);
-  await act(async () => {});
-  fireEvent.click(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' }));
-  const menu = screen.getByRole('menu', { name: 'Permisos del agente' });
-  expect(within(menu).getByRole('combobox', { name: 'Regla para Archivos' })).toHaveValue('');
-  fireEvent.change(within(menu).getByRole('combobox', { name: 'Alcance de las reglas' }), { target: { value: 'global' } });
-  expect(within(menu).getByRole('combobox', { name: 'Regla para Archivos' })).toHaveValue('allow');
-  expect(within(menu).getByRole('combobox', { name: 'Regla para Nube y conexiones' })).toHaveValue('deny');
-  expect(within(menu).getByText('Se aplican a todas las conversaciones; las reglas de cada chat tienen prioridad.')).toBeInTheDocument();
-});
-
-it('muestra el historial de reglas con las entradas de auditoría más recientes primero', async () => {
-  localStorage.setItem('antares-agent-session', session.id);
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.mocked(agentApi.agentPolicyGet).mockResolvedValue({
-    rules: {},
-    audit: [
-      { id: 'r1', at: 1, scope: 'session', channel: 'cloud', from: 'deny', to: 'ask' },
-      { id: 'r2', at: 3, scope: 'global', channel: 'files', from: null, to: 'allow' },
-    ],
-  });
-  render(<AgentView />);
-  await act(async () => {});
-  fireEvent.click(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' }));
-  const menu = screen.getByRole('menu', { name: 'Permisos del agente' });
-  fireEvent.click(within(menu).getByRole('button', { name: 'Historial de reglas' }));
-  const entries = within(menu).getAllByRole('listitem');
-  expect(entries[0]).toHaveTextContent('Archivos · Todas las conversaciones · de «Heredar» a «Permitir»');
-  expect(entries[1]).toHaveTextContent('Nube y conexiones · Esta conversación · de «Bloquear» a «Preguntar»');
-});
-
-it('sigue guardando las reglas de la conversación al volver del alcance global', async () => {
-  localStorage.setItem('antares-agent-session', session.id);
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.mocked(agentApi.agentPolicyGet).mockResolvedValue({ rules: { files: 'deny' }, audit: [] });
-  const sessionSave = vi.spyOn(agentApi, 'agentSessionRulesSet')
-    .mockResolvedValue({ session: { ...session, approval_rules: { files: 'ask' } } });
-  const globalSave = vi.spyOn(agentApi, 'agentPolicyRulesSet');
-  render(<AgentView />);
-  await act(async () => {});
-  fireEvent.click(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' }));
-  const menu = screen.getByRole('menu', { name: 'Permisos del agente' });
-  const scope = within(menu).getByRole('combobox', { name: 'Alcance de las reglas' });
-  fireEvent.change(scope, { target: { value: 'global' } });
-  expect(within(menu).getByRole('combobox', { name: 'Regla para Archivos' })).toHaveValue('deny');
-  fireEvent.change(scope, { target: { value: 'session' } });
-  expect(within(menu).getByRole('combobox', { name: 'Regla para Archivos' })).toHaveValue('');
-  fireEvent.change(within(menu).getByRole('combobox', { name: 'Regla para Archivos' }), { target: { value: 'ask' } });
-  expect(sessionSave).toHaveBeenCalledWith(session.id, { files: 'ask' });
-  expect(globalSave).not.toHaveBeenCalled();
-  await act(async () => {});
-  expect(screen.getByRole('button', { name: /1 regla por canal/ })).toBeEnabled();
 });
 
 it.each([
