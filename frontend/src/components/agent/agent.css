@@ -151,6 +151,63 @@
   50% { opacity: 0; }
 }
 
+.agent-diff-body { animation: agentDiffBodyIn 180ms var(--ease-out) both; }
+.agent-diff-number { color: var(--text-muted); opacity: 0.7; }
+.agent-diff-line[data-kind='add'] .agent-diff-word {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent-green) 32%, transparent);
+}
+.agent-diff-line[data-kind='remove'] .agent-diff-word {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent-red) 30%, transparent);
+}
+.agent-diff-fold {
+  min-height: 22px;
+  background: color-mix(in srgb, var(--text-muted) 7%, transparent);
+  transition: color 120ms var(--ease-out), background-color 120ms var(--ease-out);
+}
+.agent-diff-fold:hover { color: var(--text-primary); background: color-mix(in srgb, var(--text-muted) 14%, transparent); }
+.agent-diff-fold:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: -2px; }
+.agent-diff-stats[data-applied] > span { display: inline-block; animation: agentDiffStatsPop 420ms var(--ease-out); }
+.agent-diff-line {
+  animation: agentDiffLineIn 220ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 14ms);
+}
+.agent-diff-line[data-kind='add'] {
+  background: color-mix(in srgb, var(--accent-green) 13%, transparent);
+  color: var(--text-primary);
+}
+.agent-diff-line[data-kind='add'] > span:first-child { color: var(--accent-green); }
+.agent-diff-line[data-kind='remove'] {
+  background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--accent-red) 45%, transparent);
+}
+.agent-diff-line[data-kind='remove'] > span:first-child { color: var(--accent-red); text-decoration: none; }
+.agent-diff[data-applied] .agent-diff-line[data-kind='add'] {
+  animation: agentDiffApplied 900ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 20ms);
+}
+.agent-diff[data-applied] .agent-diff-line[data-kind='remove'] {
+  animation: agentDiffRemoved 420ms var(--ease-out) forwards;
+}
+@keyframes agentDiffBodyIn {
+  from { opacity: 0; }
+}
+@keyframes agentDiffStatsPop {
+  40% { transform: translateY(-2px) scale(1.12); }
+}
+@keyframes agentDiffLineIn {
+  from { opacity: 0; transform: translateX(-4px); }
+}
+@keyframes agentDiffApplied {
+  0% { background: color-mix(in srgb, var(--accent-green) 34%, transparent); }
+  100% { background: color-mix(in srgb, var(--accent-green) 13%, transparent); }
+}
+@keyframes agentDiffRemoved {
+  to { opacity: 0.55; }
+}
+
 @keyframes agentEyesWorking {
   0%, 42%, 49%, 100% { transform: scaleY(1); }
   45% { transform: scaleY(0.15); }
@@ -165,12 +222,17 @@
   .agent-shimmer,
   .agent-workspace .agent-suggestion,
   .agent-terminal-cursor,
+  .agent-diff-body,
+  .agent-diff-line,
+  .agent-diff[data-applied] .agent-diff-line[data-kind],
+  .agent-diff-stats[data-applied] > span,
   .agent-model-menu,
   .agent-workspace .animate-spin,
   .agent-model-menu .animate-spin { animation: none; }
   .agent-shimmer { background: none; color: var(--text-secondary); }
   .agent-suggestions { transition: none; }
   .agent-tool-row,
+  .agent-diff-fold,
   .agent-tool-row .transition-transform,
   .agent-approval :is(button, summary, svg) { transition: none; }
   .agent-workspace .agent-suggestion:hover:not(:disabled) { transform: none; }
