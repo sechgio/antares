@@ -263,6 +263,8 @@ def run(
     role: str = DEFAULT_ROLE,
     output_schema: JsonObject | None = None,
     cancelled: Callable[[], bool] | None = None,
+    remaining_tokens: int | None = None,
+    on_usage: Callable[[JsonObject], None] | None = None,
 ) -> JsonObject:
     started = time.monotonic()
     role = normalize_role(role)
@@ -282,10 +284,16 @@ def run(
     rounds = 0
     retried = False
     finished = False
+    tokens = 0
 
     while rounds < MAX_STEPS:
         if cancelled is not None and cancelled():
             raise RunCancelled()
+        if remaining_tokens is not None and tokens >= remaining_tokens:
+            status = "token_budget"
+            summary = "Este agente agotó su presupuesto diario de tokens; amplíalo o continúa mañana."
+            finished = True
+            break
         reply = agent_chat.chat(
             provider,
             model,
@@ -293,6 +301,11 @@ def run(
             system=system_prompt(name, str(agent.get("instructions") or ""), role, output_schema),
             tools=tools,
         )
+        usage = reply.get("usage")
+        if isinstance(usage, dict):
+            tokens += int(usage.get("input") or 0) + int(usage.get("output") or 0)
+            if on_usage is not None:
+                on_usage(usage)
         text = str(reply.get("text") or "").strip()
         calls = [call for call in (reply.get("calls") or []) if isinstance(call, dict)]
         if not calls:

@@ -387,6 +387,22 @@ def _openai_wire(messages: list[JsonObject], system: str | None) -> list[JsonObj
     return wire
 
 
+def _usage(data: JsonObject, style: str) -> JsonObject:
+    raw = data.get("usage")
+    if not isinstance(raw, dict):
+        return {}
+
+    def count(value: object) -> int:
+        return value if type(value) is int and value >= 0 else 0
+
+    if style == "openai":
+        details = raw.get("prompt_tokens_details")
+        cached = count(details.get("cached_tokens")) if isinstance(details, dict) else 0
+        return {"usage": {"input": max(0, count(raw.get("prompt_tokens")) - cached),
+                          "output": count(raw.get("completion_tokens"))}}
+    return {"usage": {"input": count(raw.get("input_tokens")), "output": count(raw.get("output_tokens"))}}
+
+
 def _chat_openai(
     url: str,
     headers: dict[str, str],
@@ -449,7 +465,7 @@ def _chat_openai(
     text = message.get("content")
     if text is not None and not isinstance(text, str):
         raise ValueError("El proveedor no devolvió una respuesta válida de OpenAI Chat Completions")
-    return {"text": text if isinstance(text, str) else "", "calls": calls}
+    return {"text": text if isinstance(text, str) else "", "calls": calls, **_usage(data, "openai")}
 
 
 def _anthropic_wire(messages: list[JsonObject]) -> list[JsonObject]:
@@ -559,7 +575,7 @@ def _chat_anthropic(
                     "params": params,
                 }
             )
-    return {"text": "".join(text_parts), "calls": calls}
+    return {"text": "".join(text_parts), "calls": calls, **_usage(data, "anthropic")}
 
 
 def chat(

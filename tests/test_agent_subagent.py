@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.core.agent import agent, agent_chat, subagent
+from backend.core.agent import agent, agent_chat, memory, subagent
 from backend.core.agent.cancel import RunCancelled, _CancelEvent
 from backend.handlers import agent_internal
 
@@ -64,6 +64,54 @@ def test_subagent_ejecuta_lecturas_y_devuelve_traza(tmp_path, monkeypatch):
     assert receipt["steps"] == [{"name": "canvas_list", "status": "done"}]
     assert executed == [("canvas_list", {"include": "all"})]
     assert offered[0] == ["canvas_list"]
+
+
+@pytest.mark.parametrize(("scope", "expected"), [
+    ("own", {"Memoria del hijo"}),
+    ("shared-read", {"Memoria del hijo", "Memoria general"}),
+    ("none", set()),
+])
+def test_subagent_busca_memoria_del_perfil_sin_cambiar_la_del_padre(tmp_path, monkeypatch, scope, expected):
+    store, session = _session(tmp_path)
+    memories = memory.memory_for(store)
+    for sid, profile_id, content in [(session["id"], "padre", "Memoria del padre"),
+                                     ("child", "hijo", "Memoria del hijo"),
+                                     ("global", None, "Memoria general")]:
+        memories.context(sid, "", {}, profile_id=profile_id, memory_scope="own" if profile_id else None)
+        memories.remember(sid, {"kind": "fact", "title": "Datoauditoria", "content": content})
+    observed = []
+
+    def chat(provider, model, messages, **kwargs):
+        if messages[-1]["role"] == "tool_result":
+            observed.extend(json.loads(messages[-1]["content"])["items"])
+            return {"text": "Consulta finalizada", "calls": []}
+        return {"calls": [{"id": "m1", "name": "memory_search", "params": {"query": "Datoauditoria"}}]}
+
+    monkeypatch.setattr(agent_chat, "chat", chat)
+    runner = agent.AgentRunner(store, lambda name: None)
+    runner._execute(_call(session, subagent=_profile(id="hijo", memory_scope=scope, tools=["memory_search"])), None)
+    assert {item["content"] for item in observed} == expected
+    assert {item["content"] for item in memories.search("Datoauditoria", session_id=session["id"])} == {"Memoria del padre"}
+
+
+@pytest.mark.parametrize("remaining", [0, 10])
+def test_subagent_respeta_presupuesto_y_devuelve_consumo(tmp_path, monkeypatch, remaining):
+    store, session = _session(tmp_path)
+    replies = []
+
+    def chat(*args, **kwargs):
+        replies.append(True)
+        return {"text": "", "calls": [{"id": "t1", "name": "canvas_list", "params": {}}],
+                "usage": {"input": 8, "output": 3}}
+
+    monkeypatch.setattr(agent_chat, "chat", chat)
+    runner = agent.AgentRunner(store, lambda name: lambda params: {"documents": []})
+    receipt = json.loads(runner._execute(_call(session, subagent=_profile(remaining_tokens=remaining)), None))
+    assert len(replies) == (1 if remaining else 0)
+    assert receipt["status"] == "token_budget"
+    assert receipt.get("usage", {"input": 0, "output": 0}) == {
+        "input": 8 if remaining else 0, "output": 3 if remaining else 0,
+    }
 
 
 def test_subagente_no_ejecuta_efectos_ni_se_ofrece_a_si_mismo(tmp_path, monkeypatch):

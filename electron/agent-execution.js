@@ -20,7 +20,7 @@ const {
   ctx,
 } = require('./agent-shared');
 const { compactMessages, requestBudget } = require('./agent-request-budget');
-const { resolvePortableProfile, mergeProfileSkills, readProfileSkill } = require('./agent-profiles');
+const { resolvePortableProfile } = require('./agent-profiles');
 
 const compaction = require('./agent-compaction');
 
@@ -945,9 +945,6 @@ async function executeTool(spec, args, api, context) {
 
 async function dispatchTool(spec, args, sessionId, api, context) {
   const portableProfile = resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
-  if (portableProfile && spec.name === 'skills_read' && typeof args?.skill_id === 'string' && args.skill_id.startsWith('profile:')) {
-    return { text: JSON.stringify(readProfileSkill(portableProfile, args)) };
-  }
   if (spec.kind === 'meta') {
     if (spec.name === 'agent_delegate') {
       const profile = await resolveProfile(args?.agent);
@@ -977,6 +974,12 @@ async function dispatchTool(spec, args, sessionId, api, context) {
   };
   if (spec.name === 'skills_list' || spec.name === 'skills_read') {
     request.context = { profile_id: (await requireSession(sessionId)).profile?.id || null };
+    if (portableProfile) {
+      request.context.profile_skills = [...portableProfile.skills.values()].map(({ content, ...skill }) => ({
+        ...skill,
+        ...(skill.id === args?.skill_id && (!args.file_path || args.file_path === 'SKILL.md') ? { content } : {}),
+      }));
+    }
   }
   if (spec.kind === 'subagent') {
     const profile = await resolveProfile(args && args.agent);
@@ -984,16 +987,20 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     const conv = await conversation(sessionId);
     const enabled = (await conv.agent(context)).tools.map((tool) => tool.name);
     const session = await requireSession(sessionId);
-    const denied = profileDenied(profile);
+    const allows = profileFilter(profile);
+    const budget = await profileBudget(profile);
+    if (budget && budget.exhausted) {
+      return { text: JSON.stringify({ error: 'Este agente agotó su presupuesto diario de tokens; amplíalo o continúa mañana' }) };
+    }
     request.context = {
       subagent: {
         id: profile.id,
         name: profile.name,
         role: profile.role || 'explorer',
         instructions: profile.instructions,
-        tools: denied.size
-          ? (Array.isArray(profile.tools) ? profile.tools : enabled).filter((name) => !denied.has(name))
-          : Array.isArray(profile.tools) ? profile.tools : null,
+        tools: allows ? enabled.filter(allows) : null,
+        memory_scope: profile.memory_scope || 'shared-read',
+        remaining_tokens: budget ? budget.limit - budget.used : null,
         enabled,
         provider: session.provider,
         model: session.model,
@@ -1005,7 +1012,7 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     const text = spec.kind === 'native'
       ? await dispatchNative(spec, request, context)
       : await dispatchAndWait(request, context, api);
-    return { text: portableProfile && spec.name === 'skills_list' ? mergeProfileSkills(portableProfile, args, text) : text };
+    return { text };
   } finally {
     if (spec.name === 'ask_user') shared.waitingInput.delete(sessionId);
   }
@@ -1166,12 +1173,15 @@ function profileDenied(profile) {
 // La lista de herramientas de un agente guardado (null = todas) y sus
 // bloqueadas limitan la conversación durante toda su vida, no solo al crearla.
 // Una herramienta bloqueada nunca se permite, aunque figure en la lista.
-async function profileToolFilter(session) {
-  const profile = await sessionProfile(session);
+function profileFilter(profile) {
   const denied = profileDenied(profile);
   if (!profile || (!Array.isArray(profile.tools) && !denied.size)) return null;
   const allowed = Array.isArray(profile.tools) ? new Set(profile.tools) : null;
   return (name) => (!allowed || allowed.has(name)) && !denied.has(name);
+}
+
+async function profileToolFilter(session) {
+  return profileFilter(await sessionProfile(session));
 }
 
 function localDay(now = Date.now()) {
@@ -1186,7 +1196,9 @@ async function profileBudget(profile) {
   if (!limit) return null;
   const doc = await shared.state.harness.snapshot(shared.state.ProfilesDoc, ctx());
   const entry = doc && doc.usage && doc.usage[profile.id];
-  const used = entry && entry.day === localDay() ? Number(entry.tokens) || 0 : 0;
+  const day = localDay();
+  const delegated = await bridge('agent_internal_profile_usage', { profile_id: profile.id, day });
+  const used = (entry && entry.day === day ? Number(entry.tokens) || 0 : 0) + (Number(delegated.tokens) || 0);
   return { limit, used, exhausted: used >= limit };
 }
 
@@ -1207,10 +1219,10 @@ async function recordProfileUsage(session, usage) {
 // Herramientas con las que arranca, o a las que se restablece, una conversación.
 function profileInitialTools(profile, specs) {
   const available = new Set(specs.map((spec) => spec.name));
-  const denied = profileDenied(profile);
+  const allows = profileFilter(profile);
   const base = profile && Array.isArray(profile.tools)
     ? profile.tools.filter((name) => available.has(name)) : defaultToolNames(specs);
-  return denied.size ? (base || [...available]).filter((name) => !denied.has(name)) : base;
+  return allows ? (base || [...available]).filter(allows) : base;
 }
 
 async function toolEnabled(sessionId, name, context) {
@@ -1285,7 +1297,7 @@ module.exports = {
   moduleToolNames,
   localDay,
   profileBudget,
-  profileDenied,
+  profileFilter,
   profileInitialTools,
   profileToolFilter,
   sessionProfile,

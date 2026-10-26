@@ -170,6 +170,12 @@ def _provider(params: JsonObject) -> JsonObject:
     }
 
 
+@with_locale
+@validate_params("profile_id", "day")
+def _profile_usage(params: JsonObject) -> JsonObject:
+    return {"tokens": _store().profile_usage(str(params["profile_id"]), str(params["day"]))}
+
+
 def _intent(session_id: str, method: str, params: JsonObject, context: JsonObject | None = None) -> JsonObject:
     try:
         artifact_context: JsonObject = {}
@@ -519,6 +525,7 @@ def _dispatch(params: JsonObject) -> JsonObject:
                 result = _agent.get_agent_runner()._execute(
                     {"id": call_id, "name": name, "params": call_params, "session_id": session_id, "op_id": op_id,
                      "approved_context": intent["context"], "profile_id": intent["context"].get("profile_id"),
+                     "profile_skills": intent["context"].get("profile_skills"),
                      **({"subagent": subagent_profile} if subagent_profile else {})},
                     token,
                 )
@@ -819,6 +826,7 @@ def _dispatch_cancel(params: JsonObject) -> JsonObject:
 HANDLERS = {
     "agent_internal_tools": _tools,
     "agent_internal_provider": _provider,
+    "agent_internal_profile_usage": _profile_usage,
     "agent_internal_approval_ensure": _approval_ensure,
     "agent_internal_approval_status": _approval_status,
     "agent_internal_approval_decide": _approval_decide,

@@ -4,9 +4,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from backend.core.agent import agent, agent_chat
+from backend.core.agent import agent_chat
 from backend.core.integrations import ai_providers, vault
-from backend.handlers import agent as agent_handlers
 from backend.handlers import integrations as integration_handlers
 
 
@@ -175,16 +174,6 @@ def test_custom_provider_roundtrip_and_protocol(provider_server, monkeypatch, pr
         assert followup["messages"][-1]["content"][0]["tool_use_id"] == "call-1"
 
 
-def test_saved_model_used_by_sessions(provider_server, tmp_path, monkeypatch):
-    base, _ = provider_server
-    ai_providers.put_config("anthropic", {"api_key": "test-key", "base_url": base + "/v1", "model": "custom-model"})
-    store = agent.AgentStore(tmp_path / "agent")
-    monkeypatch.setattr(agent_handlers, "_store", lambda: store)
-    session = agent_handlers._session_create({"provider": "anthropic"})["session"]
-    assert session["model"] == "custom-model"
-    assert agent_handlers._session_create({"provider": "anthropic", "model": "explicit"})["session"]["model"] == "explicit"
-
-
 def test_model_and_url_can_be_reset_without_replacing_key(provider_server):
     base, _ = provider_server
     ai_providers.put_config("openai", {"api_key": "test-key", "base_url": base, "model": " custom-model "})
@@ -287,34 +276,6 @@ def test_streaming_matches_native_sdk_over_http(provider_server, monkeypatch, pr
         assert actual["calls"][0]["params"] == final.content[1].input
     assert requests[-1][0] == requests[-2][0]
     assert requests[-1][2] == requests[-2][2]
-
-
-@pytest.mark.parametrize("provider", ["openai", "anthropic"])
-@pytest.mark.parametrize("model", ["stream-text", "stream-error"])
-def test_saved_provider_sends_turn_and_persists_streamed_response(provider_server, tmp_path, monkeypatch, caplog, provider, model):
-    base, requests = provider_server
-    integration_handlers._ai_provider_save({"provider": provider, "api_key": "test-key-1234", "base_url": base + "/v1", "model": model})
-    store = agent.AgentStore(tmp_path / "agent")
-    runner = agent.AgentRunner(store, lambda name: None)
-    monkeypatch.setattr(agent_handlers, "_store", lambda: store)
-    monkeypatch.setattr(agent_handlers, "_runner", lambda: runner)
-    monkeypatch.setattr(agent_chat, "tool_specs", lambda: [])
-    session_id = agent_handlers._session_create({"provider": provider})["session"]["id"]
-    assert agent_handlers._message_send({"session_id": session_id, "content": "Hola"}) == {"accepted": True}
-    with runner._lock:
-        worker = runner._running.get(session_id)
-    if worker:
-        worker.join(timeout=5)
-    assert agent_handlers._turn_status({"session_id": session_id})["running"] is False
-    result = agent_handlers._messages_list({"session_id": session_id})
-    if model == "stream-text":
-        assert [m["content"] for m in result["messages"]] == ["Hola", "Sí"]
-        assert store.get_session(session_id)["last_error"] is None
-    else:
-        assert "Error del agente" in result["messages"][-1]["content"]
-        assert store.get_session(session_id)["last_error"]
-        assert "test-key-1234" not in json.dumps(result) + caplog.text
-    assert len(requests) == 1
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])

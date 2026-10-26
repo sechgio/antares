@@ -99,10 +99,9 @@ async function delegate(profile, args, sessionId, api, context) {
   let child = (await sessions())[id];
   if (!child) {
     const enabled = new Set((await api.agent(context)).tools.map((tool) => tool.name));
-    const denied = require('./agent-execution').profileDenied(profile);
+    const allows = require('./agent-execution').profileFilter(profile);
     const tools = [...shared.toolSpecs.values()].filter((tool) => tool.kind === 'backend' && tool.replay_safe === true
-      && enabled.has(tool.name) && (!Array.isArray(profile.tools) || profile.tools.includes(tool.name))
-      && !excluded.has(tool.name) && !denied.has(tool.name));
+      && enabled.has(tool.name) && (!allows || allows(tool.name)) && !excluded.has(tool.name));
     const now = Date.now();
     await state.harness.createConversation({
       ownership: { kind: 'ownerless' },

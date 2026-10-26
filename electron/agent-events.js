@@ -292,7 +292,7 @@ async function prepare(event, sessionId, api) {
       baseline = { run_id: event.run_id };
     } else {
       const latest = await github.runs({ repo: event.repo, branch: event.branch, limit: 10 });
-      baseline = { latest_id: latest.runs[0]?.id ?? null, since: Date.now() };
+      baseline = { run_ids: latest.runs.map((run) => run.id), since: Date.now() };
     }
   }
   if (event.kind === 'http') {
@@ -445,8 +445,9 @@ async function evaluate(record) {
       return { done: false, state: { run: current.run } };
     }
     const latest = await github.runs({ repo: record.params.repo, branch: record.params.branch, limit: 10 });
-    const candidate = latest.runs.find((run) => run.id !== record.baseline.latest_id
-      && Date.parse(run.created_at) >= record.baseline.since - 120000);
+    const known = record.baseline.run_ids || [record.baseline.latest_id];
+    const candidate = latest.runs.find((run) => !known.includes(run.id)
+      && Date.parse(run.created_at) >= Math.floor(record.baseline.since / 1000) * 1000);
     if (!candidate) return { done: false, state: { runs: latest.runs.length } };
     if (candidate.status === 'completed') {
       return { done: true, result: { kind: 'github_run', event: 'completed', repo: record.params.repo, run: candidate } };

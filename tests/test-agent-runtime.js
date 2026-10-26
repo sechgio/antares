@@ -22,7 +22,7 @@ const PUBLIC_METHODS = [
   'agent_effect_undo', 'agent_session_reasoning_set',
 ];
 const INTERNAL_RPCS = [
-  'agent_internal_tools', 'agent_internal_provider',
+  'agent_internal_tools', 'agent_internal_provider', 'agent_internal_profile_usage',
   'agent_internal_approval_ensure', 'agent_internal_approval_status',
   'agent_internal_approval_decide', 'agent_internal_approvals_pending',
   'agent_internal_approvals_deny_session', 'agent_internal_dispatch',
@@ -40,6 +40,7 @@ function makeBridge() {
   const bridge = async (method, params) => {
     switch (method) {
       case 'agent_internal_activity': return { attention: state.attention };
+      case 'agent_internal_profile_usage': return { tokens: 0 };
       case 'agent_internal_memory_context':
         state.memoryCalls = [...(state.memoryCalls || []), params];
         return /plantilla/.test(params.text) ? { context: 'Memoria del agente:\n- Preferencia: Plantilla — usa la B', items: ['m1'] } : { context: '', items: [] };
@@ -2070,6 +2071,45 @@ async function main() {
     const usage = (await internal.harness.snapshot(internal.ProfilesDoc, internal.ctx)).usage || {};
     assert(!(profile.id in usage), 'borrar el bot elimina su consumo');
     assert(state.dispatchLog.length <= 1, 'el turno pausado no repite herramientas');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const requests = [];
+    const delegatedBridge = async (method, params) => {
+      if (method === 'agent_internal_profile_usage') return { tokens: requests.length * 11 };
+      if (method === 'agent_internal_dispatch' && params.name === 'subagent_run') {
+        requests.push(params);
+        return { result: JSON.stringify({ status: 'done', text: 'Revisión', usage: { input: 8, output: 3 } }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('subagent_run', { agent: 'Ahorrador delegado', task: 'Revisa' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Revisado'),
+      fauxAssistantMessage([fauxToolCall('subagent_run', { agent: 'Ahorrador delegado', task: 'Repite' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Sin presupuesto'),
+    ], delegatedBridge);
+    const { profile } = await runtime.handlers.agent_profile_save({ name: 'Ahorrador delegado', instructions: 'Revisa',
+      tools: null, daily_tokens: 1000, memory_scope: 'own' });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const { session: target } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Delega la revisión' });
+    assert(await waitIdle(session.id), 'la delegación con presupuesto termina');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: target.id });
+    assert(listed.token_budget.used === 11, 'los tokens de subagent_run se cargan al agente destinatario');
+    assert(requests[0].context.subagent.memory_scope === 'own'
+      && requests[0].context.subagent.remaining_tokens === 1000, 'la delegación recibe el alcance y saldo del destinatario');
+    const internal = runtime._internal.state();
+    await internal.harness.commit(async (tx) => {
+      const doc = await tx.doc(internal.ProfilesDoc);
+      doc.usage ||= {};
+      doc.usage[profile.id] = { day: require('../electron/agent-execution').localDay(), tokens: 1000 };
+    }, internal.ctx);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Delega de nuevo' });
+    assert(await waitIdle(session.id), 'la delegación agotada termina sin llamar al subagente');
+    assert(requests.length === 1, 'un destinatario sin presupuesto no llega al backend');
     await runtime.shutdown();
   }
 

@@ -47,7 +47,7 @@ Usamos un broker único para los efectos del agente:
 - La aprobación manual de una regla rápida guarda primero la regla y solo
   después decide la llamada; si el guardado falla, no se decide.
 - Las reglas se evalúan antes de crear la aprobación en Electron. La ruta
-  backend `AgentRunner.decide` registra dispatch, recibo y Undo, pero no
+  backend `agent_internal_dispatch` registra dispatch, recibo y Undo, pero no
   consulta reglas porque el estado de política vive en Electron.
 - Las acciones remotas y los envíos no tienen Undo real; la interfaz lo dice
   explícitamente.

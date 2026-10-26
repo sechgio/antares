@@ -7,6 +7,10 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Las delegaciones síncronas de Agent consultan la memoria de su agente, respetan su presupuesto diario y conservan su consumo también al detenerlas o reiniciar. La selección de herramientas aplica una sola política en las conversaciones y las dos formas de delegación.
+- Esperar la próxima ejecución de CI ignora las ejecuciones que ya existían; las búsquedas y esperas de Outlook por remitente usan un filtro compatible con la ordenación de Microsoft Graph.
+
 ### Added
 - El compositor de Agent invoca skills con «/» al inicio del borrador o tras un espacio: filtra el catálogo de forma difusa, se navega con el teclado y la skill elegida queda como chip. El turno valida la skill con el perfil de la conversación, avisa si usa la versión compartida y bloquea cualquier otra herramienta hasta cargarla con `skills_read`; la skill son instrucciones, no habilita herramientas ni salta aprobaciones.
 - Cada agente guardado tiene sus rutinas: el editor lista, crea y cancela los encargos recurrentes de todas sus conversaciones y crea los nuevos en la más reciente. Un agente admite como mucho 3 rutinas activas y, cuando se las programa él mismo con `task_schedule`, no pueden repetirse más de una vez cada 30 minutos; el usuario puede elegir intervalos menores desde el panel o el editor. Las rutinas respetan el presupuesto diario y los permisos del agente.
