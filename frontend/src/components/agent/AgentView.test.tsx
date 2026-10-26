@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { agentApi, type AgentApproval, type AgentPermissionMode, type AgentSession } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
+import { mcpApi } from '../../api/mcpApi';
 import AgentView from './AgentView';
 
 const { addToast, confirm } = vi.hoisted(() => ({ addToast: vi.fn(), confirm: vi.fn() }));
@@ -140,8 +141,8 @@ it('sugiere bots con @ y permite elegir con teclado sin enviar el mensaje', asyn
   await act(async () => {});
   const composer = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
   fireEvent.change(composer, { target: { value: 'Consulta @' } });
-  expect(screen.getByRole('listbox', { name: 'Bots para mencionar' })).toBeVisible();
-  expect(screen.getAllByRole('option')).toHaveLength(2);
+  expect(screen.getByRole('listbox', { name: 'Bots y conectores para mencionar' })).toBeVisible();
+  expect(screen.getAllByRole('option', { name: /Comprueba firmas/ })).toHaveLength(2);
   fireEvent.keyDown(composer, { key: 'Enter', isComposing: true });
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   expect(composer).toHaveValue('Consulta @');
@@ -155,6 +156,27 @@ it('sugiere bots con @ y permite elegir con teclado sin enviar el mensaje', asyn
   fireEvent.keyDown(composer, { key: 'Escape' });
   expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   expect(composer).toHaveValue('Consulta @Revi');
+});
+
+it('sugiere conectores y servidores MCP con @ e inserta la mención que habilita sus herramientas', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.spyOn(mcpApi, 'mcpServersList').mockResolvedValue({ servers: [{
+    id: 'srv', name: 'Mi Servidor', transport: 'http', url: 'https://mcp.example.com', command: '', args: [], secret_keys: [], tools_count: 3,
+  }] });
+  render(<AgentView />);
+  await act(async () => {});
+  const composer = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
+  fireEvent.change(composer, { target: { value: 'Revisa @gma' } });
+  expect(screen.getByRole('option', { name: /Gmail\s*Buscar y leer correos/ })).toHaveAttribute('aria-selected', 'true');
+  fireEvent.keyDown(composer, { key: 'Enter' });
+  expect(composer).toHaveValue('Revisa @gmail ');
+  fireEvent.change(composer, { target: { value: 'Busca con @mi' } });
+  await act(async () => {});
+  expect(screen.getByRole('option', { name: /Mi Servidor\s*Servidor MCP · 3 herramientas/ })).toBeVisible();
+  fireEvent.keyDown(composer, { key: 'Tab' });
+  expect(composer).toHaveValue('Busca con @mi-servidor ');
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
 });
 
 it('distingue bots con nombres repetidos y conserva el texto después del cursor', async () => {
@@ -410,6 +432,24 @@ it('regula el razonamiento con los niveles del modelo y lo guarda al soltar', as
   expect(screen.getByRole('button', { name: 'Razonamiento: Medio' })).toBeEnabled();
   await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
   expect(screen.queryByRole('button', { name: /^Razonamiento:/ })).not.toBeInTheDocument();
+});
+
+it('ofrece el nivel máximo cuando el modelo lo admite', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const reasoning_levels = ['high', 'xhigh', 'max'] as const;
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [{ ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'high' }] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const save = vi.spyOn(agentApi, 'agentSessionReasoningSet')
+    .mockResolvedValueOnce({ session: { ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'max' } });
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Alto' }));
+  const slider = within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByRole('slider', { name: 'Nivel de razonamiento' });
+  fireEvent.change(slider, { target: { value: '2' } });
+  expect(slider).toHaveAttribute('aria-valuetext', 'Máximo');
+  await act(async () => { fireEvent.keyUp(slider, { key: 'ArrowRight' }); });
+  expect(save).toHaveBeenCalledWith(session.id, 'max');
+  expect(screen.getByRole('button', { name: 'Razonamiento: Máximo' })).toBeEnabled();
 });
 
 it('cambia los permisos por conversación y conserva el modo si falla el guardado', async () => {

@@ -31,6 +31,20 @@ interface Props {
   size?: number;
 }
 
+// Marcas casi negras: el glifo toma el color del texto para verse en ambos temas.
+const INK_BRANDS = new Set(['github', 'notion']);
+
+/** Solo el glifo de la marca, sin fondo, para listas compactas como las menciones del chat. */
+export function ProviderGlyph({ providerId, size = 16 }: { providerId: string; size?: number }) {
+  const glyph = BRAND_GLYPHS[providerId];
+  if (!glyph) return null;
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden fill={INK_BRANDS.has(providerId) ? 'currentColor' : glyph.color}>
+      <path d={glyph.path} />
+    </svg>
+  );
+}
+
 export function ProviderIcon({ providerId, label, size = 34 }: Props) {
   const glyph = BRAND_GLYPHS[providerId];
   return (

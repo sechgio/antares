@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownRight, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { mcpApi, type McpServer } from '../../api/mcpApi';
 import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentSkill, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
@@ -12,6 +13,7 @@ import Button from '../ui/Button';
 import ThemedSelect from '../ui/ThemedSelect';
 import Input from '../ui/Input';
 import { SegmentedControl } from '../ui/SegmentedControl';
+import { ProviderGlyph } from '../connections/connectionIcons';
 import AgentAvatar from './AgentAvatar';
 import ModelPicker from './ModelPicker';
 import PermissionPicker from './PermissionPicker';
@@ -44,7 +46,20 @@ type SendIntent = Readonly<{
   skillId?: string;
 }>;
 
-type ComposerOption = { kind: 'bot'; profile: AgentProfile } | { kind: 'skill'; skill: AgentSkill };
+type ComposerOption = { kind: 'bot'; profile: AgentProfile } | { kind: 'skill'; skill: AgentSkill }
+  | { kind: 'connector'; mention: string; label: string; detail: string; brand: string | null };
+
+// Alias del módulo Conexiones (shared/agent-modules.json): mencionarlos habilita sus herramientas.
+// La marca elige el glifo de Complementos (connectionIcons).
+const CONNECTOR_MENTIONS = [
+  ['drive', 'Google Drive', 'google', 'Buscar, descargar y subir archivos'],
+  ['sheets', 'Hojas de Google', 'google', 'Leer y actualizar hojas de cálculo'],
+  ['gmail', 'Gmail', 'google', 'Buscar y leer correos'],
+  ['onedrive', 'OneDrive', 'microsoft', 'Buscar, descargar y subir archivos'],
+  ['excel', 'Excel', 'microsoft', 'Leer y actualizar libros en OneDrive'],
+  ['outlook', 'Outlook', 'microsoft', 'Buscar y leer correos'],
+  ['github', 'GitHub', 'github', 'Consultar ejecuciones de GitHub Actions'],
+] as const;
 
 // Subsecuencia difusa: null si no coincide; menor es mejor (huecos entre letras).
 function fuzzyGaps(query: string, text: string): number | null {
@@ -188,6 +203,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [messagesStale, setMessagesStale] = useState(false);
   const [draft, setDraft] = useState('');
   const [skills, setSkills] = useState<AgentSkill[] | null>(null);
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [activeSkill, setActiveSkill] = useState<AgentSkill | null>(null);
   const [search, setSearch] = useState('');
   const [profileSearch, setProfileSearch] = useState('');
@@ -586,8 +602,14 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       pattern: /(?:^|\s)@(?:"([^"\n]*)|([\p{L}\p{N}_-]*))$/u,
       options: (match) => {
         const query = normalizeBotName(match[1] ?? match[2] ?? '');
-        return profiles.filter((profile) => normalizeBotName(profile.name).includes(query)).slice(0, 6)
+        const bots = profiles.filter((profile) => normalizeBotName(profile.name).includes(query)).slice(0, 6)
           .map((profile) => ({ kind: 'bot' as const, profile }));
+        const connectors = [
+          ...CONNECTOR_MENTIONS.map(([mention, label, brand, detail]) => ({ kind: 'connector' as const, mention, label, detail, brand })),
+          ...mcpServers.map((server) => ({ kind: 'connector' as const, mention: normalizeBotName(server.name), label: server.name,
+            detail: `Servidor MCP${server.tools_count === null ? '' : ` · ${server.tools_count} herramientas`}`, brand: null })),
+        ].filter((item) => item.mention.includes(query) || normalizeBotName(item.label).includes(query)).slice(0, 10);
+        return [...bots, ...connectors];
       },
     },
     {
@@ -605,7 +627,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     },
   ]);
   const autocomplete = composer.suggestion;
-  const optionId = (option: ComposerOption) => option.kind === 'bot' ? `agent-mention-${option.profile.id}` : `agent-skill-${option.skill.id}`;
+  const optionId = (option: ComposerOption) => option.kind === 'bot' ? `agent-mention-${option.profile.id}`
+    : option.kind === 'connector' ? `agent-connector-${option.mention}` : `agent-skill-${option.skill.id}`;
   const selectedOptionId = autocomplete?.selected ? optionId(autocomplete.selected) : undefined;
   const listboxId = autocomplete?.id === 'bot' ? 'agent-bot-mentions' : 'agent-skill-options';
   useEffect(() => {
@@ -613,6 +636,14 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     option?.scrollIntoView({ block: 'nearest' });
   }, [selectedOptionId]);
   const skillsOpen = autocomplete?.id === 'skill';
+  const mentionsOpen = autocomplete?.id === 'bot';
+  useEffect(() => {
+    if (!mentionsOpen) return;
+    let alive = true;
+    // Sin servidores MCP la lista sigue ofreciendo bots y conectores.
+    mcpApi.mcpServersList().then((res) => { if (alive) setMcpServers(res.servers); }).catch(() => {});
+    return () => { alive = false; };
+  }, [mentionsOpen]);
   useEffect(() => {
     if (!skillsOpen) return;
     let alive = true;
@@ -624,7 +655,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     return () => { alive = false; };
   }, [skillsOpen]);
   const pickSuggestion = (option: ComposerOption, active: ComposerSuggestion<ComposerOption>) => {
-    const token = option.kind === 'bot' ? `@bot:${option.profile.id} ` : '';
+    const token = option.kind === 'bot' ? `@bot:${option.profile.id} ` : option.kind === 'connector' ? `@${option.mention} ` : '';
     const caret = active.start + token.length;
     draftVersionRef.current += 1;
     setDraft(`${draft.slice(0, active.start)}${token}${draft.slice(active.end)}`);
@@ -1436,26 +1467,38 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
             onDrop={(event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); void attachFiles([...event.dataTransfer.files]); }}>
             {autocomplete && <div className="border-b border-[var(--border-subtle)] p-2">
-              <p className="px-2 pb-1 text-[11px] text-[var(--text-secondary)]">
-                {autocomplete.id === 'bot' ? 'Colaborar con un bot · solo lectura' : 'Usar una skill · instrucciones, no permisos'}
-              </p>
-              <div ref={suggestionsRef} id={listboxId} role="listbox" aria-label={autocomplete.id === 'bot' ? 'Bots para mencionar' : 'Skills disponibles'} className="max-h-44 overflow-y-auto">
-                {autocomplete.options.map((option) => <Button key={optionId(option)} id={optionId(option)} role="option"
-                  aria-selected={autocomplete.selected === option} tabIndex={-1} variant="none" size="none"
-                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--bg-input)] ${autocomplete.selected === option ? 'bg-[var(--bg-input)]' : ''}`}
-                  onMouseDown={(event) => event.preventDefault()} onClick={() => pickSuggestion(option, autocomplete)}>
-                  {option.kind === 'bot' ? <>
-                    <AgentAvatar seed={option.profile.id} color={option.profile.color} name={option.profile.name} size={24} />
-                    <span className="min-w-0 flex-1"><span className="block truncate text-[12px]">{option.profile.name}</span>
-                      <span className="block truncate text-[11px] text-[var(--text-secondary)]">{option.profile.description || 'Agente guardado'} · {option.profile.id}</span></span>
-                  </> : <>
-                    <span className="flex size-6 shrink-0 items-center justify-center text-[var(--text-secondary)]"><Sparkles size={14} /></span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-[12px]">/{option.skill.name}</span>
-                      <span className="block truncate text-[11px] text-[var(--text-secondary)]">{option.skill.description}</span></span>
-                  </>}
-                </Button>)}
+              {autocomplete.id === 'skill' && <p className="px-2 pb-1 text-[11px] text-[var(--text-secondary)]">Usar una skill · instrucciones, no permisos</p>}
+              <div ref={suggestionsRef} id={listboxId} role="listbox" aria-label={autocomplete.id === 'bot' ? 'Bots y conectores para mencionar' : 'Skills disponibles'} className="max-h-72 overflow-y-auto">
+                {autocomplete.options.map((option, index) => {
+                  const previous = autocomplete.options[index - 1];
+                  // Las menciones se agrupan como en Complementos: primero bots, luego conectores y MCP.
+                  const heading = option.kind !== 'skill' && option.kind !== previous?.kind
+                    ? (option.kind === 'bot' ? 'Bots · solo lectura' : 'Complementos') : null;
+                  return <Fragment key={optionId(option)}>
+                    {heading && <p aria-hidden="true" className="px-2 pb-1 pt-1.5 text-[12px] text-[var(--text-muted)]">{heading}</p>}
+                    <Button id={optionId(option)} role="option"
+                      aria-selected={autocomplete.selected === option} tabIndex={-1} variant="none" size="none"
+                      className={`flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--bg-input)] ${autocomplete.selected === option ? 'bg-[var(--bg-input)]' : ''}`}
+                      onMouseDown={(event) => event.preventDefault()} onClick={() => pickSuggestion(option, autocomplete)}>
+                      {option.kind === 'skill' ? <>
+                        <span className="flex size-6 shrink-0 items-center justify-center text-[var(--text-secondary)]"><Sparkles size={14} /></span>
+                        <span className="min-w-0 flex-1"><span className="block truncate text-[12px]">/{option.skill.name}</span>
+                          <span className="block truncate text-[11px] text-[var(--text-secondary)]">{option.skill.description}</span></span>
+                      </> : <>
+                        <span className="flex size-5 shrink-0 items-center justify-center text-[var(--text-secondary)]">
+                          {option.kind === 'bot' ? <AgentAvatar seed={option.profile.id} color={option.profile.color} name={option.profile.name} size={20} />
+                            : option.brand ? <ProviderGlyph providerId={option.brand} size={16} /> : <Plug size={15} />}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[13px]">
+                          <span className="text-[var(--text-primary)]">{option.kind === 'bot' ? option.profile.name : option.label}</span>
+                          <span className="ml-2 text-[var(--text-muted)]">{option.kind === 'bot' ? option.profile.description || 'Agente guardado' : option.detail}</span>
+                        </span>
+                      </>}
+                    </Button>
+                  </Fragment>;
+                })}
                 {autocomplete.options.length === 0 && <p className="px-2 py-1 text-[12px] text-[var(--text-secondary)]">
-                  {autocomplete.id === 'bot' ? 'Sin bots coincidentes. Crea uno en Agentes o continúa con tu mensaje.'
+                  {autocomplete.id === 'bot' ? 'Sin bots ni conectores coincidentes. Continúa con tu mensaje.'
                     : skills === null ? 'Cargando skills…' : 'Sin skills coincidentes. Añádelas en Complementos o continúa con tu mensaje.'}
                 </p>}
               </div>
@@ -1521,7 +1564,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 placeholder={
                   running || pending.length > 0
                     ? 'Añade una indicación o déjala para después…'
-                    : 'Escribe un mensaje, @ para mencionar un bot o / para usar una skill…'
+                    : 'Escribe un mensaje, @ para mencionar un bot o un conector, / para usar una skill…'
                 }
                 aria-label="Mensaje para el agente"
                 className="block max-h-36 min-h-12 w-full min-w-0 resize-none bg-transparent py-0.5 text-[14px] leading-[22px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"

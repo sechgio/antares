@@ -214,18 +214,50 @@ async function main() {
       'un modelo personalizado puede declarar visión aunque su nombre no la sugiera');
     const { OPENAI_MODELS } = await import('@earendil-works/pi-ai/providers/openai.models');
     const openai = { provider: 'openai', style: 'openai_chat', base_url: 'https://api.openai.com/v1' };
+    const anthropicCatalog = { provider: 'anthropic', style: 'anthropic_messages', base_url: 'https://api.anthropic.com' };
     const priced = modelDefinition(openai, 'gpt-4o', 'openai-completions', undefined, OPENAI_MODELS['gpt-4o']);
     assert(priced.cost.input === 2.5 && priced.cost.output === 10 && priced.cost.cacheRead === 1.25,
       'un modelo del catálogo lleva sus precios reales por millón de tokens');
     assert(priced.contextWindow === 128000
       && modelDefinition(openai, 'gpt-4.1', 'openai-completions', undefined, OPENAI_MODELS['gpt-4.1']).contextWindow === 1047576,
       'la ventana del catálogo sustituye al valor por defecto');
+    assert(modelDefinition(anthropicCatalog, 'claude-sonnet-5-5', 'anthropic-messages', ANTHROPIC_MODELS['claude-sonnet-5-5'],
+      ANTHROPIC_MODELS['claude-sonnet-5-5']).maxTokens === 128000
+      && modelDefinition(openai, 'gpt-5.5', 'openai-completions', undefined, OPENAI_MODELS['gpt-5.5']).maxTokens === 68000,
+      'el techo de salida del catálogo deja sitio al razonamiento y a la respuesta');
     const declared = modelDefinition({ ...openai, capabilities: { context_window: 32000 } }, 'gpt-4o',
       'openai-completions', undefined, OPENAI_MODELS['gpt-4o']);
     assert(declared.contextWindow === 32000 && declared.maxTokens === 8000,
       'la ventana declarada por el usuario manda sobre el catálogo');
     assert(!define({ custom: true, base_url: 'http://127.0.0.1:11434/v1' }, 'gpt-4o').cost.input,
       'un endpoint propio no hereda los precios del catálogo');
+    const { catalogFor } = require('../electron/agent-execution');
+    assert(catalogFor({ provider: 'custom-claude', style: 'anthropic_messages', base_url: 'https://api.anthropic.com' }) === 'anthropic'
+      && catalogFor({ provider: 'custom-gpt', style: 'openai_chat', base_url: 'https://api.openai.com/v1' }) === 'openai'
+      && catalogFor({ provider: 'custom-or', style: 'openai_chat', base_url: 'https://openrouter.ai/api/v1' }) === 'openrouter'
+      && catalogFor({ provider: 'anthropic', style: 'anthropic_messages', base_url: 'https://proxy.example.com' }) === 'anthropic',
+      'un modelo personalizado en una API oficial usa el mismo catálogo que el proveedor integrado');
+    assert(catalogFor({ provider: 'custom-local', style: 'openai_chat', base_url: 'http://127.0.0.1:11434/v1' }) === null
+      && catalogFor({ provider: 'custom-x', style: 'openai_chat', base_url: 'https://api.anthropic.com' }) === null,
+      'un endpoint propio o con otro formato de API no hereda el catálogo');
+    const { rankTools } = require('../electron/agent-execution');
+    const searchable = [
+      { name: 'task_schedule', module: 'agenda', description: 'Programa encargos futuros para el usuario' },
+      { name: 'ui_type', module: 'computer', description: 'Escribe texto en una ventana; requiere aprobación del usuario' },
+      { name: 'desktop_key', module: 'computer', description: 'Pulsa una tecla para el usuario' },
+      { name: 'artifact_print', module: 'printing', description: 'Envía un artefacto a la impresora' },
+      { name: 'printers_list', module: 'printing', description: 'Lista impresoras (solo lectura)' },
+      { name: 'document_generate', module: 'documents', description: 'Genera un documento desde una plantilla' },
+      { name: 'canvas_apply_layers', module: 'canvas', description: 'Aplica capas al lienzo' },
+    ];
+    const ranked = (query) => rankTools(searchable, { query }).map((spec) => spec.name);
+    assert(JSON.stringify(ranked('programar un recordatorio para mañana')) === '["task_schedule"]',
+      'los alias del módulo encuentran la herramienta y las palabras vacías no cargan herramientas ajenas');
+    assert(JSON.stringify(ranked('imprimir el documento').sort()) === '["artifact_print","document_generate","printers_list"]',
+      'cada módulo nombrado por su alias entra y las coincidencias sueltas quedan fuera');
+    assert(JSON.stringify(ranked('canvas_apply_layers')) === '["canvas_apply_layers"]' && ranked('para el usuario').length === 0,
+      'el nombre exacto selecciona una sola herramienta y una consulta sin términos útiles no carga nada');
+    assert(rankTools(searchable, { modules: ['printing'] }).length === 2, 'pedir un módulo sigue cargando todas sus herramientas');
   }
   {
     const { MemoryStorage } = await import('@earendil-works/pi-durable');
@@ -578,7 +610,7 @@ async function main() {
     assert(await thinkingLevel(session.id) === 'high', 'el nivel elegido se aplica al cambiar a un modelo que razona');
     await runtime.handlers.agent_session_reasoning_set({ id: session.id, reasoning_effort: 'minimal' });
     assert(await thinkingLevel(session.id) === 'minimal', 'el nivel se aplica al modelo actual');
-    for (const effort of ['off', 'max', '', null, undefined]) {
+    for (const effort of ['off', 'ultra', '', null, undefined]) {
       let rejected;
       try { await runtime.handlers.agent_session_reasoning_set({ id: session.id, reasoning_effort: effort }); } catch (err) { rejected = err; }
       assert(rejected, `rechaza un nivel inválido: ${effort}`);
@@ -587,6 +619,10 @@ async function main() {
     await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
     const restored = (await runtime.handlers.agent_sessions_list()).sessions.find((item) => item.id === session.id);
     assert(restored.reasoning_effort === 'minimal' && restored.reasoning_levels.includes('minimal'), 'el nivel sobrevive al reinicio de SQLite');
+    runtime._internal._providerOverrides.set('razona', fauxProvider({ provider: 'razona', models: [{ id: 'razonador', reasoning: false }] }).provider);
+    const synced = (await runtime.handlers.agent_sessions_list()).sessions.find((item) => item.id === session.id);
+    assert(synced.reasoning_levels.length === 0 && await thinkingLevel(session.id) === 'off',
+      'la lista refleja al momento los niveles que Proveedores IA declara para el modelo');
     await runtime.shutdown();
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -932,8 +968,17 @@ async function main() {
     assert(thinkingLevelFor([], 'high') === 'off' && thinkingLevelFor(['minimal', 'low', 'medium', 'high']) === 'low'
       && thinkingLevelFor(['minimal', 'low', 'medium', 'high'], 'xhigh') === 'high' && thinkingLevelFor(['low', 'medium'], 'minimal') === 'low',
       'el nivel elegido se ajusta al más cercano que admite el modelo');
+    assert(thinkingLevelFor(['low', 'medium', 'high', 'xhigh', 'max'], 'max') === 'max'
+      && thinkingLevelFor(['low', 'medium', 'high', 'xhigh'], 'max') === 'xhigh',
+      'max se envía solo a los modelos que lo admiten y, si no, baja al nivel inferior');
     const { OPENAI_MODELS } = await import('@earendil-works/pi-ai/providers/openai.models');
     const { ANTHROPIC_MODELS } = await import('@earendil-works/pi-ai/providers/anthropic.models');
+    const { getSupportedThinkingLevels } = await import('@earendil-works/pi-ai');
+    const anthropicLevels = { provider: 'anthropic', style: 'anthropic_messages', base_url: 'https://api.anthropic.com' };
+    const levelsOf = (id) => getSupportedThinkingLevels(modelDefinition(anthropicLevels, id, 'anthropic-messages',
+      ANTHROPIC_MODELS[id], ANTHROPIC_MODELS[id]));
+    assert(levelsOf('claude-opus-5-5').includes('max') && !levelsOf('claude-haiku-4-5').includes('max'),
+      'el catálogo decide qué modelos admiten el nivel max');
     const openaiInfo = { provider: 'openai', style: 'openai_chat', base_url: 'https://api.openai.com/v1' };
     const gpt5 = modelDefinition(openaiInfo, 'gpt-5', 'openai-completions', undefined, OPENAI_MODELS['gpt-5']);
     assert(gpt5.reasoning === true && gpt5.thinkingLevelMap && gpt5.thinkingLevelMap.xhigh === null,
@@ -1837,8 +1882,13 @@ async function main() {
     const { bridge } = makeBridge();
     const schema = { type: 'object', properties: {} };
     const bigBridge = async (method, params) => {
+      if (method === 'agent_internal_mentions' && /@demo\b/.test(params.text)) {
+        return { modules: [], unknown: [], ambiguous: [], labels: {}, mcp_tools: ['mcp2__demo__buscar', 'mcp2__demo__retirada'],
+          context: 'El usuario mencionó estos servidores MCP; sus herramientas piden aprobación antes de cada llamada:\n- Demo: herramientas mcp2__demo__buscar' };
+      }
       if (method !== 'agent_internal_tools') return bridge(method, params);
       const result = await bridge(method, params);
+      result.tools.push({ name: 'mcp2__demo__buscar', description: 'MCP Demo · buscar', gated: true, kind: 'mcp', inputSchema: schema });
       for (let i = 0; i < 70; i += 1) {
         result.tools.push({ name: `formatos_t${i}`, module: 'formatos', description: `Formatos PDF ${i}`, gated: false, kind: 'backend', inputSchema: schema });
         result.tools.push({ name: `sellador_t${i}`, module: 'sellador', description: `Sellar ${i}`, gated: false, kind: 'backend', inputSchema: schema });
@@ -1858,6 +1908,7 @@ async function main() {
         return fauxAssistantMessage('formatos listos');
       },
       fauxAssistantMessage('sellador listo'),
+      fauxAssistantMessage('demo listo'),
     ], bigBridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const enabledNames = async () => (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools
@@ -1877,6 +1928,12 @@ async function main() {
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'usa @sellador' });
     assert(await waitIdle(session.id), 'el turno con mención termina');
     assert((await enabledNames()).filter((name) => name.startsWith('sellador_')).length === 70, 'mencionar un módulo carga sus herramientas');
+    assert(!(await enabledNames()).includes('mcp2__demo__buscar'), 'las herramientas MCP no entran en el núcleo de un catálogo grande');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'revisa @demo' });
+    assert(await waitIdle(session.id), 'el turno con mención MCP termina');
+    const withMcp = await enabledNames();
+    assert(withMcp.includes('mcp2__demo__buscar') && !withMcp.includes('mcp2__demo__retirada'),
+      'mencionar un servidor MCP habilita solo sus herramientas registradas');
     await runtime.handlers.agent_tools_set({ session_id: session.id, names: null });
     assert(JSON.stringify(await enabledNames()) === JSON.stringify(initial), 'restablecer vuelve al núcleo');
     await runtime.shutdown();

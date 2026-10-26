@@ -8,10 +8,17 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- Agent usa el límite de salida real de cada modelo del catálogo (por ejemplo, 128 000 tokens en Claude 5.5 y hasta un cuarto de la ventana en GPT): con el tope fijo de 8 192 tokens, el razonamiento alto dejaba sin espacio la respuesta y truncaba las llamadas a herramientas.
+- Un modelo personalizado que apunta a la API oficial de Anthropic, OpenAI u OpenRouter usa el catálogo de ese proveedor (ventana, límite de salida, precios y modo de razonamiento), y la lista de conversaciones refleja al momento los niveles de razonamiento que declara Proveedores IA.
+- Las herramientas MCP usan su canal de permisos, de modo que las reglas del canal MCP también se les aplican; la traza y la tarjeta de aprobación las nombran por su servidor y su herramienta real.
+- El chat de Agent no pone en cursiva los guiones bajos dentro de palabras (`gmail_search`, `mi_archivo_final.pdf`).
 - Las delegaciones síncronas de Agent consultan la memoria de su agente, respetan su presupuesto diario y conservan su consumo también al detenerlas o reiniciar. La selección de herramientas aplica una sola política en las conversaciones y las dos formas de delegación.
 - Esperar la próxima ejecución de CI ignora las ejecuciones que ya existían; las búsquedas y esperas de Outlook por remitente usan un filtro compatible con la ordenación de Microsoft Graph.
 
 ### Added
+- Agent ofrece el nivel de razonamiento «Máximo» en los modelos que lo admiten (Claude Opus/Sonnet 5.5, Fable 5.1, GPT-6.1); en los demás se ajusta al nivel inferior.
+- `tools_load` encuentra la herramienta adecuada: el nombre exacto la selecciona sola, los alias de cada módulo pesan más que la descripción, se ignoran las palabras vacías y solo se cargan las coincidencias cercanas a la mejor.
+- El compositor de Agent sugiere con «@» los conectores (Drive, Hojas de Google, Gmail, OneDrive, Excel, Outlook, GitHub) y los servidores MCP configurados, con el icono de cada marca. Mencionarlos habilita sus herramientas en la conversación; las herramientas MCP siguen pidiendo aprobación y solo se habilitan las activas en Conexiones.
 - El navegador de Agent permite anotar la página: «Anotar la página» congela una captura y abre una barra con seleccionar, lápiz, formas (línea, flecha, rectángulo, elipse y pasos numerados), texto, color de tinta y grosor. «Agregar al chat» adjunta la captura anotada como PNG al compositor de la conversación; mientras se anota, la vista nativa se retira para no tapar la barra.
 - El chat de Agent muestra gráficos e interfaces en línea: los bloques ```chart (barras, líneas o torta desde JSON) se dibujan como SVG nativo y los bloques ```svg y ```html se muestran en un marco aislado, sanitizado y sin scripts ni recursos externos. Mientras el bloque se transmite se muestra un marcador «Generando…»; al cerrarse se dibuja con valores al pasar el cursor, una tarjeta con «Vista/Código» y copiar, y una tabla de datos para lectores de pantalla. El visor se carga en un módulo diferido y un JSON inválido se muestra como código.
 - El compositor de Agent invoca skills con «/» al inicio del borrador o tras un espacio: filtra el catálogo de forma difusa, se navega con el teclado y la skill elegida queda como chip. El turno valida la skill con el perfil de la conversación, avisa si usa la versión compartida y bloquea cualquier otra herramienta hasta cargarla con `skills_read`; la skill son instrucciones, no habilita herramientas ni salta aprobaciones.

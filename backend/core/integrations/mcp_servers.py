@@ -8,6 +8,7 @@ import os
 import re
 import threading
 import time
+import unicodedata
 import urllib.parse
 from collections.abc import Callable
 from pathlib import Path
@@ -358,6 +359,30 @@ def _resolve_tool_name(server_id: str, name: str, *, advertised: bool = False) -
     if advertised:
         raise ValueError("La herramienta MCP aprobada ya no está disponible")
     return name
+
+
+def _mention_slug(text: str) -> str:
+    folded = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode().casefold()
+    return re.sub(r"[\s_]+", "-", folded.strip())
+
+
+def mentioned_servers(tokens: list[str]) -> list[JsonObject]:
+    """Servidores mencionados con @nombre (espacios como guiones) o @id y sus herramientas habilitadas para el agente."""
+    wanted = {_mention_slug(token): token for token in tokens}
+    found: list[JsonObject] = []
+    for server in list_servers():
+        server_id = str(server["id"])
+        token = wanted.get(_mention_slug(str(server["name"]))) or wanted.get(_mention_slug(server_id))
+        if token is None:
+            continue
+        entry: JsonObject = {"mention": token, "name": str(server["name"]), "tools": [], "error": None}
+        try:
+            entry["tools"] = [agent_tool_name(server_id, str(tool["name"]))
+                              for tool in list_tools(server_id) if tool.get("enabled", True)]
+        except Exception:
+            entry["error"] = "no responde; revisa su conexión en Conexiones"
+        found.append(entry)
+    return found
 
 
 def parse_agent_tool(name: str) -> tuple[str, str] | None:

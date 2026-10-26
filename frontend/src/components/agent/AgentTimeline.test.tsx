@@ -108,6 +108,24 @@ it('muestra cuenta y recursos revisados antes de una decisión explícita', () =
   expect(decide).toHaveBeenCalledWith('approval', true);
 });
 
+it('nombra las herramientas MCP por su servidor y su herramienta real', () => {
+  const name = 'mcp2__mi-servidor-25cd107f1dee__buscar-021181d13e7c';
+  render(<>
+    <MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+      id: 'mcp', name, params: { query: 'antares' }, status: 'done', gated: true, result: '{"text":"3 documentos"}',
+    }] }} />
+    <ApprovalCard busy={false} onDecide={vi.fn()} approval={{
+      id: 'approval', session_id: 'session', call_id: 'call', method: name, params: { query: 'antares' },
+      status: 'pending', created_at: 1, decided_at: null, channel: 'mcp',
+      context: { account: 'MCP: Mi Servidor', tool: 'buscar' },
+    }} />
+  </>);
+  expect(screen.getByText('MCP mi-servidor · buscar')).toBeInTheDocument();
+  expect(screen.getByText('Usar buscar en Mi Servidor')).toBeInTheDocument();
+  expect(screen.getByText('MCP')).toBeInTheDocument();
+  expect(screen.queryByText('Acción sin descripción disponible')).not.toBeInTheDocument();
+});
+
 
 it('resume más de dos pasos de herramientas y los abre si alguno necesita atención', () => {
   const step = (id: string, status: string) => ({ id, name: 'templates_catalog', params: {}, status, gated: false });

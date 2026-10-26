@@ -28,7 +28,7 @@ export interface AgentRuleAudit {
   to: AgentChannelRule | null;
 }
 
-export type AgentReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type AgentReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export interface AgentSession {
   id: string;
@@ -159,7 +159,7 @@ export interface AgentApproval {
   channel?: AgentChannel | null;
   source?: AgentApprovalSource | null;
   consumed_by?: string;
-  context?: { account?: string; sheet_id?: string; scopes?: string[]; filename?: string;
+  context?: { account?: string; tool?: string; sheet_id?: string; scopes?: string[]; filename?: string;
     page_url?: string; page_time_origin?: number; domain?: string; policy_blocked?: boolean;
     computer?: { app?: string; window?: string; element?: string }; subagent?: string; subagent_role?: AgentRole };
   resources?: { path: string; sha256?: string }[];

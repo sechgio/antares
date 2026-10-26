@@ -20,6 +20,13 @@ it('muestra negritas, código y listas sin interpretar HTML ni abrir enlaces', (
   expect(screen.getByText('panel')).toHaveAttribute('title', 'https://evil.example.com');
 });
 
+it('no abre cursiva con guiones bajos dentro de palabras', () => {
+  const { container } = render(<MessageMarkdown text={'Usa gmail_search, gmail_get y mi_archivo_final.pdf; esto es _cursiva_ y __negrita__.'} />);
+  expect(container.textContent).toContain('Usa gmail_search, gmail_get y mi_archivo_final.pdf; esto es cursiva y negrita.');
+  expect([...container.querySelectorAll('em')].map((node) => node.textContent)).toEqual(['cursiva']);
+  expect(screen.getByText('negrita').tagName).toBe('STRONG');
+});
+
 const chart = '```chart\n{"type":"bar","title":"Ventas","labels":["Ene","Feb"],"series":[{"name":"2026","data":[3,5]}]}\n```';
 
 it('reconoce el lenguaje del bloque y marca los que siguen abiertos', () => {
