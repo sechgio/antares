@@ -29,6 +29,7 @@
   },
   "prefixes": [
     ["mcp__", "mcp"],
+    ["mcp2__", "mcp"],
     ["desktop_", "desktop"],
     ["web_", "desktop"],
     ["gdrive_", "cloud"],

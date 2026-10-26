@@ -10,7 +10,7 @@ import MessageMarkdown from './MessageMarkdown';
 import Reasoning from './Reasoning';
 import SubagentTrace from './SubagentTrace';
 import { channelLabel } from './channels';
-import { METHOD_LABELS } from './methodLabels';
+import { METHOD_LABELS, methodLabel } from './methodLabels';
 
 interface AgentIdentity {
   seed: string;
@@ -306,7 +306,7 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
     <>
       <Icon size={14} className={`shrink-0 ${live ? 'animate-spin text-[var(--text-secondary)]' : failed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`} aria-hidden="true" />
       <span title={arg ?? undefined} className={`min-w-0 truncate transition-colors ${failed ? 'text-[var(--accent-red)]' : denied ? 'text-[var(--text-muted)]' : 'group-hover:text-[var(--text-primary)]'}`}>
-        {METHOD_LABELS[call.name] ?? call.name}
+        {methodLabel(call.name)}
         {arg && <span className={`ml-1.5 font-mono text-[12px] ${failed ? '' : 'text-[var(--text-muted)]'}`}>{arg}</span>}
       </span>
       {call.gated && <ShieldCheck size={12} className="shrink-0 text-[var(--text-muted)]" aria-label="Acción sensible" />}
@@ -454,8 +454,12 @@ export function ApprovalCard({
   const label = Object.prototype.hasOwnProperty.call(METHOD_LABELS, approval.method) ? METHOD_LABELS[approval.method] : undefined;
   const filename = typeof params.filename === 'string' && params.filename ? params.filename : params.name;
   const appGrant = typeof context?.computer?.app === 'string' ? context.computer.app : null;
+  // El contexto de aprobación MCP trae la herramienta real y el nombre visible del servidor.
+  const mcpServer = typeof context?.account === 'string' && context.account.startsWith('MCP: ') ? context.account.slice(5) : null;
   const action = approval.method === 'drafts_save' && typeof filename === 'string'
-    ? `Guardar ${filename}` : label;
+    ? `Guardar ${filename}`
+    : label ?? (mcpServer && typeof context?.tool === 'string' ? `Usar ${context.tool} en ${mcpServer}`
+      : methodLabel(approval.method) !== approval.method ? methodLabel(approval.method) : undefined);
   const ruleChannel = approval.channel ?? null;
   const channel = channelLabel(ruleChannel);
   const facts = [
@@ -672,7 +676,7 @@ export function ToolGroup({ label, names, enabledNames, onToggle, disabled, expa
       <ul className="mt-1.5 max-h-44 space-y-1 overflow-auto">
         {names.map((n) => (
           <li key={n} className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]" title={n}>
-            <span className="min-w-0 flex-1 truncate">{METHOD_LABELS[n] ?? n}</span>
+            <span className="min-w-0 flex-1 truncate">{methodLabel(n)}</span>
             {onToggle && <Toggle checked={enabledNames?.has(n) ?? true} onChange={(enabled) => onToggle(n, enabled)} disabled={disabled} aria-label={`Habilitar ${n}`} />}
           </li>
         ))}
