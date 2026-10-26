@@ -231,6 +231,15 @@ async function main() {
       'la ventana declarada por el usuario manda sobre el catálogo');
     assert(!define({ custom: true, base_url: 'http://127.0.0.1:11434/v1' }, 'gpt-4o').cost.input,
       'un endpoint propio no hereda los precios del catálogo');
+    const { catalogFor } = require('../electron/agent-execution');
+    assert(catalogFor({ provider: 'custom-claude', style: 'anthropic_messages', base_url: 'https://api.anthropic.com' }) === 'anthropic'
+      && catalogFor({ provider: 'custom-gpt', style: 'openai_chat', base_url: 'https://api.openai.com/v1' }) === 'openai'
+      && catalogFor({ provider: 'custom-or', style: 'openai_chat', base_url: 'https://openrouter.ai/api/v1' }) === 'openrouter'
+      && catalogFor({ provider: 'anthropic', style: 'anthropic_messages', base_url: 'https://proxy.example.com' }) === 'anthropic',
+      'un modelo personalizado en una API oficial usa el mismo catálogo que el proveedor integrado');
+    assert(catalogFor({ provider: 'custom-local', style: 'openai_chat', base_url: 'http://127.0.0.1:11434/v1' }) === null
+      && catalogFor({ provider: 'custom-x', style: 'openai_chat', base_url: 'https://api.anthropic.com' }) === null,
+      'un endpoint propio o con otro formato de API no hereda el catálogo');
   }
   {
     const { MemoryStorage } = await import('@earendil-works/pi-durable');
@@ -592,6 +601,10 @@ async function main() {
     await runtime.open({ storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
     const restored = (await runtime.handlers.agent_sessions_list()).sessions.find((item) => item.id === session.id);
     assert(restored.reasoning_effort === 'minimal' && restored.reasoning_levels.includes('minimal'), 'el nivel sobrevive al reinicio de SQLite');
+    runtime._internal._providerOverrides.set('razona', fauxProvider({ provider: 'razona', models: [{ id: 'razonador', reasoning: false }] }).provider);
+    const synced = (await runtime.handlers.agent_sessions_list()).sessions.find((item) => item.id === session.id);
+    assert(synced.reasoning_levels.length === 0 && await thinkingLevel(session.id) === 'off',
+      'la lista refleja al momento los niveles que Proveedores IA declara para el modelo');
     await runtime.shutdown();
     fs.rmSync(dir, { recursive: true, force: true });
   }

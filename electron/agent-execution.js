@@ -188,6 +188,22 @@ const MODEL_CATALOGS = {
   openrouter: ['@earendil-works/pi-ai/providers/openrouter.models', 'OPENROUTER_MODELS'],
 };
 
+// Un modelo personalizado que apunta a una API oficial usa su catálogo, como
+// el proveedor integrado: límites, precios y modo de razonamiento reales.
+const CATALOG_HOSTS = [
+  ['anthropic', 'anthropic_messages', /(^|\.)api\.anthropic\.com$/i],
+  ['openai', 'openai_chat', /(^|\.)api\.openai\.com$/i],
+  ['openrouter', 'openai_chat', /(^|\.)openrouter\.ai$/i],
+];
+
+function catalogFor(info) {
+  if (MODEL_CATALOGS[info.provider]) return info.provider;
+  let host = '';
+  try { host = new URL(info.base_url).hostname; } catch { }
+  const match = CATALOG_HOSTS.find(([, style, pattern]) => style === info.style && pattern.test(host));
+  return match ? match[0] : null;
+}
+
 async function catalogModels(provider) {
   const entry = MODEL_CATALOGS[provider];
   if (!entry) return {};
@@ -201,7 +217,7 @@ async function buildProvider(record) {
   const anthropic = info.style === 'anthropic_messages';
   const api = anthropic ? 'anthropic-messages' : 'openai-completions';
   const providerId = info.provider;
-  const catalog = await catalogModels(providerId);
+  const catalog = await catalogModels(catalogFor(info));
   return createProvider({
     id: providerId,
     name: providerId,
@@ -1306,6 +1322,7 @@ module.exports = {
   TOOLS_LOAD,
   supportsVision,
   modelDefinition,
+  catalogFor,
   leadingSystem,
   callKey,
   providerInfo,

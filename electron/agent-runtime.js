@@ -258,7 +258,22 @@ function toPublicSession(current) {
   return rest;
 }
 
+// Proveedores IA puede cambiar los niveles de un modelo (capacidad declarada o
+// catálogo nuevo): la lista los muestra al día sin esperar al próximo turno.
+async function _syncListedReasoning() {
+  const ready = new Map();
+  for (const session of Object.values(await sessions())) {
+    if (session.deleted) continue;
+    const key = JSON.stringify([session.provider, session.model]);
+    if (!ready.has(key)) {
+      ready.set(key, await execution.ensureProvider(session.provider, session.model).then(() => true, () => false));
+    }
+    if (ready.get(key)) await _syncReasoning(session).catch(() => {});
+  }
+}
+
 async function sessionsList() {
+  await _syncListedReasoning();
   const result = Object.values(await sessions())
     .filter((s) => !s.deleted)
     .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))
