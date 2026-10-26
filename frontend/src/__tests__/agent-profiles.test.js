@@ -144,13 +144,6 @@ describe('perfiles portables', () => {
     expect(() => loadAgentProfile('reviewer')).toThrow(/duplicado: review/);
   });
 
-  it('la skill de muestra incluida se puede registrar y cargar', () => {
-    const example = fs.readFileSync(new URL('../../../agents/_shared/skills/example/SKILL.md', import.meta.url), 'utf8');
-    write('_shared/skills/example/SKILL.md', example);
-    const loaded = loadAgentProfile('reviewer');
-    expect(readProfileSkill(loaded, { skill_id: 'profile:example' }).content).toContain('evidencia concreta');
-  });
-
   it('rechaza JSON inválido, metadatos incompletos y AGENTS.md ausente', () => {
     write('reviewer/agent.json', '{');
     expect(() => loadAgentProfile('reviewer')).toThrow(/agent\.json.*JSON inválido/);

@@ -719,7 +719,11 @@ def _memory_context(params: JsonObject) -> JsonObject:
     profile_id = params.get("profile_id")
     if profile_id is not None and (not isinstance(profile_id, str) or not profile_id or len(profile_id) > 120):
         raise ValidationError("El perfil de memoria no es válido")
-    return memory.context(str(params["session_id"]), str(params["text"]), versions, templates, accounts, profile_id)
+    memory_scope = params.get("memory_scope")
+    if memory_scope is not None and memory_scope not in ("shared-read", "own", "none"):
+        raise ValidationError("El alcance de memoria no es válido")
+    return memory.context(str(params["session_id"]), str(params["text"]), versions, templates, accounts, profile_id,
+                          memory_scope)
 
 
 @with_locale

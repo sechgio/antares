@@ -1881,6 +1881,200 @@ async function main() {
 
   {
     const { bridge, state } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    const bigBridge = async (method, params) => {
+      if (method !== 'agent_internal_tools') return bridge(method, params);
+      const result = await bridge(method, params);
+      for (let i = 0; i < 3; i += 1) {
+        result.tools.push({ name: `formatos_t${i}`, module: 'formatos', description: `Formatos PDF ${i}`, gated: false, kind: 'backend', inputSchema: schema });
+        result.tools.push({ name: `sellador_t${i}`, module: 'sellador', description: `Sellar ${i}`, gated: false, kind: 'backend', inputSchema: schema });
+      }
+      result.tools.push({ name: 'fs_read', module: 'computer', description: 'Leer archivo', gated: false, kind: 'backend', inputSchema: schema });
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('tools_load', { modules: ['formatos', 'sellador'] })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('módulos revisados'),
+      fauxAssistantMessage('sellador revisado'),
+      fauxAssistantMessage([fauxToolCall('fs_read', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('lectura bloqueada'),
+    ], bigBridge);
+    const tools = ['fs_read', 'tools_load', 'formatos_t0'];
+    const { profile } = await runtime.handlers.agent_profile_save({ name: 'Lector', instructions: 'Solo lee', tools });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
+    const enabledNames = async () => (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools
+      .filter((t) => t.enabled).map((t) => t.name).sort();
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'necesito formatos y sellos' });
+    assert(await waitIdle(session.id), 'el turno con tools_load del bot termina');
+    assert(JSON.stringify(await enabledNames()) === JSON.stringify([...tools].sort()), 'tools_load no amplía las herramientas del bot');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'usa @sellador' });
+    assert(await waitIdle(session.id), 'el turno con mención del bot termina');
+    assert(!(await enabledNames()).some((name) => name.startsWith('sellador_')), 'mencionar un módulo no amplía las herramientas del bot');
+    let error;
+    try { await runtime.handlers.agent_tools_set({ session_id: session.id, names: ['sellador_t0'] }); } catch (err) { error = err; }
+    assert(!!error, 'la selección manual no supera la lista del bot');
+    await runtime.handlers.agent_tools_set({ session_id: session.id, names: null });
+    assert(JSON.stringify(await enabledNames()) === JSON.stringify([...tools].sort()), 'restablecer vuelve a las herramientas del bot');
+    await runtime.handlers.agent_profile_save({ ...profile, tools: ['tools_load', 'formatos_t0'] });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'lee el archivo' });
+    assert(await waitIdle(session.id), 'el turno con una herramienta retirada del bot termina');
+    assert(state.dispatchLog.length === 0, 'una herramienta retirada del bot no se ejecuta aunque siga en la conversación');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    const bigBridge = async (method, params) => {
+      if (method !== 'agent_internal_tools') return bridge(method, params);
+      const result = await bridge(method, params);
+      for (let i = 0; i < 3; i += 1) {
+        result.tools.push({ name: `sellador_t${i}`, module: 'sellador', description: `Sellar ${i}`, gated: false, kind: 'backend', inputSchema: schema });
+      }
+      result.tools.push({ name: 'fs_read', module: 'computer', description: 'Leer archivo', gated: false, kind: 'backend', inputSchema: schema });
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('tools_load', { modules: ['sellador'] })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('sellador revisado'),
+      fauxAssistantMessage([fauxToolCall('fs_read', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('lectura bloqueada'),
+    ], bigBridge);
+    for (const toolsDeny of [['desconocida'], 'fs_read', [false]]) {
+      let error;
+      try { await runtime.handlers.agent_profile_save({ name: 'Inválido', instructions: 'x', tools: null, tools_deny: toolsDeny }); } catch (err) { error = err; }
+      assert(!!error, 'una lista de bloqueadas inválida se rechaza');
+    }
+    const open = (await runtime.handlers.agent_profile_save({ name: 'Abierto', instructions: 'Todo menos sellar', tools: null, tools_deny: ['sellador_t0'] })).profile;
+    assert(JSON.stringify(open.tools_deny) === '["sellador_t0"]', 'el bot guarda sus herramientas bloqueadas');
+    const kept = (await runtime.handlers.agent_profile_save({ id: open.id, name: 'Abierto', instructions: 'Todo menos sellar', tools: null })).profile;
+    assert(JSON.stringify(kept.tools_deny) === '["sellador_t0"]', 'editar sin indicar bloqueadas las conserva');
+    const { session: openSession } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: open.id });
+    const { session: plainSession } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const enabledIn = async (id) => (await runtime.handlers.agent_tools_list({ session_id: id })).tools.filter((t) => t.enabled).map((t) => t.name);
+    assert(JSON.stringify(await enabledIn(openSession.id)) === JSON.stringify((await enabledIn(plainSession.id)).filter((name) => name !== 'sellador_t0')),
+      'un bot con todas las herramientas arranca como una conversación normal sin las bloqueadas');
+    const tools = ['fs_read', 'tools_load', 'sellador_t0', 'sellador_t1'];
+    const { profile } = await runtime.handlers.agent_profile_save({ name: 'Sellos', instructions: 'Sella', tools, tools_deny: ['sellador_t0'] });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
+    const enabledNames = async () => (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools
+      .filter((t) => t.enabled).map((t) => t.name).sort();
+    const expected = JSON.stringify(['fs_read', 'sellador_t1', 'tools_load']);
+    assert(JSON.stringify(await enabledNames()) === expected, 'la bloqueada gana aunque figure en la lista permitida');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'sella' });
+    assert(await waitIdle(session.id), 'el turno con tools_load y bloqueadas termina');
+    assert(JSON.stringify(await enabledNames()) === expected, 'tools_load no carga una herramienta bloqueada');
+    let error;
+    try { await runtime.handlers.agent_tools_set({ session_id: session.id, names: ['sellador_t0'] }); } catch (err) { error = err; }
+    assert(!!error, 'la selección manual no habilita una herramienta bloqueada');
+    await runtime.handlers.agent_profile_save({ ...profile, tools_deny: ['sellador_t0', 'fs_read'] });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'lee el archivo' });
+    assert(await waitIdle(session.id), 'el turno con una herramienta recién bloqueada termina');
+    assert(state.dispatchLog.length === 0, 'una herramienta recién bloqueada no se ejecuta aunque siga en la conversación');
+    await runtime.handlers.agent_tools_set({ session_id: session.id, names: null });
+    assert(JSON.stringify(await enabledNames()) === JSON.stringify(['sellador_t1', 'tools_load']), 'restablecer excluye las bloqueadas');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    const scopes = [];
+    const memoryBridge = async (method, params) => {
+      if (method === 'agent_internal_memory_context') scopes.push(params.memory_scope);
+      if (method !== 'agent_internal_tools') return bridge(method, params);
+      const result = await bridge(method, params);
+      for (const name of ['memory_search', 'memory_remember', 'procedure_learn']) {
+        result.tools.push({ name, module: 'agent', description: `Memoria ${name}`, gated: name !== 'memory_search', kind: 'backend', inputSchema: schema });
+      }
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage('con memoria propia'),
+      fauxAssistantMessage([fauxToolCall('memory_search', { query: 'formato' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('sin memoria'),
+    ], memoryBridge);
+    let error;
+    try { await runtime.handlers.agent_profile_save({ name: 'Inválido', instructions: 'x', tools: null, memory_scope: 'all' }); } catch (err) { error = err; }
+    assert(!!error, 'un alcance de memoria desconocido se rechaza');
+    const shared = (await runtime.handlers.agent_profile_save({ name: 'Compartido', instructions: 'x', tools: null })).profile;
+    assert(!('memory_scope' in shared), 'el alcance por defecto no cambia la ficha guardada');
+    const own = (await runtime.handlers.agent_profile_save({ name: 'Propio', instructions: 'x', tools: null, memory_scope: 'own' })).profile;
+    assert(own.memory_scope === 'own', 'el bot guarda su alcance de memoria');
+    const kept = (await runtime.handlers.agent_profile_save({ id: own.id, name: 'Propio', instructions: 'y', tools: null })).profile;
+    assert(kept.memory_scope === 'own', 'editar sin indicar el alcance lo conserva');
+    const { session: ownSession } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: own.id });
+    await runtime.handlers.agent_message_send({ session_id: ownSession.id, content: 'hola' });
+    assert(await waitIdle(ownSession.id), 'el turno con memoria propia termina');
+    assert(scopes.at(-1) === 'own', 'la consulta de memoria recibe el alcance del bot');
+    const none = (await runtime.handlers.agent_profile_save({ name: 'Sin memoria', instructions: 'x', tools: null, memory_scope: 'none' })).profile;
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: none.id });
+    const enabled = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools.filter((t) => t.enabled).map((t) => t.name);
+    const { session: plain } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const plainEnabled = (await runtime.handlers.agent_tools_list({ session_id: plain.id })).tools.filter((t) => t.enabled).map((t) => t.name);
+    const memoryTools = ['memory_search', 'memory_remember', 'procedure_learn'];
+    assert(plainEnabled.includes('memory_search')
+      && JSON.stringify(enabled) === JSON.stringify(plainEnabled.filter((name) => !memoryTools.includes(name))),
+      'un bot sin memoria arranca como una conversación normal sin sus herramientas');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'busca en memoria' });
+    assert(await waitIdle(session.id), 'el turno sin memoria termina');
+    assert(scopes.at(-1) === 'none' && state.dispatchLog.length === 0, 'un bot sin memoria no consulta recuerdos');
+    let blocked;
+    try { await runtime.handlers.agent_tools_set({ session_id: session.id, names: ['memory_search'] }); } catch (err) { blocked = err; }
+    assert(!!blocked, 'la selección manual no devuelve la memoria a un bot sin memoria');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    await openFaux([
+      fauxAssistantMessage('primer turno'),
+      fauxAssistantMessage([fauxToolCall('canvas_list', {})], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('no debería llegar'),
+    ], bridge);
+    for (const dailyTokens of [10, 1500.5, '2000', 200_000_000]) {
+      let error;
+      try { await runtime.handlers.agent_profile_save({ name: 'Inválido', instructions: 'x', tools: null, daily_tokens: dailyTokens }); } catch (err) { error = err; }
+      assert(!!error, `un presupuesto diario inválido se rechaza: ${dailyTokens}`);
+    }
+    const internal = runtime._internal.state();
+    const setUsage = (id, day, tokens) => internal.harness.commit(async (tx) => {
+      const doc = await tx.doc(internal.ProfilesDoc);
+      doc.usage = { ...(doc.usage || {}), [id]: { day, tokens } };
+    }, internal.ctx);
+    const today = require('../electron/agent-execution').localDay();
+    const { profile } = await runtime.handlers.agent_profile_save({ name: 'Ahorrador', instructions: 'Gasta poco', tools: null, daily_tokens: 50_000 });
+    assert(profile.daily_tokens === 50_000, 'el bot guarda su presupuesto diario');
+    const kept = (await runtime.handlers.agent_profile_save({ id: profile.id, name: 'Ahorrador', instructions: 'Gasta poco', tools: null })).profile;
+    assert(kept.daily_tokens === 50_000, 'editar sin indicar presupuesto lo conserva');
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
+    await setUsage(profile.id, '2000-01-01', 10_000_000);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'hola' });
+    assert(await waitIdle(session.id), 'el consumo de otro día no bloquea el turno');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(listed.token_budget && listed.token_budget.limit === 50_000 && listed.token_budget.used > 0 && listed.token_budget.used < 50_000,
+      'cada respuesta suma su consumo al día actual del bot');
+    await setUsage(profile.id, today, 49_999);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'lista los documentos' });
+    assert(await waitIdle(session.id), 'el turno que agota el presupuesto se detiene');
+    const paused = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(paused.resumable && paused.messages.some((message) => /presupuesto diario de tokens/.test(message.content || '')),
+      'agotar el presupuesto a mitad de turno deja un punto reanudable');
+    assert(!paused.messages.some((message) => message.content === 'no debería llegar'), 'sin presupuesto no se pide otra respuesta');
+    let error;
+    try { await runtime.handlers.agent_message_send({ session_id: session.id, content: 'sigue' }); } catch (err) { error = err; }
+    assert(error && /presupuesto diario/.test(error.message), 'un bot sin presupuesto no admite turnos nuevos ni reanudar');
+    const plain = (await runtime.handlers.agent_profile_save({ name: 'Libre', instructions: 'x', tools: null })).profile;
+    assert(!('daily_tokens' in plain), 'sin presupuesto la ficha no cambia');
+    await runtime.handlers.agent_profile_delete({ id: profile.id });
+    const usage = (await internal.harness.snapshot(internal.ProfilesDoc, internal.ctx)).usage || {};
+    assert(!(profile.id in usage), 'borrar el bot elimina su consumo');
+    assert(state.dispatchLog.length <= 1, 'el turno pausado no repite herramientas');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
     await openFaux([
       fauxAssistantMessage([fauxToolCall('db_clear', { turno: 1 }, { id: 'call_0' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('primero'),

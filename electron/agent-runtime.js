@@ -270,6 +270,9 @@ async function sessionsList() {
 
 const MAX_PROFILES = 30;
 const PROFILE_ROLES = new Set(['explorer', 'reviewer', 'worker']);
+const MEMORY_SCOPES = new Set(['shared-read', 'own', 'none']);
+const MIN_DAILY_TOKENS = 1000;
+const MAX_DAILY_TOKENS = 100_000_000;
 const SECRET_RE = /(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|bearer\s+[A-Za-z0-9._~+/-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:password|contraseña|api[_ -]?key|token|secret)\s*[:=]\s*\S+)/i;
 
 async function _profiles() {
@@ -298,14 +301,24 @@ async function profileSave(params = {}) {
   if (tools !== null && tools !== undefined && (!Array.isArray(tools) || tools.some((name) => typeof name !== 'string'))) {
     throw validation('Las herramientas deben ser una lista o «todas»');
   }
-  if (Array.isArray(tools)) {
-    const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
-    if (tools.some((name) => !available.has(name))) throw validation('La selección contiene herramientas no disponibles');
-  }
   const existing = params.id ? (await _profiles())[String(params.id)] : null;
   if (params.id && !existing) throw notFound('El agente ya no existe');
+  const deny = params.tools_deny === undefined ? (existing?.tools_deny || []) : params.tools_deny;
+  if (!Array.isArray(deny) || deny.some((name) => typeof name !== 'string')) {
+    throw validation('Las herramientas bloqueadas deben ser una lista');
+  }
+  if (Array.isArray(tools) || deny.length) {
+    const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
+    if ([...(tools || []), ...deny].some((name) => !available.has(name))) throw validation('La selección contiene herramientas no disponibles');
+  }
   const role = params.role === undefined ? (existing?.role || 'explorer') : String(params.role);
   if (!PROFILE_ROLES.has(role)) throw validation('Rol de agente no válido: usa explorer, reviewer o worker');
+  const memoryScope = params.memory_scope === undefined ? (existing?.memory_scope || 'shared-read') : String(params.memory_scope);
+  if (!MEMORY_SCOPES.has(memoryScope)) throw validation('Alcance de memoria no válido: usa shared-read, own o none');
+  const dailyTokens = params.daily_tokens === undefined ? (existing?.daily_tokens ?? null) : params.daily_tokens;
+  if (dailyTokens !== null && (!Number.isInteger(dailyTokens) || dailyTokens < MIN_DAILY_TOKENS || dailyTokens > MAX_DAILY_TOKENS)) {
+    throw validation(`El presupuesto diario debe estar entre ${MIN_DAILY_TOKENS} y ${MAX_DAILY_TOKENS} tokens, o vacío para no limitarlo`);
+  }
   const now = Date.now();
   const profile = {
     id: existing ? existing.id : crypto.randomBytes(6).toString('hex'),
@@ -316,6 +329,9 @@ async function profileSave(params = {}) {
     instructions: _text(params.instructions, 'las instrucciones', 4000, true),
     starter: _text(params.starter, 'el mensaje inicial', 500),
     tools: Array.isArray(tools) ? [...new Set(tools)] : null,
+    ...(deny.length ? { tools_deny: [...new Set(deny)] } : {}),
+    ...(memoryScope !== 'shared-read' ? { memory_scope: memoryScope } : {}),
+    ...(dailyTokens !== null ? { daily_tokens: dailyTokens } : {}),
     created_at: existing ? existing.created_at : now,
     updated_at: now,
   };
@@ -336,6 +352,7 @@ async function profileDelete(params = {}) {
     const doc = await tx.doc(shared.state.ProfilesDoc);
     removed = Boolean(doc.profiles[id]);
     delete doc.profiles[id];
+    if (doc.usage) delete doc.usage[id];
   }, ctx());
   if (!removed) throw notFound('El agente ya no existe');
   return { deleted: true, id };
@@ -363,11 +380,7 @@ async function sessionCreate(params) {
     ownership: { kind: 'ownerless' },
     agent: { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(levels), instructions },
   }, ctx());
-  const specs = [...shared.toolSpecs.values()];
-  const available = new Set(specs.map((tool) => tool.name));
-  const initialTools = profile && Array.isArray(profile.tools)
-    ? profile.tools.filter((name) => available.has(name))
-    : execution.defaultToolNames(specs);
+  const initialTools = execution.profileInitialTools(profile, [...shared.toolSpecs.values()]);
   if (initialTools) await conv.configure({ tools: initialTools.map((name) => ({ name })) }, ctx());
   const now = Date.now();
   const session = {
@@ -638,6 +651,7 @@ async function messagesList(params) {
   const plan = _latestPlan(messages);
   const stopped = messages.length > 0 && messages[messages.length - 1].content === CANCELLED_NOTE;
   const contextWindow = execution.contextWindowFor(session);
+  const budget = await execution.profileBudget(await execution.sessionProfile(session));
   return {
     messages,
     running,
@@ -651,6 +665,7 @@ async function messagesList(params) {
     context_window: contextWindow,
     compaction_thresholds: compactionPolicy.thresholdsFor(shared.state.compaction, contextWindow),
     compacting: (projection.liveFor(session.conversationId).compactions || []).length > 0,
+    ...(budget ? { token_budget: { limit: budget.limit, used: budget.used } } : {}),
   };
 }
 
@@ -713,6 +728,10 @@ async function messageSend(params) {
   resolvePortableProfile(shared.state.portableProfiles, session.conversationId);
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: sessionId })).approvals;
   if (pending.length && !correction) throw validation('Resuelve primero las aprobaciones pendientes de esta conversación');
+  const budget = await execution.profileBudget(await execution.sessionProfile(session));
+  if (budget && budget.exhausted) {
+    throw validation('Este agente agotó su presupuesto diario de tokens; podrás seguir mañana o al ampliar su presupuesto');
+  }
   await execution.refreshTools();
   await execution.ensureProvider(session.provider, session.model);
   await _syncReasoning(session);
@@ -760,7 +779,8 @@ async function messageSend(params) {
   const mentions = await bridge('agent_internal_mentions', { text: mentionText, native_tools: nativeNames });
   if ((mentions.modules || []).length) {
     const current = (await conv.agent(ctx())).tools.map((tool) => tool.name);
-    const extra = execution.moduleToolNames(mentions.modules).filter((name) => !current.includes(name));
+    const allows = await execution.profileToolFilter(session);
+    const extra = execution.moduleToolNames(mentions.modules).filter((name) => !current.includes(name) && (!allows || allows(name)));
     if (current.includes(execution.TOOLS_LOAD) && extra.length) {
       await conv.configure({ tools: [...current, ...extra].map((name) => ({ name })) }, ctx());
     }
@@ -952,9 +972,10 @@ function _toolVersion(spec) {
 }
 
 async function memoryContext(session, text) {
+  const profile = await execution.sessionProfile(session);
   return bridge('agent_internal_memory_context', {
     session_id: session.id, text, tools: [...shared.toolSpecs.values()].map(_toolVersion), accounts: _accounts(),
-    profile_id: session.profile?.id || null,
+    profile_id: session.profile?.id || null, memory_scope: profile?.memory_scope || null,
   }).catch(() => ({ context: '' }));
 }
 
@@ -993,8 +1014,14 @@ async function toolsSet(params) {
   }
   const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
   if (names && names.some((name) => !available.has(name))) throw validation('La selección contiene herramientas no disponibles');
+  const session = await requireSession(String(params.session_id || ''));
+  const allows = await execution.profileToolFilter(session);
+  if (allows && names && names.some((name) => !allows(name))) {
+    throw validation('El agente guardado de esta conversación no permite alguna de esas herramientas');
+  }
   await execution.refreshTools();
-  const selected = names === null ? execution.defaultToolNames([...shared.toolSpecs.values()]) : [...new Set(names)];
+  const selected = names !== null ? [...new Set(names)]
+    : execution.profileInitialTools(await execution.sessionProfile(session), [...shared.toolSpecs.values()]);
   await conv.configure({ tools: selected && selected.map((name) => ({ name })) }, ctx());
   return toolsList(params);
 }

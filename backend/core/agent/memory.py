@@ -128,10 +128,12 @@ class MemoryStore:
         self._applied: dict[str, list[str]] = dict(data.get("applied") or {})
         self._tool_versions: dict[str, str] = dict(data.get("tool_versions") or {})
         self._profiles: dict[str, str] = dict(data.get("profiles") or {})
+        self._scopes: dict[str, str] = dict(data.get("scopes") or {})
 
     def _write(self) -> None:
         atomic_write_json(self._path, {"items": self._items, "applied": self._applied,
-                                     "tool_versions": self._tool_versions, "profiles": self._profiles})
+                                     "tool_versions": self._tool_versions, "profiles": self._profiles,
+                                     **({"scopes": self._scopes} if self._scopes else {})})
 
     @staticmethod
     def _view(item: JsonObject) -> JsonObject:
@@ -166,7 +168,17 @@ class MemoryStore:
                      and item.get("profile_id") == profile_id), None)
 
     def _visible(self, item: JsonObject, session_id: str) -> bool:
-        return not item.get("profile_id") or item["profile_id"] == self._profiles.get(session_id)
+        scope = self._scopes.get(session_id)
+        if scope == "none":
+            return False
+        profile_id = self._profiles.get(session_id)
+        if scope == "own":
+            return bool(profile_id) and item.get("profile_id") == profile_id
+        return not item.get("profile_id") or item["profile_id"] == profile_id
+
+    def _check_writable(self, session_id: str) -> None:
+        if self._scopes.get(session_id) == "none":
+            raise ValueError("Este agente no usa memoria; no puede guardar recuerdos ni procedimientos")
 
     def items(self) -> list[JsonObject]:
         with self._lock:
@@ -180,6 +192,7 @@ class MemoryStore:
         content = _clean(params.get("content"), "el contenido", MAX_TEXT)
         source = {"kind": "agent", "session_id": session_id}
         with self._lock:
+            self._check_writable(session_id)
             existing = self._same(str(kind), title, session_id)
             if existing is not None and existing["versions"][-1]["source"]["kind"] == "user":
                 raise ValueError("El usuario corrigió este recuerdo; propón el cambio en el chat en lugar de reemplazarlo")
@@ -192,6 +205,8 @@ class MemoryStore:
             return self._view(item)
 
     def learn(self, store: AgentStore, session_id: str, params: JsonObject) -> JsonObject:
+        with self._lock:
+            self._check_writable(session_id)
         title = _clean(params.get("title"), "un título", MAX_TITLE)
         when = _clean(params.get("when"), "cuándo aplica", MAX_TEXT)
         steps = _steps(params.get("steps"))
@@ -316,12 +331,18 @@ class MemoryStore:
 
     def context(self, session_id: str, text: str, versions: dict[str, str],
                 templates: set[str] | None = None, accounts: dict[str, str] | None = None,
-                profile_id: str | None = None) -> JsonObject:
+                profile_id: str | None = None, memory_scope: str | None = None) -> JsonObject:
         with self._lock:
             if profile_id:
                 self._profiles[session_id] = profile_id
             else:
                 self._profiles.pop(session_id, None)
+            # «shared-read» (por defecto) lee lo propio y lo global; «own» solo lo
+            # propio y «none» nada. Solo se guarda el alcance distinto del defecto.
+            if profile_id and memory_scope in ("own", "none"):
+                self._scopes[session_id] = memory_scope
+            else:
+                self._scopes.pop(session_id, None)
             self._tool_versions.update(versions)
             words = _words(text)
             chosen: list[tuple[int, JsonObject]] = []

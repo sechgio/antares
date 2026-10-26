@@ -176,6 +176,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [running, setRunning] = useState(false);
   const [plan, setPlan] = useState<AgentPlan | null>(null);
   const [resumable, setResumable] = useState(false);
+  const [tokenBudget, setTokenBudget] = useState<{ limit: number; used: number } | null>(null);
   const [provider, setProvider] = useState('');
   const [model, setModel] = useState('');
   const [modelBusy, setModelBusy] = useState(false);
@@ -326,6 +327,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           setRunning(res.running);
           setPlan(res.plan ?? null);
           setResumable(!!res.resumable);
+          setTokenBudget(res.token_budget ?? null);
         }
       } catch (err) {
         if (id === sessionIdRef.current) setMessagesStale(true);
@@ -1632,6 +1634,14 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 </div>
               ))}
             </div>
+          )}
+          {tokenBudget && tokenBudget.used >= tokenBudget.limit * 0.8 && (
+            <p role="status" className="mt-1.5 text-right text-[12px] text-[var(--accent-yellow)]">
+              {tokenBudget.used >= tokenBudget.limit
+                ? 'Este agente agotó su presupuesto diario'
+                : `Este agente usó el ${Math.floor((tokenBudget.used / tokenBudget.limit) * 100)} % de su presupuesto diario`}
+              {` (${tokenBudget.used.toLocaleString('es')} de ${tokenBudget.limit.toLocaleString('es')} tokens).`}
+            </p>
           )}
           {resumable && !running && pending.length === 0 && (
             <div className="mt-1.5 flex min-w-0 items-center justify-end gap-2 text-[12px] text-[var(--text-muted)]">

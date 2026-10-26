@@ -69,6 +69,47 @@ def test_agent_profile_color_accepts_legacy_calls_and_rejects_non_hex_colors():
             jsonschema.validate({**params, "color": color}, schema)
 
 
+def test_agent_profile_tools_deny_is_an_optional_list_of_names():
+    import jsonschema
+
+    schema = _catalog()["methods"]["agent_profile_save"]["inputSchema"]
+    params = {"name": "Revisor", "instructions": "Revisa documentos"}
+    for tools_deny in ([], ["shell_run"]):
+        jsonschema.validate({**params, "tools_deny": tools_deny}, schema)
+    for tools_deny in (None, "shell_run", [1]):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({**params, "tools_deny": tools_deny}, schema)
+
+
+def test_agent_profile_daily_tokens_is_a_bounded_integer_or_null():
+    import jsonschema
+
+    schema = _catalog()["methods"]["agent_profile_save"]["inputSchema"]
+    params = {"name": "Revisor", "instructions": "Revisa documentos"}
+    for daily_tokens in (None, 1000, 200000, 100000000):
+        jsonschema.validate({**params, "daily_tokens": daily_tokens}, schema)
+    for daily_tokens in (0, 999, 1500.5, "2000", 100000001):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({**params, "daily_tokens": daily_tokens}, schema)
+
+
+def test_agent_profile_memory_scope_accepts_only_known_scopes():
+    import jsonschema
+
+    methods = _catalog()["methods"]
+    schema = methods["agent_profile_save"]["inputSchema"]
+    params = {"name": "Revisor", "instructions": "Revisa documentos"}
+    for scope in ("shared-read", "own", "none"):
+        jsonschema.validate({**params, "memory_scope": scope}, schema)
+    for scope in (None, "all", 1):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({**params, "memory_scope": scope}, schema)
+    context = methods["agent_internal_memory_context"]["inputSchema"]
+    jsonschema.validate({"session_id": "s1", "text": "x", "memory_scope": None}, context)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"session_id": "s1", "text": "x", "memory_scope": "all"}, context)
+
+
 def test_agent_approve_accepts_optional_remember_for_always_allow():
     import jsonschema
 
