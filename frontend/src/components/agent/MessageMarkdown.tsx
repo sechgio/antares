@@ -1,4 +1,20 @@
-import type { ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
+
+const ChatVisual = lazy(() => import('./ChatVisual'));
+const VISUAL_LABELS: Record<string, string> = { chart: 'gráfico', svg: 'ilustración', html: 'interfaz' };
+
+function VisualPlaceholder({ lang }: { lang: string }) {
+  return (
+    <div role="status" className="w-full max-w-2xl overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+      <p className="border-b border-[var(--border-subtle)] px-3 py-2 text-[12.5px] text-[var(--text-muted)]">Generando {VISUAL_LABELS[lang]}…</p>
+      <div className="flex h-[150px] items-end gap-2 p-3 motion-safe:animate-pulse" aria-hidden="true">
+        {[45, 70, 55, 85, 40, 65].map((height, i) => (
+          <span key={i} className="flex-1 rounded-t bg-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)]" style={{ height: `${height}%` }} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|_[^_\n]+_|\[[^\]\n]+\]\([^)\s]+\))/g;
 
@@ -32,7 +48,7 @@ type Block =
   | { kind: 'p'; text: string }
   | { kind: 'h'; level: number; text: string }
   | { kind: 'ul' | 'ol'; items: string[] }
-  | { kind: 'code'; text: string }
+  | { kind: 'code'; text: string; lang?: string; open?: true }
   | { kind: 'quote'; text: string };
 
 export function parseBlocks(source: string): Block[] {
@@ -47,10 +63,11 @@ export function parseBlocks(source: string): Block[] {
     const line = lines[i];
     if (line.trim().startsWith('```')) {
       flush();
+      const lang = line.trim().slice(3).trim().toLowerCase();
       const code: string[] = [];
       i += 1;
       while (i < lines.length && !lines[i].trim().startsWith('```')) code.push(lines[i++]);
-      blocks.push({ kind: 'code', text: code.join('\n') });
+      blocks.push({ kind: 'code', text: code.join('\n'), ...(lang ? { lang } : {}), ...(i >= lines.length ? { open: true as const } : {}) });
       continue;
     }
     const heading = /^(#{1,4})\s+(.+)$/.exec(line);
@@ -100,12 +117,20 @@ export default function MessageMarkdown({ text, streaming = false }: { text: str
               </List>
             );
           }
-          case 'code':
-            return (
+          case 'code': {
+            const pre = (
               <pre key={key} className="overflow-x-auto whitespace-pre rounded-xl bg-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)] p-2.5 font-mono text-[12.5px] leading-[18px]">
                 {block.text}{cursor}
               </pre>
             );
+            if (!block.lang || !VISUAL_LABELS[block.lang]) return pre;
+            if (block.open) return streaming ? <VisualPlaceholder key={key} lang={block.lang} /> : pre;
+            return (
+              <Suspense key={key} fallback={<VisualPlaceholder lang={block.lang} />}>
+                <ChatVisual lang={block.lang} source={block.text} fallback={pre} />
+              </Suspense>
+            );
+          }
           case 'quote':
             return <p key={key} className="border-l-2 border-[var(--border-medium)] pl-2.5 text-[var(--text-secondary)]">{inline(block.text, key)}{cursor}</p>;
           default:
