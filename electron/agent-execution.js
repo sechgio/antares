@@ -72,7 +72,7 @@ function supportsReasoning(style, modelId) {
   return (style === 'anthropic_messages' ? REASONING_ANTHROPIC_MODEL : REASONING_OPENAI_MODEL).test(String(modelId || ''));
 }
 
-const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'];
+const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 // Niveles que admite el modelo ya registrado (ensureProvider), según su
 // definición: capacidad declarada en el proveedor, catálogo de pi-ai o nombre.
@@ -173,7 +173,9 @@ function modelDefinition(info, id, api, verified, catalogModel) {
       ...(Array.isArray(rates.tiers) ? { tiers: rates.tiers } : {}),
     },
     contextWindow,
-    maxTokens: Math.min(DEFAULT_MAX_TOKENS, Math.floor(contextWindow / 4)),
+    // El techo de salida del catálogo: el razonamiento comparte max_tokens con
+    // la respuesta y con 8 k un nivel alto dejaba la respuesta truncada.
+    maxTokens: Math.min(Number(catalog.maxTokens) || DEFAULT_MAX_TOKENS, Math.floor(contextWindow / 4)),
     reasoning,
     ...(reasoning && catalog.thinkingLevelMap ? { thinkingLevelMap: catalog.thinkingLevelMap } : {}),
     ...(Object.keys(compat).length ? { compat } : {}),
@@ -185,6 +187,22 @@ const MODEL_CATALOGS = {
   anthropic: ['@earendil-works/pi-ai/providers/anthropic.models', 'ANTHROPIC_MODELS'],
   openrouter: ['@earendil-works/pi-ai/providers/openrouter.models', 'OPENROUTER_MODELS'],
 };
+
+// Un modelo personalizado que apunta a una API oficial usa su catálogo, como
+// el proveedor integrado: límites, precios y modo de razonamiento reales.
+const CATALOG_HOSTS = [
+  ['anthropic', 'anthropic_messages', /(^|\.)api\.anthropic\.com$/i],
+  ['openai', 'openai_chat', /(^|\.)api\.openai\.com$/i],
+  ['openrouter', 'openai_chat', /(^|\.)openrouter\.ai$/i],
+];
+
+function catalogFor(info) {
+  if (MODEL_CATALOGS[info.provider]) return info.provider;
+  let host = '';
+  try { host = new URL(info.base_url).hostname; } catch { }
+  const match = CATALOG_HOSTS.find(([, style, pattern]) => style === info.style && pattern.test(host));
+  return match ? match[0] : null;
+}
 
 async function catalogModels(provider) {
   const entry = MODEL_CATALOGS[provider];
@@ -199,7 +217,7 @@ async function buildProvider(record) {
   const anthropic = info.style === 'anthropic_messages';
   const api = anthropic ? 'anthropic-messages' : 'openai-completions';
   const providerId = info.provider;
-  const catalog = await catalogModels(providerId);
+  const catalog = await catalogModels(catalogFor(info));
   return createProvider({
     id: providerId,
     name: providerId,
@@ -381,6 +399,36 @@ function normal(text) {
   return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
 
+// Palabras que aparecen en casi cualquier petición o descripción y no
+// distinguen herramientas («para», «usuario», «requiere aprobación»…).
+const SEARCH_STOPWORDS = new Set(['para', 'con', 'los', 'las', 'del', 'una', 'uno', 'unos', 'unas', 'que', 'por', 'como',
+  'mas', 'quiero', 'necesito', 'hacer', 'este', 'esta', 'esto', 'ese', 'esa', 'sus', 'mis', 'sobre', 'desde', 'hasta',
+  'entre', 'cuando', 'donde', 'todo', 'todos', 'toda', 'todas', 'muy', 'sin', 'hay', 'puedes', 'favor', 'usuario',
+  'requiere', 'aprobacion', 'solo', 'lectura', 'efecto', 'the', 'and', 'for', 'with']);
+
+// Como el searchHint de las herramientas de sistema de Claude Desktop: el
+// nombre exacto manda, y la etiqueta y los alias del módulo (agent-modules.json)
+// cuentan más que la descripción. Solo se cargan las que se acercan a la mejor.
+function rankTools(specs, args) {
+  const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
+  const query = normal(args.query);
+  const words = query.split(/[^a-z0-9_]+/).filter((word) => word.length > 2 && !SEARCH_STOPWORDS.has(word));
+  const catalog = require('../shared/agent-modules.json').modules;
+  const hints = (module) => normal([module, catalog[module]?.label, ...(catalog[module]?.aliases || [])].join(' '));
+  const score = (spec) => {
+    if (modules.includes(spec.module)) return 100;
+    if (words.includes(normal(spec.name))) return 50;
+    const name = normal(spec.name);
+    const hint = hints(spec.module);
+    const description = normal(`${spec.label || ''} ${spec.description || ''}`);
+    return words.reduce((total, word) => total
+      + (name.includes(word) ? 3 : 0) + (hint.includes(word) ? 2 : 0) + (description.includes(word) ? 1 : 0), 0);
+  };
+  const scored = specs.map((spec) => [spec, score(spec)]).filter(([, value]) => value > 0).sort((a, b) => b[1] - a[1]);
+  const floor = scored.length ? Math.ceil(scored[0][1] / 2) : 0;
+  return scored.filter(([, value]) => value >= floor).slice(0, MAX_LOADED_TOOLS).map(([spec]) => spec);
+}
+
 async function loadTools(args, sessionId, context) {
   const conv = await conversation(sessionId);
   const enabled = new Set((await conv.agent(context)).tools.map((tool) => tool.name));
@@ -400,13 +448,7 @@ async function loadTools(args, sessionId, context) {
     }
     return { text: JSON.stringify({ modules: [...catalog.values()].sort((a, b) => a.module.localeCompare(b.module)) }) };
   }
-  const score = (spec) => {
-    if (modules.includes(spec.module)) return 100;
-    const haystack = normal(`${spec.name} ${spec.module || ''} ${spec.label || ''} ${spec.description || ''}`);
-    return words.filter((word) => haystack.includes(word)).length;
-  };
-  const found = specs.map((spec) => [spec, score(spec)]).filter(([, value]) => value > 0)
-    .sort((a, b) => b[1] - a[1]).slice(0, MAX_LOADED_TOOLS).map(([spec]) => spec);
+  const found = rankTools(specs, args);
   const added = found.filter((spec) => !enabled.has(spec.name)).map((spec) => spec.name);
   const text = JSON.stringify({
     loaded: added,
@@ -1295,6 +1337,7 @@ module.exports = {
   allToolSpecs,
   defaultToolNames,
   moduleToolNames,
+  rankTools,
   localDay,
   profileBudget,
   profileFilter,
@@ -1304,6 +1347,7 @@ module.exports = {
   TOOLS_LOAD,
   supportsVision,
   modelDefinition,
+  catalogFor,
   leadingSystem,
   callKey,
   providerInfo,

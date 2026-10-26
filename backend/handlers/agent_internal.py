@@ -288,11 +288,23 @@ def _shell_jobs_cancel_session(params: JsonObject) -> JsonObject:
 def _mentions(params: JsonObject) -> JsonObject:
     result = _agent_modules.resolve_mentions(str(params["text"]))
     result["labels"] = {module: _agent_modules.label_for(module) for module in result["modules"]}
+    servers = _mcp_servers.mentioned_servers(result["unknown"]) if result["unknown"] else []
+    mentioned = {server["mention"] for server in servers}
+    result["unknown"] = [token for token in result["unknown"] if token not in mentioned]
+    result["mcp_tools"] = [name for server in servers for name in server["tools"]]
+    context = []
     if result["modules"]:
         native = params.get("native_tools")
         names = [str(spec["name"]) for spec in _agent_chat.tool_specs()]
         names += [str(n) for n in native if isinstance(n, str)] if isinstance(native, list) else []
-        result["context"] = _agent_modules.mention_context(result["modules"], names)
+        context.append(_agent_modules.mention_context(result["modules"], names))
+    if servers:
+        context.append("El usuario mencionó estos servidores MCP; sus herramientas piden aprobación antes de cada llamada:\n"
+                       + "\n".join(f"- {server['name']}: " + (f"no disponible, {server['error']}" if server["error"]
+                                   else f"herramientas {', '.join(server['tools']) or '(ninguna habilitada)'}")
+                                   for server in servers))
+    if context:
+        result["context"] = "\n\n".join(context)
     return result
 
 

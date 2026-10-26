@@ -12,7 +12,8 @@ try {
   assert(channelFor('desktop_click', 'computer') === 'desktop', 'el escritorio tiene su canal');
   assert(channelFor('web_click', 'computer') === 'desktop', 'el navegador comparte canal con el escritorio');
   assert(channelFor('gdrive_upload', 'connections') === 'cloud', 'las conexiones caen en nube');
-  assert(channelFor('mcp__srv__do', null) === 'mcp', 'MCP tiene su propio canal');
+  assert(channelFor('mcp__srv__do', null) === 'mcp' && channelFor('mcp2__srv-0123456789ab__do-0123456789ab', null) === 'mcp',
+    'MCP tiene su propio canal, también con los nombres actuales mcp2__');
   assert(channelFor('document_generate', 'documents') === 'documents', 'los documentos tienen su canal');
   assert(channelFor('memory_remember', 'agent') === 'memory', 'la memoria tiene su canal');
   assert(channelFor('task_schedule', 'agent') === 'agenda', 'la agenda tiene su canal');

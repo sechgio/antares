@@ -16,7 +16,9 @@ function VisualPlaceholder({ lang }: { lang: string }) {
   );
 }
 
-const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|_[^_\n]+_|\[[^\]\n]+\]\([^)\s]+\))/g;
+// Como en CommonMark, «_» pegado a letras o números no abre ni cierra énfasis:
+// gmail_search o mi_archivo_final.pdf se muestran tal cual.
+const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|(?<![\p{L}\p{N}_])__[^_\n]+__(?![\p{L}\p{N}_])|\*[^*\n]+\*|(?<![\p{L}\p{N}_])_[^_\n]+_(?![\p{L}\p{N}_])|\[[^\]\n]+\]\([^)\s]+\))/gu;
 
 function inline(text: string, keyPrefix: string): ReactNode[] {
   const out: ReactNode[] = [];
