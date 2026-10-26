@@ -214,12 +214,17 @@ async function main() {
       'un modelo personalizado puede declarar visión aunque su nombre no la sugiera');
     const { OPENAI_MODELS } = await import('@earendil-works/pi-ai/providers/openai.models');
     const openai = { provider: 'openai', style: 'openai_chat', base_url: 'https://api.openai.com/v1' };
+    const anthropicCatalog = { provider: 'anthropic', style: 'anthropic_messages', base_url: 'https://api.anthropic.com' };
     const priced = modelDefinition(openai, 'gpt-4o', 'openai-completions', undefined, OPENAI_MODELS['gpt-4o']);
     assert(priced.cost.input === 2.5 && priced.cost.output === 10 && priced.cost.cacheRead === 1.25,
       'un modelo del catálogo lleva sus precios reales por millón de tokens');
     assert(priced.contextWindow === 128000
       && modelDefinition(openai, 'gpt-4.1', 'openai-completions', undefined, OPENAI_MODELS['gpt-4.1']).contextWindow === 1047576,
       'la ventana del catálogo sustituye al valor por defecto');
+    assert(modelDefinition(anthropicCatalog, 'claude-sonnet-5-5', 'anthropic-messages', ANTHROPIC_MODELS['claude-sonnet-5-5'],
+      ANTHROPIC_MODELS['claude-sonnet-5-5']).maxTokens === 128000
+      && modelDefinition(openai, 'gpt-5.5', 'openai-completions', undefined, OPENAI_MODELS['gpt-5.5']).maxTokens === 68000,
+      'el techo de salida del catálogo deja sitio al razonamiento y a la respuesta');
     const declared = modelDefinition({ ...openai, capabilities: { context_window: 32000 } }, 'gpt-4o',
       'openai-completions', undefined, OPENAI_MODELS['gpt-4o']);
     assert(declared.contextWindow === 32000 && declared.maxTokens === 8000,

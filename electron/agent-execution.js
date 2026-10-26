@@ -173,7 +173,9 @@ function modelDefinition(info, id, api, verified, catalogModel) {
       ...(Array.isArray(rates.tiers) ? { tiers: rates.tiers } : {}),
     },
     contextWindow,
-    maxTokens: Math.min(DEFAULT_MAX_TOKENS, Math.floor(contextWindow / 4)),
+    // El techo de salida del catálogo: el razonamiento comparte max_tokens con
+    // la respuesta y con 8 k un nivel alto dejaba la respuesta truncada.
+    maxTokens: Math.min(Number(catalog.maxTokens) || DEFAULT_MAX_TOKENS, Math.floor(contextWindow / 4)),
     reasoning,
     ...(reasoning && catalog.thinkingLevelMap ? { thinkingLevelMap: catalog.thinkingLevelMap } : {}),
     ...(Object.keys(compat).length ? { compat } : {}),
