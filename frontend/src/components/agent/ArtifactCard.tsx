@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, FileText, FolderOpen, Printer, Save, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, Eye, FileText, LayoutTemplate, Printer, Save, ShieldCheck } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { agentApi, type AgentArtifact } from '../../api/agentApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
@@ -7,6 +8,42 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import ThemedSelect from '../ui/ThemedSelect';
 import { channelLabel } from './channels';
+
+function ArtifactAction({ label, icon: Icon, title = label, ...props }: {
+  label: string; icon: LucideIcon; title?: string; disabled?: boolean; onClick: () => void;
+}) {
+  return (
+    <Button size="none" variant="ghost" aria-label={label} title={title} className="size-8 shrink-0" {...props}>
+      <Icon size={15} aria-hidden="true" />
+    </Button>
+  );
+}
+
+const VISIBLE_RESULTS = 2;
+
+/** Resultados de un turno: los más recientes visibles y los anteriores plegados para que no se apilen. */
+export function ArtifactList({ artifacts, sessionId, onRefresh, onOpenModule }: {
+  artifacts: AgentArtifact[]; sessionId: string; onRefresh: () => void; onOpenModule?: (module: string, id?: string) => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const hidden = showAll ? 0 : Math.max(0, artifacts.length - VISIBLE_RESULTS);
+  return (
+    <div role="group" aria-label="Resultados" className="space-y-1.5 pt-1">
+      {hidden > 0 && (
+        <button type="button" onClick={() => setShowAll(true)}
+          className="agent-tool-row flex items-center gap-1.5 px-1 text-[12px] text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+          <ChevronRight size={13} aria-hidden="true" />
+          {hidden === 1 ? 'Mostrar 1 resultado anterior' : `Mostrar ${hidden} resultados anteriores`}
+        </button>
+      )}
+      {artifacts.slice(hidden).map((artifact) => (
+        <div key={artifact.id} id={`agent-artifact-${artifact.id}`} className="scroll-mt-4">
+          <ArtifactCard artifact={artifact} sessionId={sessionId} onRefresh={onRefresh} onOpenModule={onOpenModule} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function ArtifactCard({ artifact, sessionId, onRefresh, onOpenModule }: {
   artifact: AgentArtifact; sessionId: string; onRefresh: () => void; onOpenModule?: (module: string, id?: string) => void;
@@ -74,34 +111,46 @@ export default function ArtifactCard({ artifact, sessionId, onRefresh, onOpenMod
   const id = ['canvas', 'formato'].includes(artifact.family) || (!artifact.module && artifact.family === 'html')
     ? artifact.template_id : artifact.sources?.find((source) => source.ids?.length)?.ids?.[0];
   return (
-    <section aria-label={`Documento ${file.name}`} className="w-full max-w-2xl space-y-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3">
-      <div className="flex min-w-0 items-center gap-2 text-sm text-[var(--text-primary)]">
-        <FileText size={16} className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate" title={file.name}>{file.name}</span>
-        <span className="shrink-0 text-xs text-[var(--text-secondary)]">{file.pages} pág.</span>
-      </div>
-      {artifact.files.length > 1 && <ThemedSelect value={String(fileIndex)} aria-label="Archivo del resultado"
-        options={artifact.files.map((item, index) => ({ value: String(index), label: item.name }))}
-        onChange={(value) => { setFileIndex(Number(value)); setPage(0); setPreview(''); setReviewed(''); }} />}
-      <p className="text-xs text-[var(--text-secondary)]">{isReviewed ? 'PDF revisado' : 'Pendiente de revisión'} · {Math.ceil(file.size / 1024)} KB</p>
-      {receipt && (
-        <div role="group" aria-label="Recibo de la acción"
-          className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-4 text-[var(--text-muted)]">
-          <ShieldCheck size={11} className="shrink-0" aria-hidden="true" />
-          <span>{channelLabel(receipt.channel) ?? 'Documentos'}</span>
-          <span aria-hidden="true">·</span>
-          <span>{receiptText}</span>
-          <span>· No reversible</span>
+    <section aria-label={`Documento ${file.name}`} className="agent-artifact w-full max-w-[min(620px,100%)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 p-2.5">
+        <span className="agent-artifact-icon flex size-10 shrink-0 flex-col items-center justify-center rounded-lg" aria-hidden="true">
+          <FileText size={16} />
+          <span className="text-[8.5px] font-semibold leading-none tracking-wide">PDF</span>
+        </span>
+        <div className="min-w-0 flex-1 basis-40">
+          <p className="truncate text-[13px] font-medium leading-5 text-[var(--text-primary)]" title={file.name}>{file.name}</p>
+          <p className="truncate text-[11.5px] leading-4 text-[var(--text-muted)]">
+            {file.pages} pág. · {Math.ceil(file.size / 1024)} KB · <span className={isReviewed ? 'text-[var(--accent-green)]' : ''}>{isReviewed ? 'PDF revisado' : 'Pendiente de revisión'}</span>
+          </p>
         </div>
-      )}
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="secondary" disabled={busy} onClick={() => void action('preview')}>Vista previa</Button>
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void action('open')}><FolderOpen size={13} className="mr-1" />Abrir PDF</Button>
-        {onOpenModule && <Button size="sm" variant="ghost" onClick={() => onOpenModule(module, id)}>Abrir módulo</Button>}
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void action('save')}><Save size={13} className="mr-1" />Guardar</Button>
-        <Button size="sm" variant="ghost" disabled={busy || !isReviewed} onClick={() => void selectPrint()}><Printer size={13} className="mr-1" />Imprimir</Button>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          <Button size="sm" variant="secondary" disabled={busy} aria-expanded={!!preview}
+            onClick={() => { if (preview) setPreview(''); else void action('preview'); }}>
+            <Eye size={13} aria-hidden="true" />Vista previa
+          </Button>
+          <ArtifactAction label="Abrir PDF" icon={ExternalLink} disabled={busy} onClick={() => void action('open')} />
+          {onOpenModule && <ArtifactAction label="Abrir módulo" icon={LayoutTemplate} onClick={() => onOpenModule(module, id)} />}
+          <ArtifactAction label="Guardar" icon={Save} disabled={busy} onClick={() => void action('save')} />
+          <ArtifactAction label="Imprimir" icon={Printer} disabled={busy || !isReviewed} onClick={() => void selectPrint()}
+            title={isReviewed ? 'Imprimir' : 'Revisa la vista previa antes de imprimir'} />
+        </div>
       </div>
-      {preview && <div className="space-y-2">
+      {(artifact.files.length > 1 || receipt) && <div className="space-y-2 px-2.5 pb-2.5">
+        {artifact.files.length > 1 && <ThemedSelect value={String(fileIndex)} aria-label="Archivo del resultado"
+          options={artifact.files.map((item, index) => ({ value: String(index), label: item.name }))}
+          onChange={(value) => { setFileIndex(Number(value)); setPage(0); setPreview(''); setReviewed(''); }} />}
+        {receipt && (
+          <div role="group" aria-label="Recibo de la acción"
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-4 text-[var(--text-muted)]">
+            <ShieldCheck size={11} className="shrink-0" aria-hidden="true" />
+            <span>{channelLabel(receipt.channel) ?? 'Documentos'}</span>
+            <span aria-hidden="true">·</span>
+            <span>{receiptText}</span>
+            <span>· No reversible</span>
+          </div>
+        )}
+      </div>}
+      {preview && <div className="space-y-2 border-t border-[var(--border-subtle)] bg-[var(--bg-base)] p-2.5">
         <img src={`data:image/png;base64,${preview}`} alt={`Página ${page + 1} de ${file.name}`} className="max-h-[65vh] w-full object-contain" />
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" variant="ghost" disabled={busy || page === 0} aria-label="Página anterior" onClick={() => void action('preview', page - 1)}><ChevronLeft size={14} /></Button>
@@ -110,7 +159,7 @@ export default function ArtifactCard({ artifact, sessionId, onRefresh, onOpenMod
           <Button size="sm" disabled={busy || isReviewed} onClick={() => void action('review')}>He revisado este PDF</Button>
         </div>
       </div>}
-      {showPrint && <div className="space-y-2 border-t border-[var(--border-subtle)] pt-2">
+      {showPrint && <div className="space-y-2 border-t border-[var(--border-subtle)] p-2.5">
         {!printers.length ? <p className="text-xs text-[var(--text-secondary)]">Añade una impresora en Windows para continuar.</p> : <>
           <ThemedSelect value={printer} onChange={setPrinter} aria-label="Impresora" options={printers.map((item) => ({ value: item.name, label: item.name }))} />
           <div className="grid grid-cols-2 gap-2">

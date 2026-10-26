@@ -19,7 +19,7 @@ import ModelPicker from './ModelPicker';
 import PermissionPicker from './PermissionPicker';
 import ReasoningPicker from './ReasoningPicker';
 import ContextUsage from './ContextUsage';
-import ArtifactCard from './ArtifactCard';
+import { ArtifactList } from './ArtifactCard';
 import QuestionCard from './QuestionCard';
 import MemoryMenu from './MemoryMenu';
 import ContextChips from './ContextChips';
@@ -30,7 +30,7 @@ import AgentAuditPanel from './AgentAuditPanel';
 import ScheduledTasksPanel from './ScheduledTasksPanel';
 import { METHOD_LABELS } from './methodLabels';
 import { useComposerAutocomplete, type ComposerSuggestion } from './useComposerAutocomplete';
-import { ApprovalCard, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel } from './AgentTimeline';
+import { ApprovalCard, AssistantTurn, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel, groupTurns, placeArtifacts } from './AgentTimeline';
 
 const POLL_MS = 1500;
 const SESSION_KEY = 'antares-agent-session';
@@ -271,6 +271,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [announcement, setAnnouncement] = useState<{ key: string; text: string } | null>(null);
   const activeCall = messages.flatMap((message) => message.tool_calls ?? []).reverse().find((call) => call.status === 'running');
   const artifact = [...artifacts].reverse().find((item) => item.files.length > 0);
+  const turns = useMemo(() => groupTurns(messages), [messages]);
+  const turnArtifacts = useMemo(() => placeArtifacts(turns, artifacts), [turns, artifacts]);
   const attention: ConversationAttention | null = sessionId !== sessionIdRef.current ? null : messagesStale
     ? { kind: 'stale', key: 'stale', text: 'No se pudo actualizar la conversación. El estado mostrado puede estar desactualizado.' }
     : pending[0]
@@ -1293,14 +1295,21 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               )}
             </div>
           ) : (
-            messages.map((m, i) => {
-              const label = m.ts ? dayLabel(m.ts) : '';
-              const previous = messages.slice(0, i).reverse().find((item) => item.ts);
+            turns.map((turn, i) => {
+              const first = turn.role === 'user' ? turn.message : turn.messages[0];
+              const label = first.ts ? dayLabel(first.ts) : '';
+              const before = turns[i - 1];
+              const previous = before && (before.role === 'user' ? before.message : before.messages[before.messages.length - 1]);
               const newDay = !!label && (!previous?.ts || dayLabel(previous.ts) !== label);
+              const results = turnArtifacts.get(turn.key);
               return (
-                <div key={`${sessionId}-${m.role}-${i}`} className="space-y-4">
+                <div key={`${sessionId}-${turn.role}-${turn.key}`} className="space-y-4">
                   {newDay && <DaySeparator label={label} />}
-                  <MessageRow msg={m} agent={agentIdentity} onUndo={undoEffect} />
+                  {turn.role === 'user' ? <MessageRow msg={turn.message} /> : (
+                    <AssistantTurn messages={turn.messages} startedAt={turn.startedAt} agent={agentIdentity} onUndo={undoEffect}
+                      results={results && <ArtifactList artifacts={results} sessionId={sessionId}
+                        onRefresh={() => void loadMessages(sessionId, false)} onOpenModule={onOpenModule} />} />
+                  )}
                 </div>
               );
             })
@@ -1314,10 +1323,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 onRule={(channel, rule) => void decideWithRule(a, channel, rule)} />
             </div>
           ))}
-          {artifacts.map((artifact) => <div key={artifact.id} id={`agent-artifact-${artifact.id}`}>
-            <ArtifactCard artifact={artifact} sessionId={sessionId}
-              onRefresh={() => void loadMessages(sessionId, false)} onOpenModule={onOpenModule} />
-          </div>)}
+          {turnArtifacts.has(-1) && <ArtifactList artifacts={turnArtifacts.get(-1) ?? []} sessionId={sessionId}
+            onRefresh={() => void loadMessages(sessionId, false)} onOpenModule={onOpenModule} />}
           {questions.map((question) => <div key={question.id} id={`agent-question-${question.id}`}>
             <QuestionCard question={question} onAnswered={() => void loadMessages(sessionId, false)} />
           </div>)}
@@ -1703,7 +1710,13 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         </div>
       </main>
 
-      {browserOpen && <AgentBrowserPanel onClose={() => setBrowserOpen(false)} />}
+      {browserOpen && <AgentBrowserPanel
+        onClose={() => setBrowserOpen(false)}
+        onAnnotate={sessionId ? (file, url) => {
+          void attachFiles([file]);
+          if (!draft.trim()) { draftVersionRef.current += 1; setDraft(`Mira mi anotación sobre ${url}: `); }
+        } : undefined}
+      />}
       {auditOpen && session && (
         <AgentAuditPanel sessions={sessions} sessionId={session.id} onClose={() => setAuditOpen(false)} />
       )}

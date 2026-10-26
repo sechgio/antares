@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import { ApprovalCard, MessageRow, PlanCard, ThinkingRow } from './AgentTimeline';
+import { ApprovalCard, AssistantTurn, MessageRow, PlanCard, ThinkingRow, groupTurns, placeArtifacts } from './AgentTimeline';
 
 it('muestra el descubrimiento y la lectura de skills en la traza', () => {
   render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [
@@ -129,28 +129,76 @@ it('nombra las herramientas MCP por su servidor y su herramienta real', () => {
 
 it('resume más de dos pasos de herramientas y los abre si alguno necesita atención', () => {
   const step = (id: string, status: string) => ({ id, name: 'templates_catalog', params: {}, status, gated: false });
-  const { container, rerender } = render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1,
+  const { rerender } = render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1,
     tool_calls: [step('a', 'done'), step('b', 'done'), step('c', 'done')] } as never} />);
-  expect(screen.getByText('3 pasos · 3 completados')).toBeInTheDocument();
-  expect(container.querySelector('details')?.open).toBe(false);
+  expect(screen.getByRole('button', { name: '3 pasos' })).toHaveAttribute('aria-expanded', 'false');
   rerender(<MessageRow msg={{ role: 'assistant', content: '', ts: 1,
     tool_calls: [step('a', 'done'), step('b', 'failed'), step('c', 'done')] } as never} />);
-  expect(container.querySelector('details')?.open).toBe(true);
+  expect(screen.getByRole('button', { name: /3 pasos/ })).toHaveAttribute('aria-expanded', 'true');
 });
 
 it('conserva la apertura elegida por el usuario cuando terminan las herramientas', () => {
   const message = (status: 'running' | 'done' | 'failed') => ({ role: 'assistant' as const, content: '', ts: 1,
     tool_calls: ['a', 'b', 'c'].map((id) => ({ id, name: 'canvas_list', params: {}, status: id === 'c' ? status : 'done' as const, gated: false })) });
-  const { container, rerender } = render(<MessageRow msg={message('running')} />);
-  const summary = screen.getByText('3 pasos · 2 completados');
+  const { rerender } = render(<MessageRow msg={message('running')} />);
+  const summary = screen.getByRole('button', { expanded: true, name: 'Listar documentos de Canvas' });
   fireEvent.click(summary);
   fireEvent.click(summary);
   rerender(<MessageRow msg={message('done')} />);
-  expect(container.querySelector('details')?.open).toBe(true);
-  fireEvent.click(screen.getByText('3 pasos · 3 completados'));
+  expect(screen.getByRole('button', { name: '3 pasos' })).toHaveAttribute('aria-expanded', 'true');
+  fireEvent.click(screen.getByRole('button', { name: '3 pasos' }));
   rerender(<MessageRow msg={message('failed')} />);
-  expect(container.querySelector('details')?.open).toBe(false);
+  expect(screen.getByRole('button', { name: /3 pasos/ })).toHaveAttribute('aria-expanded', 'false');
   expect(screen.getByText('· 1 por revisar')).toBeVisible();
+});
+
+it('agrupa el trabajo de un turno en un solo bloque y deja la respuesta final fuera de él', () => {
+  const call = (id: string) => ({ id, name: 'fs_read', params: { path: `${id}.txt` }, status: 'done' as const, gated: false });
+  const messages = [
+    { role: 'user' as const, content: 'Revisa', ts: 1_000 },
+    { role: 'assistant' as const, content: 'Voy a leer los archivos.', ts: 2_000, tool_calls: [call('a'), call('b')] },
+    { role: 'tool_result' as const, content: '', ts: 2_500 },
+    { role: 'assistant' as const, content: '', ts: 3_000, tool_calls: [call('c')] },
+    { role: 'assistant' as const, content: 'Todo correcto.', ts: 43_000 },
+  ];
+  const turns = groupTurns(messages);
+  expect(turns.map((turn) => turn.role)).toEqual(['user', 'assistant']);
+  const turn = turns[1];
+  if (turn.role !== 'assistant') throw new Error('turno inesperado');
+  render(<AssistantTurn messages={turn.messages} startedAt={turn.startedAt} />);
+  expect(screen.getAllByText('Agente')).toHaveLength(1);
+  expect(screen.getByText('Todo correcto.')).toBeVisible();
+  expect(screen.queryByText('Voy a leer los archivos.')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Trabajó durante 42 s · 3 pasos' }));
+  expect(screen.getByText('Voy a leer los archivos.')).toBeVisible();
+  expect(screen.getByText('c.txt')).toBeVisible();
+});
+
+it('coloca cada resultado en el turno que lo produjo y no repite el mismo archivo', () => {
+  const file = (sha256: string) => ({ name: 'Formato-D.pdf', sha256, pages: 1, mime: 'application/pdf', size: 2048 });
+  const artifact = (id: string, sha256: string) => ({ id, family: 'formato', template_id: 'd', template_revision: 'r', files: [file(sha256)] });
+  const turns = groupTurns([
+    { role: 'user', content: 'Genera', ts: 1 },
+    { role: 'assistant', content: '', ts: 2, tool_calls: [{ id: 'g', name: 'formatos_generate', params: {}, status: 'done', gated: false,
+      result: JSON.stringify({ artifact: { id: 'first' } }) }] },
+    { role: 'assistant', content: 'Hecho', ts: 3 },
+    { role: 'user', content: 'Otra vez', ts: 4 },
+    { role: 'assistant', content: 'Hecho', ts: 5 },
+  ]);
+  const placed = placeArtifacts(turns, [artifact('first', 'x'), artifact('dup-1', 'y'), artifact('dup-2', 'y'), artifact('empty', 'z')]
+    .map((item) => (item.id === 'empty' ? { ...item, files: [] } : item)));
+  expect(placed.get(1)?.map((item) => item.id)).toEqual(['first']);
+  expect(placed.get(4)?.map((item) => item.id)).toEqual(['dup-2']);
+  expect([...placed.values()].flat()).toHaveLength(2);
+});
+
+it('muestra la terminal con su carpeta y el código de salida en la cabecera', () => {
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 't', name: 'shell_run', params: { command: 'npm test', cwd: 'C:\\proyecto' }, status: 'failed', gated: true,
+    result: JSON.stringify({ exit_code: 2, stdout: '', stderr: 'boom' }),
+  }] }} />);
+  expect(screen.getByText('C:\\proyecto')).toBeVisible();
+  expect(screen.getByText('salida 2')).toBeVisible();
 });
 
 it('abre el error de una herramienta para poder revisarlo sin buscar sus detalles', () => {
@@ -489,14 +537,14 @@ it('detalla el comando y la ruta en la aprobación de una acción del equipo', (
 it.each([false, true])('conserva la elección de mostrar los pasos al actualizar su estado: %s', (open) => {
   const message = (status: 'running' | 'done') => ({ role: 'assistant' as const, content: '', ts: 1,
     tool_calls: ['a', 'b', 'c'].map((id) => ({ id, name: 'fs_read', params: {}, gated: false, status })) });
-  const { container, rerender } = render(<MessageRow msg={message(open ? 'done' : 'running')} />);
-  const toggle = screen.getByText(/3 pasos/);
+  const { rerender } = render(<MessageRow msg={message(open ? 'done' : 'running')} />);
+  const toggle = screen.getByRole('button', { expanded: !open });
   fireEvent.click(toggle);
-  expect(container.querySelector('details')?.open).toBe(open);
+  expect(toggle).toHaveAttribute('aria-expanded', String(open));
   rerender(<MessageRow msg={message('done')} />);
   rerender(<MessageRow msg={message('running')} />);
   rerender(<MessageRow msg={message('done')} />);
-  expect(container.querySelector('details')?.open).toBe(open);
+  expect(toggle).toHaveAttribute('aria-expanded', String(open));
 });
 
 
