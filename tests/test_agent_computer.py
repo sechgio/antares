@@ -83,6 +83,39 @@ def test_write_refuses_existing_files_without_overwrite_and_ambiguous_edits(stor
         _run(store, "fs_edit", path="a.txt", old="zzz", new="y")
 
 
+def test_edit_applies_several_edits_atomically_and_returns_a_numbered_snippet(store):
+    _run(store, "fs_write", path="app.py", content="def a():\n    return 1\n\n\ndef b():\n    return 2\n")
+    path = store.drafts_dir("s1") / "app.py"
+    result = _run(store, "fs_edit", path="app.py", edits=[
+        {"old": "return 1", "new": "return 10"}, {"old": "def b():\n    return 2", "new": "def b():\n    return 20"}])
+    assert result["replacements"] == 2
+    assert path.read_text(encoding="utf-8") == "def a():\n    return 10\n\n\ndef b():\n    return 20\n"
+    assert result["snippet"].splitlines() == ["2\t    return 10", "3\t", "4\t", "5\tdef b():", "6\t    return 20"]
+    with pytest.raises(ValueError, match="Edición 2: No se encontró"):
+        _run(store, "fs_edit", path="app.py", edits=[{"old": "return 10", "new": "x"}, {"old": "zzz", "new": "y"}])
+    assert "return 10" in path.read_text(encoding="utf-8")
+
+
+def test_edit_matches_lf_fragments_in_crlf_files(store):
+    path = store.drafts_dir("s1") / "win.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"uno\r\ndos\r\ntres\r\n")
+    assert _run(store, "fs_edit", path="win.txt", old="uno\ndos", new="1\n2")["replacements"] == 1
+    assert path.read_bytes() == b"1\r\n2\r\ntres\r\n"
+
+
+def test_search_supports_path_globs_context_and_file_counts(store):
+    _run(store, "fs_write", path="src/pkg/mod.py", content="import os\nVALOR = 1\nprint(VALOR)\n")
+    _run(store, "fs_write", path="src/notas.txt", content="VALOR en texto")
+    _run(store, "fs_write", path="node_modules/dep/index.py", content="VALOR = 2")
+    root = store.drafts_dir("s1")
+    hits = _run(store, "fs_search", pattern="VALOR =", glob="src/**/*.py", context=1)["hits"]
+    assert hits == [{"file": str(root / "src" / "pkg" / "mod.py"), "line": 2, "text": "VALOR = 1",
+                     "before": ["import os"], "after": ["print(VALOR)"]}]
+    assert _run(store, "fs_search", pattern="valor", glob="**/*.py", files_only=True)["hits"] == [
+        {"file": str(root / "src" / "pkg" / "mod.py"), "matches": 2}]
+
+
 def test_paths_outside_the_workspace_need_a_grant(store, tmp_path):
     outside = tmp_path / "privado"
     outside.mkdir()

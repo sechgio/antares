@@ -19,6 +19,11 @@ _MAX_WRITE_CHARS = 2_000_000
 _MAX_SEARCH_FILES = 2_000
 _MAX_SEARCH_HITS = 40
 _MAX_SEARCH_BYTES = 5 * 1024 * 1024
+_MAX_SEARCH_CONTEXT = 5
+_SEARCH_SKIP_DIRS = frozenset({"node_modules", "__pycache__"})
+_MAX_EDITS = 50
+_SNIPPET_CONTEXT = 3
+_MAX_SNIPPET_CHARS = 1_500
 _TEXT_ENCODINGS = ("utf-8-sig", "cp1252", "latin-1")
 _DELEGATED = {".pdf", ".csv", ".xlsx", ".xlsm", ".xls", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
 
@@ -58,14 +63,19 @@ TOOL_SPECS: list[JsonObject] = [
         "module": "computer",
         "description": (
             "Equipo · fs_search (solo lectura): busca texto o una expresión regular en los archivos de una carpeta "
-            "autorizada o del espacio de trabajo"
+            "autorizada o del espacio de trabajo; omite node_modules, __pycache__ y carpetas ocultas"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "path": _PATH,
                 "pattern": {"type": "string", "description": "Texto o expresión regular (sin distinguir mayúsculas)"},
-                "glob": {"type": "string", "description": "Filtro de nombres, p. ej. *.txt"},
+                "glob": {"type": "string",
+                         "description": "Filtro de nombres (*.txt) o de rutas relativas a la carpeta (src/**/*.py)"},
+                "context": {"type": "integer", "minimum": 0, "maximum": _MAX_SEARCH_CONTEXT,
+                            "description": "Líneas de contexto antes y después de cada coincidencia"},
+                "files_only": {"type": "boolean",
+                               "description": "Devuelve solo los archivos con coincidencias y cuántas tiene cada uno"},
             },
             "required": ["pattern"],
         },
@@ -94,7 +104,8 @@ TOOL_SPECS: list[JsonObject] = [
         "module": "computer",
         "description": (
             "Equipo · fs_edit (efecto: requiere aprobación del usuario): reemplaza un fragmento exacto de un "
-            "archivo de texto o Word (.docx); léelo antes con fs_read"
+            "archivo de texto o Word (.docx); léelo antes con fs_read. Con edits aplica varios reemplazos en orden "
+            "y de forma atómica (solo texto). Devuelve un fragmento numerado del resultado para verificarlo"
         ),
         "inputSchema": {
             "type": "object",
@@ -103,8 +114,18 @@ TOOL_SPECS: list[JsonObject] = [
                 "old": {"type": "string", "description": "Fragmento exacto a reemplazar"},
                 "new": {"type": "string", "description": "Texto nuevo"},
                 "replace_all": {"type": "boolean", "description": "Reemplazar todas las apariciones"},
+                "edits": {
+                    "type": "array", "minItems": 1, "maxItems": _MAX_EDITS,
+                    "description": "Reemplazos en orden, en lugar de old/new; si uno falla no se escribe nada",
+                    "items": {
+                        "type": "object",
+                        "properties": {"old": {"type": "string"}, "new": {"type": "string"},
+                                       "replace_all": {"type": "boolean"}},
+                        "required": ["old", "new"],
+                    },
+                },
             },
-            "required": ["path", "old", "new"],
+            "required": ["path"],
         },
     },
 ]
@@ -271,15 +292,18 @@ def search(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> Jso
         regex = re.compile(pattern, re.IGNORECASE)
     except re.error:
         regex = re.compile(re.escape(pattern), re.IGNORECASE)
-    wanted = str(params.get("glob") or "*")
+    wanted = str(params.get("glob") or "*").replace("\\", "/").casefold()
+    context = max(0, min(_MAX_SEARCH_CONTEXT, int(params.get("context") or 0)))
+    files_only = params.get("files_only") is True
     hits: list[JsonObject] = []
     scanned = 0
     for current, dirs, files in os.walk(folder):
-        dirs[:] = [d for d in dirs if not d.startswith(".") and not Path(current, d).is_symlink()]
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in _SEARCH_SKIP_DIRS
+                   and not Path(current, d).is_symlink()]
         for name in files:
-            if not fnmatch.fnmatch(name.casefold(), wanted.casefold()):
-                continue
             file = Path(current, name)
+            if not _glob_match(file.relative_to(folder).as_posix().casefold(), name.casefold(), wanted):
+                continue
             scanned += 1
             if scanned > _MAX_SEARCH_FILES or len(hits) >= _MAX_SEARCH_HITS:
                 return {"path": str(folder), "hits": hits, "truncated": True}
@@ -289,12 +313,29 @@ def search(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> Jso
                 text = _text_of(file)
             except (ValueError, OSError, KeyError):
                 continue
-            for number, line in enumerate(text.splitlines(), 1):
+            lines = text.splitlines()
+            if files_only:
+                matches = sum(1 for line in lines if regex.search(line))
+                if matches:
+                    hits.append({"file": str(file), "matches": matches})
+                continue
+            for number, line in enumerate(lines, 1):
                 if regex.search(line):
-                    hits.append({"file": str(file), "line": number, "text": line.strip()[:120]})
+                    hit: JsonObject = {"file": str(file), "line": number, "text": line.strip()[:120]}
+                    if context:
+                        hit["before"] = [s[:120] for s in lines[max(0, number - 1 - context): number - 1]]
+                        hit["after"] = [s[:120] for s in lines[number: number + context]]
+                    hits.append(hit)
                     if len(hits) >= _MAX_SEARCH_HITS:
                         break
     return {"path": str(folder), "hits": hits, "truncated": False}
+
+
+def _glob_match(relative: str, name: str, wanted: str) -> bool:
+    if "/" not in wanted:
+        return fnmatch.fnmatch(name, wanted)
+    # fnmatch deja que * cruce "/", así que solo falta que **/ admita la raíz.
+    return fnmatch.fnmatch(relative, wanted) or (wanted.startswith("**/") and fnmatch.fnmatch(relative, wanted[3:]))
 
 
 def _atomic_write(path: Path, write: Callable[[Path], object]) -> None:
@@ -370,30 +411,69 @@ def _edit_docx(path: Path, old: str, new: str, replace_all: bool) -> int:
     return count
 
 
+def _edit_list(params: JsonObject) -> list[tuple[str, str, bool]]:
+    raw = params.get("edits")
+    if raw is None:
+        raw = [{"old": params.get("old"), "new": params.get("new"), "replace_all": params.get("replace_all")}]
+    elif not isinstance(raw, list) or not raw or len(raw) > _MAX_EDITS:
+        raise ValueError(f"edits debe tener entre 1 y {_MAX_EDITS} reemplazos")
+    result: list[tuple[str, str, bool]] = []
+    for item in raw:
+        old, new = (item.get("old"), item.get("new")) if isinstance(item, dict) else (None, None)
+        if not isinstance(old, str) or not old or not isinstance(new, str):
+            raise ValueError("Indica el fragmento exacto y su reemplazo")
+        result.append((old, new, isinstance(item, dict) and item.get("replace_all") is True))
+    return result
+
+
+def _replace(text: str, old: str, new: str, replace_all: bool) -> tuple[str, int, int]:
+    """Reemplaza en text y devuelve el texto, las sustituciones y dónde empieza la primera."""
+    if old not in text and "\r\n" in text and "\n" in old:
+        # El modelo suele escribir saltos \n aunque el archivo use CRLF.
+        old, new = (s.replace("\r\n", "\n").replace("\n", "\r\n") for s in (old, new))
+    occurrences = text.count(old)
+    if occurrences > 1 and not replace_all:
+        raise ValueError(f"El fragmento aparece {occurrences} veces; amplíalo o usa replace_all")
+    if not occurrences:
+        raise ValueError("No se encontró el fragmento; vuelve a leer el archivo con fs_read")
+    start = text.index(old)
+    updated = text.replace(old, new) if replace_all else text.replace(old, new, 1)
+    return updated, occurrences if replace_all else 1, start
+
+
+def _snippet(text: str, start: int, new: str) -> str:
+    first = text.count("\n", 0, start)
+    last = first + new.count("\n")
+    lines = text.splitlines()
+    low, high = max(0, first - _SNIPPET_CONTEXT), min(len(lines), last + _SNIPPET_CONTEXT + 1)
+    return "\n".join(f"{number}\t{line}" for number, line in enumerate(lines[low:high], low + 1))[:_MAX_SNIPPET_CHARS]
+
+
 def edit(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> JsonObject:
     path = resolve(params.get("path"), grants, root, write=True)
-    old, new = params.get("old"), params.get("new")
-    if not isinstance(old, str) or not old or not isinstance(new, str):
-        raise ValueError("Indica el fragmento exacto y su reemplazo")
+    edits = _edit_list(params)
     if not path.is_file():
         raise ValueError("El archivo no existe")
-    replace_all = params.get("replace_all") is True
     if path.suffix.lower() == ".docx":
-        count = _edit_docx(path, old, new, replace_all)
-    else:
-        raw = path.read_bytes()
-        text = _decode(raw)
-        occurrences = text.count(old)
-        if occurrences > 1 and not replace_all:
-            raise ValueError(f"El fragmento aparece {occurrences} veces; amplíalo o usa replace_all")
-        count = occurrences if replace_all else min(occurrences, 1)
-        if count:
-            encoding = "utf-8-sig" if raw.startswith(b"\xef\xbb\xbf") else "utf-8"
-            updated = text.replace(old, new) if replace_all else text.replace(old, new, 1)
-            _atomic_write(path, lambda temp: temp.write_text(updated, encoding=encoding, newline=""))
-    if not count:
-        raise ValueError("No se encontró el fragmento; vuelve a leer el archivo con fs_read")
-    return {"path": str(path), "replacements": count, "size": path.stat().st_size}
+        if len(edits) > 1:
+            raise ValueError("Las ediciones múltiples solo se admiten en archivos de texto")
+        count = _edit_docx(path, *edits[0])
+        if not count:
+            raise ValueError("No se encontró el fragmento; vuelve a leer el archivo con fs_read")
+        return {"path": str(path), "replacements": count, "size": path.stat().st_size}
+    raw = path.read_bytes()
+    text = _decode(raw)
+    count = start = 0
+    for index, (old, new, replace_all) in enumerate(edits, 1):
+        try:
+            text, hits, start = _replace(text, old, new, replace_all)
+        except ValueError as error:
+            raise ValueError(f"Edición {index}: {error}" if len(edits) > 1 else str(error)) from None
+        count += hits
+    encoding = "utf-8-sig" if raw.startswith(b"\xef\xbb\xbf") else "utf-8"
+    _atomic_write(path, lambda temp: temp.write_text(text, encoding=encoding, newline=""))
+    return {"path": str(path), "replacements": count, "size": path.stat().st_size,
+            "snippet": _snippet(text, start, edits[-1][1])}
 
 
 def resources(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> list[JsonObject]:

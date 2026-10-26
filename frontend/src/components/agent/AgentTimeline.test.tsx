@@ -534,6 +534,64 @@ it('detalla el comando y la ruta en la aprobación de una acción del equipo', (
   expect(screen.getByText(/Requiere tu aprobación también en Acceso completo/)).toBeInTheDocument();
 });
 
+it('muestra la edición de un archivo como diff y lo marca aplicado al terminar', () => {
+  const message = (status: 'running' | 'done') => ({ role: 'assistant' as const, content: '', ts: 1, tool_calls: [{
+    id: 'e', name: 'fs_edit', gated: true, status,
+    params: { path: 'C:\\proyecto\\src\\app.py', old: 'x = 1\ny = 2', new: 'x = 10\ny = 2' },
+    result: status === 'done' ? '{"replacements":1}' : null,
+  }] });
+  const { rerender } = render(<MessageRow msg={message('running')} />);
+  expect(screen.getByRole('button', { name: /Editando app\.py/ })).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByLabelText('1 líneas añadidas, 1 eliminadas')).toHaveTextContent('+1 −1');
+  const diff = screen.getByRole('group', { name: 'Cambios del archivo' });
+  expect(diff).toHaveTextContent('x = 10');
+  expect(diff.querySelector('[data-kind="remove"]')).toHaveTextContent('x = 1');
+  expect(diff).not.toHaveAttribute('data-applied');
+  rerender(<MessageRow msg={message('done')} />);
+  expect(screen.getByRole('button', { name: /Editó app\.py/ })).toBeInTheDocument();
+  expect(screen.getByRole('group', { name: 'Cambios del archivo' })).toHaveAttribute('data-applied', 'true');
+});
+
+it('numera las líneas con el fragmento del resultado y despliega el contexto plegado', () => {
+  const old = ['def total(xs):', ...Array.from({ length: 10 }, (_, i) => `    paso_${i}()`), '    return sum(xs)'].join('\n');
+  const result = JSON.stringify({ replacements: 1, snippet: '1\tdef total(xs, tax):\n2\t    paso_0()\n3\t    paso_1()' });
+  const { container } = render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 'e', name: 'fs_edit', gated: true, status: 'done', result,
+    params: { path: 'app.py', old, new: old.replace('def total(xs):', 'def total(xs, tax):').replace('sum(xs)', 'sum(xs) * tax') },
+  }] }} />);
+  const added = container.querySelectorAll('[data-kind="add"]');
+  expect(added[0]).toHaveTextContent(/^1\+/);
+  expect(added[0].querySelector('.agent-diff-word')).toHaveTextContent(', tax');
+  expect(added[1]).toHaveTextContent(/^12\+/);
+  expect(screen.queryByText('paso_5()')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '4 líneas sin cambios' }));
+  expect(screen.getByText('paso_5()')).toBeInTheDocument();
+});
+
+it('pliega por defecto un archivo nuevo grande y enseña el error de una edición fallida', () => {
+  const content = Array.from({ length: 40 }, (_, i) => `línea ${i}`).join('\n');
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [
+    { id: 'w', name: 'fs_write', gated: true, status: 'done', params: { path: 'informe.md', content },
+      result: '{"saved_path":"informe.md","replaced":false}' },
+    { id: 'f', name: 'fs_edit', gated: true, status: 'failed', params: { path: 'a.txt', old: 'zzz', new: 'y' },
+      result: '{"error":"No se encontró el fragmento"}' },
+  ] }} />);
+  const created = screen.getByRole('button', { name: /Creó informe\.md/ });
+  expect(created).toHaveAttribute('aria-expanded', 'false');
+  fireEvent.click(created);
+  expect(screen.getAllByRole('group', { name: 'Cambios del archivo' })[0]).toHaveTextContent('línea 39');
+  expect(screen.getByText('No se encontró el fragmento')).toBeVisible();
+});
+
+it('enseña el diff que se aplicará antes de aprobar una edición', () => {
+  render(<ApprovalCard busy={false} onDecide={vi.fn()} approval={{
+    id: 'a', session_id: 's', call_id: 'c', method: 'fs_edit', status: 'pending', created_at: 1, decided_at: null,
+    params: { path: 'app.py', edits: [{ old: 'return 1', new: 'return 2' }] },
+  }} />);
+  expect(screen.getByText('Cambios que se aplicarán')).toBeVisible();
+  expect(screen.getByRole('group', { name: 'Cambios del archivo' })).toHaveTextContent('return 2');
+});
+
 it.each([false, true])('conserva la elección de mostrar los pasos al actualizar su estado: %s', (open) => {
   const message = (status: 'running' | 'done') => ({ role: 'assistant' as const, content: '', ts: 1,
     tool_calls: ['a', 'b', 'c'].map((id) => ({ id, name: 'fs_read', params: {}, gated: false, status })) });

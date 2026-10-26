@@ -6,6 +6,8 @@ import Button from '../ui/Button';
 import Toggle from '../ui/Toggle';
 import AgentAvatar from './AgentAvatar';
 import BrokerReceipt from './BrokerReceipt';
+import { DiffStats, FileChangeStep, FileDiff } from './FileDiff';
+import { fileChange } from './diffLines';
 import MessageMarkdown from './MessageMarkdown';
 import Reasoning from './Reasoning';
 import SubagentTrace from './SubagentTrace';
@@ -302,6 +304,9 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
 function ToolCallStep({ call }: { call: AgentToolCall }) {
   if (call.name === 'subagent_run') return <SubagentTrace call={call} />;
   if (call.name === 'shell_run') return <TerminalStep call={call} />;
+  if (fileChange(call.name, call.params)) {
+    return <FileChangeStep call={call} status={CALL_STATUS_LABEL[call.status] ?? call.status} className={TASK_ROW} />;
+  }
   const detail = call.result || null;
   const params = Object.keys(call.params).length > 0 ? JSON.stringify(call.params, null, 2) : null;
   const failed = call.status === 'failed';
@@ -639,6 +644,7 @@ export function ApprovalCard({
   const Icon = approval.method === 'shell_run' ? Terminal
     : Object.prototype.hasOwnProperty.call(TOOL_ICONS, approval.method) ? TOOL_ICONS[approval.method] : ShieldCheck;
   const ruleButtons = !!(onRule && ruleChannel && channel);
+  const change = fileChange(approval.method, params);
   return (
     <div role="group" aria-label="Confirmación de acción" className="agent-approval agent-trace-in">
       <div className="w-full max-w-[min(620px,100%)] overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)]">
@@ -669,6 +675,15 @@ export function ApprovalCard({
               )}
               {facts.map((fact) => <li key={fact} className="break-all">{fact}</li>)}
             </ul>
+          )}
+          {change && (
+            <div className="space-y-1">
+              <p className="flex items-center gap-2 text-[11.5px] leading-4 text-[var(--text-muted)]">
+                {change.whole ? 'Contenido que se escribirá' : 'Cambios que se aplicarán'}
+                <DiffStats change={change} />
+              </p>
+              <FileDiff change={change} className="max-h-56" />
+            </div>
           )}
           <details className="group text-[11.5px] text-[var(--text-muted)]">
             <summary aria-label="Ver detalles de la acción" className="flex w-fit cursor-pointer list-none items-center gap-1 transition-colors hover:text-[var(--text-secondary)]">
