@@ -211,6 +211,35 @@ def test_profile_memory_survives_restart_without_crossing_profiles(store, tmp_pa
     assert "Usa azul" in reloaded.context("a2", "formato", VERSIONS, profile_id="role-a")["context"]
 
 
+def test_memory_scope_limits_what_a_profile_reads_and_writes(store, tmp_path):
+    mem = memory.memory_for(store)
+    shared = mem.remember("general", {"kind": "preference", "title": "Idioma", "content": "Español"})
+    mem.context("a", "", VERSIONS, profile_id="role-a")
+    own = mem.remember("a", {"kind": "fact", "title": "Formato", "content": "Usa azul"})
+    context = mem.context("a", "formato idioma", VERSIONS, profile_id="role-a", memory_scope="own")
+    assert context["items"] == [own["id"]]
+    assert [item["id"] for item in mem.search("", session_id="a")] == [own["id"]]
+    reloaded = memory.MemoryStore(tmp_path)
+    assert [item["id"] for item in reloaded.search("", session_id="a")] == [own["id"]]
+    assert reloaded.context("n", "formato idioma", VERSIONS, profile_id="role-a", memory_scope="none") == {"context": "", "items": []}
+    assert reloaded.search("", session_id="n") == []
+    with pytest.raises(ValueError, match="no usa memoria"):
+        reloaded.remember("n", {"kind": "fact", "title": "Otro", "content": "x"})
+    mem.context("n", "", VERSIONS, profile_id="role-a", memory_scope="none")
+    with pytest.raises(ValueError, match="no usa memoria"):
+        _learn(store, session_id="n")
+    shared_read = reloaded.context("a", "formato idioma", VERSIONS, profile_id="role-a", memory_scope="shared-read")
+    assert set(shared_read["items"]) == {shared["id"], own["id"]}
+    assert "scopes" in json.loads((tmp_path / "memory.json").read_text(encoding="utf-8"))
+    general = reloaded.context("general", "idioma", VERSIONS, memory_scope="none")
+    assert shared["id"] in general["items"], "sin perfil el alcance no se aplica"
+
+
+def test_memory_context_handler_rejects_unknown_scope(store):
+    with pytest.raises(ValidationError):
+        agent_internal._memory_context({"session_id": "s1", "text": "x", "profile_id": "p", "memory_scope": "all"})
+
+
 def test_relevant_fact_is_not_starved_by_long_preferences(store):
     mem = memory.memory_for(store)
     for index in range(8):

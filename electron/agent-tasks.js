@@ -12,6 +12,8 @@ let reconciled = false;
 let reconciling = null;
 
 const MAX_DELEGATION_DEPTH = 1;
+const MAX_ROUTINES = 3;
+const ROUTINE_MIN_MINUTES = 30;
 const PROFILE_ROLES = new Set(['explorer', 'reviewer', 'worker']);
 
 const ROLE_PROMPT = {
@@ -97,9 +99,10 @@ async function delegate(profile, args, sessionId, api, context) {
   let child = (await sessions())[id];
   if (!child) {
     const enabled = new Set((await api.agent(context)).tools.map((tool) => tool.name));
+    const denied = require('./agent-execution').profileDenied(profile);
     const tools = [...shared.toolSpecs.values()].filter((tool) => tool.kind === 'backend' && tool.replay_safe === true
       && enabled.has(tool.name) && (!Array.isArray(profile.tools) || profile.tools.includes(tool.name))
-      && !excluded.has(tool.name));
+      && !excluded.has(tool.name) && !denied.has(tool.name));
     const now = Date.now();
     await state.harness.createConversation({
       ownership: { kind: 'ownerless' },
@@ -235,7 +238,7 @@ async function cancelDelegations(sessionId) {
 }
 
 async function schedule(args, sessionId, api) {
-  await requireSession(sessionId);
+  const session = await requireSession(sessionId);
   const state = shared.state;
   if (args.action === 'enqueue') return queue.enqueue(args.content, sessionId, api?.taskId);
   if (args.action === 'pause') return queue.setQueuePaused(sessionId, true);
@@ -273,12 +276,29 @@ async function schedule(args, sessionId, api) {
   const timezone = resolveTimezone(args.timezone);
   const silent = args.silent === true;
   const id = args.action === 'update' ? String(args.id || '') : crypto.createHash('sha256').update(`${sessionId}:${api?.taskId}`).digest('hex').slice(0, 24);
+  // Rutinas de un agente guardado: encargos recurrentes en cualquiera de sus
+  // conversaciones. El agente no puede programarse rutinas más frecuentes que
+  // ROUTINE_MIN_MINUTES; el usuario sí, desde el panel o el editor.
+  const profileId = session.profile && !session.profile.portable ? session.profile.id : null;
+  if (profileId && interval && !api?.byUser && interval < ROUTINE_MIN_MINUTES) {
+    throw validation(`Un agente no puede programarse rutinas cada menos de ${ROUTINE_MIN_MINUTES} minutos`);
+  }
+  const botSessions = profileId
+    ? new Set(Object.values(await sessions()).filter((item) => item.profile?.id === profileId).map((item) => item.id))
+    : null;
+  const checkRoutines = (doc, exceptId) => {
+    if (!botSessions || !interval) return;
+    const active = Object.values(doc.tasks).filter((task) => task.id !== exceptId && task.kind !== 'queue'
+      && isActiveTask(task) && task.interval_ms > 0 && botSessions.has(task.session_id));
+    if (active.length >= MAX_ROUTINES) throw validation(`Este agente ya tiene ${MAX_ROUTINES} rutinas; cancela alguna antes de crear otra`);
+  };
   return state.harness.commit(async (tx) => {
     const doc = await tx.doc(state.TasksDoc);
     if (args.action === 'update') {
       const task = doc.tasks[id];
       if (!task || task.session_id !== sessionId) throw validation('El encargo programado no existe');
       if (task.status !== 'pending') throw validation('Solo puedes editar encargos pendientes');
+      if (hasInterval) checkRoutines(doc, task.id);
       task.content = content;
       task.due_at = dueAt;
       if (hasInterval) task.interval_ms = (interval || 0) * 60000;
@@ -292,6 +312,7 @@ async function schedule(args, sessionId, api) {
     }
     if (doc.tasks[id]) return { scheduled: { ...doc.tasks[id] } };
     if (Object.values(doc.tasks).filter(isActiveTask).length >= 100) throw validation('Ya hay 100 encargos pendientes');
+    checkRoutines(doc, null);
     pruneTasks(doc);
     const now = Date.now();
     const task = { id, session_id: sessionId, content, due_at: dueAt,
@@ -316,7 +337,7 @@ async function saveTask(params = {}) {
   if (params.kind !== undefined && params.kind !== 'schedule') throw validation('Tipo de encargo no válido');
   const id = typeof params.id === 'string' && params.id ? params.id.slice(0, 64) : undefined;
   return schedule({ ...params, id, action: id ? 'update' : 'create' }, sessionId,
-    { taskId: crypto.randomUUID() });
+    { taskId: crypto.randomUUID(), byUser: true });
 }
 
 async function cancelTask(params = {}) {
@@ -405,6 +426,18 @@ async function tick() {
       const session = sessionDoc.sessions[task.session_id];
       if (!session || session.deleted) {
         await state.harness.commit(async (tx) => { (await tx.doc(state.TasksDoc)).tasks[task.id].status = 'cancelled'; }, ctx());
+        continue;
+      }
+      const execution = require('./agent-execution');
+      const budget = await execution.profileBudget(await execution.sessionProfile(session));
+      if (budget && budget.exhausted) {
+        // Sin presupuesto el encargo espera al día siguiente: no se reclama ni cuenta como fallo.
+        const midnight = new Date();
+        midnight.setHours(24, 0, 0, 0);
+        await state.harness.commit(async (tx) => {
+          const current = (await tx.doc(state.TasksDoc)).tasks[task.id];
+          if (current.status === 'pending') current.retry_at = midnight.getTime();
+        }, ctx());
         continue;
       }
       let submitted = false;
