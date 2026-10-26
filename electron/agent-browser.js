@@ -777,6 +777,15 @@ async function screenshot(contents, dir, fullPage = false) {
     image: { path: target, mime: 'image/jpeg' } };
 }
 
+// Fotograma de la pestaña visible para que la UI lo anote encima del DOM.
+async function capture(id = activeTab) {
+  const contents = tabContents(tabs.get(id));
+  if (!contents) throw browserError('No hay ninguna página abierta para anotar', 'NO_PAGE');
+  const image = await contents.capturePage();
+  const { width, height } = image.getSize();
+  return { png_base64: image.toPNG().toString('base64'), width, height, url: contents.getURL(), title: contents.getTitle() };
+}
+
 async function observeAfter(contents) {
   await settle(contents);
   return snapshot(contents, 0, RESULT_BUDGET - 400);
@@ -907,4 +916,4 @@ function close() {
   pendingMouseInputs.clear();
 }
 
-module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, state, dock, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, clampBounds, siteUserAgent, approvalContext };
+module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, state, dock, capture, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, clampBounds, siteUserAgent, approvalContext };

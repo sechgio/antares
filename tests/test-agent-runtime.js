@@ -842,6 +842,7 @@ async function main() {
       setUserControl: (user) => { calls.push(['control', user]); return { user_control: user }; },
       allowAgent: () => { calls.push(['allow']); return { open: true, user_control: false }; },
       activateTab: (tab) => { calls.push(['tab', tab]); return { active_tab: tab }; },
+      capture: async (tab) => ({ png_base64: 'iVBOR', width: 800, height: 600, url: 'https://example.com', tab }),
       navigate: async (action, url) => { calls.push([action, url]); return { open: true, url: url || '' }; },
     };
     const handle = runtime.handlers.agent_browser;
@@ -852,6 +853,7 @@ async function main() {
     assert((await handle({ action: 'open', url: 'example.com' })).url === 'example.com', 'la barra de dirección abre páginas');
     assert((await handle({ action: 'allow' })).user_control === false, 'la UI puede liberar la espera del navegador');
     assert((await handle({ action: 'tab', tab: 'user' })).active_tab === 'user', 'la UI cambia de pestaña');
+    assert((await handle({ action: 'capture' })).png_base64 === 'iVBOR', 'la UI captura la página para anotarla');
     let rejected = false;
     try { await handle({ action: 'borrar' }); } catch { rejected = true; }
     assert(rejected && calls.length === 6, 'una acción desconocida se rechaza sin tocar el navegador');
