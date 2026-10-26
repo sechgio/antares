@@ -40,6 +40,7 @@ const SUBAGENT_MAX_TASKS = 4;
 const TOOLS_LOAD = 'tools_load';
 const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent']);
 const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD, 'task_schedule']);
+const MEMORY_TOOLS = ['memory_search', 'memory_remember', 'procedure_learn'];
 // Acciones ui_ que inyectan entrada: el marco ámbar del lease humano cubre la
 // ventana objetivo durante su despacho (ui_windows/ui_observe/ui_launch no inyectan).
 const UI_ACTION_TOOLS = new Set(['ui_click', 'ui_type', 'ui_key', 'ui_scroll', 'ui_drag', 'ui_set_value']);
@@ -380,8 +381,9 @@ function normal(text) {
 async function loadTools(args, sessionId, context) {
   const conv = await conversation(sessionId);
   const enabled = new Set((await conv.agent(context)).tools.map((tool) => tool.name));
-  const specs = [...shared.toolSpecs.values()].filter((spec) => spec.kind !== 'meta'
-    || ['task_schedule', 'agent_delegate', 'wait_event'].includes(spec.name));
+  const allows = await profileToolFilter(await requireSession(sessionId));
+  const specs = [...shared.toolSpecs.values()].filter((spec) => (spec.kind !== 'meta'
+    || ['task_schedule', 'agent_delegate', 'wait_event'].includes(spec.name)) && (!allows || allows(spec.name)));
   const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
   const words = normal(args.query).split(/[^a-z0-9_]+/).filter((word) => word.length > 2);
   if (!modules.length && !words.length) {
@@ -461,6 +463,9 @@ async function refreshTools() {
         beforeRequest: async ({ messages }, api, context) => {
           resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
           if (await toolBudget(api, context) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
+          const budget = await profileBudget(await sessionProfile(
+            (await sessions())[await sessionForConversation(api.conversationId, api, context)]));
+          if (budget && budget.exhausted) await pauseForBudget(api, context, 'token_budget');
           await noteTurnStart(api, messages || []);
           const compacted = await compactRequest(messages, api, context);
           const next = compacted || messages;
@@ -471,6 +476,7 @@ async function refreshTools() {
         afterResponse: async (message, api, context) => {
           try {
             const sessionId = await sessionForConversation(api.conversationId, api, context);
+            await recordProfileUsage((await sessions())[sessionId], message.usage);
             if (message.stopReason !== 'toolUse') {
               try { require('./agent-browser').release(sessionId); } catch { }
             }
@@ -540,20 +546,23 @@ async function toolBudget(api, context, completed = false) {
   return rounds;
 }
 
-async function pauseForBudget(api, context) {
+async function pauseForBudget(api, context, reason = 'tool_budget') {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   const remaining = turnState(api.conversationId).remaining || [];
   await commitSessions((map) => {
     if (map[sessionId]) map[sessionId].continuation = {
-      reason: 'tool_budget', rounds: MAX_TOOL_STEPS, pending_steps: remaining, created_at: Date.now(),
+      reason, ...(reason === 'tool_budget' ? { rounds: MAX_TOOL_STEPS } : {}), pending_steps: remaining, created_at: Date.now(),
     };
   });
   const conv = await conversation(sessionId);
   const stopped = shared.state.harness.abortTask(api.taskId, ctx()).then(async () => {
     await conv.waitForIdle(ctx());
     return conv.submit({ type: 'write', requestId: `budget:${api.taskId}`, entry: {
-      kind: shared.NOTICE_KIND, data: { text: 'Este turno alcanzó su límite de pasos. Conservé un punto de continuación. '
-        + `Usa Reanudar para seguir.${remaining.length ? '\nPendiente: ' + remaining.join('; ') : ''}` },
+      kind: shared.NOTICE_KIND, data: { text: (reason === 'token_budget'
+        ? 'El agente agotó su presupuesto diario de tokens. Conservé un punto de continuación; '
+          + 'podrás reanudar mañana o al ampliar su presupuesto.'
+        : 'Este turno alcanzó su límite de pasos. Conservé un punto de continuación. Usa Reanudar para seguir.')
+        + (remaining.length ? '\nPendiente: ' + remaining.join('; ') : '') },
     } }, ctx());
   });
   // El aborto debe interrumpir esta espera: abortTask espera a que termine este mismo hook.
@@ -964,13 +973,16 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     const conv = await conversation(sessionId);
     const enabled = (await conv.agent(context)).tools.map((tool) => tool.name);
     const session = await requireSession(sessionId);
+    const denied = profileDenied(profile);
     request.context = {
       subagent: {
         id: profile.id,
         name: profile.name,
         role: profile.role || 'explorer',
         instructions: profile.instructions,
-        tools: Array.isArray(profile.tools) ? profile.tools : null,
+        tools: denied.size
+          ? (Array.isArray(profile.tools) ? profile.tools : enabled).filter((name) => !denied.has(name))
+          : Array.isArray(profile.tools) ? profile.tools : null,
         enabled,
         provider: session.provider,
         model: session.model,
@@ -1128,7 +1140,71 @@ async function dispatchApproved(approval, context) {
   }
 }
 
+async function sessionProfile(session) {
+  const id = session && session.profile && !session.profile.portable ? session.profile.id : null;
+  return id ? (await profiles())[id] || null : null;
+}
+
+// Bloqueadas de un agente guardado; sin memoria tampoco usa sus herramientas.
+function profileDenied(profile) {
+  const denied = new Set((profile && profile.tools_deny) || []);
+  if (profile && profile.memory_scope === 'none') for (const name of MEMORY_TOOLS) denied.add(name);
+  return denied;
+}
+
+// La lista de herramientas de un agente guardado (null = todas) y sus
+// bloqueadas limitan la conversación durante toda su vida, no solo al crearla.
+// Una herramienta bloqueada nunca se permite, aunque figure en la lista.
+async function profileToolFilter(session) {
+  const profile = await sessionProfile(session);
+  const denied = profileDenied(profile);
+  if (!profile || (!Array.isArray(profile.tools) && !denied.size)) return null;
+  const allowed = Array.isArray(profile.tools) ? new Set(profile.tools) : null;
+  return (name) => (!allowed || allowed.has(name)) && !denied.has(name);
+}
+
+function localDay(now = Date.now()) {
+  const date = new Date(now);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+// Presupuesto diario de un agente guardado: tokens de entrada y salida (sin la
+// caché) de todas sus conversaciones durante el día local, en ProfilesDoc.usage.
+async function profileBudget(profile) {
+  const limit = Number(profile && profile.daily_tokens) || 0;
+  if (!limit) return null;
+  const doc = await shared.state.harness.snapshot(shared.state.ProfilesDoc, ctx());
+  const entry = doc && doc.usage && doc.usage[profile.id];
+  const used = entry && entry.day === localDay() ? Number(entry.tokens) || 0 : 0;
+  return { limit, used, exhausted: used >= limit };
+}
+
+async function recordProfileUsage(session, usage) {
+  const id = session && session.profile && !session.profile.portable ? session.profile.id : null;
+  const tokens = (Number(usage && usage.input) || 0) + (Number(usage && usage.output) || 0);
+  if (!id || !tokens) return;
+  const day = localDay();
+  await shared.state.harness.commit(async (tx) => {
+    const doc = await tx.doc(shared.state.ProfilesDoc);
+    if (!doc.profiles[id]) return;
+    doc.usage ||= {};
+    const entry = doc.usage[id];
+    doc.usage[id] = { day, tokens: (entry && entry.day === day ? Number(entry.tokens) || 0 : 0) + tokens };
+  }, ctx());
+}
+
+// Herramientas con las que arranca, o a las que se restablece, una conversación.
+function profileInitialTools(profile, specs) {
+  const available = new Set(specs.map((spec) => spec.name));
+  const denied = profileDenied(profile);
+  const base = profile && Array.isArray(profile.tools)
+    ? profile.tools.filter((name) => available.has(name)) : defaultToolNames(specs);
+  return denied.size ? (base || [...available]).filter((name) => !denied.has(name)) : base;
+}
+
 async function toolEnabled(sessionId, name, context) {
+  const allows = await profileToolFilter((await sessions())[sessionId]);
+  if (allows && !allows(name)) return false;
   const conv = await conversation(sessionId);
   return (await conv.agent(context)).tools.some((tool) => tool.name === name);
 }
@@ -1191,6 +1267,12 @@ module.exports = {
   allToolSpecs,
   defaultToolNames,
   moduleToolNames,
+  localDay,
+  profileBudget,
+  profileDenied,
+  profileInitialTools,
+  profileToolFilter,
+  sessionProfile,
   TOOLS_LOAD,
   supportsVision,
   modelDefinition,

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, X } from 'lucide-react';
-import { agentApi, type AgentProfile, type AgentRole, type AgentToolSpec } from '../../api/agentApi';
+import { agentApi, type AgentMemoryScope, type AgentProfile, type AgentRole, type AgentToolSpec } from '../../api/agentApi';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
@@ -10,6 +10,7 @@ import { SegmentedControl } from '../ui/SegmentedControl';
 import Textarea from '../ui/Textarea';
 import Toggle from '../ui/Toggle';
 import AgentAvatar, { AGENT_AVATAR_COLORS } from './AgentAvatar';
+import AgentRoutines from './AgentRoutines';
 import { METHOD_LABELS } from './methodLabels';
 
 const FIELD = 'grid grid-cols-[96px_1fr] items-start gap-3 px-3 py-2.5';
@@ -19,6 +20,12 @@ const ROLE_HINT: Record<AgentRole, string> = {
   explorer: 'Solo lee datos; investiga y reúne evidencia.',
   reviewer: 'Solo lee datos; revisa, contrasta y emite un veredicto.',
   worker: 'Puede ejecutar efectos; cada acción pedirá tu aprobación en la conversación que delega.',
+};
+
+const MEMORY_HINT: Record<AgentMemoryScope, string> = {
+  'shared-read': 'Lee la memoria general y la suya; lo que aprende queda solo para este agente.',
+  own: 'Solo lee y guarda su propia memoria; no ve la memoria general.',
+  none: 'No recibe recuerdos ni puede guardarlos.',
 };
 
 export default function AgentEditor({ profile, canStartChat = true, onClose, onSaved, onDeleted }: {
@@ -34,10 +41,13 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
   const [color, setColor] = useState(profile?.color ?? '');
   const [description, setDescription] = useState(profile?.description ?? '');
   const [role, setRole] = useState<AgentRole>(profile?.role ?? 'explorer');
+  const [memoryScope, setMemoryScope] = useState<AgentMemoryScope>(profile?.memory_scope ?? 'shared-read');
+  const [dailyTokens, setDailyTokens] = useState(profile?.daily_tokens ? String(profile.daily_tokens) : '');
   const [instructions, setInstructions] = useState(profile?.instructions ?? '');
   const [starter, setStarter] = useState(profile?.starter ?? '');
   const [allTools, setAllTools] = useState(profile ? profile.tools === null : true);
   const [selected, setSelected] = useState<Set<string>>(new Set(profile?.tools ?? []));
+  const [denied, setDenied] = useState<Set<string>>(new Set(profile?.tools_deny ?? []));
   const [tools, setTools] = useState<AgentToolSpec[]>([]);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -61,8 +71,10 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
     try {
       const res = await agentApi.agentProfileSave({
         ...(profile ? { id: profile.id } : {}),
-        name, color, description, role, instructions, starter,
+        name, color, description, role, memory_scope: memoryScope, instructions, starter,
+        daily_tokens: dailyTokens.trim() ? Number(dailyTokens) : null,
         tools: allTools ? null : [...selected],
+        tools_deny: allTools ? [...denied] : [],
       });
       addToast({ message: profile ? 'Agente actualizado. Los cambios se aplicarán a conversaciones nuevas.' : 'Agente creado', type: 'success' });
       onSaved(res.profile);
@@ -178,6 +190,33 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
               </span>
             </div>
           </div>
+          <div className={FIELD}>
+            <span className={LABEL}>Memoria</span>
+            <div className="space-y-1.5">
+              <SegmentedControl<AgentMemoryScope>
+                aria-label="Memoria del agente"
+                value={memoryScope}
+                onChange={setMemoryScope}
+                options={[
+                  { value: 'shared-read', label: 'Compartida' },
+                  { value: 'own', label: 'Propia' },
+                  { value: 'none', label: 'Ninguna' },
+                ]}
+              />
+              <span className="block text-[11px] leading-relaxed text-[var(--text-muted)]">{MEMORY_HINT[memoryScope]}</span>
+            </div>
+          </div>
+          <label className={FIELD}>
+            <span className={LABEL}>Tokens por día</span>
+            <div className="space-y-1.5">
+              <Input type="number" inputMode="numeric" min={1000} step={1000} value={dailyTokens}
+                onChange={(e) => setDailyTokens(e.target.value)} aria-label="Presupuesto diario de tokens"
+                placeholder="Sin límite" className="w-full" />
+              <span className="block text-[11px] leading-relaxed text-[var(--text-muted)]">
+                Tokens de entrada y salida de todas sus conversaciones. Al agotarlos se detiene en un punto reanudable hasta el día siguiente.
+              </span>
+            </div>
+          </label>
           <label className={FIELD}>
             <span className={LABEL}>Mensaje inicial</span>
             <Input value={starter} onChange={(e) => setStarter(e.target.value)} maxLength={500}
@@ -189,32 +228,36 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
             <span className="text-[13px] text-[var(--text-primary)]">Todas las herramientas</span>
             <Toggle checked={allTools} onChange={setAllTools} aria-label="Usar todas las herramientas" />
           </div>
-          {!allTools && (
-            <div className="mt-2 space-y-2">
-              {groups.map((group) => (
-                <div key={group.label}>
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">{group.label}</p>
-                  <ul className="mt-1 max-h-40 space-y-1 overflow-auto">
-                    {group.items.map((tool) => (
-                      <li key={tool.name} className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]" title={tool.name}>
-                        <span className="min-w-0 flex-1 truncate">{METHOD_LABELS[tool.name] ?? tool.name}</span>
-                        <Toggle
-                          checked={selected.has(tool.name)}
-                          aria-label={`Permitir ${tool.name}`}
-                          onChange={(on) => setSelected((prev) => {
-                            const next = new Set(prev);
-                            if (on) next.add(tool.name); else next.delete(tool.name);
-                            return next;
-                          })}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
+          {allTools && (
+            <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+              Bloquea las que el agente nunca debe usar, también las que se añadan después.
+            </p>
           )}
+          <div className="mt-2 space-y-2">
+            {groups.map((group) => (
+              <div key={group.label}>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">{group.label}</p>
+                <ul className="mt-1 max-h-40 space-y-1 overflow-auto">
+                  {group.items.map((tool) => (
+                    <li key={tool.name} className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]" title={tool.name}>
+                      <span className="min-w-0 flex-1 truncate">{METHOD_LABELS[tool.name] ?? tool.name}</span>
+                      <Toggle
+                        checked={allTools ? denied.has(tool.name) : selected.has(tool.name)}
+                        aria-label={`${allTools ? 'Bloquear' : 'Permitir'} ${tool.name}`}
+                        onChange={(on) => (allTools ? setDenied : setSelected)((prev) => {
+                          const next = new Set(prev);
+                          if (on) next.add(tool.name); else next.delete(tool.name);
+                          return next;
+                        })}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
+        {profile && <AgentRoutines profileId={profile.id} />}
         <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
           Tu pedido actual tiene prioridad sobre estas indicaciones; estas prevalecen sobre las preferencias de memoria.
         </p>

@@ -36,8 +36,43 @@ it('crea un agente con indicaciones y solo las herramientas elegidas', async () 
   fireEvent.click(screen.getByRole('switch', { name: 'Permitir templates_catalog' }));
   await act(async () => { fireEvent.click(create); });
   expect(save).toHaveBeenCalledWith({ name: 'Informe mensual', color: '#0E7490', description: '', role: 'explorer', instructions: 'Usa la plantilla de cortes',
-    starter: 'Prepara el informe', tools: ['templates_catalog'] });
+    starter: 'Prepara el informe', tools: ['templates_catalog'], tools_deny: [], memory_scope: 'shared-read', daily_tokens: null });
   expect(onSaved).toHaveBeenCalledWith(saved);
+});
+
+it('bloquea herramientas concretas sin renunciar a todas las demás', async () => {
+  const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: saved });
+  await act(async () => { render(<AgentEditor profile={{ ...saved, tools: null, tools_deny: ['artifact_print'] }}
+    onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} />); });
+  expect(screen.getByRole('switch', { name: 'Bloquear artifact_print' })).toBeChecked();
+  fireEvent.click(screen.getByRole('switch', { name: 'Bloquear templates_catalog' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(save.mock.calls[0][0]).toMatchObject({ tools: null, tools_deny: ['artifact_print', 'templates_catalog'] });
+});
+
+it('fija y retira el presupuesto diario de tokens del agente', async () => {
+  const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: saved });
+  await act(async () => { render(<AgentEditor profile={{ ...saved, daily_tokens: 50000 }}
+    onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} />); });
+  const field = screen.getByLabelText('Presupuesto diario de tokens');
+  expect(field).toHaveValue(50000);
+  fireEvent.change(field, { target: { value: '200000' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(save.mock.calls[0][0]).toMatchObject({ daily_tokens: 200000 });
+  fireEvent.change(field, { target: { value: '' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(save.mock.calls[1][0]).toMatchObject({ daily_tokens: null });
+});
+
+it('elige el alcance de memoria del agente y conserva el guardado', async () => {
+  const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: saved });
+  await act(async () => { render(<AgentEditor profile={{ ...saved, memory_scope: 'own' }}
+    onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} />); });
+  expect(screen.getByText('Solo lee y guarda su propia memoria; no ve la memoria general.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Ninguna' }));
+  expect(screen.getByText('No recibe recuerdos ni puede guardarlos.')).toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(save.mock.calls[0][0]).toMatchObject({ id: saved.id, memory_scope: 'none' });
 });
 
 it('permite empezar con nombre e instrucción sin abrir las opciones avanzadas', async () => {
@@ -48,7 +83,7 @@ it('permite empezar con nombre e instrucción sin abrir las opciones avanzadas',
   fireEvent.change(screen.getByLabelText('Nombre del agente'), { target: { value: 'Revisor' } });
   fireEvent.change(screen.getByLabelText('Indicaciones del agente'), { target: { value: 'Revisa mis informes' } });
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Crear y chatear' })); });
-  expect(save).toHaveBeenCalledWith({ name: 'Revisor', color: '', role: 'explorer', instructions: 'Revisa mis informes', description: '', starter: '', tools: null });
+  expect(save).toHaveBeenCalledWith({ name: 'Revisor', color: '', role: 'explorer', instructions: 'Revisa mis informes', description: '', starter: '', tools: null, tools_deny: [], memory_scope: 'shared-read', daily_tokens: null });
 });
 
 it('conserva el color al editar y permite volver al automático', async () => {
