@@ -38,6 +38,9 @@ const SUBAGENT_DESCRIPTION_MAX = 80;
 const SUBAGENT_MAX_DEPTH = 1;
 const SUBAGENT_MAX_TASKS = 4;
 const TOOLS_LOAD = 'tools_load';
+// Skill elegida con «/» en el compositor: bloquea las demás herramientas hasta
+// que skills_read la cargue. Solo ordena el turno; no habilita ni aprueba nada.
+const requiredSkills = new Map();
 const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent']);
 const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD, 'task_schedule']);
 const MEMORY_TOOLS = ['memory_search', 'memory_remember', 'procedure_learn'];
@@ -488,6 +491,7 @@ async function refreshTools() {
                 && (shared.rounds.get(api.conversationId) || 0) < MAX_TOOL_STEPS) delete sessions[sessionId].continuation;
             });
           } finally {
+            if (message.stopReason !== 'toolUse') requiredSkills.delete(api.conversationId);
             await closeTurnLog(message, api);
           }
         },
@@ -706,6 +710,10 @@ async function beforeTool(call, api, context) {
   const rounds = await toolBudget(api, context);
   if (rounds >= MAX_TOOL_STEPS) return { block: LIMIT_NOTE };
   if (!spec) return { block: `Herramienta no disponible para el agente: ${call.name}` };
+  const skillId = requiredSkills.get(api.conversationId);
+  if (skillId && !(call.name === 'skills_read' && (call.arguments || {}).skill_id === skillId)) {
+    return { block: `Antes de cualquier otra herramienta carga la skill elegida por el usuario con skills_read y skill_id "${skillId}".` };
+  }
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   if (!await toolEnabled(sessionId, call.name, context)) return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
   const calls = turnState(api.conversationId).calls;
@@ -888,6 +896,9 @@ async function executeTool(spec, args, api, context) {
     : (parsed.window && Array.isArray(parsed.window.rect) ? parsed.window.rect : null));
   if (rect) turnState(api.conversationId).uiRect = rect;
   const isError = !!(parsed && typeof parsed === 'object' && (parsed.error !== undefined || parsed.isError === true));
+  if (spec.name === 'skills_read' && !isError && requiredSkills.get(api.conversationId) === (args || {}).skill_id) {
+    requiredSkills.delete(api.conversationId);
+  }
   if (spec.name === 'task_plan' && !isError && parsed && Array.isArray(parsed.remaining)) {
     turnState(api.conversationId).remaining = parsed.remaining.map(String);
   }
@@ -1263,6 +1274,11 @@ function pollDispatch(sessionId, callId, context, onOutput) {
   });
 }
 
+function requireSkill(conversationId, skillId) {
+  if (skillId) requiredSkills.set(conversationId, skillId);
+  else requiredSkills.delete(conversationId);
+}
+
 module.exports = {
   allToolSpecs,
   defaultToolNames,
@@ -1289,4 +1305,5 @@ module.exports = {
   dispatchApproved,
   sanitizeProviderError,
   contextWindowFor,
+  requireSkill,
 };

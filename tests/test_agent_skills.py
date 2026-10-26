@@ -306,3 +306,30 @@ def test_full_shared_catalog_keeps_agent_override_with_attached_shared_root(stor
     assert [entry["location"] for entry in result["skills"]] == [str(own)]
     assert len(result["warnings"]) == 1
     assert scans.count(home / "_shared") == 1 and scans.count(home / "reader") == 1
+
+
+def test_composer_skill_resolves_with_agent_levels_and_rejects_unknown_ids(store, tmp_path, monkeypatch):
+    from backend.core.exceptions import ValidationError
+    from backend.handlers import agent_internal
+
+    home = tmp_path / "configured-skills"
+    install(home / "_shared", body="Compartida")
+    install(home / "_shared", name="informe", description="Redacta informes")
+    install(home / "reader", body="Propia")
+    monkeypatch.setattr(agent_internal, "_store", lambda: store)
+    resolve = agent_internal.HANDLERS["agent_internal_skill_resolve"]
+    listed = {skill["name"]: skill["id"] for skill in agent_internal.HANDLERS["agent_skills_list"]({})["skills"]}
+    workspace, library = store.drafts_dir("skills-session"), store.base_dir / "skills"
+
+    own = resolve({"session_id": "skills-session", "skill_id": listed["pdf-review"], "profile_id": "reader"})["skill"]
+    assert own["name"] == "pdf-review" and own["id"] != listed["pdf-review"] and own["warning"] is None
+    assert skills.run("skills_read", {"skill_id": own["id"]}, {}, workspace, library, agent_id="reader")["content"].endswith("Propia")
+    fallback = resolve({"session_id": "skills-session", "skill_id": listed["informe"], "profile_id": "reader"})["skill"]
+    assert fallback["id"] == listed["informe"] and "_shared" in fallback["warning"]
+    assert fallback["notice"] == skills._NOTICE
+    assert resolve({"session_id": "skills-session", "skill_id": listed["informe"]})["skill"]["warning"] is None
+    for unknown in ("0" * 24, "../reader", 17):
+        with pytest.raises(ValidationError, match="desconocida"):
+            resolve({"session_id": "skills-session", "skill_id": unknown, "profile_id": "reader"})
+    with pytest.raises(ValidationError, match="perfil"):
+        resolve({"session_id": "skills-session", "skill_id": listed["informe"], "profile_id": ""})

@@ -1803,3 +1803,41 @@ it('el eco de un texto en el historial no confirma una respuesta de envío perdi
   expect(screen.getByText('Recepción sin confirmar.')).toBeVisible();
   expect(screen.queryByText('Mensaje recibido.')).not.toBeInTheDocument();
 });
+
+it('invoca una skill con «/»: filtra el catálogo, elige con el teclado y envía su skill_id', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [] });
+  const catalog = vi.spyOn(agentApi, 'agentSkillsList').mockResolvedValue({ skills: [
+    { id: 'a'.repeat(24), name: 'pdf-review', description: 'Revisa PDFs' },
+    { id: 'b'.repeat(24), name: 'informe-tecnico', description: 'Redacta informes' },
+    { id: 'c'.repeat(24), name: 'firmas', description: 'Comprueba firmas' },
+  ], library: '', warnings: [], truncated: false });
+  render(<AgentView />);
+  await act(async () => {});
+  const box = screen.getByLabelText('Mensaje para el agente');
+  fireEvent.change(box, { target: { value: 'Abre C:/datos' } });
+  expect(screen.queryByRole('listbox', { name: 'Skills disponibles' })).not.toBeInTheDocument();
+  expect(catalog).not.toHaveBeenCalled();
+  fireEvent.change(box, { target: { value: 'Revisa /if' } });
+  await act(async () => {});
+  const listbox = screen.getByRole('listbox', { name: 'Skills disponibles' });
+  expect(within(listbox).getAllByRole('option').map((option) => option.textContent)).toEqual(['/informe-tecnicoRedacta informes']);
+  fireEvent.keyDown(box, { key: 'Escape' });
+  expect(screen.queryByRole('listbox', { name: 'Skills disponibles' })).not.toBeInTheDocument();
+  fireEvent.change(box, { target: { value: 'Revisa /f' } });
+  await act(async () => {});
+  expect(within(screen.getByRole('listbox', { name: 'Skills disponibles' })).getAllByRole('option').map((option) => option.textContent?.split('/')[1]))
+    .toEqual(['firmasComprueba firmas', 'pdf-reviewRevisa PDFs', 'informe-tecnicoRedacta informes']);
+  fireEvent.keyDown(box, { key: 'ArrowDown' });
+  expect(screen.getByRole('option', { name: /pdf-review/ })).toHaveAttribute('aria-selected', 'true');
+  fireEvent.keyDown(box, { key: 'Enter' });
+  expect(screen.queryByRole('listbox', { name: 'Skills disponibles' })).not.toBeInTheDocument();
+  expect(box).toHaveValue('Revisa ');
+  expect(within(screen.getByLabelText('Skill activa')).getByText('/pdf-review')).toBeVisible();
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  fireEvent.change(box, { target: { value: 'Revisa el contrato' } });
+  await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }); });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Revisa el contrato', expect.any(String), [], false, 'a'.repeat(24));
+  expect(screen.queryByLabelText('Skill activa')).not.toBeInTheDocument();
+});
