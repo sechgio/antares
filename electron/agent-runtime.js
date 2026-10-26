@@ -795,10 +795,13 @@ async function messageSend(params) {
     : { granted: [], rejected: [] };
   const nativeNames = [...shared.toolSpecs.values()].filter((t) => t.kind === 'native').map((t) => t.name);
   const mentions = await bridge('agent_internal_mentions', { text: mentionText, native_tools: nativeNames });
-  if ((mentions.modules || []).length) {
+  // Mencionar un módulo o un servidor MCP habilita sus herramientas desde esta ronda.
+  const mentionedTools = [...execution.moduleToolNames(mentions.modules || []),
+    ...(mentions.mcp_tools || []).filter((name) => shared.toolSpecs.has(name))];
+  if (mentionedTools.length) {
     const current = (await conv.agent(ctx())).tools.map((tool) => tool.name);
     const allows = await execution.profileToolFilter(session);
-    const extra = execution.moduleToolNames(mentions.modules).filter((name) => !current.includes(name) && (!allows || allows(name)));
+    const extra = mentionedTools.filter((name) => !current.includes(name) && (!allows || allows(name)));
     if (current.includes(execution.TOOLS_LOAD) && extra.length) {
       await conv.configure({ tools: [...current, ...extra].map((name) => ({ name })) }, ctx());
     }

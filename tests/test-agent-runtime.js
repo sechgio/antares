@@ -1880,8 +1880,13 @@ async function main() {
     const { bridge } = makeBridge();
     const schema = { type: 'object', properties: {} };
     const bigBridge = async (method, params) => {
+      if (method === 'agent_internal_mentions' && /@demo\b/.test(params.text)) {
+        return { modules: [], unknown: [], ambiguous: [], labels: {}, mcp_tools: ['mcp2__demo__buscar', 'mcp2__demo__retirada'],
+          context: 'El usuario mencionó estos servidores MCP; sus herramientas piden aprobación antes de cada llamada:\n- Demo: herramientas mcp2__demo__buscar' };
+      }
       if (method !== 'agent_internal_tools') return bridge(method, params);
       const result = await bridge(method, params);
+      result.tools.push({ name: 'mcp2__demo__buscar', description: 'MCP Demo · buscar', gated: true, kind: 'mcp', inputSchema: schema });
       for (let i = 0; i < 70; i += 1) {
         result.tools.push({ name: `formatos_t${i}`, module: 'formatos', description: `Formatos PDF ${i}`, gated: false, kind: 'backend', inputSchema: schema });
         result.tools.push({ name: `sellador_t${i}`, module: 'sellador', description: `Sellar ${i}`, gated: false, kind: 'backend', inputSchema: schema });
@@ -1901,6 +1906,7 @@ async function main() {
         return fauxAssistantMessage('formatos listos');
       },
       fauxAssistantMessage('sellador listo'),
+      fauxAssistantMessage('demo listo'),
     ], bigBridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const enabledNames = async () => (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools
@@ -1920,6 +1926,12 @@ async function main() {
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'usa @sellador' });
     assert(await waitIdle(session.id), 'el turno con mención termina');
     assert((await enabledNames()).filter((name) => name.startsWith('sellador_')).length === 70, 'mencionar un módulo carga sus herramientas');
+    assert(!(await enabledNames()).includes('mcp2__demo__buscar'), 'las herramientas MCP no entran en el núcleo de un catálogo grande');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'revisa @demo' });
+    assert(await waitIdle(session.id), 'el turno con mención MCP termina');
+    const withMcp = await enabledNames();
+    assert(withMcp.includes('mcp2__demo__buscar') && !withMcp.includes('mcp2__demo__retirada'),
+      'mencionar un servidor MCP habilita solo sus herramientas registradas');
     await runtime.handlers.agent_tools_set({ session_id: session.id, names: null });
     assert(JSON.stringify(await enabledNames()) === JSON.stringify(initial), 'restablecer vuelve al núcleo');
     await runtime.shutdown();
