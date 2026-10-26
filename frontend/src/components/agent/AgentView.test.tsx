@@ -412,6 +412,24 @@ it('regula el razonamiento con los niveles del modelo y lo guarda al soltar', as
   expect(screen.queryByRole('button', { name: /^Razonamiento:/ })).not.toBeInTheDocument();
 });
 
+it('ofrece el nivel máximo cuando el modelo lo admite', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const reasoning_levels = ['high', 'xhigh', 'max'] as const;
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [{ ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'high' }] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const save = vi.spyOn(agentApi, 'agentSessionReasoningSet')
+    .mockResolvedValueOnce({ session: { ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'max' } });
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Alto' }));
+  const slider = within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByRole('slider', { name: 'Nivel de razonamiento' });
+  fireEvent.change(slider, { target: { value: '2' } });
+  expect(slider).toHaveAttribute('aria-valuetext', 'Máximo');
+  await act(async () => { fireEvent.keyUp(slider, { key: 'ArrowRight' }); });
+  expect(save).toHaveBeenCalledWith(session.id, 'max');
+  expect(screen.getByRole('button', { name: 'Razonamiento: Máximo' })).toBeEnabled();
+});
+
 it('cambia los permisos por conversación y conserva el modo si falla el guardado', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   const second = { ...session, id: 's2', title: 'Segunda', permission_mode: 'ask' as const };

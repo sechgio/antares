@@ -72,7 +72,7 @@ function supportsReasoning(style, modelId) {
   return (style === 'anthropic_messages' ? REASONING_ANTHROPIC_MODEL : REASONING_OPENAI_MODEL).test(String(modelId || ''));
 }
 
-const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'];
+const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 // Niveles que admite el modelo ya registrado (ensureProvider), según su
 // definición: capacidad declarada en el proveedor, catálogo de pi-ai o nombre.

@@ -5,13 +5,14 @@ import type { AgentReasoningEffort } from '../../api/agentApi';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import Button from '../ui/Button';
 
-const ORDER: AgentReasoningEffort[] = ['minimal', 'low', 'medium', 'high', 'xhigh'];
+const ORDER: AgentReasoningEffort[] = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 const LABELS: Record<AgentReasoningEffort, string> = {
   minimal: 'Mínimo',
   low: 'Bajo',
   medium: 'Medio',
   high: 'Alto',
   xhigh: 'Extra alto',
+  max: 'Máximo',
 };
 
 // Mismo ajuste que el runtime: el nivel elegido o el más cercano por debajo.

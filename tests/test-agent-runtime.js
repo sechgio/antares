@@ -583,7 +583,7 @@ async function main() {
     assert(await thinkingLevel(session.id) === 'high', 'el nivel elegido se aplica al cambiar a un modelo que razona');
     await runtime.handlers.agent_session_reasoning_set({ id: session.id, reasoning_effort: 'minimal' });
     assert(await thinkingLevel(session.id) === 'minimal', 'el nivel se aplica al modelo actual');
-    for (const effort of ['off', 'max', '', null, undefined]) {
+    for (const effort of ['off', 'ultra', '', null, undefined]) {
       let rejected;
       try { await runtime.handlers.agent_session_reasoning_set({ id: session.id, reasoning_effort: effort }); } catch (err) { rejected = err; }
       assert(rejected, `rechaza un nivel inválido: ${effort}`);
@@ -935,8 +935,17 @@ async function main() {
     assert(thinkingLevelFor([], 'high') === 'off' && thinkingLevelFor(['minimal', 'low', 'medium', 'high']) === 'low'
       && thinkingLevelFor(['minimal', 'low', 'medium', 'high'], 'xhigh') === 'high' && thinkingLevelFor(['low', 'medium'], 'minimal') === 'low',
       'el nivel elegido se ajusta al más cercano que admite el modelo');
+    assert(thinkingLevelFor(['low', 'medium', 'high', 'xhigh', 'max'], 'max') === 'max'
+      && thinkingLevelFor(['low', 'medium', 'high', 'xhigh'], 'max') === 'xhigh',
+      'max se envía solo a los modelos que lo admiten y, si no, baja al nivel inferior');
     const { OPENAI_MODELS } = await import('@earendil-works/pi-ai/providers/openai.models');
     const { ANTHROPIC_MODELS } = await import('@earendil-works/pi-ai/providers/anthropic.models');
+    const { getSupportedThinkingLevels } = await import('@earendil-works/pi-ai');
+    const anthropicLevels = { provider: 'anthropic', style: 'anthropic_messages', base_url: 'https://api.anthropic.com' };
+    const levelsOf = (id) => getSupportedThinkingLevels(modelDefinition(anthropicLevels, id, 'anthropic-messages',
+      ANTHROPIC_MODELS[id], ANTHROPIC_MODELS[id]));
+    assert(levelsOf('claude-opus-5-5').includes('max') && !levelsOf('claude-haiku-4-5').includes('max'),
+      'el catálogo decide qué modelos admiten el nivel max');
     const openaiInfo = { provider: 'openai', style: 'openai_chat', base_url: 'https://api.openai.com/v1' };
     const gpt5 = modelDefinition(openaiInfo, 'gpt-5', 'openai-completions', undefined, OPENAI_MODELS['gpt-5']);
     assert(gpt5.reasoning === true && gpt5.thinkingLevelMap && gpt5.thinkingLevelMap.xhigh === null,

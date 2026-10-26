@@ -28,7 +28,7 @@ export interface AgentRuleAudit {
   to: AgentChannelRule | null;
 }
 
-export type AgentReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type AgentReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export interface AgentSession {
   id: string;
