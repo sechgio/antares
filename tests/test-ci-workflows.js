@@ -147,8 +147,8 @@ function run() {
     assert(new RegExp(`  ${input}:[\\s\\S]*?default: 'true'`).test(setupCi), `Release setup keeps ${input} enabled by default`);
   }
   assert(
-    ['frontend', 'frontend-shard-2'].every((name) => job(name).includes("python: 'false'") && job(name).includes("root: 'true'")),
-    'Frontend shards skip Python and install root dependencies for Electron-backed Vitest tests',
+    ['frontend', 'frontend-shard-2'].every((name) => !job(name).includes("python: 'false'") && job(name).includes("root: 'true'")),
+    'Frontend shards install Python for the skills probe and root dependencies for Electron-backed Vitest tests',
   );
   assert(job('backend').includes("frontend: 'false'") && job('backend').includes("root: 'false'"), 'Backend setup skips both npm installs');
   assert(packageJson.scripts['audit:python'].endsWith('python scripts/audit_python.py'), 'The shared audit uses the tested lock exporter');
