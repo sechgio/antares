@@ -51,10 +51,14 @@ const MEMORY_TOOLS = ['memory_search', 'memory_remember', 'procedure_learn'];
 // ventana objetivo durante su despacho (las lecturas y cua_launch_app no inyectan).
 const UI_ACTION_TOOLS = new Set(['cua_click', 'cua_drag', 'cua_scroll', 'cua_type_text', 'cua_press_key', 'cua_hotkey',
   'cua_set_value', 'cua_invoke_menu', 'cua_bring_to_front']);
+// Acciones desktop_ que inyectan entrada, enfocan o abren aplicaciones: actúan
+// por coordenadas o sobre la ventana activa, sin identificar la app objetivo.
+const DESKTOP_ACTION_TOOLS = new Set(['desktop_click', 'desktop_type', 'desktop_key', 'desktop_scroll',
+  'desktop_launch', 'desktop_focus']);
 // En Acceso completo siguen exigiendo decisión humana: el shell (incluidos los
 // jobs en segundo plano) y las acciones de Equipo que inyectan entrada o abren
 // aplicaciones.
-const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'cua_launch_app', ...UI_ACTION_TOOLS]);
+const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'cua_launch_app', ...UI_ACTION_TOOLS, ...DESKTOP_ACTION_TOOLS]);
 // Acciones con efecto que el techo desatendido contabiliza por encargo programado.
 const UNATTENDED_ACTION_TOOLS = new Set(['cua_launch_app', ...UI_ACTION_TOOLS]);
 const MAX_UNATTENDED_ACTIONS = 25;
@@ -850,6 +854,11 @@ async function beforeTool(call, api, context) {
       + 'No repitas esta acción: pide permiso, cambia la regla en Permisos o propone otra vía.' };
   }
   const unattendedApps = await unattendedAllowlist(api, context, mode, spec);
+  // La lista blanca del encargo nombra apps y desktop_ no identifica a cuál apunta.
+  if (unattendedApps && DESKTOP_ACTION_TOOLS.has(call.name)) {
+    return { block: 'En un encargo programado las acciones desktop_* no se aprueban porque no identifican la aplicación. '
+      + 'Usa cua_launch_app y las herramientas cua_* sobre una app de la lista blanca del encargo.' };
+  }
   if (unattendedApps && UNATTENDED_ACTION_TOOLS.has(call.name)) {
     const turn = turnState(api.conversationId);
     turn.uiActions = (turn.uiActions || 0) + 1;

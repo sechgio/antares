@@ -14,6 +14,7 @@ from typing import Any
 
 from backend.core.agent import computer_files
 from backend.core.agent.cancel import RunCancelled, _CancelEvent
+from backend.core.computer_use import driver, policy
 from backend.core.integrations.types import JsonObject
 
 _SHOT_WIDTH = 1280
@@ -381,6 +382,8 @@ def type_text(params: JsonObject, root: Path, token: _CancelEvent | None = None)
         raise ValueError("Indica el texto")
     if len(text) > 5_000:
         raise ValueError("El texto excede 5000 caracteres")
+    if driver.focused_is_password():
+        raise policy.DriverRefused(policy.classify_action("type_text", target_password=True)["reason"])
     for char in text.replace("\r\n", "\n"):
         if token is not None and token.cancelled:
             raise RunCancelled()
