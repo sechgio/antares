@@ -50,6 +50,27 @@ const redactedCookieValue = l.redactText('cookie=sessionid=secret-one; csrf=secr
 assert(!redactedCookieValue.includes('secret-one') && !redactedCookieValue.includes('secret-two'));
 console.log('redacción de secretos en JSON y cookies: OK');
 
+const bareTokens = [
+  ['openai', 'sk-proj-0123456789abcdefghijklmnopqrstuv'],
+  ['github-classic', 'ghp_0123456789abcdefghijklmnopqrstuvwxyz'],
+  ['github-fine', 'github_pat_0123456789ABCDEFGHIJ_0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghij'],
+  ['aws', 'AKIAIOSFODNN7EXAMPLE'],
+  ['slack', 'xoxb-' + '123456789012-123456789012-abcdefghijklmnopqrst'],
+  ['google-api', 'AIza0123456789abcdefghijklmnopqrstuvwxy'],
+  ['google-refresh', '1//0abcdefghijklmnopqrstuvwxyz123456'],
+  ['google-access', 'ya29.0123456789abcdefghijklmnopqrstuvwxyz'],
+];
+for (const [label, token] of bareTokens) {
+  const redacted = l.redactText(`fallo con ${token} en la petición`);
+  assert(!redacted.includes(token), `token desnudo ${label} se redacta sin prefijo clave=valor`);
+  assert(redacted.includes('[REDACTED]'), `token desnudo ${label} deja marcador`);
+}
+assert(
+  l.redactText('tarea task-0123456789abcdefghijklmnopqrstuv normal').includes('task-0123456789abcdefghijklmnopqrstuv'),
+  'una palabra que contiene sk- tras otra letra no se redacta',
+);
+console.log('redacción de tokens desnudos (sk-, ghp_, github_pat_, AKIA, xox, AIza, 1//, ya29.): OK');
+
 let syncAppendCalls = 0;
 const originalAppendFileSync = fs.appendFileSync;
 fs.appendFileSync = (...args) => {
