@@ -9,8 +9,9 @@ const { assert, finish, stubModule } = require('./helpers/harness');
 const { getEventListeners } = require('node:events');
 
 // Este fixture cuenta con un catálogo pequeño (todas las herramientas habilitadas);
-// cua-driver tiene sus propias pruebas en test-agent-cua.js.
+// cua-driver y el navegador tienen sus propias pruebas en test-agent-cua.js y test-agent-browser-tools.js.
 stubModule('electron/agent-cua.js', { TOOLS: new Map(), run: async () => ({}), approvalContext: () => ({}), close: () => {} });
+stubModule('electron/agent-browser.js', { ...require('../electron/agent-browser'), TOOLS: {} });
 const runtime = require('../electron/agent-runtime');
 const importer = require('../electron/agent-import');
 const { METHODS, INTERNAL_METHODS: INTERNAL_SET, nativeDispatchFor } = require('../shared/ipc-method-catalog');
@@ -317,12 +318,14 @@ async function main() {
         result.tools.push(
           { name: 'cua_click', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
           { name: 'cua_window_state', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
+          { name: 'desktop_type', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
         );
       }
       return result;
     };
     await openFaux([
       fauxAssistantMessage([fauxToolCall('cua_click', { window_id: 'w1a2b', element_id: 'e3' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('desktop_type', { text: 'hola' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage([fauxToolCall('cua_window_state', { window_id: 'w1a2b' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('Acciones de equipo terminadas'),
     ], uiBridge);
@@ -333,8 +336,11 @@ async function main() {
     assert(state.dispatches.length === 0, 'no inyecta entrada en la app antes de la aprobación humana');
     const approval = [...state.approvals.values()][0];
     await runtime.handlers.agent_approve({ approval_id: approval.id });
+    assert(await waitFor(() => state.approvals.size === 2), 'escribir con desktop_type pide aprobación también en Acceso completo');
+    assert(state.dispatches.length === 1, 'desktop_type no inyecta entrada antes de la aprobación humana');
+    await runtime.handlers.agent_approve({ approval_id: [...state.approvals.values()][1].id });
     assert(await waitIdle(session.id), 'las acciones ui continúan después de la aprobación humana');
-    assert(state.dispatches.length === 2, 'la aprobación ejecuta el clic; la observación de lectura sigue sola');
+    assert(state.dispatches.length === 3, 'cada aprobación ejecuta su acción; la observación de lectura sigue sola');
     await runtime.shutdown();
   }
 
@@ -362,6 +368,7 @@ async function main() {
       if (method === 'agent_internal_tools') {
         result.tools.push(
           { name: 'cua_click', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
+          { name: 'desktop_click', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
         );
       }
       return result;
@@ -376,6 +383,7 @@ async function main() {
         apps: ['notepad'],
       })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('Encargo programado'),
+      fauxAssistantMessage([fauxToolCall('desktop_click', { x: 10, y: 10 })], { stopReason: 'toolUse' }),
       ...clicks,
       fauxAssistantMessage('Encargo desatendido terminado'),
     ], uiBridge);
@@ -387,6 +395,9 @@ async function main() {
     assert(JSON.stringify(state.unattendedApps) === JSON.stringify(['notepad']), 'la lista blanca declarada llega a la aprobación');
     assert([...state.approvals.values()].every((a) => a.status === 'approved'), 'las aprobaciones desatendidas quedan aprobadas con auditoría');
     assert(state.dispatches.length === 25, 'el techo bloquea la acción 26 del encargo desatendido');
+    assert(!state.dispatches.some((d) => d.method === 'desktop_click')
+      && ![...state.approvals.values()].some((a) => a.method === 'desktop_click'),
+    'el encargo desatendido bloquea desktop_click porque no identifica la app de la lista blanca');
     assert(await waitIdle(session.id), 'el encargo desatendido termina tras el techo');
     await runtime.shutdown();
   }

@@ -336,11 +336,21 @@ def test_desktop_stops_typing_when_the_turn_is_cancelled(store, monkeypatch):
 
     monkeypatch.setattr(computer_desktop, "_send", send)
     monkeypatch.setattr(computer_desktop, "_settled", lambda *_: {"typed": True})
+    monkeypatch.setattr(computer_desktop.driver, "focused_is_password", lambda: False)
     with pytest.raises(RunCancelled):
         agent_tools.run("desktop_type", {"text": "abcd"}, store, "s1", token)
     assert len(sent) == 2
     monkeypatch.setattr(computer_desktop, "observe", lambda *_: {"observed": True})
     assert _run(store, "desktop_observe") == {"observed": True}
+
+
+def test_desktop_type_refuses_a_focused_password_field(store, monkeypatch):
+    sent = []
+    monkeypatch.setattr(computer_desktop, "_send", lambda *inputs: sent.extend(inputs))
+    monkeypatch.setattr(computer_desktop.driver, "focused_is_password", lambda: True)
+    with pytest.raises(ValueError, match="contraseña"):
+        _run(store, "desktop_type", text="secreto")
+    assert sent == []
 
 
 def test_cancelled_desktop_action_does_not_execute_after_waiting(store, monkeypatch):
