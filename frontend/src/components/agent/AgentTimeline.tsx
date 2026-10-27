@@ -384,6 +384,10 @@ type ActivityEntry =
   | { kind: 'call'; key: string; call: AgentToolCall };
 
 const NEEDS_REVIEW = ['failed', 'interrupted', 'pending'];
+// Borrado o descarte de archivos en posición de comando: avisa en la aprobación,
+// porque el diario de deshacer solo cubre fs_write, fs_edit y drafts_save.
+const DESTRUCTIVE_COMMAND = new RegExp(String.raw`(?:^\s*|[;|&({]\s*)(?:remove-item|rm|ri|del|erase|rd|rmdir|clear-content|format-volume|clear-disk)\b`
+  + String.raw`|\bformat(?:\.com)?\s+[a-z]:|\bgit\s+(?:clean\b|reset\s+--hard\b|checkout\s+--\s)|\[(?:system\.)?io\.(?:file|directory)\]::delete\b`, 'im');
 
 function workDuration(ms: number): string {
   const seconds = Math.max(1, Math.round(ms / 1000));
@@ -672,6 +676,10 @@ export function ApprovalCard({
               Este comando puede acceder al equipo completo con tus permisos, fuera de las carpetas adjuntas.
               Requiere tu aprobación también en Acceso completo.
             </span>
+          </p>}
+          {typeof params.command === 'string' && DESTRUCTIVE_COMMAND.test(params.command) && <p className="flex gap-2 text-[12px] leading-[18px] text-[var(--accent-red)]">
+            <TriangleAlert size={13} strokeWidth={1.75} aria-hidden="true" className="mt-[3px] shrink-0" />
+            <span>Este comando elimina o descarta archivos y Antares no puede deshacerlo. Comprueba las rutas antes de permitirlo.</span>
           </p>}
           {(typeof params.command === 'string' || facts.length > 0) && (
             <ul className="space-y-0.5 rounded-lg bg-[var(--bg-base)] px-3 py-2 font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)]">

@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- Agent ya no edita a ciegas: `fs_edit` y `fs_write` con `overwrite` exigen haber leído el archivo con `fs_read` en la conversación y lo rechazan si cambió desde esa lectura (otra aplicación, el usuario o un deshacer), en lugar de pisar contenido que el modelo no vio. Lo que el agente escribe o edita cuenta como leído. `fs_edit` encuentra un fragmento de líneas completas aunque difiera solo en espacios finales, si la coincidencia es única, y explica cuándo el fragmento trae los números de línea de `fs_read`. La aprobación de un comando que borra o descarta archivos (`Remove-Item`, `del`, `git reset --hard`, `git clean`…) avisa de que Antares no puede deshacerlo.
 - Agent usa el límite de salida real de cada modelo del catálogo (por ejemplo, 128 000 tokens en Claude 5.5 y hasta un cuarto de la ventana en GPT): con el tope fijo de 8 192 tokens, el razonamiento alto dejaba sin espacio la respuesta y truncaba las llamadas a herramientas.
 - Un modelo personalizado que apunta a la API oficial de Anthropic, OpenAI u OpenRouter usa el catálogo de ese proveedor (ventana, límite de salida, precios y modo de razonamiento), y la lista de conversaciones refleja al momento los niveles de razonamiento que declara Proveedores IA.
 - Las herramientas MCP usan su canal de permisos, de modo que las reglas del canal MCP también se les aplican; la traza y la tarjeta de aprobación las nombran por su servidor y su herramienta real.

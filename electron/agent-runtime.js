@@ -85,6 +85,8 @@ const SYSTEM_PROMPT =
   'con un resumen breve: qué quedó hecho, la evidencia que lo comprueba y, si falta algo, qué necesitas para seguir. ' +
   'Archivos: fs_list, fs_read y fs_search leen el espacio de trabajo de la conversación y lo que el usuario adjuntó ' +
   '(PDF, Excel, Word y texto); fs_write y fs_edit escriben, y un nombre relativo va al espacio de trabajo. ' +
+  'Lee un archivo con fs_read antes de editarlo o reemplazarlo y prefiere fs_edit a reescribirlo entero; no borres, ' +
+    'muevas ni vacíes archivos o carpetas que el usuario no haya pedido eliminar. ' +
   'Terminal: shell_run inicia PowerShell en el espacio de trabajo, pero puede acceder al equipo completo con los permisos del usuario; '
     + 'cada comando requiere aprobación, también en Acceso completo. Para builds o despliegues largos usa shell_job_start y espera '
     + 'con wait_event kind=shell_job; shell_output lee su salida y shell_job_cancel lo detiene. Internet: web_open abre páginas o búsquedas en un ' +
