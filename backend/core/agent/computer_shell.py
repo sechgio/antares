@@ -83,19 +83,22 @@ def kill_tree(process: subprocess.Popen[bytes]) -> None:
                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
-def run(params: JsonObject, grants: dict[str, JsonObject], root: Path, token: Any = None) -> JsonObject:
+def run(params: JsonObject, grants: dict[str, JsonObject], root: Path, token: Any = None,
+        *, workspace: Path | None = None) -> JsonObject:
     command = params.get("command")
     if not isinstance(command, str) or not command.strip():
         raise ValueError("Indica el comando")
     if len(command) > _MAX_COMMAND_CHARS:
         raise ValueError(f"El comando excede {_MAX_COMMAND_CHARS} caracteres")
-    cwd = computer_files.resolve(params.get("cwd") or str(root), grants, root)
+    # root guarda las salidas; workspace es la carpeta donde trabaja el comando.
+    workspace = workspace or root
+    cwd = computer_files.resolve(params.get("cwd") or str(workspace), grants, workspace)
     if not cwd.is_dir():
         raise ValueError("La carpeta de trabajo no existe")
     raw_timeout = params.get("timeout_s")
     timeout = raw_timeout if isinstance(raw_timeout, int) and not isinstance(raw_timeout, bool) else _DEFAULT_TIMEOUT_S
     timeout = max(1, min(_MAX_TIMEOUT_S, timeout))
-    env = {**os.environ, "ANTARES_AGENT_WORKSPACE": str(root)}
+    env = {**os.environ, "ANTARES_AGENT_WORKSPACE": str(workspace)}
     started = time.monotonic()
     process = subprocess.Popen(
         ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",

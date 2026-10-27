@@ -1268,6 +1268,14 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 addToast({ message: errorMessage(err, 'No se pudo retirar el archivo'), type: 'error' });
               }
             }}
+            onSetWorkspace={async (path) => {
+              try {
+                await agentApi.agentWorkspaceSet(session.id, path);
+                await loadMessages(session.id, false);
+              } catch (err) {
+                addToast({ message: errorMessage(err, 'No se pudo cambiar el espacio de trabajo'), type: 'error' });
+              }
+            }}
           />
         )}
 

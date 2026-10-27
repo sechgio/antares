@@ -87,7 +87,7 @@ it('separa la pestaña fija del agente de las pestañas del usuario', async () =
   const call = vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue(state);
   render(<AgentBrowserPanel onClose={vi.fn()} />);
   expect(await screen.findByRole('tablist', { name: 'Pestañas del navegador' })).toBeInTheDocument();
-  expect(screen.getByRole('tab', { name: 'Mi página' })).toHaveAttribute('aria-selected', 'true');
+  expect(await screen.findByRole('tab', { name: 'Mi página' })).toHaveAttribute('aria-selected', 'true');
   expect(screen.queryByRole('button', { name: 'Cerrar Agente: Docs' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Más opciones del navegador' }));
   expect(screen.queryByRole('menuitem', { name: /Tomar el control/ })).not.toBeInTheDocument();

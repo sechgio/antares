@@ -293,6 +293,42 @@ def test_shell_rejects_unauthorized_working_folders(store, tmp_path):
         computer_shell.run({"command": "dir", "cwd": str(tmp_path)}, {}, store.drafts_dir("s1"))
 
 
+def test_attached_folder_becomes_the_conversation_workspace(store, tmp_path):
+    first, second = tmp_path / "web", tmp_path / "otra"
+    first.mkdir()
+    second.mkdir()
+    added = agent_internal.HANDLERS["agent_internal_grants_add"]({"session_id": "s1", "paths": [], "folders": [str(first)]})
+    assert added["workspace"] == str(first) and store.workspace_dir("s1") == first
+
+    saved = _run(store, "fs_write", path="archivo.html", content="<p>hola</p>")
+    assert saved["saved_path"] == str(first / "archivo.html")
+    assert not (store.drafts_dir("s1") / "archivo.html").exists()
+    assert [e["name"] for e in _run(store, "fs_list")["entries"]] == ["archivo.html"]
+    assert _run(store, "fs_search", pattern="hola")["hits"][0]["file"] == str(first / "archivo.html")
+
+    agent_internal.HANDLERS["agent_internal_grants_add"]({"session_id": "s1", "paths": [], "folders": [str(second)]})
+    assert store.workspace_dir("s1") == second
+    assert agent_internal.HANDLERS["agent_internal_workspace_set"]({"session_id": "s1", "path": str(first)}) == {"workspace": str(first)}
+    assert agent_internal.HANDLERS["agent_internal_artifacts"]({"session_id": "s1"})["context"]["workspace"] == str(first)
+    with pytest.raises(ValidationError, match="no está adjunta"):
+        agent_internal.HANDLERS["agent_internal_workspace_set"]({"session_id": "s1", "path": str(tmp_path)})
+
+    store.revoke_grant("s1", str(first))
+    assert store.workspace_dir("s1") == store.drafts_dir("s1")
+    assert agent_internal.HANDLERS["agent_internal_artifacts"]({"session_id": "s1"})["context"]["workspace"] is None
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_runs_in_the_attached_folder_by_default(store, tmp_path):
+    folder = tmp_path / "proyecto"
+    folder.mkdir()
+    agent_internal.HANDLERS["agent_internal_grants_add"]({"session_id": "s1", "paths": [], "folders": [str(folder)]})
+    out = _run(store, "shell_run", command="Get-Location | % Path; $env:ANTARES_AGENT_WORKSPACE")
+    assert out["stdout"].splitlines() == [str(folder), str(folder)]
+    assert not list(folder.glob("shell-*.json"))
+    assert _run(store, "shell_output", output_id=out["output_id"])["content"].startswith(str(folder))
+
+
 def test_task_plan_requires_evidence_to_close_a_step():
     with pytest.raises(ValueError, match="evidencia"):
         task_plan.update({"goal": "g", "steps": [{"title": "Crear archivo", "status": "done"}]})

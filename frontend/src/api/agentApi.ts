@@ -290,6 +290,7 @@ export interface AgentContext {
   modules: { id: string; label: string }[];
   files: { path: string; folder: boolean }[];
   accounts: string[];
+  workspace?: string | null;
 }
 
 export interface AgentMemoryItem {
@@ -362,6 +363,9 @@ export const agentApi = {
 
   agentContextRemoveFile: (session_id: string, path: string) =>
     _invoke<{ removed: number }>('agent_context_remove_file', { session_id, path }),
+
+  agentWorkspaceSet: (session_id: string, path?: string) =>
+    _invoke<{ workspace: string | null }>('agent_workspace_set', { session_id, ...(path ? { path } : {}) }),
 
   agentMessageSend: (session_id: string, content: string, request_id: string, attachments: string[] = [], correction = false, skill_id?: string) =>
     _invoke<{ accepted: boolean; duplicate?: boolean; files?: AgentMessageFiles; mentions?: AgentMessageMentions }>(

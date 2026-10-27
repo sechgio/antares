@@ -51,6 +51,9 @@ function makeBridge() {
       case 'agent_internal_grant_remove':
         state.removed = [...(state.removed || []), params];
         return { removed: 1 };
+      case 'agent_internal_workspace_set':
+        state.workspaces = [...(state.workspaces || []), params];
+        return { workspace: params.path || null };
       case 'agent_internal_tools':
         return {
           tools: [
@@ -131,7 +134,8 @@ function makeBridge() {
         return { cancelled: false };
       case 'agent_internal_grants_add':
         state.grants.push(params);
-        return { granted: params.paths.filter((p) => p.endsWith('.pdf')), rejected: params.paths.filter((p) => !p.endsWith('.pdf')).map((path) => ({ path, reason: 'una carpeta requiere seleccionar los archivos concretos' })) };
+        return { granted: params.paths.filter((p) => p.endsWith('.pdf')), rejected: params.paths.filter((p) => !p.endsWith('.pdf')).map((path) => ({ path, reason: 'una carpeta requiere seleccionar los archivos concretos' })),
+          ...(params.folders && params.folders.length ? { workspace: params.folders.at(-1) } : {}) };
       case 'agent_internal_dispatch_finish': {
         const record = state.dispatches.find((d) => d.op_id === params.op_id);
         record.status = 'succeeded';
@@ -1312,6 +1316,9 @@ async function main() {
       && JSON.stringify(grant.folders) === JSON.stringify([String.raw`C:\fotos`]), 'los adjuntos se conceden como archivos y carpeta');
     assert(await waitIdle(session.id), 'el turno termina');
     assert(seen[0].includes('Archivos adjuntos por el usuario') && seen[0].includes('(carpeta)'), 'el modelo conoce los adjuntos');
+    assert(seen[0].includes(JSON.stringify(String.raw`Espacio de trabajo activo: C:\fotos`).slice(1, -1)), 'el modelo conoce la carpeta raíz de la conversación');
+    const switched = await runtime.handlers.agent_workspace_set({ session_id: session.id, path: String.raw`C:\fotos` });
+    assert(switched.workspace === String.raw`C:\fotos` && state.workspaces.at(-1).session_id === session.id, 'la raíz activa se puede cambiar');
     const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(messages[0].content === 'usa los adjuntos', 'el transcript no muestra el bloque de adjuntos');
     let reused = null;
