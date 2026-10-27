@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownRight, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownLeft, CornerDownRight, FileImage, FileSpreadsheet, FileText, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
 import { mcpApi, type McpServer } from '../../api/mcpApi';
 import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentSkill, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
@@ -9,7 +9,9 @@ import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
+import { useLocalStorageState } from '../../hooks/useLocalStorageState';
 import Button from '../ui/Button';
+import { WithHoverTooltip } from '../ui/HoverTooltip';
 import ThemedSelect from '../ui/ThemedSelect';
 import Input from '../ui/Input';
 import { SegmentedControl } from '../ui/SegmentedControl';
@@ -30,11 +32,13 @@ import AgentAuditPanel from './AgentAuditPanel';
 import ScheduledTasksPanel from './ScheduledTasksPanel';
 import { METHOD_LABELS } from './methodLabels';
 import { useComposerAutocomplete, type ComposerSuggestion } from './useComposerAutocomplete';
-import { ApprovalCard, AssistantTurn, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel, groupTurns, placeArtifacts } from './AgentTimeline';
+import { ApprovalCard, AssistantTurn, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel, groupTurns, placeArtifacts, type TranscriptView } from './AgentTimeline';
 
 const POLL_MS = 1500;
 const SESSION_KEY = 'antares-agent-session';
 const QUEUE_KEY = 'antares-agent-queue';
+const VIEW_KEY = 'antares-agent-transcript-view';
+const parseView = (raw: string): TranscriptView => (raw === 'thinking' || raw === 'verbose' ? raw : 'normal');
 const RESUME_TEXT = 'Reanuda el encargo donde lo dejaste: revisa el plan y los últimos resultados antes de repetir cualquier acción.';
 
 type SendIntent = Readonly<{
@@ -180,6 +184,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [sessionId, setSessionId] = useState('');
   const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [transcriptView, setTranscriptView] = useLocalStorageState<TranscriptView>(VIEW_KEY, { parse: parseView, fallback: 'normal', serialize: (view) => view });
   const [artifacts, setArtifacts] = useState<AgentArtifact[]>([]);
   const [questions, setQuestions] = useState<AgentQuestion[]>([]);
   const [context, setContext] = useState<AgentContext | null>(null);
@@ -1244,6 +1249,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             <ConversationMenu
               session={session}
               messages={messages}
+              view={transcriptView}
+              onView={setTranscriptView}
               onRename={async (title) => {
                 try {
                   await agentApi.agentSessionRename(session.id, title);
@@ -1306,7 +1313,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 <div key={`${sessionId}-${turn.role}-${turn.key}`} className="space-y-4">
                   {newDay && <DaySeparator label={label} />}
                   {turn.role === 'user' ? <MessageRow msg={turn.message} /> : (
-                    <AssistantTurn messages={turn.messages} startedAt={turn.startedAt} agent={agentIdentity} onUndo={undoEffect}
+                    <AssistantTurn messages={turn.messages} startedAt={turn.startedAt} agent={agentIdentity} onUndo={undoEffect} view={transcriptView}
                       results={results && <ArtifactList artifacts={results} sessionId={sessionId}
                         onRefresh={() => void loadMessages(sessionId, false)} onOpenModule={onOpenModule} />} />
                   )}
@@ -1462,12 +1469,13 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             </section>
           )}
           <div role="group" aria-label="Redactar mensaje"
-            className={`agent-composer rounded-2xl border bg-[var(--bg-elevated)] transition-colors ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
+            className={`agent-composer relative rounded-2xl border bg-[var(--bg-elevated)] transition-colors ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
             onDragOver={(event) => { if (!sessionId || !event.dataTransfer.types.includes('Files')) return; event.preventDefault(); setDragging(true); }}
             onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
             onDrop={(event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); void attachFiles([...event.dataTransfer.files]); }}>
-            {autocomplete && <div className="border-b border-[var(--border-subtle)] p-2">
-              {autocomplete.id === 'skill' && <p className="px-2 pb-1 text-[11px] text-[var(--text-secondary)]">Usar una skill · instrucciones, no permisos</p>}
+            {/* Paleta flotante sobre el compositor, como una paleta de comandos: no desplaza el borrador al abrirse. */}
+            {autocomplete && <div className="agent-command-palette absolute bottom-full left-0 z-20 mb-2 w-[min(440px,100%)] rounded-2xl border border-[var(--border-medium)] bg-[var(--bg-surface)] p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.06)]">
+              {autocomplete.id === 'skill' && <p className="px-2.5 pb-1 pt-0.5 text-[11px] text-[var(--text-muted)]">Usar una skill · instrucciones, no permisos</p>}
               <div ref={suggestionsRef} id={listboxId} role="listbox" aria-label={autocomplete.id === 'bot' ? 'Bots y conectores para mencionar' : 'Skills disponibles'} className="max-h-72 overflow-y-auto">
                 {autocomplete.options.map((option, index) => {
                   const previous = autocomplete.options[index - 1];
@@ -1475,15 +1483,17 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   const heading = option.kind !== 'skill' && option.kind !== previous?.kind
                     ? (option.kind === 'bot' ? 'Bots · solo lectura' : 'Complementos') : null;
                   return <Fragment key={optionId(option)}>
-                    {heading && <p aria-hidden="true" className="px-2 pb-1 pt-1.5 text-[12px] text-[var(--text-muted)]">{heading}</p>}
+                    {heading && <p aria-hidden="true" className="px-2.5 pb-1 pt-1.5 text-[11px] text-[var(--text-muted)]">{heading}</p>}
                     <Button id={optionId(option)} role="option"
                       aria-selected={autocomplete.selected === option} tabIndex={-1} variant="none" size="none"
-                      className={`flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--bg-input)] ${autocomplete.selected === option ? 'bg-[var(--bg-input)]' : ''}`}
+                      className={`flex min-h-9 w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left transition-colors hover:bg-[var(--bg-input)] ${autocomplete.selected === option ? 'bg-[var(--bg-input)]' : ''}`}
                       onMouseDown={(event) => event.preventDefault()} onClick={() => pickSuggestion(option, autocomplete)}>
                       {option.kind === 'skill' ? <>
-                        <span className="flex size-6 shrink-0 items-center justify-center text-[var(--text-secondary)]"><Sparkles size={14} /></span>
-                        <span className="min-w-0 flex-1"><span className="block truncate text-[12px]">/{option.skill.name}</span>
-                          <span className="block truncate text-[11px] text-[var(--text-secondary)]">{option.skill.description}</span></span>
+                        <span className="flex size-5 shrink-0 items-center justify-center text-[var(--text-secondary)]"><Sparkles size={15} /></span>
+                        <span className="min-w-0 flex-1 truncate text-[13px]">
+                          <span className="font-medium text-[var(--text-primary)]">/{option.skill.name}</span>
+                          <span className="ml-2.5 text-[var(--text-muted)]">{option.skill.description}</span>
+                        </span>
                       </> : <>
                         <span className="flex size-5 shrink-0 items-center justify-center text-[var(--text-secondary)]">
                           {option.kind === 'bot' ? <AgentAvatar seed={option.profile.id} color={option.profile.color} name={option.profile.name} size={20} />
@@ -1494,10 +1504,15 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                           <span className="ml-2 text-[var(--text-muted)]">{option.kind === 'bot' ? option.profile.description || 'Agente guardado' : option.detail}</span>
                         </span>
                       </>}
+                      {autocomplete.selected === option && (
+                        <kbd aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center rounded-md bg-[var(--bg-base)] text-[var(--text-muted)]">
+                          <CornerDownLeft size={11} />
+                        </kbd>
+                      )}
                     </Button>
                   </Fragment>;
                 })}
-                {autocomplete.options.length === 0 && <p className="px-2 py-1 text-[12px] text-[var(--text-secondary)]">
+                {autocomplete.options.length === 0 && <p className="px-2.5 py-1.5 text-[12px] text-[var(--text-secondary)]">
                   {autocomplete.id === 'bot' ? 'Sin bots ni conectores coincidentes. Continúa con tu mensaje.'
                     : skills === null ? 'Cargando skills…' : 'Sin skills coincidentes. Añádelas en Complementos o continúa con tu mensaje.'}
                 </p>}
@@ -1521,24 +1536,36 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             )}
             {attachments.length > 0 && (
               <div className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Adjuntos">
-                {attachments.map((item) => (
-                  <span
-                    key={item.id}
-                    className="flex max-w-[60%] items-center gap-1 rounded-full bg-[var(--bg-input)] py-0.5 pl-2 pr-1 text-[11px] text-[var(--text-secondary)]"
-                  >
-                    {item.preview ? <img src={item.preview} alt="" className="size-5 rounded object-cover" />
-                      : item.kind === 'folder' ? <FolderOpen size={11} /> : <Paperclip size={11} />}
-                    <span className="truncate">{item.name}</span>
-                    <button
-                      type="button"
-                      className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-                      aria-label={`Quitar ${item.name}`}
-                      onClick={() => { draftVersionRef.current += 1; setAttachments((prev) => prev.filter((a) => a.id !== item.id)); }}
-                    >
-                      <X size={10} />
-                    </button>
-                  </span>
-                ))}
+                {attachments.map((item) => {
+                  const extension = item.kind === 'folder' ? '' : (/\.([\p{L}\p{N}]{1,5})$/u.exec(item.name)?.[1] ?? '').toLowerCase();
+                  const Icon = item.kind === 'folder' ? FolderOpen : ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(extension) ? FileImage
+                    : ['xlsx', 'xls', 'csv', 'ods'].includes(extension) ? FileSpreadsheet : ['pdf', 'doc', 'docx', 'txt', 'md'].includes(extension) ? FileText : Paperclip;
+                  return (
+                    <div key={item.id} className="agent-attachment relative">
+                      <WithHoverTooltip label={item.name} placement="top">
+                        <div className="flex size-14 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-[var(--text-secondary)]">
+                          {item.preview ? <img src={item.preview} alt="" className="size-full object-cover" /> : <>
+                            <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
+                            <span aria-hidden="true" className="max-w-full truncate px-1 text-[9.5px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                              {item.kind === 'folder' ? 'carpeta' : extension || 'archivo'}
+                            </span>
+                          </>}
+                          <span className="sr-only">{item.name}</span>
+                        </div>
+                      </WithHoverTooltip>
+                      <WithHoverTooltip label="Quitar archivo" placement="top" className="absolute -right-1.5 -top-1.5">
+                        <button
+                          type="button"
+                          className="flex size-5 items-center justify-center rounded-full border border-[var(--border-medium)] bg-[var(--bg-surface)] text-[var(--text-secondary)] shadow-sm transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+                          aria-label={`Quitar ${item.name}`}
+                          onClick={() => { draftVersionRef.current += 1; setAttachments((prev) => prev.filter((a) => a.id !== item.id)); }}
+                        >
+                          <X size={11} strokeWidth={2.25} />
+                        </button>
+                      </WithHoverTooltip>
+                    </div>
+                  );
+                })}
               </div>
             )}
             <div className="px-4 pb-1 pt-4">

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AppWindow, ArrowLeft, ArrowRight, Ban, BookOpen, Camera, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Copy, Download, FilePen, FileText, FolderOpen, Globe, Hand, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Network, Package, RotateCw, Route, Search, ShieldCheck, Terminal, TriangleAlert, Upload, Wrench } from 'lucide-react';
+import { AppWindow, ArrowLeft, ArrowRight, Ban, BookOpen, Camera, ChevronDown, ChevronRight, CircleArrowRight, CircleCheck, CircleDashed, CircleX, Download, FilePen, FileText, FolderOpen, Globe, Hand, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Network, Package, Plug, RotateCw, Search, ShieldCheck, Terminal, TriangleAlert, Upload, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { agentApi, AgentApproval, AgentArtifact, AgentChannel, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
@@ -8,11 +8,16 @@ import AgentAvatar from './AgentAvatar';
 import BrokerReceipt from './BrokerReceipt';
 import { DiffStats, FileChangeStep, FileDiff } from './FileDiff';
 import { fileChange } from './diffLines';
+import type { FileChange } from './diffLines';
+import CopyButton from './CopyButton';
 import MessageMarkdown from './MessageMarkdown';
 import Reasoning from './Reasoning';
 import SubagentTrace from './SubagentTrace';
 import { channelLabel } from './channels';
-import { METHOD_LABELS, methodLabel } from './methodLabels';
+import { METHOD_LABELS, mcpServer, methodLabel } from './methodLabels';
+
+/** Cuánto detalle enseña el chat: lo justo, el razonamiento abierto o todos los pasos abiertos. */
+export type TranscriptView = 'normal' | 'thinking' | 'verbose';
 
 interface AgentIdentity {
   seed: string;
@@ -106,6 +111,17 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   skills_list: BookOpen,
   skills_read: BookOpen,
 };
+
+/** Nombre de la skill leída: el que devuelve el resultado o, si aún no lo hay, el identificador pedido. */
+function skillName(call: AgentToolCall): string | null {
+  try {
+    const data: unknown = call.result ? JSON.parse(call.result) : null;
+    if (data && typeof data === 'object' && 'name' in data && typeof data.name === 'string' && data.name) return data.name;
+  } catch { /* resultado sin JSON: se usa el identificador */ }
+  return typeof call.params.skill_id === 'string' ? call.params.skill_id : null;
+}
+
+const toolIcon = (name: string): LucideIcon => TOOL_ICONS[name] ?? (mcpServer(name) ? Plug : Wrench);
 
 const KEY_PARAMS = ['path', 'url', 'query', 'target', 'title', 'keys', 'text', 'name', 'skill_id', 'id'];
 
@@ -244,12 +260,15 @@ function Elapsed({ since }: { since?: number }) {
   return <span className="shrink-0 text-[12px] tabular-nums text-[var(--text-muted)]" aria-label={`En curso desde hace ${seconds} s`}>{seconds} s</span>;
 }
 
-function TerminalStep({ call }: { call: AgentToolCall }) {
+function TerminalStep({ call, verbose }: { call: AgentToolCall; verbose?: boolean }) {
   const command = typeof call.params.command === 'string' ? call.params.command : '';
   const output = shellOutput(call.result);
   const live = call.status === 'running';
-  const [open, setOpen] = useState(live || call.status === 'failed' || call.status === 'interrupted');
+  const [open, setOpen] = useState(verbose || live || call.status === 'failed' || call.status === 'interrupted');
   const [seen, setSeen] = useState(call.status);
+  // La salida se monta al abrirla la primera vez y se conserva para animar el cierre.
+  const [mounted, setMounted] = useState(open);
+  if (open && !mounted) setMounted(true);
   if (seen !== call.status) {
     setSeen(call.status);
     if (call.status === 'running' || call.status === 'failed' || call.status === 'interrupted') setOpen(true);
@@ -283,7 +302,9 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
         {live && <Elapsed since={call.started_at} />}
         <ChevronRight size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${open ? 'rotate-90' : ''}`} aria-hidden="true" />
       </button>
-      {open && (
+      <div className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+      <div className="agent-subagent-body overflow-hidden" inert={!open} aria-hidden={!open}>
+      {mounted && (
         <div className={`${TASK_BODY} group/term mb-1.5 mt-1`}>
           <div className="agent-terminal overflow-hidden rounded-lg border border-[var(--border-subtle)]">
             <div className="flex min-h-7 items-center gap-2 border-b border-[var(--border-subtle)] px-3 text-[11px] text-[var(--text-muted)]">
@@ -292,29 +313,31 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
               {typeof call.params.cwd === 'string' && <span className="min-w-0 truncate font-mono" title={call.params.cwd}>{call.params.cwd}</span>}
               <span className="ml-auto flex shrink-0 items-center gap-1.5">
                 {live ? <span className="agent-shimmer">en curso</span>
-                  : output?.exit != null && <span className={exitFailed ? 'text-[var(--accent-red)]' : 'text-[var(--accent-green)]'}>salida {output.exit}</span>}
+                  : output?.exit != null && <span className={`agent-terminal-exit ${exitFailed ? 'text-[var(--accent-red)]' : 'text-[var(--accent-green)]'}`}>salida {output.exit}</span>}
                 {!live && output?.text && <CopyButton text={output.text} label="Copiar salida" className="group-hover/term:opacity-100" />}
               </span>
             </div>
-            <div ref={logRef} role="log" aria-label={`Salida de ${command}`} aria-busy={live}
+            <div ref={logRef} role="log" aria-label={`Salida de ${command}`} aria-busy={live} data-live={live || undefined}
               onScroll={(event) => { const log = event.currentTarget; followOutputRef.current = log.scrollHeight - log.scrollTop - log.clientHeight < 48; }}
               className="max-h-72 overflow-auto px-3 py-2.5 font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)]">
               <div className="whitespace-pre-wrap break-all text-[var(--text-primary)]"><span className="select-none text-[var(--accent-green)]">$ </span>{command}</div>
               {lines.map((line, i) => (
-                <div key={i} className={`whitespace-pre-wrap break-all ${output && i >= output.errorFrom ? 'text-[var(--accent-red)]' : ''}`}>{line || ' '}</div>
+                <div key={i} className={`agent-terminal-line whitespace-pre-wrap break-all ${output && i >= output.errorFrom ? 'text-[var(--accent-red)]' : ''}`}>{line || ' '}</div>
               ))}
               {live && <span className="agent-terminal-cursor" aria-hidden="true" />}
             </div>
           </div>
         </div>
       )}
+      </div>
+      </div>
     </div>
   );
 }
 
-function ToolCallStep({ call }: { call: AgentToolCall }) {
+function ToolCallStep({ call, verbose }: { call: AgentToolCall; verbose?: boolean }) {
   if (call.name === 'subagent_run') return <SubagentTrace call={call} />;
-  if (call.name === 'shell_run') return <TerminalStep call={call} />;
+  if (call.name === 'shell_run') return <TerminalStep call={call} verbose={verbose} />;
   if (fileChange(call.name, call.params)) {
     return <FileChangeStep call={call} status={CALL_STATUS_LABEL[call.status] ?? call.status} className={TASK_ROW} />;
   }
@@ -323,8 +346,8 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
   const failed = call.status === 'failed';
   const denied = call.status === 'denied';
   const live = call.status === 'running';
-  const Icon = live ? Loader2 : denied ? Ban : TOOL_ICONS[call.name] ?? Wrench;
-  const arg = keyArgument(call.params);
+  const Icon = live ? Loader2 : denied ? Ban : toolIcon(call.name);
+  const arg = call.name === 'skills_read' ? skillName(call) : keyArgument(call.params);
   const row = (
     <>
       <Icon size={14} className={`shrink-0 ${live ? 'animate-spin text-[var(--text-secondary)]' : failed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`} aria-hidden="true" />
@@ -342,7 +365,7 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
   );
   if (denied || (!params && !detail)) return <div className={`group ${TASK_ROW}`}>{row}</div>;
   return (
-    <details className="group" open={failed || call.status === 'interrupted' || undefined}>
+    <details className="group" open={verbose || failed || call.status === 'interrupted' || undefined}>
       <summary className={`agent-tool-row ${TASK_ROW} cursor-pointer list-none`}>{row}</summary>
       <div className={`${TASK_BODY} mb-1.5 mt-1 space-y-2`}>
         {params && <ToolCode label="Entrada">{params}</ToolCode>}
@@ -356,31 +379,12 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
 
 function UserBubble({ msg }: { msg: AgentMessage }) {
   return (
-    <div className="agent-trace-in flex justify-end">
+    <div className="agent-trace-in group flex items-end justify-end gap-1">
+      <CopyButton text={msg.content} label="Copiar mensaje" />
       <div className="agent-message-user min-w-0 max-w-[min(600px,88%)] rounded-2xl px-4 py-3 text-[14px] leading-[22px] text-[var(--text-primary)]">
         <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
       </div>
     </div>
-  );
-}
-
-function CopyButton({ text, label = 'Copiar respuesta', className = 'group-hover:opacity-100' }: { text: string; label?: string; className?: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      className={`flex size-5 items-center justify-center rounded-md text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] focus-visible:opacity-100 ${className}`}
-      aria-label={copied ? 'Copiado' : label}
-      title={copied ? 'Copiado' : 'Copiar'}
-      onClick={() => {
-        void navigator.clipboard?.writeText(text).then(() => {
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 1500);
-        }).catch(() => {});
-      }}
-    >
-      {copied ? <Check size={13} className="text-[var(--accent-green)]" /> : <Copy size={13} />}
-    </button>
   );
 }
 
@@ -390,6 +394,7 @@ type ActivityEntry =
   | { kind: 'call'; key: string; call: AgentToolCall };
 
 const NEEDS_REVIEW = ['failed', 'interrupted', 'pending'];
+const LIVE_TAIL = 3;
 // Borrado o descarte de archivos en posición de comando: avisa en la aprobación,
 // porque el diario de deshacer solo cubre fs_write, fs_edit y drafts_save.
 const DESTRUCTIVE_COMMAND = new RegExp(String.raw`(?:^\s*|[;|&({]\s*)(?:remove-item|rm|ri|del|erase|rd|rmdir|clear-content|format-volume|clear-disk)\b`
@@ -398,6 +403,55 @@ const DESTRUCTIVE_COMMAND = new RegExp(String.raw`(?:^\s*|[;|&({]\s*)(?:remove-i
 function workDuration(ms: number): string {
   const seconds = Math.max(1, Math.round(ms / 1000));
   return seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+}
+
+const count = (n: number, one: string, other: string) => `${n} ${n === 1 ? one : other}`;
+const fileNames = (verb: string) => (calls: AgentToolCall[]) => {
+  const names = [...new Set(calls.map((call) => (typeof call.params.path === 'string' ? call.params.path.split(/[\\/]/).pop() || call.params.path : '')))];
+  return names.length <= 2 && names.every(Boolean) ? `${verb} ${names.join(' y ')}` : `${verb} ${count(names.length, 'archivo', 'archivos')}`;
+};
+
+const STEP_KINDS: { match: (name: string) => boolean; label: (calls: AgentToolCall[]) => string }[] = [
+  { match: (name) => name === 'fs_read', label: fileNames('Leyó') },
+  { match: (name) => name === 'fs_edit', label: fileNames('Editó') },
+  { match: (name) => name === 'fs_write', label: fileNames('Escribió') },
+  { match: (name) => name === 'fs_list', label: (calls) => `Listó ${count(calls.length, 'carpeta', 'carpetas')}` },
+  { match: (name) => name === 'fs_search', label: (calls) => `Hizo ${count(calls.length, 'búsqueda', 'búsquedas')}` },
+  { match: (name) => name === 'shell_run' || name === 'shell_job_start', label: (calls) => `Ejecutó ${count(calls.length, 'comando', 'comandos')}` },
+  { match: (name) => name.startsWith('web_'), label: (calls) => `Hizo ${count(calls.length, 'acción', 'acciones')} en el navegador` },
+  { match: (name) => name.startsWith('desktop_') || name.startsWith('cua_'), label: (calls) => `Hizo ${count(calls.length, 'acción', 'acciones')} en el escritorio` },
+  { match: (name) => name === 'subagent_run', label: (calls) => `Delegó en ${count(calls.length, 'agente', 'agentes')}` },
+  { match: (name) => name === 'skills_list' || name === 'skills_read', label: (calls) => {
+    const names = [...new Set(calls.flatMap((call) => (call.name === 'skills_read' ? [skillName(call) ?? 'sin nombre'] : [])))];
+    if (names.length === 0) return 'Buscó skills';
+    if (names.length > 2) return `Usó ${names.length} skills`;
+    return names.length === 1 ? `Usó la skill ${names[0]}` : `Usó las skills ${names.join(' y ')}`;
+  } },
+  { match: (name) => mcpServer(name) !== null, label: (calls) => {
+    const servers = [...new Set(calls.map((call) => mcpServer(call.name)))];
+    return servers.length === 1 ? `Usó el conector ${servers[0]}` : `Usó ${servers.length} conectores`;
+  } },
+  { match: () => true, label: (calls) => `Usó ${count(calls.length, 'herramienta', 'herramientas')}` },
+];
+
+/** Resume los pasos por tipo, de más a menos frecuente: «Leyó 3 archivos, ejecutó 2 comandos y 4 pasos más». */
+export function stepsSummary(calls: AgentToolCall[]): string {
+  const groups = new Map<number, AgentToolCall[]>();
+  for (const call of calls) {
+    if (call.name === 'task_plan') continue;
+    const kind = STEP_KINDS.findIndex((step) => step.match(call.name));
+    groups.set(kind, [...(groups.get(kind) ?? []), call]);
+  }
+  if (groups.size === 0) return count(calls.length, 'paso', 'pasos');
+  const sorted = [...groups].sort((a, b) => b[1].length - a[1].length);
+  const shown = sorted.slice(0, sorted.length > 3 ? 2 : 3);
+  const labels = shown.map(([kind, group], index) => {
+    const label = STEP_KINDS[kind].label(group);
+    return index === 0 ? label : label.charAt(0).toLowerCase() + label.slice(1);
+  });
+  const rest = sorted.slice(shown.length).reduce((total, [, group]) => total + group.length, 0);
+  if (rest > 0) return `${labels.join(', ')} y ${count(rest, 'paso más', 'pasos más')}`;
+  return labels.length > 1 ? `${labels.slice(0, -1).join(', ')} y ${labels[labels.length - 1]}` : labels[0];
 }
 
 function liveActivity(entries: ActivityEntry[]): string {
@@ -412,8 +466,8 @@ function liveActivity(entries: ActivityEntry[]): string {
   return 'Trabajando…';
 }
 
-function ActivityItem({ entry, onUndo }: { entry: ActivityEntry; onUndo?: (callId: string) => Promise<void> }) {
-  if (entry.kind === 'reasoning') return <Reasoning text={entry.text} streaming={entry.streaming} ms={entry.ms} />;
+function ActivityItem({ entry, onUndo, view }: { entry: ActivityEntry; onUndo?: (callId: string) => Promise<void>; view: TranscriptView }) {
+  if (entry.kind === 'reasoning') return <Reasoning text={entry.text} streaming={entry.streaming} ms={entry.ms} defaultOpen={view !== 'normal'} />;
   if (entry.kind === 'note') {
     return (
       <div className="agent-activity-note py-1 text-[13px] leading-5 text-[var(--text-secondary)]">
@@ -423,33 +477,40 @@ function ActivityItem({ entry, onUndo }: { entry: ActivityEntry; onUndo?: (callI
   }
   return (
     <div>
-      <ToolCallStep call={entry.call} />
+      <ToolCallStep call={entry.call} verbose={view === 'verbose'} />
       {entry.call.gated && <BrokerReceipt call={entry.call} onUndo={onUndo} />}
     </div>
   );
 }
 
-function Activity({ entries, working, answering, duration, onUndo }: {
+function Activity({ entries, working, answering, duration, onUndo, view }: {
   entries: ActivityEntry[];
   working: boolean;
   answering: boolean;
   duration?: number;
   onUndo?: (callId: string) => Promise<void>;
+  view: TranscriptView;
 }) {
   const [expanded, setExpanded] = useState<boolean | null>(null);
+  const [showEarlier, setShowEarlier] = useState(false);
   const calls = entries.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []));
   const live = working && !answering;
-  const open = expanded ?? (live || calls.some((call) => NEEDS_REVIEW.includes(call.status)));
+  const open = expanded ?? (view === 'verbose' || live || calls.some((call) => NEEDS_REVIEW.includes(call.status)));
+  // En vivo solo se ven los últimos pasos; nunca se pliega uno que necesite atención.
+  const firstReview = entries.findIndex((entry) => entry.kind === 'call' && NEEDS_REVIEW.includes(entry.call.status));
+  const earlier = live && view !== 'verbose' && entries.length > LIVE_TAIL + 1
+    ? Math.min(entries.length - LIVE_TAIL, firstReview === -1 ? Infinity : firstReview) : 0;
   if (entries.length <= 2) {
     return (
       <div className="w-full max-w-[min(620px,100%)] space-y-0.5">
-        {entries.map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} />)}
+        {entries.map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} view={view} />)}
       </div>
     );
   }
   const review = calls.filter((call) => call.status === 'failed' || call.status === 'interrupted').length;
-  const icons = [...new Set(calls.map((call) => (call.name === 'shell_run' ? Terminal : TOOL_ICONS[call.name] ?? Wrench)))].slice(0, 4);
-  const steps = `${calls.length} ${calls.length === 1 ? 'paso' : 'pasos'}`;
+  const notes = entries.filter((entry) => entry.kind === 'note').length;
+  const icons = [...new Set(calls.map((call) => (call.name === 'shell_run' ? Terminal : toolIcon(call.name))))].slice(0, 4);
+  const steps = notes > 0 ? `${stepsSummary(calls)} · ${count(notes, 'nota', 'notas')}` : stepsSummary(calls);
   return (
     <div className="w-full max-w-[min(620px,100%)]">
       <button
@@ -469,14 +530,21 @@ function Activity({ entries, working, answering, duration, onUndo }: {
             </span>
           )}
         <span className={`min-w-0 truncate ${live ? 'agent-shimmer' : ''}`}>
-          {live ? liveActivity(entries) : duration ? `Trabajó durante ${workDuration(duration)} · ${steps}` : steps}
+          {live ? liveActivity(entries) : duration ? `${steps} · ${workDuration(duration)}` : steps}
         </span>
         {review > 0 && <span className="shrink-0 text-[var(--accent-red)]">· {review} por revisar</span>}
         <ChevronRight size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${open ? 'rotate-90' : ''}`} aria-hidden="true" />
       </button>
       {open && (
         <div className={`${TASK_BODY} agent-activity-body mt-0.5 space-y-0.5`}>
-          {entries.map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} />)}
+          {earlier > 0 && (
+            <button type="button" aria-expanded={showEarlier} onClick={() => setShowEarlier(!showEarlier)}
+              className={`${TASK_ROW} w-fit text-[12px] text-[var(--text-muted)] hover:text-[var(--text-primary)]`}>
+              <ChevronDown size={13} className={`shrink-0 transition-transform duration-200 ${showEarlier ? 'rotate-180' : ''}`} aria-hidden="true" />
+              {showEarlier ? 'Ocultar pasos anteriores' : count(earlier, 'paso anterior', 'pasos anteriores')}
+            </button>
+          )}
+          {(showEarlier ? entries : entries.slice(earlier)).map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} view={view} />)}
         </div>
       )}
     </div>
@@ -544,8 +612,42 @@ export function placeArtifacts(turns: TimelineTurn[], artifacts: AgentArtifact[]
   return placed;
 }
 
-export function AssistantTurn({ messages, agent, onUndo, startedAt, results }: {
+/** Archivos que el turno escribió o editó, con sus líneas sumadas: queda a la vista aunque los pasos se plieguen. */
+function TurnChanges({ calls }: { calls: AgentToolCall[] }) {
+  const files = new Map<string, FileChange>();
+  for (const call of calls) {
+    const change = call.status === 'done' && typeof call.params.path === 'string' ? fileChange(call.name, call.params) : null;
+    if (!change || typeof call.params.path !== 'string') continue;
+    const before = files.get(call.params.path);
+    files.set(call.params.path, before
+      ? { ...before, added: before.added + change.added, removed: before.removed + change.removed }
+      : change);
+  }
+  if (files.size === 0) return null;
+  const total = [...files.values()].reduce((sum, change) => ({ ...sum, added: sum.added + change.added, removed: sum.removed + change.removed }),
+    { hunks: [], added: 0, removed: 0, whole: false, starts: [] } as FileChange);
+  return (
+    <section aria-label="Archivos cambiados" className="agent-trace-in w-full max-w-[min(620px,100%)] rounded-lg border border-[var(--border-subtle)] px-3 py-2 text-[12.5px] leading-5">
+      <p className="flex items-center gap-2 text-[var(--text-secondary)]">
+        <FilePen size={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden="true" />
+        {count(files.size, 'archivo cambiado', 'archivos cambiados')}
+        <DiffStats change={total} />
+      </p>
+      <ul className="mt-1 space-y-0.5">
+        {[...files].map(([path, change]) => (
+          <li key={path} className="flex min-w-0 items-center gap-2 pl-[21px]">
+            <span title={path} className="min-w-0 truncate font-mono text-[12px] text-[var(--text-secondary)]">{path.split(/[\\/]/).pop() || path}</span>
+            <DiffStats change={change} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+export function AssistantTurn({ messages, agent, onUndo, startedAt, results, view = 'normal' }: {
   messages: AgentMessage[];
+  view?: TranscriptView;
   agent?: AgentIdentity;
   onUndo?: (callId: string) => Promise<void>;
   startedAt?: number;
@@ -556,8 +658,9 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results }: {
   const entries: ActivityEntry[] = [];
   messages.forEach((message, index) => {
     if (message.reasoning) {
+      // Como pi-durable (trackThinking), el pensamiento de la ronda acaba en cuanto emite texto o una llamada.
       entries.push({ kind: 'reasoning', key: `reasoning-${index}`, text: message.reasoning, ms: message.reasoning_ms,
-        streaming: !!message.partial && !message.content });
+        streaming: !!message.partial && !message.content && !message.tool_calls?.length });
     }
     if (message.content && message !== answer) entries.push({ kind: 'note', key: `note-${index}`, text: message.content });
     for (const call of message.tool_calls ?? []) entries.push({ kind: 'call', key: call.id, call });
@@ -574,13 +677,14 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results }: {
         {answer && !answer.partial && <CopyButton text={answer.content} />}
       </div>
       {thought
-        ? <Reasoning text={thought.text} streaming={thought.streaming} ms={thought.ms} />
-        : entries.length > 0 && <Activity entries={entries} working={working} answering={!!answer} duration={duration} onUndo={onUndo} />}
+        ? <Reasoning text={thought.text} streaming={thought.streaming} ms={thought.ms} defaultOpen={view !== 'normal'} />
+        : entries.length > 0 && <Activity entries={entries} working={working} answering={!!answer} duration={duration} onUndo={onUndo} view={view} />}
       {answer && (
         <div className="agent-message-answer min-w-0 max-w-full py-1 text-[14px] leading-[23px] text-[var(--text-primary)]">
           <MessageMarkdown text={answer.content} streaming={!!answer.partial} />
         </div>
       )}
+      {!working && entries.length > 2 && <TurnChanges calls={entries.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []))} />}
       {results}
     </div>
   );
@@ -775,46 +879,63 @@ export function ApprovalCard({
 }
 
 function PlanStepIcon({ status }: { status: AgentPlan['steps'][number]['status'] }) {
-  if (status === 'done') return <CircleCheck size={14} className="text-[var(--text-secondary)]" aria-label="Hecho" />;
+  if (status === 'done') return <CircleCheck size={14} className="text-[var(--text-muted)]" aria-label="Hecho" />;
   if (status === 'failed') return <CircleX size={14} className="text-[var(--accent-red)]" aria-label="Fallido" />;
-  if (status === 'in_progress') return <CircleDot size={14} className="text-[var(--text-primary)]" aria-label="En curso" />;
-  return <Circle size={14} className="text-[var(--text-muted)] opacity-70" aria-label="Pendiente" />;
+  if (status === 'in_progress') return <CircleArrowRight size={14} className="text-[var(--text-primary)]" aria-label="En curso" />;
+  return <CircleDashed size={14} className="text-[var(--text-muted)] opacity-70" aria-label="Pendiente" />;
+}
+
+/** Anillo que se llena con los pasos hechos; al completarse pasa a un check. */
+function PlanProgress({ done, total }: { done: number; total: number }) {
+  if (total > 0 && done === total) return <CircleCheck size={14} className="agent-plan-icon shrink-0 text-[var(--accent-green)]" data-animate aria-hidden="true" />;
+  const length = 2 * Math.PI * 5;
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" className="shrink-0 -rotate-90" aria-hidden="true">
+      <circle cx="7" cy="7" r="5" fill="none" strokeWidth="1.5" className="stroke-[var(--border-medium)]" />
+      <circle cx="7" cy="7" r="5" fill="none" strokeWidth="1.5" strokeLinecap="round" strokeDasharray={length}
+        strokeDashoffset={length * (1 - (total ? done / total : 0))} className="agent-plan-progress stroke-[var(--accent-green)]" />
+    </svg>
+  );
 }
 
 export function PlanCard({ plan, running }: { plan: AgentPlan; running: boolean }) {
   const [open, setOpen] = useState(true);
   const done = plan.steps.filter((step) => step.status === 'done').length;
+  const complete = plan.steps.length > 0 && done === plan.steps.length;
   return (
-    <section aria-label="Plan del agente" className="agent-trace-in max-w-[min(620px,100%)] text-[13px] leading-5">
+    <section aria-label="Plan del agente" className="agent-trace-in max-w-[min(620px,100%)] rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[13px] leading-5">
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="group flex max-w-full items-center gap-2 rounded-md py-0.5 text-left text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+        className="group flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
       >
-        <Route size={14} className="shrink-0" aria-hidden="true" />
-        <span className="min-w-0 truncate" title={plan.goal}>Plan: {plan.goal}</span>
-        <span className="shrink-0 tabular-nums text-[var(--text-muted)]">{done} de {plan.steps.length} hechos</span>
+        <PlanProgress done={done} total={plan.steps.length} />
+        <span className="shrink-0 font-medium text-[var(--text-primary)]">{complete ? 'Plan completado' : 'Plan'}</span>
+        <span className="min-w-0 flex-1 truncate text-[var(--text-muted)]" title={plan.goal}>{plan.goal}</span>
+        <span className="shrink-0 tabular-nums text-[12px] text-[var(--text-muted)]" aria-label={`${done} de ${plan.steps.length} hechos`}>{done}/{plan.steps.length}</span>
         <ChevronDown size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${open ? '' : '-rotate-90'}`} aria-hidden="true" />
       </button>
-      {open && (
-        <ol className="ml-[6.5px] mt-1 space-y-1 border-l border-[var(--border-subtle)] pl-[13px]">
-          {plan.steps.map((step, index) => (
-            <li key={`${index}-${step.title}`} className="flex items-start gap-2">
-              <span className="flex h-5 shrink-0 items-center"><PlanStepIcon status={step.status} /></span>
-              <span className="min-w-0">
-                <span className={
-                  step.status === 'in_progress' && running ? 'agent-shimmer'
-                    : step.status === 'pending' ? 'text-[var(--text-muted)]'
-                      : step.status === 'failed' ? 'text-[var(--accent-red)]'
-                        : 'text-[var(--text-secondary)]'
-                }>{step.title}</span>
-                {step.evidence && <span className="block text-[11.5px] leading-4 text-[var(--text-muted)]">{step.evidence}</span>}
-              </span>
-            </li>
-          ))}
-        </ol>
-      )}
+      <div className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+        <div className="agent-subagent-body overflow-hidden" inert={!open} aria-hidden={!open}>
+          <ol className="space-y-1 px-3 pb-2.5">
+            {plan.steps.map((step, index) => (
+              <li key={`${index}-${step.title}`} className="flex items-start gap-2">
+                <span key={step.status} data-animate={running || undefined} className="agent-plan-icon flex h-5 shrink-0 items-center"><PlanStepIcon status={step.status} /></span>
+                <span className="min-w-0">
+                  <span data-done={step.status === 'done' || undefined} className={`agent-plan-title ${
+                    step.status === 'in_progress' ? (running ? 'agent-shimmer' : 'text-[var(--text-primary)]')
+                      : step.status === 'pending' ? 'text-[var(--text-muted)]'
+                        : step.status === 'failed' ? 'text-[var(--accent-red)]'
+                          : 'text-[var(--text-muted)]'
+                  }`}>{step.title}</span>
+                  {step.evidence && <span className="block text-[11.5px] leading-4 text-[var(--text-muted)]">{step.evidence}</span>}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
     </section>
   );
 }

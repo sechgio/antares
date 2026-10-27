@@ -18,7 +18,7 @@ it('copia la conversación como texto legible sin resultados internos de herrami
 it('renombra desde el menú y elimina sin pasos extra', async () => {
   const onRename = vi.fn().mockResolvedValue(undefined);
   const onDelete = vi.fn();
-  render(<ConversationMenu session={session} messages={messages} onRename={onRename} onDelete={onDelete} onCopied={vi.fn()} />);
+  render(<ConversationMenu session={session} messages={messages} view="normal" onView={vi.fn()} onRename={onRename} onDelete={onDelete} onCopied={vi.fn()} />);
   fireEvent.click(screen.getByLabelText('Opciones de la conversación'));
   fireEvent.click(screen.getByRole('menuitem', { name: /Renombrar/ }));
   fireEvent.change(screen.getByLabelText('Nuevo nombre de la conversación'), { target: { value: '  Marzo  ' } });
@@ -27,6 +27,17 @@ it('renombra desde el menú y elimina sin pasos extra', async () => {
   fireEvent.click(screen.getByLabelText('Opciones de la conversación'));
   fireEvent.click(screen.getByRole('menuitem', { name: /Eliminar/ }));
   expect(onDelete).toHaveBeenCalledOnce();
+});
+
+it('cambia la vista del chat desde el menú y marca la activa', () => {
+  const onView = vi.fn();
+  render(<ConversationMenu session={session} messages={messages} view="thinking" onView={onView} onRename={vi.fn()} onDelete={vi.fn()} onCopied={vi.fn()} />);
+  fireEvent.click(screen.getByLabelText('Opciones de la conversación'));
+  expect(screen.getByRole('menuitemradio', { name: /Pensamiento/ })).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole('menuitemradio', { name: /Normal/ })).toHaveAttribute('aria-checked', 'false');
+  fireEvent.click(screen.getByRole('menuitemradio', { name: /Detallado/ }));
+  expect(onView).toHaveBeenCalledWith('verbose');
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 });
 
 it('agrupa las conversaciones por su última actividad', () => {

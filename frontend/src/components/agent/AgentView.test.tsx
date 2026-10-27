@@ -783,6 +783,11 @@ it('adjunta archivos y carpetas y los envía por id con el mensaje', async () =>
   expect(attach.mock.calls).toEqual([['files'], ['folder']]);
   expect(screen.getByText('clientes.xlsx')).toBeInTheDocument();
   expect(screen.getByText('fotos')).toBeInTheDocument();
+  // Cada adjunto es una miniatura con su tipo a la vista y el botón de quitar en la esquina.
+  const tiles = within(screen.getByLabelText('Adjuntos'));
+  expect(tiles.getByText('xlsx')).toBeVisible();
+  expect(tiles.getByText('carpeta')).toBeVisible();
+  expect(tiles.getByRole('button', { name: 'Quitar clientes.xlsx' }).parentElement).toHaveClass('absolute');
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Genera el informe' } });
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Genera el informe', expect.any(String), ['a1', 'a2']);
@@ -1871,6 +1876,10 @@ it('invoca una skill con «/»: filtra el catálogo, elige con el teclado y env�
     .toEqual(['firmasComprueba firmas', 'pdf-reviewRevisa PDFs', 'informe-tecnicoRedacta informes']);
   fireEvent.keyDown(box, { key: 'ArrowDown' });
   expect(screen.getByRole('option', { name: /pdf-review/ })).toHaveAttribute('aria-selected', 'true');
+  // Solo la fila activa muestra la tecla con la que se elige.
+  expect(screen.getByRole('option', { name: /pdf-review/ }).querySelector('kbd')).not.toBeNull();
+  expect(screen.getByRole('option', { name: /firmas/ }).querySelector('kbd')).toBeNull();
+  expect(screen.getByRole('listbox', { name: 'Skills disponibles' }).closest('.agent-command-palette')).toHaveClass('absolute', 'bottom-full');
   fireEvent.keyDown(box, { key: 'Enter' });
   expect(screen.queryByRole('listbox', { name: 'Skills disponibles' })).not.toBeInTheDocument();
   expect(box).toHaveValue('Revisa ');
