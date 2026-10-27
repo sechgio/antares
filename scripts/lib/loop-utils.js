@@ -8,7 +8,9 @@ const REPO_OWNER = 'sechgio';
 const REPO_NAME = 'antares';
 const BASE_BRANCH = 'main';
 const ROOT = path.resolve(__dirname, '..', '..');
-const QUALITY_GATE_TIMEOUT_MS = 900000;
+// aislado el gate tarda ~6,5 min, pero con suites concurrentes de otras
+// sesiones en la misma máquina supera los 15 min y el kill deja "exit 1"
+const QUALITY_GATE_TIMEOUT_MS = 1800000;
 
 function sh(command, opts = {}) {
   const { silent: _, ...execOpts } = opts;
@@ -236,7 +238,7 @@ function runQualityCommand(command, label, options = {}) {
       .join('\n')
       .trim();
     const status = Number.isInteger(error.status) ? error.status : 1;
-    const failure = new Error(`${label} falló (exit ${status}):\n${output.slice(0, 800)}`);
+    const failure = new Error(`${label} falló (exit ${status}):\n${output.slice(0, 4000)}`);
     failure.code = status;
     throw failure;
   }
