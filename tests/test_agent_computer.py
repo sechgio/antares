@@ -313,7 +313,7 @@ def test_desktop_keys_and_coordinates_are_validated():
     with pytest.raises(ValueError, match="coordenada x"):
         computer_desktop._physical(True, "x")
     with pytest.raises(ValueError, match="no disponible"):
-        computer_desktop.run("desktop_teleport", {}, None)  # type: ignore[arg-type]
+        computer_desktop.run("desktop_teleport", {}, None)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Escritorio de Windows")

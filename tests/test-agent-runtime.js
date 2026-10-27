@@ -8,8 +8,6 @@ const path = require('path');
 const { assert, finish, stubModule } = require('./helpers/harness');
 const { getEventListeners } = require('node:events');
 
-// Este fixture cuenta con un catálogo pequeño (todas las herramientas habilitadas);
-// cua-driver y el navegador tienen sus propias pruebas en test-agent-cua.js y test-agent-browser-tools.js.
 stubModule('electron/agent-cua.js', { TOOLS: new Map(), run: async () => ({}), approvalContext: () => ({}), close: () => {} });
 stubModule('electron/agent-browser.js', { ...require('../electron/agent-browser'), TOOLS: {} });
 const runtime = require('../electron/agent-runtime');
@@ -353,12 +351,8 @@ async function main() {
 
   {
     const { bridge, state } = makeBridge();
-    // El backend real auto-aprueba en desatendido las apps declaradas al programar;
-    // el puente falso replica ese contrato y registra la lista recibida.
     const uiBridge = async (method, params) => {
       if (method === 'agent_internal_dispatch' && params.meta) {
-        // Contrato del broker: el meta-dispacho vuelve a Electron, que ejecuta
-        // schedule() y cierra la operación con dispatch_finish.
         return { execute: 'meta', dispatch: { op_id: `op-${params.call_id}`, status: 'running' } };
       }
       if (method === 'agent_internal_dispatch_finish' && !state.dispatches.some((d) => d.op_id === params.op_id)) {
@@ -380,8 +374,6 @@ async function main() {
       }
       return result;
     };
-    // Elementos distintos: el guardia de repetición bloquearía la 4.ª llamada
-    // idéntica antes de alcanzar el techo desatendido.
     const clicks = Array.from({ length: 27 }, (_, i) =>
       fauxAssistantMessage([fauxToolCall('cua_click', { window_id: 'w1a2b', element_id: `e${i}` })], { stopReason: 'toolUse' }));
     await openFaux([
@@ -395,7 +387,6 @@ async function main() {
       fauxAssistantMessage('Encargo desatendido terminado'),
     ], uiBridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
-    // El broker exige aprobación para programar; el modo de acceso completo la aplica sola.
     await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Programa el encargo' });
     assert(await waitFor(() => state.dispatches.length >= 25, 20000), 'el encargo desatendido auto-aprueba las apps declaradas');

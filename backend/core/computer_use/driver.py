@@ -27,8 +27,6 @@ _MAX_TEXT = 5_000
 # inyección unicode como repetición de una misma tecla y corrompe el texto en
 # apps TSF (Notepad de Win11); 48 ms se validó perfecto en barrido empírico.
 _TYPE_CHAR_DELAY_S = 0.048
-# check:ratchet cuenta en línea cada anotación de dict con Any; estas bolsas
-# internas heterogéneas viven bajo alias allowlistado.
 _RawElements = dict[str, Any]  # allowlist
 _ActionContext = dict[str, Any]  # allowlist
 _SHOT_WIDTH = 1280
@@ -218,7 +216,7 @@ def _run_on_worker(fn: Callable[[], Any], timeout: float) -> Any:
 
 def _process_name(pid: int) -> str:
     k32 = ctypes.windll.kernel32
-    h = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    h = k32.OpenProcess(0x1000, False, pid)
     if not h:
         return "?"
     try:
@@ -233,7 +231,7 @@ def _process_name(pid: int) -> str:
 
 def _process_elevated(pid: int) -> bool:
     k32 = ctypes.windll.kernel32
-    h = k32.OpenProcess(0x0400, False, pid)  # PROCESS_QUERY_INFORMATION
+    h = k32.OpenProcess(0x0400, False, pid)
     if not h:
         return True
     k32.CloseHandle(h)
@@ -271,7 +269,7 @@ def _enumerate_on_worker() -> list[JsonObject]:
         user32.GetWindowRect(hwnd, ctypes.byref(rect))
         if rect.right - rect.left < 40 or rect.bottom - rect.top < 30:
             return True
-        if user32.GetWindowLongW(hwnd, -8) != 0:  # GWL_HWNDPARENT: descarta diálogos de otra ventana
+        if user32.GetWindowLongW(hwnd, -8) != 0:
             return True
         hwnds.append(int(hwnd))
         return len(hwnds) < 40
@@ -689,7 +687,6 @@ def normalize_app(name: str) -> str:
 
 
 def approval_context(params: JsonObject) -> JsonObject:
-    """Contexto legible para la tarjeta de aprobación: app, ventana y elemento objetivo."""
     info: JsonObject = {}
     app = params.get("app")
     if isinstance(app, str) and app:

@@ -78,7 +78,6 @@ function install(zipPath) {
     console.error(`HASH DISTINTO ${path.basename(zipPath)}: ${zipDigest} != ${manifest.build.assetSha256}`);
     process.exit(1);
   }
-  // El zip ya está verificado; solo se copian los binarios del manifest, cada uno verificado.
   const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-cua-'));
   const quote = (value) => `'${String(value).replace(/'/g, "''")}'`;
   try {

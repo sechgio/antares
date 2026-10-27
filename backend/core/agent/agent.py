@@ -170,8 +170,6 @@ class AgentStore:
                     except Exception:
                         logger.warning("No se pudo verificar el trabajo de impresión %s", record.get("op_id"), exc_info=True)
                 dirty = True
-        # Retención de copias previas: lo podado deja de ser recuperable y los
-        # dispatches que quedaron a medias se reconcilian con el archivo actual.
         self._undo.prune()
         for record in self._dispatches.values():
             undo = record.get("undo")

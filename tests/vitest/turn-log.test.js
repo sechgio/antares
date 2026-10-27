@@ -205,7 +205,6 @@ describe('listTurns', () => {
   });
 
   it('omite rotados anteriores a --since por su sello y tolera ficheros ilegibles', async () => {
-    // Si se leyera pasaría el filtro (ended 11:00 > --since): su ausencia prueba el salto por sello.
     const oldRotated = path.join(tmpDir, 'turns-2020-01-01T00-00-00-000Z.jsonl');
     fs.writeFileSync(
       oldRotated,

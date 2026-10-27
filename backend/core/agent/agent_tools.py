@@ -36,8 +36,6 @@ SPECS["mcp_status"] = {
                    "refresh=true vuelve a consultar sus catálogos; no modifica configuración ni credenciales.",
     "inputSchema": {"type": "object", "properties": {"refresh": {"type": "boolean"}}},
 }
-# El efecto lo ejecuta Electron sobre TasksDoc; aquí solo se anuncia para que la
-# aprobación y el recibo se reserven en el backend. run() no lo implementa.
 SPECS["task_schedule"] = {
     "name": "task_schedule", "module": "agenda", "gated": True,
     "description": "Gestiona encargos propios de esta conversación solo cuando el usuario lo pide. Antares debe seguir "

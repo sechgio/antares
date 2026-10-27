@@ -69,6 +69,14 @@ const SENSITIVE_TEXT_RE = [
   /([a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:)[^\s/@]+@/gi,
   /([?&](?:key|sig|signature|passwd|pwd)=)[^\s&#]+/gi,
   /(?:[A-Za-z]:\\|\\\\|\/(?:Users|home|tmp|var|private|opt|mnt|workspace)\/)[^\s"'`]+/g,
+  // tokens desnudos sin prefijo clave=valor ni Bearer: prefijos de proveedor
+  /\bsk-[A-Za-z0-9_-]{20,}\b/g,
+  /\b(?:gh[pous]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,})\b/g,
+  /\bAKIA[0-9A-Z]{16}\b/g,
+  /\bx(?:ox[baprs]|app)-[A-Za-z0-9-]{10,}\b/g,
+  /\bAIza[0-9A-Za-z_-]{35}\b/g,
+  /\b1\/\/[0-9A-Za-z_-]{30,}\b/g,
+  /\bya29\.[0-9A-Za-z_-]{20,}\b/g,
 ];
 const STALE_TEMP_PREFIX_RE = /^antares-(?:backend-command|pdf|staged)-/;
 

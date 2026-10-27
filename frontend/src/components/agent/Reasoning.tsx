@@ -2,7 +2,6 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Brain, ChevronRight } from 'lucide-react';
 import MessageMarkdown from './MessageMarkdown';
 
-/** Verbo y duración por separado: la duración se atenúa como dato secundario. */
 function thoughtLabel(ms?: number): [string, string] {
   if (ms === undefined) return ['Pensó', ''];
   const seconds = Math.round(ms / 1000);
@@ -11,7 +10,6 @@ function thoughtLabel(ms?: number): [string, string] {
   return ['Pensó', ` durante ${Math.floor(seconds / 60)} min ${seconds % 60} s`];
 }
 
-/** Primera línea con texto, sin marcas de markdown: resume el razonamiento con el bloque cerrado. */
 export function reasoningRecap(text: string): string {
   for (const raw of text.split('\n')) {
     const line = raw.trim().replace(/^```[\w-]*$/, '').replace(/^#{1,6}\s+/, '').replace(/^(?:[-*+]|\d{1,3}\.)\s+/, '')
@@ -21,10 +19,6 @@ export function reasoningRecap(text: string): string {
   return '';
 }
 
-/**
- * Razonamiento de una ronda del agente, con las mismas medidas que las filas de pasos:
- * el texto empieza en la columna de las etiquetas para que se lea como parte de la secuencia.
- */
 export default function Reasoning({ text, streaming, ms, defaultOpen = false }: { text: string; streaming: boolean; ms?: number; defaultOpen?: boolean }) {
   const [openOverride, setOpenOverride] = useState<boolean | null>(null);
   const bodyId = useId();

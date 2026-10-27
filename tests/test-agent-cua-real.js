@@ -36,7 +36,6 @@ const FORM = [
 ].join('; ');
 
 async function rawTools() {
-  // Mismo daemon de producción: el catálogo debe ser un subconjunto de lo que el binario expone.
   const exe = path.join(__dirname, '..', 'cua-driver', 'cua-driver.exe');
   const listed = await new Promise((resolve, reject) => {
     const child = spawn(exe, ['list-tools'], { windowsHide: true,

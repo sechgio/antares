@@ -27,7 +27,6 @@ _MAX_OUTPUT_CHARS = 4_000_000
 _MAX_BUFFER_BYTES = 8_000_000
 _WRITE_INTERVAL_S = 0.75
 _JOB_ID = re.compile(r"[a-f0-9]{32}")
-# Mismo preludio que shell_run: salida UTF-8 y sin progreso interactivo.
 _PRELUDE = (
     "$ProgressPreference='SilentlyContinue';"
     "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;$OutputEncoding=[System.Text.Encoding]::UTF8;"

@@ -1,6 +1,7 @@
 'use strict';
 
 const { nativeMethods } = require('../shared/ipc-method-catalog');
+const { FORBIDDEN_FALLBACK_EXTENSIONS } = require('./ipc-file-policy');
 
 const AGENT_METHODS = nativeMethods('agent');
 
@@ -25,6 +26,10 @@ async function artifactAction(params) {
   if (['preview', 'review'].includes(params.action)) return _callBackend('agent_internal_artifact_action', params);
   const file = await _callBackend('agent_internal_artifact_action', { ...params, action: 'file' });
   if (params.action === 'open') {
+    const extension = require('node:path').extname(file.path).toLowerCase();
+    if (FORBIDDEN_FALLBACK_EXTENSIONS.has(extension)) {
+      throw new Error(`Antares no abre artefactos ejecutables (${extension}); ábrelo tú desde el Explorador`);
+    }
     const error = await require('electron').shell.openPath(file.path);
     if (error) throw new Error(error);
     return { opened: true };

@@ -137,7 +137,6 @@ const READ_TOOLS = new Set(['web_read', 'web_screenshot', 'web_text', 'web_conso
 const NAVIGATION_TOOLS = new Set(['web_open', 'web_back', 'web_forward', 'web_reload']);
 const AGENT_TAB = 'agent';
 const USER_TAB = 'user';
-// Como en Claude Desktop: una vista por pestaña, misma sesión y un tope de pestañas.
 const MAX_USER_TABS = 8;
 const AGENT_LEASE_MS = 10 * 60_000;
 const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
@@ -153,7 +152,6 @@ const tabs = new Map();
 const pendingMouseInputs = new Set();
 let consoleLog = [];
 const netLog = new Map();
-// Contadores de mensajes y peticiones: marcan lo que la página informó después de una acción.
 let consoleSeq = 0;
 let netSeq = 0;
 let sessionReady = false;
@@ -217,12 +215,51 @@ function isWeb(url) {
   }
 }
 
+function isPrivateIpv4(ip) {
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((n) => !(n >= 0 && n <= 255))) return true;
+  if (parts[0] === 0 || parts[0] === 10 || parts[0] === 127) return true;
+  if (parts[0] === 169 && parts[1] === 254) return true;
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+  if (parts[0] === 192 && parts[1] === 168) return true;
+  if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return true;
+  return parts[0] >= 224;
+}
+
+function isPrivateHostname(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (host.includes(':')) {
+    if (host === '::' || host === '::1' || host.startsWith('::ffff:')) return true;
+    if (/^f[cd][0-9a-f]{2}:/.test(host)) return true;
+    if (/^fe[89ab][0-9a-f]:/.test(host)) return true;
+    return false;
+  }
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) ? isPrivateIpv4(host) : false;
+}
+
+function isAllowedWebUrl(url) {
+  if (!isWeb(url)) return false;
+  try {
+    return !isPrivateHostname(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function publicWebUrl(url) {
+  if (isPrivateHostname(new URL(url).hostname)) {
+    throw new Error('El navegador de Agent no accede a direcciones locales ni de la red privada');
+  }
+  return url;
+}
+
 function normalizeUrl(raw) {
   const value = String(raw || '').trim();
   if (!value) throw new Error('Indica la dirección o la búsqueda');
-  if (isWeb(value)) return value;
+  if (isWeb(value)) return publicWebUrl(value);
   if (/^[a-z][a-z0-9+.-]*:/i.test(value) && !/^[\w.-]+:\d+/.test(value)) throw new Error('Solo se admiten direcciones http y https');
-  if (/^[\w-]+(\.[\w-]+)+(:\d+)?(\/\S*)?$/.test(value)) return `https://${value}`;
+  if (/^[\w-]+(\.[\w-]+)+(:\d+)?(\/\S*)?$/.test(value)) return publicWebUrl(`https://${value}`);
   return `https://duckduckgo.com/html/?q=${encodeURIComponent(value)}`;
 }
 
@@ -238,8 +275,6 @@ function prepareSession(electron) {
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
   ses.setUserAgent(siteUserAgent(ses.getUserAgent()));
-  // Toda descarga se cancela salvo que web_download la haya pedido: el
-  // navegador del agente nunca escribe en el disco por decisión de una página.
   ses.on('will-download', (event, item) => {
     const slot = downloadSlot;
     if (!slot || item.getURLChain()[0] !== slot.url) { event.preventDefault(); item.cancel(); return; }
@@ -269,6 +304,7 @@ function downloadName(value) {
 function startDownload(url, drafts) {
   if (!drafts) throw new Error('Los borradores requieren una conversación');
   if (!isWeb(url)) throw new Error('Indica la dirección http(s) del archivo');
+  publicWebUrl(url);
   const policy = require('./agent-browser-policy');
   if (policy.isBlocked(policy.hostOf(url))) {
     throw new Error('Dominio bloqueado por la política del navegador del agente');
@@ -372,8 +408,6 @@ function notify(reason) {
   } catch { }
 }
 
-// La rueda puede emitir decenas de eventos por segundo; la UI solo necesita
-// enterarse de que el bloqueo sigue vigente, no de cada píxel desplazado.
 function noteUserInput(tab) {
   if (!tab || tab.userControl) return;
   tab.lastUserInputAt = Date.now();
@@ -410,14 +444,14 @@ function ensureTab(id) {
     netLog.clear();
   }
   contents.setWindowOpenHandler(({ url }) => {
-    if (isWeb(url)) setImmediate(() => contents.loadURL(url).catch(() => {}));
+    if (isAllowedWebUrl(url)) setImmediate(() => contents.loadURL(url).catch(() => {}));
     return { action: 'deny' };
   });
   contents.on('will-navigate', (event, url) => {
-    if (!isWeb(url)) event.preventDefault();
+    if (!isAllowedWebUrl(url)) event.preventDefault();
   });
   contents.on('will-redirect', (event, url) => {
-    if (!isWeb(url)) event.preventDefault();
+    if (!isAllowedWebUrl(url)) event.preventDefault();
   });
   const userInput = (_event, input) => {
     if (input.type === 'mouseDown') {
@@ -463,7 +497,6 @@ function ensureTab(id) {
   return tab;
 }
 
-// Sin cabeceras, cookies ni cuerpos: el registro solo describe el tráfico.
 function recordNet(id, entry) {
   netLog.set(id, entry);
   if (netLog.size > NET_KEEP) netLog.delete(netLog.keys().next().value);
@@ -590,7 +623,6 @@ function newTab() {
   return activateTab(id);
 }
 
-// Al cerrar la pestaña visible se activa la de la derecha o, si no hay, la de la izquierda.
 function closeTab(id) {
   if (id === AGENT_TAB || !order.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
   const index = order.indexOf(id);
@@ -829,8 +861,6 @@ async function snapshot(contents, offset = 0, budget = RESULT_BUDGET) {
     ...(more > 0 ? { elements_more: more, elements_note: 'Hay más elementos interactivos: desplázate con web_scroll y vuelve a leer' } : {}) };
 }
 
-// Errores de consola y peticiones fallidas que la página informó desde la marca:
-// llegan con el resultado de la acción, como datos de la página y no instrucciones.
 function pageReported(mark) {
   const errors = consoleLog.filter((entry) => entry.seq > mark.console && entry.level === 'error')
     .slice(-HEALTH_KEEP).map((entry) => entry.text.slice(0, 200));
@@ -1035,7 +1065,6 @@ async function screenshot(contents, dir, fullPage = false) {
     image: { path: target, mime: 'image/jpeg' } };
 }
 
-// Fotograma de la pestaña visible para que la UI lo anote encima del DOM.
 async function capture(id = activeTab) {
   const contents = tabContents(tabs.get(id));
   if (!contents) throw browserError('No hay ninguna página abierta para anotar', 'NO_PAGE');
@@ -1044,8 +1073,6 @@ async function capture(id = activeTab) {
   return { png_base64: image.toPNG().toString('base64'), width, height, url: contents.getURL(), title: contents.getTitle() };
 }
 
-// Como el «seleccionar» de Claude Desktop: describe el elemento bajo un punto
-// (0–1 sobre la vista) para llevar su contexto al chat. Nunca lee valores de campos.
 const INSPECT = (x, y) => `(() => {
   const el = document.elementFromPoint(${x} * innerWidth, ${y} * innerHeight);
   if (!el || el === document.documentElement || el === document.body) return null;
@@ -1174,7 +1201,6 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId 
   if (name === 'web_key') {
     const keys = String(params.keys || '').trim();
     if (!keys) throw new Error('Indica las teclas');
-    // Las teclas que escriben texto no sirven para rellenar a mano un campo secreto.
     const writes = keys.split(/\s+/).some((combo) => {
       const parts = combo.split('+').filter(Boolean);
       const last = parts[parts.length - 1] || '';
@@ -1195,7 +1221,6 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId 
   throw new Error(`Herramienta nativa no disponible: ${name}`);
 }
 
-// Selecciona todo el contenido del campo de la ref, también dentro de un marco o un shadow root.
 function selectAllScript(id) {
   return `(() => {
     ${DEEP_JS}
@@ -1316,7 +1341,6 @@ async function fillFields(input, params) {
   if (texts.reduce((total, text) => total + text.length, 0) > MAX_FILL_TEXT) {
     throw new Error(`El texto de los campos excede ${MAX_FILL_TEXT} caracteres`);
   }
-  // Se comprueban todos los campos antes de escribir el primero.
   const kinds = await input.contents.executeJavaScript(`(() => {
     ${refGuard(input.contents)}
     ${DEEP_JS}
@@ -1373,9 +1397,6 @@ async function fillFields(input, params) {
   page: await observeAfter(input.contents) };
 }
 
-// El archivo ya pasó la verificación de grants del backend; aquí solo se
-// comprueba que el elemento siga siendo un campo de archivo de la página
-// aprobada y se le asigna el archivo por CDP, como hace Playwright.
 async function uploadFile(input, ref, filePath) {
   const id = String(ref || '').replace(/[^0-9]/g, '');
   if (!id) throw new Error('Indica la referencia del campo (web_read)');
@@ -1416,4 +1437,4 @@ function close() {
   pendingMouseInputs.clear();
 }
 
-module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, state, dock, capture, inspect, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };
+module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, isPrivateHostname, isAllowedWebUrl, state, dock, capture, inspect, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };
