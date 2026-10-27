@@ -5,7 +5,11 @@ function makeHarness() {
   const state = { loadFileCalls: 0, loadURLCalls: [], logEvents: [], calls: [], windowOpts: null, currentURL: 'file:///app/dist/index.html' };
 
   const webContents = new EventEmitter();
-  webContents.session = { webRequest: { onHeadersReceived: () => {}, onBeforeSendHeaders: () => {} } };
+  webContents.session = {
+    webRequest: { onHeadersReceived: () => {}, onBeforeSendHeaders: () => {} },
+    setPermissionRequestHandler: () => {},
+    setPermissionCheckHandler: () => {},
+  };
   webContents.setBackgroundThrottling = () => {};
   webContents.setWindowOpenHandler = () => {};
   webContents.isLoadingMainFrame = () => false;

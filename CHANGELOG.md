@@ -33,6 +33,9 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Las rutas registradas antes para lectura ya no permiten sobrescribir ejecutables: el veto de extensiones peligrosas (`.exe`, `.bat`, `.ps1`…) aplica a toda salida salvo los write roots concedidos por diálogo.
 - El gancho de pre-commit también bloquea claves privadas y tokens de GitHub, AWS u OpenAI en los cambios staged, y `.gitignore` ignora el material de claves (`*.pem`, `*.key`, `*.p12`, `*.pfx`, `credentials*.json`).
 
+### Security
+- La sesión principal del shell niega por defecto los permisos del navegador (geolocalización, notificaciones web, pantalla completa, MIDI…) y solo concede micrófono, captura de pantalla y portapapeles, que es lo que usa la UI; antes Electron los aprobaba todos automáticamente.
+
 ### Added
 - El chat de Agent resume mejor el trabajo de cada turno: el grupo de pasos dice qué hizo («Leyó 3 archivos, ejecutó 2 comandos y 4 pasos más · 1 nota · 42 s») y nombra las skills y los conectores MCP usados; mientras trabaja solo muestra los últimos pasos y pliega los anteriores, salvo los que necesitan atención. El razonamiento plegado muestra su primera línea, se cierra en cuanto la ronda pasa a una acción y usa las medidas de las filas de pasos. Al terminar, una tarjeta resume los archivos cambiados con sus líneas. El menú de la conversación elige la vista del chat (Normal, Pensamiento o Detallado).
 - El plan de Agent es una lista de tareas con anillo de progreso, contador y tachado animado de los pasos hechos. La terminal se abre con transición y anima la salida en vivo, los bloques de código tienen cabecera con el lenguaje y botón de copiar, y los mensajes del usuario se pueden copiar. La paleta de «/» y «@» flota sobre el compositor y marca la opción activa con ↵, y los adjuntos se muestran como miniaturas con su tipo y un botón para quitarlos.
