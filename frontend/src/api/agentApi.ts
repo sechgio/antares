@@ -384,6 +384,8 @@ export const agentApi = {
   agentBrowser: (action: 'state' | 'bounds' | 'tab' | 'control' | 'allow' | 'open' | 'back' | 'forward' | 'reload',
     extra: { url?: string; user?: boolean; tab?: 'agent' | 'user'; bounds?: AgentBrowserBounds | null } = {}) =>
     _invoke<AgentBrowserState>('agent_browser', { action, ...extra }),
+  agentBrowserCapture: () =>
+    _invoke<{ png_base64: string; width: number; height: number; url: string; title: string }>('agent_browser', { action: 'capture' }),
   agentTurnCancel: (session_id: string) =>
     _invoke<{ cancelled: boolean }>('agent_turn_cancel', { session_id }),
 

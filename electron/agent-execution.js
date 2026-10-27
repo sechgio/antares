@@ -56,6 +56,7 @@ const UNATTENDED_ACTION_TOOLS = new Set(['ui_launch', ...UI_ACTION_TOOLS]);
 const MAX_UNATTENDED_ACTIONS = 25;
 const MAX_LOADED_TOOLS = 25;
 const MAX_DEFAULT_TOOLS = 100;
+const MAX_OPENAI_TOOLS = 128;
 
 const REASONING_OPENAI_MODEL = /deepseek-(r1|reasoner)|qwq|qwen3|gpt-oss|thinking/i;
 const REASONING_ANTHROPIC_MODEL = /claude-(3-7|(opus|sonnet|haiku|fable)-[4-9])/i;
@@ -224,8 +225,32 @@ async function buildProvider(record) {
       },
     },
     models: [...modelIds].map((id) => modelDefinition(info, id, api, anthropic ? catalog[id] : undefined, catalog[id])),
-    api: anthropic ? shared.deps.aiAnthropic.anthropicMessagesApi() : shared.deps.aiOpenai.openAICompletionsApi(),
+    api: anthropic ? shared.deps.aiAnthropic.anthropicMessagesApi() : cappedOpenAIApi(shared.deps.aiOpenai.openAICompletionsApi()),
   });
+}
+
+function capOpenAITools(payload) {
+  const tools = payload && payload.tools;
+  if (!Array.isArray(tools) || tools.length <= MAX_OPENAI_TOOLS) return payload;
+  const nameOf = (tool) => ((tool && (tool.function || tool.custom)) || {}).name;
+  const called = new Set((payload.messages || []).flatMap((message) => (message.tool_calls || []).map(nameOf)));
+  const rank = (tool) => (called.has(nameOf(tool)) ? 0 : shared.toolSpecs.get(nameOf(tool))?.gated ? 2 : 1);
+  const kept = new Set(tools.map((tool, index) => [rank(tool), index])
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    .slice(0, MAX_OPENAI_TOOLS)
+    .map(([, index]) => index));
+  return { ...payload, tools: tools.filter((_, index) => kept.has(index)) };
+}
+
+function cappedOpenAIApi(api) {
+  const wrap = (stream) => (model, context, options) => stream(model, context, {
+    ...options,
+    onPayload: async (payload, target) => {
+      const next = options && options.onPayload ? await options.onPayload(payload, target) : undefined;
+      return capOpenAITools(next === undefined ? payload : next);
+    },
+  });
+  return { ...api, stream: wrap(api.stream), streamSimple: wrap(api.streamSimple) };
 }
 
 async function allToolSpecs() {
@@ -1312,6 +1337,7 @@ module.exports = {
   supportsReasoning,
   REASONING_EFFORTS,
   ensureProvider,
+  cappedOpenAIApi,
   refreshTools,
   notifyDecision,
   dispatchApproved,

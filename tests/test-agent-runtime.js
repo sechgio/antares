@@ -842,6 +842,7 @@ async function main() {
       setUserControl: (user) => { calls.push(['control', user]); return { user_control: user }; },
       allowAgent: () => { calls.push(['allow']); return { open: true, user_control: false }; },
       activateTab: (tab) => { calls.push(['tab', tab]); return { active_tab: tab }; },
+      capture: async (tab) => ({ png_base64: 'iVBOR', width: 800, height: 600, url: 'https://example.com', tab }),
       navigate: async (action, url) => { calls.push([action, url]); return { open: true, url: url || '' }; },
     };
     const handle = runtime.handlers.agent_browser;
@@ -852,6 +853,7 @@ async function main() {
     assert((await handle({ action: 'open', url: 'example.com' })).url === 'example.com', 'la barra de dirección abre páginas');
     assert((await handle({ action: 'allow' })).user_control === false, 'la UI puede liberar la espera del navegador');
     assert((await handle({ action: 'tab', tab: 'user' })).active_tab === 'user', 'la UI cambia de pestaña');
+    assert((await handle({ action: 'capture' })).png_base64 === 'iVBOR', 'la UI captura la página para anotarla');
     let rejected = false;
     try { await handle({ action: 'borrar' }); } catch { rejected = true; }
     assert(rejected && calls.length === 6, 'una acción desconocida se rechaza sin tocar el navegador');
@@ -1343,6 +1345,8 @@ async function main() {
     const instructions = (await conv.agent(runtime._internal.state().ctx)).instructions;
     assert(String(instructions).includes('plantilla de cortes') && String(instructions).includes('no amplían los permisos elegidos'),
       'las indicaciones del agente se suman sin ampliar los permisos elegidos');
+    assert(String(instructions).includes('sin narrar la preparación') && String(instructions).includes('la única acción que lo desbloquea'),
+      'las instrucciones incluyen la política de comunicación');
     const plain = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const plainTools = (await runtime.handlers.agent_tools_list({ session_id: plain.session.id })).tools;
     const defaults = require('../electron/agent-execution').defaultToolNames([...runtime._internal.shared.toolSpecs.values()]);
@@ -3101,6 +3105,29 @@ for line in sys.stdin:
       lines.close();
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  }
+
+  {
+    const { cappedOpenAIApi } = require('../electron/agent-execution');
+    const { shared } = require('../electron/agent-shared');
+    const tool = (name) => ({ type: 'function', function: { name } });
+    const sent = [];
+    const fake = { stream: (_model, _context, options) => options.onPayload(sent.shift(), {}) };
+    const api = cappedOpenAIApi({ ...fake, streamSimple: fake.stream });
+    shared.toolSpecs.set('efecto_0', { name: 'efecto_0', gated: true });
+    shared.toolSpecs.set('efecto_1', { name: 'efecto_1', gated: true });
+    const many = [tool('efecto_0'), tool('efecto_1'), ...Array.from({ length: 140 }, (_, i) => tool(`lectura_${i}`))];
+    sent.push({ tools: many, messages: [{ role: 'assistant', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'efecto_1' } }] }] });
+    const capped = await api.stream({}, {}, {});
+    const names = capped.tools.map((t) => t.function.name);
+    assert(names.length === 128, 'OpenAI recibe como máximo 128 herramientas');
+    assert(names.includes('efecto_1') && !names.includes('efecto_0'),
+      'se conservan las herramientas ya llamadas y se descartan antes las que tienen efecto');
+    const few = { tools: many.slice(0, 5), messages: [] };
+    sent.push(few);
+    assert(await api.streamSimple({}, {}, {}) === few, 'una lista dentro del límite se envía sin cambios');
+    shared.toolSpecs.delete('efecto_0');
+    shared.toolSpecs.delete('efecto_1');
   }
 
   finish();

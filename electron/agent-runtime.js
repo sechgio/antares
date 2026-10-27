@@ -96,7 +96,10 @@ const SYSTEM_PROMPT =
   'tools_load y úsalo desde la siguiente ronda. ' +
   'Cuando un gráfico o una interfaz expliquen mejor la respuesta, el chat los muestra en línea: usa un bloque ```chart con JSON ' +
   '{"type":"bar|line|pie","title":"…","labels":["…"],"series":[{"name":"…","data":[1,2]}]} (cada serie con un valor por etiqueta), ' +
-  'o un bloque ```svg o ```html autocontenido con estilos en línea; no se ejecutan scripts ni se cargan recursos externos.';
+  'o un bloque ```svg o ```html autocontenido con estilos en línea; no se ejecutan scripts ni se cargan recursos externos. ' +
+  'Empieza a trabajar sin narrar la preparación ni la carga de contexto; informa resultados, cambios, fallos y lo que necesites del usuario. ' +
+  'No afirmes que comprobaste algo si ningún resultado de herramienta lo muestra. ' +
+  'Si no puedes completar el encargo, di qué intentaste y la única acción que lo desbloquea.';
 const CANCELLED_NOTE =
   '⏹ Turno detenido por el usuario. Una herramienta ya iniciada puede seguir ejecutándose; ' +
   'comprueba su resultado antes de repetirla.';
@@ -699,6 +702,7 @@ async function browserAction(params) {
   if (action === 'tab') return browser.activateTab(params.tab);
   if (action === 'control') return browser.setUserControl(params.user === true, params.tab);
   if (action === 'allow') return browser.allowAgent(params.tab);
+  if (action === 'capture') return browser.capture(params.tab);
   if (['open', 'back', 'forward', 'reload'].includes(action)) return browser.navigate(action, params.url, params.tab);
   throw validation(`Acción del navegador no válida: ${action}`);
 }
