@@ -61,7 +61,7 @@ _win_dll: ctypes.WinDLL | None = None
 
 def _user32() -> ctypes.WinDLL | None:
     global _win_dll
-    if not hasattr(ctypes, "WINFUNCTYPE"):  # pragma: no cover
+    if not hasattr(ctypes, "WINFUNCTYPE"):
         return None
     if _win_dll is None:
         _win_dll = ctypes.WinDLL("user32", use_last_error=True)
@@ -112,7 +112,7 @@ class InputGuard:
 
     def _pump(self, ready: threading.Event, stop: threading.Event) -> None:
         user32 = _user32()
-        if user32 is None or _KbdProc is None or _MouseProc is None:  # pragma: no cover
+        if user32 is None or _KbdProc is None or _MouseProc is None:
             self._mark()
             ready.set()
             return

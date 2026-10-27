@@ -26,11 +26,11 @@ from backend.core.evidencia_volanteo.layout import (
 )
 from backend.core.evidencia_volanteo.rendering import (
     _environment,
-    _prepare_logos,
     _serialize_pages,
     layout_context,
 )
 from backend.utils.image_data import build_image_uris as _build_image_uris
+from backend.utils.image_data import prepare_logos
 from tests.weasyprint_env import weasyprint_native_available
 
 requires_weasyprint = pytest.mark.skipif(
@@ -236,8 +236,8 @@ def test_pdf_html_cuadrante_matches_preview() -> None:
         "title": doc.title,
         "cuadrante": doc.cuadrante,
         "pages": pages_data,
-        "logo_left": _prepare_logos({})[0],
-        "logo_right": _prepare_logos({})[1],
+        "logo_left": prepare_logos({})[0],
+        "logo_right": prepare_logos({})[1],
         **layout_context(),
     })
     assert "ZONA NORTE" in html

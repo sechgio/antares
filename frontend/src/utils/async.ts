@@ -23,3 +23,13 @@ export async function withTimeout<T>(
     if (timer !== undefined) clearTimeout(timer);
   }
 }
+
+export function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => resolve());
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
+}

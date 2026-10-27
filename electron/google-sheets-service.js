@@ -19,6 +19,8 @@ const { googleApiFetch } = require('./google-api-fetch');
 const {
   findAvailablePort,
   startCallbackServer,
+  generateCodeVerifier: _generateCodeVerifier,
+  generateCodeChallenge: _generateCodeChallenge,
 } = require('./autoimg-oauth-flow');
 const {
   setActiveUser,
@@ -40,14 +42,6 @@ let _pendingRedirectUri = null;
 let _pendingCodeVerifier = null;
 let _pendingOAuthState = null;
 let _callbackFlow = null;
-
-function _generateCodeVerifier() {
-  return crypto.randomBytes(32).toString('base64url');
-}
-
-function _generateCodeChallenge(verifier) {
-  return crypto.createHash('sha256').update(verifier).digest('base64url');
-}
 
 let _sheetId = null;
 let _sheetMeta = null;

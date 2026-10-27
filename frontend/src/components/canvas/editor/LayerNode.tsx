@@ -18,6 +18,7 @@ import { clipPathForLayer } from '../ops/shapePaths';
 import { isTextualLayerType } from '../layerKinds';
 import {
   buildLayerPaintStyle,
+  cssDeclarationsToStyle,
   DEFAULT_LAYER_FONT,
   DEFAULT_LINE_HEIGHT,
   keepSpreadOnlyShadows,
@@ -60,17 +61,10 @@ const imgStyleCache = new WeakMap<CanvasLayer['cssVars'], CSSProperties>();
 function imgStyleFromCssVars(cssVars: CanvasLayer['cssVars']): CSSProperties {
   const cached = imgStyleCache.get(cssVars);
   if (cached) return cached;
-  const style: CSSProperties = {};
-  for (const part of imageContentInlineStyle(cssVars).split(';')) {
-    if (!part) continue;
-    const i = part.indexOf(':');
-    if (i < 0) continue;
-    const prop = part.slice(0, i).trim();
-    const value = part.slice(i + 1).trim();
-    const camel = prop.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase()) as keyof CSSProperties;
-    (style as Record<string, string>)[camel as string] = value;
-  }
-  style.imageRendering = 'auto';
+  const style: CSSProperties = {
+    ...cssDeclarationsToStyle(imageContentInlineStyle(cssVars).split(';')),
+    imageRendering: 'auto',
+  };
   imgStyleCache.set(cssVars, style);
   return style;
 }

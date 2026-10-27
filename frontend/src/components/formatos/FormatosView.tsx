@@ -42,6 +42,7 @@ import {
   pad,
 } from "./formatHelpers";
 import { ensurePdfJs } from "../../lib/pdfjs";
+import { askPdfSavePath } from "../../utils/deliverRenderedDocument";
 import ThemedSelect from "../ui/ThemedSelect";
 import Button from "@/components/ui/Button";
 import { errorMessage } from "@/utils/errors";
@@ -768,17 +769,7 @@ export default function FormatosView() {
   const numMin = selected?.number_min ?? 1;
   const numMax = selected?.number_max ?? 9999999;
   const total = Math.max(0, hasta - desde + 1);
-  const isValid =
-    selected !== null &&
-    desde >= numMin &&
-    hasta >= desde &&
-    total <= maxPages &&
-    hasta <= numMax;
-  const canGenerate =
-    isValid &&
-    (selected?.strategy === "legacy_xobject" ||
-      selected?.strategy === "simple_overlay" ||
-      selected?.has_mapping);
+  const canGenerate = selected !== null && formatCanPreview(selected, desde, hasta);
 
   const fetchFormats = useCallback(async () => {
     setLoadingFormats(true);
@@ -864,15 +855,7 @@ export default function FormatosView() {
     setError(null);
     try {
       const defaultName = buildGeneratedPdfName(selected, desde, hasta);
-      const saveTarget = await api.dialogSave({
-        title: "Guardar PDF",
-        defaultPath: defaultName,
-        filters: [
-          { name: "PDF", extensions: ["pdf"] },
-          { name: "Todos los archivos", extensions: ["*"] },
-        ],
-      });
-      const outputPath = saveTarget.paths[0];
+      const outputPath = await askPdfSavePath(defaultName, "Guardar PDF");
       if (!outputPath) {
         setLoading(false);
         return;

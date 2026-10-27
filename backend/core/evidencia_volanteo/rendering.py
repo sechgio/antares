@@ -23,8 +23,7 @@ from backend.core.jinja_environment import make_cached_jinja_environment, resolv
 from backend.utils.image_data import (
     build_image_uris,
     contain_fit_cm,
-    data_uri_from_b64,
-    valid_b64_image,
+    prepare_logos,
     valid_image_bytes,
 )
 from backend.utils.pdf_html import write_pdf_sanitized
@@ -168,14 +167,6 @@ def _serialize_pages(
     return pages_data
 
 
-def _prepare_logos(logos: dict[str, str | None]) -> tuple[str | None, str | None]:
-    left_raw = logos.get("left")
-    right_raw = logos.get("right")
-    left = data_uri_from_b64(left_raw) if left_raw and valid_b64_image(left_raw) else None
-    right = data_uri_from_b64(right_raw) if right_raw and valid_b64_image(right_raw) else None
-    return left, right
-
-
 def _default_filename(fmt: str) -> str:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     ext = "docx" if fmt == "docx" else "pdf"
@@ -213,7 +204,7 @@ def render_pdf(
         msg = f"Error al cargar plantilla: {exc}"
         raise RenderingError(msg) from exc
 
-    logo_left, logo_right = _prepare_logos(logos)
+    logo_left, logo_right = prepare_logos(logos)
     image_uris = build_image_uris(images, image_paths)
     pages_data = _serialize_pages(document, image_uris)
     filename = _default_filename("pdf")

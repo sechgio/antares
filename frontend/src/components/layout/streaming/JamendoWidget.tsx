@@ -11,6 +11,7 @@ import { useValue } from '../radio/core';
 import { jamendoSource } from './jamendo';
 import type { StreamPlayer } from './player';
 import {
+  formatTrackDuration,
   STREAM_STRINGS,
   StreamAction,
   StreamItemList,
@@ -25,11 +26,6 @@ const T = {
   ...STREAM_STRINGS,
   ...jamendoSource.strings,
 };
-
-function fmtDuration(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-}
 
 function ItemRow({ item, list, player, pending, failed, onChoose }: StreamRowProps) {
   const current = useValue(player.track);
@@ -59,7 +55,7 @@ function ItemRow({ item, list, player, pending, failed, onChoose }: StreamRowPro
           <span className="antares-jamendo-row-artist">{item.artist}</span>
         </span>
         {item.duration > 0 && (
-          <span className="antares-jamendo-row-duration">{fmtDuration(item.duration)}</span>
+          <span className="antares-jamendo-row-duration">{formatTrackDuration(item.duration)}</span>
         )}
       </Button>
     </div>

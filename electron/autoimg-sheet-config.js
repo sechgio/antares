@@ -1,6 +1,6 @@
 const sheets = require('./google-sheets-service');
 const { emitError } = require('./autoimg-notify');
-const { sanitizeErrorMessage } = require('./autoimg-security');
+const { sanitizeErrorText } = require('./autoimg-security');
 const { saveRenameDest, loadRenameDest } = require('./autoimg-user-store');
 const {
   configValueFromRows,
@@ -51,16 +51,18 @@ async function tryUpsertConfigValues(entries) {
     await upsertConfigValues(entries);
     return { persisted: true };
   } catch (error) {
-    const message = sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
+    const message = sanitizeErrorText(error);
     emitError('CONFIG_WRITE_FAILED', message);
     return { persisted: false, error: message };
   }
 }
 
 async function ensureSheetId() {
-  if (sheets.getSheetId()) return sheets.getSheetId();
+  const current = sheets.getSheetId();
+  if (current) return current;
   await sheets.restorePersistedSheet();
-  if (sheets.getSheetId()) return sheets.getSheetId();
+  const restored = sheets.getSheetId();
+  if (restored) return restored;
   let sheetId = '';
   try {
     sheetId = await readConfigValue('SHEET_ID');

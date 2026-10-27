@@ -42,6 +42,7 @@ import {
   type PdfExportScope,
 } from "./pdfExport";
 import { imageToPdfSource, type PdfQuality } from "../../utils/pdfAssets";
+import { askPdfSavePath } from "../../utils/deliverRenderedDocument";
 import DataPreviewModal from "./DataPreviewModal";
 import Step from "./Step";
 import { usePersistedLogos } from "./usePersistedLogos";
@@ -632,15 +633,7 @@ export default function PreviewPanelView() {
         templateName: customTemplate?.name,
         idValue: selectedRows[0]?.idValue,
       });
-      const saveTarget = await api.dialogSave({
-        title: "Guardar PDF",
-        defaultPath: filename,
-        filters: [
-          { name: "PDF", extensions: ["pdf"] },
-          { name: "Todos los archivos", extensions: ["*"] },
-        ],
-      });
-      const outputPath = saveTarget.paths[0];
+      const outputPath = await askPdfSavePath(filename, "Guardar PDF");
       if (!outputPath) return;
 
       setPdfLoadingMessage(

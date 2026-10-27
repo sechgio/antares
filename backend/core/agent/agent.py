@@ -14,7 +14,7 @@ from pathlib import Path
 
 from backend.core.agent import agent_tools, drafts, resource_grants, subagent
 from backend.core.agent import undo as undo_journal
-from backend.core.agent.agent_chat import replay_safe, scrub_secrets, tool_specs
+from backend.core.agent.agent_chat import replay_safe, result_failed, scrub_secrets, tool_specs
 from backend.core.agent.cancel import RunCancelled, _CancelEvent, await_or_cancel
 from backend.core.integrations import mcp_servers
 from backend.core.integrations.types import JsonObject
@@ -112,14 +112,6 @@ def summarize_result(full: str) -> str:
                        **({"isError": True} if result_failed(full) else {})}, ensure_ascii=False)
 
 
-def result_failed(full: str) -> bool:
-    try:
-        data = json.loads(full)
-    except json.JSONDecodeError:
-        return False
-    return isinstance(data, dict) and ("error" in data or data.get("isError") is True)
-
-
 class AgentStore:
     def __init__(self, base_dir: Path | None = None) -> None:
         base = base_dir or user_data_path("ai-agent")
@@ -170,8 +162,6 @@ class AgentStore:
                     except Exception:
                         logger.warning("No se pudo verificar el trabajo de impresión %s", record.get("op_id"), exc_info=True)
                 dirty = True
-        # Retención de copias previas: lo podado deja de ser recuperable y los
-        # dispatches que quedaron a medias se reconcilian con el archivo actual.
         self._undo.prune()
         for record in self._dispatches.values():
             undo = record.get("undo")

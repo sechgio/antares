@@ -783,7 +783,6 @@ it('adjunta archivos y carpetas y los envía por id con el mensaje', async () =>
   expect(attach.mock.calls).toEqual([['files'], ['folder']]);
   expect(screen.getByText('clientes.xlsx')).toBeInTheDocument();
   expect(screen.getByText('fotos')).toBeInTheDocument();
-  // Cada adjunto es una miniatura con su tipo a la vista y el botón de quitar en la esquina.
   const tiles = within(screen.getByLabelText('Adjuntos'));
   expect(tiles.getByText('xlsx')).toBeVisible();
   expect(tiles.getByText('carpeta')).toBeVisible();
@@ -1876,7 +1875,6 @@ it('invoca una skill con «/»: filtra el catálogo, elige con el teclado y env�
     .toEqual(['firmasComprueba firmas', 'pdf-reviewRevisa PDFs', 'informe-tecnicoRedacta informes']);
   fireEvent.keyDown(box, { key: 'ArrowDown' });
   expect(screen.getByRole('option', { name: /pdf-review/ })).toHaveAttribute('aria-selected', 'true');
-  // Solo la fila activa muestra la tecla con la que se elige.
   expect(screen.getByRole('option', { name: /pdf-review/ }).querySelector('kbd')).not.toBeNull();
   expect(screen.getByRole('option', { name: /firmas/ }).querySelector('kbd')).toBeNull();
   expect(screen.getByRole('listbox', { name: 'Skills disponibles' }).closest('.agent-command-palette')).toHaveClass('absolute', 'bottom-full');

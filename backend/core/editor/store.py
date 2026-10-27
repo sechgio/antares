@@ -11,7 +11,12 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
 
-from backend.core.editor.models import EditorContractError, normalize_document, validate_document
+from backend.core.editor.models import (
+    EditorContractError,
+    normalize_document,
+    utc_now_iso,
+    validate_document,
+)
 from backend.utils.lazy import LazySingleton
 from backend.utils.paths import user_data_path
 
@@ -23,14 +28,8 @@ _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _MAX_REQUEST_MEMORY = 512
 
 
-def _utc_now_iso() -> str:
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-
-
 def new_project_document(name: str, project_id: str | None = None) -> dict[str, Any]:  # allowlist: dict[str, Any]
-    now = _utc_now_iso()
+    now = utc_now_iso()
     doc: dict[str, Any] = {  # allowlist: dict[str, Any]
         "id": project_id or uuid.uuid4().hex,
         "schemaVersion": 1,
@@ -221,7 +220,7 @@ class EditorStore:
         copy = json.loads(json.dumps(source))
         copy["id"] = uuid.uuid4().hex
         copy["name"] = (name or f"{source['name']} (copia)")[:120]
-        now = _utc_now_iso()
+        now = utc_now_iso()
         copy["createdAt"] = now
         copy["updatedAt"] = now
         copy = validate_document(copy)

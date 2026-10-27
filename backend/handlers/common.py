@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import base64
 from functools import wraps
 from typing import TYPE_CHECKING, Any, cast
 
+from backend.utils.atomic_write import atomic_output_file
 from backend.utils.i18n import set_locale
 from backend.utils.image_data import decode_b64_payload
 from backend.utils.validators import is_safe_user_path, path_param_violations
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
 def with_locale(fn: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(fn)
@@ -158,3 +160,33 @@ def _validate_path(path: str) -> None:
     if not is_safe_user_path(path):
         msg = f"Path traversal detected: {path}"
         raise ValueError(msg)
+
+
+def finalize_render_export(
+    params: Mapping[str, Any],
+    content: bytes,
+    filename: str,
+    fmt: str,
+    mime_type: str,
+) -> dict[str, object]:
+    output_path = str(params.get("output_path") or "").strip() or None
+    if output_path:
+        resolved = params.get("_resolved_output_path") or output_path
+        with atomic_output_file(
+            resolved, extension=f".{fmt}", write_token=params.get("_write_token")
+        ) as target:
+            target.tmp_path.write_bytes(content)
+        out = target.destination
+        return {
+            "content_base64": "",
+            "saved_path": str(out),
+            "filename": out.name,
+            "format": fmt,
+            "mime_type": mime_type,
+        }
+    return {
+        "content_base64": base64.b64encode(content).decode("ascii"),
+        "filename": filename,
+        "format": fmt,
+        "mime_type": mime_type,
+    }

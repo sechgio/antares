@@ -21,6 +21,7 @@ import {
 } from './core';
 import { createAudiusPlayer, type AudiusPlayer } from './player';
 import {
+  formatTrackDuration,
   StreamAction,
   StreamItemList,
   streamPanelStyle,
@@ -38,11 +39,6 @@ const audiusList: StreamListSource<AudiusTrack, AudiusTrack> = {
   resolve: (item, list) =>
     Promise.resolve({ tracks: [...list], index: Math.max(0, list.indexOf(item)) }),
 };
-
-function _fmtDuration(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-}
 
 function TrackRow({ item: track, list, player, index, onChoose }: StreamRowProps<AudiusTrack, AudiusTrack>) {
   const current = useValue(player.track);
@@ -77,7 +73,7 @@ function TrackRow({ item: track, list, player, index, onChoose }: StreamRowProps
           <span className="antares-audius-row-artist">
             {track.artist}
             {track.duration > 0 && (
-              <span className="antares-audius-row-duration">{_fmtDuration(track.duration)}</span>
+              <span className="antares-audius-row-duration">{formatTrackDuration(track.duration)}</span>
             )}
           </span>
         </span>

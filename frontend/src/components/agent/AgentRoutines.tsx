@@ -15,8 +15,6 @@ function everyText(ms: number): string {
   return `cada ${minutes} min`;
 }
 
-// Rutinas de un agente guardado: encargos recurrentes en cualquiera de sus
-// conversaciones. Las nuevas se crean en su conversación más reciente.
 export default function AgentRoutines({ profileId }: { profileId: string }) {
   const { addToast } = useToast();
   const [sessions, setSessions] = useState<AgentSession[]>([]);

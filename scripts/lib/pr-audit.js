@@ -136,7 +136,6 @@ async function fetchReviews(repo, number) {
   };
 }
 
-// El PR no anuncia cuántos comentarios tiene: la paginación crece solo si la página viene llena.
 async function fetchComments(repo, number) {
   const { items, truncated } = await fetchPagedList(`repos/${repo}/issues/${number}/comments`, MAX_COMMENT_PAGES);
   return { items: items.map(normalizeComment), truncated };

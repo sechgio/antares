@@ -37,6 +37,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Vista previa de HTML en Agent, como en Claude Code: `web_open` acepta la ruta de un `.html` del espacio de trabajo o de una carpeta adjunta (o una dirección `file://`) y lo abre renderizado en el panel del navegador de Antares, servido por un servidor local solo en `127.0.0.1` (puerto libre y prefijo aleatorio en la ruta) desde la carpeta del archivo. Guardar cualquier archivo de esa carpeta recarga la vista previa al momento. Si el servidor no puede arrancar, se abre como `file://`, limitado a la misma carpeta. El resto de localhost y de la red privada sigue bloqueado para el navegador del agente.
 
 ### Changed
+- El arranque en frío queda usable antes: Electron lanza el backend Python antes de crear la ventana y la bandeja, en lugar de después, y el backend termina listo ~300 ms antes (p50 1521 → 1219 ms desde el inicio del proceso) sin retrasar la ventana.
 - Agent recibe con el mensaje un índice de las skills de la biblioteca (nombre, `skill_id` y descripción) y la indicación de cargar con `skills_read` la que encaje con el encargo, sin tener que llamar antes a `skills_list`. El índice solo se reenvía si cambia o tras compactar el contexto, y no aparece en el chat.
 - A partir del paso 32 de los 40 que admite un turno, Agent recibe con cada resultado de herramienta cuántos pasos lleva y la indicación de actualizar el plan y priorizar lo pendiente antes de que el turno se pause para «Reanudar». El aviso solo viaja en la petición al modelo: no se guarda ni se muestra en el chat.
 

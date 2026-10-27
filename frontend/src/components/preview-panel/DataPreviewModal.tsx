@@ -42,6 +42,7 @@ import {
   filterAndSortRows,
   toggleHiddenColumn,
 } from "./utils/modalRows";
+import { normalizePreviewValue } from "./utils";
 import Button from "@/components/ui/Button";
 import {
   getColumnWidthClass,
@@ -977,10 +978,7 @@ export default function DataPreviewModal({
 
                             {visibleHeaders.map((header) => {
                               const rawValue = row[header];
-                              const cellText =
-                                rawValue !== null && rawValue !== undefined
-                                  ? String(rawValue).trim()
-                                  : "";
+                              const cellText = normalizePreviewValue(rawValue, "");
                               const isStatusCol =
                                 header.toUpperCase().includes("ESTADO") ||
                                 header.toUpperCase().includes("STATUS");
@@ -1146,10 +1144,7 @@ export default function DataPreviewModal({
                   </span>
                   {headers.map((header) => {
                     const val = focusedRowData[header];
-                    const text =
-                      val !== null && val !== undefined
-                        ? String(val).trim()
-                        : "";
+                    const text = normalizePreviewValue(val, "");
                     return (
                       <div
                         key={header}
