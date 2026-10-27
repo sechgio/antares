@@ -9,6 +9,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Security
 - Guardar un borrador en una carpeta del equipo (`drafts_save`) ya no se auto-aprueba con el canal Archivos: su carpeta de destino no está confinada a un espacio de trabajo, así que pasa al canal «Otros» y pide aprobación siempre, igual que declara su propio contrato de herramienta.
+- Abrir un artefacto de Agent ya no ejecuta archivos ejecutables: las descargas web y los borradores admiten cualquier extensión, así que «Abrir» consulta la misma lista de veto (`.exe`, `.bat`, `.url`, `.lnk`…) que la política de escritura IPC y rechaza el archivo con un aviso.
 
 ### Fixed
 - La nota de texto al anotar el navegador de Agent ya no se cierra sola al hacer clic, y un clic sin arrastre con el lápiz o una forma ya no deja trazos invisibles que tapaban la selección.

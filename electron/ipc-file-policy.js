@@ -357,6 +357,7 @@ function validateAndResolveWriteParams(params, win, method) {
 }
 
 module.exports = {
+  FORBIDDEN_FALLBACK_EXTENSIONS,
   _maybeResolveFileTokens: maybeResolveFileTokens,
   _collectStagedTokens: collectStagedTokens,
   _cleanupStagedTokens: cleanupStagedTokens,
