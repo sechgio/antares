@@ -30,9 +30,9 @@ assert(JSON.stringify(exportsSpecs.slice(0, 3).map((s) => s.module)) === JSON.st
 
 const browser = require('../electron/agent-browser');
 assert(browser.normalizeUrl('example.com/a') === 'https://example.com/a', 'un dominio sin esquema se abre por https');
-assert(browser.normalizeUrl('http://localhost:5173') === 'http://localhost:5173', 'una URL http se conserva');
+assert(browser.normalizeUrl('http://example.com/a') === 'http://example.com/a', 'una URL http pública se conserva');
 assert(browser.normalizeUrl('clima en Lima').startsWith('https://duckduckgo.com/html/?q=clima%20en%20Lima'), 'un texto libre se busca');
-for (const bad of ['file:///C:/Windows/win.ini', 'javascript:alert(1)', 'chrome://settings', '']) {
+for (const bad of ['file:///C:/Windows/win.ini', 'javascript:alert(1)', 'chrome://settings', 'http://localhost:5173', '']) {
   let threw = false;
   try { browser.normalizeUrl(bad); } catch { threw = true; }
   assert(threw, `el navegador del agente rechaza ${JSON.stringify(bad)}`);
