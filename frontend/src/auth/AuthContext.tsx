@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import type { AppUser } from './types';
 import { reportFrontendError } from '../utils/observability';
+import { useLiveRef } from '../hooks/useLiveRef';
 import { errorMessage } from '@/utils/errors';
 
 const DISABLED_ACCOUNT_MESSAGE =
@@ -74,11 +75,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
-  const loadingRef = useRef(loading);
+  const loadingRef = useLiveRef(loading);
   const clientRef = useRef<AuthClient>(null);
   const authGenRef = useRef(0);
-
-  useEffect(() => { loadingRef.current = loading; }, [loading]);
 
   useEffect(() => {
     mountedRef.current = true;

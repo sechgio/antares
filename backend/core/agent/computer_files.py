@@ -562,6 +562,13 @@ def serialized_size(value: object, *, utf16: bool = False) -> int:
     return len(text)
 
 
+def clip_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    half = limit // 2
+    return f"{text[:half]}\n… [{len(text) - limit} caracteres omitidos] …\n{text[-half:]}"
+
+
 def fit(result: JsonObject, limit: int = _RESULT_BUDGET, *, utf16: bool = False) -> JsonObject:
     def size(value: object) -> int:
         return serialized_size(value, utf16=utf16)

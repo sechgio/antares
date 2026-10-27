@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-READ_ONLY = "read_only"
 ACT = "act"
 ALWAYS_CONFIRM = "always_confirm"
 HANDOFF = "handoff"

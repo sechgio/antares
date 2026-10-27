@@ -23,8 +23,7 @@ from backend.core.jinja_environment import make_cached_jinja_environment, resolv
 from backend.utils.image_data import (
     build_image_uris,
     contain_fit_cm,
-    data_uri_from_b64,
-    valid_b64_image,
+    prepare_logos,
 )
 from backend.utils.pdf_html import write_pdf_sanitized
 
@@ -77,14 +76,6 @@ _environment = make_cached_jinja_environment(
 )
 
 
-def _prepare_logos(logos: dict[str, str | None]) -> tuple[str | None, str | None, str | None]:
-    left_raw = logos.get("left")
-    right_raw = logos.get("right")
-    left = data_uri_from_b64(left_raw) if left_raw and valid_b64_image(left_raw) else None
-    right = data_uri_from_b64(right_raw) if right_raw and valid_b64_image(right_raw) else None
-    return left, right, left or right
-
-
 def _panels_for_export(panels: tuple[Panel, ...], export_mode: ExportMode) -> tuple[Panel, ...]:
     if export_mode == "include_empty":
         return panels
@@ -115,7 +106,8 @@ def render_pdf(
         msg = f"Error al cargar plantilla: {exc}"
         raise RenderingError(msg) from exc
 
-    logo_left, logo_right, logo_center = _prepare_logos(logos)
+    logo_left, logo_right = prepare_logos(logos)
+    logo_center = logo_left or logo_right
 
     image_uris = build_image_uris(images, image_paths)
 

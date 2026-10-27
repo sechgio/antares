@@ -1,4 +1,5 @@
 import { ensurePdfJs } from '../../../lib/pdfjs';
+import { yieldToMain } from '../../../utils/async';
 import {
   DEFAULT_PDF_IMPORT_LIMITS,
   assertPdfFileSize,
@@ -229,13 +230,6 @@ function abortError(): DOMException {
 
 export function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw abortError();
-}
-
-function yieldToMain(): Promise<void> {
-  return new Promise((resolve) => {
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
-    else setTimeout(resolve, 0);
-  });
 }
 
 function addIssue(

@@ -88,7 +88,7 @@ def build_render_plan(snapshot: dict[str, Any], *, assets_dir: Path | None = Non
         else:
             asset = assets_by_id[str(clip["assetId"])]
             input_index = input_index_of_asset[str(asset["id"])]
-        chain, label = _visual_chain(clip, input_index, assets_by_id, canvas_w, canvas_h, fps_num, fps_den, chain_index)
+        chain, label = _visual_chain(clip, input_index, assets_by_id, canvas_w, canvas_h, chain_index)
         chains.append(chain)
         labels_v.append(label)
     for chain_index, clip in enumerate(audio_clips):
@@ -143,8 +143,6 @@ def _visual_chain(
     assets_by_id: dict[str, dict[str, Any]],  # allowlist: dict[str, Any]
     canvas_w: int,
     canvas_h: int,
-    fps_num: int,
-    fps_den: int,
     chain_index: int,
 ) -> tuple[str, str]:
     is_text = clip["kind"] == "text" and not str(clip.get("assetId", ""))
@@ -158,7 +156,7 @@ def _visual_chain(
         duration_s = _s(clip_duration_us(clip))
         parts.append(f"loop=loop=-1:size=1,trim=duration={duration_s},setpts=PTS-STARTPTS")
     else:
-        parts.append(filters.trim_video(int(clip["sourceInUs"]), int(clip["sourceOutUs"]), fps_num, fps_den))
+        parts.append(filters.trim_video(int(clip["sourceInUs"]), int(clip["sourceOutUs"])))
     speed = filters.speed(int(clip["speed"]["num"]), int(clip["speed"]["den"]), has_audio=False)
     if speed:
         parts.append(speed)

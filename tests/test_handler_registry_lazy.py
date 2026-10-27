@@ -206,7 +206,8 @@ def test_every_electron_backend_method_resolves() -> None:
     import json
     from pathlib import Path
 
-    from backend.handlers import HandlerRegistry, _module_for_method
+    from backend.core.ipc_catalog import handler_module_for
+    from backend.handlers import HandlerRegistry
 
     catalog_path = Path(__file__).resolve().parent.parent / "shared" / "ipc-method-catalog.json"
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
@@ -217,7 +218,7 @@ def test_every_electron_backend_method_resolves() -> None:
     ]
     assert methods
 
-    unmapped = [m for m in methods if _module_for_method(m) is None]
+    unmapped = [m for m in methods if handler_module_for(m) is None]
     assert unmapped == []
 
     reg = HandlerRegistry()

@@ -1,8 +1,9 @@
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { CanvasDocument, CanvasLayer } from '../types';
 import { A4_HEIGHT_PX, A4_WIDTH_PX } from '../types';
-import { stripPlaceholderChrome, type FillContext } from '../runtime/renderHtml';
+import { isTruthyCell, stripPlaceholderChrome, type FillContext } from '../runtime/renderHtml';
 import { getActivePageLayers } from '../ops/pages';
+import { indexComponentMasters } from '../ops/components';
 import { parseTableData } from '../ops/tableData';
 import LayerNode from './LayerNode';
 
@@ -37,9 +38,7 @@ export function documentWithFill(doc: CanvasDocument, ctx: FillContext): CanvasD
       if (layer.type === 'checkbox') {
         const key = layer.meta?.key;
         if (!key || ctx.data[key] == null) return layer;
-        const raw = String(ctx.data[key]).toLowerCase();
-        const checked =
-          raw === '1' || raw === 'true' || raw === 'si' || raw === 'sí' || raw === 'x' || raw === 'yes';
+        const checked = isTruthyCell(ctx.data[key]);
         return { ...layer, meta: { ...layer.meta, checked } };
       }
       if (layer.type === 'signature') {
@@ -92,11 +91,7 @@ export default function PageLayerPreview({
     (l): l is CanvasLayer => l.type !== 'frame',
   );
   const layers = pageLayers.filter((l) => l.visible !== false);
-  const masterById = new Map<string, CanvasLayer>();
-  for (const l of pageLayers) {
-    if (l.meta?.componentId) masterById.set(l.meta.componentId, l);
-    else if (l.type === 'component' && !l.meta?.instanceOf) masterById.set(l.id, l);
-  }
+  const masterById = indexComponentMasters(pageLayers);
 
   return (
     <div

@@ -4,10 +4,10 @@ import json
 import logging
 import threading
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from backend.core.design.models import utc_now_iso
 from backend.core.design.types import Memory, Note
 from backend.utils.atomic_write import atomic_write_json
 from backend.utils.paths import user_data_path
@@ -17,11 +17,6 @@ logger = logging.getLogger(__name__)
 MEMORY_VERSION = 1
 MAX_NOTES = 40
 MAX_NOTE_CHARS = 600
-
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 def _clean(text: Any) -> str:
@@ -53,7 +48,7 @@ def normalize_memory(raw: Any) -> Memory:
                 {
                     "id": note_id.strip()[:64] if isinstance(note_id, str) and note_id.strip() else str(uuid.uuid4()),
                     "text": text,
-                    "createdAt": item.get("createdAt") if isinstance(item.get("createdAt"), str) else _now(),
+                    "createdAt": item.get("createdAt") if isinstance(item.get("createdAt"), str) else utc_now_iso(),
                 }
             )
     return {"version": MEMORY_VERSION, "notes": notes}
@@ -94,7 +89,7 @@ class DesignMemory:
         current = self.load()
         if any(str(existing.get("text") or "").strip().lower() == note.lower() for existing in current["notes"]):
             return current
-        current["notes"].append({"id": str(uuid.uuid4()), "text": note, "createdAt": _now()})
+        current["notes"].append({"id": str(uuid.uuid4()), "text": note, "createdAt": utc_now_iso()})
         return self.save(current)
 
     def update(self, note_id: str, text: str) -> Memory:

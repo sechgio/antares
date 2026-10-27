@@ -119,23 +119,24 @@ async function scanNis(folderId, folderName = '') {
   return { nis_map: nis.finalizeNisMap(nisMap) };
 }
 
-async function assertDriveFolder(input) {
+async function _folderMeta(input) {
   const folderId = assertValidFolderId(input);
   const meta = await _driveFetch(`files/${folderId}`, { fields: 'id,name,mimeType' });
   if (meta.mimeType !== 'application/vnd.google-apps.folder') {
     throw new Error('El ID no corresponde a una carpeta de Drive');
   }
+  return meta;
+}
+
+async function assertDriveFolder(input) {
+  const meta = await _folderMeta(input);
   return { folder_id: meta.id, name: meta.name || '' };
 }
 
 async function verifyFolder(input) {
-  const folderId = assertValidFolderId(input);
-  const meta = await _driveFetch(`files/${folderId}`, { fields: 'id,name,mimeType' });
-  if (meta.mimeType !== 'application/vnd.google-apps.folder') {
-    throw new Error('El ID no corresponde a una carpeta de Drive');
-  }
+  const meta = await _folderMeta(input);
   const data = await _driveFetch('files', {
-    q: `'${folderId}' in parents and trashed=false and ${IMAGE_QUERY}`,
+    q: `'${meta.id}' in parents and trashed=false and ${IMAGE_QUERY}`,
     fields: 'nextPageToken,files(name)',
     pageSize: '200',
   });

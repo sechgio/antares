@@ -11,6 +11,7 @@ const {
   notFound,
   validation,
   sessions,
+  profiles: _profiles,
   commitSessions,
   requireSession,
   conversation,
@@ -302,11 +303,6 @@ const MEMORY_SCOPES = new Set(['shared-read', 'own', 'none']);
 const MIN_DAILY_TOKENS = 1000;
 const MAX_DAILY_TOKENS = 100_000_000;
 const SECRET_RE = /(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|bearer\s+[A-Za-z0-9._~+/-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:password|contraseña|api[_ -]?key|token|secret)\s*[:=]\s*\S+)/i;
-
-async function _profiles() {
-  const doc = await shared.state.harness.snapshot(shared.state.ProfilesDoc, ctx());
-  return (doc && doc.profiles) || {};
-}
 
 function _text(value, label, max, required = false) {
   const text = String(value ?? '').trim();

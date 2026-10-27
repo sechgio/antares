@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import threading
 import uuid
 from collections import OrderedDict
@@ -9,7 +8,7 @@ from typing import Any, cast
 from backend.core.panel_aviso_corte import build_panels, parse_excel_bytes, render_docx, render_pdf
 from backend.core.panel_aviso_corte.models import MAX_EXCEL_ROWS, ExcelSource, ExportMode, MatchRule, MatchStrategy
 from backend.core.panel_aviso_corte.serialization import deserialize_panel
-from backend.handlers.common import validate_params, with_locale
+from backend.handlers.common import finalize_render_export, validate_params, with_locale
 from backend.utils.atomic_write import atomic_output_file
 from backend.utils.image_data import decode_b64_payload
 
@@ -116,7 +115,6 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
     image_paths_raw = params.get("image_paths") or {}
     fmt = str(params.get("format", "pdf")).lower()
     template_id = str(params.get("template_id") or "").strip() or None
-    output_path = str(params.get("output_path") or "").strip() or None
     if not panels_raw:
         msg = "panels es requerido"
         raise ValueError(msg)
@@ -146,27 +144,7 @@ def panel_aviso_corte_render_pdf(params: dict[str, Any]) -> dict[str, Any]:
             template_id=template_id,
         )
         mime_type = "application/pdf"
-    if output_path:
-        resolved = params.get("_resolved_output_path") or output_path
-        with atomic_output_file(
-            resolved, extension=f".{fmt}", write_token=params.get("_write_token")
-        ) as target:
-            target.tmp_path.write_bytes(content)
-        out = target.destination
-        return {
-            "content_base64": "",
-            "saved_path": str(out),
-            "filename": out.name,
-            "format": fmt,
-            "mime_type": mime_type,
-        }
-    encoded = base64.b64encode(content).decode("ascii")
-    return {
-        "content_base64": encoded,
-        "filename": filename,
-        "format": fmt,
-        "mime_type": mime_type,
-    }
+    return finalize_render_export(params, content, filename, fmt, mime_type)
 
 @with_locale
 @validate_params()

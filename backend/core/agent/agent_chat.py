@@ -66,6 +66,14 @@ def scrub_secrets(value: Any) -> Any:
         return [scrub_secrets(item) for item in value]
     return value
 
+
+def result_failed(full: str) -> bool:
+    try:
+        data = json.loads(full)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(data, dict) and ("error" in data or data.get("isError") is True)
+
 _SYSTEM_PROMPT = (
     "Eres el agente de Antares, una app de escritorio de documentos e imágenes. "
     "Responde en español. Tienes herramientas para consultar el estado de la app "

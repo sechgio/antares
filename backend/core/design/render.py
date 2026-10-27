@@ -58,7 +58,7 @@ def _font_stack(name: str) -> str:
     return f'"{name}"'
 
 
-def _px_ratio(width_mm: float, height_mm: float) -> float:
+def _px_ratio(width_mm: float) -> float:
     ratio: float = (width_mm / 210.0) ** 0.5 * 0.98
     return max(0.72, min(1.45, ratio))
 
@@ -146,7 +146,7 @@ def render_html(document: JsonObject, *, notes: bool = False) -> str:
     theme: dict[str, str] = theme_raw if isinstance(theme_raw, dict) else {}
     width = float(page.get("widthMm") or 210)
     height = float(page.get("heightMm") or 297)
-    ratio = _px_ratio(width, height)
+    ratio = _px_ratio(width)
 
     pad_v = round(width * 0.075, 2)
     pad_h = round(height * 0.075, 2)

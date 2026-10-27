@@ -14,7 +14,7 @@ from pathlib import Path
 
 from backend.core.agent import agent_tools, drafts, resource_grants, subagent
 from backend.core.agent import undo as undo_journal
-from backend.core.agent.agent_chat import replay_safe, scrub_secrets, tool_specs
+from backend.core.agent.agent_chat import replay_safe, result_failed, scrub_secrets, tool_specs
 from backend.core.agent.cancel import RunCancelled, _CancelEvent, await_or_cancel
 from backend.core.integrations import mcp_servers
 from backend.core.integrations.types import JsonObject
@@ -110,14 +110,6 @@ def summarize_result(full: str) -> str:
     preview = full[: _MAX_TOOL_RESULT_CHARS - 200]
     return json.dumps({"truncated": True, "total_chars": len(full), "preview": preview,
                        **({"isError": True} if result_failed(full) else {})}, ensure_ascii=False)
-
-
-def result_failed(full: str) -> bool:
-    try:
-        data = json.loads(full)
-    except json.JSONDecodeError:
-        return False
-    return isinstance(data, dict) and ("error" in data or data.get("isError") is True)
 
 
 class AgentStore:
