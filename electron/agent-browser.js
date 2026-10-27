@@ -217,12 +217,54 @@ function isWeb(url) {
   }
 }
 
+// El agente no debe sondear servicios locales ni la red privada (p. ej. por
+// inyección de prompt): bloqueamos localhost e IP literales privadas. Los
+// nombres DNS que resuelven a IP privadas quedan fuera de este filtro.
+function isPrivateIpv4(ip) {
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((n) => !(n >= 0 && n <= 255))) return true;
+  if (parts[0] === 0 || parts[0] === 10 || parts[0] === 127) return true;
+  if (parts[0] === 169 && parts[1] === 254) return true;
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+  if (parts[0] === 192 && parts[1] === 168) return true;
+  if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return true;
+  return parts[0] >= 224;
+}
+
+function isPrivateHostname(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (host.includes(':')) {
+    if (host === '::' || host === '::1' || host.startsWith('::ffff:')) return true;
+    if (/^f[cd][0-9a-f]{2}:/.test(host)) return true;
+    if (/^fe[89ab][0-9a-f]:/.test(host)) return true;
+    return false;
+  }
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) ? isPrivateIpv4(host) : false;
+}
+
+function isAllowedWebUrl(url) {
+  if (!isWeb(url)) return false;
+  try {
+    return !isPrivateHostname(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function publicWebUrl(url) {
+  if (isPrivateHostname(new URL(url).hostname)) {
+    throw new Error('El navegador de Agent no accede a direcciones locales ni de la red privada');
+  }
+  return url;
+}
+
 function normalizeUrl(raw) {
   const value = String(raw || '').trim();
   if (!value) throw new Error('Indica la dirección o la búsqueda');
-  if (isWeb(value)) return value;
+  if (isWeb(value)) return publicWebUrl(value);
   if (/^[a-z][a-z0-9+.-]*:/i.test(value) && !/^[\w.-]+:\d+/.test(value)) throw new Error('Solo se admiten direcciones http y https');
-  if (/^[\w-]+(\.[\w-]+)+(:\d+)?(\/\S*)?$/.test(value)) return `https://${value}`;
+  if (/^[\w-]+(\.[\w-]+)+(:\d+)?(\/\S*)?$/.test(value)) return publicWebUrl(`https://${value}`);
   return `https://duckduckgo.com/html/?q=${encodeURIComponent(value)}`;
 }
 
@@ -269,6 +311,7 @@ function downloadName(value) {
 function startDownload(url, drafts) {
   if (!drafts) throw new Error('Los borradores requieren una conversación');
   if (!isWeb(url)) throw new Error('Indica la dirección http(s) del archivo');
+  publicWebUrl(url);
   const policy = require('./agent-browser-policy');
   if (policy.isBlocked(policy.hostOf(url))) {
     throw new Error('Dominio bloqueado por la política del navegador del agente');
@@ -410,14 +453,14 @@ function ensureTab(id) {
     netLog.clear();
   }
   contents.setWindowOpenHandler(({ url }) => {
-    if (isWeb(url)) setImmediate(() => contents.loadURL(url).catch(() => {}));
+    if (isAllowedWebUrl(url)) setImmediate(() => contents.loadURL(url).catch(() => {}));
     return { action: 'deny' };
   });
   contents.on('will-navigate', (event, url) => {
-    if (!isWeb(url)) event.preventDefault();
+    if (!isAllowedWebUrl(url)) event.preventDefault();
   });
   contents.on('will-redirect', (event, url) => {
-    if (!isWeb(url)) event.preventDefault();
+    if (!isAllowedWebUrl(url)) event.preventDefault();
   });
   const userInput = (_event, input) => {
     if (input.type === 'mouseDown') {
@@ -1416,4 +1459,4 @@ function close() {
   pendingMouseInputs.clear();
 }
 
-module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, state, dock, capture, inspect, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };
+module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, isPrivateHostname, isAllowedWebUrl, state, dock, capture, inspect, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };
