@@ -15,7 +15,7 @@
     "shell_run": "terminal",
     "fs_write": "files",
     "fs_edit": "files",
-    "drafts_save": "files",
+    "drafts_save": "other",
     "artifact_print": "documents",
     "document_generate": "documents",
     "canvas_fill_fields": "documents",

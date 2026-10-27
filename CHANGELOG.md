@@ -7,6 +7,9 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+- Guardar un borrador en una carpeta del equipo (`drafts_save`) ya no se auto-aprueba con el canal Archivos: su carpeta de destino no está confinada a un espacio de trabajo, así que pasa al canal «Otros» y pide aprobación siempre, igual que declara su propio contrato de herramienta.
+
 ### Fixed
 - La nota de texto al anotar el navegador de Agent ya no se cierra sola al hacer clic, y un clic sin arrastre con el lápiz o una forma ya no deja trazos invisibles que tapaban la selección.
 - Agent ya no edita a ciegas: `fs_edit` y `fs_write` con `overwrite` exigen haber leído el archivo con `fs_read` en la conversación y lo rechazan si cambió desde esa lectura (otra aplicación, el usuario o un deshacer), en lugar de pisar contenido que el modelo no vio. Lo que el agente escribe o edita cuenta como leído. `fs_edit` encuentra un fragmento de líneas completas aunque difiera solo en espacios finales, si la coincidencia es única, y explica cuándo el fragmento trae los números de línea de `fs_read`. La aprobación de un comando que borra o descarta archivos (`Remove-Item`, `del`, `git reset --hard`, `git clean`…) avisa de que Antares no puede deshacerlo.
