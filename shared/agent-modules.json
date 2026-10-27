@@ -142,11 +142,13 @@
     },
     "connections": {
       "label": "Conexiones",
-      "aliases": ["conexiones", "drive", "google-drive", "sheets", "hojas-de-google", "onedrive", "excel"],
+      "aliases": ["conexiones", "drive", "google-drive", "sheets", "hojas-de-google", "onedrive", "excel", "gmail", "correo",
+        "outlook", "github"],
       "handlers": [],
       "methods": ["gdrive_search", "gdrive_get", "gdrive_download", "gdrive_upload", "gsheets_metadata", "gsheets_read",
         "gsheets_update_range", "gsheets_append", "onedrive_search", "onedrive_get", "onedrive_download", "onedrive_upload",
-        "excel_worksheets", "excel_read_range", "excel_update_range"],
+        "excel_worksheets", "excel_read_range", "excel_update_range", "gmail_search", "gmail_get", "outlook_search",
+        "outlook_get", "github_workflow_runs", "github_run_get", "mcp_status"],
       "native": true
     },
     "computer": {

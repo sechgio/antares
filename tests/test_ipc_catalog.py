@@ -187,7 +187,7 @@ def test_agent_reasoning_selection_is_a_renderer_command_not_an_agent_tool():
     entry = _catalog()["methods"]["agent_session_reasoning_set"]
     assert entry["handler"] == "native:agent"
     assert entry["inputSchema"]["required"] == ["id", "reasoning_effort"]
-    assert entry["inputSchema"]["properties"]["reasoning_effort"]["enum"] == ["minimal", "low", "medium", "high", "xhigh"]
+    assert entry["inputSchema"]["properties"]["reasoning_effort"]["enum"] == ["minimal", "low", "medium", "high", "xhigh", "max"]
     assert "agent_session_reasoning_set" not in ORCHESTRATABLE_METHODS
 
 

@@ -202,3 +202,13 @@ export const METHOD_LABELS: Record<string, string> = {
   memory_remember: 'Guardar una preferencia o un hecho',
   procedure_learn: 'Guardar un procedimiento comprobado',
 };
+
+// mcp_servers.agent_tool_name: mcp2__<servidor>-<hash>__<herramienta>-<hash>.
+const MCP_TOOL = /^mcp2__(.+)-[0-9a-f]{12}__(.+)-[0-9a-f]{12}$/;
+
+/** Etiqueta legible de una herramienta: la del catálogo, la de su servidor MCP o el nombre. */
+export function methodLabel(name: string): string {
+  if (Object.prototype.hasOwnProperty.call(METHOD_LABELS, name)) return METHOD_LABELS[name];
+  const mcp = MCP_TOOL.exec(name);
+  return mcp ? `MCP ${mcp[1]} · ${mcp[2]}` : name;
+}

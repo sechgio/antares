@@ -1,16 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppWindow, ArrowLeft, ArrowRight, Ban, BookOpen, Camera, Check, ChevronDown, ChevronRight, Circle, CircleCheck, CircleDot, CircleX, Copy, Download, FilePen, FileText, FolderOpen, Globe, Hand, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Network, Package, RotateCw, Route, Search, ShieldCheck, Terminal, TriangleAlert, Upload, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { agentApi, AgentApproval, AgentChannel, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
+import type { agentApi, AgentApproval, AgentArtifact, AgentChannel, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
 import Toggle from '../ui/Toggle';
 import AgentAvatar from './AgentAvatar';
 import BrokerReceipt from './BrokerReceipt';
+import { DiffStats, FileChangeStep, FileDiff } from './FileDiff';
+import { fileChange } from './diffLines';
 import MessageMarkdown from './MessageMarkdown';
 import Reasoning from './Reasoning';
 import SubagentTrace from './SubagentTrace';
 import { channelLabel } from './channels';
-import { METHOD_LABELS } from './methodLabels';
+import { METHOD_LABELS, methodLabel } from './methodLabels';
 
 interface AgentIdentity {
   seed: string;
@@ -99,7 +101,7 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   skills_read: BookOpen,
 };
 
-const KEY_PARAMS = ['path', 'url', 'query', 'target', 'title', 'keys', 'text', 'name', 'id'];
+const KEY_PARAMS = ['path', 'url', 'query', 'target', 'title', 'keys', 'text', 'name', 'skill_id', 'id'];
 
 function keyArgument(params: Record<string, unknown>): string | null {
   for (const key of KEY_PARAMS) {
@@ -276,20 +278,27 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
         <ChevronRight size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${open ? 'rotate-90' : ''}`} aria-hidden="true" />
       </button>
       {open && (
-        <div className={`${TASK_BODY} group/term relative mb-1.5 mt-1`}>
-          {!live && output?.text && (
-            <div className="absolute right-4 top-1.5 z-10">
-              <CopyButton text={output.text} label="Copiar salida" className="group-hover/term:opacity-100" />
+        <div className={`${TASK_BODY} group/term mb-1.5 mt-1`}>
+          <div className="agent-terminal overflow-hidden rounded-lg border border-[var(--border-subtle)]">
+            <div className="flex min-h-7 items-center gap-2 border-b border-[var(--border-subtle)] px-3 text-[11px] text-[var(--text-muted)]">
+              <Terminal size={12} className="shrink-0" aria-hidden="true" />
+              <span className="shrink-0 font-medium">Terminal</span>
+              {typeof call.params.cwd === 'string' && <span className="min-w-0 truncate font-mono" title={call.params.cwd}>{call.params.cwd}</span>}
+              <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                {live ? <span className="agent-shimmer">en curso</span>
+                  : output?.exit != null && <span className={exitFailed ? 'text-[var(--accent-red)]' : 'text-[var(--accent-green)]'}>salida {output.exit}</span>}
+                {!live && output?.text && <CopyButton text={output.text} label="Copiar salida" className="group-hover/term:opacity-100" />}
+              </span>
             </div>
-          )}
-          <div ref={logRef} role="log" aria-label={`Salida de ${command}`} aria-busy={live}
-            onScroll={(event) => { const log = event.currentTarget; followOutputRef.current = log.scrollHeight - log.scrollTop - log.clientHeight < 48; }}
-            className="agent-terminal max-h-64 overflow-auto rounded-lg border border-[var(--border-subtle)] px-3 py-2.5 font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)]">
-            <div className="whitespace-pre-wrap break-all text-[var(--text-primary)]"><span className="select-none text-[var(--text-muted)]">&gt; </span>{command}</div>
-            {lines.map((line, i) => (
-              <div key={i} className={`whitespace-pre-wrap break-all ${output && i >= output.errorFrom ? 'text-[var(--accent-red)]' : ''}`}>{line || ' '}</div>
-            ))}
-            {live && <span className="agent-terminal-cursor" aria-hidden="true" />}
+            <div ref={logRef} role="log" aria-label={`Salida de ${command}`} aria-busy={live}
+              onScroll={(event) => { const log = event.currentTarget; followOutputRef.current = log.scrollHeight - log.scrollTop - log.clientHeight < 48; }}
+              className="max-h-72 overflow-auto px-3 py-2.5 font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)]">
+              <div className="whitespace-pre-wrap break-all text-[var(--text-primary)]"><span className="select-none text-[var(--accent-green)]">$ </span>{command}</div>
+              {lines.map((line, i) => (
+                <div key={i} className={`whitespace-pre-wrap break-all ${output && i >= output.errorFrom ? 'text-[var(--accent-red)]' : ''}`}>{line || ' '}</div>
+              ))}
+              {live && <span className="agent-terminal-cursor" aria-hidden="true" />}
+            </div>
           </div>
         </div>
       )}
@@ -300,6 +309,9 @@ function TerminalStep({ call }: { call: AgentToolCall }) {
 function ToolCallStep({ call }: { call: AgentToolCall }) {
   if (call.name === 'subagent_run') return <SubagentTrace call={call} />;
   if (call.name === 'shell_run') return <TerminalStep call={call} />;
+  if (fileChange(call.name, call.params)) {
+    return <FileChangeStep call={call} status={CALL_STATUS_LABEL[call.status] ?? call.status} className={TASK_ROW} />;
+  }
   const detail = call.result || null;
   const params = Object.keys(call.params).length > 0 ? JSON.stringify(call.params, null, 2) : null;
   const failed = call.status === 'failed';
@@ -311,7 +323,7 @@ function ToolCallStep({ call }: { call: AgentToolCall }) {
     <>
       <Icon size={14} className={`shrink-0 ${live ? 'animate-spin text-[var(--text-secondary)]' : failed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`} aria-hidden="true" />
       <span title={arg ?? undefined} className={`min-w-0 truncate transition-colors ${failed ? 'text-[var(--accent-red)]' : denied ? 'text-[var(--text-muted)]' : 'group-hover:text-[var(--text-primary)]'}`}>
-        {METHOD_LABELS[call.name] ?? call.name}
+        {methodLabel(call.name)}
         {arg && <span className={`ml-1.5 font-mono text-[12px] ${failed ? '' : 'text-[var(--text-muted)]'}`}>{arg}</span>}
       </span>
       {call.gated && <ShieldCheck size={12} className="shrink-0 text-[var(--text-muted)]" aria-label="Acción sensible" />}
@@ -366,66 +378,199 @@ function CopyButton({ text, label = 'Copiar respuesta', className = 'group-hover
   );
 }
 
-function ToolSteps({ calls, onUndo }: {
-  calls: AgentToolCall[];
-  onUndo?: (callId: string) => Promise<void>;
-}) {
-  const [expanded, setExpanded] = useState<boolean | null>(null);
-  const attention = calls.some((c) => !['done', 'submitted'].includes(c.status));
-  const open = expanded ?? attention;
-  const item = (call: AgentToolCall) => (
-    <div key={call.id}>
-      <ToolCallStep call={call} />
-      {call.gated && <BrokerReceipt call={call} onUndo={onUndo} />}
-    </div>
-  );
-  if (calls.length <= 2) return <>{calls.map((c) => item(c))}</>;
-  const done = calls.filter((c) => c.status === 'done').length;
-  const review = calls.filter((c) => c.status === 'failed' || c.status === 'interrupted').length;
+type ActivityEntry =
+  | { kind: 'reasoning'; key: string; text: string; ms?: number; streaming: boolean }
+  | { kind: 'note'; key: string; text: string }
+  | { kind: 'call'; key: string; call: AgentToolCall };
+
+const NEEDS_REVIEW = ['failed', 'interrupted', 'pending'];
+
+function workDuration(ms: number): string {
+  const seconds = Math.max(1, Math.round(ms / 1000));
+  return seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+}
+
+function liveActivity(entries: ActivityEntry[]): string {
+  const calls = entries.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []));
+  const running = [...calls].reverse().find((call) => call.status === 'running');
+  if (running) {
+    if (running.name === 'shell_run' && typeof running.params.command === 'string') return `Ejecutando ${running.params.command}`;
+    return METHOD_LABELS[running.name] ?? running.name;
+  }
+  if (calls.some((call) => call.status === 'pending')) return 'Esperando tu aprobación';
+  if (entries.some((entry) => entry.kind === 'reasoning' && entry.streaming)) return 'Pensando…';
+  return 'Trabajando…';
+}
+
+function ActivityItem({ entry, onUndo }: { entry: ActivityEntry; onUndo?: (callId: string) => Promise<void> }) {
+  if (entry.kind === 'reasoning') return <Reasoning text={entry.text} streaming={entry.streaming} ms={entry.ms} />;
+  if (entry.kind === 'note') {
+    return (
+      <div className="agent-activity-note py-1 text-[13px] leading-5 text-[var(--text-secondary)]">
+        <MessageMarkdown text={entry.text} />
+      </div>
+    );
+  }
   return (
-    <details className="group/steps" open={open}>
-      <summary className={`agent-tool-row ${TASK_ROW} w-fit cursor-pointer list-none hover:text-[var(--text-primary)]`}
-        onClick={(event) => { event.preventDefault(); setExpanded(!open); }}>
-        <Wrench size={14} className="shrink-0 text-[var(--text-muted)]" aria-hidden="true" />
-        {calls.length} pasos · {done} completados
-        {review > 0 && <span className="text-[var(--accent-red)]">· {review} por revisar</span>}
-        <ChevronRight size={14} className="shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-open/steps:rotate-90" aria-hidden="true" />
-      </summary>
-      <div className={`${TASK_BODY} mt-0.5`}>{calls.map((c) => item(c))}</div>
-    </details>
+    <div>
+      <ToolCallStep call={entry.call} />
+      {entry.call.gated && <BrokerReceipt call={entry.call} onUndo={onUndo} />}
+    </div>
   );
 }
 
-function AssistantBlock({ msg, agent, onUndo }: {
-  msg: AgentMessage;
-  agent?: AgentIdentity;
+function Activity({ entries, working, answering, duration, onUndo }: {
+  entries: ActivityEntry[];
+  working: boolean;
+  answering: boolean;
+  duration?: number;
   onUndo?: (callId: string) => Promise<void>;
 }) {
-  const calls = msg.tool_calls ?? [];
-  return (
-    <div className="agent-trace-in group flex items-start gap-2.5" data-tools-only={!msg.content && !msg.reasoning && calls.length > 0 ? '' : undefined}>
-      <div className="min-w-0 flex-1 space-y-1.5">
-        {(msg.content || msg.reasoning) && (
-          <div className="flex items-center gap-1.5">
-            {agent && <AgentAvatar seed={agent.seed} color={agent.color} name={agent.name} size={18} working={!!msg.partial} />}
-            <span className="text-[12px] font-medium leading-5 text-[var(--text-secondary)]">
-              {agent?.name ?? 'Agente'}
-            </span>
-            {!msg.partial && msg.content && <CopyButton text={msg.content} />}
-          </div>
-        )}
-        {msg.reasoning && <Reasoning text={msg.reasoning} streaming={!!msg.partial && !msg.content} ms={msg.reasoning_ms} />}
-        {msg.content && (
-          <div className="agent-message-answer min-w-0 max-w-full py-1 text-[14px] leading-[23px] text-[var(--text-primary)]">
-            <MessageMarkdown text={msg.content} streaming={!!msg.partial} />
-          </div>
-        )}
-        {calls.length > 0 && (
-          <div className="w-full max-w-[min(620px,100%)] space-y-0.5">
-            <ToolSteps calls={calls} onUndo={onUndo} />
-          </div>
-        )}
+  const [expanded, setExpanded] = useState<boolean | null>(null);
+  const calls = entries.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []));
+  const live = working && !answering;
+  const open = expanded ?? (live || calls.some((call) => NEEDS_REVIEW.includes(call.status)));
+  if (entries.length <= 2) {
+    return (
+      <div className="w-full max-w-[min(620px,100%)] space-y-0.5">
+        {entries.map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} />)}
       </div>
+    );
+  }
+  const review = calls.filter((call) => call.status === 'failed' || call.status === 'interrupted').length;
+  const icons = [...new Set(calls.map((call) => (call.name === 'shell_run' ? Terminal : TOOL_ICONS[call.name] ?? Wrench)))].slice(0, 4);
+  const steps = `${calls.length} ${calls.length === 1 ? 'paso' : 'pasos'}`;
+  return (
+    <div className="w-full max-w-[min(620px,100%)]">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setExpanded(!open)}
+        className={`agent-tool-row group ${TASK_ROW} w-fit max-w-full pr-2 text-left hover:text-[var(--text-primary)]`}
+      >
+        {live ? <Loader2 size={14} className="shrink-0 animate-spin text-[var(--text-secondary)]" aria-hidden="true" />
+          : (
+            <span className="agent-activity-icons flex shrink-0 items-center" aria-hidden="true">
+              {icons.map((Icon, index) => (
+                <span key={index} className="flex size-[18px] items-center justify-center rounded-full bg-[var(--bg-input)] text-[var(--text-muted)]">
+                  <Icon size={11} />
+                </span>
+              ))}
+            </span>
+          )}
+        <span className={`min-w-0 truncate ${live ? 'agent-shimmer' : ''}`}>
+          {live ? liveActivity(entries) : duration ? `Trabajó durante ${workDuration(duration)} · ${steps}` : steps}
+        </span>
+        {review > 0 && <span className="shrink-0 text-[var(--accent-red)]">· {review} por revisar</span>}
+        <ChevronRight size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${open ? 'rotate-90' : ''}`} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className={`${TASK_BODY} agent-activity-body mt-0.5 space-y-0.5`}>
+          {entries.map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export type TimelineTurn =
+  | { key: number; role: 'user'; message: AgentMessage }
+  | { key: number; role: 'assistant'; messages: AgentMessage[]; startedAt?: number };
+
+/** Agrupa los mensajes consecutivos del agente en un único turno: su trabajo y, al final, la respuesta. */
+export function groupTurns(messages: AgentMessage[]): TimelineTurn[] {
+  const turns: TimelineTurn[] = [];
+  let startedAt: number | undefined;
+  messages.forEach((message, index) => {
+    if (message.role === 'tool_result') return;
+    if (message.role === 'user') {
+      startedAt = message.ts;
+      turns.push({ key: index, role: 'user', message });
+      return;
+    }
+    const last = turns[turns.length - 1];
+    if (last?.role === 'assistant') last.messages.push(message);
+    else turns.push({ key: index, role: 'assistant', messages: [message], startedAt });
+  });
+  return turns;
+}
+
+function resultArtifactId(result?: string | null): string | null {
+  if (!result) return null;
+  try {
+    const data: unknown = JSON.parse(result);
+    if (data && typeof data === 'object' && 'artifact' in data && data.artifact && typeof data.artifact === 'object'
+      && 'id' in data.artifact && typeof data.artifact.id === 'string') return data.artifact.id;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/** Sitúa cada resultado en el turno que lo produjo; un mismo archivo repetido solo aparece en su última versión. */
+export function placeArtifacts(turns: TimelineTurn[], artifacts: AgentArtifact[]): Map<number, AgentArtifact[]> {
+  const latest = new Map<string, AgentArtifact>();
+  for (const artifact of artifacts) {
+    if (artifact.files.length === 0) continue;
+    const signature = artifact.files.map((file) => file.sha256).join(',');
+    latest.delete(signature);
+    latest.set(signature, artifact);
+  }
+  const owner = new Map<string, number>();
+  for (const turn of turns) {
+    if (turn.role !== 'assistant') continue;
+    for (const call of turn.messages.flatMap((message) => message.tool_calls ?? [])) {
+      const id = resultArtifactId(call.result);
+      if (id) owner.set(id, turn.key);
+    }
+  }
+  const fallback = [...turns].reverse().find((turn) => turn.role === 'assistant')?.key ?? -1;
+  const placed = new Map<number, AgentArtifact[]>();
+  for (const artifact of latest.values()) {
+    const key = owner.get(artifact.id) ?? fallback;
+    placed.set(key, [...(placed.get(key) ?? []), artifact]);
+  }
+  return placed;
+}
+
+export function AssistantTurn({ messages, agent, onUndo, startedAt, results }: {
+  messages: AgentMessage[];
+  agent?: AgentIdentity;
+  onUndo?: (callId: string) => Promise<void>;
+  startedAt?: number;
+  results?: ReactNode;
+}) {
+  const last = messages[messages.length - 1];
+  const answer = last?.content && !last.tool_calls?.length ? last : null;
+  const entries: ActivityEntry[] = [];
+  messages.forEach((message, index) => {
+    if (message.reasoning) {
+      entries.push({ kind: 'reasoning', key: `reasoning-${index}`, text: message.reasoning, ms: message.reasoning_ms,
+        streaming: !!message.partial && !message.content });
+    }
+    if (message.content && message !== answer) entries.push({ kind: 'note', key: `note-${index}`, text: message.content });
+    for (const call of message.tool_calls ?? []) entries.push({ kind: 'call', key: call.id, call });
+  });
+  const working = messages.some((message) => message.partial)
+    || entries.some((entry) => entry.kind === 'call' && ['running', 'queued'].includes(entry.call.status));
+  const duration = !working && startedAt && last && last.ts > startedAt ? last.ts - startedAt : undefined;
+  const thought = entries.length === 1 && entries[0].kind === 'reasoning' ? entries[0] : null;
+  return (
+    <div className="agent-trace-in agent-turn group space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        {agent && <AgentAvatar seed={agent.seed} color={agent.color} name={agent.name} size={18} working={working} />}
+        <span className="text-[12px] font-medium leading-5 text-[var(--text-secondary)]">{agent?.name ?? 'Agente'}</span>
+        {answer && !answer.partial && <CopyButton text={answer.content} />}
+      </div>
+      {thought
+        ? <Reasoning text={thought.text} streaming={thought.streaming} ms={thought.ms} />
+        : entries.length > 0 && <Activity entries={entries} working={working} answering={!!answer} duration={duration} onUndo={onUndo} />}
+      {answer && (
+        <div className="agent-message-answer min-w-0 max-w-full py-1 text-[14px] leading-[23px] text-[var(--text-primary)]">
+          <MessageMarkdown text={answer.content} streaming={!!answer.partial} />
+        </div>
+      )}
+      {results}
     </div>
   );
 }
@@ -436,7 +581,7 @@ export function MessageRow({ msg, agent, onUndo }: {
   onUndo?: (callId: string) => Promise<void>;
 }) {
   if (msg.role === 'tool_result') return null;
-  return msg.role === 'user' ? <UserBubble msg={msg} /> : <AssistantBlock msg={msg} agent={agent} onUndo={onUndo} />;
+  return msg.role === 'user' ? <UserBubble msg={msg} /> : <AssistantTurn messages={[msg]} agent={agent} onUndo={onUndo} />;
 }
 
 export function ApprovalCard({
@@ -459,8 +604,12 @@ export function ApprovalCard({
   const label = Object.prototype.hasOwnProperty.call(METHOD_LABELS, approval.method) ? METHOD_LABELS[approval.method] : undefined;
   const filename = typeof params.filename === 'string' && params.filename ? params.filename : params.name;
   const appGrant = typeof context?.computer?.app === 'string' ? context.computer.app : null;
+  // El contexto de aprobación MCP trae la herramienta real y el nombre visible del servidor.
+  const mcpServer = typeof context?.account === 'string' && context.account.startsWith('MCP: ') ? context.account.slice(5) : null;
   const action = approval.method === 'drafts_save' && typeof filename === 'string'
-    ? `Guardar ${filename}` : label;
+    ? `Guardar ${filename}`
+    : label ?? (mcpServer && typeof context?.tool === 'string' ? `Usar ${context.tool} en ${mcpServer}`
+      : methodLabel(approval.method) !== approval.method ? methodLabel(approval.method) : undefined);
   const ruleChannel = approval.channel ?? null;
   const channel = channelLabel(ruleChannel);
   const facts = [
@@ -500,6 +649,7 @@ export function ApprovalCard({
   const Icon = approval.method === 'shell_run' ? Terminal
     : Object.prototype.hasOwnProperty.call(TOOL_ICONS, approval.method) ? TOOL_ICONS[approval.method] : ShieldCheck;
   const ruleButtons = !!(onRule && ruleChannel && channel);
+  const change = fileChange(approval.method, params);
   return (
     <div role="group" aria-label="Confirmación de acción" className="agent-approval agent-trace-in">
       <div className="w-full max-w-[min(620px,100%)] overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)]">
@@ -530,6 +680,15 @@ export function ApprovalCard({
               )}
               {facts.map((fact) => <li key={fact} className="break-all">{fact}</li>)}
             </ul>
+          )}
+          {change && (
+            <div className="space-y-1">
+              <p className="flex items-center gap-2 text-[11.5px] leading-4 text-[var(--text-muted)]">
+                {change.whole ? 'Contenido que se escribirá' : 'Cambios que se aplicarán'}
+                <DiffStats change={change} />
+              </p>
+              <FileDiff change={change} className="max-h-56" />
+            </div>
           )}
           <details className="group text-[11.5px] text-[var(--text-muted)]">
             <summary aria-label="Ver detalles de la acción" className="flex w-fit cursor-pointer list-none items-center gap-1 transition-colors hover:text-[var(--text-secondary)]">
@@ -677,7 +836,7 @@ export function ToolGroup({ label, names, enabledNames, onToggle, disabled, expa
       <ul className="mt-1.5 max-h-44 space-y-1 overflow-auto">
         {names.map((n) => (
           <li key={n} className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]" title={n}>
-            <span className="min-w-0 flex-1 truncate">{METHOD_LABELS[n] ?? n}</span>
+            <span className="min-w-0 flex-1 truncate">{methodLabel(n)}</span>
             {onToggle && <Toggle checked={enabledNames?.has(n) ?? true} onChange={(enabled) => onToggle(n, enabled)} disabled={disabled} aria-label={`Habilitar ${n}`} />}
           </li>
         ))}

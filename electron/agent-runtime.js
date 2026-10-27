@@ -265,7 +265,22 @@ function toPublicSession(current) {
   return rest;
 }
 
+// Proveedores IA puede cambiar los niveles de un modelo (capacidad declarada o
+// catálogo nuevo): la lista los muestra al día sin esperar al próximo turno.
+async function _syncListedReasoning() {
+  const ready = new Map();
+  for (const session of Object.values(await sessions())) {
+    if (session.deleted) continue;
+    const key = JSON.stringify([session.provider, session.model]);
+    if (!ready.has(key)) {
+      ready.set(key, await execution.ensureProvider(session.provider, session.model).then(() => true, () => false));
+    }
+    if (ready.get(key)) await _syncReasoning(session).catch(() => {});
+  }
+}
+
 async function sessionsList() {
+  await _syncListedReasoning();
   const result = Object.values(await sessions())
     .filter((s) => !s.deleted)
     .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))
@@ -788,10 +803,13 @@ async function messageSend(params) {
     : { granted: [], rejected: [] };
   const nativeNames = [...shared.toolSpecs.values()].filter((t) => t.kind === 'native').map((t) => t.name);
   const mentions = await bridge('agent_internal_mentions', { text: mentionText, native_tools: nativeNames });
-  if ((mentions.modules || []).length) {
+  // Mencionar un módulo o un servidor MCP habilita sus herramientas desde esta ronda.
+  const mentionedTools = [...execution.moduleToolNames(mentions.modules || []),
+    ...(mentions.mcp_tools || []).filter((name) => shared.toolSpecs.has(name))];
+  if (mentionedTools.length) {
     const current = (await conv.agent(ctx())).tools.map((tool) => tool.name);
     const allows = await execution.profileToolFilter(session);
-    const extra = execution.moduleToolNames(mentions.modules).filter((name) => !current.includes(name) && (!allows || allows(name)));
+    const extra = mentionedTools.filter((name) => !current.includes(name) && (!allows || allows(name)));
     if (current.includes(execution.TOOLS_LOAD) && extra.length) {
       await conv.configure({ tools: [...current, ...extra].map((name) => ({ name })) }, ctx());
     }
