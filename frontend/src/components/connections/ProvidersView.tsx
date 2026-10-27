@@ -228,7 +228,7 @@ export default function ProvidersView() {
                         size="sm"
                         variant="ghost"
                         aria-label={`${p.needs_key ? 'Obtener clave de' : 'Instalar'} ${p.label}`}
-                        onClick={() => window.open(p.docs, '_blank')}
+                        onClick={() => window.open(p.docs, '_blank', 'noopener,noreferrer')}
                       >
                         {p.needs_key ? 'Obtener clave' : 'Cómo instalar'}
                         <ExternalLink size={12} />

@@ -284,9 +284,12 @@ function _assertAllowedRawOutputPath(outRaw) {
       if (!_isUnderStandardUserDir(dir)) {
         throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
       }
-      if (FORBIDDEN_FALLBACK_EXTENSIONS.has(_outputExtension(resolved))) {
-        throw new Error('tipo de archivo no permitido en la ruta de salida');
-      }
+    }
+    // El veto de ejecutables aplica siempre que no haya write root por
+    // diálogo: que la ruta estuviera registrada antes para lectura no
+    // habilita sobrescribir un binario (p. ej. el .exe abierto ayer).
+    if (!isUnderAllowedWriteRoot(dir) && FORBIDDEN_FALLBACK_EXTENSIONS.has(_outputExtension(resolved))) {
+      throw new Error('tipo de archivo no permitido en la ruta de salida');
     }
     const { hasSymlinkAncestor } = require('./path-allowlist');
     if (hasSymlinkAncestor(resolved)) {
