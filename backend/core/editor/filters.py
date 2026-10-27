@@ -11,7 +11,7 @@ def _num(value: Any) -> str:
     return repr(round(f, 6))
 
 
-def trim_video(source_in_us: int, source_out_us: int, fps_num: int, fps_den: int) -> str:
+def trim_video(source_in_us: int, source_out_us: int) -> str:
     start = _us_to_seconds(source_in_us)
     end = _us_to_seconds(source_out_us)
     # trim es semiabierto en el sentido de descartar >= end; se usa un
@@ -130,7 +130,6 @@ def opacity(alpha: float) -> str:
 
 
 def delogo_rects(rects: list[dict[str, Any]], width_px: int, height_px: int) -> list[str]:  # allowlist: dict[str, Any]
-    """FFmpeg exige que el rectángulo quede dentro del fotograma."""
     filters: list[str] = []
     for rect in rects:
         x = round(float(rect["x"]) * width_px)

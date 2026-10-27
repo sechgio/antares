@@ -11,6 +11,7 @@ const {
   notFound,
   validation,
   sessions,
+  profiles: _profiles,
   commitSessions,
   requireSession,
   conversation,
@@ -177,13 +178,9 @@ async function _open(options = {}) {
     const registry = pi.createRegistry();
     // Retención larga: una aprobación o una pausa de más de 5 minutos no vacía
     // la caché del prefijo (solo la reciben las APIs oficiales, ver modelDefinition).
-    // Compactación en dos capas: los umbrales de ai-agent/compaction.json con
-    // la política sagrada de resumen en agent-compaction.beforeCompact, y el
-    // guardián mecánico por petición en agent-execution.compactRequest.
     const settings = {
       ...(options.settings || {}),
       stream: { cacheRetention: 'long', ...(options.settings && options.settings.stream) },
-      // La política del llamante gana; si no, la de ai-agent/compaction.json.
       compaction: options.compaction || (options.settings && options.settings.compaction) || compactionPolicy.loadPolicy(dir),
       ...(options.retry ? { retry: options.retry } : {}),
     };
@@ -254,7 +251,6 @@ async function _indexConversations() {
   }
 }
 
-// Sesiones anteriores al selector: se sincronizan con el modelo en su próximo turno.
 const LEGACY_REASONING = ['minimal', 'low', 'medium', 'high'];
 
 function toPublicSession(current) {
@@ -268,8 +264,6 @@ function toPublicSession(current) {
   return rest;
 }
 
-// Proveedores IA puede cambiar los niveles de un modelo (capacidad declarada o
-// catálogo nuevo): la lista los muestra al día sin esperar al próximo turno.
 async function _syncListedReasoning() {
   const ready = new Map();
   for (const session of Object.values(await sessions())) {
@@ -302,11 +296,6 @@ const MEMORY_SCOPES = new Set(['shared-read', 'own', 'none']);
 const MIN_DAILY_TOKENS = 1000;
 const MAX_DAILY_TOKENS = 100_000_000;
 const SECRET_RE = /(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|bearer\s+[A-Za-z0-9._~+/-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:password|contraseña|api[_ -]?key|token|secret)\s*[:=]\s*\S+)/i;
-
-async function _profiles() {
-  const doc = await shared.state.harness.snapshot(shared.state.ProfilesDoc, ctx());
-  return (doc && doc.profiles) || {};
-}
 
 function _text(value, label, max, required = false) {
   const text = String(value ?? '').trim();
@@ -617,8 +606,6 @@ async function sessionRulesSet(params) {
   }, ctx());
 }
 
-// La configuración del proveedor (p. ej. un modelo personalizado que ahora
-// declara razonamiento) puede cambiar entre turnos: el turno usa la vigente.
 async function _syncReasoning(session) {
   const levels = await execution.reasoningLevels(session.provider, session.model);
   if (JSON.stringify(levels) === JSON.stringify(session.reasoning_levels)) return;
@@ -817,7 +804,6 @@ async function messageSend(params) {
     : { granted: [], rejected: [] };
   const nativeNames = [...shared.toolSpecs.values()].filter((t) => t.kind === 'native').map((t) => t.name);
   const mentions = await bridge('agent_internal_mentions', { text: mentionText, native_tools: nativeNames });
-  // Mencionar un módulo o un servidor MCP habilita sus herramientas desde esta ronda.
   const mentionedTools = [...execution.moduleToolNames(mentions.modules || []),
     ...(mentions.mcp_tools || []).filter((name) => shared.toolSpecs.has(name))];
   if (mentionedTools.length) {
@@ -887,11 +873,7 @@ async function messageSend(params) {
       await Promise.race([conv.waitForIdle(ctx()), new Promise((r) => setTimeout(r, 5000))]);
     }
   }
-  // Una corrección es una instrucción nueva: no debe heredar el freno de
-  // repeticiones del turno que está corrigiendo.
   if (correction) shared.turns.get(session.conversationId)?.calls.clear();
-  // Enviar una instrucción nueva también libera la pausa por actividad
-  // reciente del usuario en la pestaña del agente.
   try { require('./agent-browser').resetUserActivity(); } catch { }
   if (pending.length) {
     const { denied } = await bridge('agent_internal_approvals_deny_session', { session_id: sessionId });
@@ -919,7 +901,6 @@ async function attach(params) {
   const kind = params && params.kind === 'folder' ? 'folder' : 'files';
   let filePaths;
   if (Array.isArray(params && params.paths) || Array.isArray(params && params.data)) {
-    // Arrastrar y soltar trae rutas del explorador; pegar trae bytes sin ruta.
     filePaths = [...await _droppedPaths(params.paths), ...await _pastedFiles(params.data)];
   } else {
     const dialog = shared.dialog || require('electron').dialog;
@@ -971,8 +952,6 @@ async function _pastedFiles(data) {
   return out;
 }
 
-// Con modelos con visión las imágenes adjuntas viajan en el mensaje, como en
-// un chat; el resto de archivos se leen con herramientas desde su ruta.
 async function _inlineImages(conv, attached, rejected) {
   const candidates = attached.filter((a) => a.kind === 'files' && !rejected.includes(a.path)
     && IMAGE_MIME[path.extname(a.path).toLowerCase()]);
@@ -1024,8 +1003,6 @@ function _toolVersion(spec) {
   return { name: spec.name, version: crypto.createHash('sha256').update(JSON.stringify(shape)).digest('hex').slice(0, 16) };
 }
 
-// Índice de skills de la biblioteca para que el modelo sepa qué hay sin llamar
-// antes a skills_list. Se reenvía solo si cambia o tras una compactación.
 async function skillsIndex(session, tools) {
   if (!tools.some((tool) => tool.name === 'skills_read')) return null;
   const { skills } = await bridge('agent_skills_list', {}).catch(() => ({ skills: [] }));
@@ -1151,12 +1128,10 @@ async function approve(params, approved) {
   const remembered = approved && params.remember === true && approval && approval.status === 'approved'
     ? String(approval.method || '') : null;
   if (remembered !== null && !remembered.startsWith('web_') && !remembered.startsWith('cua_') && approval.channel) {
-    // Igual que el dominio web: la acción ya está aprobada y guardar la regla del canal no debe romperla.
     try { await saveSessionRule(String(approval.session_id), String(approval.channel), 'allow'); } catch { }
   }
   execution.notifyDecision(approvalId);
   if (remembered !== null && remembered.startsWith('web_')) {
-    // La acción ya quedó aprobada; persistir el dominio es un favor añadido que no debe romperla.
     try {
       const policy = require('./agent-browser-policy');
       const domain = policy.hostOf(approval.context && approval.context.page_url);
@@ -1185,8 +1160,6 @@ async function effectUndo(params) {
   const callId = _text(params.call_id, 'la acción', 200, true);
   await requireSession(sessionId);
   const result = await bridge('agent_internal_effect_undo', { session_id: sessionId, call_id: callId });
-  // El modelo debe saber que el disco ya no coincide con lo que creyó escribir;
-  // un fallo al avisar no invalida un Undo que ya quedó aplicado.
   try {
     const conv = await conversation(sessionId);
     const name = path.basename(String((result && result.path) || '')) || 'el archivo';

@@ -78,13 +78,6 @@ def read_output(params: JsonObject, root: Path) -> JsonObject:
     return page
 
 
-def _clip(text: str) -> str:
-    if len(text) <= _MAX_OUTPUT_CHARS:
-        return text
-    half = _MAX_OUTPUT_CHARS // 2
-    return f"{text[:half]}\n… [{len(text) - _MAX_OUTPUT_CHARS} caracteres omitidos] …\n{text[-half:]}"
-
-
 def kill_tree(process: subprocess.Popen[bytes]) -> None:
     subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, check=False,
                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -149,8 +142,9 @@ def run(params: JsonObject, grants: dict[str, JsonObject], root: Path, token: An
     if cancelled:
         raise RunCancelled()
 
-    result: JsonObject = {"exit_code": process.returncode, "cwd": str(cwd), "stdout": _clip(output["stdout"]),
-                          "stderr": _clip(output["stderr"]), "output_id": output_id,
+    result: JsonObject = {"exit_code": process.returncode, "cwd": str(cwd),
+                          "stdout": computer_files.clip_text(output["stdout"], _MAX_OUTPUT_CHARS),
+                          "stderr": computer_files.clip_text(output["stderr"], _MAX_OUTPUT_CHARS), "output_id": output_id,
                           "duration_s": round(time.monotonic() - started, 2)}
     if timed_out:
         result["error"] = f"El comando superó {timeout} s y se detuvo"

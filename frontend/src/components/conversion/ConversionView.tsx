@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { api, type PreviewBody, type SequenceMode } from '../../api';
 import { useFileSelection } from '../../hooks/useFileSelection';
+import { useLiveRef } from '../../hooks/useLiveRef';
 import { useProcessRunner } from '../../hooks/useProcessRunner';
 import { useToast } from '../../hooks/useToast';
 import { useDialog } from '../../hooks/useDialog';
@@ -64,8 +65,7 @@ export default function ConversionView() {
     [mappingData, files],
   );
   const { selectedFile, setSelectedFile, selectedFiles, setSelectedFiles, handleFileClick, handleFileDoubleClick, selectAllFiles } = useFileSelection(files);
-  const selectedFilesRef = useRef(selectedFiles);
-  useEffect(() => { selectedFilesRef.current = selectedFiles; }, [selectedFiles]);
+  const selectedFilesRef = useLiveRef(selectedFiles);
   const { state: runnerState, status, running, pollStatus, pollError, startProcess, cancelProcess } = useProcessRunner();
   const { addToast } = useToast();
   const { confirm } = useDialog();

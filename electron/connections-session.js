@@ -13,6 +13,8 @@ const { maskClientId } = require('./autoimg-security');
 const {
   findAvailablePort,
   startCallbackServer,
+  generateCodeVerifier: _generateCodeVerifier,
+  generateCodeChallenge: _generateCodeChallenge,
 } = require('./autoimg-oauth-flow');
 const { getProvider } = require('./connections-providers');
 
@@ -242,13 +244,6 @@ async function getValidTokens(provider) {
   } catch {
     return null;
   }
-}
-
-function _generateCodeVerifier() {
-  return crypto.randomBytes(32).toString('base64url');
-}
-function _generateCodeChallenge(verifier) {
-  return crypto.createHash('sha256').update(verifier).digest('base64url');
 }
 
 function cancelConnect(provider) {

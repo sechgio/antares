@@ -3,7 +3,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-// Dominios sensibles que el agente no abre por decisión propia.
 const SEED_BLOCKED = [
   'bcp.pe', 'interbank.pe', 'scotiabank.pe', 'bbva.pe', 'bancofalabella.pe', 'cajaarequipa.pe',
   'paypal.com', 'mercadopago.com', 'niubiz.com.pe', 'stripe.com', 'sunat.gob.pe', 'reniec.gob.pe',

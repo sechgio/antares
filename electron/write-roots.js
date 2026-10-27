@@ -66,7 +66,7 @@ function _loadPersistedWriteRoots() {
   }
 }
 
-function _registerWriteRootFromPath(rawPath) {
+function _registerWriteRootFromPath(rawPath, persist = true) {
   if (typeof rawPath !== 'string' || !rawPath.trim()) return;
   const resolved = path.resolve(rawPath);
   let root;
@@ -76,7 +76,7 @@ function _registerWriteRootFromPath(rawPath) {
   } catch {
     root = path.dirname(resolved);
   }
-  if (_addWriteRoot(root)) _persistWriteRoots();
+  if (_addWriteRoot(root) && persist) _persistWriteRoots();
 }
 
 function _isUnderRegisteredWriteRoot(dir) {

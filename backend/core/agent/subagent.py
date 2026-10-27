@@ -184,14 +184,6 @@ def normalize_tasks(profile: JsonObject, params: JsonObject) -> list[JsonObject]
     return tasks
 
 
-def _result_failed(result: str) -> bool:
-    try:
-        data = json.loads(result)
-    except json.JSONDecodeError:
-        return False
-    return isinstance(data, dict) and ("error" in data or data.get("isError") is True)
-
-
 def _error_detail(result: str) -> str:
     try:
         data = json.loads(result)
@@ -365,7 +357,7 @@ def run(
                     raise
                 except Exception as err:
                     result = json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
-            failed = _result_failed(result)
+            failed = agent_chat.result_failed(result)
             steps.append(
                 {
                     "name": tool_name,

@@ -594,9 +594,11 @@ async function run() {
       await fs.promises.readFile(path.join(userDataDir, 'antares-write-roots.json'), 'utf8'),
     );
     assert(
-      persistedAfterCap.length === MAX_ROOTS
-        && !persistedAfterCap.includes(path.resolve(path.join(capBase, 'd0'))),
-      'el archivo de raíces persistidas queda acotado al tope',
+      persistedAfterCap.length === 2
+        && persistedAfterCap.includes(path.resolve(persistedRoot))
+        && persistedAfterCap.includes(path.resolve(path.join(tmpRoot, 'nueva-raiz')))
+        && !persistedAfterCap.some((entry) => entry.startsWith(path.resolve(capBase))),
+      'dialog_save no persiste su raíz (solo sesión); el archivo solo guarda raíces de carpeta',
     );
 
     const overCapRoots = [];

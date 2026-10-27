@@ -16,7 +16,7 @@ const WIDTH_BUCKET = 80;
 const OTHER_PAGES_CACHE_VERSION = 'disp-v1';
 const fileCacheIdentity = createObjectIdentity<File>();
 
-function bucketContainerWidth(width: number): number {
+export function bucketRenderWidth(width: number): number {
   const clamped = Math.max(width, 320);
   return Math.round(clamped / WIDTH_BUCKET) * WIDTH_BUCKET;
 }
@@ -37,7 +37,7 @@ export function otherPagesCacheKey(
       ? `file:${fileCacheIdentity(pdfFile)}:${pdfFile.name}:${pdfFile.size}:${pdfFile.lastModified}`
       : `b64:${base64Fingerprint ?? hashPdfBase64(pdfBase64 ?? '')}`);
   const stamp = stampRects.map((r) => [r.x, r.y, r.width, r.height].map((value) => value.toFixed(2)).join(',')).join('|') || 'none';
-  return `other:${OTHER_PAGES_CACHE_VERSION}:${sourceRevision}:${source}:${pageNum}:${bucketContainerWidth(containerW)}:${stampUrl ?? 'none'}:${stamp}`;
+  return `other:${OTHER_PAGES_CACHE_VERSION}:${sourceRevision}:${source}:${pageNum}:${bucketRenderWidth(containerW)}:${stampUrl ?? 'none'}:${stamp}`;
 }
 
 async function loadStampImage(stampUrl: string): Promise<HTMLImageElement> {
@@ -160,7 +160,7 @@ export async function renderOtherPagesPreview(
     isCancelled,
   } = options;
 
-  const bucketedWidth = bucketContainerWidth(containerW);
+  const bucketedWidth = bucketRenderWidth(containerW);
   const base64Fingerprint = !pdfPath && !pdfFile && pdfBase64 ? hashPdfBase64(pdfBase64) : undefined;
   const previews: Array<{ pageNum: number; url: string; stampCount: number }> = [];
   const pagesToRender = [...new Set(

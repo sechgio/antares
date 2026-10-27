@@ -221,8 +221,6 @@ async function nativeToolContext(name, sessionId, params = {}) {
     Object.assign(context, browserContext, { domain, policy_blocked: policy.isBlocked(domain) });
   }
   if (name === 'web_upload') {
-    // El backend es la única fuente de archivos autorizados de la conversación;
-    // falla aquí para no pedir al usuario una aprobación imposible de cumplir.
     await require('./ipc-router')._callBackend('agent_internal_grants_check',
       { session_id: sessionId, path: String(params.path || '') });
   }

@@ -27,7 +27,6 @@ _MAX_OUTPUT_CHARS = 4_000_000
 _MAX_BUFFER_BYTES = 8_000_000
 _WRITE_INTERVAL_S = 0.75
 _JOB_ID = re.compile(r"[a-f0-9]{32}")
-# Mismo preludio que shell_run: salida UTF-8 y sin progreso interactivo.
 _PRELUDE = (
     "$ProgressPreference='SilentlyContinue';"
     "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;$OutputEncoding=[System.Text.Encoding]::UTF8;"
@@ -127,13 +126,6 @@ def _meta_path(root: Path, job_id: str) -> Path:
     return root / f"shell-job-{job_id}.json"
 
 
-def _clip_text(text: str) -> str:
-    if len(text) <= _MAX_OUTPUT_CHARS:
-        return text
-    half = _MAX_OUTPUT_CHARS // 2
-    return f"{text[:half]}\n… [{len(text) - _MAX_OUTPUT_CHARS} caracteres omitidos] …\n{text[-half:]}"
-
-
 def _append(job: _Job, stream: str, chunk: bytes) -> None:
     data = job.stdout if stream == "stdout" else job.stderr
     data.extend(chunk)
@@ -154,8 +146,8 @@ def _snapshot(job: _Job) -> JsonObject:
         stderr = bytes(job.stderr).decode("utf-8", errors="replace").replace("\r\n", "\n")
         dropped_stdout, dropped_stderr = job.dropped_stdout, job.dropped_stderr
     return {
-        "stdout": _clip_text(stdout),
-        "stderr": _clip_text(stderr),
+        "stdout": computer_files.clip_text(stdout, _MAX_OUTPUT_CHARS),
+        "stderr": computer_files.clip_text(stderr, _MAX_OUTPUT_CHARS),
         "dropped_stdout_bytes": dropped_stdout,
         "dropped_stderr_bytes": dropped_stderr,
     }

@@ -4,6 +4,10 @@ import { parseMm } from '../types';
 
 export type RectMm = { x: number; y: number; w: number; h: number };
 
+export function rectsOverlap(a: RectMm, b: RectMm): boolean {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
 export function parseRotateDeg(layer: CanvasLayer): number {
   return parseFloat(layer.cssVars['--rotate'] || '0') || 0;
 }

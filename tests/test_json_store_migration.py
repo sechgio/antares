@@ -133,7 +133,6 @@ def test_frozen_default_store_does_not_import_development_legacy_data(
     legacy.write_text(json.dumps({"FT-1": {"id": "FT-1", "cliente": "legacy"}}), encoding="utf-8")
 
     monkeypatch.setattr(module, "DEFAULT_DB_PATH", target)
-    monkeypatch.setattr(module, "_DEFAULT_USER_DATA_PATH", target)
     monkeypatch.setattr(module, "_LEGACY_DB_PATH", legacy)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
 
@@ -164,7 +163,6 @@ def test_default_store_wiring_passes_legacy_path_only_for_real_default(
     legacy.write_text(json.dumps({"item": {"id": "item"}}), encoding="utf-8")
 
     monkeypatch.setattr(module, "DEFAULT_DB_PATH", target)
-    monkeypatch.setattr(module, "_DEFAULT_USER_DATA_PATH", target)
     monkeypatch.setattr(module, "_LEGACY_DB_PATH", legacy)
 
     store = store_class()

@@ -1,11 +1,10 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useLiveRef } from './useLiveRef';
 
 export function useFileSelection(files: string[]) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
-  const filesRef = useRef(files);
-
-  useEffect(() => { filesRef.current = files; }, [files]);
+  const filesRef = useLiveRef(files);
 
   const filesSet = useMemo(() => new Set(files), [files]);
 

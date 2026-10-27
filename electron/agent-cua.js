@@ -26,8 +26,6 @@ const MISSING_DRIVER = 'El driver de computer use no está instalado. Descarga e
 
 let runtime = null;
 let starting = null;
-// Lo último que el driver dijo de cada ventana y elemento, para describir la
-// acción en la tarjeta de aprobación sin volver a leer el escritorio.
 const windows = new Map();
 const elements = new Map();
 
@@ -162,7 +160,6 @@ function targetWindow(params) {
   return [...windows.values()].find((win) => win.pid === params.pid) || null;
 }
 
-// Lo que la tarjeta de aprobación muestra y lo que se compara al ejecutar.
 function approvalContext(name, params = {}) {
   if (name === 'cua_launch_app') {
     const app = String(params.name || path.basename(String(params.path || ''))).trim();

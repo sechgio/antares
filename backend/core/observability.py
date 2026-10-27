@@ -92,6 +92,13 @@ _TEXT_REDACTIONS = (
         re.compile(r"(?:[A-Za-z]:\\|\\\\|/(?:Users|home|tmp|var|private|opt|mnt|workspace)/)[^\s\"'`]+"),
         "[REDACTED]",
     ),
+    (re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"), "[REDACTED]"),
+    (re.compile(r"\b(?:gh[pous]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,})\b"), "[REDACTED]"),
+    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "[REDACTED]"),
+    (re.compile(r"\bx(?:ox[baprs]|app)-[A-Za-z0-9-]{10,}\b"), "[REDACTED]"),
+    (re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"), "[REDACTED]"),
+    (re.compile(r"\b1//[0-9A-Za-z_-]{30,}\b"), "[REDACTED]"),
+    (re.compile(r"\bya29\.[0-9A-Za-z_-]{20,}\b"), "[REDACTED]"),
 )
 
 _REQUEST_CONTEXT: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(

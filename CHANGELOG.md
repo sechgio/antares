@@ -7,6 +7,15 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+- Guardar un borrador en una carpeta del equipo (`drafts_save`) ya no se auto-aprueba con el canal Archivos: su carpeta de destino no está confinada a un espacio de trabajo, así que pasa al canal «Otros» y pide aprobación siempre, igual que declara su propio contrato de herramienta.
+- Abrir un artefacto de Agent ya no ejecuta archivos ejecutables: las descargas web y los borradores admiten cualquier extensión, así que «Abrir» consulta la misma lista de veto (`.exe`, `.bat`, `.url`, `.lnk`…) que la política de escritura IPC y rechaza el archivo con un aviso.
+- El navegador de Agent ya no accede a direcciones locales ni de la red privada: `web_open` y `web_download` rechazan localhost, IP literales privadas (incluida la de metadatos de nube), y la navegación y las redirecciones dentro de la pestaña vuelven a pasar el mismo filtro, de modo que una inyección de prompt no puede sondear la red doméstica o los servicios de la propia máquina.
+- El sanitizador de HTML (exportación a PDF y vista previa) también elimina los manejadores de eventos separados del resto de atributos con barra (`<img src="x"/onerror=…>`): el parser HTML los acepta como atributos reales aunque vayan sin espacio, y antes sobrevivían al filtrado (quedaba el CSP como única barrera).
+- La carpeta de un archivo guardado con el diálogo ya no queda autorizada para escritura para siempre: como la ruta preseleccionada la propone la interfaz, esa raíz solo dura la sesión; las carpetas que el usuario elige expresamente (seleccionar carpeta o destino) siguen siendo permanentes.
+- Guardar credenciales (tokens de Google, conexiones, claves de API) ya no recurre al cifrado derivado de rutas públicas cuando safeStorage/DPAPI no está disponible: esa clave era ofuscación reversible, no cifrado. Ahora la escritura falla con un aviso claro (reinicia la sesión de Windows) y los sobres antiguos v1 siguen leyéndose y migrándose a v2 en cuanto el cifrado vuelve a estar disponible.
+- Los logs (Electron y backend) redactan también los tokens que aparecen sueltos, sin prefijo `clave=valor` ni `Bearer`: claves tipo `sk-…`, tokens de GitHub (`ghp_…`, `github_pat_…`), AWS (`AKIA…`), Slack (`xox…`), Google (`AIza…`, `1//…`, `ya29.…`). Un error que incluya una credencial en el mensaje ya no la escribe en claro en el archivo de log.
+
 ### Fixed
 - La nota de texto al anotar el navegador de Agent ya no se cierra sola al hacer clic, y un clic sin arrastre con el lápiz o una forma ya no deja trazos invisibles que tapaban la selección.
 - Agent ya no edita a ciegas: `fs_edit` y `fs_write` con `overwrite` exigen haber leído el archivo con `fs_read` en la conversación y lo rechazan si cambió desde esa lectura (otra aplicación, el usuario o un deshacer), en lugar de pisar contenido que el modelo no vio. Lo que el agente escribe o edita cuenta como leído. `fs_edit` encuentra un fragmento de líneas completas aunque difiera solo en espacios finales, si la coincidencia es única, y explica cuándo el fragmento trae los números de línea de `fs_read`. La aprobación de un comando que borra o descarta archivos (`Remove-Item`, `del`, `git reset --hard`, `git clean`…) avisa de que Antares no puede deshacerlo.
@@ -25,6 +34,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - La carpeta que el usuario adjunta en Agent pasa a ser el espacio de trabajo de la conversación: `fs_read`, `fs_write`, `fs_edit`, `fs_list`, `fs_search` y `shell_run` sin ruta o `cwd` explícitos operan en ella y los nombres relativos se resuelven allí, no en los borradores. Con varias carpetas manda la última adjuntada; el chip «Espacio de trabajo» del contexto muestra la raíz activa y un clic en otra carpeta adjunta la cambia. Sin carpeta, Agent sigue usando sus borradores.
+- El arranque en frío queda usable antes: Electron lanza el backend Python antes de crear la ventana y la bandeja, en lugar de después, y el backend termina listo ~300 ms antes (p50 1521 → 1219 ms desde el inicio del proceso) sin retrasar la ventana.
 - Agent recibe con el mensaje un índice de las skills de la biblioteca (nombre, `skill_id` y descripción) y la indicación de cargar con `skills_read` la que encaje con el encargo, sin tener que llamar antes a `skills_list`. El índice solo se reenvía si cambia o tras compactar el contexto, y no aparece en el chat.
 - A partir del paso 32 de los 40 que admite un turno, Agent recibe con cada resultado de herramienta cuántos pasos lleva y la indicación de actualizar el plan y priorizar lo pendiente antes de que el turno se pause para «Reanudar». El aviso solo viaja en la petición al modelo: no se guarda ni se muestra en el chat.
 

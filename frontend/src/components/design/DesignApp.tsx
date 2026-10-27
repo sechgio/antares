@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ChevronLeft, ChevronRight, Download, Loader2, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import { sanitizeHtmlForPreview } from '../../../../shared/html-sanitizer.js';
 import {
@@ -50,7 +50,6 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
   const [memory, setMemory] = useState<DesignMemoryResponse['memory']>({ version: 1, notes: [] });
   const [memoryDraft, setMemoryDraft] = useState('');
   const [memoryOpen, setMemoryOpen] = useState(false);
-  const frameRef = useRef<HTMLIFrameElement | null>(null);
 
   const refreshMemory = useCallback(async () => {
     try {
@@ -400,7 +399,6 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
             )}
             <div className="min-h-0 flex-1 overflow-auto p-3">
               <iframe
-                ref={frameRef}
                 srcDoc={previewHtml}
                 sandbox="allow-same-origin"
                 title={`Vista previa del diseño: ${document?.name ?? ''}`}

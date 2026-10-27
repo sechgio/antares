@@ -21,7 +21,7 @@ def _load_schema() -> dict[str, Any]:  # allowlist: dict[str, Any]
 _SCHEMA = _load_schema()
 
 
-def _utc_now_iso() -> str:
+def utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
@@ -107,5 +107,5 @@ def normalize_document(
                 f"documento está en {current}"
             )
     doc["revision"] = int(doc.get("revision", 0)) + 1
-    doc["updatedAt"] = _utc_now_iso()
+    doc["updatedAt"] = utc_now_iso()
     return validate_document(doc)

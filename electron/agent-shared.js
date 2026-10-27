@@ -21,7 +21,6 @@ const shared = {
   rounds: new Map(),
   turns: new Map(),
   turnRuns: new Map(),
-  // conversationId → último índice de skills enviado al modelo.
   skillIndexes: new Map(),
   unattendedApps: new Map(),
   waitingInput: new Set(),

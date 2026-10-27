@@ -123,7 +123,6 @@ const ACCIONA_LOGO = accionaLogoSrc;
 const SEDAPAL_LOGO = sedapalLogoSrc;
 
 export default function PadronView() {
-  const previewRef = useRef<HTMLDivElement>(null);
   const [outputFormat, setOutputFormat] = useState<OutputFormat>(
     "service-interruption",
   );
@@ -1148,7 +1147,7 @@ export default function PadronView() {
         </header>
 
         <div className="vpad-preview-scroll-container vpad-preview-pane">
-          <div className="vpad-print-doc" ref={previewRef}>
+          <div className="vpad-print-doc">
             {(isWaterCutNotice
               ? renderedPages.waterCutItems
               : renderedPages.serviceItems

@@ -34,7 +34,7 @@ async function instance(owner = true) {
   const deps = {
     electron: { app, Tray, Notification, ipcMain: { handle: (id, fn) => handlers.set(id, fn), on: noop },
       Menu: { setApplicationMenu: noop, buildFromTemplate: (template) => template } },
-    './window-manager': { createWindow: noop, getMainWindow: () => win },
+    './window-manager': { createWindow: () => { state.windowCreatedAfterStart = state.started; }, getMainWindow: () => win },
     './backend-spawner': { startPythonBackend: async () => state.started++, killPython: () => state.killed++ },
     './ipc-router': { registerIpcHandlers: noop }, './renderer-observability': { registerRendererObservability: noop },
     './renderer-trust': { isTrustedRendererFrame: () => true },
@@ -56,6 +56,7 @@ async function instance(owner = true) {
 async function main() {
   const { state, app, win, handlers, intervals } = await instance();
   assert.equal(state.started, 1);
+  assert.equal(state.windowCreatedAfterStart, 1, 'el backend se lanza antes de crear la ventana');
   assert.equal(state.agentOpened, true);
   const event = { prevented: false, preventDefault() { this.prevented = true; } };
   win.emit('close', event);

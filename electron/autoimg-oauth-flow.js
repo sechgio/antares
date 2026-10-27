@@ -1,8 +1,17 @@
+const crypto = require('crypto');
 const http = require('http');
 const net = require('net');
 
 const DEFAULT_PORT = 42813;
 const FLOW_TIMEOUT_MS = 5 * 60_000;
+
+function generateCodeVerifier() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+function generateCodeChallenge(verifier) {
+  return crypto.createHash('sha256').update(verifier).digest('base64url');
+}
 
 function findAvailablePort(startPort = DEFAULT_PORT) {
   return new Promise((resolve, reject) => {
@@ -147,4 +156,6 @@ function startCallbackServer(port, { onCode, onDenied, onTimeout, expectedState,
 module.exports = {
   findAvailablePort,
   startCallbackServer,
+  generateCodeVerifier,
+  generateCodeChallenge,
 };

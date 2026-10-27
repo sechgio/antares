@@ -56,8 +56,6 @@ _native_leases: dict[str, list[threading.Lock]] = {}
 _NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_export_pdf", "fichas_tecnicas_export_pdf",
                     "document_generate", "padron_", "volantes_", "espacios_", "canvas_fill_fields", "canvas_apply_layers",
                     "gdrive_", "gsheets_", "onedrive_", "excel_", "web_", "cua_")
-# Herramientas de Equipo cuya aprobación nombra una app: concesiones por app y lista
-# blanca de los encargos programados. Su contexto lo calcula Electron.
 _APP_SCOPED_PREFIXES = ("cua_",)
 _CLOUD_UPLOADS = frozenset({"gdrive_upload", "onedrive_upload"})
 _META_METHODS = frozenset({"task_schedule"})
@@ -381,8 +379,6 @@ def _approval_ensure(params: JsonObject) -> JsonObject:
     if method.startswith(_APP_SCOPED_PREFIXES) and approval.get("status") == "pending":
         app = str(((approval.get("context") or {}).get("computer") or {}).get("app") or "")
         if isinstance(unattended_apps, list) and unattended_apps:
-            # Desatendido: las concesiones de la conversación no aplican; solo
-            # las apps declaradas al programar, normalizadas por alias.
             allowed = {os.path.normcase(_computer_driver.normalize_app(str(raw))) for raw in unattended_apps}
             if app and os.path.normcase(_computer_driver.normalize_app(app)) in allowed:
                 approval = store.decide_approval(str(approval["id"]), True) or approval
@@ -524,8 +520,6 @@ def _dispatch(params: JsonObject) -> JsonObject:
 
     op_id = str(record["op_id"])
     if meta:
-        # task_schedule se ejecuta en Electron: el backend solo reserva la
-        # llamada y su recibo para que la aprobación valga una sola vez.
         return {"result": None, "dispatch": record, "execute": "meta"}
     if native:
         return {"result": None, "dispatch": record, "execute": "native"}

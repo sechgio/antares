@@ -46,6 +46,14 @@ const KEYS_BY_KIND: Record<CanvasStyleKind, readonly string[]> = {
   effect: EFFECT_STYLE_KEYS,
 };
 
+export function cssVarsEqual(a: Partial<LayerCssVars>, b: Partial<LayerCssVars>): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) {
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
+}
+
 export function styleIdField(kind: CanvasStyleKind): 'fillStyleId' | 'textStyleId' | 'effectStyleId' {
   if (kind === 'color') return 'fillStyleId';
   if (kind === 'text') return 'textStyleId';

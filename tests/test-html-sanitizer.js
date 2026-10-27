@@ -1,4 +1,4 @@
-const { sanitizeHtmlForPdf } = require('../shared/html-sanitizer');
+const { sanitizeHtmlForPdf, sanitizeHtmlForPreview } = require('../shared/html-sanitizer');
 
 const { assert, finish } = require('./helpers/harness');
 
@@ -58,6 +58,14 @@ function run() {
   const spoofedOut = sanitizeHtmlForPdf(spoofedCsp);
   assert(!spoofedOut.includes('default-src *'), 'C2: strips pre-existing spoofed CSP meta tags');
   assert(spoofedOut.includes("default-src 'none'"), 'C2: enforces official strict CSP');
+
+  const slashPayload = '<img src="x"/onerror=alert(1)><a href="y"/onclick=steal()>z</a><p /onmouseover=alert(2)>q</p>';
+  const slashPdfOut = sanitizeHtmlForPdf(slashPayload);
+  assert(!/onerror|onclick|onmouseover/i.test(slashPdfOut), 'S-R2-4: el PDF elimina manejadores separados por «/»');
+  assert(slashPdfOut.includes('<img') && slashPdfOut.includes('<a'), 'S-R2-4: se conservan las etiquetas legítimas');
+  const slashPreviewOut = sanitizeHtmlForPreview(slashPayload);
+  assert(!/onerror|onclick|onmouseover/i.test(slashPreviewOut), 'S-R2-4: la vista previa elimina los mismos manejadores');
+  assert(!/onerror/i.test(sanitizeHtmlForPreview('<img src=x onerror=alert(1)>')), 'S-R2-4: el caso con espacio sigue cubierto');
 
   finish();
 }

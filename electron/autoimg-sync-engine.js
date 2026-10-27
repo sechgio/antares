@@ -1,7 +1,7 @@
 const sheets = require('./google-sheets-service');
 const { loadLocalFolders } = require('./autoimg-user-store');
 const { onActiveUserChange } = require('./autoimg-user-scope');
-const { sanitizeErrorMessage } = require('./autoimg-security');
+const { sanitizeErrorText } = require('./autoimg-security');
 const {
   SHEET_CACHE_BUDGET_BYTES,
   SHEET_CACHE_BLOCKS,
@@ -95,7 +95,7 @@ async function getStatus() {
     autoSync.restoreFromConfig(batch['CONFIG!A:B'] || []);
     if (retained) touchCache(['folders']);
   } catch (error) {
-    refreshError = sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
+    refreshError = sanitizeErrorText(error);
     emitError('STATUS_REFRESH_FAILED', refreshError);
   }
 
@@ -167,7 +167,7 @@ async function bootstrap({ refresh = true } = {}) {
       ...(applied.retained ? {} : { cache_skipped: true }),
     };
   } catch (err) {
-    const message = sanitizeErrorMessage(err instanceof Error ? err.message : String(err));
+    const message = sanitizeErrorText(err);
     emitError('BOOTSTRAP', message);
     return {
       ...base,

@@ -41,7 +41,6 @@ export interface AgentSession {
   permission_mode?: AgentPermissionMode;
   approval_rules?: AgentApprovalRules;
   reasoning_effort?: AgentReasoningEffort;
-  /** Niveles de razonamiento que admite el modelo actual; vacío si no razona. */
   reasoning_levels?: AgentReasoningEffort[];
   profile?: { id: string; name: string };
 }
@@ -72,9 +71,7 @@ export interface AgentToolCall {
   gated: boolean;
   status: 'queued' | 'pending' | 'running' | 'done' | 'denied' | 'failed' | 'interrupted' | 'submitted';
   result?: string | null;
-  /** Salida que la herramienta lleva producida mientras corre (p. ej. shell_run). */
   output?: string;
-  /** Epoch ms en que empezó a ejecutarse, mientras sigue en curso. */
   started_at?: number;
   dispatch_id?: string | null;
   channel?: AgentChannel | null;
@@ -93,7 +90,6 @@ export interface AgentMessage {
   name?: string;
   ts: number;
   partial?: boolean;
-  /** Aviso del sistema (compactación, turno detenido…), no parte del trabajo del agente. */
   notice?: boolean;
 }
 
@@ -110,13 +106,9 @@ export interface AgentUsage {
   context?: number;
   cached?: number;
   prompt?: number;
-  /** Gasto acumulado de la conversación en dólares, según pi.usage. */
   cost?: number;
-  /** Última respuesta del proveedor. */
   turn?: AgentUsageTurn;
-  /** Ventana real del modelo que respondió, si se conoce. */
   window?: number;
-  /** Resúmenes de contexto aplicados hasta ahora. */
   compactions?: number;
 }
 
@@ -382,7 +374,6 @@ export const agentApi = {
         ...(skill_id ? { skill_id } : {}) },
     ),
 
-  /** Sin `dropped` abre el diálogo; con él adjunta rutas soltadas o bytes pegados (base64). */
   agentAttach: (kind: 'files' | 'folder', dropped?: { paths?: string[]; data?: { name: string; data: string }[] }) =>
     _invoke<{ attachments: AgentAttachment[] }>('agent_attach', { kind, ...dropped }),
 
