@@ -1,10 +1,17 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Check, Copy, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import type { AgentMessage, AgentSession } from '../../api/agentApi';
+import type { TranscriptView } from './AgentTimeline';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
+
+const VIEWS: { value: TranscriptView; label: string; hint: string }[] = [
+  { value: 'normal', label: 'Normal', hint: 'Pasos plegados' },
+  { value: 'thinking', label: 'Pensamiento', hint: 'Razonamiento abierto' },
+  { value: 'verbose', label: 'Detallado', hint: 'Todos los pasos abiertos' },
+];
 
 const ITEM = 'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)]';
 
@@ -17,16 +24,18 @@ export function conversationText(title: string, messages: AgentMessage[]): strin
   return lines.join('\n');
 }
 
-export default function ConversationMenu({ session, messages, onRename, onDelete, onCopied }: {
+export default function ConversationMenu({ session, messages, view, onView, onRename, onDelete, onCopied }: {
   session: AgentSession;
   messages: AgentMessage[];
+  view: TranscriptView;
+  onView: (view: TranscriptView) => void;
   onRename: (title: string) => Promise<void>;
   onDelete: () => void;
   onCopied: () => void;
 }) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const menu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
-    align: 'end', estimatedWidth: 240, estimatedHeight: 160, stopEscapePropagation: true,
+    align: 'end', estimatedWidth: 240, estimatedHeight: 300, stopEscapePropagation: true,
   });
 
   const close = () => {
@@ -89,6 +98,17 @@ export default function ConversationMenu({ session, messages, onRename, onDelete
               >
                 <Copy size={14} className="text-[var(--text-secondary)]" /> Copiar conversación
               </button>
+              <div role="group" aria-label="Vista del chat" className="my-1 border-y border-[var(--border-subtle)] py-1">
+                <p className="px-2.5 py-1 text-[11.5px] text-[var(--text-muted)]">Vista del chat</p>
+                {VIEWS.map((option) => (
+                  <button key={option.value} type="button" role="menuitemradio" aria-checked={view === option.value} className={ITEM}
+                    onClick={() => { onView(option.value); close(); }}>
+                    <Check size={14} className={view === option.value ? 'text-[var(--text-secondary)]' : 'invisible'} aria-hidden="true" />
+                    <span className="min-w-0 flex-1">{option.label}</span>
+                    <span className="text-[11.5px] text-[var(--text-muted)]">{option.hint}</span>
+                  </button>
+                ))}
+              </div>
               <button type="button" role="menuitem" className={`${ITEM} text-[var(--accent-red)]`} onClick={() => { close(); onDelete(); }}>
                 <Trash2 size={14} /> Eliminar conversación
               </button>

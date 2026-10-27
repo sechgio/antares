@@ -1,4 +1,5 @@
 import { lazy, Suspense, type ReactNode } from 'react';
+import CopyButton from './CopyButton';
 
 const ChatVisual = lazy(() => import('./ChatVisual'));
 const VISUAL_LABELS: Record<string, string> = { chart: 'gráfico', svg: 'ilustración', html: 'interfaz' };
@@ -120,12 +121,23 @@ export default function MessageMarkdown({ text, streaming = false }: { text: str
             );
           }
           case 'code': {
+            const framed = !block.lang || !VISUAL_LABELS[block.lang];
             const pre = (
-              <pre key={key} className="overflow-x-auto whitespace-pre rounded-xl bg-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)] p-2.5 font-mono text-[12.5px] leading-[18px]">
+              <pre key={key} className={`overflow-x-auto whitespace-pre p-2.5 font-mono text-[12.5px] leading-[18px] ${framed ? '' : 'rounded-xl bg-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)]'}`}>
                 {block.text}{cursor}
               </pre>
             );
-            if (!block.lang || !VISUAL_LABELS[block.lang]) return pre;
+            if (!block.lang || !VISUAL_LABELS[block.lang]) {
+              return (
+                <div key={key} className="group/code overflow-hidden rounded-xl bg-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)]">
+                  <div className="flex h-7 items-center justify-between border-b border-[var(--border-subtle)] pl-2.5 pr-1.5 font-mono text-[11px] text-[var(--text-muted)]">
+                    {block.lang || 'código'}
+                    {!block.open && <CopyButton text={block.text} label="Copiar código" className="group-hover/code:opacity-100" />}
+                  </div>
+                  {pre}
+                </div>
+              );
+            }
             if (block.open) return streaming ? <VisualPlaceholder key={key} lang={block.lang} /> : pre;
             return (
               <Suspense key={key} fallback={<VisualPlaceholder lang={block.lang} />}>

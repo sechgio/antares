@@ -212,6 +212,11 @@ export const METHOD_LABELS: Record<string, string> = {
 // mcp_servers.agent_tool_name: mcp2__<servidor>-<hash>__<herramienta>-<hash>.
 const MCP_TOOL = /^mcp2__(.+)-[0-9a-f]{12}__(.+)-[0-9a-f]{12}$/;
 
+/** Servidor MCP de una herramienta, o null si no es de un conector. */
+export function mcpServer(name: string): string | null {
+  return MCP_TOOL.exec(name)?.[1] ?? null;
+}
+
 /** Etiqueta legible de una herramienta: la del catálogo, la de su servidor MCP o el nombre. */
 export function methodLabel(name: string): string {
   if (Object.prototype.hasOwnProperty.call(METHOD_LABELS, name)) return METHOD_LABELS[name];
