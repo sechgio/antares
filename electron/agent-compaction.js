@@ -11,12 +11,6 @@ const path = require('node:path');
 
 const { shared, bridge, sessionForConversation } = require('./agent-shared');
 
-// Umbrales sobre la ventana del modelo (tokens):
-//  - aviso (UI):      contextWindow - reserveTokens - backgroundTokens
-//  - compactación:    contextWindow - reserveTokens (bloquea la petición)
-//  - límite duro:     contextWindow (overflow del proveedor; compacta y reintenta una vez)
-// Se configuran en <datos de usuario>/ai-agent/compaction.json; un archivo
-// inválido avisa y usa estos valores por defecto.
 const DEFAULT_POLICY = Object.freeze({
   enabled: true,
   reserveTokens: 16384,
@@ -35,8 +29,6 @@ const EMERGENCY_CLIP = 300;
 const CONTEXT_MARKER = shared.CONTEXT_MARKER;
 const CHECK_MARKER = shared.CHECK_MARKER;
 
-// Mismas familias que la memoria del backend y el propio runtime; el valor se
-// sustituye por [REDACTADO] en el resumen, el registro y el diagnóstico.
 const SECRET_PATTERNS = [
   /sk-[A-Za-z0-9_-]{16,}/g,
   /gh[pousr]_[A-Za-z0-9]{20,}/g,
@@ -49,7 +41,6 @@ const SECRET_PATTERNS = [
   /((?:password|contraseña|clave|api[_ -]?key|token|secret|client[_ ]secret)\s*[:=]\s*)\S+/gi,
 ];
 
-// Directrices típicas que un dato infiltrado usa para ascender a instrucción.
 const DIRECTIVE_RE = /^\s*(?:[-*•]\s*)?((?:haz|usa|borra|elimina|destruye|ejecuta|instala|env[íi]a|ignora|olvida|revela|muestra|abre|escribe|sobrescribe)\b[^:;]{0,120}|(?:importante|instrucciones?|system|nota|aviso)\s*:) *(.+)$/i;
 
 const SUMMARY_SYSTEM_PROMPT = [
@@ -164,9 +155,6 @@ function unwrapCompactionSummary(text) {
   return match ? match[1].trim() : null;
 }
 
-// Transcriba del tramo a resumir: el contexto reinyectado ([Contexto de
-// Antares], memoria y menciones) y las comprobaciones internas se excluyen
-// porque vuelven solos; todo lo transcrito pasa por redactSecrets.
 function serializeTranscript(messages) {
   const parts = [];
   for (const message of messages || []) {
@@ -179,8 +167,6 @@ function serializeTranscript(messages) {
         const inner = unwrapCompactionSummary(text);
         (inner ? previous : user).push(inner || text);
       }
-      // El resumen de una compactación anterior no es texto del usuario: se
-      // etiqueta aparte para que el nuevo resumen lo integre sin ascenderlo.
       if (previous.length) parts.push(`[Resumen anterior]: ${redactSecrets(previous.join('\n\n'))}`);
       if (user.join('').trim()) parts.push(`[Usuario]: ${redactSecrets(user.join('\n').trim())}`);
     } else if (message.role === 'assistant') {
@@ -198,9 +184,6 @@ function serializeTranscript(messages) {
   return parts.join('\n\n');
 }
 
-// Barrera dato/directriz: una línea imperativa que sale de un resultado de
-// herramienta se reescribe como cita etiquetada; así el resumen nunca asciende
-// texto de datos a instrucción. Lo que no proviene de datos no se toca.
 function guardDataDirectives(summary, messages) {
   const toolData = (messages || [])
     .filter((message) => message.role === 'toolResult')
@@ -216,9 +199,6 @@ function guardDataDirectives(summary, messages) {
   }).join('\n');
 }
 
-// Resumen mecánico de emergencia: sin modelo, extrae del transcript lo sagrado
-// (encargos, acciones con resultado, texto del agente). Determinista y ya
-// redactado; marca su origen para que el usuario lo vea.
 function emergencySummary(transcript, reason) {
   const parts = transcript.split('\n\n');
   const users = parts.filter((part) => part.startsWith('[Usuario]:') || part.startsWith('[Resumen anterior]:'))
@@ -290,7 +270,6 @@ async function beforeCompact(compaction, runtime, context) {
     audit({ session_id: sessionId, conversation_id: conversationId, reason: compaction.reason, task_id: runtime.taskId, outcome: 'declined', detail: sanitizeError(err) });
     return { decline: true };
   }
-  // El resumen puede omitir el índice de skills: el próximo mensaje lo reenvía.
   shared.skillIndexes.delete(conversationId);
 
   const transcript = serializeTranscript(compaction.messages);

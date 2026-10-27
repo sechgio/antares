@@ -39,7 +39,6 @@ export default function BrokerReceipt({ call, onUndo }: {
     try {
       await onUndo(call.dispatch_id || call.id);
     } catch {
-      // El padre ya informa del fallo; el recibo solo recupera su botón.
     } finally {
       setBusy(false);
     }

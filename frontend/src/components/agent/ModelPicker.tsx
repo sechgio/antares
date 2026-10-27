@@ -100,8 +100,6 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
       }
       return { id: item.id, label: item.label, state, entries, custom: false };
     });
-    // Un modelo personalizado muestra su modelo configurado y, tras «Buscar
-    // modelos activos», los que su endpoint sirve ahora mismo.
     const customEntries: MenuItem[] = customs.flatMap((item) => [
       { provider: item.id, model: item.default_model, label: item.label, detail: item.default_model },
       ...[...new Set(models[item.id]?.models ?? [])].filter((model) => model !== item.default_model)

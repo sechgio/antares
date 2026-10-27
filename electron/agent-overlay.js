@@ -1,9 +1,5 @@
 'use strict';
 
-// Marca visual del lease humano: mientras el agente ejecuta una acción ui_* que
-// inyecta entrada sobre una ventana, un marco ámbar la cubre. La ventana es
-// transparente, sin foco y con el ratón atravesándola; en esta fase solo informa,
-// no captura ni bloquea nada (el aborto real vive en el guard del backend).
 
 const overlays = new Map();
 

@@ -139,7 +139,7 @@ def test_effects_expose_receipt_without_raw_result(store):
     assert receipt["approval_source"] == "manual"
     assert receipt["undo"]["kind"] == "delete"
     assert "result" not in receipt
-    assert json.dumps(receipt)  # el recibo es serializable para IPC
+    assert json.dumps(receipt)
 
 
 def _draft(store: agent.AgentStore, session_id: str, content: str) -> Path:

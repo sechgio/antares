@@ -1,7 +1,6 @@
 import { ensurePdfJs } from '../../lib/pdfjs';
 
 export type AnnotationPage = { png_base64: string; width: number; height: number };
-// Lo que se anota: una captura de la web, una imagen, un PDF o un texto, página a página.
 export type AnnotationSource = { name: string; count: number; page: (index: number) => Promise<AnnotationPage> };
 
 const MAX_SIDE = 1800;

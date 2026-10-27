@@ -130,7 +130,6 @@ def opacity(alpha: float) -> str:
 
 
 def delogo_rects(rects: list[dict[str, Any]], width_px: int, height_px: int) -> list[str]:  # allowlist: dict[str, Any]
-    """FFmpeg exige que el rectángulo quede dentro del fotograma."""
     filters: list[str] = []
     for rect in rects:
         x = round(float(rect["x"]) * width_px)

@@ -16,7 +16,6 @@ import SubagentTrace from './SubagentTrace';
 import { channelLabel } from './channels';
 import { METHOD_LABELS, mcpServer, methodLabel } from './methodLabels';
 
-/** Cuánto detalle enseña el chat: lo justo, el razonamiento abierto o todos los pasos abiertos. */
 export type TranscriptView = 'normal' | 'thinking' | 'verbose';
 
 interface AgentIdentity {
@@ -112,12 +111,11 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   skills_read: BookOpen,
 };
 
-/** Nombre de la skill leída: el que devuelve el resultado o, si aún no lo hay, el identificador pedido. */
 function skillName(call: AgentToolCall): string | null {
   try {
     const data: unknown = call.result ? JSON.parse(call.result) : null;
     if (data && typeof data === 'object' && 'name' in data && typeof data.name === 'string' && data.name) return data.name;
-  } catch { /* resultado sin JSON: se usa el identificador */ }
+  } catch {}
   return typeof call.params.skill_id === 'string' ? call.params.skill_id : null;
 }
 
@@ -266,7 +264,6 @@ function TerminalStep({ call, verbose }: { call: AgentToolCall; verbose?: boolea
   const live = call.status === 'running';
   const [open, setOpen] = useState(verbose || live || call.status === 'failed' || call.status === 'interrupted');
   const [seen, setSeen] = useState(call.status);
-  // La salida se monta al abrirla la primera vez y se conserva para animar el cierre.
   const [mounted, setMounted] = useState(open);
   if (open && !mounted) setMounted(true);
   if (seen !== call.status) {
@@ -395,8 +392,6 @@ type ActivityEntry =
 
 const NEEDS_REVIEW = ['failed', 'interrupted', 'pending'];
 const LIVE_TAIL = 3;
-// Borrado o descarte de archivos en posición de comando: avisa en la aprobación,
-// porque el diario de deshacer solo cubre fs_write, fs_edit y drafts_save.
 const DESTRUCTIVE_COMMAND = new RegExp(String.raw`(?:^\s*|[;|&({]\s*)(?:remove-item|rm|ri|del|erase|rd|rmdir|clear-content|format-volume|clear-disk)\b`
   + String.raw`|\bformat(?:\.com)?\s+[a-z]:|\bgit\s+(?:clean\b|reset\s+--hard\b|checkout\s+--\s)|\[(?:system\.)?io\.(?:file|directory)\]::delete\b`, 'im');
 
@@ -434,7 +429,6 @@ const STEP_KINDS: { match: (name: string) => boolean; label: (calls: AgentToolCa
   { match: () => true, label: (calls) => `Usó ${count(calls.length, 'herramienta', 'herramientas')}` },
 ];
 
-/** Resume los pasos por tipo, de más a menos frecuente: «Leyó 3 archivos, ejecutó 2 comandos y 4 pasos más». */
 export function stepsSummary(calls: AgentToolCall[]): string {
   const groups = new Map<number, AgentToolCall[]>();
   for (const call of calls) {
@@ -496,7 +490,6 @@ function Activity({ entries, working, answering, duration, onUndo, view }: {
   const calls = entries.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []));
   const live = working && !answering;
   const open = expanded ?? (view === 'verbose' || live || calls.some((call) => NEEDS_REVIEW.includes(call.status)));
-  // En vivo solo se ven los últimos pasos; nunca se pliega uno que necesite atención.
   const firstReview = entries.findIndex((entry) => entry.kind === 'call' && NEEDS_REVIEW.includes(entry.call.status));
   const earlier = live && view !== 'verbose' && entries.length > LIVE_TAIL + 1
     ? Math.min(entries.length - LIVE_TAIL, firstReview === -1 ? Infinity : firstReview) : 0;
@@ -555,7 +548,6 @@ export type TimelineTurn =
   | { key: number; role: 'user'; message: AgentMessage }
   | { key: number; role: 'assistant'; messages: AgentMessage[]; startedAt?: number };
 
-/** Agrupa los mensajes consecutivos del agente en un único turno: su trabajo y, al final, la respuesta. */
 export function groupTurns(messages: AgentMessage[]): TimelineTurn[] {
   const turns: TimelineTurn[] = [];
   let startedAt: number | undefined;
@@ -566,7 +558,6 @@ export function groupTurns(messages: AgentMessage[]): TimelineTurn[] {
       turns.push({ key: index, role: 'user', message });
       return;
     }
-    // Un aviso va en su propio turno: no se mezcla con el trabajo ni ocupa el lugar de la respuesta.
     const last = turns[turns.length - 1];
     if (last?.role === 'assistant' && !message.notice && !last.messages[0].notice) last.messages.push(message);
     else turns.push({ key: index, role: 'assistant', messages: [message], startedAt });
@@ -586,7 +577,6 @@ function resultArtifactId(result?: string | null): string | null {
   return null;
 }
 
-/** Sitúa cada resultado en el turno que lo produjo; un mismo archivo repetido solo aparece en su última versión. */
 export function placeArtifacts(turns: TimelineTurn[], artifacts: AgentArtifact[]): Map<number, AgentArtifact[]> {
   const latest = new Map<string, AgentArtifact>();
   for (const artifact of artifacts) {
@@ -612,7 +602,6 @@ export function placeArtifacts(turns: TimelineTurn[], artifacts: AgentArtifact[]
   return placed;
 }
 
-/** Archivos que el turno escribió o editó, con sus líneas sumadas: queda a la vista aunque los pasos se plieguen. */
 function TurnChanges({ calls }: { calls: AgentToolCall[] }) {
   const files = new Map<string, FileChange>();
   for (const call of calls) {
@@ -658,7 +647,6 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
   const entries: ActivityEntry[] = [];
   messages.forEach((message, index) => {
     if (message.reasoning) {
-      // Como pi-durable (trackThinking), el pensamiento de la ronda acaba en cuanto emite texto o una llamada.
       entries.push({ kind: 'reasoning', key: `reasoning-${index}`, text: message.reasoning, ms: message.reasoning_ms,
         streaming: !!message.partial && !message.content && !message.tool_calls?.length });
     }
@@ -719,7 +707,6 @@ export function ApprovalCard({
   const label = Object.prototype.hasOwnProperty.call(METHOD_LABELS, approval.method) ? METHOD_LABELS[approval.method] : undefined;
   const filename = typeof params.filename === 'string' && params.filename ? params.filename : params.name;
   const appGrant = typeof context?.computer?.app === 'string' ? context.computer.app : null;
-  // El contexto de aprobación MCP trae la herramienta real y el nombre visible del servidor.
   const mcpServer = typeof context?.account === 'string' && context.account.startsWith('MCP: ') ? context.account.slice(5) : null;
   const action = approval.method === 'drafts_save' && typeof filename === 'string'
     ? `Guardar ${filename}`
@@ -885,7 +872,6 @@ function PlanStepIcon({ status }: { status: AgentPlan['steps'][number]['status']
   return <CircleDashed size={14} className="text-[var(--text-muted)] opacity-70" aria-label="Pendiente" />;
 }
 
-/** Anillo que se llena con los pasos hechos; al completarse pasa a un check. */
 function PlanProgress({ done, total }: { done: number; total: number }) {
   if (total > 0 && done === total) return <CircleCheck size={14} className="agent-plan-icon shrink-0 text-[var(--accent-green)]" data-animate aria-hidden="true" />;
   const length = 2 * Math.PI * 5;

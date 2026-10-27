@@ -2,7 +2,6 @@ import { useState, type KeyboardEvent } from 'react';
 
 export type ComposerTrigger<T> = Readonly<{
   id: string;
-  /** Se evalúa sobre el texto hasta el cursor y debe terminar en `$`; la coincidencia puede empezar con un espacio. */
   pattern: RegExp;
   options: (match: RegExpMatchArray) => readonly T[];
 }>;
@@ -15,8 +14,6 @@ export type ComposerSuggestion<T> = Readonly<{
   selected: T | undefined;
 }>;
 
-// Una sola máquina de estados para los disparadores del compositor («@», «/»):
-// cursor, opción resaltada y cierre con Escape hasta la siguiente edición.
 export function useComposerAutocomplete<T>(draft: string, triggers: readonly ComposerTrigger<T>[]) {
   const [cursor, setCursor] = useState(0);
   const [index, setIndex] = useState(0);
@@ -40,11 +37,9 @@ export function useComposerAutocomplete<T>(draft: string, triggers: readonly Com
   }
   return {
     suggestion,
-    /** Tras una edición del borrador: reabre las sugerencias desde la primera opción. */
     edited: (caret: number) => { setCursor(caret); setIndex(0); setHidden(false); },
     moved: (caret: number) => setCursor(caret),
     close: (caret?: number) => { if (caret !== undefined) setCursor(caret); setHidden(true); },
-    /** Devuelve true si la tecla pertenece a las sugerencias abiertas. */
     keyDown: (event: KeyboardEvent, pick: (option: T, suggestion: ComposerSuggestion<T>) => void) => {
       if (!suggestion) return false;
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setHidden(true); return true; }

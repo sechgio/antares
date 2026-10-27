@@ -135,9 +135,6 @@ TOOL_SPECS: list[JsonObject] = [
 ]
 WRITE_TOOLS = frozenset({"fs_write", "fs_edit"})
 
-# Revisión (mtime, tamaño) de lo que cada conversación leyó o escribió: fs_edit y
-# la sobrescritura de fs_write solo actúan sobre contenido que el modelo vio y que
-# nadie cambió después. Vive en memoria; tras reiniciar hay que volver a leer.
 _seen: dict[str, tuple[int, int]] = {}
 _seen_lock = threading.Lock()
 
@@ -465,9 +462,7 @@ def _edit_list(params: JsonObject) -> list[tuple[str, str, bool]]:
 
 
 def _replace(text: str, old: str, new: str, replace_all: bool) -> tuple[str, int, int]:
-    """Reemplaza en text y devuelve el texto, las sustituciones y dónde empieza la primera."""
     if old not in text and "\r\n" in text and "\n" in old:
-        # El modelo suele escribir saltos \n aunque el archivo use CRLF.
         old, new = (s.replace("\r\n", "\n").replace("\n", "\r\n") for s in (old, new))
     occurrences = text.count(old)
     if occurrences > 1 and not replace_all:
@@ -486,7 +481,6 @@ def _replace(text: str, old: str, new: str, replace_all: bool) -> tuple[str, int
 
 
 def _loose_span(text: str, old: str) -> tuple[int, int] | None:
-    """Única coincidencia de old por líneas completas sin el espacio final, que el modelo suele perder o añadir."""
     wanted = old.replace("\r\n", "\n").split("\n")
     whole_lines = len(wanted) > 1 and wanted[-1] == ""
     if whole_lines:

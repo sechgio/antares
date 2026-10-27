@@ -21,7 +21,6 @@ function ArtifactAction({ label, icon: Icon, title = label, ...props }: {
 
 const VISIBLE_RESULTS = 2;
 
-/** Resultados de un turno: los más recientes visibles y los anteriores plegados para que no se apilen. */
 export function ArtifactList({ artifacts, sessionId, onRefresh, onOpenModule }: {
   artifacts: AgentArtifact[]; sessionId: string; onRefresh: () => void; onOpenModule?: (module: string, id?: string) => void;
 }) {

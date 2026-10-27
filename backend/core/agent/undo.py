@@ -22,12 +22,6 @@ def _sha256(path: Path) -> str:
 
 
 def _target(method: str, resources: list[JsonObject]) -> JsonObject | None:
-    """Recurso que el efecto reemplaza.
-
-    fs_write y fs_edit escriben en el primer recurso, pero el intent de
-    drafts_save añade antes el borrador de origen y la carpeta de destino, así
-    que el archivo final que se copia es el último de la lista.
-    """
     if method not in UNDO_METHODS or not resources:
         return None
     return resources[-1] if method == "drafts_save" else resources[0]
@@ -57,12 +51,6 @@ def _safe_path(path: Path) -> None:
 
 
 class UndoJournal:
-    """Copia previa de los archivos que el agente va a reemplazar.
-
-    Solo cubre efectos locales cuyo resultado se puede verificar por hash. Una
-    acción externa (shell, escritorio, nube) no se puede deshacer sin inventar
-    un rollback que no existe, así que esas herramientas no entran aquí.
-    """
 
     def __init__(self, base_dir: Path) -> None:
         self._root = base_dir / "undo"
@@ -133,7 +121,6 @@ class UndoJournal:
         return undo
 
     def matches_after(self, undo: JsonObject) -> bool:
-        """True si el archivo conserva exactamente el resultado de la acción."""
         expected = undo.get("after_sha256")
         if not isinstance(expected, str) or not expected:
             return False
@@ -170,12 +157,6 @@ class UndoJournal:
             raise
 
     def prune(self, max_age_days: int = 7, max_bytes: int = 512 * 1024 * 1024) -> list[str]:
-        """Elimina copias caducadas y, si aún sobra tamaño, las más antiguas.
-
-        Cada op_id es un directorio bajo ``undo/`` creado al preparar la acción,
-        así que su fecha de modificación sirve para ordenar la retención.
-        Devuelve los op_id descartados.
-        """
         try:
             directories = [entry for entry in self._root.iterdir() if entry.is_dir() and not entry.is_symlink()]
         except OSError:
