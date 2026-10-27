@@ -128,7 +128,7 @@ export default function ConnectionDetail({
           <div className="space-y-2 text-xs leading-relaxed text-[var(--text-secondary)]">
             <p className="font-medium text-[var(--text-primary)]">1. Prepara la conexión</p>
             <p>La primera conexión necesita una aplicación registrada en {p.label}. Si no administras esta cuenta, pide al responsable los datos indicados abajo.</p>
-            {p.docs && <Button variant="secondary" size="sm" onClick={() => window.open(p.docs, '_blank')}><ExternalLink size={12} /> Abrir panel de {p.label}</Button>}
+            {p.docs && <Button variant="secondary" size="sm" onClick={() => window.open(p.docs, '_blank', 'noopener,noreferrer')}><ExternalLink size={12} /> Abrir panel de {p.label}</Button>}
           </div>
         )}
         <div>
@@ -203,7 +203,7 @@ export default function ConnectionDetail({
             </div>
             {p.docs && (
               <button
-                onClick={() => window.open(p.docs, '_blank')}
+                onClick={() => window.open(p.docs, '_blank', 'noopener,noreferrer')}
                 className="inline-flex items-center gap-1 text-[11px] text-[var(--accent-blue)] transition-colors hover:text-[var(--accent-primary-hover)]"
               >
                 <ExternalLink size={11} />

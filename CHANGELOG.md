@@ -21,6 +21,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Agent ya no edita a ciegas: `fs_edit` y `fs_write` con `overwrite` exigen haber leído el archivo con `fs_read` en la conversación y lo rechazan si cambió desde esa lectura (otra aplicación, el usuario o un deshacer), en lugar de pisar contenido que el modelo no vio. Lo que el agente escribe o edita cuenta como leído. `fs_edit` encuentra un fragmento de líneas completas aunque difiera solo en espacios finales, si la coincidencia es única, y explica cuándo el fragmento trae los números de línea de `fs_read`. La aprobación de un comando que borra o descarta archivos (`Remove-Item`, `del`, `git reset --hard`, `git clean`…) avisa de que Antares no puede deshacerlo.
 - Los avisos del sistema en el chat de Agent (contexto compactado, turno detenido, versión compartida de una skill) se muestran en su propia fila: ya no se mezclan con los pasos del turno ni ocupan el lugar de la respuesta final, que quedaba escondida dentro de «N pasos».
 - El navegador de Agent bloquea los clics en controles de marcos y shadow DOM cuando un aviso del documento superior los tapa.
+- Sube Electron a la 44.9.3 (GHSA-jr5w-w6x2-84p9: mitigación de los certificados intermedios eMudhra comprometidos) y fija `^44.9.3` como suelo de versión para que ningún entorno resuelva por debajo del arreglo.
 - Agent usa el límite de salida real de cada modelo del catálogo (por ejemplo, 128 000 tokens en Claude 5.5 y hasta un cuarto de la ventana en GPT): con el tope fijo de 8 192 tokens, el razonamiento alto dejaba sin espacio la respuesta y truncaba las llamadas a herramientas.
 - Un modelo personalizado que apunta a la API oficial de Anthropic, OpenAI u OpenRouter usa el catálogo de ese proveedor (ventana, límite de salida, precios y modo de razonamiento), y la lista de conversaciones refleja al momento los niveles de razonamiento que declara Proveedores IA.
 - Las herramientas MCP usan su canal de permisos, de modo que las reglas del canal MCP también se les aplican; la traza y la tarjeta de aprobación las nombran por su servidor y su herramienta real.
@@ -34,6 +35,16 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Changed
 - Agent recibe con el mensaje un índice de las skills de la biblioteca (nombre, `skill_id` y descripción) y la indicación de cargar con `skills_read` la que encaje con el encargo, sin tener que llamar antes a `skills_list`. El índice solo se reenvía si cambia o tras compactar el contexto, y no aparece en el chat.
 - A partir del paso 32 de los 40 que admite un turno, Agent recibe con cada resultado de herramienta cuántos pasos lleva y la indicación de actualizar el plan y priorizar lo pendiente antes de que el turno se pause para «Reanudar». El aviso solo viaja en la petición al modelo: no se guarda ni se muestra en el chat.
+
+### Security
+- La sincronización del Canvas ya no permite falsificar la autoría: un trigger en `canvas_documents` fuerza `created_by` y `updated_by` al usuario de la sesión en todo INSERT, igual que hacía el RPC LWW. La decisión de mantener el modelo de datos compartido (todo usuario activo accede al contenido) queda documentada en `docs/adr/0004-modelo-de-datos-compartido.md`.
+
+### Security
+- Las rutas registradas antes para lectura ya no permiten sobrescribir ejecutables: el veto de extensiones peligrosas (`.exe`, `.bat`, `.ps1`…) aplica a toda salida salvo los write roots concedidos por diálogo.
+- El gancho de pre-commit también bloquea claves privadas y tokens de GitHub, AWS u OpenAI en los cambios staged, y `.gitignore` ignora el material de claves (`*.pem`, `*.key`, `*.p12`, `*.pfx`, `credentials*.json`).
+
+### Security
+- La sesión principal del shell niega por defecto los permisos del navegador (geolocalización, notificaciones web, pantalla completa, MIDI…) y solo concede micrófono, captura de pantalla y portapapeles, que es lo que usa la UI; antes Electron los aprobaba todos automáticamente.
 
 ### Added
 - El chat de Agent resume mejor el trabajo de cada turno: el grupo de pasos dice qué hizo («Leyó 3 archivos, ejecutó 2 comandos y 4 pasos más · 1 nota · 42 s») y nombra las skills y los conectores MCP usados; mientras trabaja solo muestra los últimos pasos y pliega los anteriores, salvo los que necesitan atención. El razonamiento plegado muestra su primera línea, se cierra en cuanto la ronda pasa a una acción y usa las medidas de las filas de pasos. Al terminar, una tarjeta resume los archivos cambiados con sus líneas. El menú de la conversación elige la vista del chat (Normal, Pensamiento o Detallado).

@@ -287,7 +287,7 @@ export const DesignPanel: React.FC<DesignPanelProps> = ({
                       <span
                         className="text-[8px] text-[var(--accent-primary)] hover:underline cursor-pointer"
                         onClick={() => {
-                          window.open(MAP_PROVIDER_BY_ID[provider].helpUrl, '_blank');
+                          window.open(MAP_PROVIDER_BY_ID[provider].helpUrl, '_blank', 'noopener,noreferrer');
                         }}
                       >
                         ¿Cómo obtenerla?

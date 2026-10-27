@@ -49,7 +49,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^4.3.3",
-    "@vitest/coverage-v8": "^4.1.5",
+    "@vitest/coverage-v8": "^4.1.12",
     "autoprefixer": "^10.4.16",
     "jsdom": "^29.0.2",
     "postcss": "^8.5.3",
@@ -58,13 +58,15 @@
     "terser": "^5.47.1",
     "typescript": "^5.2.2",
     "vite": "^5.4.14",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.12"
   },
   "overrides": {
     "tar": "^7.5.21",
     "dompurify": "^3.4.17",
     "js-yaml": "^4.3.2",
     "builder-util-runtime": "^9.7.0",
-    "nanoid": "^3.3.18"
+    "nanoid": "^3.3.18",
+    "undici": "^7.30.1",
+    "postcss-selector-parser": "^6.1.5"
   }
 }
