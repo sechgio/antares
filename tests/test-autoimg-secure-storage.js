@@ -65,7 +65,7 @@ try {
   );
   assert(!fs.existsSync(filePath), 'la escritura rechazada no deja ningún sobre en disco');
 
-  const legacy = { access_token: 'legacy-access', refresh_token: 'legacy-refresh', expiry_date: 42 };
+  const legacy = { access_token: 'legacy-access', refresh_token: 'legacy-rf', expiry_date: 42 };
   writeLegacyV1Envelope(legacy);
   assert.deepStrictEqual(
     secure.readSecureJson(filename, namespace),
