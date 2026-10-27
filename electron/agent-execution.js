@@ -29,6 +29,9 @@ const { appendTurn } = require('./turn-log');
 const MAX_TOOL_STEPS = 40;
 const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno. Conservé un punto de continuación; '
   + 'explica lo que queda pendiente y pide usar Reanudar para continuar.';
+// A partir de este paso cada petición recuerda al modelo cuánto le queda antes
+// de que el turno se pause, para que deje constancia del avance a tiempo.
+const BUDGET_WARNING_STEPS = 32;
 const MAX_REPEATS = 3;
 const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, sigue con '
   + 'el siguiente y compruébalo; si no puedes completarlo, márcalo como failed en task_plan con la causa y di qué necesitas.';
@@ -539,8 +542,9 @@ async function refreshTools() {
           if (budget && budget.exhausted) await pauseForBudget(api, context, 'token_budget');
           await noteTurnStart(api, messages || []);
           const compacted = await compactRequest(messages, api, context);
-          const next = compacted || messages;
-          return leadingSystem(next) || (compacted ? { messages: next } : undefined);
+          const warned = budgetWarning(compacted || messages, shared.rounds.get(api.conversationId) || 0);
+          const next = warned || compacted || messages;
+          return leadingSystem(next) || (compacted || warned ? { messages: next } : undefined);
         },
         afterTools: (_output, _task, api, context) => countRound(api, context),
         onYield: (answer, api) => planCheck(answer, api),
@@ -590,6 +594,18 @@ function leadingSystem(messages) {
   const index = messages.findIndex((message) => message.role === 'system');
   if (index <= 0) return undefined;
   return { messages: [messages[index], ...messages.slice(0, index), ...messages.slice(index + 1)] };
+}
+
+// Añade el aviso al último resultado de herramienta solo en la petición: no se
+// guarda en la conversación ni aparece en el chat.
+function budgetWarning(messages, rounds) {
+  const last = messages[messages.length - 1];
+  if (rounds < BUDGET_WARNING_STEPS || rounds >= MAX_TOOL_STEPS || !last || last.role !== 'toolResult') return undefined;
+  const notice = `Aviso de Antares: llevas ${rounds} de ${MAX_TOOL_STEPS} pasos de herramienta en este turno. `
+    + 'Actualiza task_plan con lo verificado y prioriza lo pendiente; al llegar al límite el turno se pausa y el usuario '
+    + 'puede Reanudar. No te detengas solo por este aviso.';
+  const content = Array.isArray(last.content) ? last.content : [{ type: 'text', text: String(last.content || '') }];
+  return [...messages.slice(0, -1), { ...last, content: [...content, { type: 'text', text: notice }] }];
 }
 
 async function countRound(api, context) {
@@ -1406,6 +1422,7 @@ module.exports = {
   modelDefinition,
   catalogFor,
   leadingSystem,
+  budgetWarning,
   callKey,
   providerInfo,
   thinkingLevelFor,

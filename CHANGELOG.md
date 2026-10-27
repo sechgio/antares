@@ -21,6 +21,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - Agent recibe con el mensaje un índice de las skills de la biblioteca (nombre, `skill_id` y descripción) y la indicación de cargar con `skills_read` la que encaje con el encargo, sin tener que llamar antes a `skills_list`. El índice solo se reenvía si cambia o tras compactar el contexto, y no aparece en el chat.
+- A partir del paso 32 de los 40 que admite un turno, Agent recibe con cada resultado de herramienta cuántos pasos lleva y la indicación de actualizar el plan y priorizar lo pendiente antes de que el turno se pause para «Reanudar». El aviso solo viaja en la petición al modelo: no se guarda ni se muestra en el chat.
 
 ### Added
 - Agent opera aplicaciones de Windows con cua-driver 0.34.0 (trycua, MIT): herramientas `cua_*` para listar ventanas, leerlas por accesibilidad con captura y actuar por `element_token` en segundo plano, sin mover el cursor ni quitar el foco al usuario. Cada acción informa su efecto (`confirmed`, `suspected_noop`, `unverifiable`…) y el agente no da por hecha una acción sin confirmar. Las acciones exigen aprobación también en Acceso completo y respetan las concesiones por aplicación y la lista blanca de los encargos programados. El binario se instala verificado por SHA-256 con `node scripts/prepare-cua-driver.js install <zip>`, arranca sin telemetría y con una política que solo admite las herramientas expuestas. Sustituyen a las herramientas `ui_*`, que se retiran; el driver Python se conserva para `desktop_*`.
