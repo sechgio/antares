@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.core.agent import agent
+from backend.core.agent import agent, agent_tools
 from backend.core.agent import undo as undo_journal
 from backend.core.exceptions import ValidationError
 from backend.handlers import agent_internal
@@ -54,6 +54,10 @@ def _run(session_id: str, call_id: str, method: str, params: dict, *,
     raise AssertionError(f"dispatch {call_id} no terminó")
 
 
+def _read(store, session_id: str, path: str) -> None:
+    agent_tools.run("fs_read", {"path": path}, store, session_id)
+
+
 def _undo(session_id: str, call_id: str) -> dict:
     return agent_internal.HANDLERS["agent_internal_effect_undo"]({
         "session_id": session_id, "call_id": call_id,
@@ -85,6 +89,7 @@ def test_fs_write_overwrite_undo_restores_previous_content(store):
     path = store.drafts_dir(session_id) / "existente.txt"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("original", encoding="utf-8")
+    _read(store, session_id, "existente.txt")
 
     _run(session_id, "call-2", "fs_write",
          {"path": "existente.txt", "content": "cambiado", "overwrite": True})
@@ -99,6 +104,7 @@ def test_fs_edit_undo_restores_previous_content(store):
     path = store.drafts_dir(session_id) / "editable.txt"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("antes", encoding="utf-8")
+    _read(store, session_id, "editable.txt")
 
     _run(session_id, "call-3", "fs_edit",
          {"path": "editable.txt", "old": "antes", "new": "después"})
@@ -113,8 +119,10 @@ def test_undo_refuses_to_overwrite_later_changes(store):
     path = store.drafts_dir(session_id) / "cambios.txt"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("original", encoding="utf-8")
+    _read(store, session_id, "cambios.txt")
     _run(session_id, "call-4", "fs_write",
          {"path": "cambios.txt", "content": "del agente", "overwrite": True})
+    assert path.read_text(encoding="utf-8") == "del agente"
     path.write_text("cambio externo", encoding="utf-8")
 
     with pytest.raises(ValidationError):

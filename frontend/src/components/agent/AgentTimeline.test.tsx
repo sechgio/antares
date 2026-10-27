@@ -174,6 +174,22 @@ it('agrupa el trabajo de un turno en un solo bloque y deja la respuesta final fu
   expect(screen.getByText('c.txt')).toBeVisible();
 });
 
+it('pinta los avisos del sistema aparte sin quitar la respuesta ni mezclarse con el trabajo', () => {
+  const turns = groupTurns([
+    { role: 'user', content: 'Revisa', ts: 1 },
+    { role: 'assistant', content: '', ts: 2, tool_calls: [{ id: 'r', name: 'fs_read', params: { path: 'a.txt' }, status: 'done', gated: false }] },
+    { role: 'assistant', content: 'Todo correcto.', ts: 3 },
+    { role: 'assistant', content: '🗜 Contexto compactado — límite', notice: true, ts: 4 },
+    { role: 'assistant', content: 'Sigo con lo siguiente.', ts: 5 },
+  ]);
+  expect(turns.map((turn) => (turn.role === 'user' ? 'user' : turn.messages.map((m) => m.ts).join()))).toEqual(
+    ['user', '2,3', '4', '5']);
+  const work = turns[1];
+  if (work.role !== 'assistant') throw new Error('turno inesperado');
+  render(<AssistantTurn messages={work.messages} />);
+  expect(screen.getByText('Todo correcto.')).toBeVisible();
+});
+
 it('coloca cada resultado en el turno que lo produjo y no repite el mismo archivo', () => {
   const file = (sha256: string) => ({ name: 'Formato-D.pdf', sha256, pages: 1, mime: 'application/pdf', size: 2048 });
   const artifact = (id: string, sha256: string) => ({ id, family: 'formato', template_id: 'd', template_revision: 'r', files: [file(sha256)] });
@@ -532,6 +548,22 @@ it('detalla el comando y la ruta en la aprobación de una acción del equipo', (
   expect(screen.getByText('Carpeta: C:\datos')).toBeInTheDocument();
   expect(screen.getByText(/puede acceder al equipo completo/)).toBeInTheDocument();
   expect(screen.getByText(/Requiere tu aprobación también en Acceso completo/)).toBeInTheDocument();
+  expect(screen.queryByText(/elimina o descarta archivos/)).not.toBeInTheDocument();
+});
+
+it.each([
+  ['Get-ChildItem *.tmp | Remove-Item -Force', true],
+  ['cd C:\\proyecto; git reset --hard', true],
+  ['rm -r build', true],
+  ['[IO.File]::Delete("a.txt")', true],
+  ['Select-String -Pattern "Remove-Item" *.ps1', false],
+  ['git status', false],
+])('avisa del borrado de archivos solo cuando el comando lo hace: %s', (command, destructive) => {
+  render(<ApprovalCard busy={false} onDecide={vi.fn()} approval={{
+    id: 'a', session_id: 's', call_id: 'c', method: 'shell_job_start', status: 'pending', created_at: 1, decided_at: null,
+    params: { command },
+  }} />);
+  expect(!!screen.queryByText(/elimina o descarta archivos/)).toBe(destructive);
 });
 
 it('muestra la edición de un archivo como diff y lo marca aplicado al terminar', () => {

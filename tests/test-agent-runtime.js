@@ -212,6 +212,13 @@ async function main() {
       'el prompt base encabeza la petición y los cambios posteriores quedan en su sitio');
     assert(leadingSystem([system, user]) === undefined && leadingSystem([user]) === undefined,
       'una petición que ya empieza por el prompt no se toca');
+    const { budgetWarning } = require('../electron/agent-execution');
+    const result = { role: 'toolResult', toolCallId: 't', toolName: 'fs_read', content: [{ type: 'text', text: 'ok' }] };
+    assert(budgetWarning([user, result], 31) === undefined && budgetWarning([user, result], 40) === undefined
+      && budgetWarning([result, user], 35) === undefined, 'el aviso solo aparece entre el paso 32 y el límite, tras un resultado');
+    const warned = budgetWarning([user, result], 32);
+    assert(warned[0] === user && warned[1].content[0].text === 'ok' && /llevas 32 de 40 pasos/.test(warned[1].content[1].text)
+      && result.content.length === 1, 'el aviso se añade a una copia del último resultado sin tocar el guardado');
     assert(define({ custom: true, base_url: 'https://openrouter.ai/api/v1' }, 'anthropic/claude-opus-5-5').compat
       .cacheControlFormat === 'anthropic', 'Claude vía OpenRouter lleva cache_control aunque el proveedor sea propio');
     assert(define({ custom: true, base_url: 'http://x.local/v1', capabilities: { vision: true } }, 'mi-modelo').input.includes('image'),
@@ -556,6 +563,48 @@ async function main() {
       'el turno recibe la orden de leer la skill y el aviso de que no concede permisos');
     assert(entries.includes('Antes de cualquier otra herramienta carga la skill'), 'la herramienta adelantada se bloquea con una indicación');
     assert(entries.includes(warning), 'el uso de la versión compartida queda visible en la conversación');
+    const listed = (await runtime.handlers.agent_messages_list({ session_id: session.id })).messages;
+    assert(listed.some((message) => message.content === warning && message.notice === true),
+      'el aviso llega marcado para pintarse aparte del turno');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    let library = [{ id: 'a'.repeat(24), name: 'pdf-review', description: 'Revisa firmas de PDF' }];
+    const skillsBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const catalog = await bridge(method, params);
+        catalog.tools.push({ name: 'skills_read', module: 'agent', kind: 'backend', gated: false,
+          inputSchema: { type: 'object', properties: { skill_id: { type: 'string' } } } });
+        return catalog;
+      }
+      if (method === 'agent_skills_list') return { skills: library, library: 'C:\\skills', warnings: [], truncated: false };
+      return bridge(method, params);
+    };
+    await openFaux([fauxAssistantMessage('uno'), fauxAssistantMessage('dos'), fauxAssistantMessage('tres')], skillsBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const initial = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools;
+    await runtime.handlers.agent_tools_set({ session_id: session.id,
+      names: [...new Set([...initial.filter((tool) => tool.enabled).map((tool) => tool.name), 'skills_read'])] });
+    const indexes = async () => {
+      const context = runtime._internal.shared.deps.chord.BACKGROUND_CONTEXT;
+      const state = runtime._internal.state();
+      const map = await state.harness.snapshot(state.SessionsDoc, context);
+      const conv = await state.harness.conversation(map.sessions[session.id].conversationId, context);
+      return JSON.stringify((await conv.entries({}, 500, undefined, context)).items).split('Skills disponibles.').length - 1;
+    };
+    for (const content of ['Revisa el contrato', 'Y el anexo']) {
+      await runtime.handlers.agent_message_send({ session_id: session.id, content });
+      assert(await waitIdle(session.id), 'el turno termina');
+    }
+    assert(await indexes() === 1, 'el índice de skills se envía una vez mientras no cambie');
+    library = [...library, { id: 'b'.repeat(24), name: 'informe', description: 'Redacta informes' }];
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Ahora el informe' });
+    assert(await waitIdle(session.id), 'el turno termina');
+    assert(await indexes() === 2, 'un índice distinto se reenvía');
+    const entries = JSON.stringify(await runtime.handlers.agent_messages_list({ session_id: session.id }));
+    assert(!entries.includes('Skills disponibles'), 'el índice no aparece en el chat del usuario');
     await runtime.shutdown();
   }
 
