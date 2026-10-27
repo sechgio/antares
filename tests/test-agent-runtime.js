@@ -2320,6 +2320,45 @@ async function main() {
 
   {
     const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: { path: { type: 'string' } } };
+    let probes = 0;
+    let other = 0;
+    const failingBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'file_probe', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
+        result.tools.push({ name: 'flaky_probe', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'file_probe') {
+        probes += 1;
+        return { result: JSON.stringify({ error: `No existe el archivo C:\\datos\\informe-${probes}.pdf (intento ${probes})` }) };
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'flaky_probe') {
+        other += 1;
+        return { result: JSON.stringify(other === 3 ? { ok: true } : { error: `Tiempo agotado tras ${other * 10} s` }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      ...[1, 2, 3, 4].map((n) => fauxAssistantMessage([fauxToolCall('file_probe', { path: `informe-${n}.pdf` })], { stopReason: 'toolUse' })),
+      ...[1, 2, 3, 4, 5].map((n) => fauxAssistantMessage([fauxToolCall('flaky_probe', { path: `ruta-${n}` })], { stopReason: 'toolUse' })),
+      fauxAssistantMessage('No encuentro el informe.'),
+    ], failingBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'busca el informe' });
+    assert(await waitIdle(session.id), 'el turno con fallos de la misma causa termina');
+    assert(probes === 3, 'tres fallos por la misma causa bloquean la cuarta llamada aunque cambien los argumentos');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const blocked = listed.messages.flatMap((m) => m.tool_calls || []).filter((c) => c.name === 'file_probe').at(-1);
+    assert(/fallaron por la misma causa/.test(String(blocked.result || '')) && /informe-3\.pdf/.test(String(blocked.result || '')),
+      'el agente recibe el último error y por qué se bloqueó');
+    assert(other === 5, 'un acierto entre fallos reinicia la cuenta de esa herramienta');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
     const schema = { type: 'object', properties: {} };
     let probes = 0;
     const gatedBridge = async (method, params) => {

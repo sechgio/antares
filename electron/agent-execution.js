@@ -607,7 +607,7 @@ async function pauseForBudget(api, context, reason = 'tool_budget') {
 function turnState(conversationId) {
   let turn = shared.turns.get(conversationId);
   if (!turn) {
-    turn = { calls: new Map(), remaining: null, checked: false };
+    turn = { calls: new Map(), failures: new Map(), remaining: null, checked: false };
     shared.turns.set(conversationId, turn);
   }
   return turn;
@@ -712,6 +712,21 @@ function callSignature(name, args) {
   return `${name}:${stableJson(args || {})}`;
 }
 
+// Firma de un error sin lo que cambia entre intentos (rutas, URL, números,
+// identificadores y valores citados): cambiar los argumentos no es progresar
+// si la herramienta falla por la misma causa.
+function errorSignature(message) {
+  return String(message || '').toLowerCase()
+    .replace(/[a-z][a-z0-9+.-]*:\/\/\S+/g, '<url>')
+    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '<email>')
+    .replace(/(["'`«“])[^"'`»”]*["'`»”]/g, '<valor>')
+    .replace(/(?:[a-z]:)?[\\/][^\s,;)]+/g, '<ruta>')
+    .replace(/\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b/g, '<id>')
+    .replace(/\b[0-9a-f]{8,}\b/g, '<id>')
+    .replace(/\d+(?:[.,]\d+)?/g, '<n>')
+    .replace(/\s+/g, ' ').trim().slice(0, 160);
+}
+
 function planCheck(answer, api) {
   const turn = shared.turns.get(api.conversationId);
   if (!turn || turn.checked || !turn.remaining || !turn.remaining.length) return undefined;
@@ -753,6 +768,12 @@ async function beforeTool(call, api, context) {
       : !spec.gated || spec.name === 'desktop_observe' ? 'con el mismo resultado o error' : 'con los mismos argumentos';
     return { block: `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno ${detail}. No la repitas: `
       + 'cambia de enfoque o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
+  }
+  const failing = turnState(api.conversationId).failures.get(call.name);
+  if (failing && failing.count >= MAX_REPEATS) {
+    return { block: `Las últimas ${MAX_REPEATS} llamadas a ${call.name} fallaron por la misma causa aunque cambiaste los argumentos `
+      + `(«${failing.message}»). No la repitas: diagnostica la causa con otra herramienta, cambia de enfoque `
+      + 'o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
   }
   const session = await requireSession(sessionId);
   if (session.delegation && (spec.kind !== 'backend' || spec.replay_safe !== true)) {
@@ -963,6 +984,16 @@ async function executeTool(spec, args, api, context) {
     repeated.exempt = false;
   }
   if (trackOutcome) repeated.outcome = hash;
+  const failures = turnState(api.conversationId).failures;
+  if (!isError) {
+    failures.delete(spec.name);
+  } else if (!exempt) {
+    const message = String(typeof parsed.error === 'string' ? parsed.error : (parsed.error && parsed.error.message) || parsed.message || text);
+    const key = errorSignature(message);
+    const previous = failures.get(spec.name);
+    failures.set(spec.name, { key, message: message.replace(/\s+/g, ' ').slice(0, 160),
+      count: previous && previous.key === key ? previous.count + 1 : 1 });
+  }
   noteToolResult(api, spec.name, text, isError);
   return { content: [{ type: 'text', text }, ...(image ? [image] : [])], isError,
     ...(added && added.length ? { control: { addTools: added } } : {}) };
