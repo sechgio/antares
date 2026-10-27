@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const dns = require('node:dns');
 const path = require('node:path');
 
 const PARTITION = 'persist:antares-agent-browser';
@@ -259,6 +260,23 @@ function publicWebUrl(url) {
   return url;
 }
 
+// Un nombre público puede resolver a una IP privada (DNS del atacante o
+// rebinding): antes de salir se resuelve el host y se comprueba cada
+// dirección; sin resolución verificable no hay navegación.
+async function isPublicResolution(url) {
+  let host;
+  try { host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, ''); } catch { return false; }
+  if (isPrivateHostname(host)) return false;
+  if (host.includes(':') || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return true;
+  let addresses;
+  try {
+    addresses = await dns.promises.lookup(host, { all: true });
+  } catch {
+    return false;
+  }
+  return addresses.length > 0 && !addresses.some((entry) => isPrivateHostname(entry.address));
+}
+
 function normalizeUrl(raw) {
   const value = String(raw || '').trim();
   if (!value) throw new Error('Indica la dirección o la búsqueda');
@@ -280,6 +298,13 @@ function prepareSession(electron) {
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
   ses.setUserAgent(siteUserAgent(ses.getUserAgent()));
+  // Última barrera contra el rebinding: ni las redirecciones ni los
+  // subrecursos de una página limpia pueden apuntar a una IP privada.
+  ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (details, callback) => {
+    isPublicResolution(details.url)
+      .then((allowed) => callback({ cancel: !allowed }))
+      .catch(() => callback({ cancel: true }));
+  });
   // Toda descarga se cancela salvo que web_download la haya pedido: el
   // navegador del agente nunca escribe en el disco por decisión de una página.
   ses.on('will-download', (event, item) => {
@@ -308,13 +333,16 @@ function downloadName(value) {
   return name && name !== '.' && name !== '..' ? name : 'archivo';
 }
 
-function startDownload(url, drafts) {
+async function startDownload(url, drafts) {
   if (!drafts) throw new Error('Los borradores requieren una conversación');
   if (!isWeb(url)) throw new Error('Indica la dirección http(s) del archivo');
   publicWebUrl(url);
   const policy = require('./agent-browser-policy');
   if (policy.isBlocked(policy.hostOf(url))) {
     throw new Error('Dominio bloqueado por la política del navegador del agente');
+  }
+  if (!(await isPublicResolution(url))) {
+    throw new Error('El navegador de Agent no accede a direcciones locales ni de la red privada');
   }
   const requested = new URL(url);
   requested.hash = '';
@@ -1154,7 +1182,11 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId 
     tab = ensureTab(AGENT_TAB);
     notify('agent-open');
     const contents = tab.view.webContents;
-    await load(contents, normalizeUrl(params.url));
+    const target = normalizeUrl(params.url);
+    if (!(await isPublicResolution(target))) {
+      throw new Error('El navegador de Agent no accede a direcciones locales ni de la red privada');
+    }
+    await load(contents, target);
     return snapshot(contents);
   }
   const contents = current(AGENT_TAB);
@@ -1459,4 +1491,4 @@ function close() {
   pendingMouseInputs.clear();
 }
 
-module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, isPrivateHostname, isAllowedWebUrl, state, dock, capture, inspect, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };
+module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, isPrivateHostname, isAllowedWebUrl, isPublicResolution, state, dock, capture, inspect, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };

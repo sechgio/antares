@@ -2,6 +2,18 @@
 
 const { assert, finish, stubModule, installInertTimers } = require('./helpers/harness');
 const { EventEmitter } = require('node:events');
+const Module = require('node:module');
+
+// el navegador del agente resuelve el DNS de cada destino: en los tests
+// toda resolución es pública
+const originalLoad = Module._load;
+Module._load = function patchedLoad(request, parent, isMain) {
+  if (request === 'node:dns') {
+    return { promises: { lookup: async () => [{ address: '93.184.216.34', family: 4 }] } };
+  }
+  return originalLoad.call(this, request, parent, isMain);
+};
+
 const { nativeToolSpecs } = require('../electron/agent-native-tools');
 const { nativeMethods } = require('../shared/ipc-method-catalog');
 
@@ -145,6 +157,7 @@ async function exportTest() {
       BrowserWindow: function (options) { hostOpacity = options.opacity ?? 1; return host; },
       WebContentsView: function () { return page; },
       session: { fromPartition: () => ({ setPermissionRequestHandler: () => {}, setPermissionCheckHandler: () => {}, on: () => {},
+        webRequest: { onBeforeRequest: () => {} },
         getUserAgent: () => 'Mozilla/5.0 Chrome/1 Electron/1', setUserAgent: () => {} }) },
     });
     const bounds = { x: 100, y: 50, width: 400, height: 500 };
@@ -324,6 +337,7 @@ async function exportTest() {
       BrowserWindow: function () { return parent; },
       WebContentsView: function () { return { webContents: contents, setBounds: () => {}, getBounds: () => ({ width: 1280 }) }; },
       session: { fromPartition: () => ({ setPermissionRequestHandler: () => {}, setPermissionCheckHandler: () => {}, on: () => {},
+        webRequest: { onBeforeRequest: () => {} },
         getUserAgent: () => 'Mozilla/5.0 Chrome/1 Electron/1', setUserAgent: () => {} }) },
     });
     const timers = installInertTimers();
