@@ -275,8 +275,10 @@ async function allToolSpecs() {
   }
   const saved = Object.values(await profiles()).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   if (saved.length > 0) {
-    const delegateTool = require('./agent-tasks').DELEGATE_TOOL;
-    merged.set(delegateTool.name, delegateTool);
+    const tasks = require('./agent-tasks');
+    for (const tool of [tasks.DELEGATE_TOOL, tasks.CHECK_TOOL, tasks.MESSAGE_TOOL, tasks.STOP_TOOL]) {
+      merged.set(tool.name, tool);
+    }
     merged.set(SUBAGENT_TOOL, {
       name: SUBAGENT_TOOL,
       description: `Delega trabajo acotado en uno de los agentes guardados del usuario y devuelve el resultado con sus pasos y su rol. `
@@ -315,6 +317,9 @@ async function allToolSpecs() {
   } else {
     merged.delete(SUBAGENT_TOOL);
     merged.delete('agent_delegate');
+    merged.delete('agent_message');
+    merged.delete('agent_check');
+    merged.delete('agent_stop');
   }
   merged.set(TOOLS_LOAD, {
     name: TOOLS_LOAD,
@@ -445,7 +450,8 @@ async function loadTools(args, sessionId, context) {
   const enabled = new Set((await conv.agent(context)).tools.map((tool) => tool.name));
   const allows = await profileToolFilter(await requireSession(sessionId));
   const specs = [...shared.toolSpecs.values()].filter((spec) => (spec.kind !== 'meta'
-    || ['task_schedule', 'agent_delegate', 'wait_event'].includes(spec.name)) && (!allows || allows(spec.name)));
+    || ['task_schedule', 'agent_delegate', 'agent_message', 'agent_check', 'agent_stop', 'wait_event'].includes(spec.name))
+    && (!allows || allows(spec.name)));
   const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
   const words = normal(args.query).split(/[^a-z0-9_]+/).filter((word) => word.length > 2);
   if (!modules.length && !words.length) {
@@ -1035,6 +1041,15 @@ async function dispatchTool(spec, args, sessionId, api, context) {
       const profile = await resolveProfile(args?.agent);
       if (!profile) throw validation('No se encontró un agente único; usa su identificador');
       return { text: JSON.stringify(await require('./agent-tasks').delegate(profile, args, sessionId, api, context)) };
+    }
+    if (spec.name === 'agent_check') {
+      return { text: JSON.stringify(await require('./agent-tasks').checkDelegations(args || {}, sessionId)) };
+    }
+    if (spec.name === 'agent_message') {
+      return { text: JSON.stringify(await require('./agent-tasks').sendMessage(args || {}, sessionId, api)) };
+    }
+    if (spec.name === 'agent_stop') {
+      return { text: JSON.stringify(await require('./agent-tasks').stopDelegation(args || {}, sessionId)) };
     }
     if (spec.name === 'task_schedule') {
       if (spec.gated && (args || {}).action !== 'list') {

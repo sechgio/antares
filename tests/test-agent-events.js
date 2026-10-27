@@ -31,12 +31,13 @@ async function main() {
   const workspace = path.join(dir, 'workspace');
   fs.mkdirSync(workspace, { recursive: true });
   const state = { pathChecks: 0, jobPolls: 0, githubPolls: 0, githubListPolls: 0 };
+  let slow = false;
   const bridge = async (method, params) => {
     if (method === 'agent_internal_tools') return { tools: [
       { name: 'canvas_list', kind: 'backend', gated: false, replay_safe: true, inputSchema: { type: 'object', properties: {} } },
     ] };
-    if (method === 'agent_internal_dispatch') return { result: JSON.stringify({ documents: ['Comprobante'] }) };
-    if (method === 'agent_internal_dispatch_result') return { result: JSON.stringify({ documents: ['Comprobante'] }) };
+    if (method === 'agent_internal_dispatch') return { result: slow ? null : JSON.stringify({ documents: ['Comprobante'] }) };
+    if (method === 'agent_internal_dispatch_result') return { result: slow ? null : JSON.stringify({ documents: ['Comprobante'] }) };
     if (method === 'agent_internal_provider') return { style: 'openai_chat', base_url: 'http://unused', api_key: 'test' };
     if (method === 'agent_internal_approvals_pending') return { approvals: [] };
     if (method === 'agent_internal_memory_context') return { context: '' };
@@ -360,7 +361,119 @@ async function main() {
     assert.ok(!(await runtime.handlers.agent_turn_status({ session_id: cancelSession.id })).running,
       'Detener interrumpe la espera y cierra el turno');
 
-    console.log('[PASS] wait_event: tiempo, archivo, timeout, reinicio, AutoIMG, shell job, Gmail, Outlook, GitHub, HTTP, delegación y cancelación.');
+    const controlTasks = require('../electron/agent-tasks');
+    const { profile: controller } = await runtime.handlers.agent_profile_save({
+      name: 'Control', instructions: 'SOLO_CONTROL: revisa sin escribir', tools: null,
+    });
+    const { session: controlParent } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_tools_set({ session_id: controlParent.id,
+      names: ['agent_delegate', 'agent_check', 'agent_message', 'agent_stop', 'canvas_list'] });
+    const controlSources = [];
+    const controlTurn = (context) => {
+      const source = JSON.stringify(context.messages);
+      if (source.includes('SOLO_CONTROL')) {
+        if (source.includes('Mensaje del agente principal para este encargo')) {
+          controlSources.push(source);
+          return fauxAssistantMessage('Comprobante añadido y encargo cerrado');
+        }
+        if (!source.includes('"role":"toolResult"')) return fauxAssistantMessage([fauxToolCall('canvas_list', {})], { stopReason: 'toolUse' });
+        return fauxAssistantMessage('Sigo trabajando');
+      }
+      if (source.includes('Informe de «Control»')) return fauxAssistantMessage('Informe de control recibido');
+      if (source.includes('Comprueba y actualiza el control')) {
+        if (!source.includes('"toolName":"agent_check"')) return fauxAssistantMessage([
+          fauxToolCall('agent_check', { session_id: controlChild.id })], { stopReason: 'toolUse' });
+        if (!source.includes('"toolName":"agent_message"')) return fauxAssistantMessage([
+          fauxToolCall('agent_message', { session_id: controlChild.id, message: 'Añade el comprobante del canvas' })], { stopReason: 'toolUse' });
+        return fauxAssistantMessage('Control en marcha');
+      }
+      if (!source.includes('"toolName":"agent_delegate"')) return fauxAssistantMessage([
+        fauxToolCall('agent_delegate', { agent: controller.id, task: 'Investiga con control' })], { stopReason: 'toolUse' });
+      return fauxAssistantMessage('Delegación con control creada');
+    };
+    slow = true;
+    faux.setResponses(Array.from({ length: 20 }, () => controlTurn));
+    await runtime.handlers.agent_message_send({ session_id: controlParent.id, content: 'Delega con control', request_id: 'control-delegate' });
+    await idle(controlParent.id);
+    const controlChild = (await runtime.handlers.agent_sessions_list()).sessions
+      .find((item) => item.delegation?.parent_session_id === controlParent.id);
+    assert.ok(controlChild, 'la delegación de control existe');
+    await until(async () => (await runtime.handlers.agent_sessions_list()).sessions
+      .find((item) => item.id === controlChild.id).delegation.status === 'working');
+    const listedControl = await controlTasks.checkDelegations({}, controlParent.id);
+    assert.equal(listedControl.delegations.length, 1, 'agent_check enumera las delegaciones pendientes o en marcha');
+    assert.equal(listedControl.delegations[0].session_id, controlChild.id);
+    assert.equal(listedControl.delegations[0].state, 'trabajando');
+    await runtime.handlers.agent_message_send({ session_id: controlParent.id, content: 'Comprueba y actualiza el control', request_id: 'control-actions' });
+    await idle(controlParent.id);
+    const controlCalls = (await runtime.handlers.agent_messages_list({ session_id: controlParent.id })).messages
+      .flatMap((message) => message.tool_calls || []);
+    const checked = JSON.parse(controlCalls.find((call) => call.name === 'agent_check').result);
+    assert.equal(checked.status, 'working');
+    assert.equal(checked.agent, 'Control');
+    assert.equal(checked.state, 'trabajando');
+    assert.equal(JSON.parse(controlCalls.find((call) => call.name === 'agent_message').result).sent, true);
+    slow = false;
+    await until(async () => (await messages(controlParent.id)).messages
+      .some((message) => message.content === 'Informe de control recibido'));
+    await idle(controlParent.id);
+    assert.equal(controlSources.length, 1, 'el hijo recibe el mensaje del padre en su turno en curso');
+    assert.match(controlSources[0], /Mensaje del agente principal para este encargo: Añade el comprobante del canvas/);
+    assert.equal(controlSources[0].split('Añade el comprobante del canvas').length - 1, 1, 'el mensaje llega una sola vez');
+    assert.equal((await runtime.handlers.agent_sessions_list()).sessions
+      .find((item) => item.id === controlChild.id).delegation.status, 'delivered');
+    assert.deepEqual((await controlTasks.checkDelegations({}, controlParent.id)).delegations, [],
+      'agent_check deja de listar la delegación entregada');
+    const deliveredView = await controlTasks.checkDelegations({ session_id: controlChild.id }, controlParent.id);
+    assert.equal(deliveredView.status, 'delivered');
+    assert.equal(deliveredView.state, 'entregada');
+    assert.equal(deliveredView.last_tool.name, 'canvas_list');
+    const { session: stopParent } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_tools_set({ session_id: stopParent.id,
+      names: ['agent_delegate', 'agent_check', 'agent_stop', 'canvas_list'] });
+    const stopTurn = (context) => {
+      const source = JSON.stringify(context.messages);
+      if (source.includes('SOLO_CONTROL')) {
+        if (!source.includes('"role":"toolResult"')) return fauxAssistantMessage([fauxToolCall('canvas_list', {})], { stopReason: 'toolUse' });
+        return fauxAssistantMessage('Sigo trabajando');
+      }
+      if (source.includes('Detén el encargo')) {
+        if (!source.includes('"toolName":"agent_stop"')) return fauxAssistantMessage([
+          fauxToolCall('agent_stop', { session_id: stopChild.id, reason: 'El usuario cambió de plan' })], { stopReason: 'toolUse' });
+        return fauxAssistantMessage('Delegación detenida');
+      }
+      if (!source.includes('"toolName":"agent_delegate"')) return fauxAssistantMessage([
+        fauxToolCall('agent_delegate', { agent: controller.id, task: 'Investiga para detener' })], { stopReason: 'toolUse' });
+      return fauxAssistantMessage('Delegación para detener creada');
+    };
+    slow = true;
+    faux.setResponses(Array.from({ length: 12 }, () => stopTurn));
+    await runtime.handlers.agent_message_send({ session_id: stopParent.id, content: 'Delega algo que detendré', request_id: 'stop-delegate' });
+    await idle(stopParent.id);
+    const stopChild = (await runtime.handlers.agent_sessions_list()).sessions
+      .find((item) => item.delegation?.parent_session_id === stopParent.id);
+    assert.ok(stopChild, 'la delegación que se detendrá existe');
+    await until(async () => (await runtime.handlers.agent_sessions_list()).sessions
+      .find((item) => item.id === stopChild.id).delegation.status === 'working');
+    await runtime.handlers.agent_message_send({ session_id: stopParent.id, content: 'Detén el encargo', request_id: 'stop-request' });
+    await idle(stopParent.id);
+    const stopCall = (await messages(stopParent.id)).messages
+      .flatMap((message) => message.tool_calls || []).find((call) => call.name === 'agent_stop');
+    assert.equal(JSON.parse(stopCall.result).stopped, true);
+    const stoppedView = await controlTasks.checkDelegations({ session_id: stopChild.id }, stopParent.id);
+    assert.equal(stoppedView.status, 'cancelled');
+    assert.equal(stoppedView.state, 'cancelada');
+    assert.equal(stoppedView.reason, 'El usuario cambió de plan');
+    await assert.rejects(controlTasks.sendMessage({ session_id: stopChild.id, message: 'Sigue' }, stopParent.id, {}), /ya terminó/);
+    await assert.rejects(controlTasks.checkDelegations({ session_id: controlChild.id }, stopParent.id), /no es una delegación/);
+    slow = false;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const stopMessages = (await messages(stopParent.id)).messages;
+    assert.ok(!stopMessages.some((message) => /devolvió su encargo|Informe de «Control»/.test(message.content)),
+      'una delegación detenida no entrega su informe');
+
+    console.log('[PASS] wait_event: tiempo, archivo, timeout, reinicio, AutoIMG, shell job, Gmail, Outlook, GitHub, HTTP, delegación y cancelación. '
+      + 'Delegaciones: consulta de estado, mensaje al hijo en curso y parada sin informe.');
   } finally {
     await runtime.shutdown();
     fs.rmSync(dir, { recursive: true, force: true });
