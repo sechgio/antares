@@ -245,8 +245,10 @@ def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace:
         offset = params.get("offset", 0)
         if not isinstance(skill_id, str) or not (re.fullmatch(r"[a-f0-9]{24}", skill_id) or skill_id.startswith("profile:")):
             raise ValueError("Indica el id devuelto por skills_list")
+        # isabs (3.13+) ya no ve '/x' como absoluta y pathlib la une reemplazando la base.
         if not isinstance(relative, str) or not relative or len(relative) > 240 or "\x00" in relative \
-                or ":" in relative or ntpath.isabs(relative) or ".." in relative.replace("\\", "/").split("/"):
+                or ":" in relative or relative[0] in "\\/" or ntpath.isabs(relative) \
+                or ".." in relative.replace("\\", "/").split("/"):
             raise ValueError("El archivo debe ser una ruta relativa dentro de la skill")
         if type(offset) is not int or offset < 0:
             raise ValueError("El offset debe ser un entero no negativo")
