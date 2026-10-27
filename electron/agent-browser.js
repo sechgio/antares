@@ -874,16 +874,30 @@ async function locate(contents, ref) {
     const lx = r.left + r.width / 2;
     const ly = r.top + r.height / 2;
     // El clic va a lo que esté encima del centro: un aviso o un diálogo lo taparían.
-    const hit = found.root.elementFromPoint ? found.root.elementFromPoint(lx, ly) : null;
-    const label = hit && hit.closest ? hit.closest('label') : null;
     const toggle = el.type === 'checkbox' || el.type === 'radio';
-    const reaches = !hit || hit === el || el.contains(hit) || hit.contains(el)
-      || (label && el.labels && [...el.labels].includes(label)) || (toggle && hit.parentElement === el.parentElement);
+    let surface = el, root = found.root, x = lx, y = ly, covered = null;
+    for (;;) {
+      const hit = root.elementFromPoint ? root.elementFromPoint(x, y) : null;
+      const label = hit && hit.closest ? hit.closest('label') : null;
+      const reaches = !hit || hit === surface || surface.contains(hit) || hit.contains(surface)
+        || (label && surface.labels && [...surface.labels].includes(label))
+        || (surface === el && toggle && hit.parentElement === el.parentElement);
+      if (!reaches) { covered = hit; break; }
+      if (root.host) surface = root.host;
+      else {
+        surface = root.defaultView && root.defaultView.frameElement;
+        if (!surface) break;
+        const frame = surface.getBoundingClientRect();
+        x += frame.left + surface.clientLeft;
+        y += frame.top + surface.clientTop;
+      }
+      root = surface.getRootNode();
+    }
     const role = el.getAttribute('role');
     const checked = toggle ? el.checked
       : ['checkbox', 'radio', 'switch', 'menuitemcheckbox', 'menuitemradio'].includes(role) ? el.getAttribute('aria-checked') === 'true' : null;
     return { x: Math.round(found.dx + lx), y: Math.round(found.dy + ly), secret: (${SECRET_FIELD_JS})(el), checked,
-      ...(reaches ? {} : { covered: hit.localName + ' «' + String(hit.innerText || hit.getAttribute('aria-label') || '')
+      ...(!covered ? {} : { covered: covered.localName + ' «' + String(covered.innerText || covered.getAttribute('aria-label') || '')
         .trim().replace(/\\s+/g, ' ').slice(0, 60) + '»' }) };
   })()`, true);
   assertSameDocument(rect);

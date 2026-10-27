@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- El navegador de Agent bloquea los clics en controles de marcos y shadow DOM cuando un aviso del documento superior los tapa.
 - Agent usa el límite de salida real de cada modelo del catálogo (por ejemplo, 128 000 tokens en Claude 5.5 y hasta un cuarto de la ventana en GPT): con el tope fijo de 8 192 tokens, el razonamiento alto dejaba sin espacio la respuesta y truncaba las llamadas a herramientas.
 - Un modelo personalizado que apunta a la API oficial de Anthropic, OpenAI u OpenRouter usa el catálogo de ese proveedor (ventana, límite de salida, precios y modo de razonamiento), y la lista de conversaciones refleja al momento los niveles de razonamiento que declara Proveedores IA.
 - Las herramientas MCP usan su canal de permisos, de modo que las reglas del canal MCP también se les aplican; la traza y la tarjeta de aprobación las nombran por su servidor y su herramienta real.

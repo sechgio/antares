@@ -307,6 +307,53 @@ async function main() {
     assert(met.met === true && met.waited_ms === 0, 'web_wait termina en cuanto se cumple la condición');
     const noCondition = await failure('web_wait', {});
     assert(noCondition && noCondition.message === 'Indica text, gone o url', 'web_wait exige una condición');
+
+    const { JSDOM } = require('../frontend/node_modules/jsdom');
+    const dom = new JSDOM('<iframe></iframe><div id="overlay">Aceptar cookies</div>',
+      { url: 'https://files.example.com', runScripts: 'outside-only' });
+    try {
+      const doc = dom.window.document;
+      const frame = doc.querySelector('iframe');
+      frame.getBoundingClientRect = () => ({ left: 40, top: 50 });
+      const innerDoc = frame.contentDocument;
+      innerDoc.body.innerHTML = '<button data-antares-ref="9">Enviar</button><div id="host"></div>';
+      for (const win of [dom.window, frame.contentWindow]) {
+        Object.defineProperty(win.HTMLElement.prototype, 'innerText', { get() { return this.textContent; } });
+      }
+      const button = innerDoc.querySelector('button');
+      const host = innerDoc.querySelector('#host');
+      const shadow = host.attachShadow({ mode: 'open' });
+      shadow.innerHTML = '<button data-antares-ref="10">Guardar</button>';
+      const shadowButton = shadow.querySelector('button');
+      for (const el of [button, shadowButton]) {
+        el.scrollIntoView = () => {};
+        el.getBoundingClientRect = () => ({ left: 10, top: 20, width: 100, height: 30 });
+      }
+      let outerHit = doc.querySelector('#overlay');
+      let innerHit = button;
+      doc.elementFromPoint = () => outerHit;
+      innerDoc.elementFromPoint = () => innerHit;
+      shadow.elementFromPoint = () => shadowButton;
+      contents.executeJavaScript = async (script) => dom.window.eval(script);
+      contents.executeJavaScriptInIsolatedWorld = async (_world, scripts) => dom.window.eval(scripts[0].code);
+      await browser.run('web_read', {});
+      before = sentInput();
+      const frameCovered = await failure('web_click', { ref: '9' });
+      assert(frameCovered?.code === 'COVERED' && frameCovered.message.includes('Aceptar cookies') && sentInput() === before,
+        'un aviso del documento superior bloquea el clic dentro de un marco');
+      outerHit = frame;
+      await browser.run('web_click', { ref: '9' });
+      const pressed = commands.filter(([method, params]) => method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed').at(-1);
+      assert(pressed[1].x === 100 && pressed[1].y === 85, 'un marco descubierto recibe el clic en coordenadas de la página');
+      innerHit = host;
+      const shadowClicked = await browser.run('web_click', { ref: '10' });
+      assert(shadowClicked.clicked === '10', 'un control descubierto de shadow DOM dentro de un marco admite el clic');
+      before = sentInput();
+      outerHit = doc.querySelector('#overlay');
+      const shadowCovered = await failure('web_click', { ref: '10' });
+      assert(shadowCovered?.code === 'COVERED' && sentInput() === before,
+        'un aviso superior también bloquea un control de shadow DOM dentro de un marco');
+    } finally { dom.window.close(); }
   } finally { timers.restore(); browser.close(); }
 }
 
