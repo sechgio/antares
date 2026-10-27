@@ -1,6 +1,23 @@
 const fs = require('fs');
+const Module = require('module');
 const os = require('os');
 const path = require('path');
+
+// escribir sin safeStorage ahora falla en voz alta: el test headless necesita uno disponible
+const originalLoad = Module._load;
+Module._load = function patchedLoad(request, parent, isMain) {
+  if (request === 'electron') {
+    return {
+      app: { getName: () => 'antares', getPath: () => path.join(os.tmpdir(), 'antares-autoimg') },
+      safeStorage: {
+        isEncryptionAvailable: () => true,
+        encryptString: (text) => Buffer.from(text, 'utf8'),
+        decryptString: (buf) => buf.toString('utf8'),
+      },
+    };
+  }
+  return originalLoad.call(this, request, parent, isMain);
+};
 
 const ROOT = path.resolve(__dirname, '..');
 const UBICACIONES_VIEW = path.join(ROOT, 'frontend', 'src', 'components', 'UbicacionesView.tsx');
