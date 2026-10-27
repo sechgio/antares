@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- Sube Electron a la 44.9.3 (GHSA-jr5w-w6x2-84p9: mitigación de los certificados intermedios eMudhra comprometidos) y fija `^44.9.3` como suelo de versión para que ningún entorno resuelva por debajo del arreglo.
 - Agent usa el límite de salida real de cada modelo del catálogo (por ejemplo, 128 000 tokens en Claude 5.5 y hasta un cuarto de la ventana en GPT): con el tope fijo de 8 192 tokens, el razonamiento alto dejaba sin espacio la respuesta y truncaba las llamadas a herramientas.
 - Un modelo personalizado que apunta a la API oficial de Anthropic, OpenAI u OpenRouter usa el catálogo de ese proveedor (ventana, límite de salida, precios y modo de razonamiento), y la lista de conversaciones refleja al momento los niveles de razonamiento que declara Proveedores IA.
 - Las herramientas MCP usan su canal de permisos, de modo que las reglas del canal MCP también se les aplican; la traza y la tarjeta de aprobación las nombran por su servidor y su herramienta real.
