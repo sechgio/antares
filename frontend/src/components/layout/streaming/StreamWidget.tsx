@@ -36,6 +36,11 @@ export const STREAM_STRINGS = {
   playTrack: 'Reproducir',
 } as const;
 
+export function formatTrackDuration(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
 interface StreamListStrings {
   search: string;
   searching: string;

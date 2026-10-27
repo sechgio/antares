@@ -54,3 +54,12 @@ export function parseDisplayDateToIso(displayDate: string): string {
   if (match) return `${match[3]}-${match[2]}-${match[1]}`;
   return '';
 }
+
+export function formatMoment(ms: number | null | undefined, timezone?: string): string {
+  if (!ms) return '—';
+  try {
+    return new Date(ms).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short', timeZone: timezone });
+  } catch {
+    return new Date(ms).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' });
+  }
+}

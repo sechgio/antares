@@ -30,7 +30,7 @@ def test_list_orders_by_updated_at_desc(store: EditorStore, monkeypatch: pytest.
     if newest_first:
         timestamps.reverse()
     clock = iter(timestamps)
-    monkeypatch.setattr("backend.core.editor.store._utc_now_iso", lambda: next(clock))
+    monkeypatch.setattr("backend.core.editor.store.utc_now_iso", lambda: next(clock))
     a = store.create("A")["project"]
     b = store.create("B")["project"]
     listed = store.list_projects()

@@ -2,6 +2,7 @@ import type { FillContext } from './renderHtml';
 import { mergeCanvasHtmlDocuments, renderCanvasHtml } from './renderHtml';
 import type { CanvasDocument } from '../types';
 import { getActivePageLayers, getPageCount, templateImagesPerPage } from '../ops/pages';
+import { yieldToMain } from '../../../utils/async';
 
 function chunkArray<T>(items: T[], perPage: number): T[][] {
   if (perPage <= 0) return items.length ? [items] : [[]];
@@ -37,10 +38,7 @@ export async function renderMultiPageHtmlAsync(
   for (let i = 0; i < plan.length; i += 1) {
     out.push(renderCanvasHtml(plan[i].pageDoc, plan[i].pageCtx, { forScreen: options?.forScreen }));
     if (i > 0 && i % 2 === 0) {
-      await new Promise<void>((resolve) => {
-        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
-        else setTimeout(resolve, 0);
-      });
+      await yieldToMain();
     }
   }
   return mergeCanvasHtmlDocuments(out);

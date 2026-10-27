@@ -9,6 +9,8 @@ const { maskClientId } = require('./autoimg-security');
 const {
   findAvailablePort,
   startCallbackServer,
+  generateCodeVerifier: _generateCodeVerifier,
+  generateCodeChallenge: _generateCodeChallenge,
 } = require('./autoimg-oauth-flow');
 
 const OAUTH_CONFIG_FILE = 'spotify-oauth-config.json';
@@ -48,14 +50,6 @@ let _pendingCodeVerifier = null;
 let _callbackFlow = null;
 let _refreshPromise = null;
 let _cachedTokens;
-
-function _generateCodeVerifier() {
-  return crypto.randomBytes(32).toString('base64url');
-}
-
-function _generateCodeChallenge(verifier) {
-  return crypto.createHash('sha256').update(verifier).digest('base64url');
-}
 
 function loadOAuthConfig() {
   const cfg = readSecureJson(OAUTH_CONFIG_FILE, OAUTH_CONFIG_NS);

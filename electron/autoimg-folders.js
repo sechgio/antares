@@ -1,7 +1,7 @@
 const sheets = require('./google-sheets-service');
 const drive = require('./google-drive-service');
 const { saveLocalFolders, loadLocalFolders } = require('./autoimg-user-store');
-const { sanitizeErrorMessage } = require('./autoimg-security');
+const { sanitizeErrorText } = require('./autoimg-security');
 const { parseFoldersFromValues, AUTOIMG_SHEET_TABS, tabStartIndex } = require('./autoimg-sheet-rows');
 const { ensureSheetId } = require('./autoimg-sheet-config');
 const {
@@ -22,7 +22,7 @@ function persistFoldersLocal(folders) {
 }
 
 function buildFolderErrorSummary(folder, error) {
-  const errMsg = sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
+  const errMsg = sanitizeErrorText(error);
   return {
     name: folder.name,
     folder_id: folder.folder_id,

@@ -90,6 +90,14 @@ def valid_b64_image(b64_string: str) -> bool:
     return valid_image_bytes(content)
 
 
+def prepare_logos(logos: dict[str, str | None]) -> tuple[str | None, str | None]:
+    left_raw = logos.get("left")
+    right_raw = logos.get("right")
+    left = data_uri_from_b64(left_raw) if left_raw and valid_b64_image(left_raw) else None
+    right = data_uri_from_b64(right_raw) if right_raw and valid_b64_image(right_raw) else None
+    return left, right
+
+
 def build_image_uris(
     images: dict[str, str],
     image_paths: dict[str, str] | None,

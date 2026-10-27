@@ -23,6 +23,8 @@ export {
   resetLastStrokeWeight,
 };
 
+const toHex = (n: string) => Number(n).toString(16).padStart(2, '0');
+
 export function pxToMm(px: number): number {
   return px / MM_TO_PX;
 }
@@ -185,7 +187,6 @@ export function normalizeHex(value: string | undefined, fallback = '#FFFFFF'): s
   if (!m) {
     const rgb = value.trim().match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
     if (rgb) {
-      const toHex = (n: string) => Number(n).toString(16).padStart(2, '0');
       return `#${toHex(rgb[1])}${toHex(rgb[2])}${toHex(rgb[3])}`.toUpperCase();
     }
     return fallback;
@@ -584,7 +585,6 @@ export function parseBoxShadow(value: string | undefined): ParsedShadow | null {
   );
   if (rgba) {
     const a = rgba[7] != null ? Number(rgba[7]) : 1;
-    const toHex = (n: string) => Number(n).toString(16).padStart(2, '0');
     return {
       x: Number(rgba[1]),
       y: Number(rgba[2]),

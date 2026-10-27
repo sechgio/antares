@@ -1,4 +1,4 @@
-import { clipDurationUs, clipEndUs, type Clip, type EditorProject, type MediaAsset } from '../types';
+import { clipDurationUs, clipEndUs, timelineToSourceUs, type Clip, type EditorProject, type MediaAsset } from '../types';
 
 const IMAGE_DEFAULT_DURATION_US = 5_000_000;
 
@@ -178,9 +178,4 @@ export function clipAt(clips: Clip[], trackId: string, timelineUs: number): Clip
     (c) => c.trackId === trackId && timelineUs >= c.timelineStartUs && timelineUs < clipEndUs(c),
   );
   return found ?? null;
-}
-
-function timelineToSourceUs(clip: Clip, timelineUs: number): number {
-  const { num, den } = clip.speed;
-  return clip.sourceInUs + Math.round(((timelineUs - clip.timelineStartUs) * num) / den);
 }

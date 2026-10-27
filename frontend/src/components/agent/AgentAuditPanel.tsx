@@ -3,6 +3,7 @@ import { Download, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react';
 import {
   agentApi, type AgentApproval, type AgentApprovalFilterStatus, type AgentGrant, type AgentSession,
 } from '../../api/agentApi';
+import { formatMoment } from '../../utils/dates';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
@@ -31,15 +32,6 @@ const STATUS_OPTIONS: { value: AgentApprovalFilterStatus; label: string }[] = [
 
 function methodLabel(method: string): string {
   return METHOD_LABELS[method] || method;
-}
-
-function formatMoment(ms: number | null | undefined, timezone?: string): string {
-  if (!ms) return '—';
-  try {
-    return new Date(ms).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short', timeZone: timezone });
-  } catch {
-    return new Date(ms).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' });
-  }
 }
 
 function csvCell(value: unknown): string {

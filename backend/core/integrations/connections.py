@@ -10,6 +10,7 @@ import urllib.request
 from pathlib import Path
 
 from backend.core.integrations import http_guard, vault
+from backend.core.integrations.catalog import load_catalog_providers
 from backend.core.integrations.types import JsonObject
 from backend.utils.paths import resource_path, user_data_path
 
@@ -24,12 +25,7 @@ _refresh_locks: dict[str, threading.Lock] = {}
 
 
 def load_provider_specs() -> dict[str, JsonObject]:
-    try:
-        data: JsonObject = json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    providers = data.get("providers") if isinstance(data, dict) else None
-    return dict(providers) if isinstance(providers, dict) else {}
+    return load_catalog_providers(_CATALOG_PATH)
 
 
 def get_provider(provider: str) -> JsonObject:

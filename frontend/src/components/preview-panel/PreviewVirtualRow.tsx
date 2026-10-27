@@ -1,6 +1,7 @@
 import React from 'react';
 import { Image as ImageIcon } from 'lucide-react';
 import { getColumnWidthClass, isMonospaceColumn, HighlightMatch, renderStatusBadge } from './dataPreviewFormat';
+import { normalizePreviewValue } from './utils';
 
 interface VirtualRowItem {
   row: Record<string, unknown>;
@@ -87,7 +88,7 @@ const PreviewVirtualRow = React.memo(function PreviewVirtualRowInner({
       </div>
       {vHeaders.map((header) => {
         const rawValue = row[header];
-        const cellText = rawValue !== null && rawValue !== undefined ? String(rawValue).trim() : '';
+        const cellText = normalizePreviewValue(rawValue, '');
         const isStatusCol =
           header.toUpperCase().includes('ESTADO') || header.toUpperCase().includes('STATUS');
         const isMono = isMonospaceColumn(header);

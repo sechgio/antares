@@ -311,14 +311,10 @@ async function beforeCompact(compaction, runtime, context) {
 
 module.exports = {
   DEFAULT_POLICY,
-  SUMMARY_SYSTEM_PROMPT,
   thresholdsFor,
   loadPolicy,
-  redactSecrets,
   serializeTranscript,
   unwrapCompactionSummary,
-  guardDataDirectives,
   emergencySummary,
   beforeCompact,
-  AUDIT_LOG,
 };
