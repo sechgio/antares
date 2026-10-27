@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest';
 import { agentApi, type AgentBrowserElement, type AgentBrowserState } from '../../api/agentApi';
 import AgentBrowserPanel from './AgentBrowserPanel';
-import { annotationNotes, drawMark, type Mark } from './BrowserAnnotator';
+import { annotationNotes, drawMark, type Mark } from './annotationMarks';
 import { fileSource, textPages } from './annotationSource';
 
 vi.mock('../../hooks/useToast', () => ({ useToast: () => ({ addToast: vi.fn() }) }));
