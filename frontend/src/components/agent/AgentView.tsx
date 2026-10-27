@@ -995,6 +995,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           key={editing === 'new' ? 'new' : editing.id}
           profile={editing === 'new' ? null : editing}
           canStartChat={Boolean(provider)}
+          providers={readyProviders}
           onClose={() => setEditing(null)}
           onSaved={(saved) => {
             setProfiles((prev) => [...prev.filter((p) => p.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, 'es')));

@@ -23,6 +23,11 @@ const ACTIVE_DELEGATION = new Set(['pending', 'working']);
 const FINISHED_DELEGATION = { delivered: 'entregada', cancelled: 'cancelada' };
 const MAX_MESSAGE_CHARS = 4000;
 const MAX_STOP_REASON_CHARS = 400;
+const MAX_CONTINUATION_ROUNDS = 10;
+const MAX_IDLE_MINUTES = 1440;
+const MAX_NUDGE_CHARS = 500;
+const DEFAULT_NUDGE = 'Continúa el encargo desde donde se detuvo: revisa lo que ya hiciste, no repitas trabajo ya '
+  + 'verificado y termina con un resultado verificable o con la pregunta exacta que solo el usuario puede responder.';
 
 const ROLE_PROMPT = {
   explorer: 'Investiga y devuelve hallazgos verificables. Solo puedes leer datos: no modifiques nada ni pidas aprobaciones.',
@@ -82,11 +87,22 @@ const DELEGATE_TOOL = {
     + 'o la pregunta que solo el usuario puede responder; contrasta el relato con lo observado antes de concluir. '
     + 'Para repartir trabajo entre varios agentes, llama agent_delegate una vez por agente en el mismo turno: sus informes '
     + 'vuelven juntos en una sola reanudación cuando ninguno sigue en marcha. Si el usuario cambia el encargo de una '
-    + 'delegación en curso, usa agent_message; para consultar su avance, agent_check; para detenerla, agent_stop.',
+    + 'delegación en curso, usa agent_message; para consultar su avance, agent_check; para detenerla, agent_stop. '
+    + 'Si una delegación ya terminó y quieres ampliarla conservando su historial, llama agent_delegate con resume y su '
+    + 'session_id. fork copia esta conversación como contexto del agente nuevo. max_rounds reanuda automáticamente al '
+    + 'agente si queda sin respuesta final o con error, hasta ese número de veces, tras idle_minutes de inactividad y '
+    + 'con nudge como mensaje; una respuesta completa no se altera.',
   inputSchema: { type: 'object', properties: {
     agent: { type: 'string' }, task: { type: 'string', minLength: 1, maxLength: 4000 },
     exclude_tools: { type: 'array', items: { type: 'string' }, description: 'Herramientas que el hijo no debe usar' },
     done_when: { type: 'string', maxLength: DONE_WHEN_MAX, description: 'Qué debe ser cierto para dar el encargo por terminado' },
+    resume: { type: 'string', description: 'session_id de una delegación terminada que continuará con task' },
+    fork: { type: 'boolean', description: 'Copia el historial de esta conversación como contexto del agente nuevo' },
+    max_rounds: { type: 'integer', minimum: 1, maximum: MAX_CONTINUATION_ROUNDS,
+      description: 'Reanudaciones automáticas si el agente queda sin respuesta final o con error' },
+    idle_minutes: { type: 'integer', minimum: 0, maximum: MAX_IDLE_MINUTES,
+      description: 'Minutos de inactividad antes de cada reanudación automática (por defecto 1)' },
+    nudge: { type: 'string', maxLength: MAX_NUDGE_CHARS, description: 'Mensaje que recibe el agente en cada reanudación automática' },
   }, required: ['agent', 'task'] },
 };
 
@@ -122,16 +138,83 @@ const STOP_TOOL = {
   }, required: ['session_id'] },
 };
 
+function continuationConfig(args) {
+  if (args.max_rounds === undefined) {
+    if (args.idle_minutes !== undefined || args.nudge !== undefined) {
+      throw validation('Indica max_rounds para reanudar la delegación automáticamente');
+    }
+    return null;
+  }
+  if (!Number.isInteger(args.max_rounds) || args.max_rounds < 1 || args.max_rounds > MAX_CONTINUATION_ROUNDS) {
+    throw validation(`max_rounds debe ser un entero entre 1 y ${MAX_CONTINUATION_ROUNDS}`);
+  }
+  const idle = args.idle_minutes === undefined ? 1 : args.idle_minutes;
+  if (!Number.isInteger(idle) || idle < 0 || idle > MAX_IDLE_MINUTES) {
+    throw validation(`idle_minutes debe ser un entero entre 0 y ${MAX_IDLE_MINUTES}`);
+  }
+  if (args.nudge !== undefined && typeof args.nudge !== 'string') throw validation('nudge debe ser un texto');
+  const nudge = typeof args.nudge === 'string' ? args.nudge.trim() : '';
+  if (nudge.length > MAX_NUDGE_CHARS) throw validation(`nudge no puede exceder ${MAX_NUDGE_CHARS} caracteres`);
+  return { max_rounds: args.max_rounds, idle_minutes: idle, ...(nudge ? { nudge } : {}), rounds: 0 };
+}
+
+async function resumeDelegation({ profile, role, task, resumeId, sessionId, parent, doneWhen, continuation, context }) {
+  const child = await requireDelegation(sessionId, resumeId);
+  if (ACTIVE_DELEGATION.has(child.delegation.status)) {
+    throw validation('La delegación sigue en marcha; usa agent_message para ampliar su encargo');
+  }
+  if (!child.profile || child.profile.id !== profile.id) {
+    throw validation('Solo puedes retomar la delegación con el mismo agente que la recibió');
+  }
+  const previous = child.delegation.continuation;
+  const next = continuation || (previous ? {
+    max_rounds: previous.max_rounds, idle_minutes: previous.idle_minutes,
+    ...(previous.nudge ? { nudge: previous.nudge } : {}), rounds: 0,
+  } : null);
+  const state = shared.state;
+  const now = Date.now();
+  const origin = userRequest(await require('./agent-projection').allEntries(await conversation(sessionId)));
+  const live = await state.harness.snapshot(shared.deps.pi.LiveDoc, parent.conversationId, ctx());
+  const batch = live?.run?.taskId ? String(live.run.taskId) : '';
+  const status = await state.harness.commit(async (tx) => {
+    const current = (await tx.doc(state.SessionsDoc)).sessions[child.id];
+    if (!current || current.deleted || !current.delegation || current.delegation.parent_session_id !== sessionId) return 'missing';
+    if (ACTIVE_DELEGATION.has(current.delegation.status)) return 'active';
+    if (!current.profile || current.profile.id !== profile.id) return 'agent';
+    current.delegation = {
+      ...current.delegation,
+      content: task,
+      status: 'pending',
+      round: (Number(current.delegation.round) || 0) + 1,
+      ...(doneWhen ? { done_when: doneWhen } : {}),
+      ...(origin ? { origin } : {}),
+      ...(next ? { continuation: next } : {}),
+    };
+    delete current.delegation.started_at;
+    delete current.delegation.retry_at;
+    delete current.delegation.result_request;
+    delete current.delegation.inline_waits;
+    delete current.delegation.cancelled_at;
+    delete current.delegation.cancelled_reason;
+    if (batch) current.delegation.batch = batch;
+    else delete current.delegation.batch;
+    if (!next) delete current.delegation.continuation;
+    current.updated_at = now;
+    return 'pending';
+  }, ctx());
+  if (status === 'missing') throw validation(`La conversación ${child.id} no es una delegación de esta conversación`);
+  if (status === 'active') throw validation('La delegación sigue en marcha; usa agent_message para ampliar su encargo');
+  if (status === 'agent') throw validation('Solo puedes retomar la delegación con el mismo agente que la recibió');
+  wakeWaiters();
+  return { delegated: true, resumed: true, session_id: child.id, agent: { id: profile.id, name: profile.name },
+    role, depth: Number(child.delegation.depth ?? MAX_DELEGATION_DEPTH), status: 'pending' };
+}
+
 async function delegate(profile, args, sessionId, api, context) {
   const parent = await requireSession(sessionId);
   const role = PROFILE_ROLES.has(profile.role) ? profile.role : 'explorer';
   if (role === 'worker') {
     throw validation('El rol worker solo se delega con subagent_run, donde cada efecto se aprueba en esta conversación');
-  }
-  const parentDepth = parent.delegation ? Number(parent.delegation.depth ?? MAX_DELEGATION_DEPTH) : 0;
-  const depth = parentDepth + 1;
-  if (depth > MAX_DELEGATION_DEPTH) {
-    throw validation(`La delegación alcanzó la profundidad máxima (${MAX_DELEGATION_DEPTH})`);
   }
   const task = typeof args.task === 'string' ? args.task.trim() : '';
   if (!task || task.length > 4000) throw validation('El encargo debe tener entre 1 y 4000 caracteres');
@@ -145,21 +228,48 @@ async function delegate(profile, args, sessionId, api, context) {
     throw validation(`done_when debe ser un texto de hasta ${DONE_WHEN_MAX} caracteres`);
   }
   const doneWhen = typeof args.done_when === 'string' ? args.done_when.trim() : '';
+  const continuation = continuationConfig(args);
+  if (args.fork !== undefined && typeof args.fork !== 'boolean') throw validation('fork debe ser verdadero o falso');
+  if (args.resume !== undefined && (typeof args.resume !== 'string' || !args.resume.trim())) {
+    throw validation('Indica la conversación de la delegación que quieres retomar');
+  }
+  const resumeId = typeof args.resume === 'string' ? args.resume.trim() : '';
+  if (resumeId && args.fork === true) throw validation('resume ya conserva el contexto; no lo combines con fork');
+  if (resumeId) {
+    return resumeDelegation({ profile, role, task, resumeId, sessionId, parent, doneWhen, continuation, context });
+  }
+  const parentDepth = parent.delegation ? Number(parent.delegation.depth ?? MAX_DELEGATION_DEPTH) : 0;
+  const depth = parentDepth + 1;
+  if (depth > MAX_DELEGATION_DEPTH) {
+    throw validation(`La delegación alcanzó la profundidad máxima (${MAX_DELEGATION_DEPTH})`);
+  }
   const id = `delegate-${crypto.createHash('sha256').update(`${sessionId}:${api.taskId}`).digest('hex').slice(0, 24)}`;
   const state = shared.state;
+  const execution = require('./agent-execution');
   let child = (await sessions())[id];
   if (!child) {
     const enabled = new Set((await api.agent(context)).tools.map((tool) => tool.name));
-    const allows = require('./agent-execution').profileFilter(profile);
+    const allows = execution.profileFilter(profile);
     const tools = [...shared.toolSpecs.values()].filter((tool) => tool.kind === 'backend' && tool.replay_safe === true
       && enabled.has(tool.name) && (!allows || allows(tool.name)) && !excluded.has(tool.name));
     const now = Date.now();
     const origin = userRequest(await require('./agent-projection').allEntries(await conversation(sessionId)));
     const live = await state.harness.snapshot(shared.deps.pi.LiveDoc, parent.conversationId, ctx());
     const batch = live?.run?.taskId ? String(live.run.taskId) : '';
-    await state.harness.createConversation({
+    let agentModel = { provider: parent.provider, modelId: parent.model };
+    let style = parent.style;
+    let levels;
+    if (profile.model && profile.model.provider && profile.model.model) {
+      await execution.ensureProvider(profile.model.provider, profile.model.model);
+      const info = await execution.providerInfo(profile.model.provider);
+      agentModel = { provider: profile.model.provider, modelId: profile.model.model };
+      style = info.style || 'openai_chat';
+      levels = await execution.reasoningLevels(agentModel.provider, agentModel.modelId);
+    }
+    const options = {
       ownership: { kind: 'ownerless' },
-      agent: { model: { provider: parent.provider, modelId: parent.model }, tools: tools.map((tool) => ({ name: tool.name })),
+      agent: { model: agentModel, ...(levels ? { thinkingLevel: execution.thinkingLevelFor(levels) } : {}),
+        tools: tools.map((tool) => ({ name: tool.name })),
         instructions: `Eres el agente «${profile.name}» de Antares, con rol ${role === 'reviewer' ? 'revisor' : 'explorador'}. `
           + `Responde en español. ${ROLE_PROMPT[role]} `
           + 'No puedes delegar, acceder a otros chats ni concederte acceso a archivos. '
@@ -167,13 +277,27 @@ async function delegate(profile, args, sessionId, api, context) {
       init: async (tx, conversationId) => {
         const doc = await tx.doc(state.SessionsDoc);
         if (doc.sessions[id]) throw validation('El encargo ya está registrado');
-        doc.sessions[id] = { id, conversationId, title: `Delegación: ${profile.name}`, provider: parent.provider,
-          model: parent.model, style: parent.style, created_at: now, updated_at: now, last_error: null,
+        doc.sessions[id] = { id, conversationId, title: `Delegación: ${profile.name}`, provider: agentModel.provider,
+          model: agentModel.modelId, style, created_at: now, updated_at: now, last_error: null,
+          ...(levels ? { reasoning_levels: levels } : {}),
           profile: { id: profile.id, name: profile.name },
           delegation: { parent_session_id: sessionId, content: task, status: 'pending', depth,
-            ...(doneWhen ? { done_when: doneWhen } : {}), ...(origin ? { origin } : {}), ...(batch ? { batch } : {}) } };
+            ...(doneWhen ? { done_when: doneWhen } : {}), ...(origin ? { origin } : {}), ...(batch ? { batch } : {}),
+            ...(continuation ? { continuation } : {}) } };
       },
-    }, ctx());
+    };
+    if (args.fork === true) {
+      const parentConv = await conversation(sessionId);
+      const page = await parentConv.entries({}, 40, undefined, ctx());
+      // Nunca cortar en una llamada a herramienta sin su resultado: el proveedor
+      // del hijo rechazaría el historial heredado.
+      const at = page.items.find((entry) => entry.kind !== 'pi.assistant'
+        || !(entry.model?.[0]?.content || []).some((block) => block.type === 'toolCall'))?.id;
+      if (!at) throw validation('No hay contexto de esta conversación que copiar todavía');
+      await parentConv.fork(at, options, ctx());
+    } else {
+      await state.harness.createConversation(options, ctx());
+    }
     child = (await sessions())[id];
     shared.convToSession.set(child.conversationId, id);
   }
@@ -184,7 +308,7 @@ async function delegate(profile, args, sessionId, api, context) {
     throw validation('El encargo fue cancelado');
   }
   return { delegated: true, session_id: id, agent: { id: profile.id, name: profile.name }, role, depth,
-    status: child.delegation.status };
+    ...(continuation ? { max_rounds: continuation.max_rounds } : {}), status: child.delegation.status };
 }
 
 async function startChild(child) {
@@ -197,7 +321,7 @@ async function startChild(child) {
   await conv.submit({ type: 'input', content: [
     { type: 'text', text: child.delegation.content },
     { type: 'text', text: `${shared.CONTEXT_MARKER}\n${delegationBrief(child.delegation)}\n${memory.context || ''}` },
-  ], requestId: `delegate:${child.id}`, whenBusy: 'followUp' }, ctx());
+  ], requestId: `delegate:${child.id}:${Number(child.delegation.round) || 0}`, whenBusy: 'followUp' }, ctx());
   await state.harness.commit(async (tx) => {
     const current = (await tx.doc(state.SessionsDoc)).sessions[child.id];
     if (current && !current.deleted && current.delegation.status === 'pending') {
@@ -232,6 +356,8 @@ function delegationBrief(job) {
   return [
     job.origin ? `Este encargo forma parte de esta petición del usuario: «${job.origin}». Es contexto: haz solo tu encargo.` : '',
     job.done_when ? `Se da por terminado cuando: «${job.done_when}». Comprueba ese criterio antes de responder.` : '',
+    job.round ? 'Esta es una continuación del encargo en esta misma conversación: retoma lo que ya hiciste y no repitas '
+      + 'trabajo verificado.' : '',
     'Tu respuesta final vuelve sola a la conversación que te lo encargó. Termina con lo que hiciste y lo que quedó sin '
       + 'comprobar. Si algo solo puede resolverlo el usuario (una credencial, una decisión o un paso con consecuencias '
       + 'que el encargo no cubre), termina tu respuesta con «NECESITA ENTRADA:» y la pregunta exacta.',
@@ -320,6 +446,10 @@ async function describeDelegation(child) {
     task: quoted(job.content, 200),
   };
   if (job.done_when) described.done_when = String(job.done_when).slice(0, DONE_WHEN_MAX);
+  if (job.continuation) {
+    described.rounds = Number(job.continuation.rounds) || 0;
+    described.max_rounds = Number(job.continuation.max_rounds) || 0;
+  }
   if (job.cancelled_reason) described.reason = String(job.cancelled_reason).slice(0, MAX_STOP_REASON_CHARS);
   try {
     const tool = await lastTool(await conversation(child.id));
@@ -408,7 +538,57 @@ async function delegationState(state, child) {
     return !live.run && !inbox.items.length;
   }, ctx());
   if (!idle) return 'running';
-  return (await sessions())[child.id]?.continuation ? 'parked' : 'settled';
+  return continuationStep(state, (await sessions())[child.id] || child);
+}
+
+// Un hijo estancado terminó sin respuesta final o quedó con error: un nudge le da
+// otra oportunidad con el mismo historial. Una respuesta completa no se toca.
+async function childStalled(child) {
+  if (child.continuation || child.last_error) return true;
+  const entries = await require('./agent-projection').allEntries(await conversation(child.id));
+  const answer = entries.findLast((entry) => entry.kind === 'pi.assistant' && entry.model?.[0])?.model[0];
+  const content = answer?.content || [];
+  return content.some((block) => block.type === 'toolCall')
+    || !content.some((block) => block.type === 'text' && String(block.text).trim());
+}
+
+async function continuationStep(state, child) {
+  const config = child.delegation.continuation;
+  if (!config) return child.continuation ? 'parked' : 'settled';
+  if (Number(config.rounds) >= Number(config.max_rounds)) return 'settled';
+  const waitMs = Math.max(0, Number(config.idle_minutes) || 0) * 60000;
+  const since = Number(config.since) || 0;
+  if (since && Date.now() - since < waitMs) return 'parked';
+  if (!(await childStalled(child))) return 'settled';
+  if (waitMs > 0 && !since) {
+    await state.harness.commit(async (tx) => {
+      const current = (await tx.doc(state.SessionsDoc)).sessions[child.id];
+      if (current && current.delegation.continuation && !current.delegation.continuation.since) {
+        current.delegation.continuation.since = Date.now();
+      }
+    }, ctx());
+    return 'parked';
+  }
+  const round = Number(config.rounds) + 1;
+  const claimed = await state.harness.commit(async (tx) => {
+    const current = (await tx.doc(state.SessionsDoc)).sessions[child.id];
+    if (!current || current.delegation.status !== 'working' || !current.delegation.continuation) return false;
+    current.delegation.continuation.rounds = round;
+    delete current.delegation.continuation.since;
+    return true;
+  }, ctx());
+  if (!claimed) return 'running';
+  const conv = await conversation(child.id);
+  await require('./agent-projection').ensureWatcher(child);
+  await conv.submit({ type: 'write', requestId: `delegate-nudge:${child.id}:${round}`, entry: {
+    kind: shared.NOTICE_KIND, data: { text: `Continuación automática ${round}/${config.max_rounds} del encargo` },
+  } }, ctx());
+  await conv.submit({ type: 'input', whenBusy: 'followUp', requestId: `delegate-nudge:${child.id}:${round}:input`,
+    content: `${shared.CONTEXT_MARKER}\n${config.nudge || DEFAULT_NUDGE}\n`
+      + 'Es una continuación automática del encargo que ya tienes en esta conversación; no es una aprobación, '
+      + 'un permiso nuevo ni una instrucción del usuario.' }, ctx());
+  wakeWaiters();
+  return 'running';
 }
 
 async function deferDelegations(state, children, err) {
@@ -434,8 +614,11 @@ function stillDeliverable(map, children) {
 async function deliverDelegations(state, parent, children, open) {
   const single = children.length === 1;
   const ids = children.map((child) => child.id).sort();
-  const key = single ? `delegate:${ids[0]}`
-    : `delegate-batch:${crypto.createHash('sha256').update(ids.join(':')).digest('hex').slice(0, 24)}`;
+  // Cada entrega necesita un requestId propio: pi-durable deduplica y una
+  // delegación retomada volvería a usar la clave de su entrega anterior.
+  const rounds = children.map((child) => Number(child.delegation.round) || 0).sort().join('-');
+  const key = single ? `delegate:${ids[0]}:${rounds}`
+    : `delegate-batch:${crypto.createHash('sha256').update(`${ids.join(':')}:${rounds}`).digest('hex').slice(0, 24)}`;
   const reports = [];
   for (const child of children) reports.push({ child, report: await delegationAnswer(child) });
   const conv = await conversation(parent.id);
@@ -467,7 +650,7 @@ async function deliverDelegations(state, parent, children, open) {
       const current = doc.sessions[child.id];
       if (current && current.delegation.status === 'working') {
         current.delegation.status = 'delivered';
-        if (!single) current.delegation.result_request = `${key}:result`;
+        current.delegation.result_request = `${key}:result`;
       }
     }
   }, ctx());

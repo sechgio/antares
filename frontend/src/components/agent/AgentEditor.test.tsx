@@ -36,7 +36,7 @@ it('crea un agente con indicaciones y solo las herramientas elegidas', async () 
   fireEvent.click(screen.getByRole('switch', { name: 'Permitir templates_catalog' }));
   await act(async () => { fireEvent.click(create); });
   expect(save).toHaveBeenCalledWith({ name: 'Informe mensual', color: '#0E7490', description: '', role: 'explorer', instructions: 'Usa la plantilla de cortes',
-    starter: 'Prepara el informe', tools: ['templates_catalog'], tools_deny: [], memory_scope: 'shared-read', daily_tokens: null });
+    starter: 'Prepara el informe', tools: ['templates_catalog'], tools_deny: [], memory_scope: 'shared-read', daily_tokens: null, model: null });
   expect(onSaved).toHaveBeenCalledWith(saved);
 });
 
@@ -83,7 +83,7 @@ it('permite empezar con nombre e instrucción sin abrir las opciones avanzadas',
   fireEvent.change(screen.getByLabelText('Nombre del agente'), { target: { value: 'Revisor' } });
   fireEvent.change(screen.getByLabelText('Indicaciones del agente'), { target: { value: 'Revisa mis informes' } });
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Crear y chatear' })); });
-  expect(save).toHaveBeenCalledWith({ name: 'Revisor', color: '', role: 'explorer', instructions: 'Revisa mis informes', description: '', starter: '', tools: null, tools_deny: [], memory_scope: 'shared-read', daily_tokens: null });
+  expect(save).toHaveBeenCalledWith({ name: 'Revisor', color: '', role: 'explorer', instructions: 'Revisa mis informes', description: '', starter: '', tools: null, tools_deny: [], memory_scope: 'shared-read', daily_tokens: null, model: null });
 });
 
 it('conserva el color al editar y permite volver al automático', async () => {
@@ -137,6 +137,23 @@ it('guarda el rol y advierte del alcance de un worker', async () => {
   expect(screen.getByText(/cada acción pedirá tu aprobación/)).toBeVisible();
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
   expect(save.mock.calls[0][0]).toMatchObject({ id: 'p1', role: 'worker' });
+});
+
+it('guarda un modelo propio del agente y permite volver a heredarlo', async () => {
+  const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: saved });
+  const providers = [{
+    id: 'openai', label: 'OpenAI', description: '', docs: '', editable_base_url: true, default_base_url: '',
+    default_model: 'gpt-5', provider: 'openai', configured: true, has_key: true, key_masked: null, base_url: '', needs_key: false,
+  }];
+  await act(async () => { render(<AgentEditor profile={saved} providers={providers}
+    onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} />); });
+  fireEvent.click(screen.getByRole('switch', { name: 'Usar un modelo propio del agente' }));
+  expect(screen.getByRole('button', { name: 'Elegir proveedor y modelo' })).toHaveTextContent('gpt-5');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(save.mock.calls[0][0]).toMatchObject({ model: { provider: 'openai', model: 'gpt-5' } });
+  fireEvent.click(screen.getByRole('switch', { name: 'Usar un modelo propio del agente' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(save.mock.calls[1][0]).toMatchObject({ model: null });
 });
 
 it('muestra el error del runtime sin cerrar el editor', async () => {

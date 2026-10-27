@@ -336,6 +336,17 @@ async function profileSave(params = {}) {
   if (dailyTokens !== null && (!Number.isInteger(dailyTokens) || dailyTokens < MIN_DAILY_TOKENS || dailyTokens > MAX_DAILY_TOKENS)) {
     throw validation(`El presupuesto diario debe estar entre ${MIN_DAILY_TOKENS} y ${MAX_DAILY_TOKENS} tokens, o vacío para no limitarlo`);
   }
+  const rawModel = params.model === undefined ? (existing?.model ?? null) : params.model;
+  let agentModel = null;
+  if (rawModel !== null) {
+    if (typeof rawModel !== 'object' || Array.isArray(rawModel)) {
+      throw validation('El modelo del agente debe indicar proveedor y modelo');
+    }
+    const provider = _text(rawModel.provider, 'un proveedor', 120, true);
+    const modelId = _text(rawModel.model, 'un modelo', 120, true);
+    await execution.ensureProvider(provider, modelId);
+    agentModel = { provider, model: modelId };
+  }
   const now = Date.now();
   const profile = {
     id: existing ? existing.id : crypto.randomBytes(6).toString('hex'),
@@ -349,6 +360,7 @@ async function profileSave(params = {}) {
     ...(deny.length ? { tools_deny: [...new Set(deny)] } : {}),
     ...(memoryScope !== 'shared-read' ? { memory_scope: memoryScope } : {}),
     ...(dailyTokens !== null ? { daily_tokens: dailyTokens } : {}),
+    ...(agentModel ? { model: agentModel } : {}),
     created_at: existing ? existing.created_at : now,
     updated_at: now,
   };
