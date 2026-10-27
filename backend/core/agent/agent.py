@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import ntpath
+import os
 import threading
 import time
 import uuid
@@ -402,6 +403,36 @@ class AgentStore:
         if not safe:
             raise ValueError("Sesión de agente no válida")
         return self._drafts_root / safe
+
+    def workspace_dir(self, session_id: str) -> Path:
+        """Raíz de la conversación: la carpeta adjunta activa o, sin ella, los borradores."""
+        for grant in self.grants_for(session_id).values():
+            if grant.get("mode") == "folder" and grant.get("active"):
+                try:
+                    stat = os.stat(str(grant["path"]))
+                except OSError:
+                    break
+                if (grant.get("dev"), grant.get("ino")) == (stat.st_dev, stat.st_ino) and Path(grant["path"]).is_dir():
+                    return Path(str(grant["path"]))
+                break
+        return self.drafts_dir(session_id)
+
+    def set_workspace(self, session_id: str, path: str | None) -> str | None:
+        with self._lock:
+            grants = self._grants.get(session_id) or {}
+            target = os.path.normcase(path) if path else None
+            if target is not None and not any(
+                    g.get("mode") == "folder" and os.path.normcase(str(g["path"])) == target for g in grants.values()):
+                raise ValueError("La carpeta no está adjunta a esta conversación")
+            active = None
+            for grant in grants.values():
+                if grant.get("mode") == "folder" and target is not None and os.path.normcase(str(grant["path"])) == target:
+                    grant["active"] = True
+                    active = str(grant["path"])
+                else:
+                    grant.pop("active", None)
+            self._write_grants()
+            return active
 
     def grants_for(self, session_id: str) -> dict[str, JsonObject]:
         with self._lock:

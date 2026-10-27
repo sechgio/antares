@@ -206,7 +206,7 @@ def _intent(session_id: str, method: str, params: JsonObject, context: JsonObjec
             resources.append(resource_grants.revision(str(path)))
             artifact_context = {"filename": file["name"], "sha256": file["sha256"]}
         if method in computer_files.WRITE_TOOLS:
-            resources.extend(computer_files.resources(params, store.grants_for(session_id), store.drafts_dir(session_id)))
+            resources.extend(computer_files.resources(params, store.grants_for(session_id), store.workspace_dir(session_id)))
         if method in _CLOUD_UPLOADS:
             root = store.drafts_dir(session_id)
             source = drafts.inside(root, str(root / str(params.get("draft") or "")))
@@ -253,7 +253,21 @@ def _grants_add(params: JsonObject) -> JsonObject:
         granted.append(str(record["path"]))
     if records:
         _store().add_grants(session_id, records)
-    return {"granted": granted, "rejected": rejected}
+    result: JsonObject = {"granted": granted, "rejected": rejected}
+    folders_granted = [str(record["path"]) for record in records if record.get("mode") == "folder"]
+    if folders_granted:
+        result["workspace"] = _store().set_workspace(session_id, folders_granted[-1])
+    return result
+
+
+@with_locale
+@validate_params("session_id")
+def _workspace_set(params: JsonObject) -> JsonObject:
+    path = params.get("path")
+    try:
+        return {"workspace": _store().set_workspace(str(params["session_id"]), path if isinstance(path, str) and path else None)}
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
 
 
 @with_locale
@@ -262,7 +276,7 @@ def _path_status(params: JsonObject) -> JsonObject:
     store = _store()
     session_id = str(params["session_id"])
     try:
-        return computer_files.stat_path(params["path"], store.grants_for(session_id), store.drafts_dir(session_id))
+        return computer_files.stat_path(params["path"], store.grants_for(session_id), store.workspace_dir(session_id))
     except ValueError as err:
         raise ValidationError(str(err)) from err
 
@@ -703,6 +717,12 @@ def _document_plan(params: JsonObject) -> JsonObject:
     return plan
 
 
+def _workspace_path(session_id: str) -> str | None:
+    store = _store()
+    workspace = store.workspace_dir(session_id)
+    return None if workspace == store.drafts_dir(session_id) else str(workspace)
+
+
 @with_locale
 @validate_params("session_id")
 def _artifacts(params: JsonObject) -> JsonObject:
@@ -711,7 +731,8 @@ def _artifacts(params: JsonObject) -> JsonObject:
              for record in _store().grants_for(session_id).values()]
     return {"artifacts": _store().artifacts_for(session_id),
             "questions": _store().questions_for(session_id),
-            "context": {"files": sorted(files, key=lambda f: f["path"]), "accounts": _store().accounts_for(session_id)}}
+            "context": {"files": sorted(files, key=lambda f: f["path"]), "accounts": _store().accounts_for(session_id),
+                        "workspace": _workspace_path(session_id)}}
 
 
 @with_locale
@@ -870,6 +891,7 @@ HANDLERS = {
     "agent_question_answer": _question_answer,
     "agent_internal_memory_context": _memory_context,
     "agent_internal_grant_remove": _grant_remove,
+    "agent_internal_workspace_set": _workspace_set,
     "agent_memory_list": _memory_list,
     "agent_skills_list": _skills_list,
     "agent_internal_skill_resolve": _skill_resolve,

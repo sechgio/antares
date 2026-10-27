@@ -688,7 +688,8 @@ async function messagesList(params) {
     pending_approvals: pending,
     artifacts,
     questions,
-    context: { modules: session.modules || [], files: (context && context.files) || [], accounts: (context && context.accounts) || [] },
+    context: { modules: session.modules || [], files: (context && context.files) || [], accounts: (context && context.accounts) || [],
+      workspace: (context && context.workspace) || null },
     usage: usage || null,
     context_window: contextWindow,
     compaction_thresholds: compactionPolicy.thresholdsFor(shared.state.compaction, contextWindow),
@@ -738,6 +739,13 @@ async function contextRemoveFile(params) {
   const filePath = String(params.path || '');
   if (!filePath) throw validation('Indica el archivo que quieres retirar');
   return bridge('agent_internal_grant_remove', { session_id: sessionId, path: filePath });
+}
+
+async function workspaceSet(params) {
+  const sessionId = String(params && params.session_id || '');
+  await requireSession(sessionId);
+  const folder = typeof params.path === 'string' && params.path ? params.path : undefined;
+  return bridge('agent_internal_workspace_set', { session_id: sessionId, ...(folder ? { path: folder } : {}) });
 }
 
 async function messageSend(params) {
@@ -820,9 +828,15 @@ async function messageSend(params) {
       await conv.configure({ tools: [...current, ...extra].map((name) => ({ name })) }, ctx());
     }
   }
-  const attachedNote = attached.length
-    ? `Archivos adjuntos por el usuario:\n${attached.map((a) => `- ${a.path} (${a.kind === 'folder' ? 'carpeta' : 'archivo'})`).join('\n')}`
-    : '';
+  const attachedNote = [
+    attached.length
+      ? `Archivos adjuntos por el usuario:\n${attached.map((a) => `- ${a.path} (${a.kind === 'folder' ? 'carpeta' : 'archivo'})`).join('\n')}`
+      : '',
+    files.workspace
+      ? `Espacio de trabajo activo: ${files.workspace}. Las rutas relativas de fs_* y shell_run sin cwd se resuelven en esa carpeta; `
+        + 'crea ahí los archivos que pida el usuario, no en los borradores.'
+      : '',
+  ].filter(Boolean).join('\n\n');
   const memory = await memoryContext(session, content);
   const agentConfig = await conv.agent(ctx());
   const instructions = String(agentConfig.instructions || '');
@@ -1335,6 +1349,7 @@ module.exports = {
     agent_turn_cancel: turnCancel,
     agent_attach: attach,
     agent_context_remove_file: contextRemoveFile,
+    agent_workspace_set: workspaceSet,
     agent_browser: browserAction,
     agent_profiles_list: profilesList,
     agent_profile_save: profileSave,

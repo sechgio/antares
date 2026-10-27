@@ -72,9 +72,11 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
         return skills.run(name, args, store.grants_for(session_id), root, store.base_dir / "skills",
                           agent_id=profile_id, profile_skills=profile_skills)
     if name.startswith("fs_"):
-        return computer_files.fit(computer_files.run(name, args, store.grants_for(session_id), root))
+        return computer_files.fit(computer_files.run(name, args, store.grants_for(session_id),
+                                                     store.workspace_dir(session_id)))
     if name == "shell_run":
-        return computer_files.fit(computer_shell.run(args, store.grants_for(session_id), root, token))
+        return computer_files.fit(computer_shell.run(args, store.grants_for(session_id), root, token,
+                                                     workspace=store.workspace_dir(session_id)))
     if name == "shell_output":
         return computer_shell.read_output(args, root)
     if name == "shell_job_start":
