@@ -7,6 +7,10 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- En Acceso completo, `shell_run` y `shell_job_start` se ejecutan sin pedir aprobación, como el modo sin permisos de Claude Code. Siguen pidiéndola los comandos que borran o descartan archivos (`Remove-Item`, `rm`, `git reset --hard`, `git clean`…) y cualquier comando dentro de un encargo programado; las acciones de ratón y teclado sobre apps no cambian.
+- Las tarjetas de la conversación de Agent (aprobaciones, plan, actividad, razonamiento y documentos) ocupan el mismo ancho que el compositor en lugar de quedarse en 620 px.
+
 ### Security
 - Guardar un borrador en una carpeta del equipo (`drafts_save`) ya no se auto-aprueba con el canal Archivos: su carpeta de destino no está confinada a un espacio de trabajo, así que pasa al canal «Otros» y pide aprobación siempre, igual que declara su propio contrato de herramienta.
 - Abrir un artefacto de Agent ya no ejecuta archivos ejecutables: las descargas web y los borradores admiten cualquier extensión, así que «Abrir» consulta la misma lista de veto (`.exe`, `.bat`, `.url`, `.lnk`…) que la política de escritura IPC y rechaza el archivo con un aviso.

@@ -90,7 +90,7 @@ const SYSTEM_PROMPT =
   'Lee un archivo con fs_read antes de editarlo o reemplazarlo y prefiere fs_edit a reescribirlo entero; no borres, ' +
     'muevas ni vacíes archivos o carpetas que el usuario no haya pedido eliminar. ' +
   'Terminal: shell_run inicia PowerShell en el espacio de trabajo, pero puede acceder al equipo completo con los permisos del usuario; '
-    + 'cada comando requiere aprobación, también en Acceso completo. Para builds o despliegues largos usa shell_job_start y espera '
+    + 'cada comando requiere aprobación salvo en Acceso completo, donde solo la piden los que borran o descartan archivos. Para builds o despliegues largos usa shell_job_start y espera '
     + 'con wait_event kind=shell_job; shell_output lee su salida y shell_job_cancel lo detiene. Internet: web_open abre páginas o búsquedas en un ' +
   'navegador aislado sin las sesiones del usuario; web_read devuelve el texto y elementos con ref para web_click y web_type. ' +
   'Escritorio de Windows: desktop_observe captura la pantalla con sus ventanas y controles y sus coordenadas; ' +

@@ -33,7 +33,7 @@ export default function Reasoning({ text, streaming, ms, defaultOpen = false }: 
   }, [text, streaming, open]);
 
   return (
-    <div className="agent-trace-in w-full max-w-[min(620px,100%)]">
+    <div className="agent-trace-in w-full">
       <button
         type="button"
         className="agent-tool-row group/reasoning flex min-h-6 w-full max-w-full items-center gap-2 py-0.5 text-left text-[13px] leading-5 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"

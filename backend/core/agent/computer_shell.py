@@ -33,7 +33,8 @@ TOOL_SPECS: list[JsonObject] = [
             "Equipo · shell_run (efecto: requiere aprobación del usuario): ejecuta un comando de PowerShell en el "
             "espacio de trabajo de la conversación o en una carpeta autorizada y devuelve su salida y código. "
             "El proceso puede acceder al equipo completo con los permisos del usuario, fuera de los grants de archivos. "
-            "Cada comando requiere aprobación, también en Acceso completo. "
+            "Cada comando requiere aprobación salvo en Acceso completo, donde solo la piden los que borran o "
+            "descartan archivos. "
             "Devuelve output_id para recuperar con shell_output la salida completa si el resumen se recorta"
         ),
         "inputSchema": {

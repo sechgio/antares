@@ -110,7 +110,7 @@ export default function ArtifactCard({ artifact, sessionId, onRefresh, onOpenMod
   const id = ['canvas', 'formato'].includes(artifact.family) || (!artifact.module && artifact.family === 'html')
     ? artifact.template_id : artifact.sources?.find((source) => source.ids?.length)?.ids?.[0];
   return (
-    <section aria-label={`Documento ${file.name}`} className="agent-artifact w-full max-w-[min(620px,100%)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+    <section aria-label={`Documento ${file.name}`} className="agent-artifact w-full overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 p-2.5">
         <span className="agent-artifact-icon flex size-10 shrink-0 flex-col items-center justify-center rounded-lg" aria-hidden="true">
           <FileText size={16} />

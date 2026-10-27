@@ -48,6 +48,9 @@ const UI_ACTION_TOOLS = new Set(['cua_click', 'cua_drag', 'cua_scroll', 'cua_typ
 const DESKTOP_ACTION_TOOLS = new Set(['desktop_click', 'desktop_type', 'desktop_key', 'desktop_scroll',
   'desktop_launch', 'desktop_focus']);
 const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'cua_launch_app', ...UI_ACTION_TOOLS, ...DESKTOP_ACTION_TOOLS]);
+const SHELL_TOOLS = new Set(['shell_run', 'shell_job_start']);
+const DESTRUCTIVE_COMMAND = new RegExp(String.raw`(?:^\s*|[;|&({]\s*)(?:remove-item|rm|ri|del|erase|rd|rmdir|clear-content|format-volume|clear-disk)\b`
+  + String.raw`|\bformat(?:\.com)?\s+[a-z]:|\bgit\s+(?:clean\b|reset\s+--hard\b|checkout\s+--\s)|\[(?:system\.)?io\.(?:file|directory)\]::delete\b`, 'im');
 const UNATTENDED_ACTION_TOOLS = new Set(['cua_launch_app', ...UI_ACTION_TOOLS]);
 const MAX_UNATTENDED_ACTIONS = 25;
 const MAX_LOADED_TOOLS = 25;
@@ -850,8 +853,11 @@ async function beforeTool(call, api, context) {
       ...(approvedContext ? { context: approvedContext } : {}),
       ...(unattendedApps ? { unattended_apps: unattendedApps } : {}),
     }));
+    const command = (call.arguments || {}).command;
+    const fullShell = SHELL_TOOLS.has(call.name) && !unattendedApps
+      && typeof command === 'string' && !DESTRUCTIVE_COMMAND.test(command);
     const autoSource = rule === 'allow' && !NEVER_AUTO_APPROVE.has(call.name) ? 'rule'
-      : mode === 'full' && !NEVER_AUTO_APPROVE.has(call.name) && rule !== 'ask' ? 'full'
+      : mode === 'full' && (!NEVER_AUTO_APPROVE.has(call.name) || fullShell) && rule !== 'ask' ? 'full'
         : rule !== 'ask' && webAlwaysAllowed(call.name, approvedContext) ? 'web' : null;
     if (autoSource && approval.status === 'pending') {
       ({ approval } = await bridge('agent_internal_approval_decide', {
