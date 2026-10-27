@@ -9,8 +9,9 @@ const { assert, finish, stubModule } = require('./helpers/harness');
 const { getEventListeners } = require('node:events');
 
 // Este fixture cuenta con un catálogo pequeño (todas las herramientas habilitadas);
-// cua-driver tiene sus propias pruebas en test-agent-cua.js.
+// cua-driver y el navegador tienen sus propias pruebas en test-agent-cua.js y test-agent-browser-tools.js.
 stubModule('electron/agent-cua.js', { TOOLS: new Map(), run: async () => ({}), approvalContext: () => ({}), close: () => {} });
+stubModule('electron/agent-browser.js', { ...require('../electron/agent-browser'), TOOLS: {} });
 const runtime = require('../electron/agent-runtime');
 const importer = require('../electron/agent-import');
 const { METHODS, INTERNAL_METHODS: INTERNAL_SET, nativeDispatchFor } = require('../shared/ipc-method-catalog');

@@ -83,7 +83,7 @@ async function exportTest() {
         return { url: 'https://example.com', time_origin: pageTimeOrigin };
       },
       executeJavaScript: async (script) => {
-        if (script.includes('const el = document.querySelector') && script.includes('getBoundingClientRect')) {
+        if (script.includes('elementFromPoint')) {
           if (navigationPhase === 'locate') pageTimeOrigin += 1;
           return { x: 240, y: 120 };
         }

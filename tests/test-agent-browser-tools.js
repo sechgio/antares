@@ -6,12 +6,13 @@ const browser = require('../electron/agent-browser');
 
 const specs = nativeToolSpecs();
 const web = specs.filter((s) => s.name.startsWith('web_'));
-assert(web.length === 15 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
-assert(web.filter((s) => s.gated).map((s) => s.name).sort().join() === 'web_click,web_download,web_key,web_type,web_upload',
-  'leer y navegar es automático; clic, escribir, teclas, descargar y subir requieren aprobación');
+assert(web.length === 21 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
+assert(web.filter((s) => s.gated).map((s) => s.name).sort().join()
+  === 'web_check,web_click,web_download,web_fill,web_key,web_select,web_type,web_upload',
+  'leer y navegar es automático; clic, escribir, elegir, marcar, rellenar, teclas, descargar y subir requieren aprobación');
 assert(web.filter((s) => !s.gated).map((s) => s.name).sort().join()
-  === 'web_back,web_console,web_forward,web_handover,web_network,web_open,web_read,web_reload,web_screenshot,web_text',
-  'texto, consola, red, captura, cesión del control y navegación se usan sin aprobación');
+  === 'web_back,web_console,web_forward,web_handover,web_hover,web_network,web_open,web_read,web_reload,web_screenshot,web_scroll,web_text,web_wait',
+  'texto, consola, red, captura, desplazar, esperar, pasar el puntero, cesión del control y navegación se usan sin aprobación');
 
 async function main() {
   const { mkdtempSync, rmSync, readFileSync } = require('node:fs');
@@ -23,6 +24,9 @@ async function main() {
   let documentOrigin = 3;
   let target = { x: 10, y: 20, secret: false };
   let focusedSecret = false;
+  let fillKinds = ['text'];
+  let pageText = 'Contenido';
+  let onPress = () => {};
   let canGoForward = false;
   let forwards = 0;
   let reloads = 0;
@@ -41,7 +45,11 @@ async function main() {
       if (script.includes('tagName') && script.includes('scrollIntoView')) return uploadField;
       if (script.includes('scrollIntoView')) return target;
       if (script.includes('document.activeElement')) return focusedSecret;
-      return { url: 'https://files.example.com', title: 'Archivos', text: 'Contenido', elements: [], time_origin: documentOrigin };
+      if (script.includes('const wanted')) return { selected: ['Perú'] };
+      if (script.includes("'missing'")) return fillKinds;
+      if (script.includes('gone:')) return { text: pageText.includes('listo'), gone: true, url: true };
+      if (script.includes('scrollBy')) return { moved: 800, at_end: false, at_start: false };
+      return { url: 'https://files.example.com', title: 'Archivos', text: pageText, elements: [], time_origin: documentOrigin };
     },
     executeJavaScriptInIsolatedWorld: async () => ({ url: 'https://files.example.com', time_origin: 3 }),
     capturePage: async () => ({ getSize: () => ({ width: 1280, height: 800 }), toJPEG: () => Buffer.from('jpeg-viewport') }),
@@ -49,6 +57,7 @@ async function main() {
       isAttached: () => false, attach: () => {},
       sendCommand: async (method, params) => {
         commands.push([method, params]);
+        if (method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed') onPress();
         if (method === 'Page.captureScreenshot') return { data: Buffer.from('jpeg-completa').toString('base64') };
         if (method === 'DOM.getDocument') return { root: { nodeId: 7 } };
         if (method === 'DOM.querySelector') return { nodeId: params.selector.includes('"9"') ? 21 : 0 };
@@ -236,6 +245,68 @@ async function main() {
     const submitted = await browser.run('web_key', { keys: 'enter' });
     assert(submitted.pressed === 'enter' && sentInput() > before, 'web_key puede enviar el formulario que completó el usuario');
     focusedSecret = false;
+
+    target = { x: 10, y: 20, secret: false, covered: 'div «Aceptar cookies»' };
+    before = sentInput();
+    const covered = await failure('web_click', { ref: '9' });
+    assert(covered && covered.code === 'COVERED' && covered.message.includes('Aceptar cookies') && !covered.recoverable
+      && sentInput() === before, 'un elemento encima bloquea el clic y nombra lo que tapa la referencia');
+    target = { x: 10, y: 20, secret: false };
+
+    onPress = () => {
+      contents.emit('console-message', { level: 'error', message: 'TypeError: pago no definido' });
+      contents.debugger.emit('message', {}, 'Network.requestWillBeSent',
+        { requestId: 'r500', request: { method: 'POST', url: 'https://files.example.com/api/pago' } });
+      contents.debugger.emit('message', {}, 'Network.responseReceived', { requestId: 'r500', response: { status: 500 } });
+    };
+    const reported = await browser.run('web_click', { ref: '9' });
+    assert(reported.page_reported && reported.page_reported.console_errors[0] === 'TypeError: pago no definido'
+      && reported.page_reported.failed_requests[0] === '500 POST https://files.example.com/api/pago',
+      'el clic informa los errores de consola y las peticiones fallidas que provocó');
+    onPress = () => {};
+    const quiet = await browser.run('web_click', { ref: '9' });
+    assert(!quiet.page_reported, 'los errores ya informados no se repiten en la acción siguiente');
+
+    const picked = await browser.run('web_select', { ref: '9', values: ['Perú'] });
+    assert(JSON.stringify(picked.selected) === '["Perú"]' && picked.page, 'web_select elige la opción y devuelve la página');
+
+    target = { x: 10, y: 20, secret: false, checked: false };
+    onPress = () => { target = { ...target, checked: !target.checked }; };
+    const checked = await browser.run('web_check', { ref: '9', checked: true });
+    assert(checked.checked === true && checked.changed === true && !checked.note, 'web_check hace clic y confirma el estado nuevo');
+    before = sentInput();
+    const already = await browser.run('web_check', { ref: '9', checked: true });
+    assert(already.checked === true && already.changed === false && sentInput() === before,
+      'web_check no hace clic si ya tiene el estado pedido');
+    onPress = () => {};
+    target = { x: 10, y: 20, secret: false, checked: null };
+    const notToggle = await failure('web_check', { ref: '9', checked: true });
+    assert(notToggle && notToggle.message.includes('no es una casilla'), 'web_check rechaza lo que no es una casilla');
+    target = { x: 10, y: 20, secret: false };
+
+    fillKinds = ['text', 'secret'];
+    before = sentInput();
+    const secretFill = await failure('web_fill', { fields: [{ ref: '9', text: 'Ana' }, { ref: '10', text: 'clave' }] });
+    assert(secretFill && secretFill.code === 'SECRET_FIELD' && sentInput() === before,
+      'web_fill no escribe ningún campo si alguno es secreto');
+    const duplicated = await failure('web_fill', { fields: [{ ref: '9', text: 'a' }, { ref: '9', text: 'b' }] });
+    assert(duplicated && duplicated.message.includes('ref distinta'), 'web_fill exige refs distintas');
+    fillKinds = ['text', 'text'];
+    const filled = await browser.run('web_fill', { fields: [{ ref: '9', text: 'Ana' }, { ref: '10', text: 'Lima' }] });
+    const inserted = commands.filter(([method]) => method === 'Input.insertText').slice(-2).map(([, params]) => params.text);
+    assert(filled.filled === 2 && JSON.stringify(inserted) === '["Ana","Lima"]', 'web_fill escribe cada campo en orden');
+    assert(Array.isArray(filled.unconfirmed) && filled.note, 'web_fill señala los campos cuyo valor no pudo confirmar');
+
+    const scrolled = await browser.run('web_scroll', { direction: 'down' });
+    assert(scrolled.scrolled === 800 && scrolled.page, 'web_scroll desplaza y devuelve la página');
+    pageText = 'cargando';
+    const timedOut = await browser.run('web_wait', { text: 'Listo', timeout_ms: 250 });
+    assert(timedOut.met === false && timedOut.note.includes('no la des por hecha'), 'web_wait avisa cuando la condición no se cumple');
+    pageText = 'listo';
+    const met = await browser.run('web_wait', { text: 'Listo', timeout_ms: 250 });
+    assert(met.met === true && met.waited_ms === 0, 'web_wait termina en cuanto se cumple la condición');
+    const noCondition = await failure('web_wait', {});
+    assert(noCondition && noCondition.message === 'Indica text, gone o url', 'web_wait exige una condición');
   } finally { timers.restore(); browser.close(); }
 }
 
