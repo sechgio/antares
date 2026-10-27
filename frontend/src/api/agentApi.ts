@@ -93,6 +93,8 @@ export interface AgentMessage {
   name?: string;
   ts: number;
   partial?: boolean;
+  /** Aviso del sistema (compactación, turno detenido…), no parte del trabajo del agente. */
+  notice?: boolean;
 }
 
 export interface AgentUsageTurn {

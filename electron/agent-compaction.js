@@ -290,6 +290,8 @@ async function beforeCompact(compaction, runtime, context) {
     audit({ session_id: sessionId, conversation_id: conversationId, reason: compaction.reason, task_id: runtime.taskId, outcome: 'declined', detail: sanitizeError(err) });
     return { decline: true };
   }
+  // El resumen puede omitir el índice de skills: el próximo mensaje lo reenvía.
+  shared.skillIndexes.delete(conversationId);
 
   const transcript = serializeTranscript(compaction.messages);
   let summary;

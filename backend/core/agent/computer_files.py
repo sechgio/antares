@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import fnmatch
+import itertools
 import json
 import ntpath
 import os
 import re
 import tempfile
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -25,6 +27,8 @@ _MAX_EDITS = 50
 _SNIPPET_CONTEXT = 3
 _MAX_SNIPPET_CHARS = 1_500
 _TEXT_ENCODINGS = ("utf-8-sig", "cp1252", "latin-1")
+_MAX_SEEN = 2_000
+_NUMBERED = re.compile(r"\s*\d+\t")
 _DELEGATED = {".pdf", ".csv", ".xlsx", ".xlsm", ".xls", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
 
 _PATH = {"type": "string", "description": "Ruta absoluta autorizada o nombre relativo dentro del espacio de trabajo"}
@@ -131,6 +135,12 @@ TOOL_SPECS: list[JsonObject] = [
 ]
 WRITE_TOOLS = frozenset({"fs_write", "fs_edit"})
 
+# Revisión (mtime, tamaño) de lo que cada conversación leyó o escribió: fs_edit y
+# la sobrescritura de fs_write solo actúan sobre contenido que el modelo vio y que
+# nadie cambió después. Vive en memoria; tras reiniciar hay que volver a leer.
+_seen: dict[str, tuple[int, int]] = {}
+_seen_lock = threading.Lock()
+
 
 def _key(path: str) -> str:
     return os.path.normcase(path)
@@ -206,6 +216,30 @@ def stat_path(value: object, grants: dict[str, JsonObject], root: Path) -> JsonO
             "size": stat.st_size, "mtime_ns": stat.st_mtime_ns, "dev": stat.st_dev, "ino": stat.st_ino}
 
 
+def _seen_key(path: Path, root: Path) -> str:
+    return f"{_key(str(root))}|{_key(str(path))}"
+
+
+def _remember(path: Path, root: Path) -> None:
+    stat = path.stat()
+    key = _seen_key(path, root)
+    with _seen_lock:
+        _seen.pop(key, None)
+        _seen[key] = (stat.st_mtime_ns, stat.st_size)
+        while len(_seen) > _MAX_SEEN:
+            del _seen[next(iter(_seen))]
+
+
+def _require_seen(path: Path, root: Path) -> None:
+    stat = path.stat()
+    with _seen_lock:
+        revision = _seen.get(_seen_key(path, root))
+    if revision is None:
+        raise ValueError(f"Lee {path.name} con fs_read antes de modificarlo")
+    if revision != (stat.st_mtime_ns, stat.st_size):
+        raise ValueError(f"{path.name} cambió desde que lo leíste; vuelve a leerlo con fs_read")
+
+
 def _entry(path: Path) -> JsonObject:
     stat = path.stat()
     return {"name": path.name, "type": "folder" if path.is_dir() else "file", "size": stat.st_size,
@@ -264,6 +298,7 @@ def read_path(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> 
         raise ValueError("El archivo no existe")
     if path.suffix.lower() in _DELEGATED:
         return documents.read_file({**params, "path": str(path)}, grants, root)
+    _remember(path, root)
     lines = _text_of(path).splitlines()
     offset = max(1, int(params.get("offset") or 1))
     limit = max(1, min(4000, int(params.get("limit") or 400)))
@@ -374,11 +409,14 @@ def write(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> Json
     existed = path.exists()
     if existed and (params.get("overwrite") is not True or not path.is_file()):
         raise ValueError(f"{path.name} ya existe; pide reemplazarlo con overwrite")
+    if existed:
+        _require_seen(path, root)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.suffix.lower() == ".docx":
         _atomic_write(path, lambda temp: _write_docx(temp, content))
     else:
         _atomic_write(path, lambda temp: temp.write_text(content, encoding="utf-8", newline=""))
+    _remember(path, root)
     return {"saved_path": str(path), "replaced": existed, "size": path.stat().st_size}
 
 
@@ -435,10 +473,36 @@ def _replace(text: str, old: str, new: str, replace_all: bool) -> tuple[str, int
     if occurrences > 1 and not replace_all:
         raise ValueError(f"El fragmento aparece {occurrences} veces; amplíalo o usa replace_all")
     if not occurrences:
-        raise ValueError("No se encontró el fragmento; vuelve a leer el archivo con fs_read")
+        span = None if replace_all else _loose_span(text, old)
+        if span is None:
+            hint = "; quita el número de línea y el tabulador que añade fs_read" if _NUMBERED.match(old) else ""
+            raise ValueError(f"No se encontró el fragmento; vuelve a leer el archivo con fs_read{hint}")
+        if "\r\n" in text:
+            new = new.replace("\r\n", "\n").replace("\n", "\r\n")
+        return text[:span[0]] + new + text[span[1]:], 1, span[0]
     start = text.index(old)
     updated = text.replace(old, new) if replace_all else text.replace(old, new, 1)
     return updated, occurrences if replace_all else 1, start
+
+
+def _loose_span(text: str, old: str) -> tuple[int, int] | None:
+    """Única coincidencia de old por líneas completas sin el espacio final, que el modelo suele perder o añadir."""
+    wanted = old.replace("\r\n", "\n").split("\n")
+    whole_lines = len(wanted) > 1 and wanted[-1] == ""
+    if whole_lines:
+        wanted.pop()
+    wanted = [line.rstrip() for line in wanted]
+    if not any(wanted):
+        return None
+    lines = text.splitlines(keepends=True)
+    starts = list(itertools.accumulate((len(line) for line in lines), initial=0))
+    found = [i for i in range(len(lines) - len(wanted) + 1)
+             if all(lines[i + j].rstrip() == line for j, line in enumerate(wanted))]
+    if len(found) != 1:
+        return None
+    first, last = found[0], found[0] + len(wanted) - 1
+    end = starts[last + 1] if whole_lines else starts[last] + len(lines[last].rstrip("\r\n"))
+    return starts[first], end
 
 
 def _snippet(text: str, start: int, new: str) -> str:
@@ -454,12 +518,14 @@ def edit(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> JsonO
     edits = _edit_list(params)
     if not path.is_file():
         raise ValueError("El archivo no existe")
+    _require_seen(path, root)
     if path.suffix.lower() == ".docx":
         if len(edits) > 1:
             raise ValueError("Las ediciones múltiples solo se admiten en archivos de texto")
         count = _edit_docx(path, *edits[0])
         if not count:
             raise ValueError("No se encontró el fragmento; vuelve a leer el archivo con fs_read")
+        _remember(path, root)
         return {"path": str(path), "replacements": count, "size": path.stat().st_size}
     raw = path.read_bytes()
     text = _decode(raw)
@@ -472,6 +538,7 @@ def edit(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> JsonO
         count += hits
     encoding = "utf-8-sig" if raw.startswith(b"\xef\xbb\xbf") else "utf-8"
     _atomic_write(path, lambda temp: temp.write_text(text, encoding=encoding, newline=""))
+    _remember(path, root)
     return {"path": str(path), "replacements": count, "size": path.stat().st_size,
             "snippet": _snippet(text, start, edits[-1][1])}
 
