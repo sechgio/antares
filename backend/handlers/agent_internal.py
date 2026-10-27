@@ -57,8 +57,8 @@ _NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_exp
                     "document_generate", "padron_", "volantes_", "espacios_", "canvas_fill_fields", "canvas_apply_layers",
                     "gdrive_", "gsheets_", "onedrive_", "excel_", "web_", "cua_")
 # Herramientas de Equipo cuya aprobación nombra una app: concesiones por app y lista
-# blanca de los encargos programados. El contexto de cua_ lo calcula Electron.
-_APP_SCOPED_PREFIXES = ("ui_", "cua_")
+# blanca de los encargos programados. Su contexto lo calcula Electron.
+_APP_SCOPED_PREFIXES = ("cua_",)
 _CLOUD_UPLOADS = frozenset({"gdrive_upload", "onedrive_upload"})
 _META_METHODS = frozenset({"task_schedule"})
 
@@ -216,8 +216,6 @@ def _intent(session_id: str, method: str, params: JsonObject, context: JsonObjec
         tool = agent_tools.SPECS.get(method) or {"inputSchema": input_schema_for(method)}
         current_context = dict(context or {})
         current_context.update(artifact_context)
-        if method.startswith("ui_"):
-            current_context["computer"] = _computer_driver.approval_context(params)
         mcp = _mcp_servers.parse_agent_tool(method)
         if mcp is not None:
             current_context = _mcp_servers.approval_context(mcp[0], method)

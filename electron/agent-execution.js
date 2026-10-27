@@ -44,24 +44,16 @@ const requiredSkills = new Map();
 const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent']);
 const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD, 'task_schedule']);
 const MEMORY_TOOLS = ['memory_search', 'memory_remember', 'procedure_learn'];
-// Acciones ui_ que inyectan entrada: el marco ámbar del lease humano cubre la
-// ventana objetivo durante su despacho (ui_windows/ui_observe/ui_launch no inyectan).
-const UI_ACTION_TOOLS = new Set(['ui_click', 'ui_type', 'ui_key', 'ui_scroll', 'ui_drag', 'ui_set_value']);
+// Acciones cua_ que inyectan entrada: el marco ámbar del lease humano cubre la
+// ventana objetivo durante su despacho (las lecturas y cua_launch_app no inyectan).
+const UI_ACTION_TOOLS = new Set(['cua_click', 'cua_drag', 'cua_scroll', 'cua_type_text', 'cua_press_key', 'cua_hotkey',
+  'cua_set_value', 'cua_invoke_menu', 'cua_bring_to_front']);
 // En Acceso completo siguen exigiendo decisión humana: el shell (incluidos los
 // jobs en segundo plano) y las acciones de Equipo que inyectan entrada o abren
 // aplicaciones.
-const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'ui_launch', ...UI_ACTION_TOOLS]);
+const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'cua_launch_app', ...UI_ACTION_TOOLS]);
 // Acciones con efecto que el techo desatendido contabiliza por encargo programado.
-const UNATTENDED_ACTION_TOOLS = new Set(['ui_launch', ...UI_ACTION_TOOLS]);
-// Las acciones cua_ (cua-driver) siguen la misma política que las ui_ a las que sustituyen.
-for (const name of ['cua_click', 'cua_drag', 'cua_scroll', 'cua_type_text', 'cua_press_key', 'cua_hotkey',
-  'cua_set_value', 'cua_invoke_menu', 'cua_bring_to_front']) {
-  UI_ACTION_TOOLS.add(name);
-  NEVER_AUTO_APPROVE.add(name);
-  UNATTENDED_ACTION_TOOLS.add(name);
-}
-NEVER_AUTO_APPROVE.add('cua_launch_app');
-UNATTENDED_ACTION_TOOLS.add('cua_launch_app');
+const UNATTENDED_ACTION_TOOLS = new Set(['cua_launch_app', ...UI_ACTION_TOOLS]);
 const MAX_UNATTENDED_ACTIONS = 25;
 const MAX_LOADED_TOOLS = 25;
 const MAX_DEFAULT_TOOLS = 100;

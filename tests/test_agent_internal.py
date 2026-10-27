@@ -1,5 +1,4 @@
 import json
-import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -770,49 +769,6 @@ def test_grants_check_accepts_granted_files_and_rejects_the_rest(store, tmp_path
         agent_internal.HANDLERS["agent_internal_grants_check"]({"session_id": "s2", "path": str(granted)})
 
 
-def _ui_ensure(call_id, method, session_id="s1"):
-    params = {"session_id": session_id, "call_id": call_id, "method": method,
-              "params": {"window_id": "w1a2b", "element_id": "e3"}}
-    return agent_internal.HANDLERS["agent_internal_approval_ensure"](params)["approval"]
-
-
-def test_ui_approval_grant_permite_el_resto_de_la_sesion(store, monkeypatch):
-    monkeypatch.setattr(
-        agent_internal._computer_driver, "approval_context",
-        lambda params: {"app": "Notepad", "window": "Sin título - Bloc de notas", "element": "Document «Sin título»"})
-    first = _ui_ensure("c-ui", "ui_click")
-    assert first["status"] == "pending"
-    assert first["context"]["computer"]["app"] == "Notepad"
-
-    decided = agent_internal.HANDLERS["agent_internal_approval_decide"](
-        {"approval_id": first["id"], "approve": True, "grant_app": True})["approval"]
-    assert decided["status"] == "approved"
-    key = f"app:{os.path.normcase('Notepad')}"
-    assert store.grants_for("s1")[key]["kind"] == "computer_app"
-
-    second = _ui_ensure("c-ui-2", "ui_type")
-    assert second["status"] == "approved"
-    assert agent_internal.HANDLERS["agent_internal_approvals_pending"]({"session_id": "s1"})["approvals"] == []
-
-
-def test_ui_approval_remember_concede_la_app_como_grant_app(store, monkeypatch):
-    monkeypatch.setattr(agent_internal._computer_driver, "approval_context",
-                        lambda params: {"app": "Notepad"})
-    first = _ui_ensure("c-ui", "ui_click")
-    agent_internal.HANDLERS["agent_internal_approval_decide"](
-        {"approval_id": first["id"], "approve": True, "remember": True})
-    assert _ui_ensure("c-ui-2", "ui_type")["status"] == "approved"
-
-
-def test_ui_approval_sin_grant_sigue_pidiendo_aprobacion(store, monkeypatch):
-    monkeypatch.setattr(agent_internal._computer_driver, "approval_context",
-                        lambda params: {"app": "Calc"})
-    assert _ui_ensure("c-ui", "ui_click")["status"] == "pending"
-    store.add_grants("s1", [{"kind": "computer_app", "app": "Notepad",
-                             "key": f"app:{os.path.normcase('Notepad')}"}])
-    assert _ui_ensure("c-ui-2", "ui_click")["status"] == "pending"
-
-
 def test_grant_app_ignora_metodos_que_no_son_ui(store):
     params = {"session_id": "s1", "call_id": "c-shell", "method": "shell_run", "params": {"command": "Get-Date"}}
     first = agent_internal.HANDLERS["agent_internal_approval_ensure"](params)["approval"]
@@ -820,22 +776,6 @@ def test_grant_app_ignora_metodos_que_no_son_ui(store):
         {"approval_id": first["id"], "approve": True, "grant_app": True})["approval"]
     assert decided["status"] == "approved"
     assert store.grants_for("s1") == {}
-
-
-def test_ui_approval_desatendida_permite_solo_las_apps_declaradas(store, monkeypatch):
-    monkeypatch.setattr(agent_internal._computer_driver, "approval_context",
-                        lambda params: {"app": "notepad.exe"})
-    store.add_grants("s1", [{"kind": "computer_app", "app": "Calc",
-                             "key": f"app:{os.path.normcase('Calc')}"}])
-
-    def _ensure(call_id, **extra):
-        return agent_internal.HANDLERS["agent_internal_approval_ensure"](
-            {"session_id": "s1", "call_id": call_id, "method": "ui_click",
-             "params": {"window_id": "w1a2b", "element_id": "e3"}, **extra})["approval"]
-
-    assert _ensure("c-a1", unattended_apps=["notepad"])["status"] == "approved"
-    with pytest.raises(ValidationError, match="lista blanca"):
-        _ensure("c-a2", unattended_apps=["calc"])
 
 
 def _cua_ensure(call_id, method="cua_click", computer=None, **extra):
@@ -852,6 +792,13 @@ def test_cua_approval_usa_la_concesion_por_app(store):
         {"approval_id": first["id"], "approve": True, "grant_app": True})
     assert _cua_ensure("c-cua-2", "cua_type_text")["status"] == "approved"
     assert _cua_ensure("c-cua-3", computer={"app": "Calc.exe"})["status"] == "pending"
+
+
+def test_cua_approval_remember_concede_la_app(store):
+    first = _cua_ensure("c-cua-r1")
+    agent_internal.HANDLERS["agent_internal_approval_decide"](
+        {"approval_id": first["id"], "approve": True, "remember": True})
+    assert _cua_ensure("c-cua-r2", "cua_hotkey")["status"] == "approved"
 
 
 def test_cua_approval_desatendida_exige_una_app_identificada(store):

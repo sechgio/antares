@@ -1093,7 +1093,7 @@ async function approve(params, approved) {
   });
   const remembered = approved && params.remember === true && approval && approval.status === 'approved'
     ? String(approval.method || '') : null;
-  if (remembered !== null && !remembered.startsWith('web_') && !remembered.startsWith('ui_') && approval.channel) {
+  if (remembered !== null && !remembered.startsWith('web_') && !remembered.startsWith('cua_') && approval.channel) {
     // Igual que el dominio web: la acción ya está aprobada y guardar la regla del canal no debe romperla.
     try { await saveSessionRule(String(approval.session_id), String(approval.channel), 'allow'); } catch { }
   }
