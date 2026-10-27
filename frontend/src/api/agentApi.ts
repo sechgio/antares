@@ -240,7 +240,7 @@ export interface AgentQuestion {
 }
 
 export interface AgentBrowserTab {
-  id: 'agent' | 'user';
+  id: string;
   label: string;
   open: boolean;
   url: string;
@@ -265,9 +265,21 @@ export interface AgentBrowserState {
   user_control: boolean;
   busy_until?: number;
   busy_reason?: 'user_input' | 'control' | '';
-  active_tab?: 'agent' | 'user';
+  active_tab?: string;
   tabs?: AgentBrowserTab[];
   reason?: 'page' | 'agent-open' | 'control' | 'closed' | 'busy';
+}
+
+export interface AgentBrowserElement {
+  tag: string;
+  id: string;
+  classes: string[];
+  selector: string;
+  role: string;
+  label: string;
+  text: string;
+  href: string;
+  box: AgentBrowserBounds;
 }
 
 export interface AgentBrowserBounds {
@@ -383,11 +395,13 @@ export const agentApi = {
       compacting?: boolean;
     }>('agent_turn_status', { session_id }),
 
-  agentBrowser: (action: 'state' | 'bounds' | 'tab' | 'control' | 'allow' | 'open' | 'back' | 'forward' | 'reload',
-    extra: { url?: string; user?: boolean; tab?: 'agent' | 'user'; bounds?: AgentBrowserBounds | null } = {}) =>
+  agentBrowser: (action: 'state' | 'bounds' | 'tab' | 'new' | 'close' | 'control' | 'allow' | 'open' | 'back' | 'forward' | 'reload',
+    extra: { url?: string; user?: boolean; tab?: string; bounds?: AgentBrowserBounds | null } = {}) =>
     _invoke<AgentBrowserState>('agent_browser', { action, ...extra }),
   agentBrowserCapture: () =>
     _invoke<{ png_base64: string; width: number; height: number; url: string; title: string }>('agent_browser', { action: 'capture' }),
+  agentBrowserInspect: (x: number, y: number) =>
+    _invoke<AgentBrowserElement | null>('agent_browser', { action: 'inspect', x, y }),
   agentTurnCancel: (session_id: string) =>
     _invoke<{ cancelled: boolean }>('agent_turn_cancel', { session_id }),
 

@@ -1712,9 +1712,11 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
 
       {browserOpen && <AgentBrowserPanel
         onClose={() => setBrowserOpen(false)}
-        onAnnotate={sessionId ? (file, url) => {
-          void attachFiles([file]);
-          if (!draft.trim()) { draftVersionRef.current += 1; setDraft(`Mira mi anotación sobre ${url}: `); }
+        onAnnotate={sessionId ? (files, source, notes) => {
+          void attachFiles(files);
+          const context = notes.length ? `\n${notes.join('\n')}\n` : '';
+          if (!draft.trim()) { draftVersionRef.current += 1; setDraft(`Mira mi anotación sobre ${source}: ${context}`); }
+          else if (context) { draftVersionRef.current += 1; setDraft(`${draft.trimEnd()}\n${context}`); }
         } : undefined}
       />}
       {auditOpen && session && (

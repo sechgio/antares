@@ -1,7 +1,7 @@
 # 0002. Navegador del agente con dos pestañas
 
 - Fecha: 2026-10-25
-- Estado: aceptado
+- Estado: supersedido por 0004
 - Personas: sechgio
 
 ## Contexto

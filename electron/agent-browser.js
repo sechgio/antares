@@ -137,8 +137,8 @@ const READ_TOOLS = new Set(['web_read', 'web_screenshot', 'web_text', 'web_conso
 const NAVIGATION_TOOLS = new Set(['web_open', 'web_back', 'web_forward', 'web_reload']);
 const AGENT_TAB = 'agent';
 const USER_TAB = 'user';
-const TAB_IDS = [AGENT_TAB, USER_TAB];
-const TAB_LABELS = { [AGENT_TAB]: 'Agente', [USER_TAB]: 'Tú' };
+// Como en Claude Desktop: una vista por pestaña, misma sesión y un tope de pestañas.
+const MAX_USER_TABS = 8;
 const AGENT_LEASE_MS = 10 * 60_000;
 const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
 const LOCAL_DOCUMENT = /^(?![a-z][a-z0-9+.-]*:)[^\s/\\]+\.(?:md|markdown|txt|pdf|docx?|csv|xlsx?|json)$/i;
@@ -146,6 +146,8 @@ const LOCAL_DOCUMENT = /^(?![a-z][a-z0-9+.-]*:)[^\s/\\]+\.(?:md|markdown|txt|pdf
 let host = null;
 let docked = null;
 let activeTab = AGENT_TAB;
+let order = [AGENT_TAB, USER_TAB];
+let tabSeq = 0;
 let agentOwner = null;
 const tabs = new Map();
 const pendingMouseInputs = new Set();
@@ -331,7 +333,7 @@ function tabState(id) {
   const remaining = tab && !tab.userControl ? busyRemaining(tab) : 0;
   return {
     id,
-    label: TAB_LABELS[id],
+    label: id === AGENT_TAB ? 'Agente' : 'Nueva pestaña',
     open: !!contents,
     url: contents ? contents.getURL() : '',
     title: contents ? contents.getTitle() : '',
@@ -359,7 +361,7 @@ function state() {
     busy_until: current.busy_until,
     busy_reason: current.busy_reason,
     active_tab: activeTab,
-    tabs: TAB_IDS.map((id) => tabState(id)),
+    tabs: order.map((id) => tabState(id)),
   };
 }
 
@@ -455,7 +457,7 @@ function ensureTab(id) {
       current.lastUserInputAt = 0;
       current.lastBusyNotifyAt = 0;
     }
-    notify(TAB_IDS.some((tabId) => tabContents(tabs.get(tabId))) ? 'page' : 'closed');
+    notify(order.some((tabId) => tabContents(tabs.get(tabId))) ? 'page' : 'closed');
   });
   mount(electron);
   return tab;
@@ -531,7 +533,7 @@ function dock(bounds) {
 }
 
 function setUserControl(value, id = activeTab) {
-  if (!TAB_IDS.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
+  if (!order.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
   let tab = tabs.get(id);
   if (!tab) {
     if (!value) return state();
@@ -551,7 +553,7 @@ function setUserControl(value, id = activeTab) {
 }
 
 function allowAgent(id = activeTab) {
-  if (!TAB_IDS.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
+  if (!order.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
   const tab = tabs.get(id);
   if (tab) {
     tab.userControl = false;
@@ -563,7 +565,7 @@ function allowAgent(id = activeTab) {
 }
 
 function resetUserActivity(id = AGENT_TAB) {
-  if (!TAB_IDS.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
+  if (!order.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
   const tab = tabs.get(id);
   if (!tab) return;
   tab.lastUserInputAt = 0;
@@ -572,8 +574,34 @@ function resetUserActivity(id = AGENT_TAB) {
 }
 
 function activateTab(id) {
-  if (!TAB_IDS.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
+  if (!order.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
   activeTab = id;
+  mount(require('electron'));
+  notify('page');
+  return state();
+}
+
+function newTab() {
+  if (order.length - 1 >= MAX_USER_TABS) {
+    throw new Error(`Puedes tener hasta ${MAX_USER_TABS} pestañas abiertas; cierra una antes de abrir otra`);
+  }
+  const id = `tab-${++tabSeq}`;
+  order = [...order, id];
+  return activateTab(id);
+}
+
+// Al cerrar la pestaña visible se activa la de la derecha o, si no hay, la de la izquierda.
+function closeTab(id) {
+  if (id === AGENT_TAB || !order.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
+  const index = order.indexOf(id);
+  order = order.filter((tabId) => tabId !== id);
+  if (activeTab === id) activeTab = order[index] || order[index - 1];
+  const tab = tabs.get(id);
+  tabs.delete(id);
+  if (tab && tab.view) {
+    if (alive(tab.parent)) tab.parent.contentView.removeChildView(tab.view);
+    if (alive(tab.view.webContents)) tab.view.webContents.close();
+  }
   mount(require('electron'));
   notify('page');
   return state();
@@ -1016,6 +1044,45 @@ async function capture(id = activeTab) {
   return { png_base64: image.toPNG().toString('base64'), width, height, url: contents.getURL(), title: contents.getTitle() };
 }
 
+// Como el «seleccionar» de Claude Desktop: describe el elemento bajo un punto
+// (0–1 sobre la vista) para llevar su contexto al chat. Nunca lee valores de campos.
+const INSPECT = (x, y) => `(() => {
+  const el = document.elementFromPoint(${x} * innerWidth, ${y} * innerHeight);
+  if (!el || el === document.documentElement || el === document.body) return null;
+  const part = (node) => {
+    if (node.id) return '#' + CSS.escape(node.id);
+    const tag = node.tagName.toLowerCase();
+    const same = node.parentElement ? [...node.parentElement.children].filter((child) => child.tagName === node.tagName) : [];
+    return same.length > 1 ? tag + ':nth-of-type(' + (same.indexOf(node) + 1) + ')' : tag;
+  };
+  const path = [];
+  for (let node = el; node && node.nodeType === 1 && path.length < 5; node = node.parentElement) {
+    path.unshift(part(node));
+    if (node.id) break;
+  }
+  const link = el.closest('a[href]');
+  const r = el.getBoundingClientRect();
+  return {
+    tag: el.tagName.toLowerCase(),
+    id: el.id || '',
+    classes: String(el.getAttribute('class') || '').trim().split(/\\s+/).filter(Boolean).slice(0, 6),
+    selector: path.join(' > '),
+    role: el.getAttribute('role') || '',
+    label: String(el.getAttribute('aria-label') || el.getAttribute('alt') || el.getAttribute('title') || '').slice(0, 120),
+    text: String(el.innerText || '').trim().replace(/\\s+/g, ' ').slice(0, 200),
+    href: link ? String(link.href).slice(0, 300) : '',
+    box: { x: r.left / innerWidth, y: r.top / innerHeight, width: r.width / innerWidth, height: r.height / innerHeight },
+  };
+})()`;
+
+async function inspect(x, y, id = activeTab) {
+  const contents = tabContents(tabs.get(id));
+  if (!contents) throw browserError('No hay ninguna página abierta para inspeccionar', 'NO_PAGE');
+  const point = [Number(x), Number(y)];
+  if (!point.every((value) => Number.isFinite(value) && value >= 0 && value <= 1)) throw new Error('Punto no válido');
+  return contents.executeJavaScriptInIsolatedWorld(1002, [{ code: INSPECT(...point) }], true);
+}
+
 async function observeAfter(contents) {
   await settle(contents);
   return snapshot(contents, 0, RESULT_BUDGET - 400);
@@ -1343,8 +1410,10 @@ function close() {
   host = null;
   docked = null;
   activeTab = AGENT_TAB;
+  order = [AGENT_TAB, USER_TAB];
+  tabSeq = 0;
   agentOwner = null;
   pendingMouseInputs.clear();
 }
 
-module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, state, dock, capture, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, clampBounds, siteUserAgent, approvalContext };
+module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, state, dock, capture, inspect, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };
