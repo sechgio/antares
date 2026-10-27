@@ -74,6 +74,13 @@ const TOOLS = {
 const HOST_SIZE = { width: 1280, height: 860 };
 const USER_CONTROL_ERROR = 'El usuario tiene el control del navegador ahora mismo; espera a que te lo devuelva o pídeselo';
 const USER_BUSY_ERROR = 'El usuario está usando el navegador en este momento; espera unos segundos antes de volver a actuar en la página';
+const SECRET_FIELD_ERROR = 'El campo pide una contraseña, un código o datos de tarjeta: el agente no escribe en él. '
+  + 'Cede el control con web_handover para que lo complete el usuario';
+// Documento (performance.timeOrigin) cuyo snapshot numeró las refs de cada pestaña:
+// el contador se reinicia en cada carga y la misma ref señalaría otro elemento.
+const refDocuments = new WeakMap();
+const SECRET_FIELD_JS = `(el) => el.type === 'password' || String(el.getAttribute('autocomplete') || '').toLowerCase().split(/\\s+/)
+  .some((token) => ['one-time-code', 'current-password', 'new-password'].includes(token) || token.startsWith('cc-'))`;
 const USER_INPUT_GRACE_MS = 5_000;
 const USER_WAIT_MAX_MS = 10_000;
 const READ_TOOLS = new Set(['web_read', 'web_screenshot', 'web_text', 'web_console', 'web_network']);
@@ -601,7 +608,7 @@ const SNAPSHOT = `(() => {
     elements.push(item);
   }
   const text = (document.body ? document.body.innerText : '').replace(/\\n{3,}/g, '\\n\\n');
-  return { url: location.href, title: document.title, text, elements };
+  return { url: location.href, title: document.title, text, elements, time_origin: performance.timeOrigin };
 })()`;
 
 function fit(result, budget = RESULT_BUDGET) {
@@ -623,6 +630,7 @@ function describe(item) {
 
 async function snapshot(contents, offset = 0, budget = RESULT_BUDGET) {
   const page = await contents.executeJavaScript(SNAPSHOT, true);
+  refDocuments.set(contents, page.time_origin);
   const start = Math.max(0, Number(offset) || 0);
   const text = String(page.text || '');
   const result = fit({
@@ -665,16 +673,29 @@ async function approvalContext(contents = current()) {
   return { page_url: page.url, page_time_origin: page.time_origin };
 }
 
+function refGuard(contents) {
+  return `if (performance.timeOrigin !== ${JSON.stringify(refDocuments.get(contents) ?? null)}) return { stale: true };`;
+}
+
+function assertSameDocument(result) {
+  if (result && result.stale) {
+    throw browserError('La página cambió desde que la leíste; vuelve a leerla con web_read para obtener referencias nuevas',
+      'PAGE_CHANGED', { recoverable: true });
+  }
+}
+
 async function locate(contents, ref) {
   const id = String(ref || '').replace(/[^0-9]/g, '');
   if (!id) throw new Error('Indica la referencia del elemento (web_read)');
   const rect = await contents.executeJavaScript(`(() => {
+    ${refGuard(contents)}
     const el = document.querySelector('[data-antares-ref="${id}"]');
     if (!el) return null;
     el.scrollIntoView({ block: 'center', inline: 'center' });
     const r = el.getBoundingClientRect();
-    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), secret: (${SECRET_FIELD_JS})(el) };
   })()`, true);
+  assertSameDocument(rect);
   if (!rect) throw new Error('El elemento ya no está en la página; vuelve a leerla con web_read');
   await delay(120);
   return rect;
@@ -852,7 +873,9 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId 
   if (name === 'web_type') {
     const text = String(params.text ?? '');
     if (text.length > 5000) throw new Error('El texto excede 5000 caracteres');
-    await clickAt(input, await locate(contents, params.ref));
+    const target = await locate(contents, params.ref);
+    if (target.secret) throw browserError(SECRET_FIELD_ERROR, 'SECRET_FIELD');
+    await clickAt(input, target);
     if (params.clear === true) {
       await assertInteraction(input);
       await contents.executeJavaScript(`(() => {
@@ -867,6 +890,17 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId 
   if (name === 'web_key') {
     const keys = String(params.keys || '').trim();
     if (!keys) throw new Error('Indica las teclas');
+    // Las teclas que escriben texto no sirven para rellenar a mano un campo secreto.
+    const writes = keys.split(/\s+/).some((combo) => {
+      const parts = combo.split('+').filter(Boolean);
+      const last = parts[parts.length - 1] || '';
+      return (last.length === 1 || last.toLowerCase() === 'space')
+        && !parts.slice(0, -1).some((part) => ['ctrl', 'control', 'alt', 'meta', 'cmd'].includes(part.toLowerCase()));
+    });
+    if (writes && await contents.executeJavaScript(
+      `(() => { const el = document.activeElement; return !!el && (${SECRET_FIELD_JS})(el); })()`, true)) {
+      throw browserError(SECRET_FIELD_ERROR, 'SECRET_FIELD');
+    }
     for (const combo of keys.split(/\s+/)) {
       await pressCombo(input, combo);
       await delay(80);
@@ -885,11 +919,13 @@ async function uploadFile(input, ref, filePath) {
   if (!id) throw new Error('Indica la referencia del campo (web_read)');
   if (!filePath) throw new Error('Indica la ruta del archivo');
   const field = await input.contents.executeJavaScript(`(() => {
+    ${refGuard(input.contents)}
     const el = document.querySelector('[data-antares-ref="${id}"]');
     if (!el) return null;
     el.scrollIntoView({ block: 'center', inline: 'center' });
     return { tag: el.tagName.toLowerCase(), type: el.type || '' };
   })()`, true);
+  assertSameDocument(field);
   if (!field) throw new Error('El elemento ya no está en la página; vuelve a leerla con web_read');
   if (field.tag !== 'input' || field.type !== 'file') throw new Error('El elemento no es un campo de archivo');
   await delay(120);
