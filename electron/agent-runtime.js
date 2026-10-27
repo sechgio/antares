@@ -92,6 +92,10 @@ const SYSTEM_PROMPT =
   'Escritorio de Windows: desktop_observe captura la pantalla con sus ventanas y controles y sus coordenadas; ' +
   'desktop_launch, desktop_focus, desktop_click, desktop_type, desktop_key y desktop_scroll actúan y devuelven una captura ' +
   'nueva que debes revisar antes del siguiente paso. ' +
+  'Para operar aplicaciones prefiere las herramientas cua_: localiza la ventana con cua_list_windows (por título y tamaño, '
+    + 'no la primera), léela con cua_window_state y actúa por element_token, que no mueve el cursor ni quita el foco al usuario. '
+    + 'Cada acción cua_ informa effect: si no confirma el cambio (suspected_noop, refused o unverifiable) no la des por hecha; '
+    + 'vuelve a leer la ventana y prueba otra vía. Toma el camino más corto: no inspecciones ventanas que el encargo no necesita. ' +
   'Empiezas con un núcleo de herramientas; si el encargo necesita un módulo de Antares que no tienes, cárgalo con ' +
   'tools_load y úsalo desde la siguiente ronda. ' +
   'Cuando un gráfico o una interfaz expliquen mejor la respuesta, el chat los muestra en línea: usa un bloque ```chart con JSON ' +
@@ -1241,6 +1245,7 @@ async function shutdown() {
   shared.watchers.clear();
   shared.live.clear();
   require('./agent-browser').close();
+  require('./agent-cua').close();
   if (shared.state) {
     const harness = shared.state.harness;
     shared.state = null;

@@ -158,6 +158,7 @@ for (const service of [require('./google-workspace-service'), require('./microso
 }
 
 const WEB = require('./agent-browser').TOOLS;
+const CUA = require('./agent-cua').TOOLS;
 
 function spec(name, [label, schema], gated) {
   return {
@@ -191,6 +192,10 @@ const SPECS = [
     name, module: 'computer', label, gated, kind: 'native', inputSchema: schema,
     description: `Navegador · ${name} (${gated ? 'efecto: requiere aprobación del usuario' : 'solo lectura en el navegador aislado del agente'}): ${label}`,
   })),
+  ...[...CUA.values()].map(({ name, label, gated, inputSchema }) => ({
+    name, module: 'computer', label, gated, kind: 'native', inputSchema,
+    description: `Equipo · ${name} (${gated ? 'efecto: requiere aprobación del usuario' : 'solo lectura'}): ${label}`,
+  })),
   ...Object.entries(CLOUD).map(([name, service]) => {
     const [label, schema, gated] = service.TOOLS[name];
     return { name, module: 'connections', label, gated, kind: 'native', inputSchema: schema,
@@ -222,6 +227,10 @@ async function nativeToolContext(name, sessionId, params = {}) {
       { session_id: sessionId, path: String(params.path || '') });
   }
   if (CLOUD[name]) return Object.assign(context, await CLOUD[name].context(name));
+  if (CUA.has(name)) {
+    if (selected.gated) context.computer = require('./agent-cua').approvalContext(name, params);
+    return context;
+  }
   if (selected.module === 'espacios') {
     Object.assign(context, await require('./agent-renderer-tools').runRendererTool('espacios_context'));
     return context;
@@ -327,10 +336,12 @@ async function runNativeTool(name, params, { sessionId, approvedContext } = {}) 
     const current = await nativeToolContext(name, sessionId, params || {});
     if (!approvedContext || JSON.stringify(current) !== JSON.stringify(approvedContext)) {
       if (WEB[name]) throw new Error('La página cambió después de aprobar; vuelve a leerla con web_read y solicita una nueva aprobación');
+      if (CUA.has(name)) throw new Error('La ventana o el elemento cambiaron después de aprobar; vuelve a leerla y solicita una nueva aprobación');
       throw new Error('La cuenta, los permisos o la hoja cambiaron después de aprobar; solicita una nueva aprobación');
     }
   }
   if (CLOUD[name]) return CLOUD[name].run(name, params || {}, { dir: draftsDir(sessionId) });
+  if (CUA.has(name)) return require('./agent-cua').run(name, params || {}, { sessionId, dir: `${draftsDir(sessionId)}.screens` });
   if (WEB[name]) {
     return require('./agent-browser').run(name, params || {},
       { dir: `${draftsDir(sessionId)}.screens`, drafts: draftsDir(sessionId), approvedContext, sessionId });

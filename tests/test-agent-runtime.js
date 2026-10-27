@@ -5,9 +5,12 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 
-const { assert, finish } = require('./helpers/harness');
+const { assert, finish, stubModule } = require('./helpers/harness');
 const { getEventListeners } = require('node:events');
 
+// Este fixture cuenta con un catálogo pequeño (todas las herramientas habilitadas);
+// cua-driver tiene sus propias pruebas en test-agent-cua.js.
+stubModule('electron/agent-cua.js', { TOOLS: new Map(), run: async () => ({}), approvalContext: () => ({}), close: () => {} });
 const runtime = require('../electron/agent-runtime');
 const importer = require('../electron/agent-import');
 const { METHODS, INTERNAL_METHODS: INTERNAL_SET, nativeDispatchFor } = require('../shared/ipc-method-catalog');
@@ -1347,6 +1350,8 @@ async function main() {
       'las indicaciones del agente se suman sin ampliar los permisos elegidos');
     assert(String(instructions).includes('sin narrar la preparación') && String(instructions).includes('la única acción que lo desbloquea'),
       'las instrucciones incluyen la política de comunicación');
+    assert(String(instructions).includes('prefiere las herramientas cua_') && String(instructions).includes('suspected_noop'),
+      'las instrucciones guían el uso de cua_ y la lectura de su effect');
     const plain = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const plainTools = (await runtime.handlers.agent_tools_list({ session_id: plain.session.id })).tools;
     const defaults = require('../electron/agent-execution').defaultToolNames([...runtime._internal.shared.toolSpecs.values()]);

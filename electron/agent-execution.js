@@ -53,6 +53,15 @@ const UI_ACTION_TOOLS = new Set(['ui_click', 'ui_type', 'ui_key', 'ui_scroll', '
 const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'ui_launch', ...UI_ACTION_TOOLS]);
 // Acciones con efecto que el techo desatendido contabiliza por encargo programado.
 const UNATTENDED_ACTION_TOOLS = new Set(['ui_launch', ...UI_ACTION_TOOLS]);
+// Las acciones cua_ (cua-driver) siguen la misma política que las ui_ a las que sustituyen.
+for (const name of ['cua_click', 'cua_drag', 'cua_scroll', 'cua_type_text', 'cua_press_key', 'cua_hotkey',
+  'cua_set_value', 'cua_invoke_menu', 'cua_bring_to_front']) {
+  UI_ACTION_TOOLS.add(name);
+  NEVER_AUTO_APPROVE.add(name);
+  UNATTENDED_ACTION_TOOLS.add(name);
+}
+NEVER_AUTO_APPROVE.add('cua_launch_app');
+UNATTENDED_ACTION_TOOLS.add('cua_launch_app');
 const MAX_UNATTENDED_ACTIONS = 25;
 const MAX_LOADED_TOOLS = 25;
 const MAX_DEFAULT_TOOLS = 100;

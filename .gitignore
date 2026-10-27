@@ -77,6 +77,10 @@ media/*
 !media/manifest.json
 !media/LICENSE-THIRD-PARTY.txt
 
+cua-driver/*
+!cua-driver/manifest.json
+!cua-driver/LICENSE.txt
+
 .ruff_cache/
 .mypy_cache/
 

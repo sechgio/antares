@@ -836,3 +836,32 @@ def test_ui_approval_desatendida_permite_solo_las_apps_declaradas(store, monkeyp
     assert _ensure("c-a1", unattended_apps=["notepad"])["status"] == "approved"
     with pytest.raises(ValidationError, match="lista blanca"):
         _ensure("c-a2", unattended_apps=["calc"])
+
+
+def _cua_ensure(call_id, method="cua_click", computer=None, **extra):
+    context = {"tool_version": "t1", "computer": computer if computer is not None else {"app": "Notepad.exe"}}
+    return agent_internal.HANDLERS["agent_internal_approval_ensure"](
+        {"session_id": "s1", "call_id": call_id, "method": method, "context": context,
+         "params": {"pid": 42, "window_id": 7, "element_token": "s00000001:0"}, **extra})["approval"]
+
+
+def test_cua_approval_usa_la_concesion_por_app(store):
+    first = _cua_ensure("c-cua")
+    assert first["status"] == "pending" and first["context"]["computer"]["app"] == "Notepad.exe"
+    agent_internal.HANDLERS["agent_internal_approval_decide"](
+        {"approval_id": first["id"], "approve": True, "grant_app": True})
+    assert _cua_ensure("c-cua-2", "cua_type_text")["status"] == "approved"
+    assert _cua_ensure("c-cua-3", computer={"app": "Calc.exe"})["status"] == "pending"
+
+
+def test_cua_approval_desatendida_exige_una_app_identificada(store):
+    assert _cua_ensure("c-cua-a1", unattended_apps=["notepad"])["status"] == "approved"
+    with pytest.raises(ValidationError, match="lista blanca"):
+        _cua_ensure("c-cua-a2", computer={"window": "Proceso 42 (sin leer con cua_list_windows)"},
+                    unattended_apps=["notepad"])
+
+
+def test_cua_nativa_exige_su_contexto_actual(store):
+    with pytest.raises(ValidationError, match="contexto actual"):
+        agent_internal.HANDLERS["agent_internal_approval_ensure"](
+            {"session_id": "s1", "call_id": "c-cua-sin", "method": "cua_click", "params": {"pid": 42}})
