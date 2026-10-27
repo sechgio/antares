@@ -1,7 +1,10 @@
 'use strict';
 
 const fs = require('node:fs');
+const dns = require('node:dns');
 const path = require('node:path');
+const { fileURLToPath } = require('node:url');
+const preview = require('./agent-preview');
 
 const PARTITION = 'persist:antares-agent-browser';
 const MAX_TEXT = 3_500;
@@ -35,7 +38,8 @@ const VIRTUAL_KEYS = { Enter: 13, Tab: 9, Escape: 27, Space: 32, Backspace: 8, D
 const REF = { type: 'string', description: 'Referencia «ref» de un elemento devuelto por web_read' };
 const TOOLS = {
   web_open: ['Abrir una página web en el navegador del agente', {
-    type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s) o búsqueda; para un archivo local usa fs_read' } }, required: ['url'],
+    type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s), búsqueda o ruta de un .html del espacio de trabajo '
+      + '(o file://) para verlo en vista previa con recarga en vivo; para leer otro archivo local usa fs_read' } }, required: ['url'],
   }, false],
   web_read: ['Leer el texto y los elementos interactivos de la página actual: primero los visibles, con su estado; '
     + 'incluye marcos del mismo sitio y componentes con shadow DOM', {
@@ -254,6 +258,39 @@ function publicWebUrl(url) {
   return url;
 }
 
+// Un nombre público puede resolver a una IP privada (DNS del atacante o
+// rebinding): antes de salir se resuelve el host y se comprueba cada
+// dirección; sin resolución verificable no hay navegación.
+async function isPublicResolution(url) {
+  let host;
+  try { host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, ''); } catch { return false; }
+  if (isPrivateHostname(host)) return false;
+  if (host.includes(':') || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return true;
+  let addresses;
+  try {
+    addresses = await dns.promises.lookup(host, { all: true });
+  } catch {
+    return false;
+  }
+  return addresses.length > 0 && !addresses.some((entry) => isPrivateHostname(entry.address));
+}
+
+// Una ruta a un .html (o file://) es vista previa local; «dominio.com/x.html» sigue siendo web.
+function localTarget(raw) {
+  const value = String(raw || '').trim();
+  if (/^file:/i.test(value)) {
+    try { return fileURLToPath(value); } catch { throw new Error('La dirección file:// no es válida'); }
+  }
+  if (isWeb(value) || !/^[^?#]+\.html?$/i.test(value)) return null;
+  const first = value.split(/[\\/]/)[0];
+  return /^[a-z]:[\\/]/i.test(value) || value.includes('\\') || value.startsWith('.') || !value.includes('/') || !first.includes('.')
+    ? value : null;
+}
+
+function permitted(url) {
+  return isAllowedWebUrl(url) || preview.owns(url);
+}
+
 function normalizeUrl(raw) {
   const value = String(raw || '').trim();
   if (!value) throw new Error('Indica la dirección o la búsqueda');
@@ -275,6 +312,16 @@ function prepareSession(electron) {
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
   ses.setUserAgent(siteUserAgent(ses.getUserAgent()));
+  // Última barrera contra el rebinding: ni las redirecciones ni los
+  // subrecursos de una página limpia pueden apuntar a una IP privada.
+  // La única excepción es la vista previa local, por su origen y prefijo exactos.
+  ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*', 'file:///*'] }, (details, callback) => {
+    if (preview.owns(details.url)) return callback({ cancel: false });
+    if (details.url.startsWith('file:')) return callback({ cancel: true });
+    isPublicResolution(details.url)
+      .then((allowed) => callback({ cancel: !allowed }))
+      .catch(() => callback({ cancel: true }));
+  });
   ses.on('will-download', (event, item) => {
     const slot = downloadSlot;
     if (!slot || item.getURLChain()[0] !== slot.url) { event.preventDefault(); item.cancel(); return; }
@@ -301,13 +348,16 @@ function downloadName(value) {
   return name && name !== '.' && name !== '..' ? name : 'archivo';
 }
 
-function startDownload(url, drafts) {
+async function startDownload(url, drafts) {
   if (!drafts) throw new Error('Los borradores requieren una conversación');
   if (!isWeb(url)) throw new Error('Indica la dirección http(s) del archivo');
   publicWebUrl(url);
   const policy = require('./agent-browser-policy');
   if (policy.isBlocked(policy.hostOf(url))) {
     throw new Error('Dominio bloqueado por la política del navegador del agente');
+  }
+  if (!(await isPublicResolution(url))) {
+    throw new Error('El navegador de Agent no accede a direcciones locales ni de la red privada');
   }
   const requested = new URL(url);
   requested.hash = '';
@@ -444,14 +494,14 @@ function ensureTab(id) {
     netLog.clear();
   }
   contents.setWindowOpenHandler(({ url }) => {
-    if (isAllowedWebUrl(url)) setImmediate(() => contents.loadURL(url).catch(() => {}));
+    if (permitted(url)) setImmediate(() => contents.loadURL(url).catch(() => {}));
     return { action: 'deny' };
   });
   contents.on('will-navigate', (event, url) => {
-    if (!isAllowedWebUrl(url)) event.preventDefault();
+    if (!permitted(url)) event.preventDefault();
   });
   contents.on('will-redirect', (event, url) => {
-    if (!isAllowedWebUrl(url)) event.preventDefault();
+    if (!permitted(url)) event.preventDefault();
   });
   const userInput = (_event, input) => {
     if (input.type === 'mouseDown') {
@@ -1110,13 +1160,34 @@ async function inspect(x, y, id = activeTab) {
   return contents.executeJavaScriptInIsolatedWorld(1002, [{ code: INSPECT(...point) }], true);
 }
 
+function reloadPreview() {
+  for (const tab of tabs.values()) {
+    const contents = tabContents(tab);
+    if (contents && preview.owns(contents.getURL())) contents.reload();
+  }
+}
+
+// La ruta se autoriza como en fs_read (espacio de trabajo o carpeta adjunta) y
+// se sirve su carpeta, que también debe estar autorizada.
+async function previewUrl(file, resolvePath) {
+  if (!resolvePath) throw new Error('La vista previa de archivos locales requiere una conversación');
+  const status = await resolvePath(file);
+  if (!status || !status.exists || status.type !== 'file') {
+    throw new Error(`No existe el archivo ${file}; créalo con fs_write antes de abrirlo en vista previa`);
+  }
+  const folder = await resolvePath(path.dirname(status.path));
+  if (!folder || folder.type !== 'folder') throw new Error('La carpeta del archivo no está autorizada; adjúntala en el mensaje');
+  return (await preview.open(status.path, { onReload: reloadPreview })).url;
+}
+
 async function observeAfter(contents) {
   await settle(contents);
   return snapshot(contents, 0, RESULT_BUDGET - 400);
 }
 
-async function run(name, params = {}, { dir, drafts, approvedContext, sessionId } = {}) {
-  if (name === 'web_open') {
+async function run(name, params = {}, { dir, drafts, approvedContext, sessionId, resolvePath } = {}) {
+  const file = name === 'web_open' ? localTarget(params.url) : null;
+  if (name === 'web_open' && file === null) {
     assertAgentTarget(params.url);
     const policy = require('./agent-browser-policy');
     if (policy.isBlocked(policy.hostOf(normalizeUrl(params.url)))) {
@@ -1135,10 +1206,14 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId 
   if (name === 'web_download') return startDownload(String(params.url || '').trim(), drafts);
   if (name === 'web_open') {
     if (!docked) activeTab = AGENT_TAB;
+    const target = file !== null ? await previewUrl(file, resolvePath) : normalizeUrl(params.url);
     tab = ensureTab(AGENT_TAB);
     notify('agent-open');
     const contents = tab.view.webContents;
-    await load(contents, normalizeUrl(params.url));
+    if (file === null && !(await isPublicResolution(target))) {
+      throw new Error('El navegador de Agent no accede a direcciones locales ni de la red privada');
+    }
+    await load(contents, target);
     return snapshot(contents);
   }
   const contents = current(AGENT_TAB);
@@ -1435,6 +1510,7 @@ function close() {
   tabSeq = 0;
   agentOwner = null;
   pendingMouseInputs.clear();
+  preview.close();
 }
 
-module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, isPrivateHostname, isAllowedWebUrl, state, dock, capture, inspect, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };
+module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, isPrivateHostname, isAllowedWebUrl, isPublicResolution, state, dock, capture, inspect, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };

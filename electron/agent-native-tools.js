@@ -342,7 +342,10 @@ async function runNativeTool(name, params, { sessionId, approvedContext } = {}) 
   if (CUA.has(name)) return require('./agent-cua').run(name, params || {}, { sessionId, dir: `${draftsDir(sessionId)}.screens` });
   if (WEB[name]) {
     return require('./agent-browser').run(name, params || {},
-      { dir: `${draftsDir(sessionId)}.screens`, drafts: draftsDir(sessionId), approvedContext, sessionId });
+      { dir: `${draftsDir(sessionId)}.screens`, drafts: draftsDir(sessionId), approvedContext, sessionId,
+        resolvePath: sessionId
+          ? (target) => require('./ipc-router')._callBackend('agent_internal_path_status', { session_id: sessionId, path: target })
+          : null });
   }
   if (name === 'document_generate') return generateDocument(params, sessionId);
   if ((name === 'canvas_fill_fields' || name === 'canvas_apply_layers')
