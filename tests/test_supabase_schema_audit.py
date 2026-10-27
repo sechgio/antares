@@ -58,6 +58,7 @@ EXPECTED_CANVAS_DOCUMENT_TRIGGERS = {
     "canvas_documents_lww_trigger",
     "canvas_documents_snapshot_trigger",
     "canvas_documents_preserve_created_by",
+    "canvas_documents_force_attribution",
     "canvas_documents_content_hash_trigger",
     "canvas_documents_storage_guard_trigger",
 }
