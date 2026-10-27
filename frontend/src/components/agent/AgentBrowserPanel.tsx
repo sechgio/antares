@@ -1,9 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Globe, Hand, Loader2, PenLine, RotateCw, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ArrowLeft, ArrowRight, Bot, Globe, Hand, Loader2, Maximize2, Minimize2, MoreVertical, PenLine, Plus, RotateCw, X } from 'lucide-react';
 import { agentApi, type AgentBrowserState } from '../../api/agentApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
+import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import BrowserAnnotator from './BrowserAnnotator';
 
 const EMPTY: AgentBrowserState = {
@@ -12,6 +14,9 @@ const EMPTY: AgentBrowserState = {
 };
 
 const OVERLAY = '[role="menu"], [role="dialog"], [role="listbox"], [role="alertdialog"]';
+// Como Claude Desktop: la pestaña del agente es fija y las demás tienen un tope.
+const MAX_USER_TABS = 8;
+const MENU_ITEM = 'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)] disabled:pointer-events-none disabled:opacity-40';
 
 export default function AgentBrowserPanel({ onClose, onAnnotate }: {
   onClose: () => void;
@@ -27,14 +32,21 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
   const [now, setNow] = useState(() => Date.now());
   const panelRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const addressRef = useRef<HTMLInputElement | null>(null);
   const [shot, setShot] = useState<{ png_base64: string; width: number; height: number; url: string } | null>(null);
+  const menu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
+    align: 'end', estimatedWidth: 240, estimatedHeight: 100, stopEscapePropagation: true,
+  });
   // Mientras se anota, la vista nativa se retira para que la captura y la barra queden visibles.
   const annotatingRef = useRef(false);
   const reportRef = useRef<() => void>(() => {});
   const minWidth = layout.available ? Math.min(340, layout.available / 2) : 340;
   const maxWidth = layout.available ? Math.max(minWidth, layout.available - 320) : 760;
   const clampWidth = (value: number) => Math.min(maxWidth, Math.max(minWidth, value));
-  const userTab = state.active_tab === 'user';
+  const expanded = width !== null && clampWidth(width) >= maxWidth;
+  const userTab = (state.active_tab ?? 'agent') !== 'agent';
+  const tabs = state.tabs ?? [];
+  const atTabCap = tabs.filter((tab) => tab.id !== 'agent').length >= MAX_USER_TABS;
   const busySeconds = !userTab && state.busy_until && !state.user_control
     ? Math.max(0, Math.ceil((state.busy_until - now) / 1000)) : 0;
 
@@ -109,13 +121,19 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
     };
   }, []);
 
-  const run = async (action: 'open' | 'back' | 'forward' | 'reload' | 'tab' | 'control' | 'allow',
-    extra: { url?: string; user?: boolean; tab?: 'agent' | 'user' } = {}) => {
+  const run = async (action: 'open' | 'back' | 'forward' | 'reload' | 'tab' | 'new' | 'close' | 'control' | 'allow',
+    extra: { url?: string; user?: boolean; tab?: string } = {}) => {
     try {
       setState(await agentApi.agentBrowser(action, extra));
+      return true;
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo usar el navegador'), type: 'error' });
+      return false;
     }
+  };
+
+  const newTab = async () => {
+    if (await run('new')) addressRef.current?.focus();
   };
 
   const annotate = async (open: boolean) => {
@@ -135,12 +153,13 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
     }
   };
 
-  const iconButton = 'flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:pointer-events-none disabled:opacity-40';
+
+  const iconButton = 'flex size-6 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:pointer-events-none disabled:opacity-40';
 
   return (
     <div
       ref={panelRef}
-      className="relative -my-2.5 -ml-3 -mr-2.5 flex w-[clamp(340px,44%,760px)] shrink-0"
+      className="relative flex w-[clamp(340px,44%,760px)] shrink-0"
       style={{ width: width === null ? undefined : clampWidth(width), maxWidth: layout.available ? maxWidth : undefined }}
     >
       <div
@@ -175,8 +194,131 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
           setWidth(clampWidth(next));
         }}
       />
-    <aside aria-label="Navegador del agente" className="agent-browser flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-base)]">
-      <div className="flex shrink-0 items-center gap-1 px-2.5 pb-2 pt-3">
+    <aside aria-label="Navegador del agente" className="agent-browser flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)]">
+      <div className="flex h-9 shrink-0 items-center gap-1 pl-1.5 pr-1.5">
+        <div role="tablist" aria-label="Pestañas del navegador" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
+          {tabs.map((tab) => {
+            const agent = tab.id === 'agent';
+            const name = tab.title || tab.label;
+            return (
+              <div
+                key={tab.id}
+                className={`group flex min-w-0 max-w-[180px] shrink items-center rounded-md transition-colors ${tab.active
+                  ? 'bg-[var(--bg-input)] text-[var(--text-primary)]'
+                  : 'text-[var(--text-secondary)] hover:bg-[color-mix(in_srgb,var(--bg-input)_60%,transparent)] hover:text-[var(--text-primary)]'}`}
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab.active}
+                  aria-label={agent && tab.title ? `Agente: ${tab.title}` : name}
+                  title={tab.url || name}
+                  onClick={() => void run('tab', { tab: tab.id })}
+                  onAuxClick={(event) => { if (event.button === 1 && !agent) void run('close', { tab: tab.id }); }}
+                  className="flex h-6 min-w-0 flex-1 items-center gap-1.5 pl-2 pr-1 text-left text-[12.5px]"
+                >
+                  {tab.loading
+                    ? <Loader2 size={12} className="shrink-0 animate-spin text-[var(--text-muted)]" />
+                    : agent && <Bot size={12} className="shrink-0 text-[var(--text-muted)]" />}
+                  <span className="min-w-0 truncate">{name}</span>
+                  {tab.user_control && (
+                    <span className="size-1.5 shrink-0 rounded-full bg-[var(--accent-yellow)]" title="Tienes el control" />
+                  )}
+                </button>
+                {agent ? <span className="w-1.5 shrink-0" /> : (
+                  <button
+                    type="button"
+                    aria-label={`Cerrar ${name}`}
+                    title="Cerrar pestaña"
+                    onClick={() => void run('close', { tab: tab.id })}
+                    className={`mr-1 flex size-4 shrink-0 items-center justify-center rounded text-[var(--text-muted)] transition-opacity hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100 ${tab.active ? 'opacity-100' : 'opacity-0'}`}
+                  >
+                    <X size={11} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <button
+            type="button"
+            className={iconButton}
+            aria-label="Nueva pestaña"
+            title={atTabCap ? `Puedes tener hasta ${MAX_USER_TABS} pestañas abiertas` : 'Nueva pestaña'}
+            disabled={atTabCap}
+            onClick={() => void newTab()}
+          >
+            <Plus size={15} />
+          </button>
+        </div>
+        <button
+          ref={menu.triggerRef}
+          type="button"
+          className={iconButton}
+          aria-label="Más opciones del navegador"
+          aria-haspopup="menu"
+          aria-expanded={menu.isOpen}
+          onClick={menu.toggle}
+        >
+          <MoreVertical size={14} />
+        </button>
+        <button
+          type="button"
+          className={iconButton}
+          aria-label={expanded ? 'Restaurar el ancho del navegador' : 'Expandir el navegador'}
+          title={expanded ? 'Restaurar' : 'Expandir'}
+          onClick={() => setWidth(expanded ? null : maxWidth)}
+        >
+          {expanded ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+        </button>
+        <button type="button" className={iconButton} aria-label="Cerrar el navegador" onClick={onClose}>
+          <X size={15} />
+        </button>
+      </div>
+      {menu.isOpen && createPortal(
+        <div
+          ref={menu.popupRef}
+          role="menu"
+          aria-label="Opciones del navegador"
+          className="fixed z-[300] w-[240px] rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)] p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.06)]"
+          style={{ top: menu.position?.top ?? -9999, left: menu.position?.left ?? -9999, visibility: menu.position ? 'visible' : 'hidden' }}
+        >
+          {!userTab && (
+            <button
+              type="button"
+              role="menuitem"
+              className={MENU_ITEM}
+              disabled={!state.open && !state.user_control}
+              onClick={() => { menu.close(); void run('control', { user: !state.user_control }); }}
+            >
+              <Hand size={14} className="text-[var(--text-secondary)]" />
+              {state.user_control ? 'Devolver el control al agente' : 'Tomar el control'}
+            </button>
+          )}
+          {onAnnotate && (
+            <button
+              type="button"
+              role="menuitem"
+              className={MENU_ITEM}
+              disabled={!state.open && !shot}
+              onClick={() => { menu.close(); void annotate(!shot); }}
+            >
+              <PenLine size={14} className="text-[var(--text-secondary)]" />
+              {shot ? 'Dejar de anotar' : 'Anotar la página'}
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            className={MENU_ITEM}
+            disabled={atTabCap}
+            onClick={() => { menu.close(); void newTab(); }}
+          >
+            <Plus size={14} className="text-[var(--text-secondary)]" /> Nueva pestaña
+          </button>
+        </div>,
+        document.body,
+      )}
+      <div className="flex shrink-0 items-center gap-0.5 px-2 pb-1.5">
         <button type="button" className={iconButton} aria-label="Atrás" disabled={!state.can_go_back} onClick={() => void run('back')}>
           <ArrowLeft size={14} />
         </button>
@@ -184,90 +326,45 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
           <ArrowRight size={14} />
         </button>
         <button type="button" className={iconButton} aria-label="Recargar" disabled={!state.open} onClick={() => void run('reload')}>
-          {state.loading ? <Loader2 size={14} className="animate-spin" /> : <RotateCw size={14} />}
+          {state.loading ? <Loader2 size={13} className="animate-spin" /> : <RotateCw size={13} />}
         </button>
         <form
-          className="mx-1 min-w-0 flex-1"
+          className="ml-1 min-w-0 flex-1"
           onSubmit={(event) => {
             event.preventDefault();
             if (!address.trim()) return;
             setEditing(false);
+            addressRef.current?.blur();
             void run('open', { url: address });
           }}
         >
           <input
+            ref={addressRef}
             value={address}
             onChange={(event) => setAddress(event.target.value)}
             onFocus={(event) => { setEditing(true); event.target.select(); }}
             onBlur={() => setEditing(false)}
-            placeholder="Escribe una dirección o una búsqueda"
+            placeholder="Escribe una URL"
             aria-label="Dirección del navegador del agente"
             spellCheck={false}
-            className="h-7 w-full rounded-md bg-[var(--bg-input)] px-2.5 font-mono text-[12px] text-[var(--text-primary)] outline-none placeholder:font-sans placeholder:text-[var(--text-muted)]"
+            className="h-6 w-full rounded-md border border-[var(--border-medium)] bg-[var(--bg-input)] px-2 text-[12.5px] text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-muted)] focus:border-[var(--text-muted)]"
           />
         </form>
-        {!userTab && (
-          <button
-            type="button"
-            aria-pressed={state.user_control}
-            disabled={!state.open && !state.user_control}
-            title={state.user_control ? 'Devolver el navegador al agente' : 'Tomar el control: el agente esperará mientras usas la página'}
-            onClick={() => void run('control', { user: !state.user_control })}
-            className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors disabled:pointer-events-none disabled:opacity-40 ${state.user_control
-              ? 'bg-[color-mix(in_srgb,var(--accent-yellow)_18%,transparent)] text-[var(--accent-yellow)]'
-              : 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]'}`}
-          >
-            <Hand size={13} />
-            {state.user_control ? 'Devolver' : 'Tomar el control'}
-          </button>
-        )}
-        {onAnnotate && (
-          <button
-            type="button"
-            className={`${iconButton} ${shot ? 'bg-[var(--bg-input)] text-[var(--text-primary)]' : ''}`}
-            aria-label="Anotar la página"
-            aria-pressed={!!shot}
-            title="Dibuja sobre la página y envíala al chat"
-            disabled={!state.open && !shot}
-            onClick={() => void annotate(!shot)}
-          >
-            <PenLine size={14} />
-          </button>
-        )}
-        <button type="button" className={iconButton} aria-label="Cerrar el navegador" onClick={onClose}>
-          <X size={14} />
-        </button>
       </div>
-      {state.tabs && state.tabs.length > 0 && (
-        <div role="tablist" aria-label="Pestañas del navegador" className="mx-2.5 mb-2 flex gap-1">
-          {state.tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={tab.active}
-              onClick={() => void run('tab', { tab: tab.id })}
-              className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[12px] transition-colors ${tab.active
-                ? 'bg-[var(--bg-input)] text-[var(--text-primary)]'
-                : 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]'}`}
-            >
-              <span className="shrink-0 font-medium">{tab.label}</span>
-              {tab.loading && <Loader2 size={11} className="animate-spin" />}
-              {tab.title && <span className="min-w-0 truncate text-[var(--text-muted)]">{tab.title}</span>}
-              {tab.user_control && (
-                <span className="ml-auto size-1.5 shrink-0 rounded-full bg-[var(--accent-yellow)]" title="Tienes el control" />
-              )}
-            </button>
-          ))}
-        </div>
-      )}
       {!userTab && state.user_control && (
-        <div role="status" className="mx-2.5 mb-2 rounded-md bg-[color-mix(in_srgb,var(--accent-yellow)_12%,transparent)] px-2.5 py-1.5 text-[12px] text-[var(--accent-yellow)]">
-          Tienes el control: el agente no usará el navegador hasta que se lo devuelvas.
+        <div role="status" className="flex shrink-0 items-center gap-2 border-t border-[var(--border-medium)] bg-[color-mix(in_srgb,var(--accent-yellow)_10%,transparent)] px-3 py-1.5 text-[12px] text-[var(--accent-yellow)]">
+          <span className="min-w-0 flex-1">Tienes el control: el agente no usará el navegador hasta que se lo devuelvas.</span>
+          <button
+            type="button"
+            onClick={() => void run('control', { user: false })}
+            className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium hover:bg-[var(--bg-input)]"
+          >
+            Devolver
+          </button>
         </div>
       )}
       {!userTab && !state.user_control && busySeconds > 0 && (
-        <div role="status" className="mx-2.5 mb-2 flex items-center gap-2 rounded-md bg-[color-mix(in_srgb,var(--accent-primary)_10%,transparent)] px-2.5 py-1.5 text-[12px] text-[var(--text-secondary)]">
+        <div role="status" className="flex shrink-0 items-center gap-2 border-t border-[var(--border-medium)] bg-[color-mix(in_srgb,var(--accent-primary)_8%,transparent)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)]">
           <span className="min-w-0 flex-1">El agente espera porque usaste la página. Se reanudará en {busySeconds} s.</span>
           <button
             type="button"
@@ -278,17 +375,15 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
           </button>
         </div>
       )}
-      <div ref={viewportRef} data-testid="agent-browser-viewport" className="relative min-h-0 flex-1 overflow-hidden bg-[var(--bg-surface)]">
+      <div ref={viewportRef} data-testid="agent-browser-viewport" className="relative min-h-0 flex-1 overflow-hidden border-t border-[var(--border-medium)] bg-[var(--bg-base)]">
         {!state.open && (
-          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-            <Globe size={22} className="text-[var(--text-muted)]" />
-            <p className="text-[13px] text-[var(--text-secondary)]">
-              {userTab ? 'Esta pestaña es tuya.' : 'Aquí verás las páginas que abra el agente.'}
+          <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+            <Globe size={22} strokeWidth={1.5} className="mb-1.5 text-[var(--text-muted)]" />
+            <p className="text-[13px] font-medium text-[var(--text-primary)]">
+              {userTab ? 'Explorar la web' : 'Pestaña del agente'}
             </p>
             <p className="max-w-xs text-[12px] text-[var(--text-muted)]">
-              {userTab
-                ? 'Escribe una dirección arriba o abre una página para consultarla mientras el agente trabaja en la suya.'
-                : 'También puedes escribir una dirección arriba, por ejemplo para iniciar sesión en un sitio antes de pedirle algo.'}
+              {userTab ? 'Escribe una URL para abrir un sitio.' : 'Aquí verás las páginas que abra el agente.'}
             </p>
           </div>
         )}

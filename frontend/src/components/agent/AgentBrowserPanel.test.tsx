@@ -24,8 +24,7 @@ it('coloca la página sobre su hueco, la retira al cerrarse y refleja lo que hac
   await waitFor(() => expect(call).toHaveBeenCalledWith('bounds', expect.objectContaining({ bounds: expect.objectContaining({ width: expect.any(Number) }) })));
   expect(screen.getByText('Aquí verás las páginas que abra el agente.')).toBeInTheDocument();
   const panel = screen.getByRole('complementary', { name: 'Navegador del agente' });
-  expect(panel.parentElement).toHaveClass('-ml-3', '-mr-2.5', '-my-2.5');
-  expect(panel).not.toHaveClass('rounded-[24px]');
+  expect(panel).toHaveClass('rounded-lg', 'border');
   for (const inset of ['mx-2.5', 'mb-2.5', 'rounded-xl', 'border']) {
     expect(screen.getByTestId('agent-browser-viewport')).not.toHaveClass(inset);
   }
@@ -49,10 +48,11 @@ it('abre direcciones desde la barra y permite tomar y devolver el control', asyn
   await act(async () => { fireEvent.submit(input.closest('form')!); });
   expect(call).toHaveBeenCalledWith('open', { url: 'example.com' });
 
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Tomar el control/ })); });
+  fireEvent.click(screen.getByRole('button', { name: 'Más opciones del navegador' }));
+  await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: /Tomar el control/ })); });
   expect(call).toHaveBeenCalledWith('control', { user: true });
   expect(screen.getByRole('status')).toHaveTextContent('Tienes el control');
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Devolver/ })); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Devolver' })); });
   expect(call).toHaveBeenCalledWith('control', { user: false });
   expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });
@@ -68,26 +68,51 @@ it('avisa de la espera humana y permite liberarla', async () => {
   unmount();
 });
 
-it('separa la pestaña del agente y la del usuario', async () => {
+const tab = (id: string, extra: Partial<NonNullable<AgentBrowserState['tabs']>[number]> = {}) => ({
+  id, label: id === 'agent' ? 'Agente' : 'Nueva pestaña', open: false, url: '', title: '', loading: false,
+  can_go_back: false, can_go_forward: false, user_control: false, busy_until: 0, busy_reason: '' as const, active: false, ...extra,
+});
+
+it('separa la pestaña fija del agente de las pestañas del usuario', async () => {
   const state: AgentBrowserState = {
     ...base,
     open: true,
     url: 'https://user.example',
     active_tab: 'user',
     tabs: [
-      { id: 'agent', label: 'Agente', open: true, url: 'https://agent.example', title: 'Agente', loading: false,
-        can_go_back: false, can_go_forward: false, user_control: false, busy_until: 0, busy_reason: '', active: false },
-      { id: 'user', label: 'Tú', open: true, url: 'https://user.example', title: 'Mi página', loading: false,
-        can_go_back: false, can_go_forward: false, user_control: false, busy_until: 0, busy_reason: '', active: true },
+      tab('agent', { open: true, url: 'https://agent.example', title: 'Docs' }),
+      tab('user', { open: true, url: 'https://user.example', title: 'Mi página', active: true }),
     ],
   };
   const call = vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue(state);
   render(<AgentBrowserPanel onClose={vi.fn()} />);
   expect(await screen.findByRole('tablist', { name: 'Pestañas del navegador' })).toBeInTheDocument();
-  expect(screen.getByRole('tab', { name: /Tú/ })).toHaveAttribute('aria-selected', 'true');
-  expect(screen.queryByRole('button', { name: /Tomar el control/ })).not.toBeInTheDocument();
-  await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Agente/ })); });
+  expect(screen.getByRole('tab', { name: 'Mi página' })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.queryByRole('button', { name: 'Cerrar Agente: Docs' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Más opciones del navegador' }));
+  expect(screen.queryByRole('menuitem', { name: /Tomar el control/ })).not.toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'Agente: Docs' })); });
   expect(call).toHaveBeenCalledWith('tab', { tab: 'agent' });
+});
+
+it('abre y cierra pestañas del usuario con un tope', async () => {
+  const empty: AgentBrowserState = { ...base, active_tab: 'tab-1', tabs: [tab('agent'), tab('tab-1', { active: true })] };
+  const call = vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue(empty);
+  render(<AgentBrowserPanel onClose={vi.fn()} />);
+  expect(await screen.findByText('Explorar la web')).toBeInTheDocument();
+  expect(screen.getByText('Escribe una URL para abrir un sitio.')).toBeInTheDocument();
+  expect(screen.getByLabelText('Dirección del navegador del agente')).toHaveAttribute('placeholder', 'Escribe una URL');
+
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Nueva pestaña' })); });
+  expect(call).toHaveBeenCalledWith('new', {});
+  expect(screen.getByLabelText('Dirección del navegador del agente')).toHaveFocus();
+
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Cerrar Nueva pestaña' })); });
+  expect(call).toHaveBeenCalledWith('close', { tab: 'tab-1' });
+
+  call.mockResolvedValue({ ...base, tabs: [tab('agent'), ...Array.from({ length: 8 }, (_, i) => tab(`tab-${i + 1}`))] });
+  await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'Agente' })); });
+  expect(screen.getByRole('button', { name: 'Nueva pestaña' })).toBeDisabled();
 });
 
 it('desacopla la página mientras un menú la tapa y la vuelve a colocar al cerrarse', async () => {

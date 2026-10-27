@@ -24,9 +24,11 @@ it('congela la página, retira la vista nativa mientras se anota y envía la cap
   vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (cb) { cb(new Blob(['png'], { type: 'image/png' })); });
   const onAnnotate = vi.fn();
   render(<AgentBrowserPanel onClose={vi.fn()} onAnnotate={onAnnotate} />);
-  await waitFor(() => expect(screen.getByLabelText('Anotar la página')).toBeEnabled());
+  await waitFor(() => expect(call).toHaveBeenCalledWith('state'));
+  fireEvent.click(screen.getByRole('button', { name: 'Más opciones del navegador' }));
+  await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Anotar la página' })).toBeEnabled());
 
-  await act(async () => { fireEvent.click(screen.getByLabelText('Anotar la página')); });
+  await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'Anotar la página' })); });
   expect(screen.getByRole('toolbar', { name: 'Herramientas de anotación' })).toBeInTheDocument();
   expect(call).toHaveBeenLastCalledWith('bounds', { bounds: null });
 

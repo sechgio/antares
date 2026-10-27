@@ -719,6 +719,8 @@ async function browserAction(params) {
   if (action === 'state') return browser.state();
   if (action === 'bounds') return browser.dock(params.bounds || null);
   if (action === 'tab') return browser.activateTab(params.tab);
+  if (action === 'new') return browser.newTab();
+  if (action === 'close') return browser.closeTab(params.tab);
   if (action === 'control') return browser.setUserControl(params.user === true, params.tab);
   if (action === 'allow') return browser.allowAgent(params.tab);
   if (action === 'capture') return browser.capture(params.tab);
