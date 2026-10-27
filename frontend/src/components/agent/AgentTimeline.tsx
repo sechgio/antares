@@ -492,8 +492,9 @@ export function groupTurns(messages: AgentMessage[]): TimelineTurn[] {
       turns.push({ key: index, role: 'user', message });
       return;
     }
+    // Un aviso va en su propio turno: no se mezcla con el trabajo ni ocupa el lugar de la respuesta.
     const last = turns[turns.length - 1];
-    if (last?.role === 'assistant') last.messages.push(message);
+    if (last?.role === 'assistant' && !message.notice && !last.messages[0].notice) last.messages.push(message);
     else turns.push({ key: index, role: 'assistant', messages: [message], startedAt });
   });
   return turns;

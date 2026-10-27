@@ -29,6 +29,7 @@ const ATTACHMENT_TTL_MS = 60 * 60 * 1000;
 const MAX_ATTACHMENTS = 20;
 const MAX_PASTED_BYTES = 20 * 1024 * 1024;
 const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024;
+const MAX_INDEXED_SKILLS = 40;
 const IMAGE_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
 const QUOTED_PATH_RE = /["'`\u201c\u201d]([A-Za-z]:\\[^"'`\u201c\u201d\r\n]+)["'`\u201c\u201d]/g;
 const BARE_PATH_RE = /(?:^|[\s(\[])([A-Za-z]:\\[^\s"'`<>|*?]+)/g;
@@ -820,8 +821,10 @@ async function messageSend(params) {
     ? `Archivos adjuntos por el usuario:\n${attached.map((a) => `- ${a.path} (${a.kind === 'folder' ? 'carpeta' : 'archivo'})`).join('\n')}`
     : '';
   const memory = await memoryContext(session, content);
-  const instructions = String((await conv.agent(ctx())).instructions || '');
+  const agentConfig = await conv.agent(ctx());
+  const instructions = String(agentConfig.instructions || '');
   const skillsNote = instructions.includes(SKILLS_GUIDE) ? '' : SKILLS_GUIDE;
+  const skillIndex = await skillsIndex(session, agentConfig.tools);
   const conversationNote = instructions.includes(CONVERSATION_GUIDE) ? '' : CONVERSATION_GUIDE;
   const botsNote = mentionedBots.size
     ? `El usuario solicita colaborar con estos bots guardados: ${JSON.stringify([...mentionedBots.values()])}. `
@@ -836,7 +839,8 @@ async function messageSend(params) {
       + 'con ese skill_id y sigue next_offset hasta leer SKILL.md completo; después aplica sus instrucciones a este encargo. '
       + skill.notice
     : '';
-  const context = [mentions.context, memory.context, attachedNote, skillsNote, conversationNote, botsNote, invokedSkillNote]
+  const context = [mentions.context, memory.context, attachedNote, skillsNote, skillIndex?.note, conversationNote, botsNote,
+    invokedSkillNote]
     .filter(Boolean).join('\n\n');
   const images = await _inlineImages(conv, attached, (files.rejected || []).map((item) => item.path));
   const input = context || images.length
@@ -855,6 +859,7 @@ async function messageSend(params) {
     try {
       if (skill) execution.requireSkill(session.conversationId, skill.id);
       await conv.submit({ type: 'input', content: input, whenBusy: correction ? 'steer' : 'followUp', ...(requestId ? { requestId } : {}) }, ctx());
+      if (skillIndex) shared.skillIndexes.set(session.conversationId, skillIndex.index);
       break;
     } catch (err) {
       if (skill) execution.requireSkill(session.conversationId, null);
@@ -1000,6 +1005,21 @@ function _accounts() {
 function _toolVersion(spec) {
   const shape = { description: spec.description || '', inputSchema: spec.inputSchema || null, gated: !!spec.gated };
   return { name: spec.name, version: crypto.createHash('sha256').update(JSON.stringify(shape)).digest('hex').slice(0, 16) };
+}
+
+// Índice de skills de la biblioteca para que el modelo sepa qué hay sin llamar
+// antes a skills_list. Se reenvía solo si cambia o tras una compactación.
+async function skillsIndex(session, tools) {
+  if (!tools.some((tool) => tool.name === 'skills_read')) return null;
+  const { skills } = await bridge('agent_skills_list', {}).catch(() => ({ skills: [] }));
+  const index = (skills || []).slice(0, MAX_INDEXED_SKILLS)
+    .map((skill) => `- ${skill.name} (skill_id ${skill.id}): ${String(skill.description || '').slice(0, 160)}`).join('\n');
+  if (!index || shared.skillIndexes.get(session.conversationId) === index) return null;
+  return {
+    index,
+    note: 'Skills disponibles. Si alguna encaja con el encargo, aunque sea en parte, cárgala con skills_read antes de actuar '
+      + 'y sigue sus instrucciones; skills_list encuentra además las de carpetas adjuntas y del perfil.\n' + index,
+  };
 }
 
 async function memoryContext(session, text) {

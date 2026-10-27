@@ -309,7 +309,7 @@ async function projectMessages(conv, session) {
       continue;
     }
     if (entry.kind === NOTICE_KIND) {
-      messages.push({ role: 'assistant', content: String((entry.data && entry.data.text) || ''), ts: entryTs(entry, msg) });
+      messages.push({ role: 'assistant', content: String((entry.data && entry.data.text) || ''), notice: true, ts: entryTs(entry, msg) });
       continue;
     }
     if (entry.kind === 'pi.compaction') {
@@ -323,6 +323,7 @@ async function projectMessages(conv, session) {
         messages.push({
           role: 'assistant',
           content: `🗜 Contexto compactado — ${reason}\n\n${summary}`,
+          notice: true,
           ts: entryTs(entry, msg),
         });
       }
