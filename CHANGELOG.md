@@ -12,6 +12,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Abrir un artefacto de Agent ya no ejecuta archivos ejecutables: las descargas web y los borradores admiten cualquier extensión, así que «Abrir» consulta la misma lista de veto (`.exe`, `.bat`, `.url`, `.lnk`…) que la política de escritura IPC y rechaza el archivo con un aviso.
 - El navegador de Agent ya no accede a direcciones locales ni de la red privada: `web_open` y `web_download` rechazan localhost, IP literales privadas (incluida la de metadatos de nube), y la navegación y las redirecciones dentro de la pestaña vuelven a pasar el mismo filtro, de modo que una inyección de prompt no puede sondear la red doméstica o los servicios de la propia máquina.
 - El sanitizador de HTML (exportación a PDF y vista previa) también elimina los manejadores de eventos separados del resto de atributos con barra (`<img src="x"/onerror=…>`): el parser HTML los acepta como atributos reales aunque vayan sin espacio, y antes sobrevivían al filtrado (quedaba el CSP como única barrera).
+- La carpeta de un archivo guardado con el diálogo ya no queda autorizada para escritura para siempre: como la ruta preseleccionada la propone la interfaz, esa raíz solo dura la sesión; las carpetas que el usuario elige expresamente (seleccionar carpeta o destino) siguen siendo permanentes.
 
 ### Fixed
 - La nota de texto al anotar el navegador de Agent ya no se cierra sola al hacer clic, y un clic sin arrastre con el lápiz o una forma ya no deja trazos invisibles que tapaban la selección.

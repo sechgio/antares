@@ -91,7 +91,7 @@ async function runSaveDialog(params = {}, dialog, window) {
   });
   const result = resultFromSaveDialog(response);
   registerAllowedReadPaths(result.paths);
-  _registerWriteRootFromPath(result.paths[0]);
+  _registerWriteRootFromPath(result.paths[0], false);
   return result;
 }
 
