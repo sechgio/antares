@@ -452,6 +452,20 @@ def _ensure_element_focus(ctx: _ActionContext, target: JsonObject) -> None:
     _set_focus(raw)
 
 
+def focused_is_password() -> bool:
+    """Si el control con el foco del teclado es un campo de contraseña; desktop_type escribe ahí sin elemento."""
+    def run() -> bool:
+        try:
+            from pywinauto.uia_defines import IUIA
+
+            focused = IUIA().iuia.GetFocusedElement()
+            return focused is not None and bool(focused.GetCurrentPropertyValue(UIA_ISPASSWORD))
+        except Exception:
+            return False
+
+    return bool(_run_on_worker(run, 5.0))
+
+
 def perform_action(window_id: str, action: str, element_id: str | None, params: JsonObject) -> JsonObject:
     if action not in policy.ACTIONS:
         raise ValueError(f"Acción no válida: {action}")
