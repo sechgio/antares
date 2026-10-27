@@ -5,9 +5,12 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 
-const { assert, finish } = require('./helpers/harness');
+const { assert, finish, stubModule } = require('./helpers/harness');
 const { getEventListeners } = require('node:events');
 
+// Este fixture cuenta con un catálogo pequeño (todas las herramientas habilitadas);
+// cua-driver tiene sus propias pruebas en test-agent-cua.js.
+stubModule('electron/agent-cua.js', { TOOLS: new Map(), run: async () => ({}), approvalContext: () => ({}), close: () => {} });
 const runtime = require('../electron/agent-runtime');
 const importer = require('../electron/agent-import');
 const { METHODS, INTERNAL_METHODS: INTERNAL_SET, nativeDispatchFor } = require('../shared/ipc-method-catalog');
@@ -312,15 +315,15 @@ async function main() {
       const result = await bridge(method, params);
       if (method === 'agent_internal_tools') {
         result.tools.push(
-          { name: 'ui_click', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
-          { name: 'ui_observe', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
+          { name: 'cua_click', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
+          { name: 'cua_window_state', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
         );
       }
       return result;
     };
     await openFaux([
-      fauxAssistantMessage([fauxToolCall('ui_click', { window_id: 'w1a2b', element_id: 'e3' })], { stopReason: 'toolUse' }),
-      fauxAssistantMessage([fauxToolCall('ui_observe', { window_id: 'w1a2b' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('cua_click', { window_id: 'w1a2b', element_id: 'e3' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('cua_window_state', { window_id: 'w1a2b' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('Acciones de equipo terminadas'),
     ], uiBridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
@@ -358,7 +361,7 @@ async function main() {
       const result = await bridge(method, params);
       if (method === 'agent_internal_tools') {
         result.tools.push(
-          { name: 'ui_click', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
+          { name: 'cua_click', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
         );
       }
       return result;
@@ -366,7 +369,7 @@ async function main() {
     // Elementos distintos: el guardia de repetición bloquearía la 4.ª llamada
     // idéntica antes de alcanzar el techo desatendido.
     const clicks = Array.from({ length: 27 }, (_, i) =>
-      fauxAssistantMessage([fauxToolCall('ui_click', { window_id: 'w1a2b', element_id: `e${i}` })], { stopReason: 'toolUse' }));
+      fauxAssistantMessage([fauxToolCall('cua_click', { window_id: 'w1a2b', element_id: `e${i}` })], { stopReason: 'toolUse' }));
     await openFaux([
       fauxAssistantMessage([fauxToolCall('task_schedule', {
         action: 'create', content: 'Saca el informe del ERP', due_at: new Date(Date.now() + 1500).toISOString(),
@@ -1390,6 +1393,10 @@ async function main() {
     const instructions = (await conv.agent(runtime._internal.state().ctx)).instructions;
     assert(String(instructions).includes('plantilla de cortes') && String(instructions).includes('no amplían los permisos elegidos'),
       'las indicaciones del agente se suman sin ampliar los permisos elegidos');
+    assert(String(instructions).includes('sin narrar la preparación') && String(instructions).includes('la única acción que lo desbloquea'),
+      'las instrucciones incluyen la política de comunicación');
+    assert(String(instructions).includes('prefiere las herramientas cua_') && String(instructions).includes('suspected_noop'),
+      'las instrucciones guían el uso de cua_ y la lectura de su effect');
     const plain = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const plainTools = (await runtime.handlers.agent_tools_list({ session_id: plain.session.id })).tools;
     const defaults = require('../electron/agent-execution').defaultToolNames([...runtime._internal.shared.toolSpecs.values()]);
@@ -2375,6 +2382,45 @@ async function main() {
 
   {
     const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: { path: { type: 'string' } } };
+    let probes = 0;
+    let other = 0;
+    const failingBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'file_probe', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
+        result.tools.push({ name: 'flaky_probe', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'file_probe') {
+        probes += 1;
+        return { result: JSON.stringify({ error: `No existe el archivo C:\\datos\\informe-${probes}.pdf (intento ${probes})` }) };
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'flaky_probe') {
+        other += 1;
+        return { result: JSON.stringify(other === 3 ? { ok: true } : { error: `Tiempo agotado tras ${other * 10} s` }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      ...[1, 2, 3, 4].map((n) => fauxAssistantMessage([fauxToolCall('file_probe', { path: `informe-${n}.pdf` })], { stopReason: 'toolUse' })),
+      ...[1, 2, 3, 4, 5].map((n) => fauxAssistantMessage([fauxToolCall('flaky_probe', { path: `ruta-${n}` })], { stopReason: 'toolUse' })),
+      fauxAssistantMessage('No encuentro el informe.'),
+    ], failingBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'busca el informe' });
+    assert(await waitIdle(session.id), 'el turno con fallos de la misma causa termina');
+    assert(probes === 3, 'tres fallos por la misma causa bloquean la cuarta llamada aunque cambien los argumentos');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const blocked = listed.messages.flatMap((m) => m.tool_calls || []).filter((c) => c.name === 'file_probe').at(-1);
+    assert(/fallaron por la misma causa/.test(String(blocked.result || '')) && /informe-3\.pdf/.test(String(blocked.result || '')),
+      'el agente recibe el último error y por qué se bloqueó');
+    assert(other === 5, 'un acierto entre fallos reinicia la cuenta de esa herramienta');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
     const schema = { type: 'object', properties: {} };
     let probes = 0;
     const gatedBridge = async (method, params) => {
@@ -3160,6 +3206,29 @@ for line in sys.stdin:
       lines.close();
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  }
+
+  {
+    const { cappedOpenAIApi } = require('../electron/agent-execution');
+    const { shared } = require('../electron/agent-shared');
+    const tool = (name) => ({ type: 'function', function: { name } });
+    const sent = [];
+    const fake = { stream: (_model, _context, options) => options.onPayload(sent.shift(), {}) };
+    const api = cappedOpenAIApi({ ...fake, streamSimple: fake.stream });
+    shared.toolSpecs.set('efecto_0', { name: 'efecto_0', gated: true });
+    shared.toolSpecs.set('efecto_1', { name: 'efecto_1', gated: true });
+    const many = [tool('efecto_0'), tool('efecto_1'), ...Array.from({ length: 140 }, (_, i) => tool(`lectura_${i}`))];
+    sent.push({ tools: many, messages: [{ role: 'assistant', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'efecto_1' } }] }] });
+    const capped = await api.stream({}, {}, {});
+    const names = capped.tools.map((t) => t.function.name);
+    assert(names.length === 128, 'OpenAI recibe como máximo 128 herramientas');
+    assert(names.includes('efecto_1') && !names.includes('efecto_0'),
+      'se conservan las herramientas ya llamadas y se descartan antes las que tienen efecto');
+    const few = { tools: many.slice(0, 5), messages: [] };
+    sent.push(few);
+    assert(await api.streamSimple({}, {}, {}) === few, 'una lista dentro del límite se envía sin cambios');
+    shared.toolSpecs.delete('efecto_0');
+    shared.toolSpecs.delete('efecto_1');
   }
 
   finish();

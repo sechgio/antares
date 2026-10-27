@@ -88,6 +88,7 @@ async function exportTest() {
           return { x: 240, y: 120 };
         }
         if (navigationPhase === 'clear' && script.includes("'select' in el")) pageTimeOrigin += 1;
+        if (script.includes('document.activeElement')) return false;
         if (script.includes('innerText') && !script.includes('querySelectorAll')) {
           return { url: 'https://example.com', title: 'Página', text: 'Uno. Dos. Tres. Cuatro. Cinco.' };
         }

@@ -55,7 +55,10 @@ _resource_locks: dict[str, threading.Lock] = {}
 _native_leases: dict[str, list[threading.Lock]] = {}
 _NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_export_pdf", "fichas_tecnicas_export_pdf",
                     "document_generate", "padron_", "volantes_", "espacios_", "canvas_fill_fields", "canvas_apply_layers",
-                    "gdrive_", "gsheets_", "onedrive_", "excel_", "web_")
+                    "gdrive_", "gsheets_", "onedrive_", "excel_", "web_", "cua_")
+# Herramientas de Equipo cuya aprobación nombra una app: concesiones por app y lista
+# blanca de los encargos programados. Su contexto lo calcula Electron.
+_APP_SCOPED_PREFIXES = ("cua_",)
 _CLOUD_UPLOADS = frozenset({"gdrive_upload", "onedrive_upload"})
 _META_METHODS = frozenset({"task_schedule"})
 
@@ -213,8 +216,6 @@ def _intent(session_id: str, method: str, params: JsonObject, context: JsonObjec
         tool = agent_tools.SPECS.get(method) or {"inputSchema": input_schema_for(method)}
         current_context = dict(context or {})
         current_context.update(artifact_context)
-        if method.startswith("ui_"):
-            current_context["computer"] = _computer_driver.approval_context(params)
         mcp = _mcp_servers.parse_agent_tool(method)
         if mcp is not None:
             current_context = _mcp_servers.approval_context(mcp[0], method)
@@ -363,7 +364,7 @@ def _approval_ensure(params: JsonObject) -> JsonObject:
     if approval.get("method") != method or approval.get("fingerprint") != intent:
         raise ValidationError("Esta llamada ya tiene una aprobación con otros parámetros o archivos")
     unattended_apps = params.get("unattended_apps")
-    if method.startswith("ui_") and approval.get("status") == "pending":
+    if method.startswith(_APP_SCOPED_PREFIXES) and approval.get("status") == "pending":
         app = str(((approval.get("context") or {}).get("computer") or {}).get("app") or "")
         if isinstance(unattended_apps, list) and unattended_apps:
             # Desatendido: las concesiones de la conversación no aplican; solo
@@ -393,7 +394,7 @@ def _approval_decide(params: JsonObject) -> JsonObject:
     if approval is None:
         raise _approval_error(_store().get_approval(approval_id))
     if (params.get("grant_app") is True or params.get("remember") is True) and approval.get("status") == "approved" \
-            and str(approval.get("method") or "").startswith("ui_"):
+            and str(approval.get("method") or "").startswith(_APP_SCOPED_PREFIXES):
         app = str(((approval.get("context") or {}).get("computer") or {}).get("app") or "")
         if app:
             _store().add_grants(str(approval["session_id"]), [

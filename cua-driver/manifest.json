@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "description": "Driver de computer use del agente (cua-driver, Windows x64). El binario no se commitea (.gitignore); se instala desde el zip oficial con scripts/prepare-cua-driver.js, que verifica los SHA-256 de abajo.",
+  "build": {
+    "name": "cua-driver-rs",
+    "version": "0.34.0",
+    "source": "https://github.com/trycua/cua",
+    "tag": "cua-driver-rs-v0.34.0",
+    "asset": "cua-driver-rs-0.34.0-windows-x86_64-binary.zip",
+    "assetUrl": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.34.0/cua-driver-rs-0.34.0-windows-x86_64-binary.zip",
+    "assetSha256": "bcc520e50861c7092cf775846fec76ae386d7dcd6b5b408608b0ea4423a8b888",
+    "assetByteSize": 31314221,
+    "license": "MIT",
+    "licenseFile": "LICENSE.txt",
+    "licenseSha256": "c0779290c1d4783169aa3dbfb55feb505e563ef8a004bbf55298ceffcfbda8d9"
+  },
+  "binaries": [
+    {
+      "path": "cua-driver.exe",
+      "sha256": "77f5cac754b42b6a8bae126414fc8f7487432ace93466967965188e24e9e53fb",
+      "byteSize": 35312976
+    }
+  ]
+}

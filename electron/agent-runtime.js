@@ -92,11 +92,18 @@ const SYSTEM_PROMPT =
   'Escritorio de Windows: desktop_observe captura la pantalla con sus ventanas y controles y sus coordenadas; ' +
   'desktop_launch, desktop_focus, desktop_click, desktop_type, desktop_key y desktop_scroll actúan y devuelven una captura ' +
   'nueva que debes revisar antes del siguiente paso. ' +
+  'Para operar aplicaciones prefiere las herramientas cua_: localiza la ventana con cua_list_windows (por título y tamaño, '
+    + 'no la primera), léela con cua_window_state y actúa por element_token, que no mueve el cursor ni quita el foco al usuario. '
+    + 'Cada acción cua_ informa effect: si no confirma el cambio (suspected_noop, refused o unverifiable) no la des por hecha; '
+    + 'vuelve a leer la ventana y prueba otra vía. Toma el camino más corto: no inspecciones ventanas que el encargo no necesita. ' +
   'Empiezas con un núcleo de herramientas; si el encargo necesita un módulo de Antares que no tienes, cárgalo con ' +
   'tools_load y úsalo desde la siguiente ronda. ' +
   'Cuando un gráfico o una interfaz expliquen mejor la respuesta, el chat los muestra en línea: usa un bloque ```chart con JSON ' +
   '{"type":"bar|line|pie","title":"…","labels":["…"],"series":[{"name":"…","data":[1,2]}]} (cada serie con un valor por etiqueta), ' +
-  'o un bloque ```svg o ```html autocontenido con estilos en línea; no se ejecutan scripts ni se cargan recursos externos.';
+  'o un bloque ```svg o ```html autocontenido con estilos en línea; no se ejecutan scripts ni se cargan recursos externos. ' +
+  'Empieza a trabajar sin narrar la preparación ni la carga de contexto; informa resultados, cambios, fallos y lo que necesites del usuario. ' +
+  'No afirmes que comprobaste algo si ningún resultado de herramienta lo muestra. ' +
+  'Si no puedes completar el encargo, di qué intentaste y la única acción que lo desbloquea.';
 const CANCELLED_NOTE =
   '⏹ Turno detenido por el usuario. Una herramienta ya iniciada puede seguir ejecutándose; ' +
   'comprueba su resultado antes de repetirla.';
@@ -1104,7 +1111,7 @@ async function approve(params, approved) {
   });
   const remembered = approved && params.remember === true && approval && approval.status === 'approved'
     ? String(approval.method || '') : null;
-  if (remembered !== null && !remembered.startsWith('web_') && !remembered.startsWith('ui_') && approval.channel) {
+  if (remembered !== null && !remembered.startsWith('web_') && !remembered.startsWith('cua_') && approval.channel) {
     // Igual que el dominio web: la acción ya está aprobada y guardar la regla del canal no debe romperla.
     try { await saveSessionRule(String(approval.session_id), String(approval.channel), 'allow'); } catch { }
   }
@@ -1256,6 +1263,7 @@ async function shutdown() {
   shared.watchers.clear();
   shared.live.clear();
   require('./agent-browser').close();
+  require('./agent-cua').close();
   if (shared.state) {
     const harness = shared.state.harness;
     shared.state = null;

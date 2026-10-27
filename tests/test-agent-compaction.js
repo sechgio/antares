@@ -10,8 +10,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { assert, finish } = require('./helpers/harness');
+const { assert, finish, stubModule } = require('./helpers/harness');
 
+// El fixture cuenta con todas sus herramientas habilitadas: cua-driver queda fuera
+// para no pasar de las 100 por defecto (tiene sus pruebas en test-agent-cua.js).
+stubModule('electron/agent-cua.js', { TOOLS: new Map(), run: async () => ({}), approvalContext: () => ({}), close: () => {} });
 const runtime = require('../electron/agent-runtime');
 const projection = require('../electron/agent-projection');
 const compactionModule = require('../electron/agent-compaction');

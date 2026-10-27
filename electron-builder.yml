@@ -64,6 +64,9 @@ extraResources:
   - from: media
     to: media
     filter: ["**/*"]
+  - from: cua-driver
+    to: cua-driver
+    filter: ["cua-driver.exe", "manifest.json", "LICENSE.txt"]
 win:
   target:
     - target: nsis

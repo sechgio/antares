@@ -44,18 +44,20 @@ const requiredSkills = new Map();
 const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent']);
 const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD, 'task_schedule']);
 const MEMORY_TOOLS = ['memory_search', 'memory_remember', 'procedure_learn'];
-// Acciones ui_ que inyectan entrada: el marco ámbar del lease humano cubre la
-// ventana objetivo durante su despacho (ui_windows/ui_observe/ui_launch no inyectan).
-const UI_ACTION_TOOLS = new Set(['ui_click', 'ui_type', 'ui_key', 'ui_scroll', 'ui_drag', 'ui_set_value']);
+// Acciones cua_ que inyectan entrada: el marco ámbar del lease humano cubre la
+// ventana objetivo durante su despacho (las lecturas y cua_launch_app no inyectan).
+const UI_ACTION_TOOLS = new Set(['cua_click', 'cua_drag', 'cua_scroll', 'cua_type_text', 'cua_press_key', 'cua_hotkey',
+  'cua_set_value', 'cua_invoke_menu', 'cua_bring_to_front']);
 // En Acceso completo siguen exigiendo decisión humana: el shell (incluidos los
 // jobs en segundo plano) y las acciones de Equipo que inyectan entrada o abren
 // aplicaciones.
-const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'ui_launch', ...UI_ACTION_TOOLS]);
+const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'cua_launch_app', ...UI_ACTION_TOOLS]);
 // Acciones con efecto que el techo desatendido contabiliza por encargo programado.
-const UNATTENDED_ACTION_TOOLS = new Set(['ui_launch', ...UI_ACTION_TOOLS]);
+const UNATTENDED_ACTION_TOOLS = new Set(['cua_launch_app', ...UI_ACTION_TOOLS]);
 const MAX_UNATTENDED_ACTIONS = 25;
 const MAX_LOADED_TOOLS = 25;
 const MAX_DEFAULT_TOOLS = 100;
+const MAX_OPENAI_TOOLS = 128;
 
 const REASONING_OPENAI_MODEL = /deepseek-(r1|reasoner)|qwq|qwen3|gpt-oss|thinking/i;
 const REASONING_ANTHROPIC_MODEL = /claude-(3-7|(opus|sonnet|haiku|fable)-[4-9])/i;
@@ -242,8 +244,32 @@ async function buildProvider(record) {
       },
     },
     models: [...modelIds].map((id) => modelDefinition(info, id, api, anthropic ? catalog[id] : undefined, catalog[id])),
-    api: anthropic ? shared.deps.aiAnthropic.anthropicMessagesApi() : shared.deps.aiOpenai.openAICompletionsApi(),
+    api: anthropic ? shared.deps.aiAnthropic.anthropicMessagesApi() : cappedOpenAIApi(shared.deps.aiOpenai.openAICompletionsApi()),
   });
+}
+
+function capOpenAITools(payload) {
+  const tools = payload && payload.tools;
+  if (!Array.isArray(tools) || tools.length <= MAX_OPENAI_TOOLS) return payload;
+  const nameOf = (tool) => ((tool && (tool.function || tool.custom)) || {}).name;
+  const called = new Set((payload.messages || []).flatMap((message) => (message.tool_calls || []).map(nameOf)));
+  const rank = (tool) => (called.has(nameOf(tool)) ? 0 : shared.toolSpecs.get(nameOf(tool))?.gated ? 2 : 1);
+  const kept = new Set(tools.map((tool, index) => [rank(tool), index])
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    .slice(0, MAX_OPENAI_TOOLS)
+    .map(([, index]) => index));
+  return { ...payload, tools: tools.filter((_, index) => kept.has(index)) };
+}
+
+function cappedOpenAIApi(api) {
+  const wrap = (stream) => (model, context, options) => stream(model, context, {
+    ...options,
+    onPayload: async (payload, target) => {
+      const next = options && options.onPayload ? await options.onPayload(payload, target) : undefined;
+      return capOpenAITools(next === undefined ? payload : next);
+    },
+  });
+  return { ...api, stream: wrap(api.stream), streamSimple: wrap(api.streamSimple) };
 }
 
 async function allToolSpecs() {
@@ -624,7 +650,7 @@ async function pauseForBudget(api, context, reason = 'tool_budget') {
 function turnState(conversationId) {
   let turn = shared.turns.get(conversationId);
   if (!turn) {
-    turn = { calls: new Map(), remaining: null, checked: false };
+    turn = { calls: new Map(), failures: new Map(), remaining: null, checked: false };
     shared.turns.set(conversationId, turn);
   }
   return turn;
@@ -729,6 +755,21 @@ function callSignature(name, args) {
   return `${name}:${stableJson(args || {})}`;
 }
 
+// Firma de un error sin lo que cambia entre intentos (rutas, URL, números,
+// identificadores y valores citados): cambiar los argumentos no es progresar
+// si la herramienta falla por la misma causa.
+function errorSignature(message) {
+  return String(message || '').toLowerCase()
+    .replace(/[a-z][a-z0-9+.-]*:\/\/\S+/g, '<url>')
+    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '<email>')
+    .replace(/(["'`«“])[^"'`»”]*["'`»”]/g, '<valor>')
+    .replace(/(?:[a-z]:)?[\\/][^\s,;)]+/g, '<ruta>')
+    .replace(/\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b/g, '<id>')
+    .replace(/\b[0-9a-f]{8,}\b/g, '<id>')
+    .replace(/\d+(?:[.,]\d+)?/g, '<n>')
+    .replace(/\s+/g, ' ').trim().slice(0, 160);
+}
+
 function planCheck(answer, api) {
   const turn = shared.turns.get(api.conversationId);
   if (!turn || turn.checked || !turn.remaining || !turn.remaining.length) return undefined;
@@ -770,6 +811,12 @@ async function beforeTool(call, api, context) {
       : !spec.gated || spec.name === 'desktop_observe' ? 'con el mismo resultado o error' : 'con los mismos argumentos';
     return { block: `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno ${detail}. No la repitas: `
       + 'cambia de enfoque o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
+  }
+  const failing = turnState(api.conversationId).failures.get(call.name);
+  if (failing && failing.count >= MAX_REPEATS) {
+    return { block: `Las últimas ${MAX_REPEATS} llamadas a ${call.name} fallaron por la misma causa aunque cambiaste los argumentos `
+      + `(«${failing.message}»). No la repitas: diagnostica la causa con otra herramienta, cambia de enfoque `
+      + 'o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
   }
   const session = await requireSession(sessionId);
   if (session.delegation && (spec.kind !== 'backend' || spec.replay_safe !== true)) {
@@ -980,6 +1027,16 @@ async function executeTool(spec, args, api, context) {
     repeated.exempt = false;
   }
   if (trackOutcome) repeated.outcome = hash;
+  const failures = turnState(api.conversationId).failures;
+  if (!isError) {
+    failures.delete(spec.name);
+  } else if (!exempt) {
+    const message = String(typeof parsed.error === 'string' ? parsed.error : (parsed.error && parsed.error.message) || parsed.message || text);
+    const key = errorSignature(message);
+    const previous = failures.get(spec.name);
+    failures.set(spec.name, { key, message: message.replace(/\s+/g, ' ').slice(0, 160),
+      count: previous && previous.key === key ? previous.count + 1 : 1 });
+  }
   noteToolResult(api, spec.name, text, isError);
   return { content: [{ type: 'text', text }, ...(image ? [image] : [])], isError,
     ...(added && added.length ? { control: { addTools: added } } : {}) };
@@ -1356,6 +1413,7 @@ module.exports = {
   supportsReasoning,
   REASONING_EFFORTS,
   ensureProvider,
+  cappedOpenAIApi,
   refreshTools,
   notifyDecision,
   dispatchApproved,

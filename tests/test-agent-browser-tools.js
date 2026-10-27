@@ -20,6 +20,9 @@ async function main() {
   const { EventEmitter: Emitter } = require('node:events');
   const commands = [];
   let uploadField = { tag: 'input', type: 'file' };
+  let documentOrigin = 3;
+  let target = { x: 10, y: 20, secret: false };
+  let focusedSecret = false;
   let canGoForward = false;
   let forwards = 0;
   let reloads = 0;
@@ -33,8 +36,12 @@ async function main() {
       goForward: () => { forwards += 1; } },
     close: () => contents.emit('destroyed'),
     executeJavaScript: async (script) => {
+      const guard = script.match(/performance\.timeOrigin !== (\S+)\)/);
+      if (guard && JSON.parse(guard[1]) !== documentOrigin) return { stale: true };
       if (script.includes('tagName') && script.includes('scrollIntoView')) return uploadField;
-      return { url: 'https://files.example.com', title: 'Archivos', text: 'Contenido', elements: [] };
+      if (script.includes('scrollIntoView')) return target;
+      if (script.includes('document.activeElement')) return focusedSecret;
+      return { url: 'https://files.example.com', title: 'Archivos', text: 'Contenido', elements: [], time_origin: documentOrigin };
     },
     executeJavaScriptInIsolatedWorld: async () => ({ url: 'https://files.example.com', time_origin: 3 }),
     capturePage: async () => ({ getSize: () => ({ width: 1280, height: 800 }), toJPEG: () => Buffer.from('jpeg-viewport') }),
@@ -194,6 +201,41 @@ async function main() {
     try { await browser.run('web_upload', { ref: '8', path: 'C:\\datos\\informe.pdf' }, { approvedContext }); }
     catch (error) { noNode = error.message; }
     assert(noNode === 'El campo de archivo ya no está en la página; vuelve a leerla con web_read', 'web_upload exige el nodo vivo en el DOM');
+
+    const sentInput = () => commands.filter(([method]) => method.startsWith('Input.')).length;
+    const failure = async (name, params) => {
+      try { await browser.run(name, params); } catch (error) { return error; }
+      return null;
+    };
+    documentOrigin = 4;
+    let before = sentInput();
+    const staleClick = await failure('web_click', { ref: '9' });
+    assert(staleClick && staleClick.code === 'PAGE_CHANGED' && staleClick.recoverable === true && sentInput() === before,
+      'una ref de un documento anterior no hace clic en el elemento que hoy tiene ese número');
+    const staleUpload = await failure('web_upload', { ref: '9', path: 'C:\datos\informe.pdf' });
+    assert(staleUpload && staleUpload.code === 'PAGE_CHANGED', 'web_upload tampoco usa refs de un documento anterior');
+    await browser.run('web_read', {});
+    const clicked = await browser.run('web_click', { ref: '9' });
+    assert(clicked.clicked === '9' && sentInput() > before, 'tras volver a leer la página las refs nuevas funcionan');
+
+    target = { x: 10, y: 20, secret: true };
+    before = sentInput();
+    const secretType = await failure('web_type', { ref: '9', text: 'hunter2' });
+    assert(secretType && secretType.code === 'SECRET_FIELD' && secretType.message.includes('web_handover') && sentInput() === before,
+      'web_type no escribe en contraseñas, códigos ni tarjetas y propone ceder el control');
+    target = { x: 10, y: 20, secret: false };
+    const typed = await browser.run('web_type', { ref: '9', text: 'Lima' });
+    assert(typed.typed === 4 && commands.some(([method, params]) => method === 'Input.insertText' && params.text === 'Lima'),
+      'web_type sigue escribiendo en campos ordinarios');
+
+    focusedSecret = true;
+    before = sentInput();
+    const secretKeys = await failure('web_key', { keys: 'h u n space' });
+    assert(secretKeys && secretKeys.code === 'SECRET_FIELD' && sentInput() === before,
+      'web_key no escribe caracteres en un campo secreto enfocado');
+    const submitted = await browser.run('web_key', { keys: 'enter' });
+    assert(submitted.pressed === 'enter' && sentInput() > before, 'web_key puede enviar el formulario que completó el usuario');
+    focusedSecret = false;
   } finally { timers.restore(); browser.close(); }
 }
 

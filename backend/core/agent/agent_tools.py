@@ -6,7 +6,6 @@ from backend.core.agent import (
     artifacts,
     canvas_edit,
     computer_desktop,
-    computer_elements,
     computer_files,
     computer_jobs,
     computer_shell,
@@ -28,7 +27,7 @@ SPECS: dict[str, JsonObject] = {
     for spec in (*drafts.TOOL_SPECS, *({**s, "module": "documents"} for s in documents.TOOL_SPECS),
                  *canvas_edit.TOOL_SPECS, *artifacts.TOOL_SPECS, *questions.TOOL_SPECS, *memory.TOOL_SPECS,
                  *computer_files.TOOL_SPECS, *computer_shell.TOOL_SPECS, *computer_jobs.TOOL_SPECS,
-                 *computer_desktop.TOOL_SPECS, *computer_elements.TOOL_SPECS,
+                 *computer_desktop.TOOL_SPECS,
                  *task_plan.TOOL_SPECS, *skills.TOOL_SPECS)
 }
 SPECS["mcp_status"] = {
@@ -86,8 +85,6 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
         return computer_jobs.cancel(args, root, session_id)
     if name.startswith("desktop_"):
         return computer_desktop.run(name, args, root, token)
-    if name.startswith("ui_"):
-        return computer_elements.run(name, args, root)
     if name == "task_plan":
         return task_plan.update(args)
     if name == "drafts_list":

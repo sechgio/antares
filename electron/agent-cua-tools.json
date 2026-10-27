@@ -1,0 +1,619 @@
+{
+  "driverVersion": "0.34.0",
+  "tools": [
+    {
+      "name": "cua_list_windows",
+      "tool": "list_windows",
+      "gated": false,
+      "label": "Lista las ventanas de nivel superior con window_id, pid, app_name, título, bounds y si están en pantalla. Una app suele tener ventanas auxiliares pequeñas y vacías: elige la ventana por título y tamaño, nunca la primera",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "Optional pid filter. When set, only this pid's windows are returned.",
+            "type": "integer"
+          },
+          "on_screen_only": {
+            "description": "When true, drop windows that aren't currently on-screen. Default false.",
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "cua_list_apps",
+      "tool": "list_apps",
+      "gated": false,
+      "label": "Lista las aplicaciones en ejecución e instaladas con su pid y estado",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      }
+    },
+    {
+      "name": "cua_screen_size",
+      "tool": "get_screen_size",
+      "gated": false,
+      "label": "Devuelve el tamaño de la pantalla principal y su escala",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      }
+    },
+    {
+      "name": "cua_window_state",
+      "tool": "get_window_state",
+      "gated": true,
+      "label": "Lee una ventana: elementos de accesibilidad con element_token, rol, etiqueta, valor y acciones, más una captura. Hazlo una vez antes de actuar sobre esa ventana: la lectura siguiente invalida los tokens anteriores. Si solo buscas un elemento usa query e include_screenshot=false para no llenar el contexto",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "Process ID from `list_apps`.",
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "HWND of the target window. Must belong to `pid`. Enumerate via `list_windows` or read from `launch_app`'s `windows` array.",
+            "type": "integer"
+          },
+          "query": {
+            "description": "Optional case-insensitive substring. Projects both tree_markdown and structured elements to matches plus ancestors while preserving original indices. Compare total_element_count with returned_element_count.",
+            "type": "string"
+          },
+          "include_screenshot": {
+            "description": "Default true — returns a grounding screenshot alongside the tree. Set false to skip the grab and return tree only (the cheap path for re-indexing before an element ax action).",
+            "type": "boolean"
+          },
+          "max_elements": {
+            "description": "Cap on the total number of UIA nodes walked. Truncates depth-first; markdown and structured elements truncate together. Omit for the default (5 000). Lower for Electron / large web apps that produce 10k+ element trees.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "max_depth": {
+            "description": "Cap on the UIA-tree walk depth. Nodes whose rendered indent would exceed this are omitted. Omit for the default (25). Lower for deep menu / Electron trees.",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid",
+          "window_id"
+        ]
+      }
+    },
+    {
+      "name": "cua_zoom",
+      "tool": "zoom",
+      "gated": true,
+      "label": "Amplía una zona de la captura de una ventana a resolución nativa; para hacer clic en ella usa from_zoom=true",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "Optional target process ID. When omitted, the unique current snapshot for this session and HWND is used.",
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "HWND of the target window.",
+            "type": "integer"
+          },
+          "x1": {
+            "description": "Left edge of the region (resized-image pixels).",
+            "type": "number"
+          },
+          "y1": {
+            "description": "Top edge of the region (resized-image pixels).",
+            "type": "number"
+          },
+          "x2": {
+            "description": "Right edge of the region (resized-image pixels).",
+            "type": "number"
+          },
+          "y2": {
+            "description": "Bottom edge of the region (resized-image pixels).",
+            "type": "number"
+          }
+        },
+        "required": [
+          "window_id",
+          "x1",
+          "y1",
+          "x2",
+          "y2"
+        ]
+      }
+    },
+    {
+      "name": "cua_click",
+      "tool": "click",
+      "gated": true,
+      "label": "Hace clic en un elemento (element_token, preferido: no mueve el cursor ni roba el foco) o en coordenadas x,y de la captura de la ventana. delivery_mode=foreground solo si el modo en segundo plano no surte efecto",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "Target process ID for window scope. Omit with scope=desktop for screen-absolute coordinates from get_desktop_state.",
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "HWND of the target window. Omit when element_token is supplied (the token carries it).",
+            "type": "integer"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. Returns an explicit stale error naming the current snapshots once a newer read supersedes it.",
+            "pattern": "^s[0-9a-f]{8}:[0-9]+$",
+            "type": "string"
+          },
+          "x": {
+            "description": "X in window-local screenshot pixels — same space as the PNG get_window_state returns. Must be provided together with y.",
+            "type": "number"
+          },
+          "y": {
+            "description": "Y in window-local screenshot pixels. Must be provided together with x.",
+            "type": "number"
+          },
+          "button": {
+            "description": "Mouse button. Default \"left\".",
+            "enum": [
+              "left",
+              "right",
+              "middle"
+            ],
+            "type": "string"
+          },
+          "count": {
+            "description": "Click count — 1 (single), 2 (double), 3 (triple). Default 1.",
+            "maximum": 3,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "action": {
+            "description": "Accessibility action for an element_token target. \"expand\" opens the element through UIA ExpandCollapsePattern, or clicks the dropdown half of an MSAA split button. Omit for the default invoke.",
+            "type": "string"
+          },
+          "modifier": {
+            "description": "Modifier keys held during the action: cmd, shift, option/alt, ctrl.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "from_zoom": {
+            "description": "When true, x and y are pixel coordinates in the last `zoom` image for this pid. The driver maps them back to window coords.",
+            "type": "boolean"
+          },
+          "delivery_mode": {
+            "description": "Input delivery mode. 'background' (default) never swaps foreground: it routes through UIA Invoke / PostMessage and the window is never raised. For targets whose input stack silently drops posted events…",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "cua_drag",
+      "tool": "drag",
+      "gated": true,
+      "label": "Arrastra desde from_x,from_y hasta to_x,to_y en píxeles de la captura de la ventana",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "from_x": {
+            "description": "Drag-start X in window-local screenshot pixels.",
+            "type": "number"
+          },
+          "from_y": {
+            "description": "Drag-start Y in window-local screenshot pixels.",
+            "type": "number"
+          },
+          "to_x": {
+            "description": "Drag-end X in window-local screenshot pixels.",
+            "type": "number"
+          },
+          "to_y": {
+            "description": "Drag-end Y in window-local screenshot pixels.",
+            "type": "number"
+          },
+          "button": {
+            "description": "Mouse button. Default \"left\".",
+            "enum": [
+              "left",
+              "right",
+              "middle"
+            ],
+            "type": "string"
+          },
+          "modifier": {
+            "description": "Modifier keys held during the action: cmd, shift, option/alt, ctrl.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "from_zoom": {
+            "description": "When true, coordinates are in the last zoom image for this pid.",
+            "type": "boolean"
+          },
+          "duration_ms": {
+            "description": "Wall-clock duration of drag path. Default: 500.",
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "steps": {
+            "description": "Number of intermediate WM_MOUSEMOVE events. Default: 20.",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "delivery_mode": {
+            "description": "Input delivery mode. 'background' (default) never swaps foreground: it routes through UIA Invoke / PostMessage and the window is never raised. For targets whose input stack silently drops posted events…",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_x",
+          "from_y",
+          "to_x",
+          "to_y"
+        ]
+      }
+    },
+    {
+      "name": "cua_scroll",
+      "tool": "scroll",
+      "gated": true,
+      "label": "Desplaza el contenido de una ventana o de un elemento",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "Target process ID for window scope. Omit with scope=desktop for screen-absolute coordinates from get_desktop_state.",
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "HWND of the target window. Omit when element_token is supplied; otherwise auto-resolves the pid's first visible window.",
+            "type": "integer"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. Returns an explicit stale error naming the current snapshots once a newer read supersedes it.",
+            "pattern": "^s[0-9a-f]{8}:[0-9]+$",
+            "type": "string"
+          },
+          "x": {
+            "description": "With pid/window_id: window-local screenshot X used to target a nested scroll surface in foreground mode. Without pid/window_id: screen-absolute X for desktop scope. Must be paired with y.",
+            "type": "number"
+          },
+          "y": {
+            "description": "With pid/window_id: window-local screenshot Y used to target a nested scroll surface in foreground mode. Without pid/window_id: screen-absolute Y for desktop scope. Must be paired with x.",
+            "type": "number"
+          },
+          "direction": {
+            "description": "Scroll direction.",
+            "enum": [
+              "up",
+              "down",
+              "left",
+              "right"
+            ],
+            "type": "string"
+          },
+          "amount": {
+            "description": "Number of scroll ticks. Default 3.",
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "by": {
+            "description": "Scroll granularity. Default: line.",
+            "enum": [
+              "line",
+              "page"
+            ],
+            "type": "string"
+          },
+          "delivery_mode": {
+            "description": "Input delivery mode. 'background' (default) never swaps foreground: it routes through UIA Invoke / PostMessage and the window is never raised. For targets whose input stack silently drops posted events…",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "direction"
+        ]
+      }
+    },
+    {
+      "name": "cua_type_text",
+      "tool": "type_text",
+      "gated": true,
+      "label": "Escribe texto en un campo. Con element_token escribe por accesibilidad y, en apps modernas (Bloc de notas, Calculadora, Configuración), reemplaza el valor completo del campo. Enter, Tab o flechas van con cua_press_key",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "HWND of the target window. Omit when element_token is supplied (the token carries it).",
+            "type": "integer"
+          },
+          "element_token": {
+            "description": "Opaque element handle from get_window_state. When supplied, type_text writes through UIA ValuePattern and reads that exact element back by handle. The shared ActionResult is confirmed only when the complete expected…",
+            "pattern": "^s[0-9a-f]{8}:[0-9]+$",
+            "type": "string"
+          },
+          "text": {
+            "description": "Text to insert at the focused element's cursor.",
+            "type": "string"
+          },
+          "delay_ms": {
+            "description": "Milliseconds between characters. Default 30.",
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "delivery_mode": {
+            "description": "Input delivery mode. 'background' (default) never swaps foreground: it routes through UIA Invoke / PostMessage and the window is never raised. For targets whose input stack silently drops posted events…",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "cua_press_key",
+      "tool": "press_key",
+      "gated": true,
+      "label": "Pulsa una tecla (Enter, Escape, Tab, flechas…) con modificadores opcionales",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "HWND for the target window. Omit when element_token is supplied; otherwise auto-resolves the pid's first visible window.",
+            "type": "integer"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. Returns an explicit stale error naming the current snapshots once a newer read supersedes it.",
+            "pattern": "^s[0-9a-f]{8}:[0-9]+$",
+            "type": "string"
+          },
+          "key": {
+            "description": "Key name (return, tab, escape, up, down, left, right, space, delete, home, end, pageup, pagedown, f1-f12, letter, digit).",
+            "type": "string"
+          },
+          "modifiers": {
+            "description": "Optional modifier names held while the key is pressed (ctrl/shift/alt/win).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "delivery_mode": {
+            "description": "Input delivery mode. 'background' (default) never swaps foreground: it routes through UIA Invoke / PostMessage and the window is never raised. For targets whose input stack silently drops posted events…",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ]
+      }
+    },
+    {
+      "name": "cua_hotkey",
+      "tool": "hotkey",
+      "gated": true,
+      "label": "Pulsa una combinación de teclas a la vez, por ejemplo [\"ctrl\",\"s\"]",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "Explicit HWND when the pid owns multiple windows.",
+            "type": "integer"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. Returns an explicit stale error naming the current snapshots once a newer read supersedes it.",
+            "pattern": "^s[0-9a-f]{8}:[0-9]+$",
+            "type": "string"
+          },
+          "keys": {
+            "description": "Modifier(s) and one non-modifier key, e.g. [\"ctrl\", \"c\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "type": "array"
+          },
+          "delivery_mode": {
+            "description": "Input delivery mode. 'background' (default) never swaps foreground: it routes through UIA Invoke / PostMessage and the window is never raised. For targets whose input stack silently drops posted events…",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "keys"
+        ]
+      }
+    },
+    {
+      "name": "cua_set_value",
+      "tool": "set_value",
+      "gated": true,
+      "label": "Establece de golpe el valor de un campo con el patrón Value de accesibilidad",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "HWND of the window. Omit when element_token is supplied (the token carries it).",
+            "type": "integer"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. Returns an explicit stale error naming the current snapshots once a newer read supersedes it.",
+            "pattern": "^s[0-9a-f]{8}:[0-9]+$",
+            "type": "string"
+          },
+          "value": {
+            "description": "New value. UIA will coerce to the element's native type.",
+            "type": "string"
+          },
+          "delivery_mode": {
+            "description": "Input delivery mode. 'background' (default) never swaps foreground: it routes through UIA Invoke / PostMessage and the window is never raised. For targets whose input stack silently drops posted events…",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "pid",
+          "value"
+        ]
+      }
+    },
+    {
+      "name": "cua_invoke_menu",
+      "tool": "invoke_menu",
+      "gated": true,
+      "label": "Abre una ruta exacta del menú de la aplicación nivel a nivel y ejecuta su último elemento",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "Process ID of the application that owns the menu.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "Window ID from list_windows whose menu is invoked.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "description": "Menu labels from the top-level menu to the item, e.g. `[\"File\", \"Save As...\"]`\n(1 to 16 labels).",
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "pid",
+          "window_id",
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "cua_launch_app",
+      "tool": "launch_app",
+      "gated": true,
+      "label": "Abre una aplicación por nombre o ruta sin robar el foco; luego localiza su ventana con cua_list_windows",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "App display name. Tried against the `shell:AppsFolder` index first for packaged-app lookup; on a miss, passed to ShellExecuteEx's PATH search.",
+            "type": "string"
+          },
+          "path": {
+            "description": "Full path to executable. Windows-only; takes precedence over name/bundle_id/aumid (but not over `launch_path`).",
+            "type": "string"
+          },
+          "additional_arguments": {
+            "description": "Extra command-line arguments passed to the launched process (or activation arguments for packaged apps).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "creates_new_application_instance": {
+            "description": "Accepted for parity; no-op on Windows (ShellExecuteEx always creates a new process).",
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "cua_bring_to_front",
+      "tool": "bring_to_front",
+      "gated": true,
+      "label": "Trae una ventana al primer plano; quita el foco al usuario, úsalo solo si una acción lo necesita",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "Optional HWND. Defaults to pid's first visible top-level window.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid"
+        ]
+      }
+    }
+  ]
+}
