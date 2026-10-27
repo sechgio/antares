@@ -64,6 +64,17 @@ function createWindow(isDev) {
     });
   });
 
+  // Deny-by-default en la sesión principal: sin handler, Electron aprueba
+  // todo (micrófono incluido) ante cualquier renderer comprometido. Solo se
+  // concede lo que la UI usa: micrófono del editor y portapapeles del lienzo.
+  const allowedPermissions = new Set(['media', 'clipboard-read', 'clipboard-sanitized-write']);
+  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(allowedPermissions.has(permission));
+  });
+  mainWindow.webContents.session.setPermissionCheckHandler(
+    (_webContents, permission) => allowedPermissions.has(permission),
+  );
+
   // Icecast/SomaFM rechaza el stream con 403 si llega un Referer externo
   // (anti-hotlink): el renderer siempre envía el de su propio origen.
   mainWindow.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
