@@ -29,6 +29,9 @@ const { appendTurn } = require('./turn-log');
 const MAX_TOOL_STEPS = 40;
 const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno. Conservé un punto de continuación; '
   + 'explica lo que queda pendiente y pide usar Reanudar para continuar.';
+// A partir de este paso cada petición recuerda al modelo cuánto le queda antes
+// de que el turno se pause, para que deje constancia del avance a tiempo.
+const BUDGET_WARNING_STEPS = 32;
 const MAX_REPEATS = 3;
 const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, sigue con '
   + 'el siguiente y compruébalo; si no puedes completarlo, márcalo como failed en task_plan con la causa y di qué necesitas.';
@@ -48,10 +51,14 @@ const MEMORY_TOOLS = ['memory_search', 'memory_remember', 'procedure_learn'];
 // ventana objetivo durante su despacho (las lecturas y cua_launch_app no inyectan).
 const UI_ACTION_TOOLS = new Set(['cua_click', 'cua_drag', 'cua_scroll', 'cua_type_text', 'cua_press_key', 'cua_hotkey',
   'cua_set_value', 'cua_invoke_menu', 'cua_bring_to_front']);
+// Acciones desktop_ que inyectan entrada, enfocan o abren aplicaciones: actúan
+// por coordenadas o sobre la ventana activa, sin identificar la app objetivo.
+const DESKTOP_ACTION_TOOLS = new Set(['desktop_click', 'desktop_type', 'desktop_key', 'desktop_scroll',
+  'desktop_launch', 'desktop_focus']);
 // En Acceso completo siguen exigiendo decisión humana: el shell (incluidos los
 // jobs en segundo plano) y las acciones de Equipo que inyectan entrada o abren
 // aplicaciones.
-const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'cua_launch_app', ...UI_ACTION_TOOLS]);
+const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'cua_launch_app', ...UI_ACTION_TOOLS, ...DESKTOP_ACTION_TOOLS]);
 // Acciones con efecto que el techo desatendido contabiliza por encargo programado.
 const UNATTENDED_ACTION_TOOLS = new Set(['cua_launch_app', ...UI_ACTION_TOOLS]);
 const MAX_UNATTENDED_ACTIONS = 25;
@@ -539,8 +546,9 @@ async function refreshTools() {
           if (budget && budget.exhausted) await pauseForBudget(api, context, 'token_budget');
           await noteTurnStart(api, messages || []);
           const compacted = await compactRequest(messages, api, context);
-          const next = compacted || messages;
-          return leadingSystem(next) || (compacted ? { messages: next } : undefined);
+          const warned = budgetWarning(compacted || messages, shared.rounds.get(api.conversationId) || 0);
+          const next = warned || compacted || messages;
+          return leadingSystem(next) || (compacted || warned ? { messages: next } : undefined);
         },
         afterTools: (_output, _task, api, context) => countRound(api, context),
         onYield: (answer, api) => planCheck(answer, api),
@@ -590,6 +598,18 @@ function leadingSystem(messages) {
   const index = messages.findIndex((message) => message.role === 'system');
   if (index <= 0) return undefined;
   return { messages: [messages[index], ...messages.slice(0, index), ...messages.slice(index + 1)] };
+}
+
+// Añade el aviso al último resultado de herramienta solo en la petición: no se
+// guarda en la conversación ni aparece en el chat.
+function budgetWarning(messages, rounds) {
+  const last = messages[messages.length - 1];
+  if (rounds < BUDGET_WARNING_STEPS || rounds >= MAX_TOOL_STEPS || !last || last.role !== 'toolResult') return undefined;
+  const notice = `Aviso de Antares: llevas ${rounds} de ${MAX_TOOL_STEPS} pasos de herramienta en este turno. `
+    + 'Actualiza task_plan con lo verificado y prioriza lo pendiente; al llegar al límite el turno se pausa y el usuario '
+    + 'puede Reanudar. No te detengas solo por este aviso.';
+  const content = Array.isArray(last.content) ? last.content : [{ type: 'text', text: String(last.content || '') }];
+  return [...messages.slice(0, -1), { ...last, content: [...content, { type: 'text', text: notice }] }];
 }
 
 async function countRound(api, context) {
@@ -834,6 +854,11 @@ async function beforeTool(call, api, context) {
       + 'No repitas esta acción: pide permiso, cambia la regla en Permisos o propone otra vía.' };
   }
   const unattendedApps = await unattendedAllowlist(api, context, mode, spec);
+  // La lista blanca del encargo nombra apps y desktop_ no identifica a cuál apunta.
+  if (unattendedApps && DESKTOP_ACTION_TOOLS.has(call.name)) {
+    return { block: 'En un encargo programado las acciones desktop_* no se aprueban porque no identifican la aplicación. '
+      + 'Usa cua_launch_app y las herramientas cua_* sobre una app de la lista blanca del encargo.' };
+  }
   if (unattendedApps && UNATTENDED_ACTION_TOOLS.has(call.name)) {
     const turn = turnState(api.conversationId);
     turn.uiActions = (turn.uiActions || 0) + 1;
@@ -1406,6 +1431,7 @@ module.exports = {
   modelDefinition,
   catalogFor,
   leadingSystem,
+  budgetWarning,
   callKey,
   providerInfo,
   thinkingLevelFor,

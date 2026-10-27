@@ -100,8 +100,38 @@ def test_edit_matches_lf_fragments_in_crlf_files(store):
     path = store.drafts_dir("s1") / "win.txt"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"uno\r\ndos\r\ntres\r\n")
+    _run(store, "fs_read", path="win.txt")
     assert _run(store, "fs_edit", path="win.txt", old="uno\ndos", new="1\n2")["replacements"] == 1
     assert path.read_bytes() == b"1\r\n2\r\ntres\r\n"
+
+
+def test_edit_and_overwrite_require_reading_the_current_revision(store):
+    path = store.drafts_dir("s1") / "ajeno.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("v1", encoding="utf-8")
+    with pytest.raises(ValueError, match=r"Lee ajeno\.txt con fs_read"):
+        _run(store, "fs_edit", path="ajeno.txt", old="v1", new="v2")
+    with pytest.raises(ValueError, match=r"Lee ajeno\.txt con fs_read"):
+        _run(store, "fs_write", path="ajeno.txt", content="nuevo", overwrite=True)
+    _run(store, "fs_read", path="ajeno.txt")
+    assert _run(store, "fs_edit", path="ajeno.txt", old="v1", new="v2")["replacements"] == 1
+    assert _run(store, "fs_edit", path="ajeno.txt", old="v2", new="v3")["replacements"] == 1
+    path.write_text("cambiado fuera", encoding="utf-8")
+    with pytest.raises(ValueError, match="cambió desde que lo leíste"):
+        _run(store, "fs_edit", path="ajeno.txt", old="cambiado", new="x")
+    assert path.read_text(encoding="utf-8") == "cambiado fuera"
+    assert _run(store, "fs_read", path="ajeno.txt")["content"] == "1\tcambiado fuera"
+    assert _run(store, "fs_edit", path="ajeno.txt", old="fuera", new="dentro")["replacements"] == 1
+
+
+def test_edit_tolerates_trailing_whitespace_and_explains_numbered_fragments(store):
+    _run(store, "fs_write", path="mod.py", content="def a():  \n    return 1\n\nfin\n")
+    path = store.drafts_dir("s1") / "mod.py"
+    assert _run(store, "fs_edit", path="mod.py", old="def a():\n    return 1 \n", new="def a():\n    return 2\n")[
+        "replacements"] == 1
+    assert path.read_text(encoding="utf-8") == "def a():\n    return 2\n\nfin\n"
+    with pytest.raises(ValueError, match="quita el número de línea"):
+        _run(store, "fs_edit", path="mod.py", old="2\t    return 2", new="x")
 
 
 def test_search_supports_path_globs_context_and_file_counts(store):
@@ -336,11 +366,21 @@ def test_desktop_stops_typing_when_the_turn_is_cancelled(store, monkeypatch):
 
     monkeypatch.setattr(computer_desktop, "_send", send)
     monkeypatch.setattr(computer_desktop, "_settled", lambda *_: {"typed": True})
+    monkeypatch.setattr(computer_desktop.driver, "focused_is_password", lambda: False)
     with pytest.raises(RunCancelled):
         agent_tools.run("desktop_type", {"text": "abcd"}, store, "s1", token)
     assert len(sent) == 2
     monkeypatch.setattr(computer_desktop, "observe", lambda *_: {"observed": True})
     assert _run(store, "desktop_observe") == {"observed": True}
+
+
+def test_desktop_type_refuses_a_focused_password_field(store, monkeypatch):
+    sent = []
+    monkeypatch.setattr(computer_desktop, "_send", lambda *inputs: sent.extend(inputs))
+    monkeypatch.setattr(computer_desktop.driver, "focused_is_password", lambda: True)
+    with pytest.raises(ValueError, match="contraseña"):
+        _run(store, "desktop_type", text="secreto")
+    assert sent == []
 
 
 def test_cancelled_desktop_action_does_not_execute_after_waiting(store, monkeypatch):

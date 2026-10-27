@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import MessageMarkdown, { parseBlocks } from './MessageMarkdown';
 import { niceTicks } from './ChatVisual';
 
@@ -80,4 +80,16 @@ it('aísla HTML y SVG en un iframe sin scripts y sanitizado', async () => {
   expect(doc).toContain('Hola');
   expect(doc).toContain("script-src 'none'");
   expect(doc).not.toMatch(/<script|onclick/);
+});
+
+it('enmarca el código con su lenguaje y lo copia al terminar de escribirse', () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  const { rerender } = render(<MessageMarkdown text={'```ts\nconst x = 1;'} streaming />);
+  expect(screen.getByText('ts')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Copiar código' })).not.toBeInTheDocument();
+  rerender(<MessageMarkdown text={'```\nconst x = 1;\n```'} />);
+  expect(screen.getByText('código')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar código' }));
+  expect(writeText).toHaveBeenCalledWith('const x = 1;');
 });

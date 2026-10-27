@@ -9,8 +9,9 @@ const { assert, finish, stubModule } = require('./helpers/harness');
 const { getEventListeners } = require('node:events');
 
 // Este fixture cuenta con un catálogo pequeño (todas las herramientas habilitadas);
-// cua-driver tiene sus propias pruebas en test-agent-cua.js.
+// cua-driver y el navegador tienen sus propias pruebas en test-agent-cua.js y test-agent-browser-tools.js.
 stubModule('electron/agent-cua.js', { TOOLS: new Map(), run: async () => ({}), approvalContext: () => ({}), close: () => {} });
+stubModule('electron/agent-browser.js', { ...require('../electron/agent-browser'), TOOLS: {} });
 const runtime = require('../electron/agent-runtime');
 const importer = require('../electron/agent-import');
 const { METHODS, INTERNAL_METHODS: INTERNAL_SET, nativeDispatchFor } = require('../shared/ipc-method-catalog');
@@ -211,6 +212,13 @@ async function main() {
       'el prompt base encabeza la petición y los cambios posteriores quedan en su sitio');
     assert(leadingSystem([system, user]) === undefined && leadingSystem([user]) === undefined,
       'una petición que ya empieza por el prompt no se toca');
+    const { budgetWarning } = require('../electron/agent-execution');
+    const result = { role: 'toolResult', toolCallId: 't', toolName: 'fs_read', content: [{ type: 'text', text: 'ok' }] };
+    assert(budgetWarning([user, result], 31) === undefined && budgetWarning([user, result], 40) === undefined
+      && budgetWarning([result, user], 35) === undefined, 'el aviso solo aparece entre el paso 32 y el límite, tras un resultado');
+    const warned = budgetWarning([user, result], 32);
+    assert(warned[0] === user && warned[1].content[0].text === 'ok' && /llevas 32 de 40 pasos/.test(warned[1].content[1].text)
+      && result.content.length === 1, 'el aviso se añade a una copia del último resultado sin tocar el guardado');
     assert(define({ custom: true, base_url: 'https://openrouter.ai/api/v1' }, 'anthropic/claude-opus-5-5').compat
       .cacheControlFormat === 'anthropic', 'Claude vía OpenRouter lleva cache_control aunque el proveedor sea propio');
     assert(define({ custom: true, base_url: 'http://x.local/v1', capabilities: { vision: true } }, 'mi-modelo').input.includes('image'),
@@ -317,12 +325,14 @@ async function main() {
         result.tools.push(
           { name: 'cua_click', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
           { name: 'cua_window_state', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
+          { name: 'desktop_type', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
         );
       }
       return result;
     };
     await openFaux([
       fauxAssistantMessage([fauxToolCall('cua_click', { window_id: 'w1a2b', element_id: 'e3' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('desktop_type', { text: 'hola' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage([fauxToolCall('cua_window_state', { window_id: 'w1a2b' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('Acciones de equipo terminadas'),
     ], uiBridge);
@@ -333,8 +343,11 @@ async function main() {
     assert(state.dispatches.length === 0, 'no inyecta entrada en la app antes de la aprobación humana');
     const approval = [...state.approvals.values()][0];
     await runtime.handlers.agent_approve({ approval_id: approval.id });
+    assert(await waitFor(() => state.approvals.size === 2), 'escribir con desktop_type pide aprobación también en Acceso completo');
+    assert(state.dispatches.length === 1, 'desktop_type no inyecta entrada antes de la aprobación humana');
+    await runtime.handlers.agent_approve({ approval_id: [...state.approvals.values()][1].id });
     assert(await waitIdle(session.id), 'las acciones ui continúan después de la aprobación humana');
-    assert(state.dispatches.length === 2, 'la aprobación ejecuta el clic; la observación de lectura sigue sola');
+    assert(state.dispatches.length === 3, 'cada aprobación ejecuta su acción; la observación de lectura sigue sola');
     await runtime.shutdown();
   }
 
@@ -362,6 +375,7 @@ async function main() {
       if (method === 'agent_internal_tools') {
         result.tools.push(
           { name: 'cua_click', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
+          { name: 'desktop_click', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} } },
         );
       }
       return result;
@@ -376,6 +390,7 @@ async function main() {
         apps: ['notepad'],
       })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('Encargo programado'),
+      fauxAssistantMessage([fauxToolCall('desktop_click', { x: 10, y: 10 })], { stopReason: 'toolUse' }),
       ...clicks,
       fauxAssistantMessage('Encargo desatendido terminado'),
     ], uiBridge);
@@ -387,6 +402,9 @@ async function main() {
     assert(JSON.stringify(state.unattendedApps) === JSON.stringify(['notepad']), 'la lista blanca declarada llega a la aprobación');
     assert([...state.approvals.values()].every((a) => a.status === 'approved'), 'las aprobaciones desatendidas quedan aprobadas con auditoría');
     assert(state.dispatches.length === 25, 'el techo bloquea la acción 26 del encargo desatendido');
+    assert(!state.dispatches.some((d) => d.method === 'desktop_click')
+      && ![...state.approvals.values()].some((a) => a.method === 'desktop_click'),
+    'el encargo desatendido bloquea desktop_click porque no identifica la app de la lista blanca');
     assert(await waitIdle(session.id), 'el encargo desatendido termina tras el techo');
     await runtime.shutdown();
   }
@@ -545,6 +563,48 @@ async function main() {
       'el turno recibe la orden de leer la skill y el aviso de que no concede permisos');
     assert(entries.includes('Antes de cualquier otra herramienta carga la skill'), 'la herramienta adelantada se bloquea con una indicación');
     assert(entries.includes(warning), 'el uso de la versión compartida queda visible en la conversación');
+    const listed = (await runtime.handlers.agent_messages_list({ session_id: session.id })).messages;
+    assert(listed.some((message) => message.content === warning && message.notice === true),
+      'el aviso llega marcado para pintarse aparte del turno');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    let library = [{ id: 'a'.repeat(24), name: 'pdf-review', description: 'Revisa firmas de PDF' }];
+    const skillsBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const catalog = await bridge(method, params);
+        catalog.tools.push({ name: 'skills_read', module: 'agent', kind: 'backend', gated: false,
+          inputSchema: { type: 'object', properties: { skill_id: { type: 'string' } } } });
+        return catalog;
+      }
+      if (method === 'agent_skills_list') return { skills: library, library: 'C:\\skills', warnings: [], truncated: false };
+      return bridge(method, params);
+    };
+    await openFaux([fauxAssistantMessage('uno'), fauxAssistantMessage('dos'), fauxAssistantMessage('tres')], skillsBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const initial = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools;
+    await runtime.handlers.agent_tools_set({ session_id: session.id,
+      names: [...new Set([...initial.filter((tool) => tool.enabled).map((tool) => tool.name), 'skills_read'])] });
+    const indexes = async () => {
+      const context = runtime._internal.shared.deps.chord.BACKGROUND_CONTEXT;
+      const state = runtime._internal.state();
+      const map = await state.harness.snapshot(state.SessionsDoc, context);
+      const conv = await state.harness.conversation(map.sessions[session.id].conversationId, context);
+      return JSON.stringify((await conv.entries({}, 500, undefined, context)).items).split('Skills disponibles.').length - 1;
+    };
+    for (const content of ['Revisa el contrato', 'Y el anexo']) {
+      await runtime.handlers.agent_message_send({ session_id: session.id, content });
+      assert(await waitIdle(session.id), 'el turno termina');
+    }
+    assert(await indexes() === 1, 'el índice de skills se envía una vez mientras no cambie');
+    library = [...library, { id: 'b'.repeat(24), name: 'informe', description: 'Redacta informes' }];
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Ahora el informe' });
+    assert(await waitIdle(session.id), 'el turno termina');
+    assert(await indexes() === 2, 'un índice distinto se reenvía');
+    const entries = JSON.stringify(await runtime.handlers.agent_messages_list({ session_id: session.id }));
+    assert(!entries.includes('Skills disponibles'), 'el índice no aparece en el chat del usuario');
     await runtime.shutdown();
   }
 

@@ -1,6 +1,7 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import { ApprovalCard, AssistantTurn, MessageRow, PlanCard, ThinkingRow, groupTurns, placeArtifacts } from './AgentTimeline';
+import { ApprovalCard, AssistantTurn, MessageRow, PlanCard, ThinkingRow, groupTurns, placeArtifacts, stepsSummary } from './AgentTimeline';
+import { reasoningRecap } from './Reasoning';
 
 it('muestra el descubrimiento y la lectura de skills en la traza', () => {
   render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [
@@ -48,7 +49,7 @@ it('distingue una lectura parcial de una completa y muestra el contenido sin eje
   }] });
   const { container, rerender } = render(<MessageRow msg={message(8000)} />);
   fireEvent.click(screen.getByText('Leer una skill'));
-  expect(screen.getByText('pdf-review')).toBeVisible();
+  expect(screen.getAllByText('pdf-review')).toHaveLength(2);
   expect(screen.getByText('references/firmas.md')).toBeVisible();
   expect(screen.getByText('Lectura parcial · siguiente offset: 8000')).toBeVisible();
   expect(screen.getByText('Solo lectura.')).toBeVisible();
@@ -131,10 +132,10 @@ it('resume más de dos pasos de herramientas y los abre si alguno necesita atenc
   const step = (id: string, status: string) => ({ id, name: 'templates_catalog', params: {}, status, gated: false });
   const { rerender } = render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1,
     tool_calls: [step('a', 'done'), step('b', 'done'), step('c', 'done')] } as never} />);
-  expect(screen.getByRole('button', { name: '3 pasos' })).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByRole('button', { name: 'Usó 3 herramientas' })).toHaveAttribute('aria-expanded', 'false');
   rerender(<MessageRow msg={{ role: 'assistant', content: '', ts: 1,
     tool_calls: [step('a', 'done'), step('b', 'failed'), step('c', 'done')] } as never} />);
-  expect(screen.getByRole('button', { name: /3 pasos/ })).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('button', { name: /Usó 3 herramientas/ })).toHaveAttribute('aria-expanded', 'true');
 });
 
 it('conserva la apertura elegida por el usuario cuando terminan las herramientas', () => {
@@ -145,10 +146,10 @@ it('conserva la apertura elegida por el usuario cuando terminan las herramientas
   fireEvent.click(summary);
   fireEvent.click(summary);
   rerender(<MessageRow msg={message('done')} />);
-  expect(screen.getByRole('button', { name: '3 pasos' })).toHaveAttribute('aria-expanded', 'true');
-  fireEvent.click(screen.getByRole('button', { name: '3 pasos' }));
+  expect(screen.getByRole('button', { name: 'Usó 3 herramientas' })).toHaveAttribute('aria-expanded', 'true');
+  fireEvent.click(screen.getByRole('button', { name: 'Usó 3 herramientas' }));
   rerender(<MessageRow msg={message('failed')} />);
-  expect(screen.getByRole('button', { name: /3 pasos/ })).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByRole('button', { name: /Usó 3 herramientas/ })).toHaveAttribute('aria-expanded', 'false');
   expect(screen.getByText('· 1 por revisar')).toBeVisible();
 });
 
@@ -169,9 +170,155 @@ it('agrupa el trabajo de un turno en un solo bloque y deja la respuesta final fu
   expect(screen.getAllByText('Agente')).toHaveLength(1);
   expect(screen.getByText('Todo correcto.')).toBeVisible();
   expect(screen.queryByText('Voy a leer los archivos.')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Trabajó durante 42 s · 3 pasos' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Leyó 3 archivos · 1 nota · 42 s' }));
   expect(screen.getByText('Voy a leer los archivos.')).toBeVisible();
   expect(screen.getByText('c.txt')).toBeVisible();
+});
+
+it.each([
+  [['fs_read'], 'Leyó a.txt'],
+  [['fs_edit', 'fs_edit'], 'Editó a.txt y b.txt'],
+  [['fs_read', 'fs_read', 'fs_read', 'shell_run', 'task_plan'], 'Leyó 3 archivos y ejecutó 1 comando'],
+  [['shell_run', 'shell_run', 'fs_read', 'web_open', 'web_click', 'web_type'], 'Hizo 3 acciones en el navegador, ejecutó 2 comandos y leyó c.txt'],
+  [['fs_read', 'fs_read', 'shell_run', 'shell_run', 'shell_run', 'fs_search', 'cua_click', 'templates_catalog'],
+    'Ejecutó 3 comandos, leyó a.txt y b.txt y 3 pasos más'],
+  [['task_plan'], '1 paso'],
+  [['skills_list'], 'Buscó skills'],
+  [['mcp2__drive-25cd107f1dee__buscar-021181d13e7c', 'mcp2__drive-25cd107f1dee__leer-021181d13e7c'], 'Usó el conector drive'],
+  [['mcp2__drive-25cd107f1dee__buscar-021181d13e7c', 'mcp2__slack-25cd107f1dee__enviar-021181d13e7c'], 'Usó 2 conectores'],
+])('resume los pasos por tipo: %j', (names, label) => {
+  const paths = 'abcdefgh';
+  expect(stepsSummary(names.map((name, i) => ({ id: `${i}`, name, params: { path: `C:\\docs\\${paths[i]}.txt` }, status: 'done', gated: false }))))
+    .toBe(label);
+});
+
+it('pliega los pasos anteriores en vivo salvo los que necesitan atención', () => {
+  const message = (failed?: string) => ({ role: 'assistant' as const, content: '', ts: 1, partial: true,
+    tool_calls: ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => ({ id, name: 'fs_read', params: { path: `${id}.txt` },
+      status: id === failed ? 'failed' as const : id === 'f' ? 'running' as const : 'done' as const, gated: false })) });
+  const { rerender } = render(<MessageRow msg={message()} />);
+  expect(screen.queryByText('a.txt')).not.toBeInTheDocument();
+  expect(screen.getByText('d.txt')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: '3 pasos anteriores' }));
+  expect(screen.getByText('a.txt')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Ocultar pasos anteriores' }));
+  rerender(<MessageRow msg={message('b')} />);
+  expect(screen.getByRole('button', { name: '1 paso anterior' })).toBeVisible();
+  expect(screen.getByText('b.txt')).toBeVisible();
+  rerender(<MessageRow msg={{ ...message(), partial: false, tool_calls: message().tool_calls.map((call) => ({ ...call, status: 'done' as const })) }} />);
+  expect(screen.queryByText(/pasos? anterior/)).not.toBeInTheDocument();
+});
+
+it.each([
+  ['normal', false, false, true],
+  ['thinking', true, false, true],
+  ['verbose', true, true, false],
+] as const)('la vista %s abre el razonamiento (%s), los pasos (%s) y pliega los anteriores (%s)', (view, thinking, steps, folds) => {
+  const call = (id: string, status: 'done' | 'running') => ({ id, name: 'fs_read', params: { path: `${id}.txt` }, status, gated: false, result: `{"text":"contenido ${id}"}` });
+  const { rerender } = render(<AssistantTurn view={view} messages={[{ role: 'assistant', content: 'Listo', reasoning: 'Comparo', ts: 1 }]} />);
+  expect(screen.getByRole('button', { name: /Pensó/ })).toHaveAttribute('aria-expanded', String(thinking));
+  rerender(<AssistantTurn view={view} messages={[{ role: 'assistant', content: '', ts: 2, tool_calls: [call('a', 'done'), call('b', 'done')] }]} />);
+  expect(screen.getByText('a.txt').closest('details')?.open).toBe(steps);
+  rerender(<AssistantTurn view={view} messages={[{ role: 'assistant', content: '', ts: 3, partial: true,
+    tool_calls: ['c', 'd', 'e', 'f', 'g'].map((id) => call(id, id === 'g' ? 'running' : 'done')) }]} />);
+  expect(!!screen.queryByRole('button', { name: /pasos anteriores/ })).toBe(folds);
+});
+
+it('resume al final del turno los archivos cambiados con sus líneas sumadas', () => {
+  const call = (id: string, name: string, params: Record<string, unknown>, status = 'done' as const) => ({ id, name, params, status, gated: false });
+  const messages = [
+    { role: 'assistant' as const, content: '', ts: 1, tool_calls: [
+      call('r', 'fs_read', { path: 'C:\\app\\a.ts' }),
+      call('e1', 'fs_edit', { path: 'C:\\app\\a.ts', old: 'uno', new: 'uno\ndos' }),
+      call('e2', 'fs_edit', { path: 'C:\\app\\a.ts', old: 'tres', new: 'cuatro' }),
+      call('w', 'fs_write', { path: 'C:\\app\\b.ts', content: 'x\ny\n' }),
+    ] },
+    { role: 'assistant' as const, content: 'Hecho.', ts: 2 },
+  ];
+  render(<AssistantTurn messages={messages} />);
+  const changes = screen.getByRole('region', { name: 'Archivos cambiados' });
+  expect(changes).toHaveTextContent('2 archivos cambiados');
+  expect(within(changes).getByText('a.ts').nextSibling).toHaveAccessibleName('2 líneas añadidas, 1 eliminadas');
+  expect(within(changes).getByText('b.ts').nextSibling).toHaveAccessibleName('2 líneas añadidas, 0 eliminadas');
+});
+
+it('nombra la skill leída en su paso y en el resumen del grupo', () => {
+  const read = (id: string, name: string) => ({ id, name: 'skills_read', params: { skill_id: `id-${name}` }, status: 'done' as const, gated: false,
+    result: JSON.stringify({ name, content: '' }) });
+  expect(stepsSummary([read('a', 'pdf-review'), read('b', 'pdf-review')])).toBe('Usó la skill pdf-review');
+  expect(stepsSummary([read('a', 'pdf-review'), read('b', 'firmas')])).toBe('Usó las skills pdf-review y firmas');
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [
+    { id: 'r', name: 'skills_read', params: { skill_id: 'id-1' }, status: 'running', gated: false }] }} />);
+  expect(screen.getByText('id-1')).toBeVisible();
+});
+
+it('anima la salida de la terminal solo mientras se ejecuta y conserva la salida al cerrarla', () => {
+  const call = (status: 'running' | 'done') => ({ id: 't', name: 'shell_run', params: { command: 'dir' }, status, gated: false,
+    ...(status === 'done' ? { result: JSON.stringify({ exit_code: 0, stdout: 'a\nb' }) } : { output: 'a\n' }) });
+  const { rerender } = render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [call('running')] }} />);
+  expect(screen.getByRole('log', { name: 'Salida de dir' })).toHaveAttribute('data-live');
+  rerender(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [call('done')] }} />);
+  expect(screen.getByRole('log', { name: 'Salida de dir' })).not.toHaveAttribute('data-live');
+  expect(screen.getByText('salida 0')).toHaveClass('agent-terminal-exit');
+  fireEvent.click(screen.getByRole('button', { name: /Ejecutó dir/ }));
+  expect(screen.getByRole('button', { name: /Ejecutó dir/ })).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByRole('log', { hidden: true, name: 'Salida de dir' }).closest('[inert]')).not.toBeNull();
+});
+
+it('muestra el avance del plan en el anillo, tacha lo hecho y lo da por completado', () => {
+  const plan = (status: 'in_progress' | 'done') => ({ goal: 'Cerrar el mes', steps: [
+    { title: 'Leer', status: 'done' as const }, { title: 'Revisar', status }] });
+  const { container, rerender } = render(<PlanCard plan={plan('in_progress')} running />);
+  const ring = container.querySelector('.agent-plan-progress');
+  expect(Number(ring?.getAttribute('stroke-dashoffset'))).toBeCloseTo(Math.PI * 5);
+  expect(screen.getByText('Leer')).toHaveAttribute('data-done');
+  expect(screen.getByText('Revisar')).not.toHaveAttribute('data-done');
+  expect(container.querySelector('.agent-plan-icon[data-animate]')).not.toBeNull();
+  rerender(<PlanCard plan={plan('done')} running={false} />);
+  expect(container.querySelector('.agent-plan-progress')).toBeNull();
+  expect(screen.getByText('Plan completado')).toBeVisible();
+  expect(screen.getByLabelText('2 de 2 hechos')).toHaveTextContent('2/2');
+  expect(screen.getByText('Revisar')).toHaveAttribute('data-done');
+});
+
+it('copia el mensaje del usuario', () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  render(<MessageRow msg={{ role: 'user', content: 'Revisa el informe', ts: 1 }} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Copiar mensaje' }));
+  expect(writeText).toHaveBeenCalledWith('Revisa el informe');
+});
+
+it.each([
+  ['\n\n## Plan\nDespués', 'Plan'],
+  ['- Reviso **los** [archivos](C:/a) `uno`', 'Reviso los archivos uno'],
+  ['```ts\ncodigo', 'codigo'],
+  ['   ', ''],
+])('resume el razonamiento en su primera línea: %j', (text, recap) => {
+  expect(reasoningRecap(text)).toBe(recap);
+});
+
+it('muestra la primera línea del razonamiento con el bloque cerrado', () => {
+  render(<MessageRow msg={{ role: 'assistant', content: 'Listo', reasoning: 'Comparo las plantillas\nY luego elijo', reasoning_ms: 2_000, ts: 1 }} />);
+  expect(screen.getByRole('button', { name: 'Pensó durante 2 s' })).toHaveTextContent('· Comparo las plantillas');
+  fireEvent.click(screen.getByRole('button', { name: 'Pensó durante 2 s' }));
+  expect(screen.getByRole('button', { name: 'Pensó durante 2 s' })).not.toHaveTextContent('Comparo');
+});
+
+it('pinta los avisos del sistema aparte sin quitar la respuesta ni mezclarse con el trabajo', () => {
+  const turns = groupTurns([
+    { role: 'user', content: 'Revisa', ts: 1 },
+    { role: 'assistant', content: '', ts: 2, tool_calls: [{ id: 'r', name: 'fs_read', params: { path: 'a.txt' }, status: 'done', gated: false }] },
+    { role: 'assistant', content: 'Todo correcto.', ts: 3 },
+    { role: 'assistant', content: '🗜 Contexto compactado — límite', notice: true, ts: 4 },
+    { role: 'assistant', content: 'Sigo con lo siguiente.', ts: 5 },
+  ]);
+  expect(turns.map((turn) => (turn.role === 'user' ? 'user' : turn.messages.map((m) => m.ts).join()))).toEqual(
+    ['user', '2,3', '4', '5']);
+  const work = turns[1];
+  if (work.role !== 'assistant') throw new Error('turno inesperado');
+  render(<AssistantTurn messages={work.messages} />);
+  expect(screen.getByText('Todo correcto.')).toBeVisible();
 });
 
 it('coloca cada resultado en el turno que lo produjo y no repite el mismo archivo', () => {
@@ -408,6 +555,16 @@ it('muestra el razonamiento abierto mientras piensa y lo pliega al responder sin
   expect(screen.getByText(reasoning).closest('[aria-hidden="true"]')).toBeNull();
 });
 
+it('da por terminado el pensamiento cuando la ronda pasa a una acción, como pi-durable', () => {
+  render(<MessageRow msg={{ role: 'assistant', content: '', reasoning: 'Leo el **Excel** primero', reasoning_ms: 3_000, partial: true, ts: 1,
+    tool_calls: [{ id: 'r', name: 'fs_read', params: { path: 'a.xlsx' }, status: 'running', gated: false }] }} />);
+  expect(screen.queryByText('Pensando…')).not.toBeInTheDocument();
+  const toggle = screen.getByRole('button', { name: 'Pensó durante 3 s' });
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  fireEvent.click(toggle);
+  expect(screen.getByText('Excel').tagName).toBe('STRONG');
+});
+
 it('no dibuja bloque de razonamiento cuando el modelo no lo expone', () => {
   render(<MessageRow msg={{ role: 'assistant', content: 'Listo', ts: 1 }} />);
   expect(screen.queryByRole('button', { name: /Pens/ })).toBeNull();
@@ -515,11 +672,11 @@ it('muestra el plan con su progreso y la evidencia de cada paso', () => {
     { title: 'Guardar el informe', status: 'pending' },
   ] }} />);
   expect(screen.getByRole('region', { name: 'Plan del agente' })).toBeInTheDocument();
-  expect(screen.getByText('1 de 3 hechos')).toBeInTheDocument();
+  expect(screen.getByLabelText('1 de 3 hechos')).toHaveTextContent('1/3');
   expect(screen.getByText('fs_read devolvió 12 filas')).toBeInTheDocument();
   expect(screen.getByText('Buscar el tipo de cambio')).toHaveClass('agent-shimmer');
-  fireEvent.click(screen.getByRole('button', { name: /Plan: Preparar el informe/ }));
-  expect(screen.queryByText('Leer el Excel')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /Preparar el informe/ }));
+  expect(screen.getByText('Leer el Excel').closest('[inert]')).not.toBeNull();
 });
 
 it('detalla el comando y la ruta en la aprobación de una acción del equipo', () => {
@@ -532,6 +689,22 @@ it('detalla el comando y la ruta en la aprobación de una acción del equipo', (
   expect(screen.getByText('Carpeta: C:\datos')).toBeInTheDocument();
   expect(screen.getByText(/puede acceder al equipo completo/)).toBeInTheDocument();
   expect(screen.getByText(/Requiere tu aprobación también en Acceso completo/)).toBeInTheDocument();
+  expect(screen.queryByText(/elimina o descarta archivos/)).not.toBeInTheDocument();
+});
+
+it.each([
+  ['Get-ChildItem *.tmp | Remove-Item -Force', true],
+  ['cd C:\\proyecto; git reset --hard', true],
+  ['rm -r build', true],
+  ['[IO.File]::Delete("a.txt")', true],
+  ['Select-String -Pattern "Remove-Item" *.ps1', false],
+  ['git status', false],
+])('avisa del borrado de archivos solo cuando el comando lo hace: %s', (command, destructive) => {
+  render(<ApprovalCard busy={false} onDecide={vi.fn()} approval={{
+    id: 'a', session_id: 's', call_id: 'c', method: 'shell_job_start', status: 'pending', created_at: 1, decided_at: null,
+    params: { command },
+  }} />);
+  expect(!!screen.queryByText(/elimina o descarta archivos/)).toBe(destructive);
 });
 
 it('muestra la edición de un archivo como diff y lo marca aplicado al terminar', () => {

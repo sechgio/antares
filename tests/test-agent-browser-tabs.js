@@ -126,7 +126,39 @@ async function tabsTest() {
   const readB = await browser.run('web_read', {}, { sessionId: 'conversation-b' });
   assert(readB.url === 'https://agent-2.example', 'al liberar, otra conversación puede continuar');
   browser.release('conversation-b');
+
+  current = browser.newTab();
+  assert(current.active_tab === 'tab-1' && current.tabs.map((tab) => tab.id).join() === 'agent,user,tab-1'
+    && current.tabs[2].label === 'Nueva pestaña', 'el usuario abre una pestaña nueva y queda activa');
+  const extraTimers = installInertTimers();
+  try { await browser.navigate('open', 'https://extra.example'); } finally { extraTimers.restore(); }
+  const extraPage = pages[pages.length - 1];
+  assert(mainChildren.has(extraPage) && hostChildren.has(agentPage) && hostChildren.has(userPage),
+    'la pestaña nueva tiene su propia vista y las demás siguen vivas');
+  browser.activateTab('user');
+  current = browser.closeTab('user');
+  assert(current.active_tab === 'tab-1' && !current.tabs.some((tab) => tab.id === 'user'),
+    'al cerrar la pestaña visible se activa la de la derecha');
+  current = browser.closeTab('tab-1');
+  assert(current.active_tab === 'agent' && current.tabs.length === 1 && !mainChildren.has(extraPage),
+    'al cerrar la última se activa la del agente y se retira la vista cerrada');
+  let agentClose = null;
+  try { browser.closeTab('agent'); } catch (err) { agentClose = err; }
+  assert(agentClose, 'la pestaña del agente no se puede cerrar');
+  let isolated = null;
+  agentPage.webContents.executeJavaScriptInIsolatedWorld = async (world, scripts) => { isolated = { world, code: scripts[0].code }; return { tag: 'a' }; };
+  const picked = await browser.inspect(0.5, 0.25);
+  assert(picked.tag === 'a' && isolated.world !== 0 && isolated.code.includes('elementFromPoint(0.5 * innerWidth, 0.25 * innerHeight)')
+    && !/\.value\b/.test(isolated.code), 'inspeccionar describe el elemento en un mundo aislado sin leer valores de campos');
+  let badPoint = null;
+  try { await browser.inspect(2, 0); } catch (err) { badPoint = err; }
+  assert(badPoint, 'inspeccionar rechaza puntos fuera de la página');
+  for (let i = 0; i < 8; i++) browser.newTab();
+  let capped = null;
+  try { browser.newTab(); } catch (err) { capped = err; }
+  assert(capped && browser.state().tabs.length === 9, 'el usuario puede tener hasta ocho pestañas');
   browser.close();
+  assert(browser.state().tabs.map((tab) => tab.id).join() === 'agent,user', 'cerrar el navegador restaura las pestañas iniciales');
 }
 
 tabsTest().then(() => { fs.rmSync(root, { recursive: true, force: true }); finish(); },

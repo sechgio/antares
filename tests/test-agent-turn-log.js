@@ -5,9 +5,10 @@ const os = require('os');
 const path = require('path');
 
 const { assert, finish, stubModule } = require('./helpers/harness');
-// El fixture cuenta con todas sus herramientas habilitadas: cua-driver queda fuera
-// para no pasar de las 100 por defecto (tiene sus pruebas en test-agent-cua.js).
+// El fixture habilita todo: cua-driver y navegador quedan fuera para no pasar de
+// las 100 herramientas por defecto; ambos tienen sus propias suites.
 stubModule('electron/agent-cua.js', { TOOLS: new Map(), run: async () => ({}), approvalContext: () => ({}), close: () => {} });
+stubModule('electron/agent-browser.js', { ...require('../electron/agent-browser'), TOOLS: {} });
 const runtime = require('../electron/agent-runtime');
 
 const LOG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-turn-log-'));

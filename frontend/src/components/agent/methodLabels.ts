@@ -32,6 +32,12 @@ export const METHOD_LABELS: Record<string, string> = {
   web_key: 'Pulsar teclas en la página web',
   web_download: 'Descargar un archivo a borradores',
   web_upload: 'Subir un archivo a la página',
+  web_scroll: 'Desplazar la página web',
+  web_hover: 'Pasar el puntero en la página web',
+  web_wait: 'Esperar a la página web',
+  web_select: 'Elegir una opción en la página web',
+  web_check: 'Marcar una casilla en la página web',
+  web_fill: 'Rellenar campos en la página web',
   desktop_observe: 'Capturar la pantalla',
   desktop_click: 'Hacer clic en el escritorio',
   desktop_type: 'Escribir en el escritorio',
@@ -205,6 +211,11 @@ export const METHOD_LABELS: Record<string, string> = {
 
 // mcp_servers.agent_tool_name: mcp2__<servidor>-<hash>__<herramienta>-<hash>.
 const MCP_TOOL = /^mcp2__(.+)-[0-9a-f]{12}__(.+)-[0-9a-f]{12}$/;
+
+/** Servidor MCP de una herramienta, o null si no es de un conector. */
+export function mcpServer(name: string): string | null {
+  return MCP_TOOL.exec(name)?.[1] ?? null;
+}
 
 /** Etiqueta legible de una herramienta: la del catálogo, la de su servidor MCP o el nombre. */
 export function methodLabel(name: string): string {

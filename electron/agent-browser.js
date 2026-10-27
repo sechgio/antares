@@ -6,6 +6,14 @@ const path = require('node:path');
 const PARTITION = 'persist:antares-agent-browser';
 const MAX_TEXT = 3_500;
 const MAX_ELEMENTS = 80;
+const MAX_CANDIDATES = 400;
+const POINTER_SCAN = 3_000;
+const MAX_FILL_FIELDS = 16;
+const MAX_FILL_TEXT = 16_000;
+const WAIT_DEFAULT_MS = 8_000;
+const WAIT_MAX_MS = 15_000;
+const WAIT_STEP_MS = 250;
+const HEALTH_KEEP = 5;
 const RESULT_BUDGET = 5_600;
 const SHOT_WIDTH = 1280;
 const KEEP_SCREENS = 12;
@@ -29,7 +37,8 @@ const TOOLS = {
   web_open: ['Abrir una página web en el navegador del agente', {
     type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s) o búsqueda; para un archivo local usa fs_read' } }, required: ['url'],
   }, false],
-  web_read: ['Leer el texto y los elementos interactivos de la página actual', {
+  web_read: ['Leer el texto y los elementos interactivos de la página actual: primero los visibles, con su estado; '
+    + 'incluye marcos del mismo sitio y componentes con shadow DOM', {
     type: 'object', properties: { offset: { type: 'integer', minimum: 0, description: 'Carácter inicial del texto' } },
   }, false],
   web_screenshot: ['Capturar la página actual del navegador del agente', {
@@ -45,7 +54,48 @@ const TOOLS = {
   }, false],
   web_console: ['Leer los mensajes recientes de la consola del navegador', { type: 'object', properties: {} }, false],
   web_network: ['Leer las peticiones de red recientes de la página actual', { type: 'object', properties: {} }, false],
+  web_scroll: ['Desplazar la página, o un contenedor con desplazamiento propio, y leer lo que aparece', {
+    type: 'object',
+    properties: {
+      direction: { type: 'string', enum: ['down', 'up'], description: 'Hacia dónde desplazar (por defecto down)' },
+      pages: { type: 'number', minimum: 0.25, maximum: 10, description: 'Pantallas a desplazar (por defecto 1)' },
+      ref: { ...REF, description: 'Contenedor con desplazamiento propio; sin ref se desplaza la página' },
+    },
+  }, false],
+  web_hover: ['Pasar el puntero sobre un elemento para abrir su menú o su ayuda', {
+    type: 'object', properties: { ref: REF }, required: ['ref'],
+  }, false],
+  web_wait: ['Esperar a que la página muestre un texto, deje de mostrarlo o cambie de dirección, y leerla', {
+    type: 'object',
+    properties: {
+      text: { type: 'string', description: 'Texto que debe aparecer' },
+      gone: { type: 'string', description: 'Texto que debe desaparecer, p. ej. «Cargando»' },
+      url: { type: 'string', description: 'Fragmento que debe contener la dirección' },
+      timeout_ms: { type: 'integer', minimum: WAIT_STEP_MS, maximum: WAIT_MAX_MS, description: 'Espera máxima (por defecto 8000)' },
+    },
+  }, false],
   web_click: ['Hacer clic en un elemento de la página', { type: 'object', properties: { ref: REF }, required: ['ref'] }, true],
+  web_select: ['Elegir opciones de un desplegable nativo (select) por su valor o su texto', {
+    type: 'object',
+    properties: {
+      ref: REF,
+      values: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 50, description: 'Valores o textos de las opciones' },
+    },
+    required: ['ref', 'values'],
+  }, true],
+  web_check: ['Marcar o desmarcar una casilla, un interruptor o una opción de radio', {
+    type: 'object', properties: { ref: REF, checked: { type: 'boolean' } }, required: ['ref', 'checked'],
+  }, true],
+  web_fill: ['Rellenar de una vez varios campos de texto leídos en el mismo web_read; no envía el formulario', {
+    type: 'object',
+    properties: {
+      fields: {
+        type: 'array', minItems: 1, maxItems: MAX_FILL_FIELDS,
+        items: { type: 'object', properties: { ref: REF, text: { type: 'string' } }, required: ['ref', 'text'] },
+      },
+    },
+    required: ['fields'],
+  }, true],
   web_type: ['Escribir en un campo de la página', {
     type: 'object',
     properties: {
@@ -83,12 +133,12 @@ const SECRET_FIELD_JS = `(el) => el.type === 'password' || String(el.getAttribut
   .some((token) => ['one-time-code', 'current-password', 'new-password'].includes(token) || token.startsWith('cc-'))`;
 const USER_INPUT_GRACE_MS = 5_000;
 const USER_WAIT_MAX_MS = 10_000;
-const READ_TOOLS = new Set(['web_read', 'web_screenshot', 'web_text', 'web_console', 'web_network']);
+const READ_TOOLS = new Set(['web_read', 'web_screenshot', 'web_text', 'web_console', 'web_network', 'web_wait']);
 const NAVIGATION_TOOLS = new Set(['web_open', 'web_back', 'web_forward', 'web_reload']);
 const AGENT_TAB = 'agent';
 const USER_TAB = 'user';
-const TAB_IDS = [AGENT_TAB, USER_TAB];
-const TAB_LABELS = { [AGENT_TAB]: 'Agente', [USER_TAB]: 'Tú' };
+// Como en Claude Desktop: una vista por pestaña, misma sesión y un tope de pestañas.
+const MAX_USER_TABS = 8;
 const AGENT_LEASE_MS = 10 * 60_000;
 const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
 const LOCAL_DOCUMENT = /^(?![a-z][a-z0-9+.-]*:)[^\s/\\]+\.(?:md|markdown|txt|pdf|docx?|csv|xlsx?|json)$/i;
@@ -96,11 +146,16 @@ const LOCAL_DOCUMENT = /^(?![a-z][a-z0-9+.-]*:)[^\s/\\]+\.(?:md|markdown|txt|pdf
 let host = null;
 let docked = null;
 let activeTab = AGENT_TAB;
+let order = [AGENT_TAB, USER_TAB];
+let tabSeq = 0;
 let agentOwner = null;
 const tabs = new Map();
 const pendingMouseInputs = new Set();
 let consoleLog = [];
 const netLog = new Map();
+// Contadores de mensajes y peticiones: marcan lo que la página informó después de una acción.
+let consoleSeq = 0;
+let netSeq = 0;
 let sessionReady = false;
 let downloadSlot = null;
 
@@ -278,7 +333,7 @@ function tabState(id) {
   const remaining = tab && !tab.userControl ? busyRemaining(tab) : 0;
   return {
     id,
-    label: TAB_LABELS[id],
+    label: id === AGENT_TAB ? 'Agente' : 'Nueva pestaña',
     open: !!contents,
     url: contents ? contents.getURL() : '',
     title: contents ? contents.getTitle() : '',
@@ -306,7 +361,7 @@ function state() {
     busy_until: current.busy_until,
     busy_reason: current.busy_reason,
     active_tab: activeTab,
-    tabs: TAB_IDS.map((id) => tabState(id)),
+    tabs: order.map((id) => tabState(id)),
   };
 }
 
@@ -378,7 +433,7 @@ function ensureTab(id) {
   contents.on('input-event', (event, input) => { if (input.type === 'mouseWheel') userInput(event, input); });
   if (id === AGENT_TAB) {
     contents.on('console-message', ({ level, message }) => {
-      consoleLog.push({ level: String(level || 'info'), text: String(message || '') });
+      consoleLog.push({ level: String(level || 'info'), text: String(message || ''), seq: ++consoleSeq });
       if (consoleLog.length > CONSOLE_KEEP) consoleLog.shift();
     });
     // El debugger se adjunta al crear la página para que Network capture las
@@ -402,7 +457,7 @@ function ensureTab(id) {
       current.lastUserInputAt = 0;
       current.lastBusyNotifyAt = 0;
     }
-    notify(TAB_IDS.some((tabId) => tabContents(tabs.get(tabId))) ? 'page' : 'closed');
+    notify(order.some((tabId) => tabContents(tabs.get(tabId))) ? 'page' : 'closed');
   });
   mount(electron);
   return tab;
@@ -417,11 +472,12 @@ function recordNet(id, entry) {
 function noteNetwork(method, params = {}) {
   if (method === 'Network.requestWillBeSent') {
     const request = params.request || {};
-    recordNet(params.requestId, { method: request.method || '', url: String(request.url || ''), type: params.type || '', status: null });
+    recordNet(params.requestId, { method: request.method || '', url: String(request.url || ''), type: params.type || '', status: null,
+      seq: ++netSeq });
   } else if (method === 'Network.responseReceived') {
     const existing = netLog.get(params.requestId);
     const response = params.response || {};
-    const entry = existing || { method: '', url: String(response.url || ''), type: params.type || '', status: null };
+    const entry = existing || { method: '', url: String(response.url || ''), type: params.type || '', status: null, seq: ++netSeq };
     entry.status = response.status ?? entry.status;
     if (!existing) recordNet(params.requestId, entry);
   } else if (method === 'Network.loadingFailed') {
@@ -477,7 +533,7 @@ function dock(bounds) {
 }
 
 function setUserControl(value, id = activeTab) {
-  if (!TAB_IDS.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
+  if (!order.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
   let tab = tabs.get(id);
   if (!tab) {
     if (!value) return state();
@@ -497,7 +553,7 @@ function setUserControl(value, id = activeTab) {
 }
 
 function allowAgent(id = activeTab) {
-  if (!TAB_IDS.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
+  if (!order.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
   const tab = tabs.get(id);
   if (tab) {
     tab.userControl = false;
@@ -509,7 +565,7 @@ function allowAgent(id = activeTab) {
 }
 
 function resetUserActivity(id = AGENT_TAB) {
-  if (!TAB_IDS.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
+  if (!order.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
   const tab = tabs.get(id);
   if (!tab) return;
   tab.lastUserInputAt = 0;
@@ -518,8 +574,34 @@ function resetUserActivity(id = AGENT_TAB) {
 }
 
 function activateTab(id) {
-  if (!TAB_IDS.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
+  if (!order.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
   activeTab = id;
+  mount(require('electron'));
+  notify('page');
+  return state();
+}
+
+function newTab() {
+  if (order.length - 1 >= MAX_USER_TABS) {
+    throw new Error(`Puedes tener hasta ${MAX_USER_TABS} pestañas abiertas; cierra una antes de abrir otra`);
+  }
+  const id = `tab-${++tabSeq}`;
+  order = [...order, id];
+  return activateTab(id);
+}
+
+// Al cerrar la pestaña visible se activa la de la derecha o, si no hay, la de la izquierda.
+function closeTab(id) {
+  if (id === AGENT_TAB || !order.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
+  const index = order.indexOf(id);
+  order = order.filter((tabId) => tabId !== id);
+  if (activeTab === id) activeTab = order[index] || order[index - 1];
+  const tab = tabs.get(id);
+  tabs.delete(id);
+  if (tab && tab.view) {
+    if (alive(tab.parent)) tab.parent.contentView.removeChildView(tab.view);
+    if (alive(tab.view.webContents)) tab.view.webContents.close();
+  }
   mount(require('electron'));
   notify('page');
   return state();
@@ -580,35 +662,134 @@ async function load(contents, url) {
   await settle(contents);
 }
 
+// Raíces donde buscar elementos: el documento, los shadow roots abiertos y los
+// marcos del mismo origen, con el desplazamiento de cada marco respecto a la página.
+const DEEP_JS = `
+  const roots = (start) => {
+    const out = [];
+    const queue = [{ root: start, dx: 0, dy: 0 }];
+    while (queue.length && out.length < 60) {
+      const item = queue.shift();
+      out.push(item);
+      const all = item.root.querySelectorAll('*');
+      for (let i = 0; i < all.length && i < 20000; i += 1) {
+        const node = all[i];
+        if (node.shadowRoot) queue.push({ root: node.shadowRoot, dx: item.dx, dy: item.dy });
+        if (node.localName === 'iframe' || node.localName === 'frame') {
+          let doc = null;
+          try { doc = node.contentDocument; } catch {}
+          if (doc) {
+            const r = node.getBoundingClientRect();
+            queue.push({ root: doc, dx: item.dx + r.left + node.clientLeft, dy: item.dy + r.top + node.clientTop });
+          }
+        }
+      }
+    }
+    return out;
+  };
+  const byRef = (id) => {
+    for (const item of roots(document)) {
+      const el = item.root.querySelector('[data-antares-ref="' + id + '"]');
+      if (el) return { el, root: item.root, dx: item.dx, dy: item.dy };
+    }
+    return null;
+  };
+`;
+
 const SNAPSHOT = `(() => {
+  ${DEEP_JS}
+  const secret = ${SECRET_FIELD_JS};
   const visible = (el) => {
     const r = el.getBoundingClientRect();
     const s = getComputedStyle(el);
     return r.width > 1 && r.height > 1 && s.visibility !== 'hidden' && s.display !== 'none';
   };
   const selector = 'a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=tab],[role=menuitem],'
-    + '[role=checkbox],[role=option],[contenteditable=true],[onclick]';
+    + '[role=menuitemcheckbox],[role=menuitemradio],[role=checkbox],[role=radio],[role=switch],[role=option],[role=combobox],'
+    + '[role=textbox],[role=searchbox],[role=slider],[role=spinbutton],[role=treeitem],[contenteditable=true],[onclick],'
+    + '[tabindex]:not([tabindex="-1"])';
+  const clean = (value) => String(value || '').trim().replace(/\\s+/g, ' ');
+  const labelOf = (el, root) => {
+    const byIds = clean((el.getAttribute('aria-labelledby') || '').split(/\\s+/)
+      .map((id) => (id && root.getElementById ? root.getElementById(id) : null)).filter(Boolean).map((node) => node.innerText).join(' '));
+    const labels = el.labels && el.labels.length ? clean([...el.labels].map((node) => node.innerText).join(' ')) : '';
+    const button = el.localName === 'input' && ['submit', 'button', 'reset'].includes(el.type) ? el.value : '';
+    const image = el.querySelector ? el.querySelector('img[alt]') : null;
+    const inner = el.localName === 'select' ? '' : el.innerText;
+    return clean(el.getAttribute('aria-label') || byIds || labels || inner || button || el.placeholder || el.title
+      || el.name || el.alt || (image && image.alt) || '').slice(0, 80);
+  };
+  const states = (el) => {
+    const out = [];
+    const role = el.getAttribute('role');
+    if (el.disabled || el.getAttribute('aria-disabled') === 'true') out.push('deshabilitado');
+    if (el.type === 'checkbox' || el.type === 'radio') out.push(el.checked ? 'marcado' : 'sin marcar');
+    else if (['checkbox', 'radio', 'switch', 'menuitemcheckbox', 'menuitemradio'].includes(role)) {
+      out.push(el.getAttribute('aria-checked') === 'true' ? 'marcado' : 'sin marcar');
+    }
+    const expanded = el.getAttribute('aria-expanded');
+    if (expanded) out.push(expanded === 'true' ? 'desplegado' : 'plegado');
+    if (el.getAttribute('aria-selected') === 'true' || el.getAttribute('aria-current')) out.push('seleccionado');
+    if (el.required || el.getAttribute('aria-required') === 'true') out.push('obligatorio');
+    if (el.readOnly) out.push('solo lectura');
+    return out;
+  };
+  const all = roots(document);
+  const candidates = [];
+  const seen = new Set();
+  let pointerScan = ${POINTER_SCAN};
+  for (const item of all) {
+    const nodes = [...item.root.querySelectorAll(selector)];
+    // Controles sin rol que solo delata el cursor, como las tarjetas con onClick de React.
+    for (const node of item.root.querySelectorAll('div,span,li,img,svg,td,p')) {
+      if (pointerScan-- <= 0) break;
+      if (node.closest(selector)) continue;
+      const parent = node.parentElement;
+      if (getComputedStyle(node).cursor === 'pointer' && !(parent && getComputedStyle(parent).cursor === 'pointer')) nodes.push(node);
+    }
+    for (const el of nodes) {
+      if (candidates.length >= ${MAX_CANDIDATES}) break;
+      if (seen.has(el)) continue;
+      seen.add(el);
+      if (!visible(el) || el.closest('[aria-hidden=true]')) continue;
+      const r = el.getBoundingClientRect();
+      const top = item.dy + r.top;
+      const left = item.dx + r.left;
+      candidates.push({ el, root: item.root, frame: item.root !== document && item.root.nodeType === 9,
+        inView: top < innerHeight && top + r.height > 0 && left < innerWidth && left + r.width > 0 });
+    }
+  }
+  candidates.sort((a, b) => Number(b.inView) - Number(a.inView));
   const elements = [];
-  for (const el of document.querySelectorAll(selector)) {
-    if (elements.length >= ${MAX_ELEMENTS}) break;
-    if (!visible(el) || el.closest('[aria-hidden=true]')) continue;
+  for (const { el, root, frame, inView } of candidates.slice(0, ${MAX_ELEMENTS})) {
     let ref = el.getAttribute('data-antares-ref');
     if (!ref) {
       window.__antaresRef = (window.__antaresRef || 0) + 1;
       ref = String(window.__antaresRef);
       el.setAttribute('data-antares-ref', ref);
     }
-    const tag = el.tagName.toLowerCase();
-    const label = (el.getAttribute('aria-label') || el.innerText || el.placeholder || el.title || el.name || el.alt || '')
-      .trim().replace(/\\s+/g, ' ').slice(0, 80);
-    const item = { ref, tag, label };
+    const tag = el.localName;
+    const item = { ref, tag, label: labelOf(el, root) };
     if (el.type && tag === 'input') item.type = el.type;
+    else if (el.getAttribute('role')) item.type = el.getAttribute('role');
     if (el.href) item.href = String(el.href).slice(0, 200);
-    if ((tag === 'input' || tag === 'textarea' || tag === 'select') && el.type !== 'password') item.value = String(el.value || '').slice(0, 100);
+    if ((tag === 'input' || tag === 'textarea' || tag === 'select') && !secret(el) && el.type !== 'checkbox' && el.type !== 'radio') {
+      item.value = String(el.value || '').slice(0, 100);
+    }
+    if (tag === 'select') item.options = [...el.options].slice(0, 12).map((option) => (option.selected ? '*' : '') + clean(option.text).slice(0, 40));
+    const current = states(el);
+    if (current.length) item.states = current;
+    if (!inView) item.off = true;
+    if (frame) item.frame = true;
     elements.push(item);
   }
-  const text = (document.body ? document.body.innerText : '').replace(/\\n{3,}/g, '\\n\\n');
-  return { url: location.href, title: document.title, text, elements, time_origin: performance.timeOrigin };
+  let text = document.body ? document.body.innerText : '';
+  for (const item of all) {
+    if (item.root !== document && item.root.nodeType === 9 && item.root.body) text += '\\n\\n[marco]\\n' + item.root.body.innerText;
+  }
+  text = text.replace(/\\n{3,}/g, '\\n\\n');
+  return { url: location.href, title: document.title, text, elements, elements_total: candidates.length,
+    time_origin: performance.timeOrigin };
 })()`;
 
 function fit(result, budget = RESULT_BUDGET) {
@@ -625,7 +806,10 @@ function fit(result, budget = RESULT_BUDGET) {
 
 function describe(item) {
   return `${item.ref} ${item.tag}${item.type ? `[${item.type}]` : ''} «${item.label}»`
-    + `${item.value ? ` = ${item.value}` : ''}${item.href ? ` → ${item.href.slice(0, 90)}` : ''}`;
+    + `${item.states && item.states.length ? ` (${item.states.join(', ')})` : ''}`
+    + `${item.value ? ` = ${item.value}` : ''}${item.href ? ` → ${item.href.slice(0, 90)}` : ''}`
+    + `${item.options && item.options.length ? ` opciones: ${item.options.join(' | ')}` : ''}`
+    + `${item.frame ? ' [marco]' : ''}${item.off ? ' [fuera de vista]' : ''}`;
 }
 
 async function snapshot(contents, offset = 0, budget = RESULT_BUDGET) {
@@ -640,7 +824,26 @@ async function snapshot(contents, offset = 0, budget = RESULT_BUDGET) {
     elements: page.elements.map(describe),
   }, budget);
   const end = start + result.text.length;
-  return { ...result, text_offset: start, text_total: text.length, ...(end < text.length ? { next_offset: end } : {}) };
+  const more = Number(page.elements_total || 0) - result.elements.length;
+  return { ...result, text_offset: start, text_total: text.length, ...(end < text.length ? { next_offset: end } : {}),
+    ...(more > 0 ? { elements_more: more, elements_note: 'Hay más elementos interactivos: desplázate con web_scroll y vuelve a leer' } : {}) };
+}
+
+// Errores de consola y peticiones fallidas que la página informó desde la marca:
+// llegan con el resultado de la acción, como datos de la página y no instrucciones.
+function pageReported(mark) {
+  const errors = consoleLog.filter((entry) => entry.seq > mark.console && entry.level === 'error')
+    .slice(-HEALTH_KEEP).map((entry) => entry.text.slice(0, 200));
+  const failed = [...netLog.values()]
+    .filter((entry) => entry.seq > mark.net && ((entry.status ?? 0) >= 400 || (entry.error && !/ERR_ABORTED/.test(entry.error))))
+    .slice(-HEALTH_KEEP)
+    .map((entry) => `${entry.error ? 'falló' : entry.status} ${entry.method || '·'} ${entry.url.slice(0, 160)}${entry.error ? ` (${entry.error})` : ''}`);
+  if (!errors.length && !failed.length) return {};
+  return { page_reported: { ...(errors.length ? { console_errors: errors } : {}), ...(failed.length ? { failed_requests: failed } : {}) } };
+}
+
+function refId(ref) {
+  return String(ref || '').replace(/[^0-9]/g, '');
 }
 
 function current(id = AGENT_TAB) {
@@ -689,14 +892,48 @@ async function locate(contents, ref) {
   if (!id) throw new Error('Indica la referencia del elemento (web_read)');
   const rect = await contents.executeJavaScript(`(() => {
     ${refGuard(contents)}
-    const el = document.querySelector('[data-antares-ref="${id}"]');
-    if (!el) return null;
-    el.scrollIntoView({ block: 'center', inline: 'center' });
+    ${DEEP_JS}
+    let found = byRef('${id}');
+    if (!found) return null;
+    found.el.scrollIntoView({ block: 'center', inline: 'center' });
+    found = byRef('${id}') || found;
+    const el = found.el;
     const r = el.getBoundingClientRect();
-    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), secret: (${SECRET_FIELD_JS})(el) };
+    const lx = r.left + r.width / 2;
+    const ly = r.top + r.height / 2;
+    // El clic va a lo que esté encima del centro: un aviso o un diálogo lo taparían.
+    const toggle = el.type === 'checkbox' || el.type === 'radio';
+    let surface = el, root = found.root, x = lx, y = ly, covered = null;
+    for (;;) {
+      const hit = root.elementFromPoint ? root.elementFromPoint(x, y) : null;
+      const label = hit && hit.closest ? hit.closest('label') : null;
+      const reaches = !hit || hit === surface || surface.contains(hit) || hit.contains(surface)
+        || (label && surface.labels && [...surface.labels].includes(label))
+        || (surface === el && toggle && hit.parentElement === el.parentElement);
+      if (!reaches) { covered = hit; break; }
+      if (root.host) surface = root.host;
+      else {
+        surface = root.defaultView && root.defaultView.frameElement;
+        if (!surface) break;
+        const frame = surface.getBoundingClientRect();
+        x += frame.left + surface.clientLeft;
+        y += frame.top + surface.clientTop;
+      }
+      root = surface.getRootNode();
+    }
+    const role = el.getAttribute('role');
+    const checked = toggle ? el.checked
+      : ['checkbox', 'radio', 'switch', 'menuitemcheckbox', 'menuitemradio'].includes(role) ? el.getAttribute('aria-checked') === 'true' : null;
+    return { x: Math.round(found.dx + lx), y: Math.round(found.dy + ly), secret: (${SECRET_FIELD_JS})(el), checked,
+      ...(!covered ? {} : { covered: covered.localName + ' «' + String(covered.innerText || covered.getAttribute('aria-label') || '')
+        .trim().replace(/\\s+/g, ' ').slice(0, 60) + '»' }) };
   })()`, true);
   assertSameDocument(rect);
   if (!rect) throw new Error('El elemento ya no está en la página; vuelve a leerla con web_read');
+  if (rect.covered) {
+    throw browserError(`Otro elemento tapa la referencia ${id}: ${rect.covered}. Ciérralo (un aviso de cookies, un diálogo o `
+      + 'un menú) o desplaza la página con web_scroll y vuelve a leerla', 'COVERED');
+  }
   await delay(120);
   return rect;
 }
@@ -807,6 +1044,45 @@ async function capture(id = activeTab) {
   return { png_base64: image.toPNG().toString('base64'), width, height, url: contents.getURL(), title: contents.getTitle() };
 }
 
+// Como el «seleccionar» de Claude Desktop: describe el elemento bajo un punto
+// (0–1 sobre la vista) para llevar su contexto al chat. Nunca lee valores de campos.
+const INSPECT = (x, y) => `(() => {
+  const el = document.elementFromPoint(${x} * innerWidth, ${y} * innerHeight);
+  if (!el || el === document.documentElement || el === document.body) return null;
+  const part = (node) => {
+    if (node.id) return '#' + CSS.escape(node.id);
+    const tag = node.tagName.toLowerCase();
+    const same = node.parentElement ? [...node.parentElement.children].filter((child) => child.tagName === node.tagName) : [];
+    return same.length > 1 ? tag + ':nth-of-type(' + (same.indexOf(node) + 1) + ')' : tag;
+  };
+  const path = [];
+  for (let node = el; node && node.nodeType === 1 && path.length < 5; node = node.parentElement) {
+    path.unshift(part(node));
+    if (node.id) break;
+  }
+  const link = el.closest('a[href]');
+  const r = el.getBoundingClientRect();
+  return {
+    tag: el.tagName.toLowerCase(),
+    id: el.id || '',
+    classes: String(el.getAttribute('class') || '').trim().split(/\\s+/).filter(Boolean).slice(0, 6),
+    selector: path.join(' > '),
+    role: el.getAttribute('role') || '',
+    label: String(el.getAttribute('aria-label') || el.getAttribute('alt') || el.getAttribute('title') || '').slice(0, 120),
+    text: String(el.innerText || '').trim().replace(/\\s+/g, ' ').slice(0, 200),
+    href: link ? String(link.href).slice(0, 300) : '',
+    box: { x: r.left / innerWidth, y: r.top / innerHeight, width: r.width / innerWidth, height: r.height / innerHeight },
+  };
+})()`;
+
+async function inspect(x, y, id = activeTab) {
+  const contents = tabContents(tabs.get(id));
+  if (!contents) throw browserError('No hay ninguna página abierta para inspeccionar', 'NO_PAGE');
+  const point = [Number(x), Number(y)];
+  if (!point.every((value) => Number.isFinite(value) && value >= 0 && value <= 1)) throw new Error('Punto no válido');
+  return contents.executeJavaScriptInIsolatedWorld(1002, [{ code: INSPECT(...point) }], true);
+}
+
 async function observeAfter(contents) {
   await settle(contents);
   return snapshot(contents, 0, RESULT_BUDGET - 400);
@@ -821,6 +1097,7 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId 
     }
   }
   acquireAgent(sessionId);
+  const mark = { console: consoleSeq, net: netSeq };
   let tab = tabs.get(AGENT_TAB);
   if (tab && tab.userControl) throw userControlError();
   await waitForHumanIdle(name, tab);
@@ -865,11 +1142,21 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId 
       requests: [...netLog.values()].map((item) => `${item.status ?? '·'} ${item.method || '·'}${item.type ? ` ${item.type}` : ''} ${item.url}${item.error ? ` (falló: ${item.error})` : ''}`),
     });
   }
+  if (name === 'web_wait') return waitFor(contents, params);
+  if (name === 'web_scroll') return scrollPage(contents, params);
   const input = { contents, expected: approvedContext || await approvalContext(contents), sent: false };
+  if (name === 'web_hover') {
+    const point = await locate(contents, params.ref);
+    await send(input, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(point.x), y: Math.round(point.y) });
+    return { hovered: String(params.ref), page: await observeAfter(contents) };
+  }
   if (name === 'web_click') {
     await clickAt(input, await locate(contents, params.ref));
-    return { clicked: String(params.ref), page: await observeAfter(contents) };
+    return { clicked: String(params.ref), page: await observeAfter(contents), ...pageReported(mark) };
   }
+  if (name === 'web_select') return { ...await selectOptions(input, params), ...pageReported(mark) };
+  if (name === 'web_check') return { ...await setChecked(input, params), ...pageReported(mark) };
+  if (name === 'web_fill') return { ...await fillFields(input, params), ...pageReported(mark) };
   if (name === 'web_type') {
     const text = String(params.text ?? '');
     if (text.length > 5000) throw new Error('El texto excede 5000 caracteres');
@@ -878,14 +1165,11 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId 
     await clickAt(input, target);
     if (params.clear === true) {
       await assertInteraction(input);
-      await contents.executeJavaScript(`(() => {
-        const el = document.querySelector('[data-antares-ref="${String(params.ref).replace(/[^0-9]/g, '')}"]');
-        if (el && 'select' in el) el.select(); else document.execCommand('selectAll');
-      })()`, true);
+      await contents.executeJavaScript(selectAllScript(refId(params.ref)), true);
     }
     await send(input, 'Input.insertText', { text });
     if (params.submit === true) await pressCombo(input, 'enter');
-    return { typed: text.length, page: await observeAfter(contents) };
+    return { typed: text.length, page: await observeAfter(contents), ...pageReported(mark) };
   }
   if (name === 'web_key') {
     const keys = String(params.keys || '').trim();
@@ -905,10 +1189,188 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId 
       await pressCombo(input, combo);
       await delay(80);
     }
-    return { pressed: keys, page: await observeAfter(contents) };
+    return { pressed: keys, page: await observeAfter(contents), ...pageReported(mark) };
   }
-  if (name === 'web_upload') return uploadFile(input, params.ref, String(params.path || '').trim());
+  if (name === 'web_upload') return { ...await uploadFile(input, params.ref, String(params.path || '').trim()), ...pageReported(mark) };
   throw new Error(`Herramienta nativa no disponible: ${name}`);
+}
+
+// Selecciona todo el contenido del campo de la ref, también dentro de un marco o un shadow root.
+function selectAllScript(id) {
+  return `(() => {
+    ${DEEP_JS}
+    const found = byRef('${id}');
+    const el = found && found.el;
+    if (el && 'select' in el) el.select();
+    else ((found && found.root.execCommand ? found.root : document)).execCommand('selectAll');
+  })()`;
+}
+
+async function waitFor(contents, params) {
+  const text = String(params.text || '').toLowerCase();
+  const gone = String(params.gone || '').toLowerCase();
+  const url = String(params.url || '');
+  if (!text && !gone && !url) throw new Error('Indica text, gone o url');
+  const timeout = Math.min(WAIT_MAX_MS, Math.max(WAIT_STEP_MS, Number(params.timeout_ms) || WAIT_DEFAULT_MS));
+  const check = `(() => {
+    const body = (document.body ? document.body.innerText : '').toLowerCase();
+    return { text: !${JSON.stringify(text)} || body.includes(${JSON.stringify(text)}),
+      gone: !${JSON.stringify(gone)} || !body.includes(${JSON.stringify(gone)}),
+      url: !${JSON.stringify(url)} || location.href.includes(${JSON.stringify(url)}) };
+  })()`;
+  let met = false;
+  let waited = 0;
+  for (;;) {
+    // Una navegación en curso rechaza el script: cuenta como condición aún no cumplida.
+    const state = await contents.executeJavaScript(check, true).catch(() => null);
+    met = !!(state && state.text && state.gone && state.url);
+    if (met || waited >= timeout) break;
+    await delay(WAIT_STEP_MS);
+    waited += WAIT_STEP_MS;
+  }
+  return { met, waited_ms: waited, ...(met ? {} : { note: `La condición no se cumplió en ${timeout} ms; no la des por hecha` }),
+    page: await observeAfter(contents) };
+}
+
+async function scrollPage(contents, params) {
+  const id = refId(params.ref);
+  const pages = Math.min(10, Math.max(0.25, Number(params.pages) || 1)) * (params.direction === 'up' ? -1 : 1);
+  const moved = await contents.executeJavaScript(`(() => {
+    ${id ? refGuard(contents) : ''}
+    ${DEEP_JS}
+    const found = ${id ? `byRef('${id}')` : 'null'};
+    if (${JSON.stringify(!!id)} && !found) return null;
+    const box = found ? found.el : (document.scrollingElement || document.documentElement);
+    const before = box.scrollTop;
+    box.scrollBy({ top: Math.round((found ? box.clientHeight : innerHeight) * ${pages}), behavior: 'instant' });
+    return { moved: Math.round(box.scrollTop - before), at_end: Math.ceil(box.scrollTop + box.clientHeight) >= box.scrollHeight,
+      at_start: box.scrollTop <= 0 };
+  })()`, true);
+  assertSameDocument(moved);
+  if (!moved) throw new Error('El elemento ya no está en la página; vuelve a leerla con web_read');
+  return { scrolled: moved.moved, at_end: moved.at_end, at_start: moved.at_start,
+    ...(moved.moved === 0 ? { note: 'No se desplazó: ya estás en el borde o el contenedor no tiene desplazamiento propio' } : {}),
+    page: await observeAfter(contents) };
+}
+
+async function selectOptions(input, params) {
+  const values = Array.isArray(params.values) ? params.values.map((value) => String(value)).slice(0, 50) : [];
+  if (!values.length) throw new Error('Indica las opciones a elegir');
+  const id = refId(params.ref);
+  await locate(input.contents, params.ref);
+  await assertInteraction(input);
+  input.sent = true;
+  const picked = await input.contents.executeJavaScript(`(() => {
+    ${refGuard(input.contents)}
+    ${DEEP_JS}
+    const found = byRef('${id}');
+    if (!found) return null;
+    const el = found.el;
+    if (el.localName !== 'select') return { error: 'not_select' };
+    const wanted = ${JSON.stringify(values)}.map((value) => value.trim().toLowerCase());
+    const options = [...el.options];
+    const chosen = options.filter((option) => wanted.includes(option.value.trim().toLowerCase())
+      || wanted.includes(option.text.trim().toLowerCase()));
+    const available = options.slice(0, 30).map((option) => option.text.trim());
+    if (!chosen.length) return { error: 'missing', available };
+    if (!el.multiple && wanted.length > 1) return { error: 'single', available };
+    if (el.disabled) return { error: 'disabled', available };
+    options.forEach((option) => { option.selected = chosen.includes(option) && (el.multiple || option === chosen[0]); });
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return { selected: options.filter((option) => option.selected).map((option) => option.text.trim()) };
+  })()`, true);
+  assertSameDocument(picked);
+  if (!picked) throw new Error('El elemento ya no está en la página; vuelve a leerla con web_read');
+  if (picked.error === 'not_select') throw new Error('El elemento no es un desplegable nativo; ábrelo con web_click y elige la opción');
+  if (picked.error === 'disabled') throw new Error('El desplegable está deshabilitado');
+  if (picked.error) {
+    throw new Error(`${picked.error === 'single' ? 'El desplegable admite una sola opción' : 'Ninguna opción coincide'}; `
+      + `opciones disponibles: ${picked.available.join(' | ')}`);
+  }
+  return { ref: id, selected: picked.selected, page: await observeAfter(input.contents) };
+}
+
+async function setChecked(input, params) {
+  const want = params.checked === true;
+  const target = await locate(input.contents, params.ref);
+  if (target.checked === null || target.checked === undefined) {
+    throw new Error('El elemento no es una casilla, un interruptor ni una opción de radio');
+  }
+  if (target.checked !== want) await clickAt(input, target);
+  await settle(input.contents);
+  let after = null;
+  try { after = await locate(input.contents, params.ref); } catch {}
+  const checked = after ? after.checked : null;
+  return { ref: refId(params.ref), checked, changed: checked !== null && checked !== target.checked,
+    ...(checked === want ? {} : { note: 'El estado no quedó como pediste; vuelve a leer la página antes de seguir' }),
+    page: await snapshot(input.contents, 0, RESULT_BUDGET - 400) };
+}
+
+async function fillFields(input, params) {
+  const fields = Array.isArray(params.fields) ? params.fields : [];
+  if (!fields.length || fields.length > MAX_FILL_FIELDS) throw new Error(`Indica entre 1 y ${MAX_FILL_FIELDS} campos`);
+  const ids = fields.map((field) => refId(field && field.ref));
+  if (ids.some((id) => !id) || new Set(ids).size !== ids.length) throw new Error('Cada campo necesita una ref distinta de web_read');
+  const texts = fields.map((field) => String(field.text ?? ''));
+  if (texts.reduce((total, text) => total + text.length, 0) > MAX_FILL_TEXT) {
+    throw new Error(`El texto de los campos excede ${MAX_FILL_TEXT} caracteres`);
+  }
+  // Se comprueban todos los campos antes de escribir el primero.
+  const kinds = await input.contents.executeJavaScript(`(() => {
+    ${refGuard(input.contents)}
+    ${DEEP_JS}
+    const secret = ${SECRET_FIELD_JS};
+    return ${JSON.stringify(ids)}.map((id) => {
+      const found = byRef(id);
+      if (!found) return 'missing';
+      const el = found.el;
+      if (secret(el)) return 'secret';
+      if (el.disabled || el.readOnly) return 'readonly';
+      const text = el.localName === 'textarea' || el.isContentEditable
+        || (el.localName === 'input' && ['text', 'search', 'email', 'tel', 'url', 'number', ''].includes(el.type));
+      return text ? 'text' : 'other';
+    });
+  })()`, true);
+  assertSameDocument(kinds);
+  const problem = kinds.findIndex((kind) => kind !== 'text');
+  if (problem >= 0) {
+    const ref = ids[problem];
+    if (kinds[problem] === 'secret') throw browserError(SECRET_FIELD_ERROR, 'SECRET_FIELD');
+    throw new Error(kinds[problem] === 'missing' ? `El campo ${ref} ya no está en la página; vuelve a leerla con web_read`
+      : kinds[problem] === 'readonly' ? `El campo ${ref} está deshabilitado o es de solo lectura`
+        : `La referencia ${ref} no es un campo de texto; usa web_select o web_check`);
+  }
+  let written = 0;
+  try {
+    for (let index = 0; index < ids.length; index += 1) {
+      await clickAt(input, await locate(input.contents, ids[index]));
+      await assertInteraction(input);
+      await input.contents.executeJavaScript(selectAllScript(ids[index]), true);
+      await send(input, 'Input.insertText', { text: texts[index] });
+      written += 1;
+    }
+  } catch (error) {
+    if (written) error.message += ` (ya se escribieron ${written} de ${ids.length} campos; vuelve a leer la página antes de seguir)`;
+    throw error;
+  }
+  const filledValues = await input.contents.executeJavaScript(`(() => {
+    ${DEEP_JS}
+    return ${JSON.stringify(ids)}.map((id) => {
+      const found = byRef(id);
+      if (!found) return null;
+      return found.el.isContentEditable ? found.el.innerText : found.el.value;
+    });
+  })()`, true);
+  const confirmed = [];
+  const unconfirmed = [];
+  ids.forEach((id, index) => {
+    const value = Array.isArray(filledValues) ? filledValues[index] : null;
+    (typeof value === 'string' && value.trim() === texts[index].trim() ? confirmed : unconfirmed).push(id);
+  });
+  return { filled: written, confirmed, ...(unconfirmed.length ? { unconfirmed,
+    note: 'Estos campos no muestran el texto escrito (la página pudo darle formato o rechazarlo); revísalos con web_read' } : {}),
+  page: await observeAfter(input.contents) };
 }
 
 // El archivo ya pasó la verificación de grants del backend; aquí solo se
@@ -948,8 +1410,10 @@ function close() {
   host = null;
   docked = null;
   activeTab = AGENT_TAB;
+  order = [AGENT_TAB, USER_TAB];
+  tabSeq = 0;
   agentOwner = null;
   pendingMouseInputs.clear();
 }
 
-module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, state, dock, capture, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, clampBounds, siteUserAgent, approvalContext };
+module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, state, dock, capture, inspect, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };

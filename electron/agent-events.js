@@ -232,9 +232,11 @@ async function claimDelegation(record) {
 async function delegationQueued(parentId, childId) {
   try {
     return await shared.state.harness.commit(async (tx) => {
-      const parent = (await tx.doc(shared.state.SessionsDoc)).sessions[parentId];
+      const doc = await tx.doc(shared.state.SessionsDoc);
+      const parent = doc.sessions[parentId];
       if (!parent || typeof tx.submissionByRequest !== 'function') return false;
-      const submission = await tx.submissionByRequest(parent.conversationId, `delegate:${childId}:result`);
+      const submission = await tx.submissionByRequest(parent.conversationId,
+        doc.sessions[childId]?.delegation?.result_request || `delegate:${childId}:result`);
       return !!submission && ['queued', 'placed', 'done'].includes(submission.status);
     }, ctx());
   } catch {
@@ -469,9 +471,11 @@ async function finish(record, outcome) {
   let result = outcome.result;
   const actual = await shared.state.harness.commit(async (tx) => {
     if (record.kind === 'delegation' && outcome.finalStatus === 'delivered') {
-      const parent = (await tx.doc(shared.state.SessionsDoc)).sessions[record.session_id];
+      const doc = await tx.doc(shared.state.SessionsDoc);
+      const parent = doc.sessions[record.session_id];
       if (parent && typeof tx.submissionByRequest === 'function') {
-        const submission = await tx.submissionByRequest(parent.conversationId, `delegate:${record.params.session_id}:result`);
+        const submission = await tx.submissionByRequest(parent.conversationId,
+          doc.sessions[record.params.session_id]?.delegation?.result_request || `delegate:${record.params.session_id}:result`);
         if (submission && ['queued', 'placed', 'done'].includes(submission.status)) {
           result = { kind: 'delegation', event: 'delivered', session_id: record.params.session_id,
             already_delivered: true, result_queued: true, note: 'El resultado ya está encolado en esta conversación.' };
