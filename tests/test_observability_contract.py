@@ -59,6 +59,20 @@ def test_redaction_covers_secret_shapes() -> None:
         ("Authorization: Bearer tok123", "tok123"),
         ("Bearer eyJhbGciOiJIUzI1NiJ9", "eyJhbGciOiJIUzI1NiJ9"),
         ("jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.dbsig", "eyJzdWIiOiIxIn0"),
+        ("error con sk-proj-0123456789abcdefghijklmnopqrstuv", "sk-proj-0123456789abcdefghijklmnopqrstuv"),
+        ("error con ghp_0123456789abcdefghijklmnopqrstuvwxyz", "ghp_0123456789abcdefghijklmnopqrstuvwxyz"),
+        (
+            "error con github_pat_0123456789ABCDEFGHIJ_0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghij",
+            "github_pat_0123456789ABCDEFGHIJ_0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghij",
+        ),
+        ("error con AKIAIOSFODNN7EXAMPLE", "AKIAIOSFODNN7EXAMPLE"),
+        (
+            "error con xox" "b-123456789012-123456789012-abcdefghijklmnopqrst",
+            "xox" "b-123456789012-123456789012-abcdefghijklmnopqrst",
+        ),
+        ("error con AIza0123456789abcdefghijklmnopqrstuvwxy", "AIza0123456789abcdefghijklmnopqrstuvwxy"),
+        ("error con 1//0abcdefghijklmnopqrstuvwxyz123456", "1//0abcdefghijklmnopqrstuvwxyz123456"),
+        ("error con ya29.0123456789abcdefghijklmnopqrstuvwxyz", "ya29.0123456789abcdefghijklmnopqrstuvwxyz"),
     ]
     for raw, secret in cases:
         assert secret not in redact_text(raw), raw
