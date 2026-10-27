@@ -27,10 +27,15 @@ function run() {
     .map((entry) => entry.trim().replace(/['"]/g, ''))
     .filter(Boolean);
 
-  for (const permission of ['media', 'clipboard-read', 'clipboard-sanitized-write']) {
+  for (const permission of [
+    'media',
+    'display-capture',
+    'clipboard-read',
+    'clipboard-sanitized-write',
+  ]) {
     assert(allowed.includes(permission), `allowlist includes ${permission}`);
   }
-  assert(allowed.length === 3, 'allowlist stays minimal (deny-by-default, no extra grants)');
+  assert(allowed.length === 4, 'allowlist stays minimal (deny-by-default, no extra grants)');
 
   assert(
     /callback\(allowedPermissions\.has\(permission\)\)/.test(source),

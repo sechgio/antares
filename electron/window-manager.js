@@ -66,8 +66,14 @@ function createWindow(isDev) {
 
   // Deny-by-default en la sesión principal: sin handler, Electron aprueba
   // todo (micrófono incluido) ante cualquier renderer comprometido. Solo se
-  // concede lo que la UI usa: micrófono del editor y portapapeles del lienzo.
-  const allowedPermissions = new Set(['media', 'clipboard-read', 'clipboard-sanitized-write']);
+  // concede lo que la UI usa: micrófono y captura de pantalla del editor, y
+  // portapapeles del lienzo.
+  const allowedPermissions = new Set([
+    'media',
+    'display-capture',
+    'clipboard-read',
+    'clipboard-sanitized-write',
+  ]);
   mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(allowedPermissions.has(permission));
   });
