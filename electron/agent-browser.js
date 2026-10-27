@@ -835,6 +835,45 @@ async function capture(id = activeTab) {
   return { png_base64: image.toPNG().toString('base64'), width, height, url: contents.getURL(), title: contents.getTitle() };
 }
 
+// Como el «seleccionar» de Claude Desktop: describe el elemento bajo un punto
+// (0–1 sobre la vista) para llevar su contexto al chat. Nunca lee valores de campos.
+const INSPECT = (x, y) => `(() => {
+  const el = document.elementFromPoint(${x} * innerWidth, ${y} * innerHeight);
+  if (!el || el === document.documentElement || el === document.body) return null;
+  const part = (node) => {
+    if (node.id) return '#' + CSS.escape(node.id);
+    const tag = node.tagName.toLowerCase();
+    const same = node.parentElement ? [...node.parentElement.children].filter((child) => child.tagName === node.tagName) : [];
+    return same.length > 1 ? tag + ':nth-of-type(' + (same.indexOf(node) + 1) + ')' : tag;
+  };
+  const path = [];
+  for (let node = el; node && node.nodeType === 1 && path.length < 5; node = node.parentElement) {
+    path.unshift(part(node));
+    if (node.id) break;
+  }
+  const link = el.closest('a[href]');
+  const r = el.getBoundingClientRect();
+  return {
+    tag: el.tagName.toLowerCase(),
+    id: el.id || '',
+    classes: String(el.getAttribute('class') || '').trim().split(/\\s+/).filter(Boolean).slice(0, 6),
+    selector: path.join(' > '),
+    role: el.getAttribute('role') || '',
+    label: String(el.getAttribute('aria-label') || el.getAttribute('alt') || el.getAttribute('title') || '').slice(0, 120),
+    text: String(el.innerText || '').trim().replace(/\\s+/g, ' ').slice(0, 200),
+    href: link ? String(link.href).slice(0, 300) : '',
+    box: { x: r.left / innerWidth, y: r.top / innerHeight, width: r.width / innerWidth, height: r.height / innerHeight },
+  };
+})()`;
+
+async function inspect(x, y, id = activeTab) {
+  const contents = tabContents(tabs.get(id));
+  if (!contents) throw browserError('No hay ninguna página abierta para inspeccionar', 'NO_PAGE');
+  const point = [Number(x), Number(y)];
+  if (!point.every((value) => Number.isFinite(value) && value >= 0 && value <= 1)) throw new Error('Punto no válido');
+  return contents.executeJavaScriptInIsolatedWorld(1002, [{ code: INSPECT(...point) }], true);
+}
+
 async function observeAfter(contents) {
   await settle(contents);
   return snapshot(contents, 0, RESULT_BUDGET - 400);
@@ -982,4 +1021,4 @@ function close() {
   pendingMouseInputs.clear();
 }
 
-module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, state, dock, capture, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };
+module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, state, dock, capture, inspect, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };

@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowUpRight, ChevronDown, Circle, Minus, MousePointer2, Pencil, Square, Type, X } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, ChevronLeft, ChevronRight, Circle, Loader2, Minus, MousePointer2, Pencil, Square, Type, X } from 'lucide-react';
+import type { AgentBrowserElement } from '../../api/agentApi';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
+import type { AnnotationPage, AnnotationSource } from './annotationSource';
 
 type Point = { x: number; y: number };
 type ShapeKind = 'line' | 'arrow' | 'rect' | 'ellipse' | 'step';
@@ -10,7 +12,8 @@ export type Mark =
   | { kind: 'pen'; color: string; width: number; points: Point[] }
   | { kind: 'line' | 'arrow' | 'rect' | 'ellipse'; color: string; width: number; from: Point; to: Point }
   | { kind: 'step'; color: string; width: number; at: Point; n: number }
-  | { kind: 'text'; color: string; width: number; at: Point; text: string };
+  | { kind: 'text'; color: string; width: number; at: Point; text: string }
+  | { kind: 'pick'; color: string; width: number; from: Point; to: Point; n: number; info: AgentBrowserElement };
 
 const SHAPES: { id: ShapeKind; label: string; icon: ReactElement }[] = [
   { id: 'line', label: 'Línea', icon: <Minus size={14} className="-rotate-45" /> },
@@ -29,6 +32,21 @@ const COLORS = [
   { value: '#111111', label: 'Negro' },
 ];
 const WIDTHS = [{ value: 2, label: 'Fino' }, { value: 4, label: 'Medio' }, { value: 8, label: 'Grueso' }];
+const PICK_COLOR = '#3b82f6';
+
+const ink = (color: string) => (['#ffffff', '#f59e0b'].includes(color) ? '#111111' : '#ffffff');
+
+function badge(ctx: CanvasRenderingContext2D, color: string, n: number, at: Point, unit: number) {
+  ctx.beginPath();
+  ctx.arc(at.x, at.y, 12 * unit, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.fillStyle = ink(color);
+  ctx.font = `600 ${13 * unit}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(n), at.x, at.y + unit);
+}
 
 // Las medidas viven en píxeles de la captura; `unit` las escala para que el trazo
 // tenga el mismo grosor en pantalla sea cual sea la densidad de la captura.
@@ -68,18 +86,28 @@ export function drawMark(ctx: CanvasRenderingContext2D, mark: Mark, unit: number
       Math.abs(mark.to.x - mark.from.x) / 2, Math.abs(mark.to.y - mark.from.y) / 2, 0, 0, Math.PI * 2);
     ctx.stroke();
   } else if (mark.kind === 'step') {
-    const r = 12 * unit;
-    ctx.beginPath();
-    ctx.arc(mark.at.x, mark.at.y, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = mark.color === '#ffffff' ? '#111111' : '#ffffff';
-    ctx.font = `600 ${13 * unit}px system-ui, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(String(mark.n), mark.at.x, mark.at.y + unit);
+    badge(ctx, mark.color, mark.n, mark.at, unit);
+  } else if (mark.kind === 'pick') {
+    const box = { x: mark.from.x, y: mark.from.y, w: mark.to.x - mark.from.x, h: mark.to.y - mark.from.y };
+    ctx.globalAlpha = 0.12;
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+    ctx.globalAlpha = 1;
+    ctx.setLineDash?.([6 * unit, 4 * unit]);
+    ctx.strokeRect(box.x, box.y, box.w, box.h);
+    ctx.setLineDash?.([]);
+    badge(ctx, mark.color, mark.n, { x: Math.max(12 * unit, box.x), y: Math.max(12 * unit, box.y) }, unit);
   } else if (mark.kind === 'text') {
-    ctx.font = `600 ${(12 + mark.width * 2) * unit}px system-ui, sans-serif`;
+    // Burbuja como los comentarios de Claude Desktop: se lee sobre cualquier fondo.
+    const size = (12 + mark.width * 2) * unit;
+    ctx.font = `600 ${size}px system-ui, sans-serif`;
     ctx.textBaseline = 'top';
+    const pad = 6 * unit;
+    const textWidth = ctx.measureText?.(mark.text).width ?? mark.text.length * size * 0.6;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(mark.at.x - pad, mark.at.y - pad, textWidth + pad * 2, size + pad * 2, 6 * unit);
+    else ctx.rect(mark.at.x - pad, mark.at.y - pad, textWidth + pad * 2, size + pad * 2);
+    ctx.fill();
+    ctx.fillStyle = ink(mark.color);
     ctx.fillText(mark.text, mark.at.x, mark.at.y);
   }
   ctx.restore();
@@ -104,11 +132,24 @@ function moved(mark: Mark, dx: number, dy: number): Mark {
   return { ...mark, from: shift(mark.from), to: shift(mark.to) };
 }
 
+// Lo que el modelo no ve en la imagen: el elemento señalado y el texto escrito.
+export function annotationNotes(pages: Mark[][], multiPage: boolean) {
+  return pages.flatMap((marks, index) => marks.flatMap((mark) => {
+    const where = multiPage ? ` (pág. ${index + 1})` : '';
+    if (mark.kind === 'text') return [`Nota${where}: «${mark.text}»`];
+    if (mark.kind !== 'pick') return [];
+    const { info } = mark;
+    const name = `<${info.tag}${info.id ? `#${info.id}` : ''}${info.classes.length ? `.${info.classes.join('.')}` : ''}>`;
+    const said = info.text || info.label;
+    return [`[${mark.n}]${where} ${name}${said ? ` «${said.slice(0, 120)}»` : ''} — ${info.selector}${info.href ? ` → ${info.href}` : ''}`];
+  }));
+}
+
 function Menu({ label, trigger, children }: { label: string; trigger: ReactElement; children: (close: () => void) => ReactElement }) {
   const menu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({ estimatedWidth: 160, estimatedHeight: 200, direction: 'up', align: 'start' });
   return <>
     <button ref={menu.triggerRef} type="button" title={label} aria-label={label} aria-haspopup="menu" aria-expanded={menu.isOpen}
-      onClick={menu.toggle} className="flex h-8 items-center gap-1 rounded-lg px-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]">
+      onClick={menu.toggle} className="flex h-7 items-center gap-0.5 rounded-md px-1 text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]">
       {trigger}
       <ChevronDown size={12} aria-hidden="true" />
     </button>
@@ -122,11 +163,19 @@ function Menu({ label, trigger, children }: { label: string; trigger: ReactEleme
   </>;
 }
 
-export default function BrowserAnnotator({ image, width, height, onSubmit, onClose }: {
-  image: string;
-  width: number;
-  height: number;
-  onSubmit: (file: File) => void;
+function loadImage(base64: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('No se pudo preparar la página'));
+    image.src = `data:image/png;base64,${base64}`;
+  });
+}
+
+export default function BrowserAnnotator({ source, onPick, onSubmit, onClose }: {
+  source: AnnotationSource;
+  onPick?: (x: number, y: number) => Promise<AgentBrowserElement | null>;
+  onSubmit: (result: { files: File[]; notes: string[] }) => void;
   onClose: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -135,15 +184,37 @@ export default function BrowserAnnotator({ image, width, height, onSubmit, onClo
   const [shape, setShape] = useState<ShapeKind>('rect');
   const [color, setColor] = useState(COLORS[0].value);
   const [stroke, setStroke] = useState(WIDTHS[1].value);
-  const [marks, setMarks] = useState<Mark[]>([]);
+  const [index, setIndex] = useState(0);
+  const [pages, setPages] = useState<Record<number, AnnotationPage>>({});
+  const [pageMarks, setPageMarks] = useState<Mark[][]>([]);
   const [draft, setDraft] = useState<Mark | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [typing, setTyping] = useState<{ at: Point; css: Point; text: string } | null>(null);
+  const [sending, setSending] = useState(false);
+  const [hover, setHover] = useState<{ from: Point; to: Point } | null>(null);
   const drag = useRef<{ start: Point; last: Point } | null>(null);
+  // Una sola consulta en vuelo: el resaltado sigue al puntero sin saturar el IPC.
+  const probe = useRef<{ busy: boolean; next: Point | null; left: boolean }>({ busy: false, next: null, left: false });
+  const page = pages[index];
+  const width = page?.width ?? 1;
+  const height = page?.height ?? 1;
+  const marks = pageMarks[index] ?? [];
+  const setMarks = (update: (prev: Mark[]) => Mark[]) => setPageMarks((prev) => {
+    const next = [...prev];
+    next[index] = update(prev[index] ?? []);
+    return next;
+  });
   const unit = () => {
     const canvas = canvasRef.current;
     return canvas && canvas.clientWidth ? width / canvas.clientWidth : 1;
   };
+
+  useEffect(() => {
+    if (pages[index]) return undefined;
+    let alive = true;
+    void source.page(index).then((next) => { if (alive) setPages((prev) => ({ ...prev, [index]: next })); }).catch(() => {});
+    return () => { alive = false; };
+  }, [index, pages, source]);
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -151,8 +222,15 @@ export default function BrowserAnnotator({ image, width, height, onSubmit, onClo
     if (!canvas || !ctx) return;
     ctx.clearRect(0, 0, width, height);
     const u = unit();
-    marks.forEach((mark, index) => drawMark(ctx, mark, u, index === selected));
+    marks.forEach((mark, i) => drawMark(ctx, mark, u, i === selected));
     if (draft) drawMark(ctx, draft, u);
+    if (hover && tool === 'select') {
+      ctx.save();
+      ctx.strokeStyle = PICK_COLOR;
+      ctx.lineWidth = 1.5 * u;
+      ctx.strokeRect(hover.from.x, hover.from.y, hover.to.x - hover.from.x, hover.to.y - hover.from.y);
+      ctx.restore();
+    }
   });
 
   useEffect(() => {
@@ -170,7 +248,7 @@ export default function BrowserAnnotator({ image, width, height, onSubmit, onClo
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, selected, typing]);
+  });
 
   const point = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -180,18 +258,58 @@ export default function BrowserAnnotator({ image, width, height, onSubmit, onClo
     };
   };
 
+  const typed = () => (typing?.text.trim() ? { kind: 'text', color, width: stroke, at: typing.at, text: typing.text.trim() } as Mark : null);
+
   const commitText = () => {
-    if (typing?.text.trim()) setMarks((prev) => [...prev, { kind: 'text', color, width: stroke, at: typing.at, text: typing.text.trim() }]);
+    const mark = typed();
+    if (mark) setMarks((prev) => [...prev, mark]);
     setTyping(null);
   };
 
+  const goTo = (next: number) => {
+    commitText();
+    setSelected(null);
+    setIndex(Math.min(source.count - 1, Math.max(0, next)));
+  };
+
+  const area = (info: AgentBrowserElement) => ({
+    from: { x: info.box.x * width, y: info.box.y * height },
+    to: { x: (info.box.x + info.box.width) * width, y: (info.box.y + info.box.height) * height },
+  });
+
+  const pick = async (at: Point) => {
+    const info = await onPick?.(at.x / width, at.y / height).catch(() => null);
+    if (!info) return;
+    setMarks((prev) => prev.some((mark) => mark.kind === 'pick' && mark.info.selector === info.selector) ? prev : [...prev, {
+      kind: 'pick', color: PICK_COLOR, width: 2, info, n: prev.filter((mark) => mark.kind === 'pick').length + 1, ...area(info),
+    }]);
+  };
+
+  const highlight = (at: Point) => {
+    const state = probe.current;
+    state.next = at;
+    state.left = false;
+    if (state.busy || !onPick) return;
+    state.busy = true;
+    void (async () => {
+      while (state.next) {
+        const next = state.next;
+        state.next = null;
+        const info = await onPick(next.x / width, next.y / height).catch(() => null);
+        if (!state.left) setHover(info ? area(info) : null);
+      }
+      state.busy = false;
+    })();
+  };
+
   const down = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || !page) return;
+    // Sin esto, el mousedown posterior roba el foco a la nota recién abierta.
+    event.preventDefault();
     const { at, css } = point(event);
     if (tool === 'text') { commitText(); setTyping({ at, css, text: '' }); return; }
     if (tool === 'step') {
-      const n = marks.filter((mark) => mark.kind === 'step').length + 1;
-      setMarks((prev) => [...prev, { kind: 'step', color, width: stroke, at, n }]);
+      setMarks((prev) => [...prev, { kind: 'step', color, width: stroke, at, n: prev.filter((mark) => mark.kind === 'step').length + 1 }]);
       return;
     }
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -201,7 +319,10 @@ export default function BrowserAnnotator({ image, width, height, onSubmit, onClo
       const hit = marks.map((mark, i) => ({ box: bounds(mark, u), i }))
         .reverse().find(({ box }) => at.x >= box.left && at.x <= box.right && at.y >= box.top && at.y <= box.bottom);
       setSelected(hit ? hit.i : null);
-      if (!hit) drag.current = null;
+      if (!hit) {
+        drag.current = null;
+        void pick(at);
+      }
       return;
     }
     setDraft(tool === 'pen' ? { kind: 'pen', color, width: stroke, points: [at] } : { kind: tool, color, width: stroke, from: at, to: at });
@@ -209,8 +330,11 @@ export default function BrowserAnnotator({ image, width, height, onSubmit, onClo
 
   const move = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const state = drag.current;
-    if (!state) return;
     const { at } = point(event);
+    if (!state) {
+      if (tool === 'select' && page) highlight(at);
+      return;
+    }
     if (tool === 'select' && selected !== null) {
       const dx = at.x - state.last.x;
       const dy = at.y - state.last.y;
@@ -224,51 +348,74 @@ export default function BrowserAnnotator({ image, width, height, onSubmit, onClo
 
   const up = () => {
     drag.current = null;
-    if (draft) setMarks((prev) => [...prev, draft]);
+    // Un clic sin arrastre no deja trazos invisibles que luego tapen la selección.
+    const empty = !draft || (draft.kind === 'pen' ? draft.points.length < 2
+      : 'from' in draft && draft.from.x === draft.to.x && draft.from.y === draft.to.y);
+    if (draft && !empty) setMarks((prev) => [...prev, draft]);
     setDraft(null);
   };
 
-  const submit = () => {
-    const shot = shotRef.current;
-    const out = document.createElement('canvas');
-    out.width = width;
-    out.height = height;
-    const ctx = out.getContext('2d');
-    if (!ctx || !shot) return;
-    ctx.drawImage(shot, 0, 0, width, height);
-    const u = unit();
-    const all = typing?.text.trim() ? [...marks, { kind: 'text', color, width: stroke, at: typing.at, text: typing.text.trim() } as Mark] : marks;
-    all.forEach((mark) => drawMark(ctx, mark, u));
-    out.toBlob((blob) => {
-      if (blob) onSubmit(new File([blob], 'anotacion.png', { type: 'image/png' }));
-    }, 'image/png');
+  const submit = async () => {
+    const pending = typed();
+    const all = pageMarks.slice();
+    if (pending) all[index] = [...(all[index] ?? []), pending];
+    // Se envían las páginas anotadas; si no hay marcas, la página visible.
+    const chosen = Object.keys(pages).map(Number).filter((i) => all[i]?.length);
+    const targets = chosen.length ? chosen.sort((a, b) => a - b) : [index];
+    setSending(true);
+    try {
+      const files = await Promise.all(targets.map(async (i) => {
+        const target = pages[i];
+        const shot = i === index ? shotRef.current : await loadImage(target.png_base64);
+        const out = document.createElement('canvas');
+        out.width = target.width;
+        out.height = target.height;
+        const ctx = out.getContext('2d');
+        if (!ctx || !shot) throw new Error('No se pudo preparar la anotación');
+        ctx.drawImage(shot, 0, 0, target.width, target.height);
+        const u = canvasRef.current?.clientWidth ? target.width / canvasRef.current.clientWidth : 1;
+        (all[i] ?? []).forEach((mark) => drawMark(ctx, mark, u));
+        const blob = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, 'image/png'));
+        if (!blob) throw new Error('No se pudo preparar la anotación');
+        return new File([blob], source.count > 1 ? `anotacion-p${i + 1}.png` : 'anotacion.png', { type: 'image/png' });
+      }));
+      onSubmit({ files, notes: annotationNotes(targets.map((i) => all[i] ?? []), source.count > 1) });
+    } catch {
+      setSending(false);
+    }
   };
 
-  const button = (active: boolean) => `flex size-8 items-center justify-center rounded-lg transition-colors ${active
-    ? 'bg-[color-mix(in_srgb,var(--accent-primary)_18%,transparent)] text-[var(--accent-primary)] ring-1 ring-[var(--accent-primary)]'
+  const button = (active: boolean) => `flex size-7 items-center justify-center rounded-md transition-colors ${active
+    ? 'bg-[color-mix(in_srgb,var(--accent-primary)_28%,transparent)] text-[var(--text-primary)]'
     : 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]'}`;
   const current = SHAPES.find((item) => item.id === shape)!;
-  const cursor = tool === 'select' ? 'default' : tool === 'text' ? 'text' : 'crosshair';
+  const cursor = tool === 'select' ? (onPick ? 'pointer' : 'default') : tool === 'text' ? 'text' : 'crosshair';
+  const selectLabel = onPick ? 'Seleccionar un elemento' : 'Seleccionar';
 
   return (
-    <div role="region" aria-label="Anotar la página" className="absolute inset-0 z-10 overflow-hidden bg-[var(--bg-surface)]">
-      <img ref={shotRef} src={`data:image/png;base64,${image}`} alt="Captura de la página" className="pointer-events-none absolute inset-0 size-full object-fill" draggable={false} />
-      <canvas
-        ref={canvasRef}
-        data-testid="annotation-canvas"
-        width={width}
-        height={height}
-        className="absolute inset-0 size-full touch-none"
-        style={{ cursor }}
-        onPointerDown={down}
-        onPointerMove={move}
-        onPointerUp={up}
-        onPointerCancel={up}
-      />
+    <div role="region" aria-label="Anotar la página" className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-[var(--bg-surface)] [container-type:size]">
+      {page ? (
+        // La caja conserva la proporción de la página para que el puntero y el trazo coincidan.
+        <div className="relative" style={{ aspectRatio: `${width} / ${height}`, width: `min(100cqw, 100cqh * ${width / height})` }}>
+        <img ref={shotRef} src={`data:image/png;base64,${page.png_base64}`} alt={`Página de ${source.name}`} className="pointer-events-none absolute inset-0 size-full" draggable={false} />
+        <canvas
+          ref={canvasRef}
+          data-testid="annotation-canvas"
+          width={width}
+          height={height}
+          className="absolute inset-0 size-full touch-none"
+          style={{ cursor }}
+          onPointerDown={down}
+          onPointerMove={move}
+          onPointerUp={up}
+          onPointerCancel={up}
+          onPointerLeave={() => { probe.current.next = null; probe.current.left = true; setHover(null); }}
+        />
       {typing && (
         <input
           autoFocus
           aria-label="Texto de la anotación"
+          placeholder="Escribe una nota"
           value={typing.text}
           onChange={(event) => setTyping({ ...typing, text: event.target.value })}
           onBlur={commitText}
@@ -276,19 +423,33 @@ export default function BrowserAnnotator({ image, width, height, onSubmit, onClo
             if (event.key === 'Enter') { event.preventDefault(); commitText(); }
             if (event.key === 'Escape') { event.preventDefault(); setTyping(null); }
           }}
-          className="absolute min-w-[80px] border-none bg-transparent font-semibold outline-none"
-          style={{ left: typing.css.x, top: typing.css.y, color, fontSize: 12 + stroke * 2 }}
+          className="absolute min-w-[120px] rounded-md px-1.5 py-1 font-semibold outline-none placeholder:opacity-70"
+          style={{ left: typing.css.x - 6, top: typing.css.y - 6, background: color, color: ink(color), fontSize: 12 + stroke * 2 }}
         />
       )}
+        </div>
+      ) : (
+        <Loader2 size={18} className="animate-spin text-[var(--text-muted)]" aria-label="Cargando la página" />
+      )}
       <div role="toolbar" aria-label="Herramientas de anotación"
-        className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-1 shadow-[0_8px_24px_rgba(0,0,0,0.25)]">
-        <button type="button" title="Seleccionar" aria-label="Seleccionar" aria-pressed={tool === 'select'} className={button(tool === 'select')} onClick={() => setTool('select')}>
+        className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-1 shadow-[0_8px_24px_rgba(0,0,0,0.3)]">
+        {source.count > 1 && <>
+          <button type="button" aria-label="Página anterior" disabled={index === 0} className={`${button(false)} disabled:opacity-40`} onClick={() => goTo(index - 1)}>
+            <ChevronLeft size={15} />
+          </button>
+          <span className="min-w-[44px] text-center text-[12px] tabular-nums text-[var(--text-secondary)]">{index + 1} / {source.count}</span>
+          <button type="button" aria-label="Página siguiente" disabled={index === source.count - 1} className={`${button(false)} disabled:opacity-40`} onClick={() => goTo(index + 1)}>
+            <ChevronRight size={15} />
+          </button>
+          <span className="mx-1 h-5 w-px bg-[var(--border-medium)]" aria-hidden="true" />
+        </>}
+        <button type="button" title={selectLabel} aria-label={selectLabel} aria-pressed={tool === 'select'} className={button(tool === 'select')} onClick={() => setTool('select')}>
           <MousePointer2 size={15} />
         </button>
         <button type="button" title="Lápiz" aria-label="Lápiz" aria-pressed={tool === 'pen'} className={button(tool === 'pen')} onClick={() => setTool('pen')}>
           <Pencil size={15} />
         </button>
-        <div className={`flex items-center rounded-lg ${SHAPES.some((item) => item.id === tool) ? 'ring-1 ring-[var(--accent-primary)]' : ''}`}>
+        <div className={`flex items-center rounded-md ${SHAPES.some((item) => item.id === tool) ? 'bg-[color-mix(in_srgb,var(--accent-primary)_28%,transparent)]' : ''}`}>
           <button type="button" title={current.label} aria-label={current.label} aria-pressed={tool === shape} className={button(false)} onClick={() => setTool(shape)}>
             {current.icon}
           </button>
@@ -307,19 +468,17 @@ export default function BrowserAnnotator({ image, width, height, onSubmit, onClo
         <button type="button" title="Texto" aria-label="Texto" aria-pressed={tool === 'text'} className={button(tool === 'text')} onClick={() => setTool('text')}>
           <Type size={15} />
         </button>
-        <span className="mx-1 h-5 w-px bg-[var(--border-medium)]" aria-hidden="true" />
-        <Menu label="Color de tinta" trigger={<span className="size-4 rounded-full border border-[var(--border-medium)]" style={{ background: color }} />}>
-          {(close) => <div className="grid grid-cols-4 gap-1 p-1">
-            {COLORS.map((item) => (
-              <button key={item.value} type="button" role="menuitemradio" aria-checked={item.value === color} aria-label={item.label} title={item.label}
-                onClick={() => { setColor(item.value); close(); }}
-                className={`size-6 rounded-full border ${item.value === color ? 'ring-2 ring-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
-                style={{ background: item.value }} />
-            ))}
-          </div>}
-        </Menu>
-        <Menu label="Grosor del trazo" trigger={<span className="block w-5 rounded-full bg-current" style={{ height: Math.max(2, stroke / 2) }} />}>
-          {(close) => <>
+        <Menu label="Color y grosor" trigger={<span className="size-3.5 rounded-full border border-[var(--border-medium)]" style={{ background: color }} />}>
+          {(close) => <div className="w-[152px]">
+            <div className="grid grid-cols-4 gap-1 p-1">
+              {COLORS.map((item) => (
+                <button key={item.value} type="button" role="menuitemradio" aria-checked={item.value === color} aria-label={item.label} title={item.label}
+                  onClick={() => { setColor(item.value); close(); }}
+                  className={`size-6 rounded-full border ${item.value === color ? 'ring-2 ring-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
+                  style={{ background: item.value }} />
+              ))}
+            </div>
+            <div className="my-1 h-px bg-[var(--border-medium)]" />
             {WIDTHS.map((item) => (
               <button key={item.value} type="button" role="menuitemradio" aria-checked={item.value === stroke}
                 onClick={() => { setStroke(item.value); close(); }}
@@ -327,10 +486,11 @@ export default function BrowserAnnotator({ image, width, height, onSubmit, onClo
                 <span className="block w-6 rounded-full bg-current" style={{ height: Math.max(2, item.value / 2) }} />{item.label}
               </button>
             ))}
-          </>}
+          </div>}
         </Menu>
-        <button type="button" onClick={submit}
-          className="ml-1 h-8 rounded-lg bg-[var(--bg-input)] px-3 text-[13px] text-[var(--text-primary)] hover:bg-[var(--accent-primary)] hover:text-white">
+        <span className="mx-1 h-5 w-px bg-[var(--border-medium)]" aria-hidden="true" />
+        <button type="button" onClick={() => void submit()} disabled={!page || sending}
+          className="h-7 whitespace-nowrap rounded-md bg-[var(--text-primary)] px-2.5 text-[12.5px] font-medium text-[var(--bg-base)] transition-opacity hover:opacity-90 disabled:opacity-50">
           Agregar al chat
         </button>
         <button type="button" title="Cerrar la anotación" aria-label="Cerrar la anotación" className={button(false)} onClick={onClose}>

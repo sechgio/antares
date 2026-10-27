@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, ArrowRight, Bot, Globe, Hand, Loader2, Maximize2, Minimize2, MoreVertical, PenLine, Plus, RotateCw, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bot, FileUp, Globe, Hand, Loader2, Maximize2, Minimize2, MoreVertical, PenLine, Plus, RotateCw, X } from 'lucide-react';
 import { agentApi, type AgentBrowserState } from '../../api/agentApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import BrowserAnnotator from './BrowserAnnotator';
+import { ANNOTATABLE_FILES, fileSource, type AnnotationSource } from './annotationSource';
 
 const EMPTY: AgentBrowserState = {
   open: false, url: '', title: '', loading: false, can_go_back: false, can_go_forward: false, docked: false, user_control: false,
@@ -20,7 +21,7 @@ const MENU_ITEM = 'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-
 
 export default function AgentBrowserPanel({ onClose, onAnnotate }: {
   onClose: () => void;
-  onAnnotate?: (file: File, url: string) => void;
+  onAnnotate?: (files: File[], source: string, notes: string[]) => void;
 }) {
   const { addToast } = useToast();
   const [state, setState] = useState<AgentBrowserState>(EMPTY);
@@ -33,7 +34,8 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const addressRef = useRef<HTMLInputElement | null>(null);
-  const [shot, setShot] = useState<{ png_base64: string; width: number; height: number; url: string } | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [shot, setShot] = useState<{ source: AnnotationSource; web: boolean } | null>(null);
   const menu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
     align: 'end', estimatedWidth: 240, estimatedHeight: 100, stopEscapePropagation: true,
   });
@@ -146,13 +148,24 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
     try {
       const capture = await agentApi.agentBrowserCapture();
       annotatingRef.current = true;
-      setShot(capture);
+      setShot({ source: { name: capture.url, count: 1, page: async () => capture }, web: true });
       reportRef.current();
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo capturar la página'), type: 'error' });
     }
   };
 
+  const annotateFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const source = await fileSource(file);
+      annotatingRef.current = true;
+      setShot({ source, web: false });
+      reportRef.current();
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo abrir el archivo'), type: 'error' });
+    }
+  };
 
   const iconButton = 'flex size-6 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:pointer-events-none disabled:opacity-40';
 
@@ -306,6 +319,16 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
               {shot ? 'Dejar de anotar' : 'Anotar la página'}
             </button>
           )}
+          {onAnnotate && !shot && (
+            <button
+              type="button"
+              role="menuitem"
+              className={MENU_ITEM}
+              onClick={() => { menu.close(); fileRef.current?.click(); }}
+            >
+              <FileUp size={14} className="text-[var(--text-secondary)]" /> Anotar un archivo…
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -389,13 +412,20 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
         )}
         {shot && onAnnotate && (
           <BrowserAnnotator
-            image={shot.png_base64}
-            width={shot.width}
-            height={shot.height}
+            source={shot.source}
+            onPick={shot.web ? (x, y) => agentApi.agentBrowserInspect(x, y) : undefined}
             onClose={() => void annotate(false)}
-            onSubmit={(file) => { onAnnotate(file, shot.url); void annotate(false); }}
+            onSubmit={({ files, notes }) => { onAnnotate(files, shot.source.name, notes); void annotate(false); }}
           />
         )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept={ANNOTATABLE_FILES}
+          aria-label="Archivo para anotar"
+          className="hidden"
+          onChange={(event) => { void annotateFile(event.target.files?.[0]); event.target.value = ''; }}
+        />
       </div>
     </aside>
     </div>

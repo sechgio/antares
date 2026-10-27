@@ -145,6 +145,14 @@ async function tabsTest() {
   let agentClose = null;
   try { browser.closeTab('agent'); } catch (err) { agentClose = err; }
   assert(agentClose, 'la pestaña del agente no se puede cerrar');
+  let isolated = null;
+  agentPage.webContents.executeJavaScriptInIsolatedWorld = async (world, scripts) => { isolated = { world, code: scripts[0].code }; return { tag: 'a' }; };
+  const picked = await browser.inspect(0.5, 0.25);
+  assert(picked.tag === 'a' && isolated.world !== 0 && isolated.code.includes('elementFromPoint(0.5 * innerWidth, 0.25 * innerHeight)')
+    && !/\.value\b/.test(isolated.code), 'inspeccionar describe el elemento en un mundo aislado sin leer valores de campos');
+  let badPoint = null;
+  try { await browser.inspect(2, 0); } catch (err) { badPoint = err; }
+  assert(badPoint, 'inspeccionar rechaza puntos fuera de la página');
   for (let i = 0; i < 8; i++) browser.newTab();
   let capped = null;
   try { browser.newTab(); } catch (err) { capped = err; }
