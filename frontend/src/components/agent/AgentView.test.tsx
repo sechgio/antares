@@ -1305,6 +1305,8 @@ it('envía una sugerencia del composer creando una única conversación si no ha
   const create = vi.spyOn(agentApi, 'agentSessionCreate').mockReturnValue(created.promise);
   render(<AgentView />);
   const group = await screen.findByRole('group', { name: 'Sugerencias' });
+  expect(screen.getByText(/Cuéntame qué necesitas\. Puedo ayudarte/)).toBeVisible();
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveAttribute('placeholder', 'Cuéntame qué necesitas…');
   const buttons = within(group).getAllByRole('button');
   expect(buttons).toHaveLength(3);
   expect(within(group).getAllByRole('button', { hidden: true })).toHaveLength(3);

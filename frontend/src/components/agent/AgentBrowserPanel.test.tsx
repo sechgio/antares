@@ -24,7 +24,7 @@ it('coloca la página sobre su hueco, la retira al cerrarse y refleja lo que hac
   await waitFor(() => expect(call).toHaveBeenCalledWith('bounds', expect.objectContaining({ bounds: expect.objectContaining({ width: expect.any(Number) }) })));
   expect(screen.getByText('Aquí verás las páginas que abra el agente.')).toBeInTheDocument();
   const panel = screen.getByRole('complementary', { name: 'Navegador del agente' });
-  expect(panel).toHaveClass('rounded-lg', 'border');
+  expect(panel).toHaveClass('rounded-l-lg', 'border', 'border-r-0');
   for (const inset of ['mx-2.5', 'mb-2.5', 'rounded-xl', 'border']) {
     expect(screen.getByTestId('agent-browser-viewport')).not.toHaveClass(inset);
   }
@@ -33,9 +33,23 @@ it('coloca la página sobre su hueco, la retira al cerrarse y refleja lo que hac
   expect(screen.getByLabelText('Dirección del navegador del agente')).toHaveValue('https://es.wikipedia.org/wiki/Lima');
   expect(screen.getByLabelText('Atrás')).toBeEnabled();
   expect(screen.queryByText('Aquí verás las páginas que abra el agente.')).not.toBeInTheDocument();
+  expect(screen.queryByRole('progressbar', { name: 'Cargando la página' })).not.toBeInTheDocument();
+  await act(async () => { notify?.('agent.browser', { ...base, open: true, loading: true, url: 'https://es.wikipedia.org/wiki/Lima', reason: 'page' }); });
+  expect(screen.getByRole('progressbar', { name: 'Cargando la página' })).toBeInTheDocument();
 
   unmount();
   expect(call).toHaveBeenLastCalledWith('bounds', { bounds: null });
+});
+
+it('mantiene la página acoplada al cambiar el estado o perder el foco de la ventana', async () => {
+  let notify: ((method: string, params: unknown) => void) | null = null;
+  vi.spyOn(window.electronAPI, 'onNotify').mockImplementation((cb) => { notify = cb; return () => { notify = null; }; });
+  const call = vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue({ ...base, open: true, docked: false });
+  render(<AgentBrowserPanel onClose={vi.fn()} />);
+  await waitFor(() => expect(call).toHaveBeenCalledWith('bounds', expect.objectContaining({ bounds: expect.any(Object) })));
+  await act(async () => { notify?.('agent.browser', { ...base, open: true, docked: true, reason: 'page' }); });
+  await act(async () => { window.dispatchEvent(new Event('blur')); });
+  expect(call).not.toHaveBeenCalledWith('bounds', { bounds: null });
 });
 
 it('abre direcciones desde la barra y permite tomar y devolver el control', async () => {
@@ -100,8 +114,8 @@ it('abre y cierra pestañas del usuario con un tope', async () => {
   const call = vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue(empty);
   render(<AgentBrowserPanel onClose={vi.fn()} />);
   expect(await screen.findByText('Explorar la web')).toBeInTheDocument();
-  expect(screen.getByText('Escribe una URL para abrir un sitio.')).toBeInTheDocument();
-  expect(screen.getByLabelText('Dirección del navegador del agente')).toHaveAttribute('placeholder', 'Escribe una URL');
+  expect(screen.getByText('Busca algo o escribe una URL para abrir un sitio.')).toBeInTheDocument();
+  expect(screen.getByLabelText('Dirección del navegador del agente')).toHaveAttribute('placeholder', 'Busca o escribe una URL');
 
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Nueva pestaña' })); });
   expect(call).toHaveBeenCalledWith('new', {});

@@ -169,10 +169,32 @@ it('agrupa el trabajo de un turno en un solo bloque y deja la respuesta final fu
   render(<AssistantTurn messages={turn.messages} startedAt={turn.startedAt} />);
   expect(screen.getAllByText('Agente')).toHaveLength(1);
   expect(screen.getByText('Todo correcto.')).toBeVisible();
-  expect(screen.queryByText('Voy a leer los archivos.')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Leyó 3 archivos · 1 nota · 42 s' }));
   expect(screen.getByText('Voy a leer los archivos.')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Leyó 3 archivos · 1 nota · 42 s' }));
+  expect(screen.getAllByText('Voy a leer los archivos.')).toHaveLength(1);
   expect(screen.getByText('c.txt')).toBeVisible();
+});
+
+it('mantiene el último avance visible al empezar la respuesta sin duplicarlo al desplegar', () => {
+  const messages = [
+    { role: 'assistant' as const, content: 'Primero reviso los archivos.', ts: 1, tool_calls: [
+      { id: 'a', name: 'fs_read', params: { path: 'informe.txt' }, status: 'done' as const, gated: false },
+    ] },
+    { role: 'assistant' as const, content: 'Encontré dos ajustes.', ts: 2, tool_calls: [
+      { id: 'b', name: 'fs_read', params: { path: 'resumen.txt' }, status: 'done' as const, gated: false },
+    ] },
+  ];
+  const { rerender } = render(<AssistantTurn messages={[...messages, { role: 'assistant', content: 'Aquí está', partial: true, ts: 3 }]} />);
+  expect(screen.queryByText('Primero reviso los archivos.')).not.toBeInTheDocument();
+  expect(screen.getByText('Encontré dos ajustes.')).toBeVisible();
+  expect(screen.getByText(/Aquí está/)).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { expanded: false }));
+  expect(screen.getByText('Primero reviso los archivos.')).toBeVisible();
+  expect(screen.getAllByText('Encontré dos ajustes.')).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { expanded: true }));
+  rerender(<AssistantTurn messages={[...messages, { role: 'assistant', content: 'Aquí está el resumen.', ts: 4 }]} />);
+  expect(screen.getByText('Encontré dos ajustes.')).toBeVisible();
+  expect(screen.getByText('Aquí está el resumen.')).toBeVisible();
 });
 
 it.each([
