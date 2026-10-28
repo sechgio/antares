@@ -52,7 +52,29 @@ type Block =
   | { kind: 'h'; level: number; text: string }
   | { kind: 'ul' | 'ol'; items: string[] }
   | { kind: 'code'; text: string; lang?: string; open?: true }
+  | { kind: 'table'; headers: string[]; align: ('left' | 'center' | 'right')[]; rows: string[][] }
   | { kind: 'quote'; text: string };
+
+function tableCells(line: string): string[] {
+  const text = line.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '');
+  const cells: string[] = [];
+  let cell = '';
+  let fence = '';
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === '\\' && text[i + 1] === '|') { cell += '|'; i += 1; }
+    else if (text[i] === '`') {
+      let end = i + 1;
+      while (text[end] === '`') end += 1;
+      const run = text.slice(i, end);
+      if (!fence) fence = run;
+      else if (run === fence) fence = '';
+      cell += run;
+      i += run.length - 1;
+    } else if (text[i] === '|' && !fence) { cells.push(cell.trim()); cell = ''; }
+    else cell += text[i];
+  }
+  return [...cells, cell.trim()];
+}
 
 export function parseBlocks(source: string): Block[] {
   const blocks: Block[] = [];
@@ -64,6 +86,19 @@ export function parseBlocks(source: string): Block[] {
   };
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
+    if (line.includes('|') && i + 1 < lines.length) {
+      const headers = tableCells(line);
+      const separators = tableCells(lines[i + 1]);
+      if (headers.length === separators.length && separators.every((cell) => /^:?-{3,}:?$/.test(cell))) {
+        flush();
+        const rows: string[][] = [];
+        i += 2;
+        while (i < lines.length && lines[i].trim() && lines[i].includes('|')) rows.push(tableCells(lines[i++]));
+        i -= 1;
+        blocks.push({ kind: 'table', headers, rows, align: separators.map((cell) => cell.endsWith(':') ? cell.startsWith(':') ? 'center' : 'right' : 'left') });
+        continue;
+      }
+    }
     if (line.trim().startsWith('```')) {
       flush();
       const lang = line.trim().slice(3).trim().toLowerCase();
@@ -102,14 +137,28 @@ export function parseBlocks(source: string): Block[] {
 export default function MessageMarkdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
   const blocks = parseBlocks(text);
   return (
-    <>
+    <div className="agent-markdown min-w-0">
       {blocks.map((block, index) => {
         const key = `b${index}`;
         const cursor = streaming && index === blocks.length - 1
           ? <span className="ml-0.5 animate-pulse text-[var(--text-muted)]">▍</span> : null;
         switch (block.kind) {
-          case 'h':
-            return <p key={key} className={`font-semibold ${block.level <= 2 ? 'text-[15px]' : ''}`}>{inline(block.text, key)}{cursor}</p>;
+          case 'h': {
+            const Heading = block.level <= 2 ? 'h3' : 'h4';
+            return <Heading key={key} className="font-semibold">{inline(block.text, key)}{cursor}</Heading>;
+          }
+          case 'table':
+            return (
+              <div key={key} role="region" aria-label="Tabla de la respuesta" tabIndex={0} className="agent-markdown-table overflow-x-auto rounded-xl border border-[var(--border-subtle)]">
+                <table className="w-full border-collapse text-left text-[13px] leading-[21px]">
+                  <thead className="bg-[var(--bg-input)]">
+                    <tr>{block.headers.map((cell, n) => <th key={n} scope="col" style={{ textAlign: block.align[n] }}>{inline(cell, `${key}-h${n}`)}</th>)}</tr>
+                  </thead>
+                  <tbody>{block.rows.map((row, r) => <tr key={r}>{block.headers.map((_, n) => <td key={n} style={{ textAlign: block.align[n] }}>{inline(row[n] ?? '', `${key}-${r}-${n}`)}</td>)}</tr>)}</tbody>
+                </table>
+                {cursor}
+              </div>
+            );
           case 'ul':
           case 'ol': {
             const List = block.kind;
@@ -151,6 +200,6 @@ export default function MessageMarkdown({ text, streaming = false }: { text: str
             return <p key={key} className="whitespace-pre-wrap break-words">{inline(block.text, key)}{cursor}</p>;
         }
       })}
-    </>
+    </div>
   );
 }

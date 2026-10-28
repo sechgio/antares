@@ -53,8 +53,9 @@ async function tabsTest() {
       getURL() { return contents.url; },
       getTitle() { return contents.title; },
       isLoading() { return false; },
-      getZoomFactor() { return 1; },
-      setZoomFactor() {},
+      zoom: 1,
+      getZoomFactor() { return contents.zoom; },
+      setZoomFactor(value) { contents.zoom = value; },
       navigationHistory: { canGoBack: () => false, canGoForward: () => false, goBack() {}, goForward() {} },
       setWindowOpenHandler() {},
       loadURL: async (url) => { contents.url = url; contents.title = url; },
@@ -86,6 +87,8 @@ async function tabsTest() {
   assert(current.active_tab === 'agent' && current.tabs[0].url === 'https://agent.example',
     'el agente abre en su propia pestaña');
   assert(mainChildren.has(agentPage), 'la pestaña activa se monta en la ventana principal');
+  agentPage.webContents.emit('did-navigate');
+  assert(agentPage.webContents.zoom === 1, 'la página del panel se ve al 100 % aunque el panel sea más estrecho que 1280 px');
 
   browser.activateTab('user');
   const userTimers = installInertTimers();
@@ -166,6 +169,21 @@ async function tabsTest() {
   let badPoint = null;
   try { await browser.inspect(2, 0); } catch (err) { badPoint = err; }
   assert(badPoint, 'inspeccionar rechaza puntos fuera de la página');
+  const slow = agentPage.webContents;
+  let now = Date.now();
+  const realNow = Date.now;
+  slow.isLoading = () => true;
+  slow.loadURL = () => { slow.emit('did-start-loading'); slow.emit('dom-ready'); return new Promise(() => {}); };
+  Date.now = () => { now += 100; return now; };
+  const slowTimers = installInertTimers();
+  let opened = false;
+  try {
+    const realTimeout = slowTimers.original.setTimeout;
+    opened = await Promise.race([browser.run('web_open', { url: 'https://slow.example' }).then(() => true),
+      new Promise((resolve) => realTimeout(() => resolve(false), 2_000))]);
+  } finally { slowTimers.restore(); Date.now = realNow; }
+  assert(opened, 'abrir una página no espera a que terminen imágenes y anuncios tras el DOM listo');
+  slow.isLoading = () => false;
   for (let i = 0; i < 8; i++) browser.newTab();
   let capped = null;
   try { browser.newTab(); } catch (err) { capped = err; }

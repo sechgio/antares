@@ -100,9 +100,9 @@ function newRequestId(): string {
 }
 
 const SUGGESTIONS = [
-  '¿Qué plantillas de reportes tengo disponibles?',
-  'Resume el estado de mis conexiones externas.',
-  '¿Qué ejecuciones recientes fallaron y por qué?',
+  'Ayúdame a preparar un informe.',
+  '¿Cómo puedo resumir mis documentos?',
+  'Ayúdame a organizar mis pendientes.',
 ];
 
 export function groupSessions(list: AgentSession[], now = Date.now()): { label: string; items: AgentSession[] }[] {
@@ -1297,11 +1297,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 <h2 className="text-[22px] font-medium leading-8 tracking-tight text-[var(--text-primary)]">
                   {activeProfile ? activeProfile.name : '¿En qué trabajamos hoy?'}
                 </h2>
-                {(readyProviders.length === 0 || activeProfile?.description) && (
-                  <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-[19px] text-[var(--text-secondary)]">
-                    {readyProviders.length === 0 ? 'Configura un proveedor en «Proveedores» para empezar.' : activeProfile?.description}
-                  </p>
-                )}
+                <p className="mx-auto mt-2 max-w-sm text-[14px] leading-[22px] text-[var(--text-secondary)]">
+                  {readyProviders.length === 0 ? 'Configura un proveedor en «Proveedores» para empezar.'
+                    : activeProfile?.description || 'Cuéntame qué necesitas. Puedo ayudarte a preparar informes, revisar documentos y organizar tu trabajo.'}
+                </p>
               </div>
               {readyProviders.length === 0 && onConfigureProvider && (
                 <Button size="sm" onClick={onConfigureProvider}>Configurar IA</Button>
@@ -1596,9 +1595,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 placeholder={
                   running || pending.length > 0
                     ? 'Añade una indicación o déjala para después…'
-                    : 'Escribe un mensaje, @ para mencionar un bot o un conector, / para usar una skill…'
+                    : 'Cuéntame qué necesitas…'
                 }
                 aria-label="Mensaje para el agente"
+                title="Intro para enviar · Mayús+Intro para otra línea · @ para mencionar · / para usar una skill"
                 className="block max-h-36 min-h-12 w-full min-w-0 resize-none bg-transparent py-0.5 text-[14px] leading-[22px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
               />
             </div>
