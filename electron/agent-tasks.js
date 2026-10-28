@@ -23,6 +23,11 @@ const ROUTINE_MIN_MINUTES = 30;
 const PROFILE_ROLES = new Set(['explorer', 'reviewer', 'worker']);
 const ACTIVE_DELEGATION = new Set(['pending', 'working']);
 const FINISHED_DELEGATION = { delivered: 'entregada', cancelled: 'cancelada' };
+// La entrega del informe se reintenta con espera creciente y un tope: un
+// proveedor caído no debe dejar la delegación reintentando cada minuto para siempre.
+const DELIVERY_RETRY_BASE_MS = 60 * 1000;
+const DELIVERY_RETRY_MAX_MS = 10 * 60 * 1000;
+const DELIVERY_UNREACHABLE_AFTER = 3;
 const MAX_MESSAGE_CHARS = 4000;
 const MAX_STOP_REASON_CHARS = 400;
 const MAX_CONTINUATION_ROUNDS = 10;
@@ -234,6 +239,7 @@ async function resumeDelegation({ profile, role, task, resumeId, sessionId, pare
     };
     delete current.delegation.started_at;
     delete current.delegation.retry_at;
+    current.delegation.delivery = { state: 'pending', attempts: 0 };
     delete current.delegation.result_request;
     delete current.delegation.inline_waits;
     delete current.delegation.cancelled_at;
@@ -334,6 +340,7 @@ async function delegate(profile, args, sessionId, api, context) {
           ...(levels ? { reasoning_levels: levels } : {}),
           profile: { id: profile.id, name: profile.name },
           delegation: { parent_session_id: sessionId, content: task, status: 'pending', depth,
+            delivery: { state: 'pending', attempts: 0 },
             ...lineage, ...(hookContext ? { hook_context: hookContext } : {}),
             ...(doneWhen ? { done_when: doneWhen } : {}), ...(origin ? { origin } : {}), ...(batch ? { batch } : {}),
             ...(continuation ? { continuation } : {}) } };
@@ -381,6 +388,8 @@ async function startChild(child) {
     if (current && !current.deleted && current.delegation.status === 'pending') {
       current.delegation.status = 'working';
       current.delegation.started_at = Date.now();
+      current.delegation.delivery = { state: 'pending', attempts: 0 };
+      delete current.delegation.retry_at;
     }
   }, ctx());
   wakeWaiters();
@@ -523,6 +532,15 @@ async function describeDelegation(child) {
     described.max_rounds = Number(job.continuation.max_rounds) || 0;
   }
   if (job.cancelled_reason) described.reason = String(job.cancelled_reason).slice(0, MAX_STOP_REASON_CHARS);
+  if (job.delivery) {
+    described.delivery = {
+      state: String(job.delivery.state || ''),
+      attempts: Number(job.delivery.attempts) || 0,
+      ...(job.delivery.retry_at ? { retry_at: Number(job.delivery.retry_at) } : {}),
+      ...(job.delivery.delivered_at ? { delivered_at: Number(job.delivery.delivered_at) } : {}),
+      ...(job.delivery.error ? { error: String(job.delivery.error).slice(0, 200) } : {}),
+    };
+  }
   if (job.room_id) {
     described.room_id = String(job.room_id);
     const rooms = (await shared.state.harness.snapshot(shared.state.RoomsDoc, ctx()))?.rooms || {};
@@ -671,7 +689,7 @@ function hasInlineWaiter(job) {
 
 async function delegationState(state, child) {
   const job = child.delegation;
-  if (job.retry_at > Date.now()) return 'parked';
+  if (Number(job.delivery?.retry_at || job.retry_at) > Date.now()) return 'parked';
   if (job.status === 'pending') {
     try {
       await startChild(child);
@@ -741,17 +759,55 @@ async function continuationStep(state, child) {
   return 'running';
 }
 
+// Espera creciente con tope: 1 min, 2 min, 4 min… hasta 10 min.
+function deliveryRetryDelay(attempts) {
+  const step = Math.min(Math.max(1, Number(attempts) || 1), 16);
+  return Math.min(DELIVERY_RETRY_BASE_MS * 2 ** (step - 1), DELIVERY_RETRY_MAX_MS);
+}
+
+function deferredDelivery(previous, attempts, now) {
+  return {
+    ...(previous && typeof previous === 'object' ? previous : {}),
+    state: attempts >= DELIVERY_UNREACHABLE_AFTER ? 'unreachable' : 'deferred',
+    attempts,
+    retry_at: now + deliveryRetryDelay(attempts),
+  };
+}
+
+// Un fallo al arrancar o al entregar el informe no se pierde: queda como intento
+// fallido con su error y una espera creciente. Al tercero el padre recibe un aviso.
 async function deferDelegations(state, children, err) {
-  await state.harness.commit(async (tx) => {
+  const message = require('./agent-execution').sanitizeProviderError(String(err?.message || err)).slice(0, 300);
+  const now = Date.now();
+  const exhausted = await state.harness.commit(async (tx) => {
     const doc = await tx.doc(state.SessionsDoc);
+    const notify = [];
     for (const child of children) {
       const current = doc.sessions[child.id];
-      if (current && ['pending', 'working'].includes(current.delegation.status)) {
-        current.delegation.retry_at = Date.now() + 60000;
+      if (!current?.delegation || !['pending', 'working'].includes(current.delegation.status)) continue;
+      const attempts = (Number(current.delegation.delivery?.attempts) || 0) + 1;
+      current.delegation.delivery = { ...deferredDelivery(current.delegation.delivery, attempts, now), error: message };
+      // Se conserva la copia plana para los lectores que ya consultaban retry_at.
+      current.delegation.retry_at = current.delegation.delivery.retry_at;
+      if (attempts === DELIVERY_UNREACHABLE_AFTER) {
+        notify.push({ id: child.id, attempts, round: Number(current.delegation.round) || 0,
+          parent: current.delegation.parent_session_id, name: current.profile?.name || 'delegado' });
       }
     }
+    return notify;
   }, ctx());
-  console.warn('[agent] delegation delivery failed:', require('./agent-execution').sanitizeProviderError(String(err?.message || err)));
+  for (const item of exhausted) {
+    try {
+      const parent = (await sessions())[item.parent];
+      if (!parent || parent.deleted) continue;
+      await (await conversation(parent.id)).submit({ type: 'write',
+        requestId: `delegate-delivery:${item.id}:${item.round}:${item.attempts}`,
+        entry: { kind: shared.NOTICE_KIND, data: { text: `La entrega de «${item.name}» sigue fallando tras `
+          + `${item.attempts} intentos (${message}). Se reintentará más tarde.` } } }, ctx());
+      wakeWaiters();
+    } catch { }
+  }
+  console.warn('[agent] delegation delivery failed:', message);
 }
 
 function stillDeliverable(map, children) {
@@ -808,6 +864,9 @@ async function deliverDelegations(state, parent, children, open) {
         current.delegation.status = 'delivered';
         current.delegation.awaiting_user = snapshot?.awaiting_user === true;
         current.delegation.result_request = `${key}:result`;
+        current.delegation.delivery = { state: 'delivered', attempts: Number(current.delegation.delivery?.attempts) || 0,
+          delivered_at: Date.now() };
+        delete current.delegation.retry_at;
       }
     }
   }, ctx());
@@ -823,7 +882,7 @@ async function collectDelegations(state) {
     if (!job || child.deleted || !['pending', 'working'].includes(job.status)) continue;
     const parent = map[job.parent_session_id];
     if (!parent || parent.deleted) {
-      if (job.retry_at > Date.now()) continue;
+      if (Number(job.delivery?.retry_at || job.retry_at) > Date.now()) continue;
       try {
         await (await conversation(child.id)).abort(ctx(), { background: true });
         await state.harness.commit(async (tx) => {
@@ -1179,5 +1238,5 @@ module.exports = {
   schedule, delegate, delegationAnswer, cancelDelegations, start, stop,
   checkDelegations, roster, sendMessage, stopDelegation, wakeParent, startChild, readTranscript,
   listTasks, saveTask, cancelTask, runTaskNow, queueControl: queue.queueControl,
-  _internal: { delegationBrief, delegationReport, userRequest },
+  _internal: { delegationBrief, delegationReport, userRequest, deferredDelivery, deferDelegations },
 };

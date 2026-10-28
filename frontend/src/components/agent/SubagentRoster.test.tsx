@@ -49,3 +49,13 @@ it('muestra la ronda de la sala y el turno en curso', () => {
   expect(screen.getByTitle('Contrato y anexo · turno de Investigador')).toBeInTheDocument();
   expect(screen.getByText('trabajando')).toBeInTheDocument();
 });
+
+it('marca la entrega aplazada y la que sigue fallando', () => {
+  render(<SubagentRoster items={[
+    delegation({ delivery: { state: 'deferred', attempts: 2, retry_at: Date.now() + 120000, error: 'proveedor caído' } }),
+    delegation({ session_id: 'delegate-2', agent: 'Revisor', delivery: { state: 'unreachable', attempts: 3 } }),
+  ]} />);
+  expect(screen.getByText('reintento · 2')).toBeInTheDocument();
+  expect(screen.getByText('sin entrega · 3')).toBeInTheDocument();
+  expect(screen.getByTitle(/proveedor caído/)).toBeInTheDocument();
+});

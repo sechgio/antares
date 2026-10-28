@@ -12,6 +12,13 @@ export interface AgentDelegation {
   rounds?: number;
   max_rounds?: number;
   reason?: string;
+  delivery?: {
+    state: string;
+    attempts: number;
+    retry_at?: number;
+    delivered_at?: number;
+    error?: string;
+  };
   room_id?: string;
   room?: {
     id: string;

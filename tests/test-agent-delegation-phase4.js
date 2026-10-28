@@ -30,6 +30,8 @@ async function main() {
   const { fauxProvider, fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai');
   const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
   const tasks = require('../electron/agent-tasks');
+  const { shared, conversation } = require('../electron/agent-shared');
+  const projection = require('../electron/agent-projection');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-delegation-phase4-'));
   const bridge = async (method) => {
     if (method === 'agent_internal_tools') return { tools: [
@@ -66,6 +68,11 @@ async function main() {
   const apiFor = (taskId, callId) => ({ taskId, callId, agent: async () => ({ tools: [{ name: 'canvas_list' }] }) });
   try {
     await tasks.stop();
+    const backoff = tasks._internal.deferredDelivery;
+    assert.equal(backoff(undefined, 1, 1000).retry_at, 1000 + 60000, 'el primer reintento espera un minuto');
+    assert.equal(backoff(undefined, 3, 1000).state, 'unreachable', 'al tercer fallo la entrega queda sin confirmar');
+    assert.equal(backoff(undefined, 3, 1000).retry_at, 1000 + 240000, 'la espera se duplica en cada intento');
+    assert.equal(backoff(undefined, 12, 1000).retry_at, 1000 + 600000, 'la espera tiene un tope de diez minutos');
     const { profile } = await runtime.handlers.agent_profile_save({
       name: 'Trazador', instructions: 'FASE4: revisa el contrato', tools: null,
     });
@@ -101,6 +108,8 @@ async function main() {
     assert.equal(finished.root_parent_request_id, 'fase4-turno-1');
     assert.equal(finished.parent_tool_call_id, 'call-1');
     assert.equal(finished.running, false);
+    assert.equal(finished.delivery.state, 'delivered', 'la entrega queda registrada como resuelta');
+    assert.equal(finished.delivery.attempts, 0);
     assert.deepEqual((await messages(parent.id)).delegations, [], 'el roster se vacía al entregar el informe');
 
     const resumed = await tasks.delegate(profile, { agent: profile.id, task: 'FASE4: amplía la revisión', resume: delegated.session_id },
@@ -110,8 +119,30 @@ async function main() {
     assert.equal(resumed.parent_tool_call_id, 'call-2');
     await until(async () => (await tasks.checkDelegations({ session_id: delegated.session_id }, parent.id)).status === 'delivered');
 
-    console.log('[PASS] linaje y roster Fase 4a: claves request/tool call en el acuse y agent_check, raíz conservada '
-      + 'al retomar, roster en vivo con estado, herramienta y duración en agent_messages_list, y vaciado al entregar.');
+    await tasks.stop();
+    const third = await tasks.delegate(profile, { agent: profile.id, task: 'FASE4: entrega con reintentos' },
+      parent.id, apiFor('fase4-turno-3', 'call-3'), {});
+    const thirdChild = (await runtime.handlers.agent_sessions_list()).sessions
+      .find((session) => session.id === third.session_id);
+    let deferred = null;
+    for (const attempt of [1, 2, 3]) {
+      await tasks._internal.deferDelegations(shared.state, [thirdChild], new Error('proveedor no disponible'));
+      deferred = await tasks.checkDelegations({ session_id: third.session_id }, parent.id);
+      assert.equal(deferred.delivery.attempts, attempt);
+      assert.equal(deferred.delivery.state, attempt >= 3 ? 'unreachable' : 'deferred');
+      const expected = 60000 * 2 ** (attempt - 1);
+      assert.ok(Math.abs(deferred.delivery.retry_at - Date.now() - expected) < 5000,
+        `el intento ${attempt} espera ${expected / 1000} s`);
+    }
+    assert.match(deferred.delivery.error, /proveedor no disponible/);
+    const notices = (await projection.allEntries(await conversation(parent.id)))
+      .filter((entry) => entry.kind === shared.NOTICE_KIND).map((entry) => String(entry.data?.text || ''));
+    assert.ok(notices.some((text) => text.includes('3 intentos')),
+      'el padre recibe un aviso cuando la entrega acumula tres fallos');
+
+    console.log('[PASS] linaje, roster y entrega Fase 4a: claves request/tool call en el acuse y agent_check, raíz '
+      + 'conservada al retomar, roster en vivo con estado, herramienta y duración, vaciado al entregar, y entrega '
+      + 'tipada con espera creciente, tope y aviso al tercer fallo.');
   } finally {
     await tasks.stop();
     await runtime.shutdown();
