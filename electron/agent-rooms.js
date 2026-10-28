@@ -163,6 +163,7 @@ function roomSummary(room, map = {}) {
 }
 
 async function submitTurn(state, room, turn) {
+  if (!await isCurrentTurn(state, room.id, turn)) return 'stale';
   const map = await sessions();
   const member = map[turn.member];
   if (!member || member.deleted) return 'inactive';
@@ -216,6 +217,23 @@ async function isCurrentTurn(state, roomId, turn) {
   const room = (await state.harness.snapshot(state.RoomsDoc, ctx()))?.rooms?.[roomId];
   return Boolean(room && room.status === 'open' && room.turn.member === turn.member
     && room.turn.round === turn.round && room.turn.index === turn.index);
+}
+
+// Un turno asignado en un arranque anterior no se da por vencido al abrir la
+// app: se le devuelve su ventana completa y se reentrega, por si el cierre
+// anterior lo perdió. El identificador del arranque evita repetirlo.
+async function resumeTurn(state, roomId, turn) {
+  return state.harness.commit(async (tx) => {
+    const doc = await tx.doc(state.RoomsDoc);
+    const current = doc.rooms[roomId];
+    if (!current || current.status !== 'open') return null;
+    if (current.turn.member !== turn.member || current.turn.round !== turn.round
+      || current.turn.index !== turn.index || current.turn.assigned_boot === shared.boot) return null;
+    const now = Date.now();
+    current.turn.assigned_boot = shared.boot;
+    current.turn.deadline = now + current.turn_seconds * 1000;
+    return plain(current);
+  }, ctx());
 }
 
 // Reintenta la entrega antes de dar el turno por perdido. submit() es
@@ -308,7 +326,7 @@ async function settle(state, roomId, memberId, outcome, messages = [], turnKey =
     }
     const index = nextIndex % room.members.length;
     const deadline = now + room.turn_seconds * 1000;
-    room.turn = { round: nextRound, index, member: room.members[index], deadline };
+    room.turn = { round: nextRound, index, member: room.members[index], deadline, assigned_boot: shared.boot };
     const snapshot = plain(room);
     return { next: { ...snapshot.turn }, room: snapshot };
   }, ctx());
@@ -403,7 +421,7 @@ async function createRoom(state, args, parentId) {
     const now = Date.now();
     const created = { id, parent_session_id: parentId, topic, status: 'open', rounds, turn_seconds: seconds,
       members: ids, log: [], created_at: now,
-      turn: { round: 0, index: 0, member: ids[0], deadline: now + seconds * 1000 } };
+      turn: { round: 0, index: 0, member: ids[0], deadline: now + seconds * 1000, assigned_boot: shared.boot } };
     for (const memberId of ids) {
       const member = sessionsDoc.sessions[memberId];
       if (!member || member.deleted || !member.delegation) return null;
@@ -534,6 +552,12 @@ async function tickRooms(state) {
     if (!active(room.turn.member)) {
       await settle(state, room.id, room.turn.member, 'SKIPPED').catch(() => {});
       changed = true;
+      continue;
+    }
+    const resumed = await resumeTurn(state, room.id, room.turn);
+    if (resumed) {
+      changed = true;
+      await submitTurn(state, resumed, resumed.turn);
       continue;
     }
     if (room.turn.deadline <= Date.now()) {
