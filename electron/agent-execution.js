@@ -29,8 +29,6 @@ const { appendTurn } = require('./turn-log');
 const MAX_TOOL_STEPS = 40;
 const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno. Conservé un punto de continuación; '
   + 'explica lo que queda pendiente y pide usar Reanudar para continuar.';
-// A partir de este paso cada petición recuerda al modelo cuánto le queda antes
-// de que el turno se pause, para que deje constancia del avance a tiempo.
 const BUDGET_WARNING_STEPS = 32;
 const MAX_REPEATS = 3;
 const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, sigue con '
@@ -41,28 +39,24 @@ const SUBAGENT_DESCRIPTION_MAX = 80;
 const SUBAGENT_MAX_DEPTH = 1;
 const SUBAGENT_MAX_TASKS = 4;
 const TOOLS_LOAD = 'tools_load';
-// Skill elegida con «/» en el compositor: bloquea las demás herramientas hasta
-// que skills_read la cargue. Solo ordena el turno; no habilita ni aprueba nada.
 const requiredSkills = new Map();
 const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent']);
 const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD, 'task_schedule']);
 const MEMORY_TOOLS = ['memory_search', 'memory_remember', 'procedure_learn'];
-// Acciones cua_ que inyectan entrada: el marco ámbar del lease humano cubre la
-// ventana objetivo durante su despacho (las lecturas y cua_launch_app no inyectan).
 const UI_ACTION_TOOLS = new Set(['cua_click', 'cua_drag', 'cua_scroll', 'cua_type_text', 'cua_press_key', 'cua_hotkey',
   'cua_set_value', 'cua_invoke_menu', 'cua_bring_to_front']);
-// Acciones desktop_ que inyectan entrada, enfocan o abren aplicaciones: actúan
-// por coordenadas o sobre la ventana activa, sin identificar la app objetivo.
 const DESKTOP_ACTION_TOOLS = new Set(['desktop_click', 'desktop_type', 'desktop_key', 'desktop_scroll',
   'desktop_launch', 'desktop_focus']);
-// En Acceso completo siguen exigiendo decisión humana: el shell (incluidos los
-// jobs en segundo plano) y las acciones de Equipo que inyectan entrada o abren
-// aplicaciones.
 const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'cua_launch_app', ...UI_ACTION_TOOLS, ...DESKTOP_ACTION_TOOLS]);
-// Acciones con efecto que el techo desatendido contabiliza por encargo programado.
+const SHELL_TOOLS = new Set(['shell_run', 'shell_job_start']);
+const DESTRUCTIVE_COMMAND = new RegExp(String.raw`(?:^\s*|[;|&({]\s*)(?:remove-item|rm|ri|del|erase|rd|rmdir|clear-content|format-volume|clear-disk)\b`
+  + String.raw`|\bformat(?:\.com)?\s+[a-z]:|\bgit\s+(?:clean\b|reset\s+--hard\b|checkout\s+--\s)|\[(?:system\.)?io\.(?:file|directory)\]::delete\b`, 'im');
 const UNATTENDED_ACTION_TOOLS = new Set(['cua_launch_app', ...UI_ACTION_TOOLS]);
 const MAX_UNATTENDED_ACTIONS = 25;
 const MAX_LOADED_TOOLS = 25;
+// Herramientas meta que un agente delegado conserva aunque no sean lecturas:
+// solo hablan con su conversación principal (aviso intermedio y salas).
+const CHILD_CONTROL_TOOLS = new Set(['agent_wake_parent', 'agent_room']);
 const MAX_DEFAULT_TOOLS = 100;
 const MAX_OPENAI_TOOLS = 128;
 
@@ -83,8 +77,6 @@ function supportsReasoning(style, modelId) {
 
 const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
-// Niveles que admite el modelo ya registrado (ensureProvider), según su
-// definición: capacidad declarada en el proveedor, catálogo de pi-ai o nombre.
 async function reasoningLevels(providerId, modelId) {
   const model = shared.state.models.getModel(providerId, modelId);
   if (!model) return [];
@@ -92,7 +84,6 @@ async function reasoningLevels(providerId, modelId) {
   return getSupportedThinkingLevels(model).filter((level) => REASONING_EFFORTS.includes(level));
 }
 
-// El nivel elegido, o el más cercano por debajo que el modelo admita.
 function thinkingLevelFor(levels, effort) {
   if (!levels.length) return 'off';
   const wanted = REASONING_EFFORTS.indexOf(REASONING_EFFORTS.includes(effort) ? effort : 'low');
@@ -197,8 +188,6 @@ const MODEL_CATALOGS = {
   openrouter: ['@earendil-works/pi-ai/providers/openrouter.models', 'OPENROUTER_MODELS'],
 };
 
-// Un modelo personalizado que apunta a una API oficial usa su catálogo, como
-// el proveedor integrado: límites, precios y modo de razonamiento reales.
 const CATALOG_HOSTS = [
   ['anthropic', 'anthropic_messages', /(^|\.)api\.anthropic\.com$/i],
   ['openai', 'openai_chat', /(^|\.)api\.openai\.com$/i],
@@ -292,8 +281,11 @@ async function allToolSpecs() {
   }
   const saved = Object.values(await profiles()).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   if (saved.length > 0) {
-    const delegateTool = require('./agent-tasks').DELEGATE_TOOL;
-    merged.set(delegateTool.name, delegateTool);
+    const tasks = require('./agent-tasks');
+    for (const tool of [tasks.DELEGATE_TOOL, tasks.CHECK_TOOL, tasks.MESSAGE_TOOL, tasks.STOP_TOOL, tasks.WAKE_TOOL,
+      require('./agent-rooms').TOOL]) {
+      merged.set(tool.name, tool);
+    }
     merged.set(SUBAGENT_TOOL, {
       name: SUBAGENT_TOOL,
       description: `Delega trabajo acotado en uno de los agentes guardados del usuario y devuelve el resultado con sus pasos y su rol. `
@@ -332,6 +324,11 @@ async function allToolSpecs() {
   } else {
     merged.delete(SUBAGENT_TOOL);
     merged.delete('agent_delegate');
+    merged.delete('agent_message');
+    merged.delete('agent_check');
+    merged.delete('agent_stop');
+    merged.delete('agent_wake_parent');
+    merged.delete('agent_room');
   }
   merged.set(TOOLS_LOAD, {
     name: TOOLS_LOAD,
@@ -432,16 +429,11 @@ function normal(text) {
   return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
 
-// Palabras que aparecen en casi cualquier petición o descripción y no
-// distinguen herramientas («para», «usuario», «requiere aprobación»…).
 const SEARCH_STOPWORDS = new Set(['para', 'con', 'los', 'las', 'del', 'una', 'uno', 'unos', 'unas', 'que', 'por', 'como',
   'mas', 'quiero', 'necesito', 'hacer', 'este', 'esta', 'esto', 'ese', 'esa', 'sus', 'mis', 'sobre', 'desde', 'hasta',
   'entre', 'cuando', 'donde', 'todo', 'todos', 'toda', 'todas', 'muy', 'sin', 'hay', 'puedes', 'favor', 'usuario',
   'requiere', 'aprobacion', 'solo', 'lectura', 'efecto', 'the', 'and', 'for', 'with']);
 
-// Como el searchHint de las herramientas de sistema de Claude Desktop: el
-// nombre exacto manda, y la etiqueta y los alias del módulo (agent-modules.json)
-// cuentan más que la descripción. Solo se cargan las que se acercan a la mejor.
 function rankTools(specs, args) {
   const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
   const query = normal(args.query);
@@ -467,7 +459,8 @@ async function loadTools(args, sessionId, context) {
   const enabled = new Set((await conv.agent(context)).tools.map((tool) => tool.name));
   const allows = await profileToolFilter(await requireSession(sessionId));
   const specs = [...shared.toolSpecs.values()].filter((spec) => (spec.kind !== 'meta'
-    || ['task_schedule', 'agent_delegate', 'wait_event'].includes(spec.name)) && (!allows || allows(spec.name)));
+    || ['task_schedule', 'agent_delegate', 'agent_message', 'agent_check', 'agent_stop', 'agent_room', 'wait_event'].includes(spec.name))
+    && (!allows || allows(spec.name)));
   const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
   const words = normal(args.query).split(/[^a-z0-9_]+/).filter((word) => word.length > 2);
   if (!modules.length && !words.length) {
@@ -600,8 +593,6 @@ function leadingSystem(messages) {
   return { messages: [messages[index], ...messages.slice(0, index), ...messages.slice(index + 1)] };
 }
 
-// Añade el aviso al último resultado de herramienta solo en la petición: no se
-// guarda en la conversación ni aparece en el chat.
 function budgetWarning(messages, rounds) {
   const last = messages[messages.length - 1];
   if (rounds < BUDGET_WARNING_STEPS || rounds >= MAX_TOOL_STEPS || !last || last.role !== 'toolResult') return undefined;
@@ -735,8 +726,6 @@ function noteToolResult(api, name, text, isError) {
   }
 }
 
-// Cada segmento (turno, continuación de plan-check, reanudación) es una entrada propia:
-// fusionarlas exigiría retrasar la escritura y perder segmentos previos si el proceso muere.
 async function closeTurnLog(message, api) {
   const turn = shared.turns.get(api.conversationId);
   const record = turn && turn.log;
@@ -775,9 +764,6 @@ function callSignature(name, args) {
   return `${name}:${stableJson(args || {})}`;
 }
 
-// Firma de un error sin lo que cambia entre intentos (rutas, URL, números,
-// identificadores y valores citados): cambiar los argumentos no es progresar
-// si la herramienta falla por la misma causa.
 function errorSignature(message) {
   return String(message || '').toLowerCase()
     .replace(/[a-z][a-z0-9+.-]*:\/\/\S+/g, '<url>')
@@ -800,8 +786,6 @@ function planCheck(answer, api) {
   return { continue: `${shared.CHECK_MARKER} ${PLAN_CHECK_TEXT.replace('{steps}', steps)}` };
 }
 
-// El backend exige una aprobación aprobada para despachar gated: "permitir
-// siempre" se resuelve aprobándola sola, como el modo completo.
 function webAlwaysAllowed(name, context) {
   if (!String(name || '').startsWith('web_') || !context || context.policy_blocked) return false;
   const domain = String(context.domain || '');
@@ -818,7 +802,13 @@ async function beforeTool(call, api, context) {
     return { block: `Antes de cualquier otra herramienta carga la skill elegida por el usuario con skills_read y skill_id "${skillId}".` };
   }
   const sessionId = await sessionForConversation(api.conversationId, api, context);
-  if (!await toolEnabled(sessionId, call.name, context)) return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
+  const session = await requireSession(sessionId);
+  // El hijo solo conserva los controles de su propio ciclo de vida: avisar al
+  // padre y participar en salas no son lecturas del backend ni amplían acceso.
+  const childControl = !!session.delegation && CHILD_CONTROL_TOOLS.has(call.name);
+  if (!childControl && !await toolEnabled(sessionId, call.name, context)) {
+    return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
+  }
   const calls = turnState(api.conversationId).calls;
   const signature = callSignature(call.name, call.arguments);
   let repeated = calls.get(signature);
@@ -838,8 +828,7 @@ async function beforeTool(call, api, context) {
       + `(«${failing.message}»). No la repitas: diagnostica la causa con otra herramienta, cambia de enfoque `
       + 'o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
   }
-  const session = await requireSession(sessionId);
-  if (session.delegation && (spec.kind !== 'backend' || spec.replay_safe !== true)) {
+  if (session.delegation && !childControl && (spec.kind !== 'backend' || spec.replay_safe !== true)) {
     return { block: 'El agente delegado solo puede usar lecturas idempotentes autorizadas' };
   }
   const mode = session.permission_mode || 'auto';
@@ -854,7 +843,6 @@ async function beforeTool(call, api, context) {
       + 'No repitas esta acción: pide permiso, cambia la regla en Permisos o propone otra vía.' };
   }
   const unattendedApps = await unattendedAllowlist(api, context, mode, spec);
-  // La lista blanca del encargo nombra apps y desktop_ no identifica a cuál apunta.
   if (unattendedApps && DESKTOP_ACTION_TOOLS.has(call.name)) {
     return { block: 'En un encargo programado las acciones desktop_* no se aprueban porque no identifican la aplicación. '
       + 'Usa cua_launch_app y las herramientas cua_* sobre una app de la lista blanca del encargo.' };
@@ -882,8 +870,11 @@ async function beforeTool(call, api, context) {
       ...(approvedContext ? { context: approvedContext } : {}),
       ...(unattendedApps ? { unattended_apps: unattendedApps } : {}),
     }));
+    const command = (call.arguments || {}).command;
+    const fullShell = SHELL_TOOLS.has(call.name) && !unattendedApps
+      && typeof command === 'string' && !DESTRUCTIVE_COMMAND.test(command);
     const autoSource = rule === 'allow' && !NEVER_AUTO_APPROVE.has(call.name) ? 'rule'
-      : mode === 'full' && !NEVER_AUTO_APPROVE.has(call.name) && rule !== 'ask' ? 'full'
+      : mode === 'full' && (!NEVER_AUTO_APPROVE.has(call.name) || fullShell) && rule !== 'ask' ? 'full'
         : rule !== 'ask' && webAlwaysAllowed(call.name, approvedContext) ? 'web' : null;
     if (autoSource && approval.status === 'pending') {
       ({ approval } = await bridge('agent_internal_approval_decide', {
@@ -919,9 +910,6 @@ function callKey(sessionId, callId) {
   return `${sessionId}:${callId}`;
 }
 
-// Un turno desatendido es el que arrancó con un encargo programado; tick()
-// registra su lista blanca de apps por id de submission y el projection la
-// limpia al terminar el run (los registros de submission se podan al asentarse).
 async function unattendedAllowlist(api, context, mode, spec) {
   if (mode === 'ask' || !spec.gated) return null;
   const submissionId = shared.turnRuns.get(api.conversationId);
@@ -987,7 +975,9 @@ async function dispatchAndWait(request, context, api) {
 
 async function executeTool(spec, args, api, context) {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
-  if (!await toolEnabled(sessionId, spec.name, context)) {
+  const session = await requireSession(sessionId);
+  const childControl = !!session.delegation && CHILD_CONTROL_TOOLS.has(spec.name);
+  if (!childControl && !await toolEnabled(sessionId, spec.name, context)) {
     const text = `Herramienta deshabilitada en esta conversación: ${spec.name}`;
     noteToolResult(api, spec.name, text, true);
     return { content: [{ type: 'text', text }], isError: true };
@@ -1030,10 +1020,6 @@ async function executeTool(spec, args, api, context) {
     const fingerprint = image ? crypto.createHash('sha256').update(image.data).digest('hex') : 'captura';
     outcome = outcome.replaceAll(JSON.stringify(capture.path), JSON.stringify(fingerprint));
   }
-  // El guard mide progreso, no llamadas: un fallo recuperable (espera, control
-  // o página cambiada) no consume intentos. Las lecturas, las observaciones y
-  // los clics que cambian de página progresan; el resto de efectos gated
-  // conserva su límite aunque el resultado cambie, para no repetir acciones.
   const trackOutcome = !spec.gated || spec.name === 'desktop_observe' || spec.name === 'web_click';
   const progress = spec.name === 'web_click'
     ? stableJson({ url: parsed && parsed.page && parsed.page.url ? String(parsed.page.url) : '' })
@@ -1063,8 +1049,18 @@ async function executeTool(spec, args, api, context) {
       count: previous && previous.key === key ? previous.count + 1 : 1 });
   }
   noteToolResult(api, spec.name, text, isError);
-  return { content: [{ type: 'text', text }, ...(image ? [image] : [])], isError,
-    ...(added && added.length ? { control: { addTools: added } } : {}) };
+  const hooks = require('./agent-hooks');
+  const hookProfile = resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
+  const pre = hooks.contextFor(hookProfile, 'preToolUse', spec.name);
+  const post = hooks.contextFor(hookProfile, 'postToolUse', spec.name);
+  if (pre) hooks.record(session, 'preToolUse', spec.name);
+  if (post) hooks.record(session, 'postToolUse', spec.name);
+  return { content: [
+    ...(pre ? [{ type: 'text', text: pre }] : []),
+    { type: 'text', text },
+    ...(image ? [image] : []),
+    ...(post ? [{ type: 'text', text: post }] : []),
+  ], isError, ...(added && added.length ? { control: { addTools: added } } : {}) };
 }
 
 async function dispatchTool(spec, args, sessionId, api, context) {
@@ -1074,6 +1070,21 @@ async function dispatchTool(spec, args, sessionId, api, context) {
       const profile = await resolveProfile(args?.agent);
       if (!profile) throw validation('No se encontró un agente único; usa su identificador');
       return { text: JSON.stringify(await require('./agent-tasks').delegate(profile, args, sessionId, api, context)) };
+    }
+    if (spec.name === 'agent_check') {
+      return { text: JSON.stringify(await require('./agent-tasks').checkDelegations(args || {}, sessionId)) };
+    }
+    if (spec.name === 'agent_message') {
+      return { text: JSON.stringify(await require('./agent-tasks').sendMessage(args || {}, sessionId, api)) };
+    }
+    if (spec.name === 'agent_stop') {
+      return { text: JSON.stringify(await require('./agent-tasks').stopDelegation(args || {}, sessionId)) };
+    }
+    if (spec.name === 'agent_wake_parent') {
+      return { text: JSON.stringify(await require('./agent-tasks').wakeParent(args || {}, sessionId)) };
+    }
+    if (spec.name === 'agent_room') {
+      return { text: JSON.stringify(await require('./agent-rooms').act(args || {}, sessionId)) };
     }
     if (spec.name === 'task_schedule') {
       if (spec.gated && (args || {}).action !== 'list') {
@@ -1168,8 +1179,6 @@ async function resultImage(parsed) {
   }
 }
 
-// task_schedule se ejecuta en Electron sobre TasksDoc: el backend reserva la
-// llamada y su recibo, el proceso principal crea el encargo y cierra el op_id.
 async function dispatchMeta(spec, args, sessionId, api, context, options = {}) {
   const callId = options.callId || dispatchCallId(api.callId, api.taskId);
   const approvalId = options.approvalId || shared.approvalsByCall.get(callKey(sessionId, callId));
@@ -1287,16 +1296,12 @@ async function sessionProfile(session) {
   return id ? (await profiles())[id] || null : null;
 }
 
-// Bloqueadas de un agente guardado; sin memoria tampoco usa sus herramientas.
 function profileDenied(profile) {
   const denied = new Set((profile && profile.tools_deny) || []);
   if (profile && profile.memory_scope === 'none') for (const name of MEMORY_TOOLS) denied.add(name);
   return denied;
 }
 
-// La lista de herramientas de un agente guardado (null = todas) y sus
-// bloqueadas limitan la conversación durante toda su vida, no solo al crearla.
-// Una herramienta bloqueada nunca se permite, aunque figure en la lista.
 function profileFilter(profile) {
   const denied = profileDenied(profile);
   if (!profile || (!Array.isArray(profile.tools) && !denied.size)) return null;
@@ -1313,8 +1318,6 @@ function localDay(now = Date.now()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-// Presupuesto diario de un agente guardado: tokens de entrada y salida (sin la
-// caché) de todas sus conversaciones durante el día local, en ProfilesDoc.usage.
 async function profileBudget(profile) {
   const limit = Number(profile && profile.daily_tokens) || 0;
   if (!limit) return null;
@@ -1340,7 +1343,6 @@ async function recordProfileUsage(session, usage) {
   }, ctx());
 }
 
-// Herramientas con las que arranca, o a las que se restablece, una conversación.
 function profileInitialTools(profile, specs) {
   const available = new Set(specs.map((spec) => spec.name));
   const allows = profileFilter(profile);

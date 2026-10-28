@@ -1,9 +1,21 @@
 'use strict';
 
 const fs = require('node:fs');
+const Module = require('node:module');
 const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
+
+// el navegador del agente resuelve el DNS de cada destino: en los tests
+// toda resolución es pública
+const originalLoad = Module._load;
+Module._load = function patchedLoad(request, parent, isMain) {
+  if (request === 'node:dns') {
+    return { promises: { lookup: async () => [{ address: '93.184.216.34', family: 4 }] } };
+  }
+  return originalLoad.call(this, request, parent, isMain);
+};
+
 const { assert, finish, stubModule, installInertTimers } = require('./helpers/harness');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-browser-tabs-'));
@@ -62,6 +74,7 @@ async function tabsTest() {
     BrowserWindow: function () { return host; },
     WebContentsView: function () { return makePage(); },
     session: { fromPartition: () => ({ setPermissionRequestHandler: () => {}, setPermissionCheckHandler: () => {},
+      webRequest: { onBeforeRequest: () => {} },
       on: () => {}, getUserAgent: () => 'Mozilla/5.0 Chrome/1 Electron/1', setUserAgent: () => {} }) },
   });
   const timers = installInertTimers();

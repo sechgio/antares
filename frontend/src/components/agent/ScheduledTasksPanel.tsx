@@ -4,6 +4,7 @@ import {
   agentApi, type AgentQueueState, type AgentSession, type AgentTask,
   type AgentTaskKind, type AgentTaskRun, type AgentTaskStatus,
 } from '../../api/agentApi';
+import { formatMoment } from '../../utils/dates';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
@@ -57,15 +58,6 @@ function toLocalInput(ms: number): string {
 
 function localTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-}
-
-function formatMoment(ms: number | undefined, timezone?: string): string {
-  if (!ms) return '—';
-  try {
-    return new Intl.DateTimeFormat('es', { dateStyle: 'medium', timeStyle: 'short', timeZone: timezone }).format(ms);
-  } catch {
-    return new Date(ms).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' });
-  }
 }
 
 function repeatText(ms: number): string {

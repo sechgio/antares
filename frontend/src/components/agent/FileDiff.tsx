@@ -6,10 +6,8 @@ import { fileChange } from './diffLines';
 import type { DiffLine, FileChange } from './diffLines';
 
 const MAX_LINES = 400;
-// Más allá de estas líneas la entrada escalonada se nota como retraso, no como movimiento.
 const MAX_STAGGER = 24;
 const SMALL_CHANGE = 16;
-// Contexto que queda a cada lado de un tramo sin cambios plegado, y lo mínimo que merece plegarse.
 const FOLD_KEEP = 3;
 const MIN_FOLD = 4;
 
@@ -127,7 +125,7 @@ function verb(call: AgentToolCall, change: FileChange): string {
   try {
     const data: unknown = call.result ? JSON.parse(call.result) : null;
     if (data && typeof data === 'object' && 'replaced' in data) replaced = data.replaced === true;
-  } catch { /* el resultado no es JSON: se queda la intención */ }
+  } catch {}
   const [present, past, base] = !change.whole ? ['Editando', 'Editó', 'Editar']
     : replaced ? ['Reemplazando', 'Reemplazó', 'Reemplazar'] : ['Creando', 'Creó', 'Crear'];
   if (call.status === 'running') return present;
@@ -142,7 +140,7 @@ function errorText(result: string | null | undefined): string | null {
   try {
     const data: unknown = JSON.parse(result);
     if (data && typeof data === 'object' && 'error' in data && typeof data.error === 'string') return data.error;
-  } catch { /* texto plano */ }
+  } catch {}
   return result;
 }
 
@@ -157,7 +155,6 @@ export function FileChangeStep({ call, status, className }: {
   const live = call.status === 'running';
   const [open, setOpen] = useState(() => live || failed
     || (!denied && !!change && change.added + change.removed <= SMALL_CHANGE));
-  // El diff se monta al abrirlo la primera vez y se conserva para animar el cierre.
   const [mounted, setMounted] = useState(open);
   const [seen, setSeen] = useState(call.status);
   const [applied, setApplied] = useState(false);

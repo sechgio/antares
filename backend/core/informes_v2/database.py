@@ -8,7 +8,6 @@ from backend.utils.lazy import LazySingleton
 from backend.utils.paths import resource_path, user_data_path
 
 DEFAULT_DB_PATH = user_data_path("informes_v2.json")
-_DEFAULT_USER_DATA_PATH = DEFAULT_DB_PATH
 _LEGACY_DB_PATH = resource_path("data/informes_v2.json")
 
 class InformesV2DB(ReportStore):
@@ -18,7 +17,7 @@ class InformesV2DB(ReportStore):
         path, legacy_path = resolve_report_store_paths(
             db_path,
             DEFAULT_DB_PATH,
-            _DEFAULT_USER_DATA_PATH,
+            DEFAULT_DB_PATH,
             _LEGACY_DB_PATH,
         )
         super().__init__(

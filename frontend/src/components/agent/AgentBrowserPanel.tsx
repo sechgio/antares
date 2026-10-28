@@ -15,7 +15,6 @@ const EMPTY: AgentBrowserState = {
 };
 
 const OVERLAY = '[role="menu"], [role="dialog"], [role="listbox"], [role="alertdialog"]';
-// Como Claude Desktop: la pestaña del agente es fija y las demás tienen un tope.
 const MAX_USER_TABS = 8;
 const MENU_ITEM = 'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)] disabled:pointer-events-none disabled:opacity-40';
 
@@ -39,7 +38,6 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
   const menu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
     align: 'end', estimatedWidth: 240, estimatedHeight: 100, stopEscapePropagation: true,
   });
-  // Mientras se anota, la vista nativa se retira para que la captura y la barra queden visibles.
   const annotatingRef = useRef(false);
   const reportRef = useRef<() => void>(() => {});
   const minWidth = layout.available ? Math.min(340, layout.available / 2) : 340;

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, X } from 'lucide-react';
 import { agentApi, type AgentMemoryScope, type AgentProfile, type AgentRole, type AgentToolSpec } from '../../api/agentApi';
+import type { AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
@@ -11,6 +12,7 @@ import Textarea from '../ui/Textarea';
 import Toggle from '../ui/Toggle';
 import AgentAvatar, { AGENT_AVATAR_COLORS } from './AgentAvatar';
 import AgentRoutines from './AgentRoutines';
+import ModelPicker from './ModelPicker';
 import { METHOD_LABELS } from './methodLabels';
 
 const FIELD = 'grid grid-cols-[96px_1fr] items-start gap-3 px-3 py-2.5';
@@ -28,9 +30,10 @@ const MEMORY_HINT: Record<AgentMemoryScope, string> = {
   none: 'No recibe recuerdos ni puede guardarlos.',
 };
 
-export default function AgentEditor({ profile, canStartChat = true, onClose, onSaved, onDeleted }: {
+export default function AgentEditor({ profile, canStartChat = true, providers = [], onClose, onSaved, onDeleted }: {
   profile: AgentProfile | null;
   canStartChat?: boolean;
+  providers?: AiProviderSpec[];
   onClose: () => void;
   onSaved: (profile: AgentProfile) => void;
   onDeleted: (id: string) => void;
@@ -42,6 +45,7 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
   const [description, setDescription] = useState(profile?.description ?? '');
   const [role, setRole] = useState<AgentRole>(profile?.role ?? 'explorer');
   const [memoryScope, setMemoryScope] = useState<AgentMemoryScope>(profile?.memory_scope ?? 'shared-read');
+  const [model, setModel] = useState<{ provider: string; model: string } | null>(profile?.model ?? null);
   const [dailyTokens, setDailyTokens] = useState(profile?.daily_tokens ? String(profile.daily_tokens) : '');
   const [instructions, setInstructions] = useState(profile?.instructions ?? '');
   const [starter, setStarter] = useState(profile?.starter ?? '');
@@ -73,6 +77,7 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
         ...(profile ? { id: profile.id } : {}),
         name, color, description, role, memory_scope: memoryScope, instructions, starter,
         daily_tokens: dailyTokens.trim() ? Number(dailyTokens) : null,
+        model: model ?? null,
         tools: allTools ? null : [...selected],
         tools_deny: allTools ? [...denied] : [],
       });
@@ -187,6 +192,27 @@ export default function AgentEditor({ profile, canStartChat = true, onClose, onS
               />
               <span className={`block text-[11px] leading-relaxed ${role === 'worker' ? 'text-[var(--accent-yellow)]' : 'text-[var(--text-muted)]'}`}>
                 {ROLE_HINT[role]}
+              </span>
+            </div>
+          </div>
+          <div className={FIELD}>
+            <span className={LABEL}>Modelo</span>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[13px] text-[var(--text-primary)]">Modelo propio al delegar</span>
+                <Toggle
+                  checked={Boolean(model)}
+                  disabled={!model && providers.length === 0}
+                  aria-label="Usar un modelo propio del agente"
+                  onChange={(on) => setModel(on && providers[0]
+                    ? { provider: providers[0].id, model: providers[0].default_model }
+                    : null)}
+                />
+              </div>
+              {model && <ModelPicker providers={providers} value={model} onChange={setModel} />}
+              <span className="block text-[11px] leading-relaxed text-[var(--text-muted)]">
+                Se usa cuando este agente recibe un encargo delegado en segundo plano; sin él hereda el modelo de la
+                conversación que delega.
               </span>
             </div>
           </div>

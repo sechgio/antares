@@ -262,6 +262,60 @@ describe('perfiles portables', () => {
     fs.symlinkSync(path.dirname(outside), path.join(home, 'reviewer/skills/review/link'), 'junction');
     expect(() => readProfileSkill(loaded, { skill_id: 'profile:review', file_path: 'link/secret.txt' })).toThrow(/sale de la carpeta/);
   });
+
+  it('carga hooks declarativos con contexto recortado y tools sin duplicados', () => {
+    write('reviewer/hooks.json', JSON.stringify({ hooks: [
+      { event: 'subagentStart', context: '  Revisa el contrato.  ' },
+      { event: 'preToolUse', context: 'Confirma el ámbito.', tools: ['canvas_list', 'canvas_list'] },
+      { event: 'postToolUse', context: 'Anota el resultado.' },
+    ] }));
+    const loaded = loadAgentProfile('reviewer');
+    expect(loaded.hooks).toEqual([
+      { event: 'subagentStart', context: 'Revisa el contrato.' },
+      { event: 'preToolUse', context: 'Confirma el ámbito.', tools: ['canvas_list'] },
+      { event: 'postToolUse', context: 'Anota el resultado.' },
+    ]);
+  });
+
+  it('sin hooks.json el perfil no declara hooks', () => {
+    expect(loadAgentProfile('reviewer').hooks).toEqual([]);
+  });
+
+  it.each([
+    ['JSON inválido', '{', /hooks\.json.*JSON inválido/],
+    ['raíz no objeto', '[]', /objeto con «hooks»/],
+    ['campo extra en la raíz', JSON.stringify({ hooks: [], command: 'rm' }), /campo no admitido: command/],
+    ['hooks no es lista', JSON.stringify({ hooks: {} }), /lista «hooks»/],
+    ['más de 32 hooks', JSON.stringify({ hooks: Array.from({ length: 33 }, () => ({ event: 'subagentStop', context: 'x' })) }), /máximo de 32 hooks/],
+    ['hook no objeto', JSON.stringify({ hooks: ['x'] }), /hook 1: se espera un objeto/],
+    ['campo no admitido', JSON.stringify({ hooks: [{ event: 'subagentStart', context: 'x', command: 'rm' }] }), /campo no admitido: command/],
+    ['evento inválido', JSON.stringify({ hooks: [{ event: 'beforeAll', context: 'x' }] }), /event debe ser/],
+    ['contexto vacío', JSON.stringify({ hooks: [{ event: 'subagentStart', context: '   ' }] }), /context de texto no vacío/],
+    ['contexto excesivo', JSON.stringify({ hooks: [{ event: 'subagentStart', context: 'x'.repeat(2001) }] }), /context excede 2000/],
+    ['texto total excesivo', JSON.stringify({ hooks: Array.from({ length: 5 }, () => ({ event: 'subagentStop', context: 'x'.repeat(2000) })) }), /excede 8000/],
+    ['tools en subagentStart', JSON.stringify({ hooks: [{ event: 'subagentStart', context: 'x', tools: ['canvas_list'] }] }), /tools solo se admite/],
+    ['tools vacío', JSON.stringify({ hooks: [{ event: 'preToolUse', context: 'x', tools: [] }] }), /lista de nombres/],
+    ['tool inválida', JSON.stringify({ hooks: [{ event: 'preToolUse', context: 'x', tools: ['Canvas List'] }] }), /lista de nombres/],
+  ])('rechaza hooks inválidos: %s', (_label, content, pattern) => {
+    write('reviewer/hooks.json', content);
+    expect(() => loadAgentProfile('reviewer')).toThrow(pattern);
+  });
+
+  it('filtra el contexto declarado por evento y herramienta', () => {
+    const hooks = require('../../../electron/agent-hooks');
+    const profile = { name: 'Revisor', hooks: [
+      { event: 'preToolUse', context: 'Ámbito general.' },
+      { event: 'preToolUse', context: 'Solo canvas.', tools: ['canvas_list'] },
+      { event: 'postToolUse', context: 'Cierre.', tools: ['otra'] },
+    ] };
+    expect(hooks.contextFor(profile, 'preToolUse', 'canvas_list')).toContain('Ámbito general.');
+    expect(hooks.contextFor(profile, 'preToolUse', 'canvas_list')).toContain('Solo canvas.');
+    expect(hooks.contextFor(profile, 'preToolUse', 'otra')).toContain('Ámbito general.');
+    expect(hooks.contextFor(profile, 'preToolUse', 'otra')).not.toContain('Solo canvas.');
+    expect(hooks.contextFor(profile, 'postToolUse', 'canvas_list')).toBe('');
+    expect(hooks.contextFor({ hooks: [] }, 'preToolUse', 'x')).toBe('');
+    expect(hooks.contextFor(null, 'subagentStart')).toBe('');
+  });
 });
 
 describe('integración con el arranque del agente', () => {

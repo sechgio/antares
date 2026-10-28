@@ -102,7 +102,7 @@ async function exportDiagnostics(params = {}, dialog, window) {
   };
 
   await fs.promises.writeFile(outPath, JSON.stringify(payload, null, 2), 'utf8');
-  _registerWriteRootFromPath(outPath);
+  _registerWriteRootFromPath(outPath, false);
   return { exported: true, path: outPath };
 }
 

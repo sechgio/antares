@@ -200,10 +200,6 @@ export function getThumbnailUrl(value: string | undefined): string {
   return getBlobUrl(value);
 }
 
-async function blobToDataUrl(blob: Blob): Promise<string> {
-  return fileToDataUrl(blob);
-}
-
 type CanvasAssetPutter = (chunk: ArrayBuffer | Uint8Array) => Promise<{ ref?: string }>;
 
 let assetPersistenceChain: Promise<unknown> = Promise.resolve();
@@ -251,8 +247,8 @@ function persistRegisteredBlob(
           });
         }
         return null;
-      }).then((storedRef) => storedRef ?? reg.dataUrl ?? blobToDataUrl(reg.blob))
-    : Promise.resolve(reg.dataUrl ?? blobToDataUrl(reg.blob));
+      }).then((storedRef) => storedRef ?? reg.dataUrl ?? fileToDataUrl(reg.blob))
+    : Promise.resolve(reg.dataUrl ?? fileToDataUrl(reg.blob));
   inFlightAssetPersistence.set(reg.blob, next);
   void next
     .finally(() => {
@@ -343,7 +339,7 @@ export async function embedCanvasAssetsAsDataUrls(
   await Promise.all([...new Set(canvasAssetRefs(doc))].map(async (ref) => {
     try {
       const chunk = await readCanvasAssetShared(getAsset, ref);
-      dataUrlByRef.set(ref, await blobToDataUrl(new Blob([chunk])));
+      dataUrlByRef.set(ref, await fileToDataUrl(new Blob([chunk])));
     } catch (err) {
       readErrorsByRef.set(ref, err);
     }
@@ -436,7 +432,7 @@ export async function embedManagedBlobsAsDataUrls(doc: CanvasDocument): Promise<
       layers.push(layer);
       continue;
     }
-    const dataUrl = await blobToDataUrl(reg.blob);
+    const dataUrl = await fileToDataUrl(reg.blob);
     changed = true;
     layers.push({ ...layer, value: dataUrl });
   }

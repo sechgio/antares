@@ -12,6 +12,7 @@ import urllib.request
 from pathlib import Path
 
 from backend.core.integrations import http_guard, vault
+from backend.core.integrations.catalog import load_catalog_providers
 from backend.core.integrations.types import JsonObject
 from backend.utils.paths import resource_path, user_data_path
 
@@ -114,12 +115,7 @@ def invalid_custom_providers() -> list[str]:
 
 
 def _catalog_specs() -> dict[str, JsonObject]:
-    try:
-        data: JsonObject = json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    providers = data.get("providers") if isinstance(data, dict) else None
-    return dict(providers) if isinstance(providers, dict) else {}
+    return load_catalog_providers(_CATALOG_PATH)
 
 
 def load_provider_specs() -> dict[str, JsonObject]:
@@ -308,7 +304,7 @@ def _mask_key(key: str) -> str:
     return f"••••{key[-4:]}" if len(key) >= 4 else "••••"
 
 
-def _base_url(provider: str, spec: JsonObject, config: JsonObject | None) -> str:
+def _base_url(spec: JsonObject, config: JsonObject | None) -> str:
     saved = (config or {}).get("base_url")
     if isinstance(saved, str) and saved:
         return saved
@@ -325,7 +321,7 @@ def public_state(provider: str) -> JsonObject:
         "configured": bool(config),
         "has_key": bool(isinstance(key, str) and key),
         "key_masked": _mask_key(key) if isinstance(key, str) and key else None,
-        "base_url": _base_url(provider, spec, config),
+        "base_url": _base_url(spec, config),
         "default_model": config.get("model") or (spec.get("chat") or {}).get("default_model", ""),
         "needs_key": (spec.get("auth") or {}).get("type") == "api_key",
     }

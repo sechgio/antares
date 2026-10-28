@@ -168,10 +168,8 @@
   background: var(--text-secondary);
   animation: agentTerminalCursor 1s steps(1) infinite;
 }
-/* En vivo, cada línea nueva entra; al abrir una salida terminada no se anima nada. */
 [role='log'][data-live] > .agent-terminal-line { animation: agentTerminalLineIn 160ms var(--ease-out) both; }
 .agent-terminal-exit { display: inline-block; animation: agentDiffStatsPop 420ms var(--ease-out); }
-/* Mientras piensa, lo ya leído se desvanece por arriba al desplazarse. */
 .agent-reasoning-body[data-streaming] {
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 24px);
   mask-image: linear-gradient(to bottom, transparent, #000 24px);
@@ -185,7 +183,6 @@
   from { opacity: 0; transform: translateY(4px) scale(0.98); }
 }
 .agent-plan-progress { transition: stroke-dashoffset 480ms var(--ease-out); }
-/* El tachado se dibuja de izquierda a derecha cuando el paso se completa. */
 .agent-plan-title {
   background: linear-gradient(currentColor, currentColor) no-repeat 0 55% / 0 1px;
   -webkit-box-decoration-break: clone;

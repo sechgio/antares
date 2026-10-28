@@ -87,8 +87,6 @@ def test_unicode_accents_and_enye(cache_dir: Path) -> None:
 
 
 def test_emoji_renders_or_falls_back(cache_dir: Path) -> None:
-    # Emoji fuera de la fuente: Pillow dibuja el glifo de reemplazo, no
-    # falla. Lo importante es que el render nunca rompe.
     out = render_text_bitmap(_text_clip(content="Hola 🎬 mundo"), 800, 400, cache_dir=cache_dir)
     assert out.is_file()
 

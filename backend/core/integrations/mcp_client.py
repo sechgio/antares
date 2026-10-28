@@ -1,3 +1,4 @@
+
 """Cliente MCP (Model Context Protocol) mínimo para los servidores del agente.
 
 Dos transportes:

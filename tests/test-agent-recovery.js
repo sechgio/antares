@@ -6,8 +6,6 @@ const os = require('node:os');
 const path = require('node:path');
 const { stubModule } = require('./helpers/harness');
 
-// El fixture habilita todo: cua-driver y navegador quedan fuera para no pasar de
-// las 100 herramientas por defecto; ambos tienen sus propias suites.
 stubModule('electron/agent-cua.js', { TOOLS: new Map(), run: async () => ({}), approvalContext: () => ({}), close: () => {} });
 stubModule('electron/agent-browser.js', { ...require('../electron/agent-browser'), TOOLS: {} });
 const runtime = require('../electron/agent-runtime');
@@ -116,7 +114,9 @@ async function main() {
                 return result;
               };
               if (key === 'submit') return async (draft, context) => {
-                if (draft.requestId === `delegate:${child.id}:${boundary === 'delivered' ? 'result' : boundary}`) {
+                const boundaryKey = boundary === 'delivered' ? 'result' : boundary;
+                if (String(draft.requestId || '').startsWith(`delegate:${child.id}:`)
+                  && String(draft.requestId || '').endsWith(`:${boundaryKey}`)) {
                   deliveryWaiting = true;
                   await new Promise((resolve) => { release = resolve; });
                 }

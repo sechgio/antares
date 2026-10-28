@@ -7,6 +7,11 @@ const yaml = require('js-yaml');
 
 const MAX_FILE_BYTES = 64 * 1024;
 const MAX_SKILLS = 256;
+const MAX_HOOKS = 32;
+const MAX_HOOK_CONTEXT = 2000;
+const MAX_HOOK_TOTAL = 8000;
+const HOOK_EVENTS = new Set(['subagentStart', 'subagentStop', 'preToolUse', 'postToolUse']);
+const HOOK_TOOL_EVENTS = new Set(['preToolUse', 'postToolUse']);
 
 function readText(file, root) {
   try {
@@ -84,6 +89,49 @@ function loadSkills(directory, root) {
   return skills;
 }
 
+// Hooks declarativos: solo contexto y registro, nunca comandos ni permisos.
+function loadHooks(directory, root) {
+  const file = path.join(directory, 'hooks.json');
+  if (!fs.existsSync(file)) return [];
+  let document;
+  try {
+    document = JSON.parse(readText(file, root));
+  } catch (error) {
+    throw new Error(`${file}: JSON inválido: ${error.message}`);
+  }
+  if (!document || typeof document !== 'object' || Array.isArray(document)) {
+    throw new Error(`${file}: se espera un objeto con «hooks»`);
+  }
+  const extra = Object.keys(document).find((key) => key !== 'hooks');
+  if (extra) throw new Error(`${file}: campo no admitido: ${extra}`);
+  if (!Array.isArray(document.hooks)) throw new Error(`${file}: falta una lista «hooks»`);
+  if (document.hooks.length > MAX_HOOKS) throw new Error(`${file}: supera el máximo de ${MAX_HOOKS} hooks`);
+  let total = 0;
+  return document.hooks.map((raw, index) => {
+    const label = `${file}: hook ${index + 1}`;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error(`${label}: se espera un objeto`);
+    const unknown = Object.keys(raw).find((key) => !['event', 'context', 'tools'].includes(key));
+    if (unknown) throw new Error(`${label}: campo no admitido: ${unknown}`);
+    if (!HOOK_EVENTS.has(raw.event)) {
+      throw new Error(`${label}: event debe ser subagentStart, subagentStop, preToolUse o postToolUse`);
+    }
+    if (typeof raw.context !== 'string' || !raw.context.trim()) {
+      throw new Error(`${label}: falta un context de texto no vacío`);
+    }
+    const context = raw.context.trim();
+    if (context.length > MAX_HOOK_CONTEXT) throw new Error(`${label}: context excede ${MAX_HOOK_CONTEXT} caracteres`);
+    total += context.length;
+    if (total > MAX_HOOK_TOTAL) throw new Error(`${file}: el texto de los hooks excede ${MAX_HOOK_TOTAL} caracteres`);
+    if (raw.tools === undefined) return { event: raw.event, context };
+    if (!HOOK_TOOL_EVENTS.has(raw.event)) throw new Error(`${label}: tools solo se admite en preToolUse y postToolUse`);
+    if (!Array.isArray(raw.tools) || raw.tools.length === 0 || raw.tools.length > 32
+      || raw.tools.some((tool) => typeof tool !== 'string' || !/^[a-z0-9_]+$/.test(tool))) {
+      throw new Error(`${label}: tools debe ser una lista de nombres de herramienta`);
+    }
+    return { event: raw.event, context, tools: [...new Set(raw.tools)] };
+  });
+}
+
 function loadAgentProfile(slug, baseInstructions = '') {
   if (typeof slug !== 'string' || !/^[a-z0-9][a-z0-9_-]*$/.test(slug)) {
     throw new Error('Slug de agente inválido: usa el nombre de su carpeta, sin rutas');
@@ -111,7 +159,7 @@ function loadAgentProfile(slug, baseInstructions = '') {
   return {
     name: metadata.name, slug, model: metadata.model, description: metadata.description,
     instructions: [baseInstructions, instructions].filter(Boolean).join('\n\n'),
-    skills,
+    skills, hooks: loadHooks(directory, directory),
   };
 }
 

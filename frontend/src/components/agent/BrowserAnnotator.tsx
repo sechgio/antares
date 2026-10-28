@@ -76,7 +76,6 @@ export default function BrowserAnnotator({ source, onPick, onSubmit, onClose }: 
   const [sending, setSending] = useState(false);
   const [hover, setHover] = useState<{ from: Point; to: Point } | null>(null);
   const drag = useRef<{ start: Point; last: Point } | null>(null);
-  // Una sola consulta en vuelo: el resaltado sigue al puntero sin saturar el IPC.
   const probe = useRef<{ busy: boolean; next: Point | null; left: boolean }>({ busy: false, next: null, left: false });
   const page = pages[index];
   const width = page?.width ?? 1;
@@ -187,7 +186,6 @@ export default function BrowserAnnotator({ source, onPick, onSubmit, onClose }: 
 
   const down = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (event.button !== 0 || !page) return;
-    // Sin esto, el mousedown posterior roba el foco a la nota recién abierta.
     event.preventDefault();
     const { at, css } = point(event);
     if (tool === 'text') { commitText(); setTyping({ at, css, text: '' }); return; }
@@ -231,7 +229,6 @@ export default function BrowserAnnotator({ source, onPick, onSubmit, onClose }: 
 
   const up = () => {
     drag.current = null;
-    // Un clic sin arrastre no deja trazos invisibles que luego tapen la selección.
     const empty = !draft || (draft.kind === 'pen' ? draft.points.length < 2
       : 'from' in draft && draft.from.x === draft.to.x && draft.from.y === draft.to.y);
     if (draft && !empty) setMarks((prev) => [...prev, draft]);
@@ -242,7 +239,6 @@ export default function BrowserAnnotator({ source, onPick, onSubmit, onClose }: 
     const pending = typed();
     const all = pageMarks.slice();
     if (pending) all[index] = [...(all[index] ?? []), pending];
-    // Se envían las páginas anotadas; si no hay marcas, la página visible.
     const chosen = Object.keys(pages).map(Number).filter((i) => all[i]?.length);
     const targets = chosen.length ? chosen.sort((a, b) => a - b) : [index];
     setSending(true);
@@ -278,7 +274,6 @@ export default function BrowserAnnotator({ source, onPick, onSubmit, onClose }: 
   return (
     <div role="region" aria-label="Anotar la página" className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden bg-[var(--bg-surface)] [container-type:size]">
       {page ? (
-        // La caja conserva la proporción de la página para que el puntero y el trazo coincidan.
         <div className="relative" style={{ aspectRatio: `${width} / ${height}`, width: `min(100cqw, 100cqh * ${width / height})` }}>
         <img ref={shotRef} src={`data:image/png;base64,${page.png_base64}`} alt={`Página de ${source.name}`} className="pointer-events-none absolute inset-0 size-full" draggable={false} />
         <canvas

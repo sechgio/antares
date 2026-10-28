@@ -41,6 +41,7 @@ import { expandWithDescendants } from '../ops/layerTree';
 import { applyWheelBurst } from '../ops/viewportNav';
 import { CULLING_MARGIN_MM, filterVisibleLayers, visiblePageRectMm } from '../ops/viewportCulling';
 import { compositionHiddenLayerIds } from '../ops/booleanOps';
+import { indexComponentMasters } from '../ops/components';
 import { createWheelGestureRaf } from '../ops/gestureRaf';
 import {
   createPointerGestureOwner,
@@ -593,14 +594,7 @@ function Artboard({
       : null;
 
   const layerById = useMemo(() => new Map(displayLayers.map((l) => [l.id, l])), [displayLayers]);
-  const masterById = useMemo(() => {
-    const map = new Map<string, CanvasLayer>();
-    for (const l of displayLayers) {
-      if (l.meta?.componentId) map.set(l.meta.componentId, l);
-      else if (l.type === 'component' && !l.meta?.instanceOf) map.set(l.id, l);
-    }
-    return map;
-  }, [displayLayers]);
+  const masterById = useMemo(() => indexComponentMasters(displayLayers), [displayLayers]);
 
   const viewRectMm = useMemo(
     () =>

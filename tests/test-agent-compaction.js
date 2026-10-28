@@ -1,10 +1,5 @@
 'use strict';
 
-// Las nueve garantías de compactación de contexto del agente (docs/adr/0003):
-// medición con ventana real, umbrales antes del límite duro, lista sagrada en el
-// resumen, punto seguro sin aprobaciones ni herramientas en vuelo, sin repetir
-// acciones ejecutadas, pausa visible ante fallo, barrera dato/directriz y
-// redacción de secretos. Todo sobre el harness real con proveedor faux.
 
 const fs = require('fs');
 const os = require('os');
@@ -12,8 +7,6 @@ const path = require('path');
 
 const { assert, finish, stubModule } = require('./helpers/harness');
 
-// El fixture habilita todo: cua-driver y navegador quedan fuera para no pasar de
-// las 100 herramientas por defecto; ambos tienen sus propias suites.
 stubModule('electron/agent-cua.js', { TOOLS: new Map(), run: async () => ({}), approvalContext: () => ({}), close: () => {} });
 stubModule('electron/agent-browser.js', { ...require('../electron/agent-browser'), TOOLS: {} });
 const runtime = require('../electron/agent-runtime');
@@ -22,8 +15,6 @@ const compactionModule = require('../electron/agent-compaction');
 const shared = require('../electron/agent-shared').shared;
 
 const WINDOW = 8192;
-// Ventana grande para los guiones donde los turnos de preparación (acción,
-// decisión, corrección) deben completarse ANTES de cruzar el umbral.
 const BIG_WINDOW = 32768;
 const POLICY = { enabled: true, reserveTokens: 1024, keepRecentTokens: 512, backgroundTokens: 0 };
 const SUMMARIZER_MARKER = 'Eres el asistente que resume el contexto';
@@ -128,10 +119,6 @@ function makeBridge() {
   return { bridge, state };
 }
 
-// Respuesta faux que se re-arma sola y clasifica cada petición: el resumidor
-// (marcador del prompt sagrado) recibe el resumen guionizado; el resto consume
-// la cola del guion o responde por defecto. Las peticiones se registran para
-// las aserciones sobre lo que llega al resumidor.
 function makeScript(faux) {
   const script = { requests: [], summaries: [], queue: [], summary: null };
   const step = async (context) => {
@@ -217,8 +204,6 @@ function longText(i) {
   return `Registro de ventas del bloque ${i}: ${'dato '.repeat(2000)}`;
 }
 
-// Rellena el contexto con turnos largos hasta que la compactación por umbral
-// arranque; cada turno termina antes del siguiente (peticiones secuenciales).
 async function fillUntilCompaction(sessionId, script) {
   for (let i = 0; i < 24 && !(await hasCompaction(sessionId)); i += 1) {
     await runtime.handlers.agent_message_send({ session_id: sessionId, content: longText(i) });
@@ -399,7 +384,6 @@ async function main() {
     }
   });
 
-  // 0. El resumen previo reinyectado se etiqueta como resumen, no como usuario.
   {
     const wrapped = {
       role: 'user',
@@ -419,7 +403,6 @@ async function main() {
       'el resumen de emergencia conserva el resumen anterior');
   }
 
-  // 1. La conversación larga compacta antes del límite duro y el turno continúa.
   {
     const { script, dir } = await openCompaction();
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
@@ -444,7 +427,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // 2. El resumen conserva encargo, decisiones y archivos generados.
   {
     const { script, dir } = await openCompaction({
       window: BIG_WINDOW,
@@ -470,7 +452,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // 3. Una corrección reciente del usuario sobrevive a la compactación.
   {
     const { script } = await openCompaction({ window: BIG_WINDOW });
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
@@ -484,7 +465,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // 4. No compacta con una aprobación pendiente.
   {
     const { state: bridgeState, dir } = await openCompaction();
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
@@ -504,7 +484,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // 5. No compacta con una herramienta en vuelo sin resultado.
   {
     const { dir } = await openCompaction();
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
@@ -520,7 +499,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // 6. Tras compactar no se repite ninguna acción ya ejecutada.
   {
     const { script, state: bridgeState } = await openCompaction({ window: BIG_WINDOW });
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
@@ -536,7 +514,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // 7. Fallo simulado de compactación: pausa y aviso, sin continuación corrupta.
   {
     const original = compactionModule.beforeCompact;
     compactionModule.beforeCompact = async () => undefined;
@@ -560,7 +537,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // 8. El resumen no introduce instrucciones desde contenido leído y redacta secretos.
   {
     const { script } = await openCompaction({
       window: BIG_WINDOW,
@@ -582,7 +558,6 @@ async function main() {
     await runtime.shutdown();
   }
 
-  // 9. Estimación conservadora: el peor caso avisa y rescata antes del límite duro.
   {
     for (const window of [32768, 128000, 200000]) {
       const thresholds = compactionModule.thresholdsFor(compactionModule.DEFAULT_POLICY, window);

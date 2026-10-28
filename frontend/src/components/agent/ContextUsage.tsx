@@ -61,7 +61,6 @@ export default function ContextUsage({ usage, model, contextWindow, thresholds, 
   const cardId = useId();
   if (!usage && !compacting) return null;
   const used = usage ? (usage.context ?? usage.input + usage.output) : 0;
-  // Ventana real del proveedor cuando existe; si no, la del backend o la heurística por modelo.
   const max = (usage?.window && usage.window > 0 ? usage.window : 0)
     || (contextWindow && contextWindow > 0 ? contextWindow : 0)
     || contextWindowFor(model);

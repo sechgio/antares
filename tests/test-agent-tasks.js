@@ -284,9 +284,9 @@ async function main() {
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Carga las herramientas de encargos', request_id: 'load-agent' });
     await idle(session.id);
     const enabled = (await runtime.handlers.agent_tools_list({ session_id: session.id })).tools.filter((tool) => tool.enabled);
-    assert.ok(enabled.some((tool) => tool.name === 'task_schedule'), 'las conversaciones existentes pueden cargar programación');
-    assert.ok(enabled.some((tool) => tool.name === 'agent_delegate'), 'las conversaciones existentes pueden cargar delegación');
-    assert.ok(enabled.some((tool) => tool.name === 'wait_event'), 'las conversaciones existentes pueden cargar esperas');
+    for (const name of ['task_schedule', 'agent_delegate', 'agent_check', 'agent_message', 'agent_stop', 'wait_event']) {
+      assert.ok(enabled.some((tool) => tool.name === name), `las conversaciones existentes pueden cargar ${name}`);
+    }
     await require('../electron/agent-tasks').stop();
     const delegationSources = [];
     const respond = (context) => {

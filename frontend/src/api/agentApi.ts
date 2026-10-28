@@ -1,5 +1,8 @@
 import { _invoke } from './core';
+import type { AgentDelegation, AgentRole } from './agentDelegation';
 import type { CanvasDocument } from '../components/canvas/types';
+
+export type { AgentDelegation, AgentRole } from './agentDelegation';
 
 export type CanvasLayersResult = Required<Pick<CanvasDocument, 'id' | 'updatedAt' | 'layers' | 'fields'>> & {
   createdLayers: { id: string; name: string }[];
@@ -41,12 +44,10 @@ export interface AgentSession {
   permission_mode?: AgentPermissionMode;
   approval_rules?: AgentApprovalRules;
   reasoning_effort?: AgentReasoningEffort;
-  /** Niveles de razonamiento que admite el modelo actual; vacío si no razona. */
   reasoning_levels?: AgentReasoningEffort[];
   profile?: { id: string; name: string };
 }
 
-export type AgentRole = 'explorer' | 'reviewer' | 'worker';
 export type AgentMemoryScope = 'shared-read' | 'own' | 'none';
 
 export interface AgentProfile {
@@ -61,6 +62,7 @@ export interface AgentProfile {
   tools_deny?: string[];
   memory_scope?: AgentMemoryScope;
   daily_tokens?: number;
+  model?: { provider: string; model: string } | null;
   created_at: number;
   updated_at: number;
 }
@@ -72,9 +74,7 @@ export interface AgentToolCall {
   gated: boolean;
   status: 'queued' | 'pending' | 'running' | 'done' | 'denied' | 'failed' | 'interrupted' | 'submitted';
   result?: string | null;
-  /** Salida que la herramienta lleva producida mientras corre (p. ej. shell_run). */
   output?: string;
-  /** Epoch ms en que empezó a ejecutarse, mientras sigue en curso. */
   started_at?: number;
   dispatch_id?: string | null;
   channel?: AgentChannel | null;
@@ -93,7 +93,6 @@ export interface AgentMessage {
   name?: string;
   ts: number;
   partial?: boolean;
-  /** Aviso del sistema (compactación, turno detenido…), no parte del trabajo del agente. */
   notice?: boolean;
 }
 
@@ -110,13 +109,9 @@ export interface AgentUsage {
   context?: number;
   cached?: number;
   prompt?: number;
-  /** Gasto acumulado de la conversación en dólares, según pi.usage. */
   cost?: number;
-  /** Última respuesta del proveedor. */
   turn?: AgentUsageTurn;
-  /** Ventana real del modelo que respondió, si se conoce. */
   window?: number;
-  /** Resúmenes de contexto aplicados hasta ahora. */
   compactions?: number;
 }
 
@@ -298,6 +293,7 @@ export interface AgentContext {
   modules: { id: string; label: string }[];
   files: { path: string; folder: boolean }[];
   accounts: string[];
+  workspace?: string | null;
 }
 
 export interface AgentMemoryItem {
@@ -355,6 +351,7 @@ export const agentApi = {
     _invoke<{
       messages: AgentMessage[];
       running: boolean;
+      delegations?: AgentDelegation[];
       plan?: AgentPlan | null;
       resumable?: boolean;
       pending_approvals: AgentApproval[];
@@ -371,6 +368,9 @@ export const agentApi = {
   agentContextRemoveFile: (session_id: string, path: string) =>
     _invoke<{ removed: number }>('agent_context_remove_file', { session_id, path }),
 
+  agentWorkspaceSet: (session_id: string, path?: string) =>
+    _invoke<{ workspace: string | null }>('agent_workspace_set', { session_id, ...(path ? { path } : {}) }),
+
   agentMessageSend: (session_id: string, content: string, request_id: string, attachments: string[] = [], correction = false, skill_id?: string) =>
     _invoke<{ accepted: boolean; duplicate?: boolean; files?: AgentMessageFiles; mentions?: AgentMessageMentions }>(
       'agent_message_send',
@@ -378,7 +378,6 @@ export const agentApi = {
         ...(skill_id ? { skill_id } : {}) },
     ),
 
-  /** Sin `dropped` abre el diálogo; con él adjunta rutas soltadas o bytes pegados (base64). */
   agentAttach: (kind: 'files' | 'folder', dropped?: { paths?: string[]; data?: { name: string; data: string }[] }) =>
     _invoke<{ attachments: AgentAttachment[] }>('agent_attach', { kind, ...dropped }),
 
@@ -468,7 +467,7 @@ export const agentApi = {
 
   agentProfilesList: () => _invoke<{ profiles: AgentProfile[] }>('agent_profiles_list'),
 
-  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; role?: AgentRole; instructions: string; starter: string; tools: string[] | null; tools_deny?: string[]; memory_scope?: AgentMemoryScope; daily_tokens?: number | null }) =>
+  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; role?: AgentRole; instructions: string; starter: string; tools: string[] | null; tools_deny?: string[]; memory_scope?: AgentMemoryScope; daily_tokens?: number | null; model?: { provider: string; model: string } | null }) =>
     _invoke<{ profile: AgentProfile }>('agent_profile_save', p),
 
   agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),

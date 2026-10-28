@@ -138,3 +138,22 @@ it('detiene la animación al terminar y oculta el contenido plegado de la navega
   fireEvent.click(screen.getByRole('button', { name: 'Delegación en Investigador' }));
   expect(screen.getByRole('list')).toBeVisible();
 });
+
+it('resume el acuse de agent_delegate con el agente, su rol y el estado pendiente', () => {
+  render(<SubagentTrace call={call({
+    name: 'agent_delegate',
+    params: { agent: 'p1', task: 'Revisa el contrato' },
+    result: JSON.stringify({
+      delegated: true,
+      session_id: 'delegate-1',
+      agent: { id: 'p1', name: 'Investigador' },
+      role: 'explorer',
+      depth: 1,
+      status: 'pending',
+    }),
+  })} />);
+  expect(screen.getByText('Investigador')).toBeInTheDocument();
+  expect(screen.getByText('explorador')).toBeInTheDocument();
+  expect(screen.getByText('pendiente')).toBeInTheDocument();
+  expect(screen.getByText('Revisa el contrato')).toBeInTheDocument();
+});

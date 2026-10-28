@@ -37,8 +37,12 @@ function sanitizeErrorMessage(message) {
   return text;
 }
 
+function sanitizeErrorText(err) {
+  return sanitizeErrorMessage(err instanceof Error ? err.message : String(err));
+}
+
 function sanitizeError(err) {
-  const message = sanitizeErrorMessage(err instanceof Error ? err.message : String(err));
+  const message = sanitizeErrorText(err);
   const safe = new Error(message);
   if (err instanceof Error && err.code) safe.code = err.code;
   return safe;
@@ -73,6 +77,7 @@ module.exports = {
   maskClientId,
   validateClientId,
   sanitizeError,
+  sanitizeErrorText,
   sanitizeErrorMessage,
   assertNoSecretInObject,
 };

@@ -52,34 +52,22 @@ function decryptPayloadAes(namespace, encoded) {
   return JSON.parse(decrypted.toString('utf8'));
 }
 
-let _fallbackWarned = false;
-
-function _warnFallbackOnce() {
-  if (_fallbackWarned) return;
-  _fallbackWarned = true;
-  const msg = 'safeStorage no disponible: secretos cifrados con clave derivada (no confidencial)';
-  try {
-    require('./app-log').appendLogEvent('WARN', 'secure_storage.fallback', { reason: 'safeStorage_unavailable' });
-  } catch {
-  }
-  try {
-    console.warn(`[secure-storage] ${msg}`);
-  } catch {
-  }
-}
-
-function isConfidentialStorage() {
-  return _safeStorageAvailable();
-}
-
 function encryptPayload(namespace, payload) {
   const json = JSON.stringify(payload);
   if (_safeStorageAvailable()) {
     const buf = safeStorage.encryptString(json);
     return { v: 2, data: Buffer.from(buf).toString('base64') };
   }
-  _warnFallbackOnce();
-  return { v: 1, data: encryptPayloadAes(namespace, payload) };
+  // La clave derivada de rutas públicas (v1) solo sirve para LEER sobres
+  // legados; es ofuscación reversible, no cifrado. Escribir credenciales
+  // nuevas con ella escondía el problema: fallamos en voz alta.
+  throw new Error(
+    'El cifrado de credenciales (safeStorage/DPAPI) no está disponible: Antares no guardará los secretos sin cifrado confidencial. Reinicia la sesión de Windows e inténtalo de nuevo.',
+  );
+}
+
+function isConfidentialStorage() {
+  return _safeStorageAvailable();
 }
 
 function decryptPayload(namespace, encoded, version = 1) {

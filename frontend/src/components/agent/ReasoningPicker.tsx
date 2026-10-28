@@ -15,7 +15,6 @@ const LABELS: Record<AgentReasoningEffort, string> = {
   max: 'Máximo',
 };
 
-// Mismo ajuste que el runtime: el nivel elegido o el más cercano por debajo.
 function effective(levels: AgentReasoningEffort[], value: AgentReasoningEffort) {
   const below = levels.filter((level) => ORDER.indexOf(level) <= ORDER.indexOf(value));
   return below[below.length - 1] ?? levels[0];

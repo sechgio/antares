@@ -1,20 +1,16 @@
 export type DiffLine = {
   kind: 'context' | 'add' | 'remove';
   text: string;
-  /** Tramo [inicio, fin) que cambió respecto a su pareja borrada/añadida. */
   change?: [number, number];
 };
 export interface FileChange {
   hunks: DiffLine[][];
   added: number;
   removed: number;
-  /** El archivo se crea o se reemplaza entero (fs_write). */
   whole: boolean;
-  /** Línea del archivo donde empieza cada hunk, cuando se conoce. */
   starts: (number | null)[];
 }
 
-// Por debajo de esta fracción en común, resaltar un tramo no aporta: cambió la línea entera.
 const MIN_SHARED = 0.4;
 
 function shared(a: string, b: string): [number, number] {
@@ -23,7 +19,6 @@ function shared(a: string, b: string): [number, number] {
   while (start < max && a[start] === b[start]) start += 1;
   let end = 0;
   while (end < max - start && a[a.length - 1 - end] === b[b.length - 1 - end]) end += 1;
-  // Se amplía a palabras completas para no partir identificadores.
   const word = (char: string | undefined) => !!char && /\w/.test(char);
   const cutsStart = word(a[start]) || word(b[start]);
   while (cutsStart && start > 0 && word(a[start - 1])) start -= 1;
@@ -32,7 +27,6 @@ function shared(a: string, b: string): [number, number] {
   return [start, end];
 }
 
-/** Empareja cada bloque de líneas borradas con las añadidas que lo siguen y marca qué tramo cambió. */
 export function markChanges(lines: DiffLine[]): DiffLine[] {
   const result = lines.map((line) => ({ ...line }));
   let i = 0;
@@ -55,7 +49,6 @@ export function markChanges(lines: DiffLine[]): DiffLine[] {
   return result;
 }
 
-// Por encima de este producto de líneas el LCS sale caro; se muestra borrado + añadido.
 const MAX_LCS_CELLS = 40_000;
 
 function lines(text: string): string[] {
@@ -96,7 +89,6 @@ export function diffLines(before: string, after: string): DiffLine[] {
     if (i < midA.length && j < midB.length && midA[i] === midB[j]) {
       middle.push({ kind: 'context', text: midA[i] }); i += 1; j += 1;
     } else if (i < midA.length && (j === midB.length || table[(i + 1) * width + j] >= table[i * width + j + 1])) {
-      // En empate se borra primero, como en git: la línea vieja precede a la nueva.
       middle.push({ kind: 'remove', text: midA[i] }); i += 1;
     } else {
       middle.push({ kind: 'add', text: midB[j] }); j += 1;
@@ -109,10 +101,6 @@ function count(hunks: DiffLine[][], kind: DiffLine['kind']): number {
   return hunks.reduce((total, hunk) => total + hunk.filter((line) => line.kind === kind).length, 0);
 }
 
-/**
- * Línea donde empieza el texto nuevo según el fragmento numerado que devuelve fs_edit.
- * El backend lo abre hasta 3 líneas antes del cambio, así que se prefiere esa posición.
- */
 export function snippetStart(result: string | null | undefined, hunk: DiffLine[]): number | null {
   const fresh = hunk.filter((line) => line.kind !== 'remove').map((line) => line.text);
   if (!result || fresh.length === 0) return null;
@@ -120,14 +108,12 @@ export function snippetStart(result: string | null | undefined, hunk: DiffLine[]
   try { snippet = (JSON.parse(result) as { snippet?: unknown }).snippet; } catch { return null; }
   if (typeof snippet !== 'string') return null;
   const rows = snippet.split('\n').map((row) => /^(\d+)\t(.*)$/.exec(row)).filter((row) => row !== null);
-  // El fragmento se recorta a 1500 caracteres: si no llega a la última línea basta con la primera.
   const fits = (k: number) => !!rows[k] && rows[k][2].includes(fresh[0])
     && (fresh.length === 1 || !rows[k + fresh.length - 1] || rows[k + fresh.length - 1][2].includes(fresh[fresh.length - 1]));
   for (let k = Math.min(3, rows.length - 1); k >= 0; k -= 1) if (fits(k)) return Number(rows[k][1]);
   return null;
 }
 
-/** Cambio que describen los parámetros de fs_edit o fs_write; null si no se puede deducir. */
 export function fileChange(method: string, params: Record<string, unknown>, result?: string | null): FileChange | null {
   let hunks: DiffLine[][];
   let starts: (number | null)[];
@@ -141,7 +127,6 @@ export function fileChange(method: string, params: Record<string, unknown>, resu
       && typeof edit.old === 'string' && typeof edit.new === 'string' ? [edit.old, edit.new] as const : null));
     if (pairs.length === 0 || !pairs.every((pair) => pair !== null)) return null;
     hunks = pairs.map((pair) => markChanges(diffLines(pair[0], pair[1])));
-    // Con varias ediciones el fragmento solo describe la última y las anteriores pueden desplazar líneas.
     starts = hunks.length === 1 ? [snippetStart(result, hunks[0])] : hunks.map(() => null);
   } else {
     return null;

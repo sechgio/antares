@@ -33,7 +33,8 @@ TOOL_SPECS: list[JsonObject] = [
             "Equipo · shell_run (efecto: requiere aprobación del usuario): ejecuta un comando de PowerShell en el "
             "espacio de trabajo de la conversación o en una carpeta autorizada y devuelve su salida y código. "
             "El proceso puede acceder al equipo completo con los permisos del usuario, fuera de los grants de archivos. "
-            "Cada comando requiere aprobación, también en Acceso completo. "
+            "Cada comando requiere aprobación salvo en Acceso completo, donde solo la piden los que borran o "
+            "descartan archivos. "
             "Devuelve output_id para recuperar con shell_output la salida completa si el resumen se recorta"
         ),
         "inputSchema": {
@@ -78,31 +79,27 @@ def read_output(params: JsonObject, root: Path) -> JsonObject:
     return page
 
 
-def _clip(text: str) -> str:
-    if len(text) <= _MAX_OUTPUT_CHARS:
-        return text
-    half = _MAX_OUTPUT_CHARS // 2
-    return f"{text[:half]}\n… [{len(text) - _MAX_OUTPUT_CHARS} caracteres omitidos] …\n{text[-half:]}"
-
-
 def kill_tree(process: subprocess.Popen[bytes]) -> None:
     subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, check=False,
                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
-def run(params: JsonObject, grants: dict[str, JsonObject], root: Path, token: Any = None) -> JsonObject:
+def run(params: JsonObject, grants: dict[str, JsonObject], root: Path, token: Any = None,
+        *, workspace: Path | None = None) -> JsonObject:
     command = params.get("command")
     if not isinstance(command, str) or not command.strip():
         raise ValueError("Indica el comando")
     if len(command) > _MAX_COMMAND_CHARS:
         raise ValueError(f"El comando excede {_MAX_COMMAND_CHARS} caracteres")
-    cwd = computer_files.resolve(params.get("cwd") or str(root), grants, root)
+    # root guarda las salidas; workspace es la carpeta donde trabaja el comando.
+    workspace = workspace or root
+    cwd = computer_files.resolve(params.get("cwd") or str(workspace), grants, workspace)
     if not cwd.is_dir():
         raise ValueError("La carpeta de trabajo no existe")
     raw_timeout = params.get("timeout_s")
     timeout = raw_timeout if isinstance(raw_timeout, int) and not isinstance(raw_timeout, bool) else _DEFAULT_TIMEOUT_S
     timeout = max(1, min(_MAX_TIMEOUT_S, timeout))
-    env = {**os.environ, "ANTARES_AGENT_WORKSPACE": str(root)}
+    env = {**os.environ, "ANTARES_AGENT_WORKSPACE": str(workspace)}
     started = time.monotonic()
     process = subprocess.Popen(
         ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
@@ -146,8 +143,9 @@ def run(params: JsonObject, grants: dict[str, JsonObject], root: Path, token: An
     if cancelled:
         raise RunCancelled()
 
-    result: JsonObject = {"exit_code": process.returncode, "cwd": str(cwd), "stdout": _clip(output["stdout"]),
-                          "stderr": _clip(output["stderr"]), "output_id": output_id,
+    result: JsonObject = {"exit_code": process.returncode, "cwd": str(cwd),
+                          "stdout": computer_files.clip_text(output["stdout"], _MAX_OUTPUT_CHARS),
+                          "stderr": computer_files.clip_text(output["stderr"], _MAX_OUTPUT_CHARS), "output_id": output_id,
                           "duration_s": round(time.monotonic() - started, 2)}
     if timed_out:
         result["error"] = f"El comando superó {timeout} s y se detuvo"
