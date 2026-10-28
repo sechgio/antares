@@ -50,7 +50,7 @@ function throwsPrivate(url) {
     assert(normalizeUrl('https://example.com/') === 'https://example.com/', 'las URLs públicas pasan intactas');
     assert(normalizeUrl('example.com') === 'https://example.com', 'un dominio simple se prefija y pasa');
     assert(normalizeUrl('http://8.8.8.8/') === 'http://8.8.8.8/', 'una IP pública pasa');
-    assert(/^https:\/\/duckduckgo\.com\/html\/\?q=/.test(normalizeUrl('buscar gatos')), 'las búsquedas van al buscador');
+    assert(/^https:\/\/www\.bing\.com\/search\?q=/.test(normalizeUrl('buscar gatos')), 'las búsquedas van al buscador');
 
     assert(isPrivateHostname('localhost') && isPrivateHostname('sub.localhost'), 'localhost y sus subdominios son privados');
     assert(isPrivateHostname('::1') && isPrivateHostname('[::1]'), 'loopback IPv6, con o sin corchetes');
