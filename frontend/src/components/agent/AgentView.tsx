@@ -1258,27 +1258,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             />
           </header>
         )}
-        {session && (
-          <ContextChips
-            context={context}
-            onRemoveFile={async (path) => {
-              try {
-                await agentApi.agentContextRemoveFile(session.id, path);
-                await loadMessages(session.id, false);
-              } catch (err) {
-                addToast({ message: errorMessage(err, 'No se pudo retirar el archivo'), type: 'error' });
-              }
-            }}
-            onSetWorkspace={async (path) => {
-              try {
-                await agentApi.agentWorkspaceSet(session.id, path);
-                await loadMessages(session.id, false);
-              } catch (err) {
-                addToast({ message: errorMessage(err, 'No se pudo cambiar el espacio de trabajo'), type: 'error' });
-              }
-            }}
-          />
-        )}
 
         <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" tabIndex={-1} className="custom-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-4 pb-4 pt-3 [&>*]:mx-auto [&>*]:max-w-[720px]">
           {showHero ? (
@@ -1450,6 +1429,27 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 ))}
               </ol>
             </section>
+          )}
+          {session && (
+            <ContextChips
+              context={context}
+              onRemoveFile={async (path) => {
+                try {
+                  await agentApi.agentContextRemoveFile(session.id, path);
+                  await loadMessages(session.id, false);
+                } catch (err) {
+                  addToast({ message: errorMessage(err, 'No se pudo retirar el archivo'), type: 'error' });
+                }
+              }}
+              onSetWorkspace={async (path) => {
+                try {
+                  await agentApi.agentWorkspaceSet(session.id, path);
+                  await loadMessages(session.id, false);
+                } catch (err) {
+                  addToast({ message: errorMessage(err, 'No se pudo cambiar el espacio de trabajo'), type: 'error' });
+                }
+              }}
+            />
           )}
           <div role="group" aria-label="Redactar mensaje"
             className={`agent-composer relative rounded-2xl border bg-[var(--bg-elevated)] transition-colors ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-subtle)]'}`}
