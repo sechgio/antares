@@ -6,6 +6,12 @@ const INTERRUPTED_RESULT = JSON.stringify({
 const NOTICE_KIND = 'antares.notice';
 const CONTEXT_MARKER = '[Contexto de Antares]';
 const CHECK_MARKER = '[Comprobación de Antares]';
+// Guía única para elegir entre las dos delegaciones: el prompt y ambas
+// descripciones la comparten para que no se contradigan.
+const DELEGATION_GUIDE = 'Cómo elegir la delegación: agent_delegate abre una conversación aparte con historial, '
+  + 'seguimiento, continuación y salas; sirve para encargos que pueden durar o varios agentes a la vez, y solo lee. '
+  + 'subagent_run devuelve el resultado en este mismo turno, agrupa varios encargos, admite output_schema y es la '
+  + 'única vía para worker, con cada efecto aprobado aquí. No uses las dos para el mismo encargo.';
 
 const shared = {
   deps: null,
@@ -36,6 +42,7 @@ const shared = {
   NOTICE_KIND,
   CONTEXT_MARKER,
   CHECK_MARKER,
+  DELEGATION_GUIDE,
 };
 
 // Los proveedores compatibles con OpenAI pueden repetir ids («call_0») entre turnos

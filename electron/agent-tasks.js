@@ -103,7 +103,7 @@ const DELEGATE_TOOL = {
     + 'Si una delegación ya terminó y quieres ampliarla conservando su historial, llama agent_delegate con resume y su '
     + 'session_id. fork copia esta conversación como contexto del agente nuevo. max_rounds reanuda automáticamente al '
     + 'agente si queda sin respuesta final o con error, hasta ese número de veces, tras idle_minutes de inactividad y '
-    + 'con nudge como mensaje; una respuesta completa no se altera.',
+    + `con nudge como mensaje; una respuesta completa no se altera. ${shared.DELEGATION_GUIDE}`,
   inputSchema: { type: 'object', properties: {
     agent: { type: 'string' }, task: { type: 'string', minLength: 1, maxLength: 4000 },
     exclude_tools: { type: 'array', items: { type: 'string' }, description: 'Herramientas que el hijo no debe usar' },

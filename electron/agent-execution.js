@@ -294,6 +294,7 @@ async function allToolSpecs() {
         + `Por defecto solo lee; role=reviewer pide una revisión y role=worker solo funciona si la ficha del agente tiene ese rol, `
         + `con cada efecto aprobado en esta conversación. Admiten task o hasta ${SUBAGENT_MAX_TASKS} tasks agrupadas. `
         + `output_schema valida la respuesta como JSON Schema. No hay delegación recursiva (profundidad máxima ${SUBAGENT_MAX_DEPTH}). `
+        + `${shared.DELEGATION_GUIDE} `
         + `Agentes disponibles: ${saved.map((profile) => `«${profile.name}» (${String(profile.description || 'agente personalizado').slice(0, SUBAGENT_DESCRIPTION_MAX)})`).join('; ')}.`,
       gated: false,
       kind: 'subagent',
