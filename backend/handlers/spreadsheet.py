@@ -40,11 +40,6 @@ _spill_cache: OrderedDict[tuple[str, int, int], dict[str, Any]] = OrderedDict()
 _spill_cache_lock = threading.Lock()
 
 
-def _clear_spreadsheet_caches() -> None:
-    with _spill_cache_lock:
-        _spill_cache.clear()
-
-
 def _spill_dir() -> Path:
     out = Path(tempfile.gettempdir()) / "antares-spreadsheet-results"
     with contextlib.suppress(FileExistsError):

@@ -14,6 +14,11 @@ from backend.core.spreadsheet_spill import (
 from backend.handlers.spreadsheet import spreadsheet_get_rows
 
 
+def _reset_spill_cache(ss) -> None:
+    with ss._spill_cache_lock:
+        ss._spill_cache.clear()
+
+
 def _make_spill(spill_dir: Path, *, sheets: dict[str, list[list[object]]] | None = None) -> Path:
     builder = SpreadsheetResultBuilder("wb.xlsx", inline_max_bytes=1, spill_dir=spill_dir)
     for name, rows in ({"Hoja1": [["a", "b"], ["1", "2"]]} if sheets is None else sheets).items():
@@ -237,7 +242,7 @@ def test_legacy_large_json_pages_reuse_cache_and_reload_after_change(tmp_path: P
         return real_read_text(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "read_text", tracking_read_text)
-    ss._clear_spreadsheet_caches()
+    _reset_spill_cache(ss)
     try:
         first = spreadsheet_get_rows({"result_path": str(cache), "offset": 0, "limit": 1})
         second = spreadsheet_get_rows({"result_path": str(cache), "offset": 1, "limit": 1})
@@ -250,4 +255,4 @@ def test_legacy_large_json_pages_reuse_cache_and_reload_after_change(tmp_path: P
         assert changed["rows"] == [["c"]]
         assert reads == 2
     finally:
-        ss._clear_spreadsheet_caches()
+        _reset_spill_cache(ss)
