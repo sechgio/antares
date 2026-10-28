@@ -1148,9 +1148,6 @@ it('abre una conversación desde un agente guardado con su mensaje inicial', asy
   await act(async () => { fireEvent.click(screen.getByTitle('Nueva conversación con Informe mensual')); });
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ profile_id: 'p1' }));
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Prepara el informe de este mes');
-  const suggestions = within(screen.getByRole('group', { name: 'Sugerencias' }));
-  expect(suggestions.getAllByRole('button')).toHaveLength(1);
-  expect(suggestions.getByRole('button', { name: 'Prepara el informe de este mes' })).toBeEnabled();
 });
 
 it('envía el primer texto una sola vez ante doble Enter y conserva lo escrito durante la creación', async () => {
@@ -1224,7 +1221,7 @@ it('conserva el primer borrador si falla la creación y permite volver a enviarl
   expect(input).toHaveValue('');
 });
 
-it.each(['texto', 'sugerencia'])('reintenta %s con la misma identidad si se pierde la respuesta de aceptación', async (source) => {
+it('reintenta el texto con la misma identidad si se pierde la respuesta de aceptación', async () => {
   vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [] });
@@ -1240,12 +1237,8 @@ it.each(['texto', 'sugerencia'])('reintenta %s con la misma identidad si se pier
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
   const submit = () => {
-    if (source === 'texto') {
-      fireEvent.change(input, { target: { value: 'Encargo aceptado' } });
-      fireEvent.click(screen.getByLabelText('Enviar'));
-    } else {
-      fireEvent.click(within(screen.getByRole('group', { name: 'Sugerencias' })).getAllByRole('button')[0]);
-    }
+    fireEvent.change(input, { target: { value: 'Encargo aceptado' } });
+    fireEvent.click(screen.getByLabelText('Enviar'));
   };
   await act(async () => { submit(); });
   await act(async () => { submit(); });
@@ -1273,62 +1266,15 @@ it('marca el estado desactualizado si falla el sondeo y lo recupera sin perder e
   expect(screen.getByText('Respuesta confirmada')).toBeVisible();
 });
 
-it('envía una sugerencia del composer creando una única conversación si no hay ninguna', async () => {
+it('muestra la bienvenida sin sugerencias de mensajes predefinidos', async () => {
   vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
   vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [] });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  const created = deferred<{ session: AgentSession }>();
-  const create = vi.spyOn(agentApi, 'agentSessionCreate').mockReturnValue(created.promise);
-  render(<AgentView />);
-  const group = await screen.findByRole('group', { name: 'Sugerencias' });
-  expect(screen.getByText(/Cuéntame qué necesitas\. Puedo ayudarte/)).toBeVisible();
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveAttribute('placeholder', 'Cuéntame qué necesitas…');
-  const buttons = within(group).getAllByRole('button');
-  expect(buttons).toHaveLength(3);
-  expect(within(group).getAllByRole('button', { hidden: true })).toHaveLength(3);
-  fireEvent.click(buttons[0]);
-  fireEvent.click(buttons[0]);
-  expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba' });
-  buttons.forEach((button) => expect(button).toBeDisabled());
-  await act(async () => { created.resolve({ session }); });
-  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', buttons[0].textContent, expect.any(String), []);
-});
-
-it('ofrece sugerencias en un chat con historial y permite reintentar un envío fallido sin borrar el borrador', async () => {
-  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta previa', ts: 1 }] });
-  vi.mocked(agentApi.agentMessageSend).mockRejectedValueOnce(new Error('No hay conexión')).mockResolvedValue({ accepted: true });
-  localStorage.setItem('antares-agent-session', 's1');
-  render(<AgentView />);
-  await screen.findByText('Respuesta previa');
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador sin enviar' } });
-  const suggestion = within(screen.getByRole('group', { name: 'Sugerencias' })).getAllByRole('button')[1];
-  await act(async () => { fireEvent.click(suggestion); });
-  expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'No hay conexión' }));
-  expect(suggestion).toBeEnabled();
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador sin enviar');
-  await act(async () => { fireEvent.click(suggestion); });
-  expect(agentApi.agentMessageSend).toHaveBeenLastCalledWith('s1', suggestion.textContent, expect.any(String), []);
-  const [first, second] = vi.mocked(agentApi.agentMessageSend).mock.calls;
-  expect(second[2]).toBe(first[2]);
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador sin enviar');
-  expect(screen.getByText('Respuesta previa')).toBeVisible();
-});
-
-it.each(['running', 'approval'])('deshabilita las sugerencias mientras el turno está en %s', async (state) => {
-  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
-    running: state === 'running',
-    pending_approvals: state === 'approval' ? [{ id: 'a1', session_id: 's1', call_id: 'c1', method: 'db_clear', params: {}, status: 'pending', created_at: 1, decided_at: null }] : [],
-  });
-  localStorage.setItem('antares-agent-session', 's1');
   render(<AgentView />);
   await act(async () => {});
-  within(screen.getByRole('group', { name: 'Sugerencias' })).getAllByRole('button').forEach((button) => {
-    expect(button).toBeDisabled();
-    fireEvent.click(button);
-  });
-  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  expect(screen.getByText(/^Puedo ayudarte a preparar informes/)).toBeVisible();
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveAttribute('placeholder', 'Cuéntame qué necesitas…');
+  expect(screen.queryByRole('group', { name: 'Sugerencias' })).not.toBeInTheDocument();
 });
 
 it('crea la conversación con el modelo real elegido en el selector', async () => {

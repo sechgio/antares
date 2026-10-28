@@ -366,17 +366,32 @@ it('muestra la terminal con su carpeta y el código de salida en la cabecera', (
     id: 't', name: 'shell_run', params: { command: 'npm test', cwd: 'C:\\proyecto' }, status: 'failed', gated: true,
     result: JSON.stringify({ exit_code: 2, stdout: '', stderr: 'boom' }),
   }] }} />);
+  expect(screen.queryByText('salida 2')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /npm test/ }));
   expect(screen.getByText('C:\\proyecto')).toBeVisible();
   expect(screen.getByText('salida 2')).toBeVisible();
 });
 
-it('abre el error de una herramienta para poder revisarlo sin buscar sus detalles', () => {
+it('muestra como texto el error con datos adicionales', () => {
+  render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
+    id: 'r', name: 'web_open', params: { url: 'https://example.com' }, status: 'failed', gated: false,
+    result: '{"error":"El usuario está usando el navegador","code":"USER_BUSY","retryable":true}',
+  }] }} />);
+  fireEvent.click(screen.getByText('https://example.com'));
+  expect(screen.getByText(/^El usuario está usando el navegador/)).toHaveTextContent('code: USER_BUSY');
+  expect(screen.queryByText(/"error"/)).not.toBeInTheDocument();
+});
+
+it('deja contraído el error de una herramienta hasta que se despliega', () => {
   const { container } = render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [{
     id: 'read', name: 'fs_read', params: { path: 'informe.pdf' }, status: 'failed', gated: false,
     result: '{"error":"El archivo ya no existe"}',
   }] }} />);
-  expect(container.querySelector('details')?.open).toBe(true);
-  expect(screen.getByText(/El archivo ya no existe/)).toBeVisible();
+  const details = container.querySelector('details')!;
+  expect(details.open).toBe(false);
+  fireEvent.click(screen.getByText('informe.pdf'));
+  expect(details.open).toBe(true);
+  expect(screen.getByText('El archivo ya no existe')).toBeVisible();
 });
 
 it('espera la aprobación del comando sin abrir una terminal vacía', () => {
@@ -513,7 +528,8 @@ it('muestra cada herramienta con su argumento clave, entrada y salida, y marca e
   expect(screen.getByText('C:\\datos\\ventas.csv')).toBeInTheDocument();
   fireEvent.click(screen.getByText('https://es.wikipedia.org/wiki/Lima'));
   expect(screen.getByText('Error')).toBeInTheDocument();
-  expect(screen.getByText(/"error": "sin conexión"/)).toBeInTheDocument();
+  expect(screen.getByText('sin conexión')).toHaveClass('text-[var(--accent-red)]');
+  expect(screen.queryByText(/"error"/)).not.toBeInTheDocument();
   expect(screen.getByText('fallida')).toBeInTheDocument();
   cleanup();
   const { container } = render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1,
