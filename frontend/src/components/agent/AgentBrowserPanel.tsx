@@ -93,7 +93,9 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
           const box = overlay.getBoundingClientRect();
           return box.width > 0 && box.height > 0 && box.left < rect.right && box.right > rect.left && box.top < rect.bottom && box.bottom > rect.top;
         });
-        const bounds = covered || annotatingRef.current ? null : {
+        // La vista nativa se pinta por coordenadas de pantalla, no es DOM: con la
+        // ventana oculta se retira y al volver se acopla de nuevo.
+        const bounds = document.hidden || covered || annotatingRef.current ? null : {
           x: rect.left + element.clientLeft,
           y: rect.top + element.clientTop,
           width: element.clientWidth || rect.width,
@@ -114,11 +116,13 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
     const overlays = new MutationObserver(report);
     overlays.observe(document.body, { childList: true });
     window.addEventListener('resize', report);
+    document.addEventListener('visibilitychange', report);
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
       overlays.disconnect();
       window.removeEventListener('resize', report);
+      document.removeEventListener('visibilitychange', report);
       void agentApi.agentBrowser('bounds', { bounds: null }).catch(() => {});
     };
   }, []);
@@ -172,7 +176,7 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
   return (
     <div
       ref={panelRef}
-      className="relative flex w-[clamp(340px,44%,760px)] shrink-0"
+      className="relative -mr-2.5 flex w-[clamp(340px,44%,760px)] shrink-0"
       style={{ width: width === null ? undefined : clampWidth(width), maxWidth: layout.available ? maxWidth : undefined }}
     >
       <div
@@ -207,7 +211,7 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
           setWidth(clampWidth(next));
         }}
       />
-    <aside aria-label="Navegador del agente" className="agent-browser flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)]">
+    <aside aria-label="Navegador del agente" className="agent-browser flex min-w-0 flex-1 flex-col overflow-hidden rounded-l-lg border border-r-0 border-[var(--border-medium)] bg-[var(--bg-base)]">
       <div className="flex h-9 shrink-0 items-center gap-1 pl-1.5 pr-1.5">
         <div role="tablist" aria-label="Pestañas del navegador" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
           {tabs.map((tab) => {
@@ -341,7 +345,8 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
         </div>,
         document.body,
       )}
-      <div className="flex shrink-0 items-center gap-0.5 px-2 pb-1.5">
+      <div className="relative flex shrink-0 items-center gap-0.5 px-2 pb-1.5">
+        {state.open && state.loading && <div role="progressbar" aria-label="Cargando la página" className="agent-browser-progress" />}
         <button type="button" className={iconButton} aria-label="Atrás" disabled={!state.can_go_back} onClick={() => void run('back')}>
           <ArrowLeft size={14} />
         </button>
@@ -367,10 +372,10 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
             onChange={(event) => setAddress(event.target.value)}
             onFocus={(event) => { setEditing(true); event.target.select(); }}
             onBlur={() => setEditing(false)}
-            placeholder="Escribe una URL"
+            placeholder="Busca o escribe una URL"
             aria-label="Dirección del navegador del agente"
             spellCheck={false}
-            className="h-6 w-full rounded-md border border-[var(--border-medium)] bg-[var(--bg-input)] px-2 text-[12.5px] text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-muted)] focus:border-[var(--text-muted)]"
+            className="h-7 w-full rounded-lg border border-transparent bg-[var(--bg-input)] px-2.5 text-[12.5px] text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-muted)] focus:border-[var(--text-muted)]"
           />
         </form>
       </div>
@@ -406,7 +411,7 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
               {userTab ? 'Explorar la web' : 'Pestaña del agente'}
             </p>
             <p className="max-w-xs text-[12px] text-[var(--text-muted)]">
-              {userTab ? 'Escribe una URL para abrir un sitio.' : 'Aquí verás las páginas que abra el agente.'}
+              {userTab ? 'Busca algo o escribe una URL para abrir un sitio.' : 'Aquí verás las páginas que abra el agente.'}
             </p>
           </div>
         )}

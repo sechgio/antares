@@ -22,6 +22,8 @@ const NET_KEEP = 300;
 const MAX_PAGE_TEXT = 12_000;
 const LOAD_TIMEOUT_MS = 30_000;
 const SETTLE_MS = 700;
+// Tras el DOM listo no se espera a que acaben imágenes, anuncios ni medidores.
+const READY_GRACE_MS = 1_500;
 const KEY_CODES = {
   enter: 'Enter', return: 'Enter', tab: 'Tab', esc: 'Escape', escape: 'Escape', space: 'Space', backspace: 'Backspace',
   delete: 'Delete', up: 'Up', down: 'Down', left: 'Left', right: 'Right', home: 'Home', end: 'End',
@@ -223,7 +225,7 @@ function normalizeUrl(raw) {
   if (isWeb(value)) return value;
   if (/^[a-z][a-z0-9+.-]*:/i.test(value) && !/^[\w.-]+:\d+/.test(value)) throw new Error('Solo se admiten direcciones http y https');
   if (/^[\w-]+(\.[\w-]+)+(:\d+)?(\/\S*)?$/.test(value)) return `https://${value}`;
-  return `https://duckduckgo.com/html/?q=${encodeURIComponent(value)}`;
+  return `https://www.bing.com/search?q=${encodeURIComponent(value)}`;
 }
 
 // Los sitios ven un Chrome normal: sin «Electron/…» ni el nombre de la app,
@@ -441,7 +443,8 @@ function ensureTab(id) {
     contents.debugger.on('message', (_event, method, params) => noteNetwork(method, params));
     ensureDebugger(contents).catch(() => { });
   }
-  contents.on('did-navigate', () => fitPage(tab));
+  contents.on('did-start-loading', () => domReadyAt.delete(contents));
+  contents.on('dom-ready', () => domReadyAt.set(contents, Date.now()));
   for (const event of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) {
     contents.on(event, () => notify('page'));
   }
@@ -512,16 +515,7 @@ function mount(electron) {
     } else {
       tab.view.setBounds({ x: 0, y: 0, ...HOST_SIZE });
     }
-    fitPage(tab);
   }
-}
-
-function fitPage(tab) {
-  const contents = tabContents(tab);
-  if (!contents) return;
-  const { width } = tab.view.getBounds();
-  const zoom = width > 0 && width < HOST_SIZE.width ? width / HOST_SIZE.width : 1;
-  if (Math.abs(contents.getZoomFactor() - zoom) > 0.001) contents.setZoomFactor(zoom);
 }
 
 function dock(bounds) {
@@ -646,20 +640,26 @@ async function waitForHumanIdle(name, tab) {
   if (tab && tab.userControl) throw userControlError();
 }
 
+const domReadyAt = new WeakMap();
+
 async function settle(contents) {
   await delay(SETTLE_MS);
   const started = Date.now();
-  while (contents.isLoading() && Date.now() - started < LOAD_TIMEOUT_MS) await delay(150);
+  while (contents.isLoading() && Date.now() - started < LOAD_TIMEOUT_MS) {
+    const ready = domReadyAt.get(contents);
+    if (ready && Date.now() - ready >= READY_GRACE_MS) return;
+    await delay(150);
+  }
 }
 
 async function load(contents, url) {
-  await Promise.race([
-    contents.loadURL(url).catch((err) => {
-      if (!/ERR_ABORTED/.test(String(err && err.message))) throw err;
-    }),
-    delay(LOAD_TIMEOUT_MS),
-  ]);
-  await settle(contents);
+  const loading = contents.loadURL(url).catch((err) => {
+    if (!/ERR_ABORTED/.test(String(err && err.message))) throw err;
+  });
+  const settled = settle(contents);
+  loading.catch(() => { });
+  await Promise.race([loading, settled]);
+  await settled;
 }
 
 // Raíces donde buscar elementos: el documento, los shadow roots abiertos y los
