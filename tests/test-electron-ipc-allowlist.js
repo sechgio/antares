@@ -80,6 +80,7 @@ function main() {
   const allowed = catalog.METHOD_NAMES;
   if (!apiMethods.has('agent_workspace_set') || !allowed.has('agent_workspace_set')
     || catalog.METHODS.agent_workspace_set.handler !== 'native:agent'
+    || catalog.METHODS.agent_workspace_set.timeout !== 'long'
     || catalog.METHODS.agent_workspace_set.inputSchema.properties.select.type !== 'boolean'
     || catalog.IDEMPOTENT_METHODS.has('agent_workspace_set')) {
     throw new Error('La carpeta de trabajo debe seleccionarse por el puente nativo sin reintentos de escritura.');

@@ -17,6 +17,7 @@ def test_agent_workspace_selection_uses_native_dialog_contract():
 
     entry = _catalog()["methods"]["agent_workspace_set"]
     assert entry["handler"] == "native:agent" and not entry.get("idempotent")
+    assert entry["timeout"] == "long"
     schema = entry["inputSchema"]
     for params in ({"session_id": "s1", "select": True}, {"session_id": "s1", "path": "C:\\proyecto"},
                    {"session_id": "s1"}):
