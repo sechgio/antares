@@ -677,10 +677,11 @@ function boundedSummary(value) {
   return collapsed.length > TURN_SUMMARY_CHARS ? `${collapsed.slice(0, TURN_SUMMARY_CHARS)}...` : collapsed;
 }
 
-function messageText(content) {
+function messageText(content, excludeContext = false) {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
-    return content.filter((part) => part && part.type === 'text').map((part) => part.text).join(' ');
+    return content.filter((part) => part && part.type === 'text'
+      && (!excludeContext || !String(part.text || '').startsWith(shared.CONTEXT_MARKER))).map((part) => part.text).join(' ');
   }
   return '';
 }
@@ -700,7 +701,7 @@ function noteTurnStart(api, messages) {
       session_id: sessionId,
       agent,
       started_at: new Date().toISOString(),
-      input_summary: boundedSummary(messageText(lastUserContent(messages))),
+      input_summary: boundedSummary(messageText(lastUserContent(messages), true)),
       tool_calls: [],
     };
   })().catch((err) => {

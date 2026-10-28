@@ -38,7 +38,7 @@ const INTERNAL_RPCS = [
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function makeBridge() {
-  const state = { approvals: new Map(), seq: 0, dispatches: [], dispatchLog: [], grants: [], revoked: [], attention: {} };
+  const state = { approvals: new Map(), seq: 0, dispatches: [], dispatchLog: [], grants: [], revoked: [], attention: {}, workspaceBySession: new Map() };
   const bridge = async (method, params) => {
     switch (method) {
       case 'agent_internal_activity': return { attention: state.attention };
@@ -47,12 +47,13 @@ function makeBridge() {
         state.memoryCalls = [...(state.memoryCalls || []), params];
         return /plantilla/.test(params.text) ? { context: 'Memoria del agente:\n- Preferencia: Plantilla — usa la B', items: ['m1'] } : { context: '', items: [] };
       case 'agent_internal_artifacts':
-        return { artifacts: [], questions: [], context: { files: state.grants.flatMap((g) => g.paths.map((p) => ({ path: p, folder: false }))), accounts: ['ana@example.com'] } };
+        return { artifacts: [], questions: [], context: { files: state.grants.flatMap((g) => g.paths.map((p) => ({ path: p, folder: false }))), accounts: ['ana@example.com'], workspace: state.workspaceBySession.get(params.session_id) || null } };
       case 'agent_internal_grant_remove':
         state.removed = [...(state.removed || []), params];
         return { removed: 1 };
       case 'agent_internal_workspace_set':
         state.workspaces = [...(state.workspaces || []), params];
+        state.workspaceBySession.set(params.session_id, params.path || null);
         return { workspace: params.path || null };
       case 'agent_internal_tools':
         return {
@@ -134,6 +135,7 @@ function makeBridge() {
         return { cancelled: false };
       case 'agent_internal_grants_add':
         state.grants.push(params);
+        if (params.folders?.length) state.workspaceBySession.set(params.session_id, params.folders.at(-1));
         return { granted: params.paths.filter((p) => p.endsWith('.pdf')), rejected: params.paths.filter((p) => !p.endsWith('.pdf')).map((path) => ({ path, reason: 'una carpeta requiere seleccionar los archivos concretos' })),
           ...(params.folders && params.folders.length ? { workspace: params.folders.at(-1) } : {}) };
       case 'agent_internal_dispatch_finish': {
@@ -1368,6 +1370,52 @@ async function main() {
 
   {
     const { bridge, state } = makeBridge();
+    const seen = [];
+    const folder = String.raw`C:\proyecto`;
+    await openFaux(Array.from({ length: 4 }, () => (context) => {
+      seen.push(JSON.stringify(context.messages.at(-1)));
+      return fauxAssistantMessage('ok');
+    }), bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const dialogs = [];
+    const picks = [{ canceled: false, filePaths: [folder] }, { canceled: true, filePaths: [] },
+      { canceled: false, filePaths: [String.raw`C:\no-disponible`] }];
+    runtime._internal.shared.dialog = { showOpenDialog: async (_win, options) => { dialogs.push(options); return picks.shift(); } };
+    const selected = await runtime.handlers.agent_workspace_set({ session_id: session.id, select: true, path: String.raw`C:\ignorar` });
+    assert(selected.workspace === folder && state.grants.at(-1).folders[0] === folder,
+      'seleccionar la carpeta la concede y activa sin enviar mensajes ni adjuntos');
+    assert(dialogs[0].properties.length === 1 && dialogs[0].properties[0] === 'openDirectory', 'se usa un diálogo nativo de carpeta');
+    assert(runtime._internal.shared.attachments.size === 0, 'la carpeta de trabajo no crea un adjunto de un solo uso');
+    const cancelled = await runtime.handlers.agent_workspace_set({ session_id: session.id, select: true });
+    assert(cancelled.workspace === folder && state.grants.length === 1, 'cancelar conserva la raíz y no concede nada');
+    const originalBridge = runtime._internal.shared.deps.bridge;
+    runtime._internal.shared.deps.bridge = async (method, params) => method === 'agent_internal_grants_add'
+      ? { granted: [], rejected: [{ path: params.folders[0], reason: 'Carpeta no disponible' }] } : bridge(method, params);
+    let denied = null;
+    try { await runtime.handlers.agent_workspace_set({ session_id: session.id, select: true }); } catch (err) { denied = err; }
+    assert(denied && /Carpeta no disponible/.test(denied.message), 'se informa si la carpeta seleccionada no puede concederse');
+    runtime._internal.shared.deps.bridge = originalBridge;
+    assert(state.workspaceBySession.get(session.id) === folder, 'una selección rechazada conserva el workspace anterior');
+    for (const content of ['crea un archivo', 'edítalo']) {
+      await runtime.handlers.agent_message_send({ session_id: session.id, content });
+      assert(await waitIdle(session.id), 'termina el turno sin adjuntos');
+    }
+    assert(seen.slice(0, 2).every((message) => message.includes(JSON.stringify(`Espacio de trabajo activo: ${folder}`).slice(1, -1))),
+      'cada turno conoce la carpeta persistente aunque no se adjunte nada');
+    const other = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: other.session.id, content: 'otra conversación' });
+    assert(await waitIdle(other.session.id), 'termina el turno de otra conversación');
+    assert(seen[2].includes('Sin carpeta de trabajo activa'), 'la raíz no se comparte con otras conversaciones');
+    await runtime.handlers.agent_workspace_set({ session_id: session.id });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'usa borradores' });
+    assert(await waitIdle(session.id), 'termina el turno sin raíz');
+    assert(seen[3].includes('Sin carpeta de trabajo activa'), 'el siguiente turno deja de usar una raíz desactivada');
+    runtime._internal.shared.dialog = null;
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
     const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-drop-'));
     const previousAppData = process.env.LOCALAPPDATA;
     process.env.LOCALAPPDATA = appData;
@@ -1603,7 +1651,8 @@ async function main() {
     assert(last.some((message) => typeof message.content === 'string'
       && message.content.includes('[Contexto compactado por Antares')),
       'una ventana pequeña recibe un resumen estructurado en lugar del historial completo');
-    assert(last.some((message) => message.role === 'user' && String(message.content).includes('tercer turno')),
+    assert(last.some((message) => message.role === 'user' && (typeof message.content === 'string'
+      ? message.content.includes('tercer turno') : message.content.some((block) => block.type === 'text' && block.text === 'tercer turno'))),
       'el mensaje actual viaja intacto');
     assert(!JSON.stringify(last).includes('a'.repeat(500)), 'el texto antiguo ya no consume la ventana');
     const { usage } = await runtime.handlers.agent_messages_list({ session_id: session.id });

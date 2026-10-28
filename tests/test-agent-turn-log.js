@@ -28,7 +28,7 @@ async function waitIdle(sessionId, timeoutMs = 15000) {
 }
 
 function makeBridge() {
-  const state = { dispatches: [], seq: 0 };
+  const state = { dispatches: [], seq: 0, workspace: null };
   const bridge = async (method, params) => {
     switch (method) {
       case 'agent_internal_tools':
@@ -61,7 +61,7 @@ function makeBridge() {
       case 'agent_internal_memory_context':
         return { context: '', items: [] };
       case 'agent_internal_artifacts':
-        return { artifacts: [], questions: [], context: {} };
+        return { artifacts: [], questions: [], context: { workspace: state.workspace } };
       case 'agent_internal_activity':
         return { attention: {} };
       default:
@@ -81,7 +81,7 @@ function loggedTurns() {
 async function main() {
   const { MemoryStorage } = await import('@earendil-works/pi-durable');
   const { fauxProvider, fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai');
-  const { bridge } = makeBridge();
+  const { bridge, state } = makeBridge();
   await runtime.open({ storage: new MemoryStorage(), bridge, skipImport: true });
   const faux = fauxProvider();
   runtime._internal._providerOverrides.set('faux', faux.provider);
@@ -93,6 +93,7 @@ async function main() {
   ]);
 
   {
+    state.workspace = String.raw`C:\proyecto`;
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Lista documentos de Canvas' });
     assert(await waitIdle(session.id), 'el turno con herramienta termina');
@@ -105,6 +106,8 @@ async function main() {
     assert(entry.agent === 'faux/faux-1', 'la entrada lleva proveedor/modelo como agent');
     assert(entry.turn_id.startsWith('turn_'), 'cada entrada tiene turn_id');
     assert(entry.input_summary === 'Lista documentos de Canvas', 'input_summary toma el texto del usuario');
+    assert(!entry.input_summary.includes(state.workspace), 'el resumen del usuario excluye el contexto de la carpeta de trabajo');
+    state.workspace = null;
     assert(entry.output_summary === 'Listado listo', 'output_summary toma la respuesta final');
     assert(entry.error === null, 'un turno ok no lleva error');
     assert(Array.isArray(entry.tool_calls) && entry.tool_calls.length === 1, 'la llamada de herramienta queda registrada');

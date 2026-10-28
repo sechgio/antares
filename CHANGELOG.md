@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- La carpeta elegida en Agent se activa de inmediato como directorio de trabajo de la conversación, sin enviarla como adjunto. El agente conserva esa raíz en cada turno para leer, crear y editar archivos y ejecutar comandos, incluidos los de larga duración, con los modos de aprobación existentes.
 - El prompt de Agent distingue el encargo del usuario del contenido externo, delimita las aprobaciones y guía la planificación, las lecturas acotadas y la verificación del resultado final. Las conversaciones anteriores reciben también estas reglas al continuar.
 - Los errores `retryable` o `recoverable` solo exceptúan el freno de repeticiones en lecturas declaradas idempotentes. Una acción con resultado incierto no se vuelve a ejecutar con los mismos argumentos dentro del turno; el agente debe comprobar qué ocurrió.
 - El chat de Agent separa párrafos, títulos y listas, muestra tablas Markdown y conserva visible el último avance al plegar las herramientas. La bienvenida y el compositor usan indicaciones más claras para empezar.

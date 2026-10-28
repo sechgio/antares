@@ -362,6 +362,9 @@ export const agentApi = {
   agentWorkspaceSet: (session_id: string, path?: string) =>
     _invoke<{ workspace: string | null }>('agent_workspace_set', { session_id, ...(path ? { path } : {}) }),
 
+  agentWorkspaceSelect: (session_id: string) =>
+    _invoke<{ workspace: string | null }>('agent_workspace_set', { session_id, select: true }),
+
   agentMessageSend: (session_id: string, content: string, request_id: string, attachments: string[] = [], correction = false, skill_id?: string) =>
     _invoke<{ accepted: boolean; duplicate?: boolean; files?: AgentMessageFiles; mentions?: AgentMessageMentions }>(
       'agent_message_send',
