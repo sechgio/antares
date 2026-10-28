@@ -40,21 +40,21 @@ export default function ContextChips({ context, onRemoveFile, onSetWorkspace }: 
   onSetWorkspace: (path: string) => void;
 }) {
   const modules = context?.modules ?? [];
-  const files = context?.files ?? [];
-  const accounts = context?.accounts ?? [];
   const workspace = context?.workspace ?? null;
+  const files = (context?.files ?? []).filter((file) => file.path !== workspace);
+  const accounts = context?.accounts ?? [];
   const hasFolders = files.some((file) => file.folder);
-  if (!modules.length && !files.length && !accounts.length && !workspace) return null;
+  if (!modules.length && !files.length && !accounts.length) return null;
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-1 pb-2" aria-label="Contexto de la conversación">
-      {(workspace || hasFolders) && (
+      {!workspace && hasFolders && (
         <span
           className={`${CHIP} pr-2 font-medium text-[var(--text-primary)]`}
-          title={workspace ? `Espacio de trabajo: ${workspace}` : 'Sin carpeta activa: el agente trabaja en sus borradores'}
+          title="Sin carpeta activa: el agente trabaja en sus borradores"
           aria-label="Espacio de trabajo activo"
         >
           <FolderRoot size={11} className="shrink-0" />
-          <span className="truncate">{workspace ? baseName(workspace) : 'Borradores'}</span>
+          <span className="truncate">Borradores</span>
         </span>
       )}
       {modules.map((module) => (
@@ -65,7 +65,7 @@ export default function ContextChips({ context, onRemoveFile, onSetWorkspace }: 
       ))}
       {files.map((file) => (
         <span key={file.path} className="flex min-w-0 max-w-[260px] items-center gap-1 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] py-1.5 pl-1.5 pr-1" title={file.path}>
-          {file.folder && file.path !== workspace ? (
+          {file.folder ? (
             <button
               type="button"
               className="flex min-w-0 items-center gap-2.5 rounded-lg transition-opacity hover:opacity-80"

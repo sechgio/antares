@@ -1181,6 +1181,26 @@ it('muestra el contexto de la conversación y permite retirar un archivo concedi
   expect(remove).toHaveBeenCalledWith('s1', 'C:\\docs\\informe.pdf');
 });
 
+it('permite quitar la carpeta de trabajo desde el compositor', async () => {
+  let snapshot: Snapshot = {
+    ...empty,
+    context: { modules: [], accounts: [], files: [{ path: 'C:\\proyecto', folder: true }], workspace: 'C:\\proyecto' },
+  };
+  vi.spyOn(agentApi, 'agentMessagesList').mockImplementation(async () => snapshot);
+  const remove = vi.spyOn(agentApi, 'agentContextRemoveFile').mockImplementation(async () => {
+    snapshot = { ...empty, context: { modules: [], accounts: [], files: [], workspace: null } };
+    return { removed: 1 };
+  });
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('proyecto');
+  await act(async () => { fireEvent.click(screen.getByLabelText('Quitar la carpeta de trabajo')); });
+  expect(remove).toHaveBeenCalledWith('s1', 'C:\\proyecto');
+  expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('Carpeta de trabajo');
+  expect(screen.queryByLabelText('Quitar la carpeta de trabajo')).toBeNull();
+});
+
 it('abre una conversación desde un agente guardado con su mensaje inicial', async () => {
   vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [
     { id: 'local', label: 'Local', configured: true, has_key: true, needs_key: false, default_model: 'prueba' },
