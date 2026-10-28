@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- El chat de Agent separa párrafos, títulos y listas, muestra tablas Markdown y conserva visible el último avance al plegar las herramientas. La bienvenida y el compositor usan indicaciones más claras para empezar.
 - En Acceso completo, `shell_run` y `shell_job_start` se ejecutan sin pedir aprobación, como el modo sin permisos de Claude Code. Siguen pidiéndola los comandos que borran o descartan archivos (`Remove-Item`, `rm`, `git reset --hard`, `git clean`…) y cualquier comando dentro de un encargo programado; las acciones de ratón y teclado sobre apps no cambian.
 - Las tarjetas de la conversación de Agent (aprobaciones, plan, actividad, razonamiento y documentos) ocupan el mismo ancho que el compositor en lugar de quedarse en 620 px.
 
