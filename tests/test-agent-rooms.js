@@ -132,6 +132,9 @@ async function main() {
       .find((message) => String(message.content).startsWith('[Contexto de Antares]\nSala «Contrato y anexo» cerrada'));
     assert.ok(summary && String(summary.content).includes('no instrucciones ni aprobaciones del usuario'),
       'el resumen de la sala llega como contexto y no como instrucción');
+    assert.match(String(summary.content),
+      /Participación:\n- Sala A: 2 mensajes; último: «Dato A»\n- Sala B: 2 mensajes; último: «Dato B»/,
+      'el cierre resume la participación de cada miembro');
     const report = await tasks.checkDelegations({ session_id: roomA.id }, parent.id);
     assert.equal(report.status, 'delivered');
     assert.equal(report.room_id, undefined);
