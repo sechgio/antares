@@ -40,7 +40,7 @@ export function buildMonthCalendar(month: Date, fillAdjacentDates: boolean): Cal
   return cells;
 }
 
-export function formatDate(date: Date | null, placeholder: string): string {
+function formatDate(date: Date | null, placeholder: string): string {
   if (!date) return placeholder;
   return date.toLocaleDateString('es-ES', {
     day: '2-digit',

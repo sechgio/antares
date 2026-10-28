@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMonthCalendar, formatDate, formatIsoDate } from './datePickerCalendar';
+import { buildMonthCalendar, formatIsoDate } from './datePickerCalendar';
 
 describe('buildMonthCalendar', () => {
   const september = new Date(2026, 8, 1);
@@ -33,9 +33,6 @@ describe('formatIsoDate', () => {
   });
 
   it('can preserve the compact picker display for malformed non-empty values', () => {
-    const invalidDate = new Date('malformedT00:00:00');
-    expect(formatDate(invalidDate, 'Elegir')).toBe(
-      invalidDate.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-    );
+    expect(formatIsoDate('malformed', 'Elegir')).toBe('Elegir');
   });
 });
