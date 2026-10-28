@@ -345,14 +345,14 @@ async function main() {
 
   {
     const { state } = await open([
-      fauxAssistantMessage([fauxToolCall('shell_run', { command: 'echo hola' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('shell_run', { command: 'Remove-Item .\\tmp -Recurse' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('hecho'),
     ]);
     const session = await createSession();
     await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'ejecuta' });
     assert(await waitFor(() => [...state.approvals.values()].some((a) => a.status === 'pending')),
-      'el terminal sigue pidiendo aprobación incluso en Acceso completo');
+      'un comando que borra archivos sigue pidiendo aprobación incluso en Acceso completo');
     assert(state.dispatches.length === 0, 'el comando no se ejecuta antes de decidir');
     const [approval] = [...state.approvals.values()];
     await runtime.handlers.agent_approve({ approval_id: approval.id });

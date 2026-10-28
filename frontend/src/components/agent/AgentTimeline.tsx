@@ -495,7 +495,7 @@ function Activity({ entries, working, answering, duration, onUndo, view }: {
     ? Math.min(entries.length - LIVE_TAIL, firstReview === -1 ? Infinity : firstReview) : 0;
   if (entries.length <= 2) {
     return (
-      <div className="w-full max-w-[min(620px,100%)] space-y-0.5">
+      <div className="w-full space-y-0.5">
         {entries.map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} view={view} />)}
       </div>
     );
@@ -505,7 +505,7 @@ function Activity({ entries, working, answering, duration, onUndo, view }: {
   const icons = [...new Set(calls.map((call) => (call.name === 'shell_run' ? Terminal : toolIcon(call.name))))].slice(0, 4);
   const steps = notes > 0 ? `${stepsSummary(calls)} · ${count(notes, 'nota', 'notas')}` : stepsSummary(calls);
   return (
-    <div className="w-full max-w-[min(620px,100%)]">
+    <div className="w-full">
       <button
         type="button"
         aria-expanded={open}
@@ -616,7 +616,7 @@ function TurnChanges({ calls }: { calls: AgentToolCall[] }) {
   const total = [...files.values()].reduce((sum, change) => ({ ...sum, added: sum.added + change.added, removed: sum.removed + change.removed }),
     { hunks: [], added: 0, removed: 0, whole: false, starts: [] } as FileChange);
   return (
-    <section aria-label="Archivos cambiados" className="agent-trace-in w-full max-w-[min(620px,100%)] rounded-lg border border-[var(--border-subtle)] px-3 py-2 text-[12.5px] leading-5">
+    <section aria-label="Archivos cambiados" className="agent-trace-in w-full rounded-lg border border-[var(--border-subtle)] px-3 py-2 text-[12.5px] leading-5">
       <p className="flex items-center gap-2 text-[var(--text-secondary)]">
         <FilePen size={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden="true" />
         {count(files.size, 'archivo cambiado', 'archivos cambiados')}
@@ -754,7 +754,7 @@ export function ApprovalCard({
   const change = fileChange(approval.method, params);
   return (
     <div role="group" aria-label="Confirmación de acción" className="agent-approval agent-trace-in">
-      <div className="w-full max-w-[min(620px,100%)] overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)]">
+      <div className="w-full overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)]">
         <div className="min-w-0 space-y-2.5 p-3 pb-2">
           <div className="flex items-start gap-2.5">
             <Icon size={16} strokeWidth={1.75} aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--text-secondary)]" />
@@ -772,7 +772,7 @@ export function ApprovalCard({
             <TriangleAlert size={13} strokeWidth={1.75} aria-hidden="true" className="mt-[3px] shrink-0 text-[var(--accent-yellow)]" />
             <span>
               Este comando puede acceder al equipo completo con tus permisos, fuera de las carpetas adjuntas.
-              Requiere tu aprobación también en Acceso completo.
+              En Acceso completo solo se piden los comandos que borran o descartan archivos.
             </span>
           </p>}
           {typeof params.command === 'string' && DESTRUCTIVE_COMMAND.test(params.command) && <p className="flex gap-2 text-[12px] leading-[18px] text-[var(--accent-red)]">
@@ -889,7 +889,7 @@ export function PlanCard({ plan, running }: { plan: AgentPlan; running: boolean 
   const done = plan.steps.filter((step) => step.status === 'done').length;
   const complete = plan.steps.length > 0 && done === plan.steps.length;
   return (
-    <section aria-label="Plan del agente" className="agent-trace-in max-w-[min(620px,100%)] rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[13px] leading-5">
+    <section aria-label="Plan del agente" className="agent-trace-in w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[13px] leading-5">
       <button
         type="button"
         aria-expanded={open}

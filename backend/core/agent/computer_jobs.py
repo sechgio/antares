@@ -42,7 +42,8 @@ TOOL_SPECS: list[JsonObject] = [
             "segundo plano para builds o despliegues largos y devuelve job_id. El proceso sigue al terminar el turno, "
             "vive como máximo 30 minutos, no admite entrada interactiva y se detiene al cerrar Antares o al cancelar la "
             "conversación. Usa shell_job_status y shell_output para seguirlo, y wait_event kind=shell_job para esperar. "
-            "Máximo 2 jobs por conversación; el comando requiere aprobación también en Acceso completo."
+            "Máximo 2 jobs por conversación; el comando requiere aprobación salvo en Acceso completo, donde solo "
+            "la piden los que borran o descartan archivos."
         ),
         "inputSchema": {
             "type": "object",
