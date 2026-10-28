@@ -855,6 +855,16 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     if (ok) setQueued((q) => q.filter((i) => i !== correcting));
   };
 
+  const removeFile = async (path: string) => {
+    if (!sessionId) return;
+    try {
+      await agentApi.agentContextRemoveFile(sessionId, path);
+      await loadMessages(sessionId, false);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo retirar el archivo'), type: 'error' });
+    }
+  };
+
   const selectWorkspace = async () => {
     const id = sessionId;
     if (!id || selectingWorkspace) return;
@@ -1433,14 +1443,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           {session && (
             <ContextChips
               context={context}
-              onRemoveFile={async (path) => {
-                try {
-                  await agentApi.agentContextRemoveFile(session.id, path);
-                  await loadMessages(session.id, false);
-                } catch (err) {
-                  addToast({ message: errorMessage(err, 'No se pudo retirar el archivo'), type: 'error' });
-                }
-              }}
+              onRemoveFile={removeFile}
               onSetWorkspace={async (path) => {
                 try {
                   await agentApi.agentWorkspaceSet(session.id, path);
@@ -1602,6 +1605,18 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 <FolderOpen size={14} className="shrink-0" />
                 <span className="truncate">{selectingWorkspace ? 'Seleccionando…' : context?.workspace?.split(/[\\/]/).filter(Boolean).pop() || 'Carpeta de trabajo'}</span>
               </Button>
+              {context?.workspace && (
+                <button
+                  type="button"
+                  className="flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                  onClick={() => { if (context.workspace) void removeFile(context.workspace); }}
+                  disabled={!sessionId || selectingWorkspace}
+                  aria-label="Quitar la carpeta de trabajo"
+                  title="Quitar la carpeta de trabajo y volver a los borradores"
+                >
+                  <X size={12} />
+                </button>
+              )}
               {session && (
                 <PermissionPicker
                   key={session.id}
