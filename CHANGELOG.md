@@ -8,6 +8,8 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- El prompt de Agent distingue el encargo del usuario del contenido externo, delimita las aprobaciones y guía la planificación, las lecturas acotadas y la verificación del resultado final. Las conversaciones anteriores reciben también estas reglas al continuar.
+- Los errores `retryable` o `recoverable` solo exceptúan el freno de repeticiones en lecturas declaradas idempotentes. Una acción con resultado incierto no se vuelve a ejecutar con los mismos argumentos dentro del turno; el agente debe comprobar qué ocurrió.
 - En Acceso completo, `shell_run` y `shell_job_start` se ejecutan sin pedir aprobación, como el modo sin permisos de Claude Code. Siguen pidiéndola los comandos que borran o descartan archivos (`Remove-Item`, `rm`, `git reset --hard`, `git clean`…) y cualquier comando dentro de un encargo programado; las acciones de ratón y teclado sobre apps no cambian.
 - Las tarjetas de la conversación de Agent (aprobaciones, plan, actividad, razonamiento y documentos) ocupan el mismo ancho que el compositor en lugar de quedarse en 620 px.
 
