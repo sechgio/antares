@@ -149,9 +149,9 @@ export default function MessageMarkdown({ text, streaming = false }: { text: str
           }
           case 'table':
             return (
-              <div key={key} role="region" aria-label="Tabla de la respuesta" tabIndex={0} className="agent-markdown-table overflow-x-auto rounded-xl border border-[var(--border-subtle)]">
+              <div key={key} role="region" aria-label="Tabla de la respuesta" tabIndex={0} className="agent-markdown-table overflow-x-auto">
                 <table className="w-full border-collapse text-left text-[13px] leading-[21px]">
-                  <thead className="bg-[var(--bg-input)]">
+                  <thead>
                     <tr>{block.headers.map((cell, n) => <th key={n} scope="col" style={{ textAlign: block.align[n] }}>{inline(cell, `${key}-h${n}`)}</th>)}</tr>
                   </thead>
                   <tbody>{block.rows.map((row, r) => <tr key={r}>{block.headers.map((_, n) => <td key={n} style={{ textAlign: block.align[n] }}>{inline(row[n] ?? '', `${key}-${r}-${n}`)}</td>)}</tr>)}</tbody>

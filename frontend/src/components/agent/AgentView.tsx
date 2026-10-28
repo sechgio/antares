@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownLeft, CornerDownRight, FileImage, FileSpreadsheet, FileText, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownLeft, CornerDownRight, FileImage, FileSpreadsheet, FileText, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
 import { mcpApi, type McpServer } from '../../api/mcpApi';
 import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentDelegation, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentSkill, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
@@ -28,7 +28,6 @@ import ContextChips from './ContextChips';
 import AgentEditor from './AgentEditor';
 import ConversationMenu from './ConversationMenu';
 import AgentBrowserPanel from './AgentBrowserPanel';
-import AgentAuditPanel from './AgentAuditPanel';
 import ScheduledTasksPanel from './ScheduledTasksPanel';
 import SubagentRoster from './SubagentRoster';
 import { METHOD_LABELS } from './methodLabels';
@@ -98,12 +97,6 @@ function activityText(tool?: string): string {
 function newRequestId(): string {
   return crypto.randomUUID();
 }
-
-const SUGGESTIONS = [
-  'Ayúdame a preparar un informe.',
-  '¿Cómo puedo resumir mis documentos?',
-  'Ayúdame a organizar mis pendientes.',
-];
 
 export function groupSessions(list: AgentSession[], now = Date.now()): { label: string; items: AgentSession[] }[] {
   const startOfToday = new Date(now);
@@ -237,7 +230,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [selectingWorkspace, setSelectingWorkspace] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
-  const [auditOpen, setAuditOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [queued, setQueued] = useState<{ session: string; text: string; requestId: string; attachments?: string[]; failed?: boolean; correction?: boolean }[]>(() => {
     try {
@@ -970,8 +962,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
 
   const showHero = !sessionId || messages.length === 0;
   const activeProfile = session?.profile ? profiles.find((item) => item.id === session.profile?.id) ?? null : null;
-  const suggestionList = activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS;
-  const suggestionsHidden = !!draft.trim() || running || pending.length > 0;
   const agentIdentity = session
     ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? 'Antares', color: activeProfile?.color }
     : undefined;
@@ -998,7 +988,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
 
   return (
     <div
-      className="agent-workspace relative flex h-full min-h-0 gap-3 bg-[var(--bg-surface)] p-2.5"
+      className="agent-workspace relative flex h-full min-h-0 bg-[var(--bg-surface)]"
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
           e.preventDefault();
@@ -1096,7 +1086,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           onChange={(value) => { setSidebarView(value); setSearchOpen(Boolean(value === 'agents' ? profileSearch : search)); }}
           options={[{ value: 'conversations', label: 'Conversaciones' }, { value: 'agents', label: 'Agentes' }]}
           aria-label="Vistas del agente"
-          className="mx-1 mt-2 flex shrink-0 gap-0.5 rounded-lg bg-[var(--bg-input)] p-0.5 [&>button]:text-[12px] [&>button[aria-pressed=false]]:text-[var(--text-secondary)]"
+          className="mx-1 mt-2 flex shrink-0 gap-1 [&>button]:flex-none [&>button]:px-2.5 [&>button]:text-[12px] [&>button[aria-pressed=false]]:text-[var(--text-secondary)] [&>button[aria-pressed=true]]:bg-[var(--bg-input)] [&>button[aria-pressed=true]]:shadow-none [&>button[aria-pressed=true]]:ring-0"
         />
         <div className="custom-scrollbar mt-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1">
           {sidebarView === 'agents' ? <>
@@ -1207,20 +1197,11 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         {session && (
           <header className="flex shrink-0 items-center gap-2 px-4 pb-2 pt-3 md:pl-12">
             <div className="flex h-8 min-w-0 items-center">
-              <span className="truncate text-[13px] font-medium leading-[18px] text-[var(--text-secondary)]">
+              <span className="truncate text-[14px] font-medium leading-5 text-[var(--text-primary)]">
                 {session.title || 'Conversación'}
               </span>
             </div>
             <span className="min-w-0 flex-1" />
-            <button
-              type="button"
-              aria-label="Historial de aprobaciones"
-              title="Historial de aprobaciones"
-              onClick={() => setAuditOpen(true)}
-              className="flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
-            >
-              <ShieldCheck size={14} />
-            </button>
             <button
               type="button"
               aria-label="Encargos programados"
@@ -1314,7 +1295,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 </h2>
                 <p className="mx-auto mt-2 max-w-sm text-[14px] leading-[22px] text-[var(--text-secondary)]">
                   {readyProviders.length === 0 ? 'Configura un proveedor en «Proveedores» para empezar.'
-                    : activeProfile?.description || 'Cuéntame qué necesitas. Puedo ayudarte a preparar informes, revisar documentos y organizar tu trabajo.'}
+                    : activeProfile?.description || 'Puedo ayudarte a preparar informes, revisar documentos y organizar tu trabajo.'}
                 </p>
               </div>
               {readyProviders.length === 0 && onConfigureProvider && (
@@ -1394,25 +1375,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               </Button>
             </div>
           )}
-          {readyProviders.length > 0 && (
-            <div className="agent-suggestions" data-hidden={suggestionsHidden ? 'true' : undefined} inert={suggestionsHidden}>
-              <div role="group" aria-label="Sugerencias" className="agent-suggestion-list min-h-0 pb-2">
-                {suggestionList.map((suggestion, i) => (
-                  <Button
-                    key={`${sessionId}-${suggestion}`}
-                    variant="none"
-                    size="none"
-                    className="agent-suggestion"
-                    style={{ animationDelay: `${i * 60}ms` }}
-                    disabled={sending || modelBusy || running || stopping || pending.length > 0}
-                    onClick={() => void sendSuggestion(suggestion)}
-                  >
-                    {suggestion}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          )}
           {queuedForSession.length > 0 && (
             <section aria-label="Mensajes en cola" className="agent-queue mb-2 overflow-hidden rounded-xl border border-[var(--border-subtle)]">
               <div className="flex items-center gap-2 px-3 py-2 text-[12px] text-[var(--text-secondary)]">
@@ -1490,7 +1452,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             </section>
           )}
           <div role="group" aria-label="Redactar mensaje"
-            className={`agent-composer relative rounded-2xl border bg-[var(--bg-elevated)] transition-colors ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
+            className={`agent-composer relative rounded-2xl border bg-[var(--bg-elevated)] transition-colors ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-subtle)]'}`}
             onDragOver={(event) => { if (!sessionId || !event.dataTransfer.types.includes('Files')) return; event.preventDefault(); setDragging(true); }}
             onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
             onDrop={(event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); void attachFiles([...event.dataTransfer.files]); }}>
@@ -1768,9 +1730,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           else if (context) { draftVersionRef.current += 1; setDraft(`${draft.trimEnd()}\n${context}`); }
         } : undefined}
       />}
-      {auditOpen && session && (
-        <AgentAuditPanel sessions={sessions} sessionId={session.id} onClose={() => setAuditOpen(false)} />
-      )}
       {tasksOpen && session && (
         <ScheduledTasksPanel sessions={sessions} sessionId={session.id} onClose={() => setTasksOpen(false)} />
       )}
@@ -1804,12 +1763,12 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               aria-label="Limpiar búsqueda de herramientas" onClick={() => { setToolsQuery(''); toolsSearchRef.current?.focus(); }}><X size={12} /></Button>}
           </div>
           <SegmentedControl value={toolsFilter} onChange={setToolsFilter} aria-label="Filtrar herramientas"
-            className="flex shrink-0 gap-0.5 rounded-lg bg-[var(--bg-input)] p-0.5 [&>button]:text-[12px] [&>button[aria-pressed=false]]:text-[var(--text-secondary)]"
+            className="flex shrink-0 gap-1 [&>button]:flex-none [&>button]:px-2.5 [&>button]:text-[12px] [&>button[aria-pressed=false]]:text-[var(--text-secondary)] [&>button[aria-pressed=true]]:bg-[var(--bg-input)] [&>button[aria-pressed=true]]:shadow-none [&>button[aria-pressed=true]]:ring-0"
             options={[{ value: 'all', label: 'Todas' }, { value: 'skills', label: 'Skills' }, { value: 'mcp', label: 'MCP' }]} />
           {toolsFilter === 'skills' && <p className="shrink-0 text-[11px] leading-relaxed text-[var(--text-secondary)]">
             Adjunta una carpeta con SKILL.md y pide al agente que busque una skill. Estas opciones habilitan sus herramientas de lectura, no instalan skills.
           </p>}
-          <div className="custom-scrollbar min-h-0 space-y-2 overflow-y-auto">
+          <div className="custom-scrollbar -mx-1.5 min-h-0 overflow-y-auto px-1.5">
             <ToolGroup label="Uso general" names={toolGroups.direct} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} expanded={!!toolsQuery.trim() || toolsFilter !== 'all'} />
             <ToolGroup label="Acciones sensibles" names={toolGroups.gated} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} expanded={!!toolsQuery.trim() || toolsFilter !== 'all'} />
             <ToolGroup label="MCP" names={toolGroups.mcp} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} expanded={!!toolsQuery.trim() || toolsFilter !== 'all'} />
@@ -1825,7 +1784,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           <Button variant="ghost" size="sm" disabled={!sessionId || toolsBusy} onClick={() => void saveTools(null)}>
             Restablecer herramientas
           </Button>
-          <p className="shrink-0 text-[10px] leading-relaxed text-[var(--text-muted)]">
+          <p className="shrink-0 text-[11px] leading-relaxed text-[var(--text-muted)]">
             {sessionId ? 'La selección se guarda para esta conversación. Las acciones siguen el modo de permisos elegido.' : 'Selecciona una conversación para configurar sus herramientas.'}
           </p>
         </div>,

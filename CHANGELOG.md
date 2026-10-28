@@ -12,6 +12,9 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - El chat de Agent separa párrafos, títulos y listas, muestra tablas Markdown y conserva visible el último avance al plegar las herramientas. La bienvenida y el compositor usan indicaciones más claras para empezar.
 - En Acceso completo, `shell_run` y `shell_job_start` se ejecutan sin pedir aprobación, como el modo sin permisos de Claude Code. Siguen pidiéndola los comandos que borran o descartan archivos (`Remove-Item`, `rm`, `git reset --hard`, `git clean`…) y cualquier comando dentro de un encargo programado; las acciones de ratón y teclado sobre apps no cambian.
 - Las tarjetas de la conversación de Agent (aprobaciones, plan, actividad, razonamiento y documentos) ocupan el mismo ancho que el compositor en lugar de quedarse en 620 px.
+- La vista de Agent es más limpia: la barra lateral va a ras, el título de la conversación tiene más peso, la fecha, las tablas, la terminal, el diff y el plan pierden bordes y cajas, y los selectores y el panel de herramientas usan un estilo más ligero.
+- Las herramientas que fallan aparecen contraídas, con solo el título en rojo, y su error se lee como texto en lugar de JSON, igual que en Claude Code.
+- Se retiran de Agent el historial de aprobaciones (el botón del escudo) y las sugerencias de mensajes sobre el compositor.
 
 ### Security
 - Guardar un borrador en una carpeta del equipo (`drafts_save`) ya no se auto-aprueba con el canal Archivos: su carpeta de destino no está confinada a un espacio de trabajo, así que pasa al canal «Otros» y pide aprobación siempre, igual que declara su propio contrato de herramienta.
@@ -24,6 +27,8 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - El navegador de Agent resuelve el DNS de cada destino antes de salir: un dominio público que resuelva a una dirección privada o local (DNS del atacante o rebinding) se bloquea en `web_open`, `web_download` y en cada petición de la sesión del navegador (redirecciones y subrecursos incluidos); sin resolución verificable no navega.
 
 ### Fixed
+- El paso en curso del plan de Agent vuelve a verse mientras el agente trabaja (el texto quedaba transparente).
+- El editor de agentes se abre a pantalla completa y desplaza su contenido dentro del panel: las opciones avanzadas ya no se salen por debajo de los botones ni el formulario queda aplastado en ventanas estrechas.
 - El navegador de Agent muestra las páginas al 100 % con el ancho real del panel, como el de Claude Code: ya no las reduce para encajar un escritorio de 1280 px, que dejaba el texto diminuto. Las búsquedas usan Bing en lugar de la versión HTML de DuckDuckGo, y abrir una página espera al DOM listo y un margen de 1,5 s en vez de a que terminen todas las imágenes y anuncios (una búsqueda pasa de 2–6 s a ~1 s). Una barra fina bajo la dirección indica que la página carga.
 - La nota de texto al anotar el navegador de Agent ya no se cierra sola al hacer clic, y un clic sin arrastre con el lápiz o una forma ya no deja trazos invisibles que tapaban la selección.
 - Agent ya no edita a ciegas: `fs_edit` y `fs_write` con `overwrite` exigen haber leído el archivo con `fs_read` en la conversación y lo rechazan si cambió desde esa lectura (otra aplicación, el usuario o un deshacer), en lugar de pisar contenido que el modelo no vio. Lo que el agente escribe o edita cuenta como leído. `fs_edit` encuentra un fragmento de líneas completas aunque difiera solo en espacios finales, si la coincidencia es única, y explica cuándo el fragmento trae los números de línea de `fs_read`. La aprobación de un comando que borra o descarta archivos (`Remove-Item`, `del`, `git reset --hard`, `git clean`…) avisa de que Antares no puede deshacerlo.
