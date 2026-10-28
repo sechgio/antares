@@ -4,7 +4,7 @@
 }
 
 .agent-workspace .agent-conversation { background: var(--agent-panel); }
-.agent-workspace .agent-sidebar { background: var(--bg-base); border-radius: 12px; }
+.agent-workspace .agent-sidebar { background: var(--bg-base); }
 .agent-workspace .agent-message-user { background: var(--agent-bubble); }
 .agent-workspace .agent-markdown { overflow-wrap: anywhere; }
 .agent-workspace .agent-markdown > * + * { margin-top: 0.875rem; }
@@ -14,7 +14,8 @@
 .agent-workspace .agent-markdown > :first-child { margin-top: 0; }
 .agent-workspace .agent-markdown :is(ul, ol) { padding-left: 1.5rem; }
 .agent-workspace .agent-markdown li + li { margin-top: 0.375rem; }
-.agent-workspace .agent-markdown-table :is(th, td) { padding: 0.625rem 0.875rem; min-width: 7rem; vertical-align: top; }
+.agent-workspace .agent-markdown-table :is(th, td) { padding: 0.5rem 1rem 0.5rem 0; min-width: 7rem; vertical-align: top; }
+.agent-workspace .agent-markdown-table th { font-size: 12px; font-weight: 500; color: var(--text-muted); }
 .agent-workspace .agent-markdown-table :is(tbody tr, thead) { border-bottom: 1px solid var(--border-subtle); }
 .agent-workspace .agent-markdown-table tbody tr:last-child { border-bottom: 0; }
 .agent-workspace .agent-composer { container-type: inline-size; }
@@ -82,7 +83,8 @@
   outline-offset: 3px;
 }
 
-.agent-shimmer {
+.agent-shimmer,
+.agent-plan-title.agent-shimmer {
   background: linear-gradient(90deg, var(--text-muted) 35%, var(--text-primary) 50%, var(--text-muted) 65%) 100% 0 / 300% 100% no-repeat;
   -webkit-background-clip: text;
   background-clip: text;
@@ -116,50 +118,6 @@
 .agent-artifact:hover { border-color: var(--border-medium); }
 @keyframes agentActivityIn {
   from { opacity: 0; transform: translateY(-2px); }
-}
-
-.agent-workspace .agent-suggestion {
-  display: inline-flex;
-  height: 28px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 400;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  animation: agentSuggestionIn 320ms cubic-bezier(0.2, 0, 0, 1) both;
-  transition-property: background-color, color, border-color, transform;
-  transition-duration: 150ms;
-}
-.agent-workspace .agent-suggestion:hover:not(:disabled) { background: var(--bg-input); color: var(--text-primary); transform: translateY(-1px); }
-.agent-workspace .agent-suggestion:focus-visible { outline-offset: -2px; box-shadow: none; }
-.agent-workspace .agent-suggestion:active { transform: none; }
-
-.agent-suggestions {
-  display: grid;
-  grid-template-rows: 1fr;
-  transition: grid-template-rows 220ms cubic-bezier(0.2, 0, 0, 1), opacity 160ms ease-out;
-}
-.agent-suggestions[data-hidden='true'] {
-  grid-template-rows: 0fr;
-  opacity: 0;
-}
-.agent-suggestion-list {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-@keyframes agentSuggestionIn {
-  from { opacity: 0; transform: translateY(6px) scale(0.98); }
 }
 
 .agent-terminal { background: color-mix(in srgb, var(--bg-base) 72%, #000); }
@@ -282,7 +240,6 @@
   .agent-avatar[data-working='true'] .agent-avatar-eyes,
   .agent-thinking-dots span,
   .agent-shimmer,
-  .agent-workspace .agent-suggestion,
   .agent-terminal-cursor,
   [role='log'][data-live] > .agent-terminal-line,
   .agent-terminal-exit,
@@ -297,13 +254,12 @@
   .agent-model-menu,
   .agent-workspace .animate-spin,
   .agent-model-menu .animate-spin { animation: none; }
-  .agent-shimmer { background: none; color: var(--text-secondary); }
-  .agent-suggestions { transition: none; }
+  .agent-shimmer,
+  .agent-plan-title.agent-shimmer { background: none; color: var(--text-secondary); }
   .agent-plan-progress,
   .agent-plan-title { transition: none; }
   .agent-tool-row,
   .agent-diff-fold,
   .agent-tool-row .transition-transform,
   .agent-approval :is(button, summary, svg) { transition: none; }
-  .agent-workspace .agent-suggestion:hover:not(:disabled) { transform: none; }
 }

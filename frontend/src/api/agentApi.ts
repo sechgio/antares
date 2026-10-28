@@ -141,7 +141,6 @@ export interface AgentToolSpec {
 }
 
 export type AgentApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired';
-export type AgentApprovalFilterStatus = AgentApprovalStatus | 'all' | 'uncertain';
 
 export interface AgentApproval {
   id: string;
@@ -161,14 +160,6 @@ export interface AgentApproval {
     computer?: { app?: string; window?: string; element?: string }; subagent?: string; subagent_role?: AgentRole };
   resources?: { path: string; sha256?: string }[];
   dispatch?: { status: string; finished_at?: number };
-}
-
-export interface AgentGrant {
-  path: string;
-  mode?: string;
-  request_id?: string;
-  size?: number;
-  mtime_ns?: number;
 }
 
 export type AgentTaskStatus = 'pending' | 'delivering' | 'delivered' | 'cancelled' | 'uncertain';
@@ -421,15 +412,6 @@ export const agentApi = {
 
   agentEffectUndo: (session_id: string, call_id: string) =>
     _invoke<{ undone: boolean; path: string; call_id: string }>('agent_effect_undo', { session_id, call_id }),
-
-  agentApprovalsHistory: (params: { session_id?: string; method?: string; status?: AgentApprovalFilterStatus; limit?: number } = {}) =>
-    _invoke<{ approvals: AgentApproval[] }>('agent_approvals_history', params),
-
-  agentGrantsList: (session_id: string) =>
-    _invoke<{ grants: AgentGrant[] }>('agent_grants_list', { session_id }),
-
-  agentGrantsRevoke: (session_id: string, path?: string) =>
-    _invoke<{ revoked: number }>('agent_grants_revoke', { session_id, ...(path ? { path } : {}) }),
 
   agentTasksList: (session_id?: string) =>
     _invoke<{ tasks: AgentTask[]; queues: AgentQueueState[] }>('agent_tasks_list', session_id ? { session_id } : {}),
