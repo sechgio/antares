@@ -10,6 +10,7 @@ import {
 import type { PdfPageSize } from './utils';
 import { loadPdfDocument, renderPdfPageToDataUrl } from './pdfjs';
 import { selladorPreviewDpr, selladorPreviewPixelWidth } from './previewDpi';
+import { bucketRenderWidth } from './previewRender';
 import Button from '@/components/ui/Button';
 import { errorMessage } from '@/utils/errors';
 
@@ -26,14 +27,8 @@ interface PdfPagePreviewProps {
 }
 
 const DEFAULT_WIDTH = 900;
-const WIDTH_BUCKET = 80;
 const RENDER_CACHE_VERSION = 'disp-v1';
 const fileCacheIdentity = createObjectIdentity<File>();
-
-function bucketRenderWidth(width: number): number {
-  const clamped = Math.max(width, 320);
-  return Math.round(clamped / WIDTH_BUCKET) * WIDTH_BUCKET;
-}
 
 export function buildCacheKey(
   pdfPath: string | null | undefined,

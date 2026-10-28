@@ -143,8 +143,6 @@ function applyEvent(convId, event) {
           const session = sessions[sessionId];
           if (session) session.last_error = require('./agent-execution').sanitizeProviderError(event.message).slice(0, 300) || session.last_error;
         }).catch(() => {});
-        // Un fallo de compactación detiene el turno (generación bloqueante);
-        // el aviso queda en la conversación: nunca continuar con contexto a medias.
         if (event.kind === 'pi.compaction') {
           conversation(sessionId).then((conv) => conv.submit({
             type: 'write',
@@ -313,9 +311,6 @@ async function projectMessages(conv, session) {
       continue;
     }
     if (entry.kind === 'pi.compaction') {
-      // El envoltorio lo añade pi-durable; aquí solo queda el resumen legible.
-      // Si el envoltorio cambia de formato, se muestra el texto crudo: la
-      // compactación nunca desaparece silenciosamente del chat.
       const raw = textOf(msg);
       const summary = require('./agent-compaction').unwrapCompactionSummary(raw) || raw.trim();
       if (summary) {

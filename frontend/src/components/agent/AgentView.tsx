@@ -53,8 +53,6 @@ type SendIntent = Readonly<{
 type ComposerOption = { kind: 'bot'; profile: AgentProfile } | { kind: 'skill'; skill: AgentSkill }
   | { kind: 'connector'; mention: string; label: string; detail: string; brand: string | null };
 
-// Alias del módulo Conexiones (shared/agent-modules.json): mencionarlos habilita sus herramientas.
-// La marca elige el glifo de Complementos (connectionIcons).
 const CONNECTOR_MENTIONS = [
   ['drive', 'Google Drive', 'google', 'Buscar, descargar y subir archivos'],
   ['sheets', 'Hojas de Google', 'google', 'Leer y actualizar hojas de cálculo'],
@@ -65,7 +63,6 @@ const CONNECTOR_MENTIONS = [
   ['github', 'GitHub', 'github', 'Consultar ejecuciones de GitHub Actions'],
 ] as const;
 
-// Subsecuencia difusa: null si no coincide; menor es mejor (huecos entre letras).
 function fuzzyGaps(query: string, text: string): number | null {
   let at = -1;
   let gaps = 0;
@@ -553,7 +550,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const receiptsForSession = sendReceipts.filter((receipt) => receipt.intent.session === sessionId);
   const latestReceipt = receiptsForSession[receiptsForSession.length - 1];
   const visibleReceipts = receiptsForSession.filter((receipt) => receipt.phase !== 'received' || receipt === latestReceipt);
-  // Un recibo confirmado solo se anuncia: el mensaje ya aparece en la conversación.
   const receiptsQuiet = visibleReceipts.every((receipt) => receipt.phase === 'received');
   const readyProviders = providers.filter((p) => p.configured && (!p.needs_key || p.has_key));
   const providerLabel = providers.find((p) => p.id === provider)?.label ?? provider;
@@ -645,7 +641,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   useEffect(() => {
     if (!mentionsOpen) return;
     let alive = true;
-    // Sin servidores MCP la lista sigue ofreciendo bots y conectores.
     mcpApi.mcpServersList().then((res) => { if (alive) setMcpServers(res.servers); }).catch(() => {});
     return () => { alive = false; };
   }, [mentionsOpen]);
@@ -873,8 +868,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
 
-  // Soltar o pegar archivos: con ruta se adjuntan tal cual; sin ruta
-  // (capturas del portapapeles) se envían los bytes para guardarlos.
   const attachFiles = async (files: File[]) => {
     if (!sessionId || !files.length) return;
     const withPath = files.map((file) => ({ file, path: window.electronAPI?.getPathForFile?.(file) || '' }));
@@ -944,7 +937,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       try {
         const policy = await agentApi.agentPolicyGet();
         setGlobalRules(policy.rules);
-      } catch { /* la decisión ya se aplicó; el historial se refrescará al reabrir */ }
+      } catch {}
       await loadMessages(sessionId);
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo aplicar la decisión'), type: 'error' });
@@ -1275,6 +1268,14 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 addToast({ message: errorMessage(err, 'No se pudo retirar el archivo'), type: 'error' });
               }
             }}
+            onSetWorkspace={async (path) => {
+              try {
+                await agentApi.agentWorkspaceSet(session.id, path);
+                await loadMessages(session.id, false);
+              } catch (err) {
+                addToast({ message: errorMessage(err, 'No se pudo cambiar el espacio de trabajo'), type: 'error' });
+              }
+            }}
           />
         )}
 
@@ -1473,13 +1474,11 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             onDragOver={(event) => { if (!sessionId || !event.dataTransfer.types.includes('Files')) return; event.preventDefault(); setDragging(true); }}
             onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
             onDrop={(event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); void attachFiles([...event.dataTransfer.files]); }}>
-            {/* Paleta flotante sobre el compositor, como una paleta de comandos: no desplaza el borrador al abrirse. */}
             {autocomplete && <div className="agent-command-palette absolute bottom-full left-0 z-20 mb-2 w-[min(440px,100%)] rounded-2xl border border-[var(--border-medium)] bg-[var(--bg-surface)] p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.06)]">
               {autocomplete.id === 'skill' && <p className="px-2.5 pb-1 pt-0.5 text-[11px] text-[var(--text-muted)]">Usar una skill · instrucciones, no permisos</p>}
               <div ref={suggestionsRef} id={listboxId} role="listbox" aria-label={autocomplete.id === 'bot' ? 'Bots y conectores para mencionar' : 'Skills disponibles'} className="max-h-72 overflow-y-auto">
                 {autocomplete.options.map((option, index) => {
                   const previous = autocomplete.options[index - 1];
-                  // Las menciones se agrupan como en Complementos: primero bots, luego conectores y MCP.
                   const heading = option.kind !== 'skill' && option.kind !== previous?.kind
                     ? (option.kind === 'bot' ? 'Bots · solo lectura' : 'Complementos') : null;
                   return <Fragment key={optionId(option)}>

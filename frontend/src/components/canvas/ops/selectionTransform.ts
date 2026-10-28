@@ -2,7 +2,7 @@ import type { CanvasGuide, CanvasLayer } from '../types';
 import { mm, parseMm } from '../types';
 import { MM_TO_PX } from './drawHelpers';
 import { applyLineStrokeWeight, mmToPxLength } from './layerStyle';
-import { layerBounds, layerLocalBounds, parseRotateDeg, type RectMm } from './layerBounds';
+import { layerBounds, layerLocalBounds, parseRotateDeg, rectsOverlap, type RectMm } from './layerBounds';
 import {
   containerUsesLayoutConstraints,
   propagateContainerResize,
@@ -114,13 +114,9 @@ export function selectionBounds(layers: CanvasLayer[], ids: string[]): RectMm | 
   return { x: minX, y: minY, w: maxRight - minX, h: maxBottom - minY };
 }
 
-function rectsIntersect(a: RectMm, b: RectMm): boolean {
-  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-}
-
 export function layersInMarquee(layers: CanvasLayer[], marquee: RectMm): string[] {
   if (marquee.w <= 0 || marquee.h <= 0) return [];
-  return layers.filter((l) => isTransformable(l) && rectsIntersect(layerBounds(l), marquee)).map((l) => l.id);
+  return layers.filter((l) => isTransformable(l) && rectsOverlap(layerBounds(l), marquee)).map((l) => l.id);
 }
 
 export function moveSelection(

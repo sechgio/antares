@@ -38,10 +38,6 @@ _DEFERRED_HANDLER_MODULES: tuple[str, ...] = tuple(
     if m not in _CORE_HANDLER_MODULES and m not in _POST_READY_HANDLER_MODULES
 )
 
-def _module_for_method(method: str) -> str | None:
-    return handler_module_for(method)
-
-
 class HandlerRegistry:
 
     def __init__(self) -> None:
@@ -149,7 +145,7 @@ class HandlerRegistry:
         with self._lock:
             if key in self._map:
                 return self._map[key]
-        mod_name = _module_for_method(key)
+        mod_name = handler_module_for(key)
         if mod_name is None:
             return default
         self._load_module(mod_name)
@@ -161,7 +157,7 @@ class HandlerRegistry:
             return self._map.get(key, default)
 
     def is_known(self, method: str) -> bool:
-        return _module_for_method(method) is not None
+        return handler_module_for(method) is not None
 
     def __contains__(self, key: object) -> bool:
         if not isinstance(key, str):

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 from typing import Any
 
 from backend.core.evidencia_volanteo import (
@@ -11,15 +10,13 @@ from backend.core.evidencia_volanteo import (
     render_pdf,
     render_pdf_html,
 )
-from backend.handlers.common import validate_params, with_locale
-from backend.utils.atomic_write import atomic_output_file
+from backend.handlers.common import finalize_render_export, validate_params, with_locale
 
 
 @with_locale
 @validate_params()
 def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
     fmt = str(params.get("format", "pdf")).lower()
-    output_path = str(params.get("output_path") or "").strip() or None
     preview_html = str(params.get("html") or "").strip()
 
     document = deserialize_document(params)
@@ -46,25 +43,7 @@ def evidencia_volanteo_render(params: dict[str, Any]) -> dict[str, Any]:
         else:
             content, filename = render_pdf(document, logos, images, image_paths)
         mime_type = "application/pdf"
-    if output_path:
-        resolved = params.get("_resolved_output_path") or output_path
-        with atomic_output_file(resolved, extension=f".{fmt}", write_token=params.get("_write_token")) as target:
-            target.tmp_path.write_bytes(content)
-        out = target.destination
-        return {
-            "content_base64": "",
-            "saved_path": str(out),
-            "filename": out.name,
-            "format": fmt,
-            "mime_type": mime_type,
-        }
-    encoded = base64.b64encode(content).decode("ascii")
-    return {
-        "content_base64": encoded,
-        "filename": filename,
-        "format": fmt,
-        "mime_type": mime_type,
-    }
+    return finalize_render_export(params, content, filename, fmt, mime_type)
 
 
 HANDLERS = {

@@ -3,6 +3,8 @@
 const fs = require('node:fs');
 const dns = require('node:dns');
 const path = require('node:path');
+const { fileURLToPath } = require('node:url');
+const preview = require('./agent-preview');
 
 const PARTITION = 'persist:antares-agent-browser';
 const MAX_TEXT = 3_500;
@@ -36,7 +38,8 @@ const VIRTUAL_KEYS = { Enter: 13, Tab: 9, Escape: 27, Space: 32, Backspace: 8, D
 const REF = { type: 'string', description: 'Referencia «ref» de un elemento devuelto por web_read' };
 const TOOLS = {
   web_open: ['Abrir una página web en el navegador del agente', {
-    type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s) o búsqueda; para un archivo local usa fs_read' } }, required: ['url'],
+    type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s), búsqueda o ruta de un .html del espacio de trabajo '
+      + '(o file://) para verlo en vista previa con recarga en vivo; para leer otro archivo local usa fs_read' } }, required: ['url'],
   }, false],
   web_read: ['Leer el texto y los elementos interactivos de la página actual: primero los visibles, con su estado; '
     + 'incluye marcos del mismo sitio y componentes con shadow DOM', {
@@ -138,7 +141,6 @@ const READ_TOOLS = new Set(['web_read', 'web_screenshot', 'web_text', 'web_conso
 const NAVIGATION_TOOLS = new Set(['web_open', 'web_back', 'web_forward', 'web_reload']);
 const AGENT_TAB = 'agent';
 const USER_TAB = 'user';
-// Como en Claude Desktop: una vista por pestaña, misma sesión y un tope de pestañas.
 const MAX_USER_TABS = 8;
 const AGENT_LEASE_MS = 10 * 60_000;
 const MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
@@ -154,7 +156,6 @@ const tabs = new Map();
 const pendingMouseInputs = new Set();
 let consoleLog = [];
 const netLog = new Map();
-// Contadores de mensajes y peticiones: marcan lo que la página informó después de una acción.
 let consoleSeq = 0;
 let netSeq = 0;
 let sessionReady = false;
@@ -218,9 +219,6 @@ function isWeb(url) {
   }
 }
 
-// El agente no debe sondear servicios locales ni la red privada (p. ej. por
-// inyección de prompt): bloqueamos localhost e IP literales privadas. Los
-// nombres DNS que resuelven a IP privadas quedan fuera de este filtro.
 function isPrivateIpv4(ip) {
   const parts = ip.split('.').map(Number);
   if (parts.length !== 4 || parts.some((n) => !(n >= 0 && n <= 255))) return true;
@@ -277,6 +275,22 @@ async function isPublicResolution(url) {
   return addresses.length > 0 && !addresses.some((entry) => isPrivateHostname(entry.address));
 }
 
+// Una ruta a un .html (o file://) es vista previa local; «dominio.com/x.html» sigue siendo web.
+function localTarget(raw) {
+  const value = String(raw || '').trim();
+  if (/^file:/i.test(value)) {
+    try { return fileURLToPath(value); } catch { throw new Error('La dirección file:// no es válida'); }
+  }
+  if (isWeb(value) || !/^[^?#]+\.html?$/i.test(value)) return null;
+  const first = value.split(/[\\/]/)[0];
+  return /^[a-z]:[\\/]/i.test(value) || value.includes('\\') || value.startsWith('.') || !value.includes('/') || !first.includes('.')
+    ? value : null;
+}
+
+function permitted(url) {
+  return isAllowedWebUrl(url) || preview.owns(url);
+}
+
 function normalizeUrl(raw) {
   const value = String(raw || '').trim();
   if (!value) throw new Error('Indica la dirección o la búsqueda');
@@ -300,7 +314,10 @@ function prepareSession(electron) {
   ses.setUserAgent(siteUserAgent(ses.getUserAgent()));
   // Última barrera contra el rebinding: ni las redirecciones ni los
   // subrecursos de una página limpia pueden apuntar a una IP privada.
-  ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (details, callback) => {
+  // La única excepción es la vista previa local, por su origen y prefijo exactos.
+  ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*', 'file:///*'] }, (details, callback) => {
+    if (preview.owns(details.url)) return callback({ cancel: false });
+    if (details.url.startsWith('file:')) return callback({ cancel: true });
     isPublicResolution(details.url)
       .then((allowed) => callback({ cancel: !allowed }))
       .catch(() => callback({ cancel: true }));
@@ -443,8 +460,6 @@ function notify(reason) {
   } catch { }
 }
 
-// La rueda puede emitir decenas de eventos por segundo; la UI solo necesita
-// enterarse de que el bloqueo sigue vigente, no de cada píxel desplazado.
 function noteUserInput(tab) {
   if (!tab || tab.userControl) return;
   tab.lastUserInputAt = Date.now();
@@ -481,14 +496,14 @@ function ensureTab(id) {
     netLog.clear();
   }
   contents.setWindowOpenHandler(({ url }) => {
-    if (isAllowedWebUrl(url)) setImmediate(() => contents.loadURL(url).catch(() => {}));
+    if (permitted(url)) setImmediate(() => contents.loadURL(url).catch(() => {}));
     return { action: 'deny' };
   });
   contents.on('will-navigate', (event, url) => {
-    if (!isAllowedWebUrl(url)) event.preventDefault();
+    if (!permitted(url)) event.preventDefault();
   });
   contents.on('will-redirect', (event, url) => {
-    if (!isAllowedWebUrl(url)) event.preventDefault();
+    if (!permitted(url)) event.preventDefault();
   });
   const userInput = (_event, input) => {
     if (input.type === 'mouseDown') {
@@ -534,7 +549,6 @@ function ensureTab(id) {
   return tab;
 }
 
-// Sin cabeceras, cookies ni cuerpos: el registro solo describe el tráfico.
 function recordNet(id, entry) {
   netLog.set(id, entry);
   if (netLog.size > NET_KEEP) netLog.delete(netLog.keys().next().value);
@@ -661,7 +675,6 @@ function newTab() {
   return activateTab(id);
 }
 
-// Al cerrar la pestaña visible se activa la de la derecha o, si no hay, la de la izquierda.
 function closeTab(id) {
   if (id === AGENT_TAB || !order.includes(id)) throw new Error(`Pestaña no válida: ${id}`);
   const index = order.indexOf(id);
@@ -900,8 +913,6 @@ async function snapshot(contents, offset = 0, budget = RESULT_BUDGET) {
     ...(more > 0 ? { elements_more: more, elements_note: 'Hay más elementos interactivos: desplázate con web_scroll y vuelve a leer' } : {}) };
 }
 
-// Errores de consola y peticiones fallidas que la página informó desde la marca:
-// llegan con el resultado de la acción, como datos de la página y no instrucciones.
 function pageReported(mark) {
   const errors = consoleLog.filter((entry) => entry.seq > mark.console && entry.level === 'error')
     .slice(-HEALTH_KEEP).map((entry) => entry.text.slice(0, 200));
@@ -1106,7 +1117,6 @@ async function screenshot(contents, dir, fullPage = false) {
     image: { path: target, mime: 'image/jpeg' } };
 }
 
-// Fotograma de la pestaña visible para que la UI lo anote encima del DOM.
 async function capture(id = activeTab) {
   const contents = tabContents(tabs.get(id));
   if (!contents) throw browserError('No hay ninguna página abierta para anotar', 'NO_PAGE');
@@ -1115,8 +1125,6 @@ async function capture(id = activeTab) {
   return { png_base64: image.toPNG().toString('base64'), width, height, url: contents.getURL(), title: contents.getTitle() };
 }
 
-// Como el «seleccionar» de Claude Desktop: describe el elemento bajo un punto
-// (0–1 sobre la vista) para llevar su contexto al chat. Nunca lee valores de campos.
 const INSPECT = (x, y) => `(() => {
   const el = document.elementFromPoint(${x} * innerWidth, ${y} * innerHeight);
   if (!el || el === document.documentElement || el === document.body) return null;
@@ -1154,13 +1162,34 @@ async function inspect(x, y, id = activeTab) {
   return contents.executeJavaScriptInIsolatedWorld(1002, [{ code: INSPECT(...point) }], true);
 }
 
+function reloadPreview() {
+  for (const tab of tabs.values()) {
+    const contents = tabContents(tab);
+    if (contents && preview.owns(contents.getURL())) contents.reload();
+  }
+}
+
+// La ruta se autoriza como en fs_read (espacio de trabajo o carpeta adjunta) y
+// se sirve su carpeta, que también debe estar autorizada.
+async function previewUrl(file, resolvePath) {
+  if (!resolvePath) throw new Error('La vista previa de archivos locales requiere una conversación');
+  const status = await resolvePath(file);
+  if (!status || !status.exists || status.type !== 'file') {
+    throw new Error(`No existe el archivo ${file}; créalo con fs_write antes de abrirlo en vista previa`);
+  }
+  const folder = await resolvePath(path.dirname(status.path));
+  if (!folder || folder.type !== 'folder') throw new Error('La carpeta del archivo no está autorizada; adjúntala en el mensaje');
+  return (await preview.open(status.path, { onReload: reloadPreview })).url;
+}
+
 async function observeAfter(contents) {
   await settle(contents);
   return snapshot(contents, 0, RESULT_BUDGET - 400);
 }
 
-async function run(name, params = {}, { dir, drafts, approvedContext, sessionId } = {}) {
-  if (name === 'web_open') {
+async function run(name, params = {}, { dir, drafts, approvedContext, sessionId, resolvePath } = {}) {
+  const file = name === 'web_open' ? localTarget(params.url) : null;
+  if (name === 'web_open' && file === null) {
     assertAgentTarget(params.url);
     const policy = require('./agent-browser-policy');
     if (policy.isBlocked(policy.hostOf(normalizeUrl(params.url)))) {
@@ -1179,11 +1208,11 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId 
   if (name === 'web_download') return startDownload(String(params.url || '').trim(), drafts);
   if (name === 'web_open') {
     if (!docked) activeTab = AGENT_TAB;
+    const target = file !== null ? await previewUrl(file, resolvePath) : normalizeUrl(params.url);
     tab = ensureTab(AGENT_TAB);
     notify('agent-open');
     const contents = tab.view.webContents;
-    const target = normalizeUrl(params.url);
-    if (!(await isPublicResolution(target))) {
+    if (file === null && !(await isPublicResolution(target))) {
       throw new Error('El navegador de Agent no accede a direcciones locales ni de la red privada');
     }
     await load(contents, target);
@@ -1249,7 +1278,6 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId 
   if (name === 'web_key') {
     const keys = String(params.keys || '').trim();
     if (!keys) throw new Error('Indica las teclas');
-    // Las teclas que escriben texto no sirven para rellenar a mano un campo secreto.
     const writes = keys.split(/\s+/).some((combo) => {
       const parts = combo.split('+').filter(Boolean);
       const last = parts[parts.length - 1] || '';
@@ -1270,7 +1298,6 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId 
   throw new Error(`Herramienta nativa no disponible: ${name}`);
 }
 
-// Selecciona todo el contenido del campo de la ref, también dentro de un marco o un shadow root.
 function selectAllScript(id) {
   return `(() => {
     ${DEEP_JS}
@@ -1391,7 +1418,6 @@ async function fillFields(input, params) {
   if (texts.reduce((total, text) => total + text.length, 0) > MAX_FILL_TEXT) {
     throw new Error(`El texto de los campos excede ${MAX_FILL_TEXT} caracteres`);
   }
-  // Se comprueban todos los campos antes de escribir el primero.
   const kinds = await input.contents.executeJavaScript(`(() => {
     ${refGuard(input.contents)}
     ${DEEP_JS}
@@ -1448,9 +1474,6 @@ async function fillFields(input, params) {
   page: await observeAfter(input.contents) };
 }
 
-// El archivo ya pasó la verificación de grants del backend; aquí solo se
-// comprueba que el elemento siga siendo un campo de archivo de la página
-// aprobada y se le asigna el archivo por CDP, como hace Playwright.
 async function uploadFile(input, ref, filePath) {
   const id = String(ref || '').replace(/[^0-9]/g, '');
   if (!id) throw new Error('Indica la referencia del campo (web_read)');
@@ -1489,6 +1512,7 @@ function close() {
   tabSeq = 0;
   agentOwner = null;
   pendingMouseInputs.clear();
+  preview.close();
 }
 
 module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, isPrivateHostname, isAllowedWebUrl, isPublicResolution, state, dock, capture, inspect, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };

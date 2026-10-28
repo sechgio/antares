@@ -83,7 +83,7 @@ function throwsPrivate(url) {
     assert(await isPublicResolution('https://localhost/a') === false, 'localhost no consulta DNS');
 
     const src = fs.readFileSync(path.resolve(__dirname, '..', 'electron', 'agent-browser.js'), 'utf8');
-    assert(src.includes("ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }"),
+    assert(src.includes("ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*', 'file:///*'] }"),
       'la sesión de navegación verifica la resolución de cada petición, incluidas redirecciones y subrecursos');
 
     Module._load = originalLoad;

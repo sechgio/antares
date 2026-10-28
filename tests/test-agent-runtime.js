@@ -8,8 +8,6 @@ const path = require('path');
 const { assert, finish, stubModule } = require('./helpers/harness');
 const { getEventListeners } = require('node:events');
 
-// Este fixture cuenta con un catálogo pequeño (todas las herramientas habilitadas);
-// cua-driver y el navegador tienen sus propias pruebas en test-agent-cua.js y test-agent-browser-tools.js.
 stubModule('electron/agent-cua.js', { TOOLS: new Map(), run: async () => ({}), approvalContext: () => ({}), close: () => {} });
 stubModule('electron/agent-browser.js', { ...require('../electron/agent-browser'), TOOLS: {} });
 const runtime = require('../electron/agent-runtime');
@@ -53,6 +51,9 @@ function makeBridge() {
       case 'agent_internal_grant_remove':
         state.removed = [...(state.removed || []), params];
         return { removed: 1 };
+      case 'agent_internal_workspace_set':
+        state.workspaces = [...(state.workspaces || []), params];
+        return { workspace: params.path || null };
       case 'agent_internal_tools':
         return {
           tools: [
@@ -133,7 +134,8 @@ function makeBridge() {
         return { cancelled: false };
       case 'agent_internal_grants_add':
         state.grants.push(params);
-        return { granted: params.paths.filter((p) => p.endsWith('.pdf')), rejected: params.paths.filter((p) => !p.endsWith('.pdf')).map((path) => ({ path, reason: 'una carpeta requiere seleccionar los archivos concretos' })) };
+        return { granted: params.paths.filter((p) => p.endsWith('.pdf')), rejected: params.paths.filter((p) => !p.endsWith('.pdf')).map((path) => ({ path, reason: 'una carpeta requiere seleccionar los archivos concretos' })),
+          ...(params.folders && params.folders.length ? { workspace: params.folders.at(-1) } : {}) };
       case 'agent_internal_dispatch_finish': {
         const record = state.dispatches.find((d) => d.op_id === params.op_id);
         record.status = 'succeeded';
@@ -303,9 +305,8 @@ async function main() {
       fauxAssistantMessage('Comando aprobado'),
     ], shellBridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
-    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Ejecuta el comando' });
-    assert(await waitFor(() => state.approvals.size === 1), 'el shell pide aprobación también en Acceso completo');
+    assert(await waitFor(() => state.approvals.size === 1), 'fuera de Acceso completo el shell pide aprobación');
     assert(state.dispatches.length === 0, 'no ejecuta PowerShell antes de la aprobación humana');
     const approval = [...state.approvals.values()][0];
     await runtime.handlers.agent_approve({ approval_id: approval.id });
@@ -314,6 +315,34 @@ async function main() {
     await runtime.handlers.agent_approve({ approval_id: [...state.approvals.values()][1].id });
     assert(await waitIdle(session.id), 'el shell continúa después de la aprobación humana');
     assert(state.dispatches.length === 2, 'cada aprobación ejecuta un único comando');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    const shellBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools') result.tools.push({
+        name: 'shell_run', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} },
+      });
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('shell_run', { command: 'Get-ChildItem' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('shell_run', { command: 'Get-ChildItem; Remove-Item .\\tmp -Recurse' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Comandos terminados'),
+    ], shellBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Lista y limpia' });
+    assert(await waitFor(() => state.dispatches.length === 1), 'Acceso completo ejecuta el shell sin preguntar');
+    assert(await waitFor(() => [...state.approvals.values()].filter((a) => a.status === 'pending').length === 1),
+      'un comando que borra archivos sigue pidiendo aprobación en Acceso completo');
+    assert(state.dispatches.length === 1, 'no borra antes de la aprobación humana');
+    const pending = [...state.approvals.values()].find((a) => a.status === 'pending');
+    await runtime.handlers.agent_approve({ approval_id: pending.id });
+    assert(await waitIdle(session.id), 'el shell continúa después de la aprobación humana');
+    assert(state.dispatches.length === 2, 'la aprobación ejecuta el comando destructivo una vez');
     await runtime.shutdown();
   }
 
@@ -353,12 +382,8 @@ async function main() {
 
   {
     const { bridge, state } = makeBridge();
-    // El backend real auto-aprueba en desatendido las apps declaradas al programar;
-    // el puente falso replica ese contrato y registra la lista recibida.
     const uiBridge = async (method, params) => {
       if (method === 'agent_internal_dispatch' && params.meta) {
-        // Contrato del broker: el meta-dispacho vuelve a Electron, que ejecuta
-        // schedule() y cierra la operación con dispatch_finish.
         return { execute: 'meta', dispatch: { op_id: `op-${params.call_id}`, status: 'running' } };
       }
       if (method === 'agent_internal_dispatch_finish' && !state.dispatches.some((d) => d.op_id === params.op_id)) {
@@ -380,8 +405,6 @@ async function main() {
       }
       return result;
     };
-    // Elementos distintos: el guardia de repetición bloquearía la 4.ª llamada
-    // idéntica antes de alcanzar el techo desatendido.
     const clicks = Array.from({ length: 27 }, (_, i) =>
       fauxAssistantMessage([fauxToolCall('cua_click', { window_id: 'w1a2b', element_id: `e${i}` })], { stopReason: 'toolUse' }));
     await openFaux([
@@ -395,7 +418,6 @@ async function main() {
       fauxAssistantMessage('Encargo desatendido terminado'),
     ], uiBridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
-    // El broker exige aprobación para programar; el modo de acceso completo la aplica sola.
     await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Programa el encargo' });
     assert(await waitFor(() => state.dispatches.length >= 25, 20000), 'el encargo desatendido auto-aprueba las apps declaradas');
@@ -1321,6 +1343,9 @@ async function main() {
       && JSON.stringify(grant.folders) === JSON.stringify([String.raw`C:\fotos`]), 'los adjuntos se conceden como archivos y carpeta');
     assert(await waitIdle(session.id), 'el turno termina');
     assert(seen[0].includes('Archivos adjuntos por el usuario') && seen[0].includes('(carpeta)'), 'el modelo conoce los adjuntos');
+    assert(seen[0].includes(JSON.stringify(String.raw`Espacio de trabajo activo: C:\fotos`).slice(1, -1)), 'el modelo conoce la carpeta raíz de la conversación');
+    const switched = await runtime.handlers.agent_workspace_set({ session_id: session.id, path: String.raw`C:\fotos` });
+    assert(switched.workspace === String.raw`C:\fotos` && state.workspaces.at(-1).session_id === session.id, 'la raíz activa se puede cambiar');
     const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(messages[0].content === 'usa los adjuntos', 'el transcript no muestra el bloque de adjuntos');
     let reused = null;

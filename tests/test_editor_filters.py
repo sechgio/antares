@@ -82,7 +82,7 @@ def test_even_rounds_down_to_even() -> None:
 
 def test_trim_video_produces_shorter_output(toolchain: Any, clip: Path) -> None:
     out = SCRATCH / "trim.mp4"
-    _run_filter(toolchain, clip, filters.trim_video(1_000_000, 3_000_000, 25, 1), out)
+    _run_filter(toolchain, clip, filters.trim_video(1_000_000, 3_000_000), out)
     meta = probe_json(toolchain, out)
     duration = float(meta["format"]["duration"])
     assert 1.9 <= duration <= 2.1, f"duración inesperada: {duration}"

@@ -2,17 +2,8 @@ import type {
   CanvasDocument,
   CanvasLayer,
   CanvasStyleKind,
-  LayerCssVars,
 } from '../types';
-import { pickStyleVars, styleIdField, updateStyle } from './sharedStyles';
-
-function stylePatchEqual(a: Partial<LayerCssVars>, b: Partial<LayerCssVars>): boolean {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-  for (const key of keys) {
-    if (a[key] !== b[key]) return false;
-  }
-  return true;
-}
+import { cssVarsEqual, pickStyleVars, styleIdField, updateStyle } from './sharedStyles';
 
 const STYLE_KINDS: CanvasStyleKind[] = ['color', 'text', 'effect'];
 
@@ -29,7 +20,7 @@ export function syncLinkedStylesFromLayer(
     if (!styleId) continue;
     const nextPatch = pickStyleVars(next.cssVars, kind);
     const prevPatch = pickStyleVars(prev.cssVars, kind);
-    if (stylePatchEqual(nextPatch, prevPatch)) continue;
+    if (cssVarsEqual(nextPatch, prevPatch)) continue;
     out = updateStyle(out, styleId, { cssVars: nextPatch });
   }
   return out;

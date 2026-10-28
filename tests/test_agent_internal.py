@@ -752,7 +752,7 @@ def test_context_lists_granted_files_and_accounts_and_removes_one_file(store, tm
     assert removed == {"removed": 1}
     left = agent_internal.HANDLERS["agent_internal_artifacts"]({"session_id": "s1"})["context"]["files"]
     assert [f["path"] for f in left] == [listed["files"][1]["path"]]
-    assert agent_internal.HANDLERS["agent_internal_artifacts"]({"session_id": "s2"})["context"] == {"files": [], "accounts": []}
+    assert agent_internal.HANDLERS["agent_internal_artifacts"]({"session_id": "s2"})["context"] == {"files": [], "accounts": [], "workspace": None}
 
 
 def test_grants_check_accepts_granted_files_and_rejects_the_rest(store, tmp_path):

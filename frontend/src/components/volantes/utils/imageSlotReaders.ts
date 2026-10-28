@@ -1,7 +1,7 @@
 import { toSlugId } from "./format";
+import { MAX_LOGO_BYTES } from "@/utils/imageUploadLimits";
 import type { FlyerRecord } from "../types";
 
-const LOGO_MAX_BYTES = 5 * 1024 * 1024;
 const LOGO_ALLOWED_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -27,7 +27,7 @@ export function readImageAsDataUrl(
     onError("La imagen debe ser PNG, JPEG, WebP, GIF o BMP.");
     return;
   }
-  if (file.size > LOGO_MAX_BYTES) {
+  if (file.size > MAX_LOGO_BYTES) {
     onError(
       `La imagen no puede superar 5 MB (recibido: ${(file.size / 1024 / 1024).toFixed(1)} MB).`,
     );

@@ -55,7 +55,7 @@ const bareTokens = [
   ['github-classic', 'ghp_0123456789abcdefghijklmnopqrstuvwxyz'],
   ['github-fine', 'github_pat_0123456789ABCDEFGHIJ_0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghij'],
   ['aws', 'AKIAIOSFODNN7EXAMPLE'],
-  ['slack', 'xoxb-antares-fixture-not-a-real-token-00000000'],
+  ['slack', 'xoxb-' + '123456789012-123456789012-abcdefghijklmnopqrst'],
   ['google-api', 'AIza0123456789abcdefghijklmnopqrstuvwxy'],
   ['google-refresh', '1//0abcdefghijklmnopqrstuvwxyz123456'],
   ['google-access', 'ya29.0123456789abcdefghijklmnopqrstuvwxyz'],

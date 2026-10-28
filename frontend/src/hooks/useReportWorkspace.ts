@@ -82,10 +82,6 @@ export interface ReportWorkspaceOptions<TReport> {
   agentModule?: string;
 }
 
-function defaultFormatError(error: unknown, fallback: string): string {
-  return errorMessage(error, fallback);
-}
-
 function identity<T>(value: T): T {
   return value;
 }
@@ -122,7 +118,7 @@ export function useReportWorkspace<TReport extends { id: string }, TListItem>(
     [options.labels],
   );
   const normalizeItem = options.normalizeItem ?? identity;
-  const formatError = options.formatError ?? defaultFormatError;
+  const formatError = options.formatError ?? errorMessage;
   const [draftInitial] = useState(() =>
     options.draftKey ? readWorkspaceDraft(options.draftKey, normalizeItem) : null,
   );

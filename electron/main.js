@@ -142,6 +142,10 @@ app.whenReady().then(async () => {
     console.warn('[main] log/temp init failed:', err && err.message);
   }
   Menu.setApplicationMenu(null);
+  // El backend es la ruta crítica del arranque: se lanza antes de crear la ventana.
+  startPythonBackend(isDev).then(() => require('./agent-runtime').open()).catch((err) => {
+    console.error('[main] startPythonBackend threw:', err);
+  });
   createWindow(isDev);
   _installWindowCloseGuard();
   _tray = new Tray(require('node:path').join(__dirname, '..', 'assets', 'icon.ico'));
@@ -154,9 +158,6 @@ app.whenReady().then(async () => {
   _tray.on('double-click', _showMainWindow);
   const agentTrayTimer = setInterval(_notifyAgentActivity, 2000);
   agentTrayTimer.unref?.();
-  startPythonBackend(isDev).then(() => require('./agent-runtime').open()).catch((err) => {
-    console.error('[main] startPythonBackend threw:', err);
-  });
   const canvasAssetGcInitialTimer = setTimeout(runCanvasAssetGc, CANVAS_ASSET_GC_INITIAL_DELAY_MS);
   canvasAssetGcInitialTimer.unref?.();
   const canvasAssetGcTimer = setInterval(runCanvasAssetGc, CANVAS_ASSET_GC_INTERVAL_MS);

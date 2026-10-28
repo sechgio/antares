@@ -57,6 +57,11 @@ export function stripPlaceholderChrome(vars: CanvasLayer['cssVars']): CanvasLaye
   };
 }
 
+export function isTruthyCell(value: unknown): boolean {
+  const raw = String(value).toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'si' || raw === 'sí' || raw === 'x' || raw === 'yes';
+}
+
 function cssVarsForExport(layer: CanvasLayer, ctx?: FillContext): CanvasLayer['cssVars'] {
   if (layer.type === 'line') {
     const ensured = ensureLinePath(layer);
@@ -174,8 +179,7 @@ function resolveLayerContent(
     const key = layer.meta?.key;
     let checked = Boolean(layer.meta?.checked);
     if (key && ctx.data[key] != null) {
-      const raw = String(ctx.data[key]).toLowerCase();
-      checked = raw === '1' || raw === 'true' || raw === 'si' || raw === 'sí' || raw === 'x' || raw === 'yes';
+      checked = isTruthyCell(ctx.data[key]);
     }
     const mark = checked ? '✓' : '';
     return {

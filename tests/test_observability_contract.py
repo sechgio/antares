@@ -66,7 +66,7 @@ def test_redaction_covers_secret_shapes() -> None:
             "github_pat_0123456789ABCDEFGHIJ_0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghij",
         ),
         ("error con AKIAIOSFODNN7EXAMPLE", "AKIAIOSFODNN7EXAMPLE"),
-        ("error con xoxb-antares-fixture-not-a-real-token-00000000", "xoxb-antares-fixture-not-a-real-token-00000000"),
+        ("error con xoxb-" "123456789012-123456789012-abcdefghijklmnopqrst", "xoxb-" "123456789012-123456789012-abcdefghijklmnopqrst"),
         ("error con AIza0123456789abcdefghijklmnopqrstuvwxy", "AIza0123456789abcdefghijklmnopqrstuvwxy"),
         ("error con 1//0abcdefghijklmnopqrstuvwxyz123456", "1//0abcdefghijklmnopqrstuvwxyz123456"),
         ("error con ya29.0123456789abcdefghijklmnopqrstuvwxyz", "ya29.0123456789abcdefghijklmnopqrstuvwxyz"),

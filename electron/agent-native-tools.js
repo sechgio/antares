@@ -221,8 +221,6 @@ async function nativeToolContext(name, sessionId, params = {}) {
     Object.assign(context, browserContext, { domain, policy_blocked: policy.isBlocked(domain) });
   }
   if (name === 'web_upload') {
-    // El backend es la única fuente de archivos autorizados de la conversación;
-    // falla aquí para no pedir al usuario una aprobación imposible de cumplir.
     await require('./ipc-router')._callBackend('agent_internal_grants_check',
       { session_id: sessionId, path: String(params.path || '') });
   }
@@ -344,7 +342,10 @@ async function runNativeTool(name, params, { sessionId, approvedContext } = {}) 
   if (CUA.has(name)) return require('./agent-cua').run(name, params || {}, { sessionId, dir: `${draftsDir(sessionId)}.screens` });
   if (WEB[name]) {
     return require('./agent-browser').run(name, params || {},
-      { dir: `${draftsDir(sessionId)}.screens`, drafts: draftsDir(sessionId), approvedContext, sessionId });
+      { dir: `${draftsDir(sessionId)}.screens`, drafts: draftsDir(sessionId), approvedContext, sessionId,
+        resolvePath: sessionId
+          ? (target) => require('./ipc-router')._callBackend('agent_internal_path_status', { session_id: sessionId, path: target })
+          : null });
   }
   if (name === 'document_generate') return generateDocument(params, sessionId);
   if ((name === 'canvas_fill_fields' || name === 'canvas_apply_layers')

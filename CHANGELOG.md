@@ -7,6 +7,10 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- En Acceso completo, `shell_run` y `shell_job_start` se ejecutan sin pedir aprobación, como el modo sin permisos de Claude Code. Siguen pidiéndola los comandos que borran o descartan archivos (`Remove-Item`, `rm`, `git reset --hard`, `git clean`…) y cualquier comando dentro de un encargo programado; las acciones de ratón y teclado sobre apps no cambian.
+- Las tarjetas de la conversación de Agent (aprobaciones, plan, actividad, razonamiento y documentos) ocupan el mismo ancho que el compositor en lugar de quedarse en 620 px.
+
 ### Security
 - Guardar un borrador en una carpeta del equipo (`drafts_save`) ya no se auto-aprueba con el canal Archivos: su carpeta de destino no está confinada a un espacio de trabajo, así que pasa al canal «Otros» y pide aprobación siempre, igual que declara su propio contrato de herramienta.
 - Abrir un artefacto de Agent ya no ejecuta archivos ejecutables: las descargas web y los borradores admiten cualquier extensión, así que «Abrir» consulta la misma lista de veto (`.exe`, `.bat`, `.url`, `.lnk`…) que la política de escritura IPC y rechaza el archivo con un aviso.
@@ -33,7 +37,12 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Agent deja de insistir con una herramienta que falla por la misma causa aunque cambie los argumentos: tras tres errores equivalentes (mismo mensaje salvo rutas, direcciones, números, identificadores y valores citados) bloquea la siguiente llamada y pide diagnosticar o informar qué lo bloquea. Un resultado correcto o un error recuperable no cuentan.
 - Las acciones de escritorio de Agent (`desktop_click`, `desktop_type`, `desktop_key`, `desktop_scroll`, `desktop_launch` y `desktop_focus`) exigen aprobación humana también en Acceso completo, igual que las `cua_*`. En un encargo programado se bloquean, porque no identifican la aplicación de la lista blanca, y `desktop_type` no escribe si el foco está en un campo de contraseña.
 
+### Added
+- Vista previa de HTML en Agent, como en Claude Code: `web_open` acepta la ruta de un `.html` del espacio de trabajo o de una carpeta adjunta (o una dirección `file://`) y lo abre renderizado en el panel del navegador de Antares, servido por un servidor local solo en `127.0.0.1` (puerto libre y prefijo aleatorio en la ruta) desde la carpeta del archivo. Guardar cualquier archivo de esa carpeta recarga la vista previa al momento. Si el servidor no puede arrancar, se abre como `file://`, limitado a la misma carpeta. El resto de localhost y de la red privada sigue bloqueado para el navegador del agente.
+
 ### Changed
+- La carpeta que el usuario adjunta en Agent pasa a ser el espacio de trabajo de la conversación: `fs_read`, `fs_write`, `fs_edit`, `fs_list`, `fs_search` y `shell_run` sin ruta o `cwd` explícitos operan en ella y los nombres relativos se resuelven allí, no en los borradores. Con varias carpetas manda la última adjuntada; el chip «Espacio de trabajo» del contexto muestra la raíz activa y un clic en otra carpeta adjunta la cambia. Sin carpeta, Agent sigue usando sus borradores.
+- El arranque en frío queda usable antes: Electron lanza el backend Python antes de crear la ventana y la bandeja, en lugar de después, y el backend termina listo ~300 ms antes (p50 1521 → 1219 ms desde el inicio del proceso) sin retrasar la ventana.
 - Agent recibe con el mensaje un índice de las skills de la biblioteca (nombre, `skill_id` y descripción) y la indicación de cargar con `skills_read` la que encaje con el encargo, sin tener que llamar antes a `skills_list`. El índice solo se reenvía si cambia o tras compactar el contexto, y no aparece en el chat.
 - A partir del paso 32 de los 40 que admite un turno, Agent recibe con cada resultado de herramienta cuántos pasos lleva y la indicación de actualizar el plan y priorizar lo pendiente antes de que el turno se pause para «Reanudar». El aviso solo viaja en la petición al modelo: no se guarda ni se muestra en el chat.
 

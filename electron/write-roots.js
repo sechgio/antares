@@ -66,11 +66,6 @@ function _loadPersistedWriteRoots() {
   }
 }
 
-// persist=false para raíces derivadas de un ARCHIVO elegido en un diálogo de
-// guardado: la carpeta padre queda autorizada solo en esta sesión, porque el
-// renderer controla la ruta preseleccionada y un «Guardar» distraído no debe
-// autorizar una carpeta para siempre. Las carpetas elegidas explícitamente
-// (dialog_folder, dialog_dest) sí persisten.
 function _registerWriteRootFromPath(rawPath, persist = true) {
   if (typeof rawPath !== 'string' || !rawPath.trim()) return;
   const resolved = path.resolve(rawPath);

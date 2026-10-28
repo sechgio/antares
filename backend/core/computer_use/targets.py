@@ -11,7 +11,7 @@ STALE_ELEMENT = "STALE_ELEMENT"
 
 
 class DriverError(ValueError):
-    """Objetivo de computer-use inexistente u obsoleto; hay que re-observar."""
+    pass
 
 
 class TargetCache:

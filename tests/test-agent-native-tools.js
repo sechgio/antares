@@ -1,19 +1,8 @@
 'use strict';
 
-const { assert, finish, stubModule, installInertTimers } = require('./helpers/harness');
+const { assert, finish, stubModule, stubPublicDns, installInertTimers } = require('./helpers/harness');
 const { EventEmitter } = require('node:events');
-const Module = require('node:module');
-
-// el navegador del agente resuelve el DNS de cada destino: en los tests
-// toda resolución es pública
-const originalLoad = Module._load;
-Module._load = function patchedLoad(request, parent, isMain) {
-  if (request === 'node:dns') {
-    return { promises: { lookup: async () => [{ address: '93.184.216.34', family: 4 }] } };
-  }
-  return originalLoad.call(this, request, parent, isMain);
-};
-
+stubPublicDns();
 const { nativeToolSpecs } = require('../electron/agent-native-tools');
 const { nativeMethods } = require('../shared/ipc-method-catalog');
 

@@ -13,12 +13,9 @@ import {
   type MappingRect,
   type PdfPageSize,
 } from './mappingCoords';
+import { pad } from './formatHelpers';
 
 type DragMode = 'move' | 'resize' | null;
-
-function pad(n: number, len: number) {
-  return String(n).padStart(len, '0');
-}
 
 function mappingToRect(mapping: VisualMapping): MappingRect {
   return {

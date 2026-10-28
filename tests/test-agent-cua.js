@@ -24,7 +24,6 @@ stubModule('electron', { nativeImage: { createFromBuffer: (buffer) => ({
   isEmpty: () => buffer.length === 0, toJPEG: () => Buffer.from('jpeg'), getSize: () => ({ width: 640, height: 400 }),
 }) } });
 
-// Daemon y proxy falsos: el proxy responde por stdout a cada línea JSON-RPC de stdin.
 const spawned = [];
 const calls = [];
 let answers = {};

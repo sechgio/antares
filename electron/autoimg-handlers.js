@@ -4,7 +4,7 @@ const { AUTOIMG_METHODS } = require('./autoimg-ipc-methods');
 const sheets = require('./google-sheets-service');
 const drive = require('./google-drive-service');
 const engine = require('./autoimg-sync-engine');
-const { sanitizeError, sanitizeErrorMessage, assertNoSecretInObject } = require('./autoimg-security');
+const { sanitizeError, sanitizeErrorMessage, sanitizeErrorText, assertNoSecretInObject } = require('./autoimg-security');
 const { assertAllowedSheetRange } = require('./autoimg-sheet-ranges');
 const { emit } = require('./autoimg-notify');
 
@@ -46,7 +46,7 @@ async function handleAutoimgCall(method, params = {}) {
         const result = await sheets.beginBrowserOAuthFlow(
           (status) => emit('autoimg.auth.complete', status),
           (err) => emit('autoimg.auth.error', {
-            message: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
+            message: sanitizeErrorText(err),
           }),
         );
         await shell.openExternal(result.url);

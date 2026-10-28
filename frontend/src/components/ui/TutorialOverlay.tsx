@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useId } from "react";
+import { useState, useEffect, useCallback, useId } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
@@ -27,7 +27,6 @@ interface TargetRect {
 export default function TutorialOverlay({ isOpen, onClose, steps }: TutorialOverlayProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null);
-  const spotlightRef = useRef<HTMLDivElement | null>(null);
   const maskId = useId().replace(/:/g, "");
 
   useEffect(() => {
@@ -165,7 +164,6 @@ export default function TutorialOverlay({ isOpen, onClose, steps }: TutorialOver
 
           {targetRect && (
             <motion.div
-              ref={spotlightRef}
               className="tutorial-spotlight-ring"
               initial={{ opacity: 0 }}
               animate={{

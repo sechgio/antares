@@ -571,8 +571,6 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
         autosavePendingRef.current = false;
       });
     }
-    // preventDefault/returnValue abrirían un prompt que compite con quit-flush;
-    // este save es un respaldo del protocolo app.flush-canvas-before-quit.
   }, [onSave]);
   useEffect(() => {
     if (!active) return;

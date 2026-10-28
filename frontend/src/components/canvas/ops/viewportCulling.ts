@@ -1,7 +1,7 @@
 
 import type { CanvasLayer } from '../types';
 import { MM_TO_PX } from './drawHelpers';
-import { layerBounds, type RectMm } from './layerBounds';
+import { layerBounds, rectsOverlap, type RectMm } from './layerBounds';
 
 export type { RectMm };
 
@@ -34,10 +34,6 @@ export function visiblePageRectMm(
   };
 }
 
-function rectsOverlapMm(a: RectMm, b: RectMm): boolean {
-  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-}
-
 export function filterVisibleLayers(
   layers: CanvasLayer[],
   viewRect: RectMm | null,
@@ -45,6 +41,6 @@ export function filterVisibleLayers(
 ): CanvasLayer[] {
   if (!viewRect) return layers;
   return layers.filter(
-    (layer) => (alwaysIds?.has(layer.id) ?? false) || rectsOverlapMm(layerBounds(layer), viewRect),
+    (layer) => (alwaysIds?.has(layer.id) ?? false) || rectsOverlap(layerBounds(layer), viewRect),
   );
 }

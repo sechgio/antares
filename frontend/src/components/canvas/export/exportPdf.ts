@@ -7,16 +7,7 @@ import {
   resolveComponentVariantsForLayers,
   type FillContext,
 } from '../runtime/renderHtml';
-
-function yieldToMain(): Promise<void> {
-  return new Promise((resolve) => {
-    if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => resolve());
-    } else {
-      setTimeout(resolve, 0);
-    }
-  });
-}
+import { yieldToMain } from '../../../utils/async';
 
 const YIELD_EVERY_CONTEXT = 2;
 

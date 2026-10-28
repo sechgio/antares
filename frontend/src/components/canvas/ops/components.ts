@@ -1,17 +1,10 @@
 import type { CanvasDocument, CanvasLayer, LayerCssVars } from '../types';
 import { mm, newId, parseMm } from '../types';
 import { expandWithDescendants } from './layerTree';
+import { cssVarsEqual } from './sharedStyles';
 import { masterBaseCssVars, resolveVariantPatch } from './variants';
 
 export const INSTANCE_OFFSET_MM = 5;
-
-function cssVarsEqual(a: Partial<LayerCssVars>, b: Partial<LayerCssVars>): boolean {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-  for (const key of keys) {
-    if (a[key] !== b[key]) return false;
-  }
-  return true;
-}
 
 function variantsEqual(
   a: Record<string, Partial<LayerCssVars>> | undefined,
@@ -24,6 +17,15 @@ function variantsEqual(
     if (!cssVarsEqual(a[key] ?? {}, b[key] ?? {})) return false;
   }
   return true;
+}
+
+export function indexComponentMasters(layers: CanvasLayer[]): Map<string, CanvasLayer> {
+  const masters = new Map<string, CanvasLayer>();
+  for (const layer of layers) {
+    if (layer.meta?.componentId) masters.set(layer.meta.componentId, layer);
+    else if (layer.type === 'component' && !layer.meta?.instanceOf) masters.set(layer.id, layer);
+  }
+  return masters;
 }
 
 export function createComponentFromLayer(layer: CanvasLayer, _doc: CanvasDocument): CanvasLayer {

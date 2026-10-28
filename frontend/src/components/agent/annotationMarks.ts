@@ -22,8 +22,6 @@ function badge(ctx: CanvasRenderingContext2D, color: string, n: number, at: Poin
   ctx.fillText(String(n), at.x, at.y + unit);
 }
 
-// Las medidas viven en píxeles de la captura; `unit` las escala para que el trazo
-// tenga el mismo grosor en pantalla sea cual sea la densidad de la captura.
 export function drawMark(ctx: CanvasRenderingContext2D, mark: Mark, unit: number, selected = false) {
   ctx.save();
   ctx.strokeStyle = mark.color;
@@ -71,7 +69,6 @@ export function drawMark(ctx: CanvasRenderingContext2D, mark: Mark, unit: number
     ctx.setLineDash?.([]);
     badge(ctx, mark.color, mark.n, { x: Math.max(12 * unit, box.x), y: Math.max(12 * unit, box.y) }, unit);
   } else if (mark.kind === 'text') {
-    // Burbuja como los comentarios de Claude Desktop: se lee sobre cualquier fondo.
     const size = (12 + mark.width * 2) * unit;
     ctx.font = `600 ${size}px system-ui, sans-serif`;
     ctx.textBaseline = 'top';
@@ -106,7 +103,6 @@ export function moved(mark: Mark, dx: number, dy: number): Mark {
   return { ...mark, from: shift(mark.from), to: shift(mark.to) };
 }
 
-// Lo que el modelo no ve en la imagen: el elemento señalado y el texto escrito.
 export function annotationNotes(pages: Mark[][], multiPage: boolean) {
   return pages.flatMap((marks, index) => marks.flatMap((mark) => {
     const where = multiPage ? ` (pág. ${index + 1})` : '';
