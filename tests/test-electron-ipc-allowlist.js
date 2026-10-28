@@ -78,6 +78,12 @@ function main() {
   const preloadMethods = extractPreloadMethods(preloadSource);
   const knownUsedMethods = new Set([...apiMethods, ...preloadMethods]);
   const allowed = catalog.METHOD_NAMES;
+  if (!apiMethods.has('agent_workspace_set') || !allowed.has('agent_workspace_set')
+    || catalog.METHODS.agent_workspace_set.handler !== 'native:agent'
+    || catalog.METHODS.agent_workspace_set.inputSchema.properties.select.type !== 'boolean'
+    || catalog.IDEMPOTENT_METHODS.has('agent_workspace_set')) {
+    throw new Error('La carpeta de trabajo debe seleccionarse por el puente nativo sin reintentos de escritura.');
+  }
   if (!apiMethods.has('agent_canvas_apply_layers') || !allowed.has('agent_canvas_apply_layers')
     || catalog.METHODS.agent_canvas_apply_layers.handler !== 'backend:agent_internal'
     || catalog.IDEMPOTENT_METHODS.has('agent_canvas_apply_layers')) {

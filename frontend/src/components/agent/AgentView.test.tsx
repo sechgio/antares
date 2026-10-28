@@ -770,27 +770,51 @@ it('un envío pendiente en otra sesión no descarta los mensajes de la sesión s
   expect(screen.getByText('Mensaje de segunda')).toBeInTheDocument();
 });
 
-it('adjunta archivos y carpetas y los envía por id con el mensaje', async () => {
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+it('activa la carpeta de trabajo antes de enviar y mantiene solo archivos en los adjuntos', async () => {
+  const messages = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const select = vi.spyOn(agentApi, 'agentWorkspaceSelect').mockImplementation(async () => {
+    messages.mockResolvedValue({ ...empty, context: { modules: [], accounts: [], files: [{ path: 'C:\\fotos', folder: true }], workspace: 'C:\\fotos' } });
+    return { workspace: 'C:\\fotos' };
+  });
   const attach = vi.spyOn(agentApi, 'agentAttach')
-    .mockResolvedValueOnce({ attachments: [{ id: 'a1', name: 'clientes.xlsx', kind: 'files' }] })
-    .mockResolvedValueOnce({ attachments: [{ id: 'a2', name: 'fotos', kind: 'folder' }] });
+    .mockResolvedValueOnce({ attachments: [{ id: 'a1', name: 'clientes.xlsx', kind: 'files' }] });
   render(<AgentView />);
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar carpeta')); });
-  expect(attach.mock.calls).toEqual([['files'], ['folder']]);
+  await act(async () => { fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo')); });
+  expect(select).toHaveBeenCalledExactlyOnceWith('s1');
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  expect(attach.mock.calls).toEqual([['files']]);
   expect(screen.getByText('clientes.xlsx')).toBeInTheDocument();
-  expect(screen.getByText('fotos')).toBeInTheDocument();
+  expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('fotos');
   const tiles = within(screen.getByLabelText('Adjuntos'));
   expect(tiles.getByText('xlsx')).toBeVisible();
-  expect(tiles.getByText('carpeta')).toBeVisible();
+  expect(tiles.queryByText('carpeta')).not.toBeInTheDocument();
   expect(tiles.getByRole('button', { name: 'Quitar clientes.xlsx' }).parentElement).toHaveClass('absolute');
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Genera el informe' } });
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
-  expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Genera el informe', expect.any(String), ['a1', 'a2']);
+  expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Genera el informe', expect.any(String), ['a1']);
   expect(screen.queryByText('clientes.xlsx')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('fotos');
+});
+
+it('conserva la carpeta y el borrador al cancelar o fallar su selección', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
+    context: { modules: [], accounts: [], files: [{ path: 'C:\\proyecto', folder: true }], workspace: 'C:\\proyecto' } });
+  const select = vi.spyOn(agentApi, 'agentWorkspaceSelect').mockResolvedValueOnce({ workspace: 'C:\\proyecto' })
+    .mockRejectedValueOnce(new Error('Carpeta no disponible'));
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Revisa el proyecto' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo')); });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo')); });
+  expect(select).toHaveBeenCalledTimes(2);
+  expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('proyecto');
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Revisa el proyecto');
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  expect(addToast).toHaveBeenCalledWith({ message: 'Carpeta no disponible', type: 'error' });
 });
 
 it('adjunta archivos soltados por ruta y capturas pegadas por contenido', async () => {

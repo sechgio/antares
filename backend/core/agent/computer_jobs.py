@@ -236,14 +236,15 @@ def _monitor(job: _Job) -> None:
 
 
 def start(params: JsonObject, grants: dict[str, JsonObject], root: Path, session_id: str,
-          token: Any = None) -> JsonObject:
+          token: Any = None, *, workspace: Path | None = None) -> JsonObject:
     command = params.get("command")
     if not isinstance(command, str) or not command.strip():
         raise ValueError("Indica el comando")
     if len(command) > _MAX_COMMAND_CHARS:
         raise ValueError(f"El comando excede {_MAX_COMMAND_CHARS} caracteres")
     root.mkdir(parents=True, exist_ok=True)
-    cwd = computer_files.resolve(params.get("cwd") or str(root), grants, root)
+    workspace = workspace or root
+    cwd = computer_files.resolve(params.get("cwd") or str(workspace), grants, workspace)
     if not cwd.is_dir():
         raise ValueError("La carpeta de trabajo no existe")
     raw_timeout = params.get("timeout_s")
@@ -258,7 +259,7 @@ def start(params: JsonObject, grants: dict[str, JsonObject], root: Path, session
         if len(running) >= _MAX_JOBS_GLOBAL:
             raise ValueError(f"Ya hay {_MAX_JOBS_GLOBAL} jobs en marcha en Antares")
         job_id = uuid.uuid4().hex
-        env = {**os.environ, "ANTARES_AGENT_WORKSPACE": str(root)}
+        env = {**os.environ, "ANTARES_AGENT_WORKSPACE": str(workspace)}
         process = subprocess.Popen(
             ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
              "-Command", _PRELUDE + command],

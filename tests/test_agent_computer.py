@@ -329,6 +329,35 @@ def test_shell_runs_in_the_attached_folder_by_default(store, tmp_path):
     assert _run(store, "shell_output", output_id=out["output_id"])["content"].startswith(str(folder))
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_jobs_use_workspace_and_keep_logs_in_drafts(store, tmp_path):
+    folder = tmp_path / "proyecto"
+    folder.mkdir()
+    child = folder / "src"
+    child.mkdir()
+    agent_internal.HANDLERS["agent_internal_grants_add"]({"session_id": "s1", "paths": [], "folders": [str(folder)]})
+    for cwd in (None, "src"):
+        job = _run(store, "shell_job_start", command="Get-Location | % Path; $env:ANTARES_AGENT_WORKSPACE; 'hecho' | Set-Content salida.txt",
+                   **({"cwd": cwd} if cwd else {}))
+        finished = _wait_job(store, job["job_id"], {"exited"})
+        assert finished["status"] == "exited" and finished["exit_code"] == 0
+        target = child if cwd else folder
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                output = _run(store, "shell_output", output_id=job["output_id"])
+                if output["content"].splitlines() == [str(target), str(folder)] or time.monotonic() >= deadline:
+                    break
+            except PermissionError:
+                if time.monotonic() >= deadline:
+                    raise
+            time.sleep(0.05)
+        assert output["content"].splitlines() == [str(target), str(folder)]
+        assert (target / "salida.txt").read_text().strip() == "hecho"
+    assert not list(folder.rglob("shell-*.json"))
+    assert list(store.drafts_dir("s1").glob("shell-*.json"))
+
+
 def test_task_plan_requires_evidence_to_close_a_step():
     with pytest.raises(ValueError, match="evidencia"):
         task_plan.update({"goal": "g", "steps": [{"title": "Crear archivo", "status": "done"}]})

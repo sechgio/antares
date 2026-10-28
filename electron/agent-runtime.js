@@ -66,7 +66,7 @@ const SYSTEM_PROMPT =
   '(métodos de solo lectura) y herramientas con efectos sujetas al modo de permisos ' +
   'que el usuario elige para la conversación. Usa herramientas cuando la respuesta dependa de datos reales de la ' +
   'app; si una herramienta requiere aprobación explícale al usuario qué hará. ' +
-  'Para archivos de salida indica solo un nombre: se generan en los borradores de la ' +
+  'Para las salidas de las herramientas de documentos indica solo un nombre: se generan en los borradores de la ' +
   'conversación; para entregarlos en una carpeta del usuario usa drafts_save. ' +
   'Guarda con memory_remember solo preferencias o hechos duraderos que indique el usuario, nunca secretos; ' +
   'cuando un encargo repetible termine con comprobante, guarda sus pasos con procedure_learn. ' +
@@ -748,7 +748,24 @@ async function contextRemoveFile(params) {
 
 async function workspaceSet(params) {
   const sessionId = String(params && params.session_id || '');
-  await requireSession(sessionId);
+  const session = await requireSession(sessionId);
+  if (params.select === true) {
+    if (projection.isRunning(session.conversationId)) throw validation('Espera a que termine el turno para cambiar la carpeta de trabajo');
+    const dialog = shared.dialog || require('electron').dialog;
+    const win = shared.dialog ? undefined : require('./window-manager').getMainWindow();
+    const response = await dialog.showOpenDialog(win || undefined, {
+      title: 'Seleccionar carpeta de trabajo del agente',
+      properties: ['openDirectory'],
+    });
+    if (!response || response.canceled || !response.filePaths?.length) {
+      const { context } = await bridge('agent_internal_artifacts', { session_id: sessionId });
+      return { workspace: context?.workspace || null };
+    }
+    if (projection.isRunning((await requireSession(sessionId)).conversationId)) throw validation('Espera a que termine el turno para cambiar la carpeta de trabajo');
+    const result = await bridge('agent_internal_grants_add', { session_id: sessionId, paths: [], folders: [response.filePaths[0]] });
+    if (!result.workspace) throw validation(result.rejected?.[0]?.reason || 'No se pudo activar la carpeta de trabajo');
+    return { workspace: result.workspace };
+  }
   const folder = typeof params.path === 'string' && params.path ? params.path : undefined;
   return bridge('agent_internal_workspace_set', { session_id: sessionId, ...(folder ? { path: folder } : {}) });
 }
@@ -832,14 +849,17 @@ async function messageSend(params) {
       await conv.configure({ tools: [...current, ...extra].map((name) => ({ name })) }, ctx());
     }
   }
+  const { context: fileContext } = await bridge('agent_internal_artifacts', { session_id: sessionId });
+  const workspace = fileContext?.workspace || files.workspace;
   const attachedNote = [
     attached.length
       ? `Archivos adjuntos por el usuario:\n${attached.map((a) => `- ${a.path} (${a.kind === 'folder' ? 'carpeta' : 'archivo'})`).join('\n')}`
       : '',
-    files.workspace
-      ? `Espacio de trabajo activo: ${files.workspace}. Las rutas relativas de fs_* y shell_run sin cwd se resuelven en esa carpeta; `
-        + 'crea ahí los archivos que pida el usuario, no en los borradores.'
-      : '',
+    workspace
+      ? `Espacio de trabajo activo: ${workspace}. Esta es la carpeta de trabajo de la conversación, no un adjunto de solo lectura. `
+        + 'Usa fs_* para leer, crear y editar archivos ahí; shell_run y shell_job_start sin cwd arrancan en esa carpeta. '
+        + 'Conserva los modos de aprobación y verifica los resultados.'
+      : 'Sin carpeta de trabajo activa: las rutas relativas se resuelven en los borradores de la conversación.',
   ].filter(Boolean).join('\n\n');
   const memory = await memoryContext(session, content);
   const agentConfig = await conv.agent(ctx());

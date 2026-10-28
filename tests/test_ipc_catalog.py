@@ -12,6 +12,19 @@ def _catalog() -> dict:
     return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
 
 
+def test_agent_workspace_selection_uses_native_dialog_contract():
+    import jsonschema
+
+    entry = _catalog()["methods"]["agent_workspace_set"]
+    assert entry["handler"] == "native:agent" and not entry.get("idempotent")
+    schema = entry["inputSchema"]
+    for params in ({"session_id": "s1", "select": True}, {"session_id": "s1", "path": "C:\\proyecto"},
+                   {"session_id": "s1"}):
+        jsonschema.validate(params, schema)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"session_id": "s1", "select": "C:\\proyecto"}, schema)
+
+
 def test_subagent_memory_scope_and_budget_are_private_dispatch_context():
     import jsonschema
 

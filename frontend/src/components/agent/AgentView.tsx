@@ -234,6 +234,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [deciding, setDeciding] = useState<{ id: string; approved: boolean } | null>(null);
   const decisionRef = useRef<string | null>(null);
   const [attachments, setAttachments] = useState<(AgentAttachment & { preview?: string })[]>([]);
+  const [selectingWorkspace, setSelectingWorkspace] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
@@ -789,7 +790,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const send = async (correction = false, suggestion?: string) => {
     const skill = suggestion === undefined ? activeSkill : null;
     const content = suggestion ?? (draft.trim() || (skill ? `/${skill.name}` : ''));
-    if (!content || sendInFlightRef.current || modelBusy || stopping || (correction && correctionInFlightRef.current)) return;
+    if (!content || sendInFlightRef.current || modelBusy || stopping || selectingWorkspace || (correction && correctionInFlightRef.current)) return;
     if (skill && (correction || running || pending.length > 0)) {
       addToast({ message: 'Espera a que termine el turno en curso para invocar una skill', type: 'warning' });
       return;
@@ -862,9 +863,23 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     if (ok) setQueued((q) => q.filter((i) => i !== correcting));
   };
 
-  const attach = async (kind: 'files' | 'folder') => {
+  const selectWorkspace = async () => {
+    const id = sessionId;
+    if (!id || selectingWorkspace) return;
+    setSelectingWorkspace(true);
     try {
-      const res = await agentApi.agentAttach(kind);
+      await agentApi.agentWorkspaceSelect(id);
+      if (sessionIdRef.current === id) await loadMessages(id, false);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo seleccionar la carpeta de trabajo'), type: 'error' });
+    } finally {
+      setSelectingWorkspace(false);
+    }
+  };
+
+  const attach = async () => {
+    try {
+      const res = await agentApi.agentAttach('files');
       if (res.attachments.length) draftVersionRef.current += 1;
       setAttachments((prev) => [...prev, ...res.attachments]);
     } catch (err) {
@@ -1606,23 +1621,25 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               <button
                 type="button"
                 className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
-                onClick={() => void attach('files')}
+                onClick={() => void attach()}
                 disabled={!sessionId}
                 aria-label="Adjuntar archivos"
                 title="Adjuntar archivos (solo lectura para el agente)"
               >
                 <Plus size={16} />
               </button>
-              <button
-                type="button"
-                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
-                onClick={() => void attach('folder')}
-                disabled={!sessionId}
-                aria-label="Adjuntar carpeta"
-                title="Adjuntar una carpeta (el agente podrá leer sus archivos)"
+              <Button
+                variant="none"
+                size="none"
+                className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 rounded-lg px-2 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                onClick={() => void selectWorkspace()}
+                disabled={!sessionId || running || sending || selectingWorkspace}
+                aria-label="Seleccionar carpeta de trabajo"
+                title={context?.workspace ? `Trabajar en ${context.workspace}. Haz clic para cambiar de carpeta` : 'Elegir dónde el agente leerá, creará y editará archivos y ejecutará comandos'}
               >
-                <FolderOpen size={14} />
-              </button>
+                <FolderOpen size={14} className="shrink-0" />
+                <span className="truncate">{selectingWorkspace ? 'Seleccionando…' : context?.workspace?.split(/[\\/]/).filter(Boolean).pop() || 'Carpeta de trabajo'}</span>
+              </Button>
               {session && (
                 <PermissionPicker
                   key={session.id}
@@ -1688,7 +1705,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 type="button"
                 className="agent-send flex size-8 shrink-0 items-center justify-center rounded-full transition-[background-color,color,transform] duration-150 active:scale-[0.96] motion-reduce:transform-none disabled:cursor-not-allowed"
                 onClick={() => void send()}
-                disabled={(!sessionId && !provider) || !draft.trim() || modelBusy || sending}
+                disabled={(!sessionId && !provider) || !draft.trim() || modelBusy || sending || selectingWorkspace}
                 aria-label="Enviar"
                 title="Enviar (Intro)"
               >
