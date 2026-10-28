@@ -16,6 +16,8 @@ const DONE_WHEN_MAX = 1000;
 const ORIGIN_MAX = 400;
 const REPORT_TOOLS_SHOWN = 8;
 const NEEDS_INPUT = /NECESITA ENTRADA:\s*([\s\S]+)$/i;
+const MAX_TRANSCRIPT_TURNS = 8;
+const TRANSCRIPT_CHARS = 800;
 const MAX_ROUTINES = 3;
 const ROUTINE_MIN_MINUTES = 30;
 const PROFILE_ROLES = new Set(['explorer', 'reviewer', 'worker']);
@@ -117,6 +119,18 @@ const CHECK_TOOL = {
   inputSchema: { type: 'object', properties: {
     session_id: { type: 'string', description: 'Conversación hija que devolvió agent_delegate' },
   } },
+};
+
+const TRANSCRIPT_TOOL = {
+  name: 'agent_transcript', kind: 'meta', module: 'agent', gated: false, replay_safe: true,
+  description: 'Lee sin modificar nada los últimos mensajes de una delegación de agent_delegate, para revisar su trabajo '
+    + 'antes del informe. Devuelve solo el texto del agente, no razonamiento, resultados de herramientas ni aprobaciones, '
+    + 'e indica si quedó esperando una respuesta del usuario.',
+  inputSchema: { type: 'object', properties: {
+    session_id: { type: 'string', description: 'Conversación hija que devolvió agent_delegate' },
+    max_turns: { type: 'integer', minimum: 1, maximum: MAX_TRANSCRIPT_TURNS,
+      description: 'Cantidad de mensajes recientes a devolver (por defecto 4)' },
+  }, required: ['session_id'] },
 };
 
 const MESSAGE_TOOL = {
@@ -499,7 +513,12 @@ async function describeDelegation(child) {
     described.max_rounds = Number(job.continuation.max_rounds) || 0;
   }
   if (job.cancelled_reason) described.reason = String(job.cancelled_reason).slice(0, MAX_STOP_REASON_CHARS);
-  if (job.room_id) described.room_id = String(job.room_id);
+  if (job.room_id) {
+    described.room_id = String(job.room_id);
+    const rooms = (await shared.state.harness.snapshot(shared.state.RoomsDoc, ctx()))?.rooms || {};
+    const room = rooms[job.room_id];
+    if (room) described.room = require('./agent-rooms').roomSummary(room, await sessions());
+  }
   try {
     const tool = await lastTool(await conversation(child.id));
     if (tool) described.last_tool = tool;
@@ -523,6 +542,33 @@ async function checkDelegations(args, sessionId) {
   const delegations = await roster(sessionId);
   if (!delegations.length) return { delegations: [], note: 'No hay delegaciones pendientes ni en marcha.' };
   return { delegations };
+}
+
+// Lectura acotada del trabajo de una delegación propia: solo el texto que
+// produjo el agente, nunca sus herramientas, razonamiento ni aprobaciones.
+async function readTranscript(args, sessionId) {
+  const child = await requireDelegation(sessionId, args.session_id);
+  const wanted = Number(args.max_turns);
+  const limit = Number.isInteger(wanted) ? Math.min(Math.max(wanted, 1), MAX_TRANSCRIPT_TURNS) : 4;
+  const entries = await require('./agent-projection').allEntries(await conversation(child.id));
+  const turns = [];
+  for (const entry of entries) {
+    if (entry.kind !== 'pi.assistant' || !entry.model?.[0]) continue;
+    const text = (entry.model[0].content || [])
+      .filter((block) => block && block.type === 'text')
+      .map((block) => String(block.text || ''))
+      .join('\n').trim();
+    if (text) turns.push(text);
+  }
+  const recent = turns.slice(-limit).map((text) => text.slice(0, TRANSCRIPT_CHARS));
+  return {
+    session_id: child.id,
+    agent: child.profile?.name || 'delegado',
+    status: child.delegation?.status || '',
+    messages: recent,
+    awaiting_user: NEEDS_INPUT.test(turns.at(-1) || ''),
+    truncated: turns.length > recent.length,
+  };
 }
 
 async function sendMessage(args, sessionId, api) {
@@ -1117,9 +1163,9 @@ async function stop() {
 }
 
 module.exports = {
-  TOOL, DELEGATE_TOOL, CHECK_TOOL, MESSAGE_TOOL, STOP_TOOL, WAKE_TOOL,
+  TOOL, DELEGATE_TOOL, CHECK_TOOL, MESSAGE_TOOL, STOP_TOOL, WAKE_TOOL, TRANSCRIPT_TOOL,
   schedule, delegate, delegationAnswer, cancelDelegations, start, stop,
-  checkDelegations, roster, sendMessage, stopDelegation, wakeParent, startChild,
+  checkDelegations, roster, sendMessage, stopDelegation, wakeParent, startChild, readTranscript,
   listTasks, saveTask, cancelTask, runTaskNow, queueControl: queue.queueControl,
   _internal: { delegationBrief, delegationReport, userRequest },
 };

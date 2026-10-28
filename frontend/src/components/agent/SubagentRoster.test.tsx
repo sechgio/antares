@@ -39,3 +39,13 @@ it('marca la última herramienta fallida sin ocultar el resto del roster', () =>
   expect(screen.getByText('Revisor')).toBeInTheDocument();
   expect(screen.getByText('Consultar las plantillas disponibles · error')).toBeInTheDocument();
 });
+
+it('muestra la ronda de la sala y el turno en curso', () => {
+  render(<SubagentRoster items={[delegation({
+    room: { id: 'room-1', topic: 'Contrato y anexo', status: 'open', round: 2, rounds: 3, members: 2,
+      turn_member: 'delegate-1', turn_agent: 'Investigador' },
+  })]} />);
+  expect(screen.getByText('Sala 2/3')).toBeInTheDocument();
+  expect(screen.getByTitle('Contrato y anexo · turno de Investigador')).toBeInTheDocument();
+  expect(screen.getByText('trabajando')).toBeInTheDocument();
+});

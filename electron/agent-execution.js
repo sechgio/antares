@@ -284,7 +284,7 @@ async function allToolSpecs() {
   const saved = Object.values(await profiles()).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   if (saved.length > 0) {
     const tasks = require('./agent-tasks');
-    for (const tool of [tasks.DELEGATE_TOOL, tasks.CHECK_TOOL, tasks.MESSAGE_TOOL, tasks.STOP_TOOL, tasks.WAKE_TOOL,
+    for (const tool of [tasks.DELEGATE_TOOL, tasks.CHECK_TOOL, tasks.TRANSCRIPT_TOOL, tasks.MESSAGE_TOOL, tasks.STOP_TOOL, tasks.WAKE_TOOL,
       require('./agent-rooms').TOOL]) {
       merged.set(tool.name, tool);
     }
@@ -1103,6 +1103,9 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     }
     if (spec.name === 'agent_check') {
       return { text: JSON.stringify(await require('./agent-tasks').checkDelegations(args || {}, sessionId)) };
+    }
+    if (spec.name === 'agent_transcript') {
+      return { text: JSON.stringify(await require('./agent-tasks').readTranscript(args || {}, sessionId)) };
     }
     if (spec.name === 'agent_message') {
       return { text: JSON.stringify(await require('./agent-tasks').sendMessage(args || {}, sessionId, api)) };

@@ -23,6 +23,14 @@ export default function SubagentRoster({ items }: { items: AgentDelegation[] }) 
         {items.map((item) => (
           <li key={item.session_id} className="flex min-w-0 items-baseline gap-2 text-[11px]">
             <span className="truncate font-medium text-[var(--text-primary)]">{item.agent}</span>
+            {item.room && (
+              <span
+                className="shrink-0 rounded-full border border-[var(--border-subtle)] px-1.5 py-px text-[9.5px] text-[var(--text-muted)]"
+                title={item.room.turn_agent ? `${item.room.topic} · turno de ${item.room.turn_agent}` : item.room.topic}
+              >
+                {item.room.status === 'open' ? `Sala ${item.room.round}/${item.room.rounds}` : 'Sala cerrada'}
+              </span>
+            )}
             <span className="shrink-0 text-[var(--text-muted)]">{item.state}</span>
             {item.last_tool && (
               <span

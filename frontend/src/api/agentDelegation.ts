@@ -13,6 +13,19 @@ export interface AgentDelegation {
   max_rounds?: number;
   reason?: string;
   room_id?: string;
+  room?: {
+    id: string;
+    topic: string;
+    status: string;
+    round: number;
+    rounds: number;
+    members: number;
+    turn_member?: string;
+    turn_agent?: string;
+    turn_deadline?: number;
+    closed_at?: number;
+    close_reason?: string;
+  };
   last_tool?: { name: string; failed: boolean };
   parent_request_id?: string;
   root_parent_request_id?: string;
