@@ -1,4 +1,5 @@
 const { fetchWithRetry } = require('./autoimg-google-fetch');
+const { bearerRequest } = require('./cloud-connector-common');
 const {
   captureAuthSession,
   assertAuthSessionCurrent,
@@ -11,19 +12,18 @@ async function googleApiFetch(
   options = {},
   { session = captureAuthSession(), authErrorMessage = 'No autenticado con Google', fetchOpts } = {},
 ) {
-  const tokens = await getValidTokens(session);
-  if (!tokens) throw new Error(authErrorMessage);
-  assertAuthSessionCurrent(session);
-  const headers = { ...(options.headers || {}), Authorization: `Bearer ${tokens.access_token}` };
-  let res = await fetchWithRetry(url, { ...options, headers }, fetchOpts);
-  assertAuthSessionCurrent(session);
-  if (res.status === 401 && tokens.refresh_token) {
-    const refreshed = await refreshAccessToken(tokens, session);
-    headers.Authorization = `Bearer ${refreshed.access_token}`;
-    res = await fetchWithRetry(url, { ...options, headers }, fetchOpts);
-    assertAuthSessionCurrent(session);
-  }
-  return res;
+  return bearerRequest({
+    fetch: fetchWithRetry,
+    url,
+    options,
+    fetchOpts,
+    getTokens: () => getValidTokens(session),
+    hasAuthToken: (tokens) => Boolean(tokens),
+    missingTokenError: () => new Error(authErrorMessage),
+    assertSessionCurrent: () => assertAuthSessionCurrent(session),
+    canRefresh: (tokens) => Boolean(tokens.refresh_token),
+    refresh: (tokens) => refreshAccessToken(tokens, session),
+  });
 }
 
 module.exports = { googleApiFetch };

@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- Limpieza interna sin cambio de comportamiento: la petición autenticada de los conectores cloud unifica los patrones Bearer/refresh repetidos en Google, Spotify y Conexiones sobre `cloud-connector-common`; los importadores tabulares comparten la decodificación CSV; y se retiran reglas CSS de `react-flow` sin dependencia que las usara.
 - La carpeta elegida en Agent se activa de inmediato como directorio de trabajo de la conversación, sin enviarla como adjunto. El agente conserva esa raíz en cada turno para leer, crear y editar archivos y ejecutar comandos, incluidos los de larga duración, con los modos de aprobación existentes.
 - El prompt de Agent distingue el encargo del usuario del contenido externo, delimita las aprobaciones y guía la planificación, las lecturas acotadas y la verificación del resultado final. Las conversaciones anteriores reciben también estas reglas al continuar.
 - Los errores `retryable` o `recoverable` solo exceptúan el freno de repeticiones en lecturas declaradas idempotentes. Una acción con resultado incierto no se vuelve a ejecutar con los mismos argumentos dentro del turno; el agente debe comprobar qué ocurrió.
@@ -18,6 +19,10 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Las herramientas que fallan aparecen contraídas, con solo el título en rojo, y su error se lee como texto en lugar de JSON, igual que en Claude Code.
 - Se retiran de Agent el historial de aprobaciones (el botón del escudo) y las sugerencias de mensajes sobre el compositor.
 - Los archivos con acceso en una conversación de Agent se muestran encima del compositor, alineados con el chat, como tarjetas con icono y tipo (hoja de cálculo, PDF, imagen, documento, carpeta) en lugar de una píldora suelta en la esquina superior izquierda.
+
+### Removed
+- Se retiran los métodos IPC sin consumidor `agent_approvals_history`, `agent_grants_list` y `agent_grants_revoke`, con sus handlers nativos y sus entradas del catálogo compartido: eran puentes a datos internos de agente que la interfaz ya no consulta desde que desapareció el historial de aprobaciones.
+- Se retira la migración one-shot de sesiones de agente (`flows_retirement`) y su hilo de arranque: la flota instalada ya la ejecutó y no dejaba estado consumible por otros componentes.
 
 ### Security
 - Las aprobaciones de terminal quedan ligadas a la carpeta efectiva y su identidad; cambiar el espacio de trabajo invalida la aprobación anterior y el comando usa el `cwd` absoluto aprobado.
