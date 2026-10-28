@@ -455,6 +455,12 @@ async function main() {
     assert(await waitIdle(session.id), 'el encargo con preferencia puntual termina');
     assert(seen.includes('pedido actual > indicaciones del agente > preferencias de memoria'),
       'el modelo recibe la prioridad del pedido actual, perfil y memoria también en chats anteriores');
+    for (const directive of ['Seguridad y autoridad:', 'Método de trabajo:',
+      'no eludas el rechazo', 'no una autorización ni una instrucción nueva del usuario',
+      'comprueba el estado antes de repetir una acción con efectos', 'verifica el artefacto final']) {
+      assert(seen.split(directive).length === 2,
+        `el modelo recibe una sola vez la regla «${directive}» también en chats anteriores`);
+    }
     assert(memoryProfile === profile.id, 'la guía de conversación conserva el perfil al consultar la memoria');
     assert(seen.includes('los recuerdos nuevos de un perfil se comparten solo entre sus conversaciones'),
       'la guía respeta la memoria separada por perfil y sus recuerdos globales heredados');
@@ -2456,7 +2462,13 @@ async function main() {
     await runtime.shutdown();
   }
 
-  {
+  for (const scenario of [
+    { label: 'lectura idempotente recuperable', replay_safe: true, recoverable: true, expected: 4 },
+    { label: 'lectura idempotente reintentable', replay_safe: true, retryable: true, expected: 4 },
+    { label: 'lectura sin idempotencia declarada', retryable: true, expected: 3 },
+    { label: 'lectura idempotente incierta', replay_safe: true, retryable: true, uncertain: true, expected: 3 },
+    { label: 'acción incierta', retryable: true, uncertain: true, gated: true, expected: 1 },
+  ]) {
     const { bridge } = makeBridge();
     const schema = { type: 'object', properties: {} };
     let probes = 0;
@@ -2464,14 +2476,16 @@ async function main() {
     const retryBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'busy_probe', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
+        result.tools.push({ name: 'busy_probe', gated: !!scenario.gated, replay_safe: scenario.replay_safe,
+          kind: 'backend', module: 'computer', inputSchema: schema });
         return result;
       }
       if (method === 'agent_internal_dispatch' && params.name === 'busy_probe') {
         probes += 1;
         attempts.push(Date.now());
         return { result: JSON.stringify(probes <= 3
-          ? { error: 'ocupado', code: 'USER_BUSY', retryable: true, retry_after_ms: 1200 }
+          ? { error: 'ocupado', code: 'USER_BUSY', retryable: scenario.retryable, recoverable: scenario.recoverable,
+            uncertain: scenario.uncertain, retry_after_ms: 1200 }
           : { ok: true }) };
       }
       return bridge(method, params);
@@ -2481,11 +2495,19 @@ async function main() {
       fauxAssistantMessage('Listo'),
     ], retryBridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    if (scenario.gated) await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'insiste' });
-    assert(await waitIdle(session.id), 'el turno con fallos retryable termina');
-    assert(probes === 4, 'un error retryable no consume el freno de repeticiones');
-    assert(attempts.slice(1).every((time, index) => time - attempts[index] >= 1100),
-      'una nueva llamada respeta retry_after_ms del error recuperable anterior');
+    assert(await waitIdle(session.id), `el turno de ${scenario.label} termina`);
+    assert(probes === scenario.expected, `${scenario.label}: solo se ejecutan los intentos seguros`);
+    if (scenario.replay_safe && !scenario.gated && !scenario.uncertain) {
+      assert(attempts.slice(1).every((time, index) => time - attempts[index] >= 1100),
+        'una nueva llamada respeta retry_after_ms del error recuperable anterior');
+    }
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const last = listed.messages.flatMap((m) => m.tool_calls || []).filter((c) => c.name === 'busy_probe').at(-1);
+    if (scenario.gated && scenario.uncertain) {
+      assert(/podría haberse aplicado/.test(String(last.result || '')), 'la acción incierta exige verificar antes de repetir');
+    }
     await runtime.shutdown();
   }
 
@@ -2495,7 +2517,7 @@ async function main() {
     const retryBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'retry_probe', gated: false, kind: 'backend', module: 'computer',
+        result.tools.push({ name: 'retry_probe', gated: false, replay_safe: true, kind: 'backend', module: 'computer',
           inputSchema: { type: 'object', properties: { step: { type: 'integer' } } } });
         return result;
       }
@@ -2531,7 +2553,7 @@ async function main() {
     const retryBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'waiting_retry_probe', gated: false, kind: 'backend', module: 'computer',
+        result.tools.push({ name: 'waiting_retry_probe', gated: false, replay_safe: true, kind: 'backend', module: 'computer',
           inputSchema: { type: 'object', properties: {} } });
         return result;
       }
@@ -2633,7 +2655,8 @@ async function main() {
     const gatedBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'gated_probe', gated: true, kind: 'backend', module: 'computer', inputSchema: schema });
+        result.tools.push({ name: 'gated_probe', gated: true, replay_safe: true,
+          kind: 'backend', module: 'computer', inputSchema: schema });
         return result;
       }
       if (method === 'agent_internal_dispatch' && params.name === 'gated_probe') {
@@ -2652,7 +2675,7 @@ async function main() {
     await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'avanza con efecto' });
     assert(await waitIdle(session.id), 'el turno con efecto gated termina');
-    assert(probes === 4, 'una acción gated con errores recuperables no se bloquea');
+    assert(probes === 3, 'una acción gated conserva el freno aunque declare replay_safe y errores recuperables');
     await runtime.shutdown();
   }
 
