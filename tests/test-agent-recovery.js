@@ -114,7 +114,9 @@ async function main() {
                 return result;
               };
               if (key === 'submit') return async (draft, context) => {
-                if (draft.requestId === `delegate:${child.id}:${boundary === 'delivered' ? 'result' : boundary}`) {
+                const boundaryKey = boundary === 'delivered' ? 'result' : boundary;
+                if (String(draft.requestId || '').startsWith(`delegate:${child.id}:`)
+                  && String(draft.requestId || '').endsWith(`:${boundaryKey}`)) {
                   deliveryWaiting = true;
                   await new Promise((resolve) => { release = resolve; });
                 }

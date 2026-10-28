@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownLeft, CornerDownRight, FileImage, FileSpreadsheet, FileText, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
 import { mcpApi, type McpServer } from '../../api/mcpApi';
-import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentSkill, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
+import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentDelegation, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentSkill, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
@@ -30,6 +30,7 @@ import ConversationMenu from './ConversationMenu';
 import AgentBrowserPanel from './AgentBrowserPanel';
 import AgentAuditPanel from './AgentAuditPanel';
 import ScheduledTasksPanel from './ScheduledTasksPanel';
+import SubagentRoster from './SubagentRoster';
 import { METHOD_LABELS } from './methodLabels';
 import { useComposerAutocomplete, type ComposerSuggestion } from './useComposerAutocomplete';
 import { ApprovalCard, AssistantTurn, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel, groupTurns, placeArtifacts, type TranscriptView } from './AgentTimeline';
@@ -191,6 +192,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [compacting, setCompacting] = useState(false);
   const [pending, setPending] = useState<AgentApproval[]>([]);
   const [running, setRunning] = useState(false);
+  const [delegations, setDelegations] = useState<AgentDelegation[]>([]);
   const [plan, setPlan] = useState<AgentPlan | null>(null);
   const [resumable, setResumable] = useState(false);
   const [tokenBudget, setTokenBudget] = useState<{ limit: number; used: number } | null>(null);
@@ -338,6 +340,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           setMessages(res.messages);
           setArtifacts(res.artifacts ?? []);
           setQuestions(res.questions ?? []);
+          setDelegations(res.delegations ?? []);
           setContext(res.context ?? null);
           setUsage(res.usage ?? null);
           setContextWindow(res.context_window ?? null);
@@ -422,6 +425,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     setCompactionThresholds(null);
     setCompacting(false);
     setPending([]);
+    setDelegations([]);
     setPlan(null);
     setResumable(false);
     setMessagesStale(false);
@@ -441,7 +445,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   }), []);
 
   useEffect(() => {
-    const active = Boolean(sessionId) && (running || pending.length > 0);
+    const active = Boolean(sessionId) && (running || pending.length > 0 || delegations.length > 0);
     if (active && timerRef.current == null) {
       timerRef.current = window.setInterval(() => {
         void loadMessages(sessionId);
@@ -457,7 +461,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         timerRef.current = null;
       }
     };
-  }, [sessionId, running, pending.length, loadMessages]);
+  }, [sessionId, running, pending.length, delegations.length, loadMessages]);
 
   useEffect(() => {
     if (atBottomRef.current) listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -995,6 +999,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           key={editing === 'new' ? 'new' : editing.id}
           profile={editing === 'new' ? null : editing}
           canStartChat={Boolean(provider)}
+          providers={readyProviders}
           onClose={() => setEditing(null)}
           onSaved={(saved) => {
             setProfiles((prev) => [...prev.filter((p) => p.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, 'es')));
@@ -1353,6 +1358,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           {announcement && <span key={announcement.key}>{announcement.text}</span>}
         </div>
         <div className="mx-auto w-full max-w-[752px] shrink-0 px-4 pb-3">
+          {delegations.length > 0 && <SubagentRoster items={delegations} />}
           {attention && (
             <div role="region" aria-label="Atención del agente" className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
               {attention.kind === 'working'

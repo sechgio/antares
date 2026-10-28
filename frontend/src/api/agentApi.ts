@@ -1,5 +1,8 @@
 import { _invoke } from './core';
+import type { AgentDelegation, AgentRole } from './agentDelegation';
 import type { CanvasDocument } from '../components/canvas/types';
+
+export type { AgentDelegation, AgentRole } from './agentDelegation';
 
 export type CanvasLayersResult = Required<Pick<CanvasDocument, 'id' | 'updatedAt' | 'layers' | 'fields'>> & {
   createdLayers: { id: string; name: string }[];
@@ -45,7 +48,6 @@ export interface AgentSession {
   profile?: { id: string; name: string };
 }
 
-export type AgentRole = 'explorer' | 'reviewer' | 'worker';
 export type AgentMemoryScope = 'shared-read' | 'own' | 'none';
 
 export interface AgentProfile {
@@ -60,6 +62,7 @@ export interface AgentProfile {
   tools_deny?: string[];
   memory_scope?: AgentMemoryScope;
   daily_tokens?: number;
+  model?: { provider: string; model: string } | null;
   created_at: number;
   updated_at: number;
 }
@@ -348,6 +351,7 @@ export const agentApi = {
     _invoke<{
       messages: AgentMessage[];
       running: boolean;
+      delegations?: AgentDelegation[];
       plan?: AgentPlan | null;
       resumable?: boolean;
       pending_approvals: AgentApproval[];
@@ -463,7 +467,7 @@ export const agentApi = {
 
   agentProfilesList: () => _invoke<{ profiles: AgentProfile[] }>('agent_profiles_list'),
 
-  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; role?: AgentRole; instructions: string; starter: string; tools: string[] | null; tools_deny?: string[]; memory_scope?: AgentMemoryScope; daily_tokens?: number | null }) =>
+  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; role?: AgentRole; instructions: string; starter: string; tools: string[] | null; tools_deny?: string[]; memory_scope?: AgentMemoryScope; daily_tokens?: number | null; model?: { provider: string; model: string } | null }) =>
     _invoke<{ profile: AgentProfile }>('agent_profile_save', p),
 
   agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),

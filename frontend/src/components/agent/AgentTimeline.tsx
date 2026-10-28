@@ -333,7 +333,7 @@ function TerminalStep({ call, verbose }: { call: AgentToolCall; verbose?: boolea
 }
 
 function ToolCallStep({ call, verbose }: { call: AgentToolCall; verbose?: boolean }) {
-  if (call.name === 'subagent_run') return <SubagentTrace call={call} />;
+  if (call.name === 'subagent_run' || call.name === 'agent_delegate') return <SubagentTrace call={call} />;
   if (call.name === 'shell_run') return <TerminalStep call={call} verbose={verbose} />;
   if (fileChange(call.name, call.params)) {
     return <FileChangeStep call={call} status={CALL_STATUS_LABEL[call.status] ?? call.status} className={TASK_ROW} />;

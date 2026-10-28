@@ -175,6 +175,9 @@ async function _open(options = {}) {
     const BudgetDoc = pi.defineDoc({
       kind: 'antares.agent.budget', version: 1, scope: 'conversation', initial: () => ({ rounds: 0 }),
     });
+    const RoomsDoc = pi.defineDoc({
+      kind: 'antares.agent.rooms', version: 1, scope: 'session', initial: () => ({ rooms: {} }),
+    });
     const registry = pi.createRegistry();
     // Retención larga: una aprobación o una pausa de más de 5 minutos no vacía
     // la caché del prefijo (solo la reciben las APIs oficiales, ver modelDefinition).
@@ -196,6 +199,7 @@ async function _open(options = {}) {
       PolicyDoc,
       WaitsDoc,
       BudgetDoc,
+      RoomsDoc,
       compaction: settings.compaction,
       dir,
       ctx: ctx(),
@@ -336,6 +340,17 @@ async function profileSave(params = {}) {
   if (dailyTokens !== null && (!Number.isInteger(dailyTokens) || dailyTokens < MIN_DAILY_TOKENS || dailyTokens > MAX_DAILY_TOKENS)) {
     throw validation(`El presupuesto diario debe estar entre ${MIN_DAILY_TOKENS} y ${MAX_DAILY_TOKENS} tokens, o vacío para no limitarlo`);
   }
+  const rawModel = params.model === undefined ? (existing?.model ?? null) : params.model;
+  let agentModel = null;
+  if (rawModel !== null) {
+    if (typeof rawModel !== 'object' || Array.isArray(rawModel)) {
+      throw validation('El modelo del agente debe indicar proveedor y modelo');
+    }
+    const provider = _text(rawModel.provider, 'un proveedor', 120, true);
+    const modelId = _text(rawModel.model, 'un modelo', 120, true);
+    await execution.ensureProvider(provider, modelId);
+    agentModel = { provider, model: modelId };
+  }
   const now = Date.now();
   const profile = {
     id: existing ? existing.id : crypto.randomBytes(6).toString('hex'),
@@ -349,6 +364,7 @@ async function profileSave(params = {}) {
     ...(deny.length ? { tools_deny: [...new Set(deny)] } : {}),
     ...(memoryScope !== 'shared-read' ? { memory_scope: memoryScope } : {}),
     ...(dailyTokens !== null ? { daily_tokens: dailyTokens } : {}),
+    ...(agentModel ? { model: agentModel } : {}),
     created_at: existing ? existing.created_at : now,
     updated_at: now,
   };
@@ -663,6 +679,7 @@ async function messagesList(params) {
     });
   }
   const running = projection.isRunning(session.conversationId);
+  const delegations = await require('./agent-tasks').roster(sessionId);
   const plan = _latestPlan(messages);
   const stopped = messages.length > 0 && messages[messages.length - 1].content === CANCELLED_NOTE;
   const contextWindow = execution.contextWindowFor(session);
@@ -670,6 +687,7 @@ async function messagesList(params) {
   return {
     messages,
     running,
+    delegations,
     plan,
     resumable: !running && pending.length === 0 && (!!session.continuation || stopped || !!(plan && plan.steps.some((step) => step.status !== 'done'))),
     pending_approvals: pending,
@@ -1035,14 +1053,19 @@ async function _admittedRequest(session, requestId) {
 async function toolsList(params = {}) {
   let enabled;
   let tools;
+  let session = null;
   if (params.session_id) {
     await execution.refreshTools();
     const conv = await conversation(String(params.session_id));
+    session = (await sessions())[String(params.session_id)] || null;
     enabled = new Set((await conv.agent(ctx())).tools.map((tool) => tool.name));
     tools = [...shared.toolSpecs.values()];
   } else {
     tools = await execution.allToolSpecs();
   }
+  // Avisar al padre solo tiene sentido dentro de una delegación; el selector
+  // del usuario no ofrece una herramienta que siempre fallaría.
+  tools = tools.filter((tool) => tool.name !== 'agent_wake_parent' || !!session?.delegation);
   return {
     tools: tools.map((t) => ({
       name: t.name, gated: !!t.gated, kind: ['mcp', 'native'].includes(t.kind) ? t.kind : 'backend', module: t.module || null,
