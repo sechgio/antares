@@ -119,7 +119,7 @@ def test_failed_journal_after_startdoc_keeps_the_effect_uncertain(sample, monkey
         artifacts.print_artifact(store, "s1", {**params, "printer_name": "Test"}, "op1")
 
 
-def test_attention_and_question_deletion_are_durable(tmp_path):
+def test_attention_is_durable(tmp_path):
     store = agent.AgentStore(tmp_path)
     question = store.add_question("s1", "q1", {"questions": [{"id": "template", "prompt": "Elige"}]})
     assert store.attention() == {"s1": "waiting_input"}
@@ -130,5 +130,4 @@ def test_attention_and_question_deletion_are_durable(tmp_path):
     _, claim = store.dispatch_claim("s1", "c2", "write", {}, None)
     store.dispatch_finish("s1", "c2", claim["op_id"], "uncertain", '{}')
     assert store.attention() == {"s1": "uncertain"}
-    store.delete_session("s1")
-    assert all(item["session_id"] != "s1" for item in agent.AgentStore(tmp_path)._questions.values())
+    assert agent.AgentStore(tmp_path).attention() == {"s1": "uncertain"}

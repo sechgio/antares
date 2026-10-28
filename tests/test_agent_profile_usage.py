@@ -5,11 +5,12 @@ from datetime import date
 
 from backend.core.agent import agent, agent_chat
 from backend.handlers import agent_internal
+from tests.agent_store_seed import seed_session
 
 
 def test_cancelled_subagent_keeps_usage_without_delaying_stop_or_counting_replay(tmp_path, monkeypatch):
     store = agent.AgentStore(tmp_path)
-    session = store.create_session("faux", "faux-1", "Padre")
+    session = seed_session(store, provider="faux", model="faux-1", title="Padre")
     runner = agent.AgentRunner(store, lambda name: None)
     monkeypatch.setattr(agent, "get_agent_store", lambda: store)
     monkeypatch.setattr(agent, "get_agent_runner", lambda: runner)

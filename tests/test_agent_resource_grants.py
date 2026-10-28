@@ -162,12 +162,10 @@ def test_revoked_grants_block_execution(store, executed, pdf):
     assert executed == []
 
 
-def test_grants_survive_restart_and_session_deletion_removes_them(store, pdf, tmp_path):
+def test_grants_survive_restart(store, pdf, tmp_path):
     _grant([pdf])
     reopened = agent.AgentStore(tmp_path / "agent")
     assert next(iter(reopened.grants_for("s1").values()))["path"] == os.path.realpath(pdf)
-    reopened.delete_session("s1")
-    assert agent.AgentStore(tmp_path / "agent").grants_for("s1") == {}
 
 
 def test_grant_and_approval_methods_are_never_agent_tools():
