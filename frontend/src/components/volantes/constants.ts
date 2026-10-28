@@ -1,6 +1,6 @@
 import pcmVivienda from "../../assets/volanteo-assets/PCM-Vivienda.webp";
-import logoSedapal from "../../assets/volanteo-assets/logo_sedapal.webp";
-import logoAcciona from "../../assets/volanteo-assets/logo_acciona.webp";
+import logoSedapal from "../../assets/padron-assets/logo_sedapal.webp";
+import logoAcciona from "../../assets/padron-assets/logo_acciona.webp";
 import aquafono from "../../assets/volanteo-assets/aquafono.webp";
 import grifo from "../../assets/volanteo-assets/grifo.webp";
 

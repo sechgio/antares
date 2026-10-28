@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 # cp1252 va antes que latin-1: latin-1 decodifica cualquier byte y se quedaría
-# con los caracteres de control en lugar de la raya y las comillas tipográficas.
+# con los caracteres de control en lugar de la raya y las comillas tipográficas;
+# esa misma garantía hace que la escalera siempre devuelva texto.
 _CSV_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
 
 
 def decode_csv_bytes(content: bytes) -> str:
     """Decodifica bytes de un CSV probando las codificaciones habituales de
-    Excel/Windows. `latin-1` mapea cualquier byte, así que el recorrido normal
-    siempre devuelve texto y `ValueError` solo salta ante una lista vacía."""
+    Excel/Windows; `ValueError` solo salta ante una lista vacía."""
     for encoding in _CSV_ENCODINGS:
         try:
             return content.decode(encoding)
