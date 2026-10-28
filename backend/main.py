@@ -426,17 +426,6 @@ def main() -> None:
         warm_thread = threading.Thread(target=_post_ready_warm, name="post-ready-warm", daemon=True)
         warm_thread.start()
 
-    if not os.environ.get("PYTEST_CURRENT_TEST"):
-        def _retire_flows() -> None:
-            try:
-                from backend.core.agent.flows_retirement import retire_flows
-
-                retire_flows()
-            except Exception:
-                logger.exception("No se pudo completar la retirada de Flujos")
-
-        threading.Thread(target=_retire_flows, name="flows-retirement", daemon=True).start()
-
     try:
         while True:
             if _shutdown_requested:
