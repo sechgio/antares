@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { agentApi, type AgentApproval, type AgentPermissionMode, type AgentSession } from '../../api/agentApi';
+import { agentApi, type AgentApproval, type AgentPermissionMode, type AgentReasoningEffort, type AgentSession } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { mcpApi } from '../../api/mcpApi';
 import AgentView from './AgentView';
@@ -422,6 +422,7 @@ it('regula el razonamiento con los niveles del modelo y lo guarda al soltar', as
   render(<AgentView />);
   await act(async () => {});
   fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Alto' }));
+  expect(within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByText(session.model)).toBeVisible();
   const slider = within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByRole('slider', { name: 'Nivel de razonamiento' });
   expect(slider).toHaveAttribute('max', '2');
   fireEvent.change(slider, { target: { value: '1' } });
@@ -450,6 +451,31 @@ it('ofrece el nivel máximo cuando el modelo lo admite', async () => {
   await act(async () => { fireEvent.keyUp(slider, { key: 'ArrowRight' }); });
   expect(save).toHaveBeenCalledWith(session.id, 'max');
   expect(screen.getByRole('button', { name: 'Razonamiento: Máximo' })).toBeEnabled();
+});
+
+it('bloquea ambos selectores mientras guarda el esfuerzo y conserva el valor si falla', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
+  const reasoning_levels: AgentReasoningEffort[] = ['low', 'medium', 'high'];
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [{ ...session, reasoning_levels, reasoning_effort: 'low' }] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const saving = deferred<{ session: AgentSession }>();
+  const save = vi.spyOn(agentApi, 'agentSessionReasoningSet').mockReturnValueOnce(saving.promise);
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Bajo' }));
+  const slider = screen.getByRole('slider');
+  fireEvent.change(slider, { target: { value: '2' } });
+  fireEvent.pointerUp(slider);
+  expect(save).toHaveBeenCalledExactlyOnceWith(session.id, 'high');
+  expect(screen.getByRole('button', { name: 'Razonamiento: Bajo' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Elegir proveedor y modelo' })).toBeDisabled();
+  expect(screen.queryByRole('dialog', { name: 'Nivel de razonamiento' })).not.toBeInTheDocument();
+  await act(async () => { saving.reject(new Error('No se pudo guardar el esfuerzo')); });
+  expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'No se pudo guardar el esfuerzo', type: 'error' }));
+  expect(screen.getByRole('button', { name: 'Elegir proveedor y modelo' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Bajo' }));
+  expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', 'Bajo');
 });
 
 it('cambia los permisos por conversación y conserva el modo si falla el guardado', async () => {

@@ -1619,7 +1619,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                     providers={readyProviders}
                     value={{ provider: session?.provider ?? provider, model: session?.model ?? model }}
                     onChange={(next) => void changeModel(next)}
-                    disabled={sending || modelBusy || running || stopping || pending.length > 0}
+                    disabled={sending || modelBusy || reasoningBusy || running || stopping || pending.length > 0}
                     className="min-w-0 max-w-[min(40vw,240px)]"
                   />
                 ) : (
@@ -1633,8 +1633,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                     key={session.id}
                     levels={session.reasoning_levels}
                     value={session.reasoning_effort ?? 'low'}
+                    model={session.model}
                     onChange={(effort) => void changeReasoning(effort)}
-                    disabled={reasoningBusy || modelBusy || running || stopping || pending.length > 0}
+                    disabled={sending || reasoningBusy || modelBusy || running || stopping || pending.length > 0}
                   />
                 )}
                 <ContextUsage usage={usage} model={session?.model ?? model} contextWindow={contextWindow} thresholds={compactionThresholds} compacting={compacting} />

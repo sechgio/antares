@@ -778,6 +778,46 @@ def test_grant_app_ignora_metodos_que_no_son_ui(store):
     assert store.grants_for("s1") == {}
 
 
+@pytest.mark.parametrize("method", ["shell_run", "shell_job_start"])
+@pytest.mark.parametrize("cwd", [None, "subcarpeta"])
+def test_shell_approval_is_bound_to_the_effective_workspace(store, tmp_path, monkeypatch, method, cwd):
+    folders = [tmp_path / "primero", tmp_path / "segundo"]
+    for folder in folders:
+        (folder / "subcarpeta").mkdir(parents=True)
+    attach = agent_internal.HANDLERS["agent_internal_grants_add"]
+    attach({"session_id": "s1", "paths": [], "folders": [str(folders[0])]})
+    params = {"command": "Set-Content marcador.txt 'hecho'", **({"cwd": cwd} if cwd else {})}
+    approval_id = _approve("s1", "shell-workspace", method, params)
+    attach({"session_id": "s1", "paths": [], "folders": [str(folders[1])]})
+    executed = []
+    monkeypatch.setattr(agent.get_agent_runner(), "_execute", lambda *args: executed.append(args) or '{}')
+
+    result = _dispatch(session_id="s1", call_id="shell-workspace", name=method,
+                       params=params, approval_id=approval_id)
+
+    assert result["result"] is not None and "error" in json.loads(result["result"])
+    assert not executed
+    assert not any((folder / "marcador.txt").exists() for folder in folders)
+
+
+@pytest.mark.parametrize("method", ["shell_run", "shell_job_start"])
+def test_shell_dispatch_uses_the_approved_absolute_working_folder(store, tmp_path, monkeypatch, method):
+    folder = tmp_path / "proyecto"
+    (folder / "subcarpeta").mkdir(parents=True)
+    agent_internal.HANDLERS["agent_internal_grants_add"](
+        {"session_id": "s1", "paths": [], "folders": [str(folder)]})
+    params = {"command": "Get-Location", "cwd": "subcarpeta"}
+    approval_id = _approve("s1", "shell-pinned", method, params)
+    executed = []
+    monkeypatch.setattr(agent.get_agent_runner(), "_execute", lambda call, token: executed.append(call) or '{}')
+
+    _dispatch(session_id="s1", call_id="shell-pinned", name=method, params=params, approval_id=approval_id)
+    assert json.loads(_wait_result("shell-pinned")["result"]) == {}
+    assert executed[0]["params"]["cwd"] == str(folder / "subcarpeta")
+    assert executed[0]["approved_context"]["shell"]["workspace"] == str(folder)
+    assert params["cwd"] == "subcarpeta"
+
+
 def _cua_ensure(call_id, method="cua_click", computer=None, **extra):
     context = {"tool_version": "t1", "computer": computer if computer is not None else {"app": "Notepad.exe"}}
     return agent_internal.HANDLERS["agent_internal_approval_ensure"](
