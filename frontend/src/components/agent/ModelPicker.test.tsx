@@ -149,3 +149,42 @@ it('busca bajo demanda los modelos activos de un modelo personalizado y elige un
   fireEvent.click(fetched);
   expect(change).toHaveBeenCalledWith({ provider: custom.id, model: 'deepseek-ai/DeepSeek-V4' });
 });
+
+it('restablece el modelo predeterminado del proveedor seleccionado', async () => {
+  mockStatus(['llama3.1']);
+  const change = vi.fn();
+  render(<ModelPicker providers={providers} value={{ provider: 'openai', model: 'gpt-4.1' }} onChange={change} />);
+  const trigger = screen.getByRole('button', { name: 'Elegir proveedor y modelo' });
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole('button', { name: 'Usar modelo predeterminado de OpenAI' }));
+  expect(change).toHaveBeenCalledExactlyOnceWith({ provider: 'openai', model: 'gpt-4o' });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+});
+
+it('inicia el recorrido en el modelo seleccionado y cierra al deshabilitarse', async () => {
+  mockStatus(['llama3.1']);
+  const change = vi.fn();
+  const value = { provider: 'openai', model: 'gpt-4.1' };
+  const { rerender } = render(<ModelPicker providers={providers} value={value} onChange={change} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Elegir proveedor y modelo' }));
+  const selected = await screen.findByRole('option', { name: 'gpt-4.1' });
+  const search = screen.getByRole('combobox', { name: 'Buscar modelo' });
+  await waitFor(() => expect(search).toHaveAttribute('aria-activedescendant', selected.id));
+  const other = screen.getByRole('option', { name: 'gpt-4o' });
+  fireEvent.mouseEnter(other);
+  expect(search).toHaveAttribute('aria-activedescendant', selected.id);
+  fireEvent.mouseMove(other);
+  expect(search).toHaveAttribute('aria-activedescendant', other.id);
+  fireEvent.keyDown(search, { key: 'Escape' });
+  fireEvent.click(screen.getByRole('button', { name: 'Elegir proveedor y modelo' }));
+  const reopened = screen.getByRole('combobox', { name: 'Buscar modelo' });
+  await waitFor(() => expect(reopened).toHaveAttribute('aria-activedescendant', screen.getByRole('option', { name: 'gpt-4.1' }).id));
+  fireEvent.keyDown(reopened, { key: 'ArrowUp' });
+  fireEvent.keyDown(reopened, { key: 'Enter' });
+  expect(change).toHaveBeenCalledWith({ provider: 'openai', model: 'gpt-4o' });
+  fireEvent.click(screen.getByRole('button', { name: 'Elegir proveedor y modelo' }));
+  rerender(<ModelPicker providers={providers} value={value} onChange={change} disabled />);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Elegir proveedor y modelo' })).toBeDisabled();
+});

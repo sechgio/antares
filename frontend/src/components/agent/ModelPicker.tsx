@@ -1,9 +1,10 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Loader2, RefreshCw, Search } from 'lucide-react';
+import { Check, ChevronDown, Loader2, RefreshCw } from 'lucide-react';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
+import Button from '../ui/Button';
 
 interface ModelChoice {
   provider: string;
@@ -52,6 +53,7 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
   const customs = useMemo(() => providers.filter((item) => item.custom), [providers]);
   const selectedProvider = providers.find((item) => item.id === value.provider);
   const currentProvider = standard.find((item) => item.id === value.provider) ?? standard[0];
+  const defaultProvider = selectedProvider ?? currentProvider;
 
   const load = useCallback(async (id: string) => {
     setModels((prev) => ({ ...prev, [id]: { loading: true, models: prev[id]?.models ?? [], error: null } }));
@@ -112,14 +114,16 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
   }, [standard, customs, models, term, currentProvider?.id]);
   const items = useMemo(() => groups.flatMap((group) => group.entries), [groups]);
   const loading = groups.some((group) => group.state.loading);
+  const selectedIndex = items.findIndex((item) => item.provider === value.provider && item.model === value.model);
 
   useEffect(() => {
     if (isOpen) updatePosition();
   }, [isOpen, items.length, loading, updatePosition]);
 
   useEffect(() => {
-    setHighlighted(0);
-  }, [query, items.length]);
+    if (!isOpen) return;
+    setHighlighted(query ? 0 : Math.max(0, selectedIndex));
+  }, [isOpen, query, items.length, selectedIndex]);
 
   useEffect(() => {
     if (isOpen) document.getElementById(`${listId}-${highlighted}`)?.scrollIntoView?.({ block: 'nearest' });
@@ -168,31 +172,32 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
 
   return (
     <div className={className}>
-      <button
+      <Button
         ref={triggerRef}
-        type="button"
+        variant="none"
+        size="none"
         disabled={disabled}
         onClick={() => (isOpen ? close() : openMenu())}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         aria-label="Elegir proveedor y modelo"
         title={`${selectedProvider?.label ?? currentProvider?.label ?? ''} · ${value.model || modelLabel}`}
-        className={`inline-flex h-7 max-w-full items-center gap-1 rounded-md px-2 text-[13px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 ${
+        className={`inline-flex h-7 max-w-full items-center gap-1 rounded-full px-2 text-[12px] transition-colors disabled:pointer-events-none disabled:opacity-50 ${
           isOpen
             ? 'bg-[var(--bg-input)] text-[var(--text-primary)]'
             : 'text-[var(--text-secondary)] hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]'
         }`}
       >
         <span className="truncate">{modelLabel}</span>
-        <ChevronDown size={14} className="shrink-0 opacity-60" />
-      </button>
+        <ChevronDown size={12} className="shrink-0 opacity-60" aria-hidden="true" />
+      </Button>
 
       {isOpen && createPortal(
         <div
           ref={popupRef}
           role="dialog"
           aria-label="Modelos disponibles"
-          className="agent-popover-in agent-model-menu fixed z-[300] flex flex-col overflow-hidden rounded-lg border p-1 shadow-md"
+          className="agent-popover-in agent-model-menu fixed z-[300] flex flex-col overflow-hidden rounded-[20px] border p-1.5 shadow-md"
           style={{
             top: position?.top ?? -9999,
             left: position?.left ?? -9999,
@@ -200,7 +205,7 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
             maxHeight: position?.maxHeight ?? MENU_HEIGHT,
             visibility: position ? 'visible' : 'hidden',
             background: 'var(--bg-elevated)',
-            borderColor: 'var(--border-subtle)',
+            borderColor: 'var(--border-medium)',
             transformOrigin: position && triggerRef.current && position.top < triggerRef.current.getBoundingClientRect().top ? 'bottom left' : 'top left',
           }}
           onMouseDown={(event) => event.stopPropagation()}
@@ -216,14 +221,13 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
               && !triggerRef.current?.contains(event.relatedTarget)) close();
           }}
         >
-          <div className="-mx-1 -mt-1 mb-1 flex h-9 items-center gap-2 border-b border-[var(--border-subtle)] px-3">
-            <Search size={14} className="shrink-0 opacity-50" />
+          <div className="flex h-7 shrink-0 items-center gap-2 px-2">
             <input
               ref={searchRef}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={handleSearchKey}
-              placeholder="Buscar modelo…"
+              placeholder="Seleccionar modelo"
               spellCheck={false}
               aria-label="Buscar modelo"
               role="combobox"
@@ -231,17 +235,31 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
               aria-expanded="true"
               aria-controls={listId}
               aria-activedescendant={items[highlighted] ? `${listId}-${highlighted}` : undefined}
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+              className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)]"
             />
             {loading && <Loader2 size={13} className="shrink-0 animate-spin text-[var(--text-muted)]" />}
           </div>
+
+          {!term && defaultProvider?.default_model && (
+            <Button
+              variant="none"
+              size="none"
+              aria-label={`Usar modelo predeterminado de ${defaultProvider.label}`}
+              title={defaultProvider.default_model}
+              onClick={() => choose(defaultProvider.id, defaultProvider.default_model)}
+              className="mb-1 rounded-xl px-2 py-1.5 text-left hover:bg-[var(--bg-input)]"
+            >
+              <span className="block text-[13px] text-[var(--text-primary)]">Predeterminado</span>
+              <span className="block truncate text-[12px] text-[var(--text-secondary)]">Modelo recomendado de {defaultProvider.label}</span>
+            </Button>
+          )}
 
           <div role="listbox" id={listId} aria-label="Modelos" aria-busy={loading} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
             {groups.map(({ id, label, state, entries, custom }, groupIndex) => (
               <Fragment key={id}>
                 {groupIndex > 0 && <div role="separator" className="my-1 h-px bg-[var(--border-subtle)]" />}
                 <div role="group" aria-label={label}>
-                  <p className="px-2 py-1.5 text-[12px] font-medium text-[var(--text-muted)]">{label}</p>
+                  {(groups.length > 1 || custom) && <p className="px-2 py-1.5 text-[12px] text-[var(--text-muted)]">{label}</p>}
                   {state.loading && state.models.length === 0 && (
                     <div className="space-y-1 px-2 pb-1" aria-hidden="true">
                       {[0, 1].map((row) => (
@@ -261,17 +279,17 @@ export default function ModelPicker({ providers, value, onChange, disabled = fal
                         id={`${listId}-${itemIndex}`}
                         aria-selected={selected}
                         tabIndex={-1}
-                        onMouseEnter={() => setHighlighted(itemIndex)}
+                        onMouseMove={() => setHighlighted(itemIndex)}
                         onClick={() => choose(item.provider, item.model)}
-                        className={`relative flex w-full cursor-default select-none items-center rounded-md py-1.5 pl-2 pr-8 text-left text-[13px] font-normal text-[var(--text-primary)] outline-none ${
+                        className={`relative flex w-full cursor-default select-none items-center rounded-xl py-1.5 pl-2 pr-8 text-left text-[13px] font-normal text-[var(--text-primary)] outline-none ${
                           itemIndex === highlighted ? 'bg-[var(--bg-input)]' : ''
                         }`}
                       >
                         <span className="min-w-0">
                           <span className="block truncate">{item.label}</span>
-                          {item.detail && <span className="block truncate font-mono text-[11px] text-[var(--text-muted)]">{item.detail}</span>}
+                          {item.detail && <span className="block truncate text-[12px] text-[var(--text-secondary)]">{item.detail}</span>}
                         </span>
-                        {selected && <Check size={14} className="absolute right-2 shrink-0" />}
+                        {selected && <Check size={14} className="absolute right-2 shrink-0 text-[var(--text-secondary)]" aria-hidden="true" />}
                       </button>
                     );
                   })}
