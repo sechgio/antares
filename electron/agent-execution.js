@@ -817,6 +817,10 @@ async function beforeTool(call, api, context) {
     repeated = { count: 0, outcome: undefined, exempt: false };
     calls.set(signature, repeated);
   }
+  if (repeated.uncertain) {
+    return { block: `El resultado anterior de ${call.name} quedó incierto y la acción podría haberse aplicado. `
+      + 'No la repitas: comprueba el estado con una herramienta de lectura o informa al usuario de qué necesitas para verificarlo.' };
+  }
   if (repeated.count >= MAX_REPEATS && !repeated.exempt) {
     const detail = spec.name === 'web_click' ? 'sin cambiar de página'
       : !spec.gated || spec.name === 'desktop_observe' ? 'con el mismo resultado o error' : 'con los mismos argumentos';
@@ -1026,7 +1030,8 @@ async function executeTool(spec, args, api, context) {
     ? stableJson({ url: parsed && parsed.page && parsed.page.url ? String(parsed.page.url) : '' })
     : outcome;
   const hash = crypto.createHash('sha256').update(progress).digest('hex');
-  const exempt = !!(isError && parsed && typeof parsed === 'object'
+  repeated.uncertain = !!(parsed && parsed.uncertain === true && (spec.gated || spec.replay_safe !== true));
+  const exempt = !!(!spec.gated && spec.replay_safe === true && isError && parsed && typeof parsed === 'object'
     && (parsed.retryable === true || parsed.recoverable === true) && parsed.uncertain !== true);
   if (exempt) {
     repeated.exempt = true;
