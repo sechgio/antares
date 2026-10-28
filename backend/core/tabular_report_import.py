@@ -9,6 +9,8 @@ from typing import Any
 
 from openpyxl import load_workbook
 
+from backend.utils.text_decoding import decode_csv_bytes
+
 ReportRow = dict[str, Any]  # allowlist: tabular imports accept heterogeneous spreadsheet values
 NormalizeValue = Callable[[str], str]
 
@@ -93,19 +95,7 @@ def parse_csv_rows(
     column_mapping: Mapping[str, str],
     normalize_key: NormalizeValue,
 ) -> list[ReportRow]:
-    text: str | None = None
-    # cp1252 va antes que latin-1: latin-1 decodifica cualquier byte y se quedaría
-    # con los caracteres de control en lugar de la raya y las comillas tipográficas.
-    for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1", "iso-8859-1"):
-        try:
-            text = content.decode(encoding)
-            break
-        except UnicodeDecodeError:
-            continue
-
-    if text is None:
-        msg = "No se pudo decodificar el archivo CSV"
-        raise ValueError(msg)
+    text = decode_csv_bytes(content)
 
     def normalize_row(row: dict[str | None, Any]) -> ReportRow:
         return {normalize_key(key): value for key, value in row.items() if key is not None}
