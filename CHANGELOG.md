@@ -17,6 +17,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - La vista de Agent es más limpia: la barra lateral va a ras, el título de la conversación tiene más peso, la fecha, las tablas, la terminal, el diff y el plan pierden bordes y cajas, y los selectores y el panel de herramientas usan un estilo más ligero.
 - Las herramientas que fallan aparecen contraídas, con solo el título en rojo, y su error se lee como texto en lugar de JSON, igual que en Claude Code.
 - Se retiran de Agent el historial de aprobaciones (el botón del escudo) y las sugerencias de mensajes sobre el compositor.
+- Los archivos con acceso en una conversación de Agent se muestran encima del compositor, alineados con el chat, como tarjetas con icono y tipo (hoja de cálculo, PDF, imagen, documento, carpeta) en lugar de una píldora suelta en la esquina superior izquierda.
 
 ### Security
 - Las aprobaciones de terminal quedan ligadas a la carpeta efectiva y su identidad; cambiar el espacio de trabajo invalida la aprobación anterior y el comando usa el `cwd` absoluto aprobado.

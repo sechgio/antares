@@ -33,3 +33,18 @@ it('indica los borradores cuando hay carpetas pero ninguna raíz activa', () => 
   );
   expect(screen.getByLabelText('Espacio de trabajo activo')).toHaveTextContent('Borradores');
 });
+
+it('muestra el tipo de cada archivo adjunto y permite retirarlo', () => {
+  const onRemoveFile = vi.fn();
+  render(
+    <ContextChips
+      context={{ modules: [], accounts: [], files: [{ path: 'C:/datos/TRABAJOS_MB_OCTUBRE.xlsx', folder: false }, { path: 'C:/informe.pdf', folder: false }], workspace: null }}
+      onRemoveFile={onRemoveFile}
+      onSetWorkspace={vi.fn()}
+    />,
+  );
+  expect(screen.getByTitle('C:/datos/TRABAJOS_MB_OCTUBRE.xlsx')).toHaveTextContent('TRABAJOS_MB_OCTUBRE.xlsxHoja de cálculo');
+  expect(screen.getByTitle('C:/informe.pdf')).toHaveTextContent('informe.pdfPDF');
+  fireEvent.click(screen.getByRole('button', { name: 'Retirar acceso a TRABAJOS_MB_OCTUBRE.xlsx' }));
+  expect(onRemoveFile).toHaveBeenCalledWith('C:/datos/TRABAJOS_MB_OCTUBRE.xlsx');
+});
