@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import codecs
 import json
 import os
 import re
@@ -111,10 +112,19 @@ def run(params: JsonObject, grants: dict[str, JsonObject], root: Path, token: An
     report = getattr(token, "report", None)
 
     def pump(name: str, stream: Any) -> None:
-        for line in iter(stream.readline, b""):
-            chunks[name].append(line)
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        pending = ""
+        try:
+            for chunk in iter(lambda: stream.read1(4096), b""):
+                chunks[name].append(chunk)
+                if callable(report):
+                    text = pending + decoder.decode(chunk)
+                    pending = "\r" if text.endswith("\r") else ""
+                    report((text[:-1] if pending else text).replace("\r\n", "\n"))
             if callable(report):
-                report(line.decode("utf-8", errors="replace").replace("\r\n", "\n"))
+                report((pending + decoder.decode(b"", final=True)).replace("\r\n", "\n"))
+        finally:
+            stream.close()
 
     readers = [threading.Thread(target=pump, args=(name, getattr(process, name)), daemon=True)
                for name in ("stdout", "stderr")]

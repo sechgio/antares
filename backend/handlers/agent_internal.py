@@ -205,6 +205,13 @@ def _intent(session_id: str, method: str, params: JsonObject, context: JsonObjec
             artifact_context = {"filename": file["name"], "sha256": file["sha256"]}
         if method in computer_files.WRITE_TOOLS:
             resources.extend(computer_files.resources(params, store.grants_for(session_id), store.workspace_dir(session_id)))
+        if method in {"shell_run", "shell_job_start"}:
+            workspace = store.workspace_dir(session_id)
+            cwd = computer_files.resolve(params.get("cwd") or str(workspace), store.grants_for(session_id), workspace)
+            folder = resource_grants.folder_record(str(cwd), None)
+            artifact_context["shell"] = {"workspace": str(workspace), "cwd": str(cwd),
+                                         "dev": folder["dev"], "ino": folder["ino"]}
+            params = {**params, "cwd": str(cwd)}
         if method in _CLOUD_UPLOADS:
             root = store.drafts_dir(session_id)
             source = drafts.inside(root, str(root / str(params.get("draft") or "")))
