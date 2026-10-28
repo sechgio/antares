@@ -85,6 +85,11 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
           setLayout((prev) => prev.width === width && prev.available === available ? prev : { width, available });
         }
         const rect = element.getBoundingClientRect();
+        // Solo se retira si está medido y completamente fuera de pantalla; un rect en
+        // ceros significa que el layout aún no midió, no que esté oculto.
+        const measured = rect.width > 0 && rect.height > 0;
+        const offscreen = measured && (rect.right <= 0 || rect.bottom <= 0
+          || rect.left >= window.innerWidth || rect.top >= window.innerHeight);
         // La vista nativa pinta encima del DOM: si un menú o diálogo la pisa,
         // se desacopla mientras siga abierto para que no lo tape.
         const covered = Array.from(document.querySelectorAll(OVERLAY)).some((overlay) => {
@@ -93,7 +98,7 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
         });
         // La vista nativa se pinta por coordenadas de pantalla, no es DOM: con la
         // ventana oculta se retira y al volver se acopla de nuevo.
-        const bounds = document.hidden || covered || annotatingRef.current ? null : {
+        const bounds = document.hidden || covered || offscreen || annotatingRef.current ? null : {
           x: rect.left + element.clientLeft,
           y: rect.top + element.clientTop,
           width: element.clientWidth || rect.width,

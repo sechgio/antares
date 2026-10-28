@@ -104,14 +104,34 @@ def _skill(path: Path, grants: dict[str, JsonObject], workspace: Path, library: 
     return _Skill(_skill_id(path), name, description.strip(), path)
 
 
+def _external_homes() -> tuple[Path, ...]:
+    """Carpetas de skills de otras herramientas (Claude Code, Codex).
+
+    Se leen solo si existen y son accesibles; una entrada ausente se ignora en
+    silencio para no ensuciar el catálogo con avisos inútiles.
+    """
+    home = Path(os.path.expanduser("~"))
+    explicit = os.environ.get("SKILLS_EXTERNAL_HOMES")
+    # `.claude/skills` y `.codex/skills` suelen contener enlaces simbólicos,
+    # que el lector rechaza por seguridad; se prefiere el almacén real
+    # (`~/.agents/skills`), compartido por Claude Code y Codex, y se añaden
+    # las carpetas de cada herramienta como respaldo si no existe.
+    roots = ([Path(os.path.abspath(item)) for item in explicit.split(os.pathsep) if item]
+             if explicit else [home / ".agents" / "skills",
+                               home / ".claude" / "skills",
+                               home / ".codex" / "skills"])
+    return tuple(root for root in dict.fromkeys(roots) if root.is_dir())
+
+
 def _levels(agent_id: str | None) -> tuple[Path, ...]:
     home = Path(os.path.abspath(os.environ.get("SKILLS_HOME") or "skills"))
     shared = Path(os.path.abspath(os.environ.get("ORBS_SHARED_HOME") or home / "_shared"))
+    external = _external_homes()
     if agent_id is None:
-        return (shared,)
+        return tuple(dict.fromkeys((shared, *external)))
     if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,119}", agent_id):
         raise ValueError("El identificador del agente debe ser un nombre de carpeta simple")
-    return tuple(dict.fromkeys((home / agent_id, shared)))
+    return tuple(dict.fromkeys((home / agent_id, shared, *external)))
 
 
 def _scan(folder: Path, grants: dict[str, JsonObject], workspace: Path, library: Path,
@@ -120,7 +140,8 @@ def _scan(folder: Path, grants: dict[str, JsonObject], workspace: Path, library:
         folder = _authorized(folder, grants, workspace, library, levels)
         if not folder.is_dir():
             return [], False
-        candidates = [folder / "SKILL.md"] if folder not in levels and (folder / "SKILL.md").is_file() else []
+        own_file = folder / "SKILL.md"
+        candidates = [own_file] if own_file.is_file() and own_file.parent != library else []
         children = list(itertools.islice(folder.iterdir(), _MAX_CANDIDATES + 1))
         candidates.extend(child / "SKILL.md"
                           for child in sorted(children[:_MAX_CANDIDATES], key=lambda item: item.name.casefold())
@@ -135,12 +156,20 @@ def _candidates(grants: dict[str, JsonObject], workspace: Path, library: Path,
     index: dict[str, Path] = {}
     warnings: list[str] = []
     truncated = False
+    external = set(_external_homes())
     for folder in levels:
         entries, cut = _scan(folder, grants, workspace, library, levels)
         truncated |= cut
         for candidate in entries:
             name = candidate.parent.name
             if name in index:
+                if index[name] == candidate:
+                    continue
+                # Dos almacenes externos (p. ej. `.agents` y `.claude`) repiten
+                # la misma skill: se conserva la primera y no se avisa, porque
+                # no es una sustitución deliberada del perfil del agente.
+                if folder in external and index[name].parent.parent in external:
+                    continue
                 warning = f"{name}: la skill del agente ({index[name]}) sustituye a la compartida ({candidate})"
                 warnings.append(warning)
                 logger.warning(warning)
@@ -182,7 +211,11 @@ def _catalog(grants: dict[str, JsonObject], workspace: Path, library: Path,
 
 
 def library_catalog(library: Path) -> JsonObject:
-    levels = _levels(None)
+    # La biblioteca visible en la vista Habilidades es una raíz directa: se
+    # escanea tanto ella como su _shared, de modo que un SKILL.md colocado en
+    # la propia biblioteca (o en una subcarpeta suya) se reconozca sin exigir
+    # el nivel intermedio `_shared`.
+    levels = tuple(dict.fromkeys((library, *_levels(None))))
     catalog, warnings, truncated = _catalog({}, library, library, levels)
     return {"skills": [{"id": skill.id, "name": skill.name, "description": skill.description} for skill in catalog],
             "library": str(library), "warnings": warnings, "truncated": truncated}

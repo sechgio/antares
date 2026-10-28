@@ -634,6 +634,20 @@ class AgentStore:
             self._write_approvals()
             return dict(approval)
 
+    def note_approval_risk(self, approval_id: str, risk: str, reason: str) -> None:
+        """Anota el veredicto del guard en una aprobación pendiente.
+
+        Deja rastro observable de por qué se auto-aprobó o se escaló, sin cambiar
+        el estado de la aprobación.
+        """
+        with self._lock:
+            approval = self._approvals.get(approval_id)
+            if not isinstance(approval, dict) or approval.get("status") != "pending":
+                return
+            approval["risk"] = risk
+            approval["risk_reason"] = reason
+            self._write_approvals()
+
     def approval_for_call(self, session_id: str, call_id: str) -> JsonObject | None:
         self._expire_stale_approvals()
         with self._lock:

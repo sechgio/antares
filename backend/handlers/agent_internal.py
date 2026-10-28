@@ -10,6 +10,7 @@ from backend.core.agent import agent as _agent
 from backend.core.agent import agent_chat as _agent_chat
 from backend.core.agent import (
     agent_tools,
+    approval_guard,
     artifacts,
     canvas_edit,
     computer_files,
@@ -59,6 +60,11 @@ _NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_exp
 _APP_SCOPED_PREFIXES = ("cua_",)
 _CLOUD_UPLOADS = frozenset({"gdrive_upload", "onedrive_upload"})
 _META_METHODS = frozenset({"task_schedule"})
+# Métodos que el guard PUEDE auto-aprobar cuando el comando es lectura pura.
+# Deliberadamente vacío: la política vigente exige que los comandos de shell los
+# decida siempre el humano. El guard solo etiqueta el riesgo. Ampliar este
+# conjunto es una decisión de política explícita, no un efecto de la heurística.
+_GUARD_AUTOAPPROVE_METHODS: frozenset[str] = frozenset()
 
 
 def _resource_keys(params: JsonObject) -> list[str]:
@@ -386,7 +392,30 @@ def _approval_ensure(params: JsonObject) -> JsonObject:
                 raise ValidationError("Esta aplicación no está en la lista blanca del encargo programado")
         elif app and f"app:{os.path.normcase(app)}" in store.grants_for(session_id):
             approval = store.decide_approval(str(approval["id"]), True) or approval
+    if approval.get("status") == "pending":
+        approval = _guard_decision(store, approval, method, snapshot["params"]) or approval
     return {"approval": approval}
+
+
+def _guard_decision(
+    store: _agent.AgentStore, approval: JsonObject, method: str, params: JsonObject
+) -> JsonObject | None:
+    """Anota el riesgo del comando y auto-aprueba solo si la política lo permite.
+
+    La clasificación se anota SIEMPRE, para dejar rastro observable. La
+    auto-aprobación respeta la garantía existente de que los comandos de shell no
+    se conceden solos: solo se auto-aprueba un método declarado apto.
+    """
+    command = approval_guard.command_of(method, params)
+    if command is None:
+        return None
+    verdict = approval_guard.classify(command)
+    store.note_approval_risk(str(approval["id"]), str(verdict["risk"]), str(verdict["reason"]))
+    if verdict["decision"] != "approve":
+        return None
+    if method not in _GUARD_AUTOAPPROVE_METHODS:
+        return None
+    return store.decide_approval(str(approval["id"]), True, "smart")
 
 
 @with_locale
