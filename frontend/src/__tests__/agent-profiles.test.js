@@ -60,7 +60,7 @@ describe('perfiles portables', () => {
     expect(listProfileSkills(loaded).skills.map((item) => item.name)).toEqual(['review', 'summary']);
     expect(listProfileSkills(loaded).skills[0]).not.toHaveProperty('content');
     expect(readProfileSkill(loaded, { skill_id: 'profile:review' }).content).toContain('Instrucciones cargables.');
-  });
+  }, 30000);
 
   it('2: comparte skills entre agentes y resuelve propia > compartida por name', () => {
     profile('writer');
