@@ -51,6 +51,9 @@ const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'cua_launch_
 const UNATTENDED_ACTION_TOOLS = new Set(['cua_launch_app', ...UI_ACTION_TOOLS]);
 const MAX_UNATTENDED_ACTIONS = 25;
 const MAX_LOADED_TOOLS = 25;
+// Herramientas meta que un agente delegado conserva aunque no sean lecturas:
+// solo hablan con su conversación principal (aviso intermedio y salas).
+const CHILD_CONTROL_TOOLS = new Set(['agent_wake_parent', 'agent_room']);
 const MAX_DEFAULT_TOOLS = 100;
 const MAX_OPENAI_TOOLS = 128;
 
@@ -276,7 +279,8 @@ async function allToolSpecs() {
   const saved = Object.values(await profiles()).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   if (saved.length > 0) {
     const tasks = require('./agent-tasks');
-    for (const tool of [tasks.DELEGATE_TOOL, tasks.CHECK_TOOL, tasks.MESSAGE_TOOL, tasks.STOP_TOOL]) {
+    for (const tool of [tasks.DELEGATE_TOOL, tasks.CHECK_TOOL, tasks.MESSAGE_TOOL, tasks.STOP_TOOL, tasks.WAKE_TOOL,
+      require('./agent-rooms').TOOL]) {
       merged.set(tool.name, tool);
     }
     merged.set(SUBAGENT_TOOL, {
@@ -320,6 +324,8 @@ async function allToolSpecs() {
     merged.delete('agent_message');
     merged.delete('agent_check');
     merged.delete('agent_stop');
+    merged.delete('agent_wake_parent');
+    merged.delete('agent_room');
   }
   merged.set(TOOLS_LOAD, {
     name: TOOLS_LOAD,
@@ -450,7 +456,7 @@ async function loadTools(args, sessionId, context) {
   const enabled = new Set((await conv.agent(context)).tools.map((tool) => tool.name));
   const allows = await profileToolFilter(await requireSession(sessionId));
   const specs = [...shared.toolSpecs.values()].filter((spec) => (spec.kind !== 'meta'
-    || ['task_schedule', 'agent_delegate', 'agent_message', 'agent_check', 'agent_stop', 'wait_event'].includes(spec.name))
+    || ['task_schedule', 'agent_delegate', 'agent_message', 'agent_check', 'agent_stop', 'agent_room', 'wait_event'].includes(spec.name))
     && (!allows || allows(spec.name)));
   const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
   const words = normal(args.query).split(/[^a-z0-9_]+/).filter((word) => word.length > 2);
@@ -793,7 +799,13 @@ async function beforeTool(call, api, context) {
     return { block: `Antes de cualquier otra herramienta carga la skill elegida por el usuario con skills_read y skill_id "${skillId}".` };
   }
   const sessionId = await sessionForConversation(api.conversationId, api, context);
-  if (!await toolEnabled(sessionId, call.name, context)) return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
+  const session = await requireSession(sessionId);
+  // El hijo solo conserva los controles de su propio ciclo de vida: avisar al
+  // padre y participar en salas no son lecturas del backend ni amplían acceso.
+  const childControl = !!session.delegation && CHILD_CONTROL_TOOLS.has(call.name);
+  if (!childControl && !await toolEnabled(sessionId, call.name, context)) {
+    return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
+  }
   const calls = turnState(api.conversationId).calls;
   const signature = callSignature(call.name, call.arguments);
   let repeated = calls.get(signature);
@@ -813,8 +825,7 @@ async function beforeTool(call, api, context) {
       + `(«${failing.message}»). No la repitas: diagnostica la causa con otra herramienta, cambia de enfoque `
       + 'o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
   }
-  const session = await requireSession(sessionId);
-  if (session.delegation && (spec.kind !== 'backend' || spec.replay_safe !== true)) {
+  if (session.delegation && !childControl && (spec.kind !== 'backend' || spec.replay_safe !== true)) {
     return { block: 'El agente delegado solo puede usar lecturas idempotentes autorizadas' };
   }
   const mode = session.permission_mode || 'auto';
@@ -958,7 +969,9 @@ async function dispatchAndWait(request, context, api) {
 
 async function executeTool(spec, args, api, context) {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
-  if (!await toolEnabled(sessionId, spec.name, context)) {
+  const session = await requireSession(sessionId);
+  const childControl = !!session.delegation && CHILD_CONTROL_TOOLS.has(spec.name);
+  if (!childControl && !await toolEnabled(sessionId, spec.name, context)) {
     const text = `Herramienta deshabilitada en esta conversación: ${spec.name}`;
     noteToolResult(api, spec.name, text, true);
     return { content: [{ type: 'text', text }], isError: true };
@@ -1030,8 +1043,18 @@ async function executeTool(spec, args, api, context) {
       count: previous && previous.key === key ? previous.count + 1 : 1 });
   }
   noteToolResult(api, spec.name, text, isError);
-  return { content: [{ type: 'text', text }, ...(image ? [image] : [])], isError,
-    ...(added && added.length ? { control: { addTools: added } } : {}) };
+  const hooks = require('./agent-hooks');
+  const hookProfile = resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
+  const pre = hooks.contextFor(hookProfile, 'preToolUse', spec.name);
+  const post = hooks.contextFor(hookProfile, 'postToolUse', spec.name);
+  if (pre) hooks.record(session, 'preToolUse', spec.name);
+  if (post) hooks.record(session, 'postToolUse', spec.name);
+  return { content: [
+    ...(pre ? [{ type: 'text', text: pre }] : []),
+    { type: 'text', text },
+    ...(image ? [image] : []),
+    ...(post ? [{ type: 'text', text: post }] : []),
+  ], isError, ...(added && added.length ? { control: { addTools: added } } : {}) };
 }
 
 async function dispatchTool(spec, args, sessionId, api, context) {
@@ -1050,6 +1073,12 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     }
     if (spec.name === 'agent_stop') {
       return { text: JSON.stringify(await require('./agent-tasks').stopDelegation(args || {}, sessionId)) };
+    }
+    if (spec.name === 'agent_wake_parent') {
+      return { text: JSON.stringify(await require('./agent-tasks').wakeParent(args || {}, sessionId)) };
+    }
+    if (spec.name === 'agent_room') {
+      return { text: JSON.stringify(await require('./agent-rooms').act(args || {}, sessionId)) };
     }
     if (spec.name === 'task_schedule') {
       if (spec.gated && (args || {}).action !== 'list') {

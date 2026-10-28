@@ -1,5 +1,8 @@
 import { _invoke } from './core';
+import type { AgentDelegation, AgentRole } from './agentDelegation';
 import type { CanvasDocument } from '../components/canvas/types';
+
+export type { AgentDelegation, AgentRole } from './agentDelegation';
 
 export type CanvasLayersResult = Required<Pick<CanvasDocument, 'id' | 'updatedAt' | 'layers' | 'fields'>> & {
   createdLayers: { id: string; name: string }[];
@@ -45,7 +48,6 @@ export interface AgentSession {
   profile?: { id: string; name: string };
 }
 
-export type AgentRole = 'explorer' | 'reviewer' | 'worker';
 export type AgentMemoryScope = 'shared-read' | 'own' | 'none';
 
 export interface AgentProfile {
@@ -349,6 +351,7 @@ export const agentApi = {
     _invoke<{
       messages: AgentMessage[];
       running: boolean;
+      delegations?: AgentDelegation[];
       plan?: AgentPlan | null;
       resumable?: boolean;
       pending_approvals: AgentApproval[];

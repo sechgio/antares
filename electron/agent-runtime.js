@@ -175,6 +175,9 @@ async function _open(options = {}) {
     const BudgetDoc = pi.defineDoc({
       kind: 'antares.agent.budget', version: 1, scope: 'conversation', initial: () => ({ rounds: 0 }),
     });
+    const RoomsDoc = pi.defineDoc({
+      kind: 'antares.agent.rooms', version: 1, scope: 'session', initial: () => ({ rooms: {} }),
+    });
     const registry = pi.createRegistry();
     // Retención larga: una aprobación o una pausa de más de 5 minutos no vacía
     // la caché del prefijo (solo la reciben las APIs oficiales, ver modelDefinition).
@@ -196,6 +199,7 @@ async function _open(options = {}) {
       PolicyDoc,
       WaitsDoc,
       BudgetDoc,
+      RoomsDoc,
       compaction: settings.compaction,
       dir,
       ctx: ctx(),
@@ -675,6 +679,7 @@ async function messagesList(params) {
     });
   }
   const running = projection.isRunning(session.conversationId);
+  const delegations = await require('./agent-tasks').roster(sessionId);
   const plan = _latestPlan(messages);
   const stopped = messages.length > 0 && messages[messages.length - 1].content === CANCELLED_NOTE;
   const contextWindow = execution.contextWindowFor(session);
@@ -682,6 +687,7 @@ async function messagesList(params) {
   return {
     messages,
     running,
+    delegations,
     plan,
     resumable: !running && pending.length === 0 && (!!session.continuation || stopped || !!(plan && plan.steps.some((step) => step.status !== 'done'))),
     pending_approvals: pending,
@@ -1047,14 +1053,19 @@ async function _admittedRequest(session, requestId) {
 async function toolsList(params = {}) {
   let enabled;
   let tools;
+  let session = null;
   if (params.session_id) {
     await execution.refreshTools();
     const conv = await conversation(String(params.session_id));
+    session = (await sessions())[String(params.session_id)] || null;
     enabled = new Set((await conv.agent(ctx())).tools.map((tool) => tool.name));
     tools = [...shared.toolSpecs.values()];
   } else {
     tools = await execution.allToolSpecs();
   }
+  // Avisar al padre solo tiene sentido dentro de una delegación; el selector
+  // del usuario no ofrece una herramienta que siempre fallaría.
+  tools = tools.filter((tool) => tool.name !== 'agent_wake_parent' || !!session?.delegation);
   return {
     tools: tools.map((t) => ({
       name: t.name, gated: !!t.gated, kind: ['mcp', 'native'].includes(t.kind) ? t.kind : 'backend', module: t.module || null,
