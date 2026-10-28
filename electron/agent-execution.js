@@ -31,6 +31,8 @@ const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno.
   + 'explica lo que queda pendiente y pide usar Reanudar para continuar.';
 const BUDGET_WARNING_STEPS = 32;
 const MAX_REPEATS = 3;
+const MAX_RECOVERABLE_FAILURES = 6;
+const MAX_RETRY_AFTER_MS = 30_000;
 const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, sigue con '
   + 'el siguiente y compruébalo; si no puedes completarlo, márcalo como failed en task_plan con la causa y di qué necesitas.';
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
@@ -521,6 +523,7 @@ async function refreshTools() {
         ? spec.inputSchema
         : { type: 'object', properties: {} },
       replay: spec.replay_safe === true ? 'safe' : 'unsafe',
+      ...(spec.gated ? { executionMode: 'sequential' } : {}),
       execute: (args, api, context) => executeTool(spec, args, api, context),
     });
   });
@@ -820,13 +823,17 @@ async function beforeTool(call, api, context) {
     return { block: `El resultado anterior de ${call.name} quedó incierto y la acción podría haberse aplicado. `
       + 'No la repitas: comprueba el estado con una herramienta de lectura o informa al usuario de qué necesitas para verificarlo.' };
   }
+  const failing = turnState(api.conversationId).failures.get(call.name);
+  if ((repeated.recoveries || 0) >= MAX_RECOVERABLE_FAILURES || (failing?.recoveries || 0) >= MAX_RECOVERABLE_FAILURES) {
+    return { block: `Las últimas ${MAX_RECOVERABLE_FAILURES} recuperaciones de ${call.name} no resolvieron el fallo. No la repitas: `
+      + 'diagnostica la causa con otra herramienta, cambia de enfoque o informa al usuario de qué te bloquea.' };
+  }
   if (repeated.count >= MAX_REPEATS && !repeated.exempt) {
     const detail = spec.name === 'web_click' ? 'sin cambiar de página'
       : !spec.gated || spec.name === 'desktop_observe' ? 'con el mismo resultado o error' : 'con los mismos argumentos';
     return { block: `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno ${detail}. No la repitas: `
       + 'cambia de enfoque o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
   }
-  const failing = turnState(api.conversationId).failures.get(call.name);
   if (failing && failing.count >= MAX_REPEATS) {
     return { block: `Las últimas ${MAX_REPEATS} llamadas a ${call.name} fallaron por la misma causa aunque cambiaste los argumentos `
       + `(«${failing.message}»). No la repitas: diagnostica la causa con otra herramienta, cambia de enfoque `
@@ -834,6 +841,13 @@ async function beforeTool(call, api, context) {
   }
   if (session.delegation && !childControl && (spec.kind !== 'backend' || spec.replay_safe !== true)) {
     return { block: 'El agente delegado solo puede usar lecturas idempotentes autorizadas' };
+  }
+  const retryDelay = Math.max(repeated.retryAt || 0, failing?.retryAt || 0) - Date.now();
+  if (retryDelay > 0) {
+    await waitResource(context, Math.min(retryDelay, MAX_RETRY_AFTER_MS));
+    if (!childControl && !await toolEnabled(sessionId, call.name, context)) {
+      return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
+    }
   }
   const mode = session.permission_mode || 'auto';
   const rules = { ...shared.globalRules, ...(session.approval_rules || {}) };
@@ -1035,6 +1049,9 @@ async function executeTool(spec, args, api, context) {
   if (exempt) {
     repeated.exempt = true;
     repeated.count = 0;
+    repeated.recoveries = (repeated.recoveries || 0) + 1;
+    repeated.retryAt = Date.now() + (Number.isFinite(parsed.retry_after_ms)
+      ? Math.min(MAX_RETRY_AFTER_MS, Math.max(0, parsed.retry_after_ms)) : 0);
   } else if (trackOutcome && repeated.outcome !== undefined && repeated.outcome !== hash) {
     repeated.count = 1;
     repeated.exempt = false;
@@ -1043,15 +1060,22 @@ async function executeTool(spec, args, api, context) {
     repeated.exempt = false;
   }
   if (trackOutcome) repeated.outcome = hash;
+  if (!isError) {
+    repeated.recoveries = 0;
+    repeated.retryAt = 0;
+  }
   const failures = turnState(api.conversationId).failures;
   if (!isError) {
     failures.delete(spec.name);
-  } else if (!exempt) {
+  } else {
     const message = String(typeof parsed.error === 'string' ? parsed.error : (parsed.error && parsed.error.message) || parsed.message || text);
     const key = errorSignature(message);
     const previous = failures.get(spec.name);
+    const sameCause = previous && previous.key === key;
     failures.set(spec.name, { key, message: message.replace(/\s+/g, ' ').slice(0, 160),
-      count: previous && previous.key === key ? previous.count + 1 : 1 });
+      count: exempt ? 0 : sameCause ? previous.count + 1 : 1,
+      recoveries: (sameCause ? previous.recoveries || 0 : 0) + (exempt ? 1 : 0),
+      retryAt: exempt ? repeated.retryAt : 0 });
   }
   noteToolResult(api, spec.name, text, isError);
   const hooks = require('./agent-hooks');
@@ -1363,7 +1387,7 @@ async function toolEnabled(sessionId, name, context) {
   return (await conv.agent(context)).tools.some((tool) => tool.name === name);
 }
 
-function waitResource(context) {
+function waitResource(context, delayMs = 400) {
   const signal = context && context.abortSignal;
   return new Promise((resolve, reject) => {
     if (signal && signal.aborted) return reject(aborted());
@@ -1374,7 +1398,7 @@ function waitResource(context) {
     const timer = setTimeout(() => {
       if (signal) signal.removeEventListener('abort', onAbort);
       resolve();
-    }, 400);
+    }, delayMs);
     if (signal) signal.addEventListener('abort', onAbort, { once: true });
   });
 }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import codecs
 import json
 import logging
 import os
@@ -9,8 +10,9 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from io import BufferedReader
 from pathlib import Path
-from typing import IO, Any
+from typing import Any
 
 from backend.core.agent import computer_files, computer_shell
 from backend.core.agent.cancel import RunCancelled
@@ -105,6 +107,7 @@ class _Job:
     ended_at: float | None = None
     status: str = "running"
     written_at: float = 0.0
+    dirty: bool = False
     dropped_stdout: int = 0
     dropped_stderr: int = 0
 
@@ -130,6 +133,7 @@ def _meta_path(root: Path, job_id: str) -> Path:
 def _append(job: _Job, stream: str, chunk: bytes) -> None:
     data = job.stdout if stream == "stdout" else job.stderr
     data.extend(chunk)
+    job.dirty = True
     if len(data) <= _MAX_BUFFER_BYTES:
         return
     keep = _MAX_BUFFER_BYTES // 2
@@ -143,22 +147,32 @@ def _append(job: _Job, stream: str, chunk: bytes) -> None:
 
 def _snapshot(job: _Job) -> JsonObject:
     with job.lock:
-        stdout = bytes(job.stdout).decode("utf-8", errors="replace").replace("\r\n", "\n")
-        stderr = bytes(job.stderr).decode("utf-8", errors="replace").replace("\r\n", "\n")
+        decoder = codecs.getincrementaldecoder("utf-8")
+        final = job.ended_at is not None
+        stdout = decoder(errors="replace").decode(bytes(job.stdout), final=final)
+        stderr = decoder(errors="replace").decode(bytes(job.stderr), final=final)
+        if not final:
+            stdout = stdout.removesuffix("\r")
+            stderr = stderr.removesuffix("\r")
         dropped_stdout, dropped_stderr = job.dropped_stdout, job.dropped_stderr
     return {
-        "stdout": computer_files.clip_text(stdout, _MAX_OUTPUT_CHARS),
-        "stderr": computer_files.clip_text(stderr, _MAX_OUTPUT_CHARS),
+        "stdout": computer_files.clip_text(stdout.replace("\r\n", "\n"), _MAX_OUTPUT_CHARS),
+        "stderr": computer_files.clip_text(stderr.replace("\r\n", "\n"), _MAX_OUTPUT_CHARS),
         "dropped_stdout_bytes": dropped_stdout,
         "dropped_stderr_bytes": dropped_stderr,
     }
 
 
 def _flush(job: _Job) -> None:
-    payload = _snapshot(job)
     with job.lock:
+        job.dirty = False
         job.written_at = time.monotonic()
-    atomic_write_json(_output_path(job.root, job.id), payload)
+    try:
+        atomic_write_json(_output_path(job.root, job.id), _snapshot(job))
+    except OSError:
+        with job.lock:
+            job.dirty = True
+        raise
 
 
 def _meta(job: _Job, status: str) -> JsonObject:
@@ -179,23 +193,16 @@ def _write_meta(job: _Job, status: str) -> None:
     atomic_write_json(_meta_path(job.root, job.id), _meta(job, status))
 
 
-def _pump(job: _Job, stream: str, handle: IO[bytes]) -> None:
+def _pump(job: _Job, stream: str, handle: BufferedReader) -> None:
     try:
-        for chunk in iter(handle.readline, b""):
+        for chunk in iter(lambda: handle.read1(4096), b""):
             with job.lock:
                 _append(job, stream, chunk)
-                due = time.monotonic() - job.written_at >= _WRITE_INTERVAL_S
-            if due:
-                try:
-                    _flush(job)
-                except OSError:
-                    logger.warning("No se pudo escribir la salida del job %s", job.id, exc_info=True)
     finally:
         handle.close()
 
 
 def _finish(job: _Job, status: str) -> None:
-    job.status = status
     job.ended_at = time.time()
     try:
         _flush(job)
@@ -203,6 +210,7 @@ def _finish(job: _Job, status: str) -> None:
     except OSError:
         logger.warning("No se pudo persistir el job %s", job.id, exc_info=True)
     with _LOCK:
+        job.status = status
         _JOBS.pop(job.id, None)
     duration = (job.ended_at or time.time()) - job.started_at
     logger.info("Shell job %s terminó con estado %s en %.1f s", job.id, status, duration)
@@ -212,14 +220,19 @@ def _monitor(job: _Job) -> None:
     process = job.process
     while process.poll() is None:
         if job.cancel_requested:
-            job.status = "cancelled"
             computer_shell.kill_tree(process)
             break
         if time.monotonic() > job.deadline:
             job.timed_out = True
-            job.status = "timed_out"
             computer_shell.kill_tree(process)
             break
+        with job.lock:
+            due = job.dirty and time.monotonic() - job.written_at >= _WRITE_INTERVAL_S
+        if due:
+            try:
+                _flush(job)
+            except OSError:
+                logger.warning("No se pudo escribir la salida del job %s", job.id, exc_info=True)
         time.sleep(0.1)
     process.wait()
     job.exit_code = process.returncode
@@ -236,14 +249,15 @@ def _monitor(job: _Job) -> None:
 
 
 def start(params: JsonObject, grants: dict[str, JsonObject], root: Path, session_id: str,
-          token: Any = None) -> JsonObject:
+          token: Any = None, *, workspace: Path | None = None) -> JsonObject:
     command = params.get("command")
     if not isinstance(command, str) or not command.strip():
         raise ValueError("Indica el comando")
     if len(command) > _MAX_COMMAND_CHARS:
         raise ValueError(f"El comando excede {_MAX_COMMAND_CHARS} caracteres")
     root.mkdir(parents=True, exist_ok=True)
-    cwd = computer_files.resolve(params.get("cwd") or str(root), grants, root)
+    workspace = workspace or root
+    cwd = computer_files.resolve(params.get("cwd") or str(workspace), grants, workspace)
     if not cwd.is_dir():
         raise ValueError("La carpeta de trabajo no existe")
     raw_timeout = params.get("timeout_s")
@@ -258,7 +272,7 @@ def start(params: JsonObject, grants: dict[str, JsonObject], root: Path, session
         if len(running) >= _MAX_JOBS_GLOBAL:
             raise ValueError(f"Ya hay {_MAX_JOBS_GLOBAL} jobs en marcha en Antares")
         job_id = uuid.uuid4().hex
-        env = {**os.environ, "ANTARES_AGENT_WORKSPACE": str(root)}
+        env = {**os.environ, "ANTARES_AGENT_WORKSPACE": str(workspace)}
         process = subprocess.Popen(
             ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
              "-Command", _PRELUDE + command],

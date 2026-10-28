@@ -757,12 +757,17 @@ async function main() {
     await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: mode });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'hazlo' });
     if (mode !== 'full') {
-      assert(await waitFor(() => state.approvals.size === (mode === 'ask' ? 2 : 1)), `${mode}: pausa las llamadas que requieren aprobación`);
+      assert(await waitFor(() => state.approvals.size === 1), `${mode}: pausa la primera llamada que requiere aprobación`);
       assert(state.dispatches.length === (mode === 'ask' ? 0 : 1), `${mode}: no ejecuta las acciones pendientes`);
       let busy;
       try { await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' }); } catch (err) { busy = err; }
       assert(busy && /termine el turno/.test(busy.message), 'no amplía permisos durante un turno activo');
-      for (const approval of state.approvals.values()) await runtime.handlers.agent_approve({ approval_id: approval.id });
+      for (let index = 0; index < (mode === 'ask' ? 2 : 1); index++) {
+        assert(await waitFor(() => [...state.approvals.values()].some((approval) => approval.status === 'pending')),
+          `${mode}: la acción ${index + 1} espera su propia aprobación`);
+        const approval = [...state.approvals.values()].find((candidate) => candidate.status === 'pending');
+        await runtime.handlers.agent_approve({ approval_id: approval.id });
+      }
     }
     assert(await waitIdle(session.id), `${mode}: el turno termina`);
     assert(state.dispatches.length === 2, `${mode}: ejecuta cada acción una vez`);
@@ -2364,6 +2369,48 @@ async function main() {
     fs.rmSync(appData, { recursive: true, force: true });
   }
 
+  for (const gated of [true, false]) {
+    const { bridge } = makeBridge();
+    const started = [];
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    const orderedBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'ordered_probe', gated, kind: 'backend', module: 'computer',
+          inputSchema: { type: 'object', properties: { step: { type: 'integer' } } } });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'ordered_probe') {
+        started.push(params.params.step);
+        if (params.params.step === 1) await held;
+        return { result: JSON.stringify({ step: params.params.step }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('ordered_probe', { step: 1 }), fauxToolCall('ordered_probe', { step: 2 })],
+        { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Comprobado'),
+    ], orderedBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    try {
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'ejecuta las dos operaciones' });
+      assert(await waitFor(() => started.length >= 1), 'la primera operación empieza');
+      const overlapped = await waitFor(() => started.length === 2, gated ? 500 : 5000);
+      release();
+      assert(await waitIdle(session.id), 'la ronda de dos operaciones termina');
+      assert(overlapped === !gated, gated ? 'los efectos esperan a que termine el efecto anterior'
+        : 'dos lecturas independientes siguen ejecutándose en paralelo');
+      assert((gated ? started : [...started].sort()).join() === '1,2',
+        'cada operación se ejecuta una vez y los efectos conservan el orden de inicio');
+    } finally {
+      release();
+      await runtime.shutdown();
+    }
+  }
+
   {
     const { bridge } = makeBridge();
     const schema = { type: 'object', properties: {} };
@@ -2425,6 +2472,7 @@ async function main() {
     const { bridge } = makeBridge();
     const schema = { type: 'object', properties: {} };
     let probes = 0;
+    const attempts = [];
     const retryBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
@@ -2434,6 +2482,7 @@ async function main() {
       }
       if (method === 'agent_internal_dispatch' && params.name === 'busy_probe') {
         probes += 1;
+        attempts.push(Date.now());
         return { result: JSON.stringify(probes <= 3
           ? { error: 'ocupado', code: 'USER_BUSY', retryable: scenario.retryable, recoverable: scenario.recoverable,
             uncertain: scenario.uncertain, retry_after_ms: 1200 }
@@ -2450,11 +2499,86 @@ async function main() {
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'insiste' });
     assert(await waitIdle(session.id), `el turno de ${scenario.label} termina`);
     assert(probes === scenario.expected, `${scenario.label}: solo se ejecutan los intentos seguros`);
+    if (scenario.replay_safe && !scenario.gated && !scenario.uncertain) {
+      assert(attempts.slice(1).every((time, index) => time - attempts[index] >= 1100),
+        'una nueva llamada respeta retry_after_ms del error recuperable anterior');
+    }
     const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
     const last = listed.messages.flatMap((m) => m.tool_calls || []).filter((c) => c.name === 'busy_probe').at(-1);
     if (scenario.gated && scenario.uncertain) {
       assert(/podría haberse aplicado/.test(String(last.result || '')), 'la acción incierta exige verificar antes de repetir');
     }
+    await runtime.shutdown();
+  }
+
+  for (const mode of ['signature', 'cause', 'uncertain']) {
+    const { bridge } = makeBridge();
+    let probes = 0;
+    const retryBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'retry_probe', gated: false, replay_safe: true, kind: 'backend', module: 'computer',
+          inputSchema: { type: 'object', properties: { step: { type: 'integer' } } } });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'retry_probe') {
+        probes += 1;
+        return { result: JSON.stringify({ error: mode === 'signature' && probes % 2 ? 'red ocupada' : 'servidor ocupado',
+          retryable: true, recoverable: true, ...(mode === 'uncertain' ? { uncertain: true } : {}) }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      ...Array.from({ length: 7 }, (_, step) => fauxAssistantMessage([
+        fauxToolCall('retry_probe', { step: mode === 'cause' ? step : 0 }),
+      ], { stopReason: 'toolUse' })),
+      fauxAssistantMessage('Necesito otra vía'),
+    ], retryBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'comprueba la recuperación' });
+    assert(await waitIdle(session.id), `la recuperación acotada termina: ${mode}`);
+    assert(probes === (mode === 'uncertain' ? 3 : 6), mode === 'uncertain'
+      ? 'un resultado incierto conserva el freno normal aunque diga retryable'
+      : `seis fallos recuperables bloquean la siguiente llamada por ${mode === 'cause' ? 'la misma causa con argumentos distintos' : 'firma con causas distintas'}`);
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const last = listed.messages.flatMap((message) => message.tool_calls || []).at(-1);
+    assert(/No la repitas/.test(String(last.result || '')), 'el modelo recibe el bloqueo para cambiar de enfoque');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    let probes = 0;
+    let retryRequested = false;
+    const retryBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'waiting_retry_probe', gated: false, replay_safe: true, kind: 'backend', module: 'computer',
+          inputSchema: { type: 'object', properties: {} } });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'waiting_retry_probe') {
+        probes += 1;
+        return { result: JSON.stringify({ error: 'ocupado', retryable: true, retry_after_ms: 60000 }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('waiting_retry_probe', {})], { stopReason: 'toolUse' }),
+      () => {
+        retryRequested = true;
+        return fauxAssistantMessage([fauxToolCall('waiting_retry_probe', {})], { stopReason: 'toolUse' });
+      },
+      fauxAssistantMessage('Fin'),
+    ], retryBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'espera y vuelve a consultar' });
+    assert(await waitFor(() => retryRequested), 'el modelo solicita una nueva consulta después del fallo');
+    await sleep(150);
+    const stoppedAt = Date.now();
+    await runtime.handlers.agent_turn_cancel({ session_id: session.id });
+    assert(await waitIdle(session.id) && Date.now() - stoppedAt < 2000, 'cancelar interrumpe la espera de recuperación');
+    assert(probes === 1, 'cancelar durante retry_after_ms evita ejecutar la llamada pendiente');
     await runtime.shutdown();
   }
 

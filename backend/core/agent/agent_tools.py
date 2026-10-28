@@ -78,7 +78,8 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
     if name == "shell_output":
         return computer_shell.read_output(args, root)
     if name == "shell_job_start":
-        return computer_jobs.start(args, store.grants_for(session_id), root, session_id, token)
+        return computer_jobs.start(args, store.grants_for(session_id), root, session_id, token,
+                                   workspace=store.workspace_dir(session_id))
     if name == "shell_job_status":
         return computer_jobs.status(args, root, session_id)
     if name == "shell_job_cancel":
