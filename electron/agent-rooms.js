@@ -15,6 +15,7 @@ const MAX_TURN_KEY = 120;
 const MAX_CLOSE_REASON = 160;
 const MAX_LOG = 60;
 const MAX_TRANSCRIPT = 12;
+const MAX_LISTED_ROOMS = 10;
 const MAX_NEW_MESSAGES = 6;
 const MAX_CONTEXT_CHARS = 400;
 const DELIVERY_GRACE_MS = 1000;
@@ -104,7 +105,12 @@ function publicRoom(room, map) {
     status: room.status,
     rounds: room.rounds,
     round: room.status === 'open' ? room.turn.round + 1 : room.rounds,
-    members: room.members.map((id) => ({ session_id: id, agent: memberName(map, id) })),
+    members: room.members.map((id) => ({
+      session_id: id,
+      agent: memberName(map, id),
+      status: map[id]?.delegation?.status || '',
+      awaiting_user: !!map[id]?.delegation?.awaiting_user,
+    })),
     ...(room.status === 'open' ? {
       turn: { member: room.turn.member, agent: memberName(map, room.turn.member),
         index: room.turn.index + 1, deadline: room.turn.deadline },
@@ -404,15 +410,22 @@ function targetRoom(rooms, args, caller) {
   return room;
 }
 
+// Lectura para la interfaz: solo las salas de esta conversación principal.
+// Reutiliza el mismo resumen que ve el agente, sin abrir salas ajenas.
+async function listRooms(sessionId) {
+  const caller = await requireSession(sessionId);
+  if (caller.delegation) return { rooms: [] };
+  const rooms = (await shared.state.harness.snapshot(shared.state.RoomsDoc, ctx()))?.rooms || {};
+  const map = await sessions();
+  const list = Object.values(rooms)
+    .filter((room) => room.parent_session_id === caller.id)
+    .sort((first, second) => second.created_at - first.created_at)
+    .slice(0, MAX_LISTED_ROOMS);
+  return { rooms: list.map((room) => publicRoom(room, map)) };
+}
+
 async function readRoom(rooms, args, caller) {
-  if (!caller.delegation && !args.room_id) {
-    const list = Object.values(rooms)
-      .filter((room) => room.parent_session_id === caller.id)
-      .sort((first, second) => second.created_at - first.created_at)
-      .slice(0, 10);
-    const map = await sessions();
-    return { rooms: list.map((room) => publicRoom(room, map)) };
-  }
+  if (!caller.delegation && !args.room_id) return listRooms(caller.id);
   const map = await sessions();
   return publicRoom(targetRoom(rooms, args, caller), map);
 }
@@ -527,4 +540,4 @@ async function prune(state) {
   }, ctx());
 }
 
-module.exports = { TOOL, act, tickRooms, roomSummary, _internal: { settle, transcript } };
+module.exports = { TOOL, act, tickRooms, roomSummary, listRooms, _internal: { settle, transcript } };

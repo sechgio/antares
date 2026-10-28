@@ -97,6 +97,15 @@ async function main() {
     assert.equal(rostered.room.round, 1);
     assert.equal(rostered.room.rounds, 2);
     assert.equal(rostered.room.turn_agent, 'Sala A');
+    const listed = await rooms.listRooms(parent.id);
+    const listedOpen = listed.rooms.find((room) => room.room_id === created.room_id);
+    assert.ok(listedOpen, 'la interfaz lista la sala abierta');
+    assert.equal(listedOpen.members.length, 2);
+    assert.ok(listedOpen.members.every((member) => typeof member.status === 'string'));
+    assert.equal(listedOpen.members.some((member) => member.awaiting_user), false);
+    assert.ok(!(await rooms.listRooms(a.session_id)).rooms.length, 'un delegado no lista las salas del padre');
+    const ipcList = await runtime.handlers.agent_rooms_list({ session_id: parent.id });
+    assert.ok(ipcList.rooms.some((room) => room.room_id === created.room_id), 'el IPC de solo lectura lista la sala');
     await assert.rejects(rooms.act({ action: 'create', topic: 'Otra', members: [a.session_id, b.session_id] }, parent.id),
       /Ya hay una sala abierta/, 'solo se admite una sala abierta por conversación');
     await assert.rejects(rooms.act({ action: 'create', topic: 'x', members: [a.session_id, parent.id] }, parent.id),
@@ -131,12 +140,19 @@ async function main() {
     assert.ok(transcriptA.messages.some((text) => text.includes('Aporté Dato A')), 'lee el texto de la delegación');
     assert.equal(transcriptA.awaiting_user, false);
     await assert.rejects(tasks.readTranscript({ session_id: roomA.id }, roomA.id), /no es una delegación/);
+    const closedList = await rooms.listRooms(parent.id);
+    const closedRoom = closedList.rooms.find((room) => room.room_id === created.room_id);
+    assert.equal(closedRoom.status, 'closed');
+    assert.match(closedRoom.transcript, /Dato A/);
     const question = await delegate('Sala A', 'SALA_PREGUNTA: revisa el contrato', 'room-question');
     await until(async () => (await messages(parent.id)).messages
       .some((message) => String(message.content).includes('Se detuvo en una pregunta para el usuario')));
     const asked = await tasks.readTranscript({ session_id: question.session_id }, parent.id);
     assert.equal(asked.awaiting_user, true, 'la lectura avisa que espera al usuario');
     assert.match(asked.messages.join('\n'), /NECESITA ENTRADA/);
+    const questionSession = (await runtime.handlers.agent_sessions_list()).sessions
+      .find((session) => session.id === question.session_id);
+    assert.equal(questionSession.delegation.awaiting_user, true, 'el estado queda guardado para la sala');
     const promptsB = (await messages(roomB.id)).messages.map((message) => String(message.content)).join('\n');
     assert.match(promptsB, /Participantes: Sala A/, 'el turno nombra a los demás participantes');
     assert.match(promptsB, /Mensajes nuevos desde tu último turno:\n- Ronda 2, Sala A: Dato A/,

@@ -29,6 +29,7 @@
     "agent_session_reasoning_set": { "handler": "native:agent", "inputSchema": {"type":"object","properties":{"id":{"type":"string"},"reasoning_effort":{"type":"string","enum":["minimal","low","medium","high","xhigh","max"]}},"required":["id","reasoning_effort"]} },
     "agent_session_delete": { "handler": "native:agent" },
     "agent_messages_list": { "handler": "native:agent", "idempotent": true },
+    "agent_rooms_list": { "handler": "native:agent", "idempotent": true, "inputSchema": {"type":"object","properties":{"session_id":{"type":"string"}},"required":["session_id"]} },
     "agent_message_send": { "handler": "native:agent" },
     "agent_tools_list": { "handler": "native:agent", "idempotent": true, "timeout": "long", "inputSchema": {"type":"object","properties":{"session_id":{"type":"string"}}} },
     "agent_tools_set": { "handler": "native:agent", "timeout": "long", "inputSchema": {"type":"object","properties":{"session_id":{"type":"string"},"names":{"type":["array","null"],"items":{"type":"string"}}},"required":["session_id","names"]} },

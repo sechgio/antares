@@ -736,6 +736,10 @@ async function messagesList(params) {
   };
 }
 
+async function roomsList(params) {
+  return require('./agent-rooms').listRooms(String((params && params.session_id) || ''));
+}
+
 function _latestPlan(messages) {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const calls = messages[i].tool_calls || [];
@@ -1394,6 +1398,7 @@ module.exports = {
     agent_policy_rules_set: policyRulesSet,
     agent_session_reasoning_set: sessionReasoningSet,
     agent_messages_list: messagesList,
+    agent_rooms_list: roomsList,
     agent_message_send: messageSend,
     agent_tools_list: toolsList,
     agent_tools_set: toolsSet,

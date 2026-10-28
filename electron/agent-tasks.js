@@ -441,11 +441,21 @@ async function delegationAnswer(child) {
   return delegationReport(child, await require('./agent-projection').allEntries(await conversation(child.id)));
 }
 
-function delegationReport(child, entries) {
+async function delegationSnapshot(child) {
+  const entries = await require('./agent-projection').allEntries(await conversation(child.id));
+  return { child, report: delegationReport(child, entries),
+    awaiting_user: !child.last_error && NEEDS_INPUT.test(lastAnswerText(entries)) };
+}
+
+function lastAnswerText(entries) {
   const answer = entries.findLast((entry) => entry.kind === 'pi.assistant' && entry.model?.[0]
     && !entry.model[0].content.some((block) => block.type === 'toolCall'))?.model[0];
-  const text = unmarked(require('./agent-execution').sanitizeProviderError((answer?.content || [])
-    .filter((block) => block.type === 'text').map((block) => block.text).join('\n'))).trim().slice(0, 6000);
+  return unmarked(require('./agent-execution').sanitizeProviderError((answer?.content || [])
+    .filter((block) => block.type === 'text').map((block) => block.text).join('\n'))).trim();
+}
+
+function delegationReport(child, entries) {
+  const text = lastAnswerText(entries).slice(0, 6000);
   const question = !child.last_error && NEEDS_INPUT.exec(text)?.[1];
   const outcome = child.last_error ? 'error' : question ? 'necesita al usuario' : text ? 'completado' : 'sin respuesta';
   const name = child.profile?.name || 'delegado';
@@ -760,7 +770,7 @@ async function deliverDelegations(state, parent, children, open) {
   const key = single ? `delegate:${ids[0]}:${rounds}`
     : `delegate-batch:${crypto.createHash('sha256').update(`${ids.join(':')}:${rounds}`).digest('hex').slice(0, 24)}`;
   const reports = [];
-  for (const child of children) reports.push({ child, report: await delegationAnswer(child) });
+  for (const child of children) reports.push(await delegationSnapshot(child));
   const conv = await conversation(parent.id);
   await require('./agent-projection').ensureWatcher(parent);
   if (!stillDeliverable(await sessions(), children)) return;
@@ -793,8 +803,10 @@ async function deliverDelegations(state, parent, children, open) {
     const doc = await tx.doc(state.SessionsDoc);
     for (const child of children) {
       const current = doc.sessions[child.id];
+      const snapshot = reports.find((item) => item.child.id === child.id);
       if (current && current.delegation.status === 'working') {
         current.delegation.status = 'delivered';
+        current.delegation.awaiting_user = snapshot?.awaiting_user === true;
         current.delegation.result_request = `${key}:result`;
       }
     }

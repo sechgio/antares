@@ -31,3 +31,23 @@ export interface AgentDelegation {
   root_parent_request_id?: string;
   parent_tool_call_id?: string;
 }
+
+export interface AgentRoomMember {
+  session_id: string;
+  agent: string;
+  status?: string;
+  awaiting_user?: boolean;
+}
+
+export interface AgentRoom {
+  room_id: string;
+  topic: string;
+  status: string;
+  rounds: number;
+  round: number;
+  members: AgentRoomMember[];
+  turn?: { member: string; agent: string; index: number; deadline: number };
+  transcript: string;
+  closed_at?: number;
+  close_reason?: string;
+}
