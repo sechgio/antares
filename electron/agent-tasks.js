@@ -28,6 +28,9 @@ const FINISHED_DELEGATION = { delivered: 'entregada', cancelled: 'cancelada' };
 const DELIVERY_RETRY_BASE_MS = 60 * 1000;
 const DELIVERY_RETRY_MAX_MS = 10 * 60 * 1000;
 const DELIVERY_UNREACHABLE_AFTER = 3;
+const MAX_PLAN_STEPS = 8;
+const MAX_PLAN_STEP_CHARS = 120;
+const PLAN_STATUS = { pending: 'pendiente', in_progress: 'en curso', done: 'hecho', failed: 'fallado' };
 const MAX_MESSAGE_CHARS = 4000;
 const MAX_STOP_REASON_CHARS = 400;
 const MAX_CONTINUATION_ROUNDS = 10;
@@ -372,16 +375,29 @@ async function delegate(profile, args, sessionId, api, context) {
     ...(continuation ? { max_rounds: continuation.max_rounds } : {}), status: child.delegation.status, ...lineage };
 }
 
+// El plan que la conversación principal ya publicó viaja con el encargo. Un
+// fallo al leerlo no bloquea el arranque: el encargo sigue sin ese contexto.
+async function parentPlanText(parentId) {
+  try {
+    return planBrief(await require('./agent-runtime').latestPlan(parentId));
+  } catch (err) {
+    console.warn('[agent] shared plan unavailable:',
+      require('./agent-execution').sanitizeProviderError(String(err?.message || err)));
+    return '';
+  }
+}
+
 async function startChild(child) {
   if (child.delegation.status !== 'pending') return;
   const state = shared.state;
   await require('./agent-execution').ensureProvider(child.provider, child.model);
   const conv = await conversation(child.id);
   const memory = await require('./agent-runtime').memoryContext(child, child.delegation.content);
+  const plan = await parentPlanText(child.delegation.parent_session_id);
   await require('./agent-projection').ensureWatcher(child);
   await conv.submit({ type: 'input', content: [
     { type: 'text', text: child.delegation.content },
-    { type: 'text', text: `${shared.CONTEXT_MARKER}\n${delegationBrief(child.delegation)}\n${memory.context || ''}` },
+    { type: 'text', text: `${shared.CONTEXT_MARKER}\n${delegationBrief(child.delegation, plan)}\n${memory.context || ''}` },
   ], requestId: `delegate:${child.id}:${Number(child.delegation.round) || 0}`, whenBusy: 'followUp' }, ctx());
   await state.harness.commit(async (tx) => {
     const current = (await tx.doc(state.SessionsDoc)).sessions[child.id];
@@ -415,9 +431,22 @@ function userRequest(entries) {
   return quoted(require('./agent-execution').sanitizeProviderError(first), ORIGIN_MAX);
 }
 
-function delegationBrief(job) {
+// Resumen acotado del plan: la delegación sabe en qué paso encaja sin recibir
+// el plan entero ni tomarlo como trabajo ya hecho.
+function planBrief(plan) {
+  if (!plan || !Array.isArray(plan.steps) || !plan.steps.length) return '';
+  const steps = plan.steps.slice(0, MAX_PLAN_STEPS).map((step, index) =>
+    `${index + 1}. [${PLAN_STATUS[step.status] || PLAN_STATUS.pending}] ${quoted(step.title, MAX_PLAN_STEP_CHARS)}`);
+  const rest = plan.steps.length > MAX_PLAN_STEPS ? `\n(+${plan.steps.length - MAX_PLAN_STEPS} pasos más en el plan)` : '';
+  return `Plan compartido de la conversación principal${plan.goal ? ` («${quoted(plan.goal, 200)}»)` : ''}:\n`
+    + `${steps.join('\n')}${rest}\n`
+    + 'Sitúa tu encargo dentro de ese plan y devuelve evidencia del paso que te toca; no lo des por hecho.';
+}
+
+function delegationBrief(job, sharedPlan = '') {
   return [
     job.origin ? `Este encargo forma parte de esta petición del usuario: «${job.origin}». Es contexto: haz solo tu encargo.` : '',
+    sharedPlan,
     job.done_when ? `Se da por terminado cuando: «${job.done_when}». Comprueba ese criterio antes de responder.` : '',
     job.round ? 'Esta es una continuación del encargo en esta misma conversación: retoma lo que ya hiciste y no repitas '
       + 'trabajo verificado.' : '',
@@ -1238,5 +1267,5 @@ module.exports = {
   schedule, delegate, delegationAnswer, cancelDelegations, start, stop,
   checkDelegations, roster, sendMessage, stopDelegation, wakeParent, startChild, readTranscript,
   listTasks, saveTask, cancelTask, runTaskNow, queueControl: queue.queueControl,
-  _internal: { delegationBrief, delegationReport, userRequest, deferredDelivery, deferDelegations },
+  _internal: { delegationBrief, delegationReport, planBrief, userRequest, deferredDelivery, deferDelegations },
 };

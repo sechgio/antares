@@ -759,6 +759,13 @@ function _latestPlan(messages) {
   return null;
 }
 
+// Plan vigente de una conversación, para que sus delegaciones sepan en qué paso encajan.
+async function latestPlan(sessionId) {
+  const session = await requireSession(sessionId);
+  const { messages } = await projection.projectMessages(await conversation(sessionId), session);
+  return _latestPlan(messages);
+}
+
 async function browserAction(params) {
   const browser = shared.browser || require('./agent-browser');
   const action = String((params && params.action) || 'state');
@@ -1368,6 +1375,7 @@ async function shutdown() {
 
 module.exports = {
   memoryContext,
+  latestPlan,
   activitySnapshot: async () => {
     if (!shared.state) return [];
     const { attention = {} } = await bridge('agent_internal_activity', {});
