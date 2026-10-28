@@ -343,15 +343,10 @@ def test_shell_jobs_use_workspace_and_keep_logs_in_drafts(store, tmp_path):
         assert finished["status"] == "exited" and finished["exit_code"] == 0
         target = child if cwd else folder
         deadline = time.monotonic() + 5
-        while True:
-            try:
-                output = _run(store, "shell_output", output_id=job["output_id"])
-                if output["content"].splitlines() == [str(target), str(folder)] or time.monotonic() >= deadline:
-                    break
-            except PermissionError:
-                if time.monotonic() >= deadline:
-                    raise
+        while job["job_id"] in computer_jobs._JOBS and time.monotonic() < deadline:
             time.sleep(0.05)
+        assert job["job_id"] not in computer_jobs._JOBS
+        output = _run(store, "shell_output", output_id=job["output_id"])
         assert output["content"].splitlines() == [str(target), str(folder)]
         assert (target / "salida.txt").read_text().strip() == "hecho"
     assert not list(folder.rglob("shell-*.json"))

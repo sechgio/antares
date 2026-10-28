@@ -1766,7 +1766,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             className="flex shrink-0 gap-1 [&>button]:flex-none [&>button]:px-2.5 [&>button]:text-[12px] [&>button[aria-pressed=false]]:text-[var(--text-secondary)] [&>button[aria-pressed=true]]:bg-[var(--bg-input)] [&>button[aria-pressed=true]]:shadow-none [&>button[aria-pressed=true]]:ring-0"
             options={[{ value: 'all', label: 'Todas' }, { value: 'skills', label: 'Skills' }, { value: 'mcp', label: 'MCP' }]} />
           {toolsFilter === 'skills' && <p className="shrink-0 text-[11px] leading-relaxed text-[var(--text-secondary)]">
-            Adjunta una carpeta con SKILL.md y pide al agente que busque una skill. Estas opciones habilitan sus herramientas de lectura, no instalan skills.
+            Elige una carpeta de trabajo con SKILL.md y pide al agente que busque una skill. Estas opciones habilitan sus herramientas de lectura, no instalan skills.
           </p>}
           <div className="custom-scrollbar -mx-1.5 min-h-0 overflow-y-auto px-1.5">
             <ToolGroup label="Uso general" names={toolGroups.direct} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} expanded={!!toolsQuery.trim() || toolsFilter !== 'all'} />
