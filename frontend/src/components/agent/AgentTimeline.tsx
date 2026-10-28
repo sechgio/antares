@@ -464,7 +464,7 @@ function ActivityItem({ entry, onUndo, view }: { entry: ActivityEntry; onUndo?: 
   if (entry.kind === 'reasoning') return <Reasoning text={entry.text} streaming={entry.streaming} ms={entry.ms} defaultOpen={view !== 'normal'} />;
   if (entry.kind === 'note') {
     return (
-      <div className="agent-activity-note py-1 text-[13px] leading-5 text-[var(--text-secondary)]">
+      <div className="agent-activity-note py-1 text-[14px] leading-[23px] text-[var(--text-secondary)]">
         <MessageMarkdown text={entry.text} />
       </div>
     );
@@ -490,6 +490,7 @@ function Activity({ entries, working, answering, duration, onUndo, view }: {
   const calls = entries.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []));
   const live = working && !answering;
   const open = expanded ?? (view === 'verbose' || live || calls.some((call) => NEEDS_REVIEW.includes(call.status)));
+  const latestNote = !open ? [...entries].reverse().find((entry) => entry.kind === 'note') : undefined;
   const firstReview = entries.findIndex((entry) => entry.kind === 'call' && NEEDS_REVIEW.includes(entry.call.status));
   const earlier = live && view !== 'verbose' && entries.length > LIVE_TAIL + 1
     ? Math.min(entries.length - LIVE_TAIL, firstReview === -1 ? Infinity : firstReview) : 0;
@@ -528,6 +529,7 @@ function Activity({ entries, working, answering, duration, onUndo, view }: {
         {review > 0 && <span className="shrink-0 text-[var(--accent-red)]">· {review} por revisar</span>}
         <ChevronRight size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${open ? 'rotate-90' : ''}`} aria-hidden="true" />
       </button>
+      {latestNote && <ActivityItem entry={latestNote} onUndo={onUndo} view={view} />}
       {open && (
         <div className={`${TASK_BODY} agent-activity-body mt-0.5 space-y-0.5`}>
           {earlier > 0 && (
@@ -660,15 +662,15 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
   return (
     <div className="agent-trace-in agent-turn group space-y-1.5">
       <div className="flex items-center gap-1.5">
-        {agent && <AgentAvatar seed={agent.seed} color={agent.color} name={agent.name} size={18} working={working} />}
-        <span className="text-[12px] font-medium leading-5 text-[var(--text-secondary)]">{agent?.name ?? 'Agente'}</span>
+        {agent && <AgentAvatar seed={agent.seed} color={agent.color} name={agent.name} size={24} working={working} />}
+        <span className="text-[13px] font-medium leading-5 text-[var(--text-secondary)]">{agent?.name ?? 'Agente'}</span>
         {answer && !answer.partial && <CopyButton text={answer.content} />}
       </div>
       {thought
         ? <Reasoning text={thought.text} streaming={thought.streaming} ms={thought.ms} defaultOpen={view !== 'normal'} />
         : entries.length > 0 && <Activity entries={entries} working={working} answering={!!answer} duration={duration} onUndo={onUndo} view={view} />}
       {answer && (
-        <div className="agent-message-answer min-w-0 max-w-full py-1 text-[14px] leading-[23px] text-[var(--text-primary)]">
+        <div className="agent-message-answer min-w-0 max-w-full py-1 text-[15px] leading-[26px] text-[var(--text-primary)]">
           <MessageMarkdown text={answer.content} streaming={!!answer.partial} />
         </div>
       )}

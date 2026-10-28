@@ -27,6 +27,42 @@ it('no abre cursiva con guiones bajos dentro de palabras', () => {
   expect(screen.getByText('negrita').tagName).toBe('STRONG');
 });
 
+it('da jerarquía semántica a los títulos sin perder el texto durante el streaming', () => {
+  render(<MessageMarkdown text={'## Resumen\nUn párrafo.\n\nOtro párrafo.\n\n### Pendientes'} streaming />);
+  expect(screen.getByRole('heading', { name: 'Resumen', level: 3 })).toBeVisible();
+  expect(screen.getByRole('heading', { name: /Pendientes/, level: 4 })).toBeVisible();
+  expect(screen.getByText('Otro párrafo.')).toBeVisible();
+});
+
+it('renderiza tablas con alineación, código y barras escapadas sin interpretar HTML', () => {
+  render(<MessageMarkdown text={'| Archivo | Estado | Total |\n| :--- | :---: | ---: |\n| `a|b` | **Listo** | 2 |\n| a\\|b | <img src=x> | 3 |'} />);
+  expect(screen.getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Archivo', 'Estado', 'Total']);
+  expect(screen.getByRole('columnheader', { name: 'Total' })).toHaveStyle({ textAlign: 'right' });
+  expect(screen.getByRole('columnheader', { name: 'Estado' })).toHaveStyle({ textAlign: 'center' });
+  expect(screen.getByText('a|b', { selector: 'code' })).toBeVisible();
+  expect(screen.getByText('a|b', { selector: 'td' })).toBeVisible();
+  expect(screen.getByText('Listo').tagName).toBe('STRONG');
+  expect(screen.getByText('<img src=x>')).toBeVisible();
+  expect(screen.queryByRole('img')).toBeNull();
+  expect(screen.getByRole('region', { name: 'Tabla de la respuesta' })).toHaveAttribute('tabindex', '0');
+});
+
+it('espera el separador de tabla y conserva celdas incompletas al recibir texto', () => {
+  const { rerender } = render(<MessageMarkdown text={'Nombre | Estado\n--- | -'} streaming />);
+  expect(screen.queryByRole('table')).toBeNull();
+  rerender(<MessageMarkdown text={'Nombre | Estado\n--- | ---\nInforme |'} streaming />);
+  expect(screen.getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['Informe', '']);
+  rerender(<MessageMarkdown text={'Nombre | Estado\n--- | ---\nInforme | Listo\n\nSiguiente paso.'} />);
+  expect(screen.getByRole('cell', { name: 'Listo' })).toBeVisible();
+  expect(screen.getByText('Siguiente paso.')).toBeVisible();
+});
+
+it('conserva las barras de texto ordinario y las tablas dentro de código', () => {
+  render(<MessageMarkdown text={'a | b\ntexto | normal\n\n```txt\na | b\n--- | ---\n```'} />);
+  expect(screen.queryByRole('table')).toBeNull();
+  expect(screen.getByText(/texto \| normal/)).toBeVisible();
+});
+
 const chart = '```chart\n{"type":"bar","title":"Ventas","labels":["Ene","Feb"],"series":[{"name":"2026","data":[3,5]}]}\n```';
 
 it('reconoce el lenguaje del bloque y marca los que siguen abiertos', () => {
