@@ -4,6 +4,7 @@ const Module = require('module');
 const os = require('os');
 const path = require('path');
 
+// escribir sin safeStorage ahora falla en voz alta: el test headless necesita uno disponible
 const originalLoad = Module._load;
 Module._load = function patchedLoad(request, parent, isMain) {
   if (request === 'electron') {

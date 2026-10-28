@@ -322,6 +322,8 @@ function prepareSession(electron) {
       .then((allowed) => callback({ cancel: !allowed }))
       .catch(() => callback({ cancel: true }));
   });
+  // Toda descarga se cancela salvo que web_download la haya pedido: el
+  // navegador del agente nunca escribe en el disco por decisión de una página.
   ses.on('will-download', (event, item) => {
     const slot = downloadSlot;
     if (!slot || item.getURLChain()[0] !== slot.url) { event.preventDefault(); item.cancel(); return; }
