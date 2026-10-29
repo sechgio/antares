@@ -19,6 +19,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Las herramientas que fallan aparecen contraídas, con solo el título en rojo, y su error se lee como texto en lugar de JSON, igual que en Claude Code.
 - Se retiran de Agent el historial de aprobaciones (el botón del escudo) y las sugerencias de mensajes sobre el compositor.
 - Los archivos con acceso en una conversación de Agent se muestran encima del compositor, alineados con el chat, como tarjetas con icono y tipo (hoja de cálculo, PDF, imagen, documento, carpeta) en lugar de una píldora suelta en la esquina superior izquierda. La carpeta de trabajo ya no se repite en esa fila: se muestra solo en el botón de carpeta del compositor, donde también se puede quitar para volver a los borradores.
+- El chat de Agent es más ancho (960 px en lugar de 720 px, con el compositor alineado) y los gráficos ocupan todo ese ancho, alineados con los mensajes del usuario, para que el contenido amplio no necesite scroll lateral.
 
 ### Security
 - Las aprobaciones de terminal quedan ligadas a la carpeta efectiva y su identidad; cambiar el espacio de trabajo invalida la aprobación anterior y el comando usa el `cwd` absoluto aprobado.

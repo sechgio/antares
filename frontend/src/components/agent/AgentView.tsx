@@ -1269,7 +1269,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           </header>
         )}
 
-        <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" tabIndex={-1} className="custom-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-4 pb-4 pt-3 [&>*]:mx-auto [&>*]:max-w-[720px]">
+        <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" tabIndex={-1} className="custom-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-4 pb-4 pt-3 [&>*]:mx-auto [&>*]:max-w-[960px]">
           {showHero ? (
             <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
               <AgentAvatar
@@ -1341,7 +1341,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         <div role="status" aria-label="Avisos del agente" aria-live="polite" aria-atomic="true" className="sr-only">
           {announcement && <span key={announcement.key}>{announcement.text}</span>}
         </div>
-        <div className="mx-auto w-full max-w-[752px] shrink-0 px-4 pb-3">
+        <div className="mx-auto w-full max-w-[992px] shrink-0 px-4 pb-3">
           {delegations.length > 0 && <SubagentRoster items={delegations} />}
           {attention && (
             <div role="region" aria-label="Atención del agente" className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
