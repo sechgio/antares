@@ -126,6 +126,17 @@ export interface AgentAttachment {
   kind: 'files' | 'folder';
 }
 
+export type AgentFilePreviewTarget = { kind: 'attachment'; id: string; name: string } | { kind: 'resource'; resource: string };
+export type AgentDocumentBlock = { kind: 'paragraph'; text: string; style: string } | { kind: 'table'; rows: string[][] };
+export type AgentFilePreview = { name: string; size: number } & (
+  | { kind: 'pdf'; png_base64: string; pages: number; page: number }
+  | { kind: 'image'; png_base64: string; width: number; height: number }
+  | { kind: 'spreadsheet'; sheets: string[]; sheet: number; page: number; pages: number; total_rows: number;
+      total_columns: number; rows: string[][]; row_start: number; truncated: boolean }
+  | { kind: 'document'; blocks: AgentDocumentBlock[]; truncated: boolean }
+  | { kind: 'text'; text: string; truncated: boolean }
+);
+
 interface AgentMessageMentions {
   modules: string[];
   unknown: string[];
@@ -385,6 +396,10 @@ export const agentApi = {
 
   agentAttach: (kind: 'files' | 'folder', dropped?: { paths?: string[]; data?: { name: string; data: string }[] }) =>
     _invoke<{ attachments: AgentAttachment[] }>('agent_attach', { kind, ...dropped }),
+
+  agentFilePreview: (session_id: string, target: AgentFilePreviewTarget, page = 0, sheet = 0) =>
+    _invoke<AgentFilePreview>('agent_file_preview', { session_id, page, sheet,
+      ...(target.kind === 'attachment' ? { attachment_id: target.id } : { resource: target.resource }) }),
 
   agentToolsList: (session_id?: string) => _invoke<{ tools: AgentToolSpec[] }>('agent_tools_list', session_id ? { session_id } : {}),
 

@@ -16,6 +16,7 @@ from backend.core.agent import (
     computer_jobs,
     documents,
     drafts,
+    file_preview,
     resource_grants,
     skills,
 )
@@ -283,6 +284,25 @@ def _path_status(params: JsonObject) -> JsonObject:
     try:
         return computer_files.stat_path(params["path"], store.grants_for(session_id), store.workspace_dir(session_id))
     except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("session_id")
+def _file_preview(params: JsonObject) -> JsonObject:
+    store = _store()
+    session_id = str(params["session_id"])
+    try:
+        if params.get("selected_file"):
+            # Solo el puente nativo proporciona un adjunto seleccionado pendiente.
+            target = Path(str(resource_grants.grant_record(params["selected_file"], None)["path"]))
+        else:
+            value = params.get("resource")
+            draft = drafts.inside(store.drafts_dir(session_id), value) if isinstance(value, str) else None
+            target = computer_files.resolve(value, store.grants_for(session_id),
+                                            store.drafts_dir(session_id) if draft else store.workspace_dir(session_id))
+        return file_preview.render_file(target, params)
+    except (ValueError, OSError) as err:
         raise ValidationError(str(err)) from err
 
 
@@ -879,6 +899,7 @@ HANDLERS = {
     "agent_internal_grants_list": _grants_list,
     "agent_internal_grants_revoke": _grants_revoke,
     "agent_internal_path_status": _path_status,
+    "agent_internal_file_preview": _file_preview,
     "agent_internal_shell_job_status": _shell_job_status,
     "agent_internal_shell_jobs_cancel_session": _shell_jobs_cancel_session,
     "agent_internal_mentions": _mentions,

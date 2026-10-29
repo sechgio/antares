@@ -29,6 +29,22 @@ def test_page_open_reuses_artifact_action_contract():
                             entry["inputSchema"])
 
 
+def test_file_preview_requires_one_resource_and_keeps_selected_paths_private():
+    import jsonschema
+
+    methods = _catalog()["methods"]
+    entry = methods["agent_file_preview"]
+    assert entry["handler"] == "native:agent" and entry["idempotent"] is True
+    assert methods["agent_internal_file_preview"]["internal"] is True
+    assert methods["agent_internal_file_preview"]["lane"] == "heavy"
+    for target in ({"resource": "informe.pdf"}, {"attachment_id": "a1"}):
+        jsonschema.validate({"session_id": "s1", **target, "page": 0, "sheet": 0}, entry["inputSchema"])
+    for target in ({}, {"resource": "a.pdf", "attachment_id": "a1"}, {"selected_file": "C:\\secret.pdf"},
+                   {"resource": "a.pdf", "page": -1}, {"resource": "a.pdf", "sheet": True}):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({"session_id": "s1", **target}, entry["inputSchema"])
+
+
 def test_agent_workspace_selection_uses_native_dialog_contract():
     import jsonschema
 
