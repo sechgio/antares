@@ -69,10 +69,11 @@ async function main() {
   try {
     await tasks.stop();
     const backoff = tasks._internal.deferredDelivery;
-    assert.equal(backoff(undefined, 1, 1000).retry_at, 1000 + 60000, 'el primer reintento espera un minuto');
+    assert.equal(backoff(undefined, 1, 1000).retry_at, 1000 + 30000, 'el primer reintento espera medio minuto');
+    assert.equal(backoff(undefined, 2, 1000).retry_at, 1000 + 120000, 'el segundo reintento espera dos minutos');
     assert.equal(backoff(undefined, 3, 1000).state, 'unreachable', 'al tercer fallo la entrega queda sin confirmar');
-    assert.equal(backoff(undefined, 3, 1000).retry_at, 1000 + 240000, 'la espera se duplica en cada intento');
-    assert.equal(backoff(undefined, 12, 1000).retry_at, 1000 + 600000, 'la espera tiene un tope de diez minutos');
+    assert.equal(backoff(undefined, 3, 1000).retry_at, undefined, 'al tercer fallo no queda reintento programado');
+    assert.equal(backoff(undefined, 12, 1000).attempts, 3, 'los intentos no crecen por encima del tope');
     const { profile } = await runtime.handlers.agent_profile_save({
       name: 'Trazador', instructions: 'FASE4: revisa el contrato', tools: null,
     });
@@ -130,15 +131,31 @@ async function main() {
       deferred = await tasks.checkDelegations({ session_id: third.session_id }, parent.id);
       assert.equal(deferred.delivery.attempts, attempt);
       assert.equal(deferred.delivery.state, attempt >= 3 ? 'unreachable' : 'deferred');
-      const expected = 60000 * 2 ** (attempt - 1);
-      assert.ok(Math.abs(deferred.delivery.retry_at - Date.now() - expected) < 5000,
-        `el intento ${attempt} espera ${expected / 1000} s`);
+      if (attempt < 3) {
+        const expected = [30000, 120000][attempt - 1];
+        assert.ok(Math.abs(deferred.delivery.retry_at - Date.now() - expected) < 5000,
+          `el intento ${attempt} espera ${expected / 1000} s`);
+      } else {
+        assert.equal(deferred.delivery.retry_at, undefined, 'el tercer fallo no programa otro intento');
+      }
     }
+    await tasks._internal.deferDelegations(shared.state, [thirdChild], new Error('proveedor no disponible'));
+    deferred = await tasks.checkDelegations({ session_id: third.session_id }, parent.id);
+    assert.equal(deferred.delivery.attempts, 3, 'los intentos no crecen por encima del tope');
+    assert.equal(deferred.delivery.retry_at, undefined, 'una delegación aparcada no reintenta sola');
     assert.match(deferred.delivery.error, /proveedor no disponible/);
     const notices = (await projection.allEntries(await conversation(parent.id)))
       .filter((entry) => entry.kind === shared.NOTICE_KIND).map((entry) => String(entry.data?.text || ''));
     assert.ok(notices.some((text) => text.includes('3 intentos')),
       'el padre recibe un aviso cuando la entrega acumula tres fallos');
+    assert.ok(notices.some((text) => text.includes('agent_transcript') && text.includes(third.session_id)),
+      'el aviso indica cómo leer el informe sin prometer una reanudación que no existe');
+    const state = runtime._internal.state();
+    await state.harness.commit(async (tx) => {
+      (await tx.doc(state.SessionsDoc)).sessions[third.session_id].delegation.status = 'working';
+    }, state.ctx);
+    const stuck = await tasks.checkDelegations({ session_id: third.session_id }, parent.id);
+    assert.equal(stuck.state, 'informe sin entregar', 'el roster nombra el informe que no se pudo entregar');
 
     console.log('[PASS] linaje, roster y entrega Fase 4a: claves request/tool call en el acuse y agent_check, raíz '
       + 'conservada al retomar, roster en vivo con estado, herramienta y duración, vaciado al entregar, y entrega '

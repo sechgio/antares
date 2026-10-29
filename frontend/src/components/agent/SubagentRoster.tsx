@@ -46,7 +46,7 @@ export default function SubagentRoster({ items }: { items: AgentDelegation[] }) 
             {item.delivery && (item.delivery.state === 'deferred' || item.delivery.state === 'unreachable') && (
               <span
                 className="shrink-0 rounded-full border border-[var(--border-subtle)] px-1.5 py-px text-[9.5px] text-[var(--text-muted)]"
-                title={`${item.delivery.state === 'unreachable' ? 'La entrega sigue fallando' : 'La entrega se reintentará'}`
+                title={`${item.delivery.state === 'unreachable' ? 'La entrega no se completó y no se reintenta sola' : 'La entrega se reintentará'}`
                   + `${item.delivery.attempts ? ` (${item.delivery.attempts} intentos)` : ''}`
                   + `${item.delivery.error ? `: ${item.delivery.error}` : ''}`}
               >
