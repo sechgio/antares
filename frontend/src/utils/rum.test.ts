@@ -33,15 +33,21 @@ describe('rum', () => {
     vi.unstubAllEnvs();
   });
 
-  it('buildTelemetryPayload añade timestamp y navigationType por defecto', async () => {
-    const { buildTelemetryPayload } = await importFresh();
-    const payload = buildTelemetryPayload({
-      name: 'LCP', value: 1200, rating: 'good', delta: 50, id: 'm1',
-    });
-    expect(payload).toMatchObject({
-      name: 'LCP', value: 1200, rating: 'good', delta: 50, id: 'm1',
-      navigationType: '',
-    });
+  it('sendMetric añade timestamp y navigationType por defecto al payload', async () => {
+    vi.stubEnv('MODE', 'production');
+    const { initRUM } = await importFresh();
+    window.__RUM_FORCE_SAMPLE = true;
+    initRUM();
+    await vi.waitFor(() => expect(onCLS).toHaveBeenCalled());
+    const send = onCLS.mock.calls[0][0] as (m: unknown) => void;
+    send({ name: 'LCP', value: 1200, rating: 'good', delta: 50, id: 'm1' });
+    await vi.waitFor(() => expect(telemetry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'LCP', value: 1200, rating: 'good', delta: 50, id: 'm1',
+        navigationType: '',
+      }),
+    ));
+    const payload = telemetry.mock.calls.at(-1)?.[0] as { timestamp: number };
     expect(payload.timestamp).toBeGreaterThan(0);
   });
 

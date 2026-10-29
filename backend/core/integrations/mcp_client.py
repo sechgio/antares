@@ -21,6 +21,7 @@ import subprocess
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 
@@ -34,6 +35,9 @@ _HTTP_TIMEOUT_S = 30.0
 _STDIO_TIMEOUT_S = 45.0
 _MAX_TOOL_PAGES = 32
 _MAX_TOOLS = 512
+_TOKEN_TIMEOUT_S = 15.0
+_TOKEN_EXPIRY_SKEW_S = 30
+_TOKEN_CACHE: dict[tuple[str, str], tuple[float, str]] = {}
 
 
 class McpError(ValueError):
@@ -243,6 +247,66 @@ def call_tool_http(
         cancelled,
     )
     return result
+
+
+def _token_post(url: str, fields: dict[str, str]) -> JsonObject:
+    req = urllib.request.Request(
+        url,
+        data=urllib.parse.urlencode(fields).encode("utf-8"),
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "Antares/mcp",
+        },
+        method="POST",
+    )
+    try:
+        with http_guard.no_redirect_opener.open(req, timeout=_TOKEN_TIMEOUT_S) as res:
+            raw = res.read(_MAX_RESPONSE_BYTES)
+    except urllib.error.HTTPError as err:
+        detail = err.read(200).decode("utf-8", errors="replace")
+        raise McpError(f"El endpoint de token respondió HTTP {err.code}: {detail[:160]}") from err
+    except urllib.error.URLError as err:
+        raise McpError(f"Sin respuesta del endpoint de token: {err.reason}") from err
+    try:
+        data: JsonObject = json.loads(raw.decode("utf-8", errors="replace"))
+    except ValueError as err:
+        raise McpError("El endpoint de token no devolvió JSON") from err
+    if not isinstance(data, dict):
+        raise McpError("El endpoint de token no devolvió un objeto JSON")
+    return data
+
+
+def client_credentials_token(
+    token_url: str, client_id: str, client_secret: str = "", scopes: list[str] | None = None, *,
+    force: bool = False,
+) -> str:
+    """Bearer token OAuth2 client_credentials (con caché) para servidores MCP HTTP."""
+    key = (token_url, client_id)
+    if not force:
+        cached = _TOKEN_CACHE.get(key)
+        if cached and cached[0] > time.time() + _TOKEN_EXPIRY_SKEW_S:
+            return cached[1]
+    fields: dict[str, str] = {"grant_type": "client_credentials", "client_id": client_id}
+    if client_secret:
+        fields["client_secret"] = client_secret
+    if scopes:
+        fields["scope"] = " ".join(scopes)
+    data = _token_post(token_url, fields)
+    token = data.get("access_token")
+    if not isinstance(token, str) or not token:
+        raise McpError("El endpoint de token no devolvió access_token")
+    try:
+        ttl = int(data.get("expires_in") or 3600)
+    except (TypeError, ValueError):
+        ttl = 3600
+    _TOKEN_CACHE[key] = (time.time() + max(ttl, 0), token)
+    return token
+
+
+def clear_client_token(token_url: str, client_id: str) -> None:
+    """Invalida el token en caché de un par token_url/client_id (p. ej. tras un 401)."""
+    _TOKEN_CACHE.pop((token_url, client_id), None)
 
 
 def _stdio_session(

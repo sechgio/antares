@@ -18,6 +18,7 @@ from backend.core.fichas_tecnicas.models import (
 )
 from backend.core.tabular_report_import import import_reports
 from backend.utils.coercion import safe_int as _safe_int
+from backend.utils.text_decoding import decode_csv_bytes
 
 
 def _normalize_header(value: Any) -> str:
@@ -28,18 +29,7 @@ def _normalize_header(value: Any) -> str:
 
 
 def parse_csv_bytes(content: bytes) -> list[dict[str, Any]]:
-    decoded: str | None = None
-    # cp1252 va antes que latin-1: latin-1 decodifica cualquier byte y se quedaría
-    # con los caracteres de control en lugar de la raya y las comillas tipográficas.
-    for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
-        try:
-            decoded = content.decode(encoding)
-            break
-        except UnicodeDecodeError:
-            continue
-    if decoded is None:
-        msg = "No se pudo decodificar el archivo CSV"
-        raise ValueError(msg)
+    decoded = decode_csv_bytes(content)
 
     def _read(delimiter: str) -> list[dict[str, Any]]:
         return list(csv.DictReader(io.StringIO(decoded), delimiter=delimiter))

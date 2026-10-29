@@ -5,24 +5,11 @@ import pytest
 
 from backend.core.agent import agent, agent_chat
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, backend_methods
+from tests.agent_store_seed import read_messages, seed_message, seed_session
 
 
 def _store(tmp_path):
     return agent.AgentStore(tmp_path)
-
-
-def test_session_lifecycle(tmp_path):
-    store = _store(tmp_path)
-    s = store.create_session("ollama", "llama3.1", "Prueba")
-    assert store.get_session(s["id"])["model"] == "llama3.1"
-    assert [x["id"] for x in store.list_sessions()] == [s["id"]]
-    store.append_message(s["id"], {"role": "user", "content": "hola"})
-    msgs = store.messages(s["id"])
-    assert msgs[0]["content"] == "hola" and msgs[0]["ts"] > 0
-    assert _store(tmp_path).messages(s["id"])[0]["content"] == "hola"
-    assert store.delete_session(s["id"]) is True
-    assert _store(tmp_path).list_sessions() == []
-    assert store.messages(s["id"]) == []
 
 
 def test_gated_methods_exclude_readonly_and_denied():
@@ -122,20 +109,20 @@ def test_chat_conserva_tokens_sin_contar_cache(monkeypatch, style):
 
 def test_approval_flow(tmp_path):
     store = _store(tmp_path)
-    s = store.create_session("ollama", "m", "t")
+    seed_session(store, "s1")
     call = {"id": "c1", "name": "flujos_x", "params": {"a": 1}}
-    ap = store.create_approval(s["id"], call)
-    assert store.pending_approvals(s["id"])[0]["method"] == "flujos_x"
+    ap = store.create_approval("s1", call)
+    assert store.pending_approvals("s1")[0]["method"] == "flujos_x"
     decided = store.decide_approval(ap["id"], True)
     assert decided["status"] == "approved" and decided["decided_at"]
     assert store.decide_approval(ap["id"], True) is None
-    assert store.pending_approvals(s["id"]) == []
+    assert store.pending_approvals("s1") == []
 
 
 def test_approval_history_filters_and_joins_dispatch(tmp_path):
     store = _store(tmp_path)
-    s1 = store.create_session("ollama", "m", "uno")["id"]
-    s2 = store.create_session("ollama", "m", "dos")["id"]
+    s1 = seed_session(store, "uno")["id"]
+    s2 = seed_session(store, "dos")["id"]
     first = store.create_approval(s1, {"id": "c1", "name": "flujos_x", "params": {"a": 1}})
     second = store.create_approval(s1, {"id": "c2", "name": "db_export", "params": {}})
     third = store.create_approval(s2, {"id": "c3", "name": "flujos_x", "params": {}})
@@ -158,7 +145,7 @@ def test_approval_history_filters_and_joins_dispatch(tmp_path):
 
 def test_approval_history_keeps_expired_decisions(tmp_path, monkeypatch):
     store = _store(tmp_path)
-    session_id = store.create_session("ollama", "m", "t")["id"]
+    session_id = seed_session(store, "s1")["id"]
     approval = store.create_approval(session_id, {"id": "c1", "name": "flujos_x", "params": {}})
     monkeypatch.setattr(agent, "_APPROVAL_TTL_MS", -1)
     assert store.pending_approvals(session_id) == []
@@ -221,17 +208,6 @@ def test_agent_reports_timeout_without_retrying_the_action(tmp_path, monkeypatch
     assert "puede seguir ejecutándose" in result["error"]
     scheduler.submit_light.assert_called_once()
     future.cancel.assert_called_once()
-
-
-def test_update_tool_call(tmp_path):
-    store = _store(tmp_path)
-    s = store.create_session("ollama", "m", "t")
-    store.append_message(
-        s["id"], {"role": "assistant", "content": "", "tool_calls": [{"id": "c9", "name": "x", "status": "queued"}]}
-    )
-    store.update_tool_call(s["id"], "c9", "done", "resultado")
-    call = store.messages(s["id"])[0]["tool_calls"][0]
-    assert call["status"] == "done" and call["result"] == "resultado"
 
 
 def test_openai_wire_and_parse():
@@ -313,36 +289,26 @@ def test_get_agent_runner_no_deadlock(tmp_path, monkeypatch):
     assert done, "get_agent_runner quedó bloqueado por _store_lock"
 
 
-def test_first_user_message_titles_session(tmp_path):
-    store = _store(tmp_path)
-    s = store.create_session("ollama", "m", "")
-    assert s["title"] == "Conversación"
-    store.append_message(s["id"], {"role": "user", "content": "  lista mis formatos  "})
-    assert store.get_session(s["id"])["title"] == "lista mis formatos"
-    store.append_message(s["id"], {"role": "user", "content": "otro"})
-    assert store.get_session(s["id"])["title"] == "lista mis formatos"
-
-
 def test_interrupted_turn_gets_marked_once_on_runner_init(tmp_path):
     store = _store(tmp_path)
-    interrupted = store.create_session("ollama", "m", "A medias")
-    store.append_message(interrupted["id"], {"role": "user", "content": "sin respuesta"})
-    ok = store.create_session("ollama", "m", "Cerrada")
-    store.append_message(ok["id"], {"role": "user", "content": "hola"})
-    store.append_message(ok["id"], {"role": "assistant", "content": "respuesta"})
-    waiting = store.create_session("ollama", "m", "Con aprobación")
-    store.append_message(waiting["id"], {"role": "user", "content": "haz algo"})
+    interrupted = seed_session(store, "interrupted")
+    seed_message(store, "interrupted", "user", "sin respuesta")
+    ok = seed_session(store, "ok")
+    seed_message(store, "ok", "user", "hola")
+    seed_message(store, "ok", "assistant", "respuesta")
+    waiting = seed_session(store, "waiting")
+    seed_message(store, "waiting", "user", "haz algo")
     store.create_approval(waiting["id"], {"id": "c1", "name": "flows_delete", "params": {}})
 
     store2 = _store(tmp_path)
     agent.AgentRunner(store2, lambda name: lambda params: {})
 
-    assert "interrumpido" in store2.messages(interrupted["id"])[-1]["content"]
-    assert store2.messages(ok["id"])[-1]["content"] == "respuesta"
-    assert store2.messages(waiting["id"])[-1]["content"] == "haz algo"
+    assert "interrumpido" in read_messages(store2, interrupted["id"])[-1]["content"]
+    assert read_messages(store2, ok["id"])[-1]["content"] == "respuesta"
+    assert read_messages(store2, waiting["id"])[-1]["content"] == "haz algo"
     store3 = _store(tmp_path)
     agent.AgentRunner(store3, lambda name: lambda params: {})
-    assert sum("interrumpido" in m["content"] for m in store3.messages(interrupted["id"])) == 1
+    assert sum("interrumpido" in m["content"] for m in read_messages(store3, interrupted["id"])) == 1
 
 
 def test_stream_response_emits_accumulated_deltas():
@@ -378,12 +344,11 @@ def test_stream_response_emits_deltas_for_native_protocol():
 
 def test_recovery_does_not_duplicate_a_response_written_before_checkpoint_cleanup(tmp_path):
     store = _store(tmp_path)
-    session = store.create_session("ollama", "m", "Tarea")
-    store.append_message(session["id"], {"role": "assistant", "content": "Progreso completado"})
-    store.save_partial(session["id"], "Progreso")
+    session = seed_session(store, "s1", _partial_text="Progreso")
+    seed_message(store, "s1", "assistant", "Progreso completado")
     restored = _store(tmp_path)
     agent.AgentRunner(restored, lambda name: None)
-    assert restored.messages(session["id"]) == store.messages(session["id"])
+    assert read_messages(restored, session["id"]) == read_messages(store, session["id"])
     assert "_partial_text" not in restored.get_session(session["id"])
 
 

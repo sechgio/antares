@@ -23,6 +23,11 @@ const {
   generateCodeChallenge: _generateCodeChallenge,
 } = require('./autoimg-oauth-flow');
 const {
+  exchangeBrowserOAuthCode,
+  browserOAuthCallbackHandlers,
+  wireOAuthCallbackServer,
+} = require('./cloud-connector-common');
+const {
   setActiveUser,
   clearActiveUser,
   getActiveUserPublic,
@@ -100,40 +105,27 @@ async function beginBrowserOAuthFlow(onComplete, onError) {
 
   const flow = { stop: null };
   _callbackFlow = flow;
-  startCallbackServer(port, {
-    expectedState: oauthState,
-    onCode: async (code) => {
-      try {
-        await exchangeCode(code, redirectUri);
-        const status = await getAuthStatus();
-        onComplete(status);
-      } catch (err) {
-        onError(err);
-      } finally {
-        cancelBrowserOAuthFlow();
-      }
+  wireOAuthCallbackServer(
+    startCallbackServer(port, {
+      expectedState: oauthState,
+      ...browserOAuthCallbackHandlers({
+        label: 'Google',
+        connect: async (code) => {
+          await exchangeCode(code, redirectUri);
+          return getAuthStatus();
+        },
+        onComplete,
+        onError,
+        cancel: cancelBrowserOAuthFlow,
+      }),
+    }),
+    {
+      isCurrent: () => _callbackFlow === flow,
+      setStop: (stop) => { flow.stop = stop; },
+      onError,
+      cancel: cancelBrowserOAuthFlow,
     },
-    onDenied: (reason) => {
-      onError(new Error(reason === 'access_denied' ? 'Autorización cancelada en Google' : String(reason)));
-      cancelBrowserOAuthFlow();
-    },
-    onTimeout: (err) => {
-      onError(err);
-      cancelBrowserOAuthFlow();
-    },
-  })
-    .then(({ stop }) => {
-      if (_callbackFlow === flow) {
-        flow.stop = stop;
-      } else {
-        stop();
-      }
-    })
-    .catch((err) => {
-      if (_callbackFlow !== flow) return;
-      onError(err);
-      cancelBrowserOAuthFlow();
-    });
+  );
 
   return { url, redirect_uri: redirectUri };
 }
@@ -143,32 +135,23 @@ async function exchangeCode(code, redirectUri) {
   const uri = redirectUri || _pendingRedirectUri;
   const codeVerifier = _pendingCodeVerifier;
   if (!uri || !codeVerifier) throw new Error('Flujo OAuth no iniciado');
-  const body = new URLSearchParams({
-    code,
-    client_id: cfg.clientId,
-    client_secret: cfg.clientSecret,
-    redirect_uri: uri,
-    grant_type: 'authorization_code',
-    code_verifier: codeVerifier,
+  const data = await exchangeBrowserOAuthCode({
+    fetch: fetchWithRetry,
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    body: new URLSearchParams({
+      code,
+      client_id: cfg.clientId,
+      client_secret: cfg.clientSecret,
+      redirect_uri: uri,
+      grant_type: 'authorization_code',
+      code_verifier: codeVerifier,
+    }),
+    fetchOpts: { retries: 0 },
+    invalidGrant: isInvalidGrantResponse,
+    reauthMessage: REAUTH_REQUIRED_MESSAGE,
+    oauthError: (errBody) => `Error OAuth: ${errBody}`,
+    noRefreshTokenMessage: 'Google no devolvió un refresh token. Revoca el acceso de la app en myaccount.google.com/permissions y vuelve a conectar.',
   });
-  const res = await fetchWithRetry(
-    'https://oauth2.googleapis.com/token',
-    { method: 'POST', body },
-    { retries: 0 },
-  );
-  if (!res.ok) {
-    const errBody = await res.text();
-    if (isInvalidGrantResponse(errBody)) {
-      throw new Error(REAUTH_REQUIRED_MESSAGE);
-    }
-    throw new Error(`Error OAuth: ${errBody}`);
-  }
-  const data = await res.json();
-  if (!data.access_token || typeof data.refresh_token !== 'string' || !data.refresh_token) {
-    throw new Error(
-      'Google no devolvió un refresh token. Revoca el acceso de la app en myaccount.google.com/permissions y vuelve a conectar.',
-    );
-  }
   const tokens = {
     access_token: data.access_token,
     refresh_token: data.refresh_token,

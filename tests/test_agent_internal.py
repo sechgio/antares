@@ -10,6 +10,7 @@ from backend.core.agent import agent
 from backend.core.exceptions import NotFoundError, ValidationError
 from backend.core.integrations import ai_providers, mcp_servers
 from backend.handlers import agent_internal
+from tests.agent_store_seed import seed_session
 
 
 @pytest.fixture()
@@ -92,7 +93,7 @@ def test_subagent_uses_the_durable_runtime_route(store, monkeypatch, legacy):
 
     monkeypatch.setattr(agent_internal._agent_chat, "chat", chat)
     monkeypatch.setattr(agent, "get_agent_runner", lambda: agent.AgentRunner(store, lambda _: None))
-    session_id = store.create_session("old-provider", "old-model", "Anterior")["id"] if legacy else "durable-session"
+    session_id = seed_session(store, "previous", provider="old-provider", model="old-model")["id"] if legacy else "durable-session"
     _dispatch(session_id=session_id, call_id="delegation", name="subagent_run", params={"task": "Revisa datos"},
               context={"subagent": {"id": "reader", "name": "Lector", "instructions": "Lee los datos",
                                     "tools": [], "enabled": [], "provider": "selected-provider", "model": "selected-model"}})

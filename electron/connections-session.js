@@ -185,6 +185,9 @@ function _isInvalidGrant(body) {
 }
 
 async function _postToken(provider, fields, basic) {
+  // pendiente deduplicar: este exchange diverge de exchangeBrowserOAuthCode en
+  // cloud-connector-common (auth Basic opcional, respuesta no JSON con texto,
+  // no exige refresh_token, expiry_date puede ser null).
   const spec = getProvider(provider);
   const headers = { Accept: 'application/json' };
   if (basic) {
@@ -237,6 +240,9 @@ function refreshTokens(provider, tokens) {
 }
 
 async function getValidTokens(provider) {
+  // pendiente deduplicar: a diferencia de google-session y spotify-session, el
+  // refresh no es local: se delega en el backend (rotación de tokens) y no
+  // comprueba expiry_date aquí; getStatus aplica su propia lógica de expiración.
   const tokens = loadTokens(provider);
   if (!tokens || (!tokens.access_token && !tokens.refresh_token)) return null;
   try {
@@ -281,48 +287,32 @@ async function beginConnect(provider, onComplete, onError) {
   }
   const url = `${spec.auth.authorize_url}?${params.toString()}`;
 
-  startCallbackServer(port, {
-    expectedState: oauthState,
-    callbackPath: spec.auth.callback_path,
-    onCode: async (code) => {
-      try {
-        await _exchangeCode(provider, code);
-        await probeAccount(provider);
-        const status = await getStatus(provider);
-        onComplete(status);
-      } catch (err) {
-        onError(err);
-      } finally {
-        cancelConnect(provider);
-      }
+  // Se resuelve en diferido: este módulo se carga en VM por
+  // tests/test-connections-refresh.js con un mapa de dependencias explícito.
+  const common = require('./cloud-connector-common');
+  common.wireOAuthCallbackServer(
+    startCallbackServer(port, {
+      expectedState: oauthState,
+      callbackPath: spec.auth.callback_path,
+      ...common.browserOAuthCallbackHandlers({
+        label: spec.label,
+        connect: async (code) => {
+          await _exchangeCode(provider, code);
+          await probeAccount(provider);
+          return getStatus(provider);
+        },
+        onComplete,
+        onError,
+        cancel: () => cancelConnect(provider),
+      }),
+    }),
+    {
+      isCurrent: () => _pending.get(provider) === entry,
+      setStop: (stop) => { entry.stop = stop; },
+      onError,
+      cancel: () => cancelConnect(provider),
     },
-    onDenied: (reason) => {
-      onError(
-        new Error(
-          reason === 'access_denied'
-            ? `Autorización cancelada en ${spec.label}`
-            : String(reason),
-        ),
-      );
-      cancelConnect(provider);
-    },
-    onTimeout: (err) => {
-      onError(err);
-      cancelConnect(provider);
-    },
-  })
-    .then(({ stop }) => {
-      if (_pending.get(provider) === entry) {
-        entry.stop = stop;
-      } else {
-        stop();
-      }
-    })
-    .catch((err) => {
-      if (_pending.get(provider) !== entry) return;
-      onError(err);
-      cancelConnect(provider);
-    });
+  );
 
   return { url, redirect_uri: redirectUri };
 }

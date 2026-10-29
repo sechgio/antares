@@ -15,6 +15,7 @@ def _servers_list(params: JsonObject) -> JsonObject:
 @validate_params("name", "transport")
 def _server_add(params: JsonObject) -> JsonObject:
     secrets = params.get("secrets")
+    oauth = params.get("oauth")
     try:
         return {
             "server": mcp_servers.add_server(
@@ -24,6 +25,7 @@ def _server_add(params: JsonObject) -> JsonObject:
                 command=str(params.get("command") or ""),
                 args=[str(a) for a in params.get("args") or []],
                 secrets=secrets if isinstance(secrets, dict) else None,
+                oauth=oauth if isinstance(oauth, dict) else None,
             )
         }
     except ValueError as exc:

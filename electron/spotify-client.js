@@ -5,6 +5,7 @@ const {
   forceRefreshTokens,
 } = require('./spotify-session');
 const { fetchWithRetry } = require('./autoimg-google-fetch');
+const { bearerRequest } = require('./cloud-connector-common');
 
 class SpotifyError extends Error {
   constructor(message) {
@@ -85,35 +86,32 @@ function _friendlyErrorMessage({ statusCode, detail, path, retryAfter }) {
 }
 
 async function _request(method, path, { params, jsonBody, allowRetryOn401 = true, emptyResponse } = {}) {
-  const tokens = await getValidTokens();
-  if (!tokens?.access_token) {
-    throw new SpotifyAuthRequiredError(REAUTH_REQUIRED_MESSAGE);
-  }
-  const res = await fetchWithRetry(
-    _withQuery(`${API_BASE}${path}`, params),
-    {
+  const res = await bearerRequest({
+    fetch: fetchWithRetry,
+    url: _withQuery(`${API_BASE}${path}`, params),
+    options: {
       method,
-      headers: {
-        Authorization: `Bearer ${tokens.access_token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: jsonBody !== undefined && jsonBody !== null ? JSON.stringify(_stripNone(jsonBody)) : undefined,
     },
-    { provider: 'spotify' },
-  );
-  if (res.status === 401 && allowRetryOn401) {
-    try { await res.text(); } catch {}
-    let fresh;
-    try {
-      fresh = await forceRefreshTokens();
-    } catch (err) {
-      throw new SpotifyAuthRequiredError(
-        err instanceof Error ? err.message : REAUTH_REQUIRED_MESSAGE,
-      );
-    }
-    if (!fresh?.access_token) throw new SpotifyAuthRequiredError(REAUTH_REQUIRED_MESSAGE);
-    return _request(method, path, { params, jsonBody, allowRetryOn401: false, emptyResponse });
-  }
+    fetchOpts: { provider: 'spotify' },
+    getTokens: () => getValidTokens(),
+    missingTokenError: () => new SpotifyAuthRequiredError(REAUTH_REQUIRED_MESSAGE),
+    canRefresh: () => allowRetryOn401,
+    refresh: async (_staleTokens, response) => {
+      try { await response.text(); } catch {}
+      let fresh;
+      try {
+        fresh = await forceRefreshTokens();
+      } catch (err) {
+        throw new SpotifyAuthRequiredError(
+          err instanceof Error ? err.message : REAUTH_REQUIRED_MESSAGE,
+        );
+      }
+      if (!fresh?.access_token) throw new SpotifyAuthRequiredError(REAUTH_REQUIRED_MESSAGE);
+      return fresh;
+    },
+  });
   if (res.status >= 400) {
     const detail = (await res.text()).trim();
     throw new SpotifyAPIError(
