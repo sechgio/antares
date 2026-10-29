@@ -58,6 +58,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - El navegador de Agent resuelve el DNS de cada destino antes de salir: un dominio público que resuelva a una dirección privada o local (DNS del atacante o rebinding) se bloquea en `web_open`, `web_download` y en cada petición de la sesión del navegador (redirecciones y subrecursos incluidos); sin resolución verificable no navega.
 
 ### Fixed
+- El navegador de Agent se retira cuando su panel queda fuera de pantalla y registra los errores al ocultarse durante la navegación entre vistas.
 - El paso en curso del plan de Agent vuelve a verse mientras el agente trabaja (el texto quedaba transparente).
 - El editor de agentes se abre a pantalla completa y desplaza su contenido dentro del panel: las opciones avanzadas ya no se salen por debajo de los botones ni el formulario queda aplastado en ventanas estrechas.
 - El navegador de Agent muestra las páginas al 100 % con el ancho real del panel, como el de Claude Code: ya no las reduce para encajar un escritorio de 1280 px, que dejaba el texto diminuto. Las búsquedas usan Bing en lugar de la versión HTML de DuckDuckGo, y abrir una página espera al DOM listo y un margen de 1,5 s en vez de a que terminen todas las imágenes y anuncios (una búsqueda pasa de 2–6 s a ~1 s). Una barra fina bajo la dirección indica que la página carga.
@@ -79,6 +80,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - El selector de razonamiento aparece también para un modelo personalizado DeepSeek V4 sin capacidades declaradas, con Bajo, Alto y Máximo, y el nivel elegido viaja al proveedor.
 
 ### Added
+- Agent registra el riesgo de los comandos pendientes sin conceder aprobaciones adicionales y descubre las skills locales de Codex y Claude Code.
 - Vista previa de HTML en Agent, como en Claude Code: `web_open` acepta la ruta de un `.html` del espacio de trabajo o de una carpeta adjunta (o una dirección `file://`) y lo abre renderizado en el panel del navegador de Antares, servido por un servidor local solo en `127.0.0.1` (puerto libre y prefijo aleatorio en la ruta) desde la carpeta del archivo. Guardar cualquier archivo de esa carpeta recarga la vista previa al momento. Si el servidor no puede arrancar, se abre como `file://`, limitado a la misma carpeta. El resto de localhost y de la red privada sigue bloqueado para el navegador del agente.
 - Los servidores MCP HTTP de Complementos aceptan OAuth de aplicación (client_credentials): se declara `token_url` (HTTPS), `client_id`, hasta 16 scopes y opcionalmente un `client_secret`, que se guarda solo en la bóveda y nunca en el JSON de configuración. El backend pide y guarda en caché el token, lo renueva al expirar y, ante un 401, reintenta la llamada una vez con un token recién renovado. Los secretos de OAuth quedan redactados en los mensajes de error y el formulario distingue estos servidores con una insignia «OAuth».
 
