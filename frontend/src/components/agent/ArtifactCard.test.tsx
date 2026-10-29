@@ -9,7 +9,7 @@ vi.mock('../../hooks/useToast', () => ({ useToast: () => ({ addToast }) }));
 const artifact: AgentArtifact = { id: 'a1', family: 'canvas', template_id: 'doc1', template_revision: 'r1',
   files: [{ name: 'Informe.pdf', sha256: 'hash', pages: 2, mime: 'application/pdf', size: 2048 }] };
 
-beforeEach(() => { vi.restoreAllMocks(); addToast.mockClear(); });
+beforeEach(() => { vi.restoreAllMocks(); addToast.mockClear(); document.documentElement.removeAttribute('data-theme'); });
 
 it('muestra el recibo de la acción y su fuente de aprobación', () => {
   render(<ArtifactCard artifact={{ ...artifact,
@@ -71,4 +71,48 @@ it('las respuestas se envían a la conversación y pregunta originales', async (
   fireEvent.click(screen.getByRole('button', { name: 'B' }));
   fireEvent.click(screen.getByRole('button', { name: 'Responder y continuar' }));
   await waitFor(() => expect(answer).toHaveBeenCalledWith('s1', 'q1', { template: 'B' }));
+});
+
+it('abre una página con su conversación y revisión sin acciones de PDF', async () => {
+  const action = vi.spyOn(agentApi, 'agentArtifactAction').mockResolvedValue({ opened: true });
+  const page: AgentArtifact = { ...artifact, kind: 'page', family: 'page', title: 'Trabajos de octubre',
+    files: [{ name: 'Trabajos.html', mime: 'application/vnd.antares.page+json', size: 1200, sha256: 'revision' }] };
+  render(<ArtifactCard artifact={page} sessionId="s1" onRefresh={vi.fn()} />);
+  expect(screen.getByRole('region', { name: 'Página Trabajos de octubre' })).toHaveTextContent('Página interactiva');
+  expect(screen.queryByRole('button', { name: 'Imprimir' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Vista previa' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir página Trabajos de octubre' }));
+  await waitFor(() => expect(action).toHaveBeenCalledWith({ session_id: 's1', artifact_id: 'a1',
+    file_index: 0, action: 'open', sha256: 'revision', color_scheme: 'dark' }));
+});
+
+it('muestra una miniatura aislada y actualiza su revisión y apariencia', async () => {
+  const action = vi.spyOn(agentApi, 'agentArtifactAction').mockImplementation(async (params) => ({
+    html: `<h1>${params.sha256} ${params.color_scheme}</h1>`,
+  }));
+  const page: AgentArtifact = { ...artifact, kind: 'page', title: 'Informe' };
+  const view = render(<ArtifactCard artifact={page} sessionId="s1" onRefresh={vi.fn()} />);
+  const thumbnail = await screen.findByTitle('Miniatura de Informe');
+  expect(thumbnail).toHaveAttribute('sandbox', '');
+  expect(thumbnail).toHaveAttribute('inert');
+  expect(thumbnail).toHaveAttribute('tabindex', '-1');
+  expect(thumbnail).toHaveAttribute('srcdoc', '<h1>hash dark</h1>');
+  expect(screen.getAllByRole('button')).toHaveLength(1);
+  document.documentElement.dataset.theme = 'light';
+  await waitFor(() => expect(screen.getByTitle('Miniatura de Informe')).toHaveAttribute('srcdoc', '<h1>hash light</h1>'));
+  view.rerender(<ArtifactCard artifact={{ ...page, files: [{ ...page.files[0], sha256: 'new' }] }} sessionId="s1" onRefresh={vi.fn()} />);
+  await waitFor(() => expect(screen.getByTitle('Miniatura de Informe')).toHaveAttribute('srcdoc', '<h1>new light</h1>'));
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir página Informe' }));
+  await waitFor(() => expect(action).toHaveBeenLastCalledWith({ session_id: 's1', artifact_id: 'a1',
+    file_index: 0, action: 'open', sha256: 'new', color_scheme: 'light' }));
+});
+
+it('permite reintentar la apertura de una página fallida', async () => {
+  vi.spyOn(agentApi, 'agentArtifactAction').mockRejectedValue(new Error('La página cambió'));
+  render(<ArtifactCard artifact={{ ...artifact, kind: 'page', title: 'Informe' }} sessionId="s1" onRefresh={vi.fn()} />);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Abrir página Informe' })).toBeEnabled());
+  expect(addToast).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir página Informe' }));
+  await waitFor(() => expect(addToast).toHaveBeenCalledWith({ message: 'La página cambió', type: 'error' }));
+  expect(screen.getByRole('button', { name: 'Abrir página Informe' })).toBeEnabled();
 });

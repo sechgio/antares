@@ -31,6 +31,29 @@ const session: AgentSession = {
   created_at: 1, updated_at: 1, last_error: null,
 };
 const empty: Snapshot = { messages: [], running: false, pending_approvals: [] };
+
+it('abre adjuntos y referencias en el visor sin enviar mensajes al agente', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
+    messages: [{ role: 'assistant', content: '[Notas](notas.txt)', ts: 1 }],
+    context: { modules: [], accounts: [], files: [{ path: 'C:\\datos.xlsx', folder: false }] },
+  });
+  vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({ attachments: [{ id: 'a1', name: 'informe.pdf', kind: 'files' }] });
+  const preview = vi.spyOn(agentApi, 'agentFilePreview').mockResolvedValue({ kind: 'text', name: 'notas.txt', size: 4, text: 'Vista local', truncated: false });
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  fireEvent.click(await screen.findByRole('button', { name: 'Previsualizar Notas' }));
+  expect(await screen.findByText('Vista local')).toBeInTheDocument();
+  expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'resource', resource: 'notas.txt' }, 0, 0);
+  fireEvent.click(screen.getByRole('button', { name: 'Previsualizar datos.xlsx' }));
+  await waitFor(() => expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'resource', resource: 'C:\\datos.xlsx' }, 0, 0));
+  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
+  fireEvent.click(screen.getByRole('button', { name: 'Previsualizar informe.pdf' }));
+  await waitFor(() => expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'attachment', id: 'a1', name: 'informe.pdf' }, 0, 0));
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByLabelText('Cerrar vista previa'));
+  expect(screen.queryByLabelText('Vista previa de archivo')).toBeNull();
+});
 const suggestionProvider: AiProviderSpec = {
   id: 'local', label: 'Local', description: '', docs: '', editable_base_url: false, default_base_url: '', default_model: 'prueba',
   provider: 'openai', configured: true, has_key: true, key_masked: null, base_url: '', needs_key: false,

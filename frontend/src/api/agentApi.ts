@@ -126,6 +126,17 @@ export interface AgentAttachment {
   kind: 'files' | 'folder';
 }
 
+export type AgentFilePreviewTarget = { kind: 'attachment'; id: string; name: string } | { kind: 'resource'; resource: string };
+export type AgentDocumentBlock = { kind: 'paragraph'; text: string; style: string } | { kind: 'table'; rows: string[][] };
+export type AgentFilePreview = { name: string; size: number } & (
+  | { kind: 'pdf'; png_base64: string; pages: number; page: number }
+  | { kind: 'image'; png_base64: string; width: number; height: number }
+  | { kind: 'spreadsheet'; sheets: string[]; sheet: number; page: number; pages: number; total_rows: number;
+      total_columns: number; rows: string[][]; row_start: number; truncated: boolean }
+  | { kind: 'document'; blocks: AgentDocumentBlock[]; truncated: boolean }
+  | { kind: 'text'; text: string; truncated: boolean }
+);
+
 interface AgentMessageMentions {
   modules: string[];
   unknown: string[];
@@ -203,7 +214,8 @@ export interface AgentTask {
   retry_at?: number;
 }
 
-export interface AgentArtifact {
+export interface AgentDocumentArtifact {
+  kind?: 'document';
   id: string;
   family: string;
   template_id: string;
@@ -218,6 +230,14 @@ export interface AgentArtifact {
   };
   files: { name: string; sha256: string; pages: number; mime: string; size: number }[];
 }
+
+export interface AgentPageArtifact extends Omit<AgentDocumentArtifact, 'kind' | 'files'> {
+  kind: 'page';
+  title: string;
+  files: { name: string; sha256: string; mime: string; size: number }[];
+}
+
+export type AgentArtifact = AgentDocumentArtifact | AgentPageArtifact;
 
 export interface AgentQuestion {
   id: string;
@@ -377,6 +397,10 @@ export const agentApi = {
   agentAttach: (kind: 'files' | 'folder', dropped?: { paths?: string[]; data?: { name: string; data: string }[] }) =>
     _invoke<{ attachments: AgentAttachment[] }>('agent_attach', { kind, ...dropped }),
 
+  agentFilePreview: (session_id: string, target: AgentFilePreviewTarget, page = 0, sheet = 0) =>
+    _invoke<AgentFilePreview>('agent_file_preview', { session_id, page, sheet,
+      ...(target.kind === 'attachment' ? { attachment_id: target.id } : { resource: target.resource }) }),
+
   agentToolsList: (session_id?: string) => _invoke<{ tools: AgentToolSpec[] }>('agent_tools_list', session_id ? { session_id } : {}),
 
   agentToolsSet: (session_id: string, names: string[] | null) =>
@@ -444,8 +468,9 @@ export const agentApi = {
     _invoke<CanvasLayersResult>('agent_canvas_apply_layers', params),
 
   agentArtifactAction: (params: { session_id: string; artifact_id: string; file_index: number; action: 'preview' | 'review' | 'open' | 'save' | 'print';
+    color_scheme?: 'light' | 'dark';
     request_id?: string; sha256?: string; page?: number; printer_name?: string; copies?: number; pages?: string; duplex?: string; quality?: string }) =>
-    _invoke<{ png_base64?: string; pages?: number; sha256?: string; reviewed?: boolean; approval?: AgentApproval; cancelled?: boolean }>('agent_artifact_action', params),
+    _invoke<{ png_base64?: string; html?: string; pages?: number; sha256?: string; reviewed?: boolean; approval?: AgentApproval; cancelled?: boolean; opened?: boolean }>('agent_artifact_action', params),
 
   agentPrintersList: () => _invoke<{ printers: { name: string; default: boolean }[] }>('printers_list'),
 

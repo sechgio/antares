@@ -1,5 +1,8 @@
 import { FileImage, FileSpreadsheet, FileText, FolderOpen, FolderRoot, Paperclip, Puzzle, UserRound, X } from 'lucide-react';
 import type { AgentContext } from '../../api/agentApi';
+import { useContext } from 'react';
+import Button from '../ui/Button';
+import { FilePreviewContext } from './filePreviewContext';
 
 const CHIP = 'flex max-w-[45%] items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] py-1 pl-2 text-[12px] text-[var(--text-secondary)]';
 
@@ -39,6 +42,7 @@ export default function ContextChips({ context, onRemoveFile, onSetWorkspace }: 
   onRemoveFile: (path: string) => void;
   onSetWorkspace: (path: string) => void;
 }) {
+  const onPreview = useContext(FilePreviewContext);
   const modules = context?.modules ?? [];
   const workspace = context?.workspace ?? null;
   const files = (context?.files ?? []).filter((file) => file.path !== workspace);
@@ -76,7 +80,8 @@ export default function ContextChips({ context, onRemoveFile, onSetWorkspace }: 
               <FileCard path={file.path} folder={file.folder} />
             </button>
           ) : (
-            <span className="flex min-w-0 items-center gap-2.5"><FileCard path={file.path} folder={file.folder} /></span>
+            <Button variant="none" size="none" className="flex min-w-0 items-center gap-2.5" aria-label={`Previsualizar ${baseName(file.path)}`}
+              onClick={() => onPreview?.(file.path)}><FileCard path={file.path} folder={file.folder} /></Button>
           )}
           <button
             type="button"

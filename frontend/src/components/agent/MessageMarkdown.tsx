@@ -1,5 +1,7 @@
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy, Suspense, useContext, type ReactNode } from 'react';
 import CopyButton from './CopyButton';
+import Button from '../ui/Button';
+import { FilePreviewContext, localPreviewResource } from './filePreviewContext';
 
 const ChatVisual = lazy(() => import('./ChatVisual'));
 const VISUAL_LABELS: Record<string, string> = { chart: 'gráfico', svg: 'ilustración', html: 'interfaz' };
@@ -19,9 +21,9 @@ function VisualPlaceholder({ lang }: { lang: string }) {
 
 // Como en CommonMark, «_» pegado a letras o números no abre ni cierra énfasis:
 // gmail_search o mi_archivo_final.pdf se muestran tal cual.
-const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|(?<![\p{L}\p{N}_])__[^_\n]+__(?![\p{L}\p{N}_])|\*[^*\n]+\*|(?<![\p{L}\p{N}_])_[^_\n]+_(?![\p{L}\p{N}_])|\[[^\]\n]+\]\([^)\s]+\))/gu;
+const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|(?<![\p{L}\p{N}_])__[^_\n]+__(?![\p{L}\p{N}_])|\*[^*\n]+\*|(?<![\p{L}\p{N}_])_[^_\n]+_(?![\p{L}\p{N}_])|\[[^\]\n]+\]\((?:<[^>\n]+>|[^)\s]+)\))/gu;
 
-function inline(text: string, keyPrefix: string): ReactNode[] {
+function inline(text: string, keyPrefix: string, onPreview: ((resource: string) => void) | null): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   let index = 0;
@@ -31,13 +33,19 @@ function inline(text: string, keyPrefix: string): ReactNode[] {
     if (start > last) out.push(text.slice(last, start));
     const key = `${keyPrefix}-${index++}`;
     if (token.startsWith('`')) {
-      out.push(<code key={key} className="rounded-md bg-[color:color-mix(in_srgb,var(--text-primary)_8%,transparent)] px-1 py-px font-mono text-[12.5px]">{token.slice(1, -1)}</code>);
+      const value = token.slice(1, -1);
+      const resource = localPreviewResource(value);
+      const code = <code className="rounded-md bg-[color:color-mix(in_srgb,var(--text-primary)_8%,transparent)] px-1 py-px font-mono text-[12.5px]">{value}</code>;
+      out.push(resource && onPreview ? <Button key={key} variant="none" size="none" className="max-w-full text-left" aria-label={`Previsualizar ${value}`} onClick={() => onPreview(resource)}>{code}</Button> : <span key={key}>{code}</span>);
     } else if (token.startsWith('**') || token.startsWith('__')) {
       out.push(<strong key={key} className="font-semibold">{token.slice(2, -2)}</strong>);
     } else if (token.startsWith('[')) {
       const label = token.slice(1, token.indexOf(']'));
       const href = token.slice(token.indexOf('(') + 1, -1);
-      out.push(<span key={key} className="underline decoration-dotted underline-offset-2" title={href}>{label}</span>);
+      const resource = localPreviewResource(href);
+      out.push(resource && onPreview
+        ? <Button key={key} variant="none" size="none" className="max-w-full text-left underline decoration-dotted underline-offset-2" title={href} aria-label={`Previsualizar ${label}`} onClick={() => onPreview(resource)}>{label}</Button>
+        : <span key={key} className="underline decoration-dotted underline-offset-2" title={href}>{label}</span>);
     } else {
       out.push(<em key={key}>{token.slice(1, -1)}</em>);
     }
@@ -135,6 +143,8 @@ export function parseBlocks(source: string): Block[] {
 }
 
 export default function MessageMarkdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
+  const onPreview = useContext(FilePreviewContext);
+  const renderInline = (value: string, key: string) => inline(value, key, onPreview);
   const blocks = parseBlocks(text);
   return (
     <div className="agent-markdown min-w-0">
@@ -145,16 +155,16 @@ export default function MessageMarkdown({ text, streaming = false }: { text: str
         switch (block.kind) {
           case 'h': {
             const Heading = block.level <= 2 ? 'h3' : 'h4';
-            return <Heading key={key} className="font-semibold">{inline(block.text, key)}{cursor}</Heading>;
+            return <Heading key={key} className="font-semibold">{renderInline(block.text, key)}{cursor}</Heading>;
           }
           case 'table':
             return (
               <div key={key} role="region" aria-label="Tabla de la respuesta" tabIndex={0} className="agent-markdown-table overflow-x-auto">
                 <table className="w-full border-collapse text-left text-[13px] leading-[21px]">
                   <thead>
-                    <tr>{block.headers.map((cell, n) => <th key={n} scope="col" style={{ textAlign: block.align[n] }}>{inline(cell, `${key}-h${n}`)}</th>)}</tr>
+                    <tr>{block.headers.map((cell, n) => <th key={n} scope="col" style={{ textAlign: block.align[n] }}>{renderInline(cell, `${key}-h${n}`)}</th>)}</tr>
                   </thead>
-                  <tbody>{block.rows.map((row, r) => <tr key={r}>{block.headers.map((_, n) => <td key={n} style={{ textAlign: block.align[n] }}>{inline(row[n] ?? '', `${key}-${r}-${n}`)}</td>)}</tr>)}</tbody>
+                  <tbody>{block.rows.map((row, r) => <tr key={r}>{block.headers.map((_, n) => <td key={n} style={{ textAlign: block.align[n] }}>{renderInline(row[n] ?? '', `${key}-${r}-${n}`)}</td>)}</tr>)}</tbody>
                 </table>
                 {cursor}
               </div>
@@ -164,7 +174,7 @@ export default function MessageMarkdown({ text, streaming = false }: { text: str
             const List = block.kind;
             return (
               <List key={key} className={`space-y-1 pl-5 ${block.kind === 'ul' ? 'list-disc' : 'list-decimal'}`}>
-                {block.items.map((item, n) => <li key={n}>{inline(item, `${key}-${n}`)}</li>)}
+                {block.items.map((item, n) => <li key={n}>{renderInline(item, `${key}-${n}`)}</li>)}
                 {cursor}
               </List>
             );
@@ -195,9 +205,9 @@ export default function MessageMarkdown({ text, streaming = false }: { text: str
             );
           }
           case 'quote':
-            return <p key={key} className="border-l-2 border-[var(--border-medium)] pl-2.5 text-[var(--text-secondary)]">{inline(block.text, key)}{cursor}</p>;
+            return <p key={key} className="border-l-2 border-[var(--border-medium)] pl-2.5 text-[var(--text-secondary)]">{renderInline(block.text, key)}{cursor}</p>;
           default:
-            return <p key={key} className="whitespace-pre-wrap break-words">{inline(block.text, key)}{cursor}</p>;
+            return <p key={key} className="whitespace-pre-wrap break-words">{renderInline(block.text, key)}{cursor}</p>;
         }
       })}
     </div>

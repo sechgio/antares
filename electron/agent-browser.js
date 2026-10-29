@@ -318,6 +318,10 @@ function prepareSession(electron) {
   // subrecursos de una página limpia pueden apuntar a una IP privada.
   // La única excepción es la vista previa local, por su origen y prefijo exactos.
   ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*', 'file:///*'] }, (details, callback) => {
+    const pageTab = [...tabs.values()].find((tab) => tab.view?.webContents.id === details.webContentsId);
+    if (pageTab && preview.isPage(pageTab.view.webContents.getURL()) && details.resourceType !== 'mainFrame') {
+      return callback({ cancel: !preview.isPage(details.url) });
+    }
     if (preview.owns(details.url)) return callback({ cancel: false });
     if (details.url.startsWith('file:')) return callback({ cancel: true });
     isPublicResolution(details.url)
@@ -676,6 +680,7 @@ function closeTab(id) {
   if (activeTab === id) activeTab = order[index] || order[index - 1];
   const tab = tabs.get(id);
   tabs.delete(id);
+  if (tab?.pageUrl) preview.releasePage(tab.pageUrl);
   if (tab && tab.view) {
     if (alive(tab.parent)) tab.parent.contentView.removeChildView(tab.view);
     if (alive(tab.view.webContents)) tab.view.webContents.close();
@@ -696,6 +701,23 @@ async function navigate(action, url, id = activeTab) {
   else if (action === 'forward' && contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward();
   else if (action === 'reload') contents.reload();
   return state();
+}
+
+async function openPage(page, colorScheme) {
+  const previous = activeTab;
+  const id = newTab().active_tab;
+  try {
+    const url = await preview.openPage(page, colorScheme);
+    const tab = ensureTab(id);
+    tab.pageUrl = url;
+    notify('agent-open');
+    await load(tab.view.webContents, url);
+    return state();
+  } catch (error) {
+    closeTab(id);
+    activateTab(previous);
+    throw error;
+  }
 }
 
 function delay(ms) {
@@ -1515,4 +1537,4 @@ function close() {
   preview.close();
 }
 
-module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, isPrivateHostname, isAllowedWebUrl, isPublicResolution, state, dock, capture, inspect, navigate, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };
+module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, isPrivateHostname, isAllowedWebUrl, isPublicResolution, state, dock, capture, inspect, navigate, openPage, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };

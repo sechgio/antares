@@ -2,6 +2,21 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import MessageMarkdown, { parseBlocks } from './MessageMarkdown';
 import { niceTicks } from './ChatVisual';
+import { FilePreviewContext, localPreviewResource } from './filePreviewContext';
+
+it('abre referencias locales con espacios y rechaza enlaces remotos o ejecutables', () => {
+  const open = vi.fn();
+  render(<FilePreviewContext.Provider value={open}><MessageMarkdown text={'[Excel](<C:/datos/mi archivo.xlsx>) y `resumen.pdf` [web](https://example.com/doc.pdf)'} /></FilePreviewContext.Provider>);
+  fireEvent.click(screen.getByRole('button', { name: 'Previsualizar Excel' }));
+  expect(open).toHaveBeenLastCalledWith('C:/datos/mi archivo.xlsx');
+  fireEvent.click(screen.getByRole('button', { name: 'Previsualizar resumen.pdf' }));
+  expect(open).toHaveBeenLastCalledWith('resumen.pdf');
+  expect(screen.queryByRole('button', { name: 'Previsualizar web' })).toBeNull();
+  expect(localPreviewResource('file:///C:/mis%20datos/acta.docx')).toBe('C:/mis datos/acta.docx');
+  for (const value of ['javascript:alert(1).pdf', 'file://servidor/a.pdf', '//servidor/a.pdf', 'mal.exe', '%00.pdf', '%invalid.pdf']) {
+    expect(localPreviewResource(value)).toBeNull();
+  }
+});
 
 it('agrupa párrafos, listas, encabezados y bloques de código', () => {
   const blocks = parseBlocks('# Resumen\nTexto\nsigue\n\n- uno\n- dos\n1. a\n2. b\n```\nconst x = 1;\n```\n> nota');

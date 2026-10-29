@@ -12,6 +12,14 @@ const VALID_HANDLERS = /^(backend:[a-z0-9_]+|native:(dialog|autoimg|ubicaciones|
 const VALID_TIMEOUTS = new Set(['normal', 'long', 'heavy']);
 const VALID_LANES = new Set(['sync', 'light', 'heavy']);
 
+const pageAction = require('../shared/ipc-method-catalog.json').methods.agent_artifact_action;
+if (pageAction.handler !== 'native:agent' || !pageAction.inputSchema.properties.action.enum.includes('open')) {
+  throw new Error('Las páginas deben abrirse mediante agent_artifact_action en el proceso principal');
+}
+if (JSON.stringify(pageAction.inputSchema.properties.color_scheme.enum) !== '["light","dark"]') {
+  throw new Error('La apariencia de las páginas debe limitarse a claro u oscuro');
+}
+
 function extractApiMethods(source, calleePattern = /_invoke(?:Invalidating)?\b/g) {
   const methods = new Set();
   let at;
@@ -78,6 +86,12 @@ function main() {
   const preloadMethods = extractPreloadMethods(preloadSource);
   const knownUsedMethods = new Set([...apiMethods, ...preloadMethods]);
   const allowed = catalog.METHOD_NAMES;
+  if (!apiMethods.has('agent_file_preview') || !allowed.has('agent_file_preview')
+    || catalog.METHODS.agent_file_preview.handler !== 'native:agent'
+    || !catalog.IDEMPOTENT_METHODS.has('agent_file_preview')
+    || !catalog.INTERNAL_METHODS.has('agent_internal_file_preview')) {
+    throw new Error('La vista de archivos debe pasar por el agente y mantener privadas las rutas seleccionadas.');
+  }
   if (!apiMethods.has('agent_workspace_set') || !allowed.has('agent_workspace_set')
     || catalog.METHODS.agent_workspace_set.handler !== 'native:agent'
     || catalog.METHODS.agent_workspace_set.timeout !== 'long'
