@@ -8,6 +8,7 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import ThemedSelect from '../ui/ThemedSelect';
 import { channelLabel } from './channels';
+import ImageGallery from './ImageGallery';
 import PageArtifactCard from './PageArtifactCard';
 
 function ArtifactAction({ label, icon: Icon, title = label, ...props }: {
@@ -45,12 +46,12 @@ export function ArtifactList({ artifacts, sessionId, onRefresh, onOpenModule }: 
   );
 }
 
-export default function ArtifactCard({ artifact, sessionId, onRefresh, onOpenModule }: {
+export default function ArtifactCard(props: {
   artifact: AgentArtifact; sessionId: string; onRefresh: () => void; onOpenModule?: (module: string, id?: string) => void;
 }) {
-  return artifact.kind === 'page'
-    ? <PageArtifactCard artifact={artifact} sessionId={sessionId} />
-    : <DocumentArtifactCard artifact={artifact} sessionId={sessionId} onRefresh={onRefresh} onOpenModule={onOpenModule} />;
+  if (props.artifact.kind === 'image') return <ImageGallery artifact={props.artifact} sessionId={props.sessionId} onRefresh={props.onRefresh} />;
+  if (props.artifact.kind === 'page') return <PageArtifactCard artifact={props.artifact} sessionId={props.sessionId} />;
+  return <DocumentArtifactCard {...props} artifact={props.artifact} />;
 }
 
 function DocumentArtifactCard({ artifact, sessionId, onRefresh, onOpenModule }: {

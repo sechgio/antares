@@ -86,6 +86,15 @@ function main() {
   const preloadMethods = extractPreloadMethods(preloadSource);
   const knownUsedMethods = new Set([...apiMethods, ...preloadMethods]);
   const allowed = catalog.METHOD_NAMES;
+  const imagePreview = catalog.METHODS.agent_artifact_action;
+  const internalImagePreview = catalog.METHODS.agent_internal_artifact_action;
+  if (!apiMethods.has('agent_artifact_action') || imagePreview.handler !== 'native:agent'
+    || internalImagePreview.internal !== true
+    || JSON.stringify(imagePreview.inputSchema.properties.full_size) !== JSON.stringify(internalImagePreview.inputSchema.properties.full_size)
+    || imagePreview.inputSchema.properties.full_size.type !== 'boolean'
+    || catalog.IDEMPOTENT_METHODS.has('agent_artifact_action')) {
+    throw new Error('El preview de imágenes debe conservar el contrato privado de artefactos y la allowlist');
+  }
   if (!apiMethods.has('agent_file_preview') || !allowed.has('agent_file_preview')
     || catalog.METHODS.agent_file_preview.handler !== 'native:agent'
     || !catalog.IDEMPOTENT_METHODS.has('agent_file_preview')

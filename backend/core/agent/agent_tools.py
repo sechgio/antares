@@ -113,6 +113,8 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
         return canvas_edit.apply_layers(args)
     if name == "artifacts_list":
         return {"artifacts": store.artifacts_for(session_id)}
+    if name == "images_show":
+        return artifacts.show_images(store, session_id, args)
     if name == "page_create":
         return pages.create(args, store, session_id)
     if name in {"memory_search", "memory_remember", "procedure_learn"}:

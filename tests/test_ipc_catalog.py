@@ -12,6 +12,24 @@ def _catalog() -> dict:
     return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
 
 
+def test_image_previews_share_the_existing_artifact_contract():
+    import jsonschema
+
+    from backend.core.agent import agent_tools, modules
+
+    methods = _catalog()["methods"]
+    public, private = (methods[name] for name in ("agent_artifact_action", "agent_internal_artifact_action"))
+    assert public["handler"] == "native:agent" and private["internal"] is True
+    assert public["inputSchema"]["properties"]["full_size"] == private["inputSchema"]["properties"]["full_size"]
+    for spec in (public, private):
+        assert spec["timeout"] == "long" and not spec.get("idempotent")
+        jsonschema.validate({"session_id": "s1", "artifact_id": "a1", "action": "preview", "full_size": True}, spec["inputSchema"])
+        jsonschema.validate({"session_id": "s1", "artifact_id": "a1", "action": "preview"}, spec["inputSchema"])
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({"full_size": "true"}, spec["inputSchema"])
+    assert agent_tools.SPECS["images_show"]["gated"] is False and modules.module_for("images_show") == "documents"
+
+
 def test_page_open_reuses_artifact_action_contract():
     import jsonschema
 

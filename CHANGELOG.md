@@ -13,6 +13,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Vista previa local de archivos del chat en un panel lateral: PDF e imágenes con zoom, Excel/CSV/TSV con hojas y páginas, Word (.docx) con texto y tablas, y archivos de texto o código. Se abre desde adjuntos, archivos autorizados y referencias locales de las respuestas.
 
 ### Changed
+- Agents entrega imágenes y gráficos PNG, JPEG o WebP como una galería persistente en el chat, con ampliación, navegación y descarga mediante la herramienta `images_show`.
 - Un turno de sala cuyo miembro sigue ocupado con su propio turno recibe hasta dos prórrogas de un minuto antes de darse por vencido, y el vencimiento queda registrado con su motivo.
 - `agent_check` y el roster de delegaciones muestran si una delegación espera al usuario, con la pregunta pendiente, y la insignia de sala indica a quién le toca el turno.
 - Las salas de Agent registran como `ERROR` el turno de un miembro que terminó con fallo del proveedor y muestran el motivo de cada turno terminal en la transcripción; un reintento con la misma `turn_key` en una sala ya cerrada confirma que el mensaje quedó registrado.

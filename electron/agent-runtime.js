@@ -140,6 +140,11 @@ const SYSTEM_PROMPT =
   'Cuando un gráfico o una interfaz expliquen mejor la respuesta, el chat los muestra en línea: usa un bloque ```chart con JSON ' +
   '{"type":"bar|line|pie","title":"…","labels":["…"],"series":[{"name":"…","data":[1,2]}]} (cada serie con un valor por etiqueta), ' +
   'o un bloque ```svg o ```html autocontenido con estilos en línea; no se ejecutan scripts ni se cargan recursos externos. ' +
+  'Para entregar imágenes o gráficos generados como archivos, carga documents con tools_load y usa images_show ' +
+  'con images: [{path, title}]; aparecerán como una galería con ampliación y descarga en esta conversación. ' +
+  'Genera los archivos en el espacio de trabajo con las herramientas y permisos disponibles; images_show no genera imágenes. ' +
+  'Calcula estadísticas sobre el archivo completo, no sobre las filas de muestra de file_read; comprueba las librerías ' +
+  'disponibles antes de ejecutar un script y no afirmes que enviaste las imágenes hasta que images_show lo confirme. ' +
   'Para paneles con filtros, tablas ordenables o gráficos personalizables carga Documentos y usa page_create: ' +
   'crea HTML y JavaScript autocontenidos; AntaresPage.rows contiene todas las filas de spreadsheet_path, ' +
   'AntaresPage.columns sus columnas y AntaresPage.data los datos adicionales. No construyas el panel con la muestra de file_read. ' +

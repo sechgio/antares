@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, Info, ShieldCheck, type LucideIcon } from 'lucide-react';
 import { useDialog, type DialogOptions } from '../../hooks/useDialog';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
@@ -9,20 +10,40 @@ const DIALOG_ICONS: Record<NonNullable<DialogOptions['type']>, LucideIcon> = {
   destructive: AlertTriangle,
 };
 
-export default function Dialog() {
-  const { isOpen, options, closeDialog } = useDialog();
+export function DialogSurface({ children, onClose, onBackdropClose = onClose, labelledBy, role = 'dialog', className = 'max-w-[28rem] p-5', portal = false }: {
+  children: ReactNode; onClose: () => void; onBackdropClose?: () => void; labelledBy: string; role?: 'dialog' | 'alertdialog'; className?: string; portal?: boolean;
+}) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  useFocusTrap(dialogRef, isOpen);
+  useFocusTrap(dialogRef, true);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeDialog();
+      if (e.key === 'Escape') onClose();
     };
-    if (isOpen) window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, closeDialog]);
+  }, [onClose]);
+
+  const surface = (
+    <div ref={overlayRef} data-testid="app-dialog-overlay"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-fade-in"
+      style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 88%, transparent)', backdropFilter: 'blur(6px)' }}
+      onClick={(e) => { if (e.target === overlayRef.current) onBackdropClose(); }}>
+      <div ref={dialogRef} data-testid="app-dialog" className={`w-full rounded-xl animate-scale-in ${className}`}
+        tabIndex={-1} style={{ backgroundColor: 'var(--bg-base)', color: 'var(--text-primary)',
+          border: '1px solid color-mix(in srgb, var(--accent-primary) 32%, var(--border-subtle))' }}
+        role={role} aria-modal="true" aria-labelledby={labelledBy}>
+        {children}
+      </div>
+    </div>
+  );
+  return portal ? createPortal(surface, document.body) : surface;
+}
+
+export default function Dialog() {
+  const { isOpen, options, closeDialog } = useDialog();
 
   if (!isOpen || !options) return null;
 
@@ -53,32 +74,7 @@ export default function Dialog() {
   const confirmFg = isDestructive ? 'var(--text-on-danger, #fff)' : 'var(--text-on-accent)';
 
   return (
-    <div
-      ref={overlayRef}
-      data-testid="app-dialog-overlay"
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-fade-in"
-      style={{
-        backgroundColor: 'color-mix(in srgb, var(--bg-base) 88%, transparent)',
-        backdropFilter: 'blur(6px)',
-      }}
-      onClick={(e) => {
-        if (e.target === overlayRef.current) handleCancel();
-      }}
-    >
-      <div
-        ref={dialogRef}
-        data-testid="app-dialog"
-        className="w-full max-w-[28rem] rounded-xl p-5 animate-scale-in"
-        tabIndex={-1}
-        style={{
-          backgroundColor: 'var(--bg-base)',
-          color: 'var(--text-primary)',
-          border: '1px solid color-mix(in srgb, var(--accent-primary) 32%, var(--border-subtle))',
-        }}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="app-dialog-title"
-      >
+    <DialogSurface onClose={closeDialog} onBackdropClose={handleCancel} labelledBy="app-dialog-title" role="alertdialog">
         <div className="mb-5 flex items-start gap-4">
           <div
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
@@ -142,7 +138,6 @@ export default function Dialog() {
             {confirmLabel}
           </button>
         </div>
-      </div>
-    </div>
+    </DialogSurface>
   );
 }
