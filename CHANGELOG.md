@@ -18,6 +18,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Las herramientas que fallan aparecen contraídas, con solo el título en rojo, y su error se lee como texto en lugar de JSON, igual que en Claude Code.
 - Se retiran de Agent el historial de aprobaciones (el botón del escudo) y las sugerencias de mensajes sobre el compositor.
 - Los archivos con acceso en una conversación de Agent se muestran encima del compositor, alineados con el chat, como tarjetas con icono y tipo (hoja de cálculo, PDF, imagen, documento, carpeta) en lugar de una píldora suelta en la esquina superior izquierda.
+- En Complementos, conectar un proveedor pide antes de abrir el navegador una confirmación con los permisos exactos que se van a conceder, y mientras llega la autorización la lista muestra «Conectando…»: el estado se refresca solo cuando el navegador termina y «Cancelar conexión» (nuevo método IPC `connections_cancel`) abandona el intento sin bloquear ni obligar a esperar al tiempo de espera. Un error de autorización que llega por el canal `connections.changed` aparece como aviso en pantalla.
 
 ### Security
 - Las aprobaciones de terminal quedan ligadas a la carpeta efectiva y su identidad; cambiar el espacio de trabajo invalida la aprobación anterior y el comando usa el `cwd` absoluto aprobado.
@@ -52,6 +53,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Added
 - Vista previa de HTML en Agent, como en Claude Code: `web_open` acepta la ruta de un `.html` del espacio de trabajo o de una carpeta adjunta (o una dirección `file://`) y lo abre renderizado en el panel del navegador de Antares, servido por un servidor local solo en `127.0.0.1` (puerto libre y prefijo aleatorio en la ruta) desde la carpeta del archivo. Guardar cualquier archivo de esa carpeta recarga la vista previa al momento. Si el servidor no puede arrancar, se abre como `file://`, limitado a la misma carpeta. El resto de localhost y de la red privada sigue bloqueado para el navegador del agente.
+- Los servidores MCP HTTP de Complementos aceptan OAuth de aplicación (client_credentials): se declara `token_url` (HTTPS), `client_id`, hasta 16 scopes y opcionalmente un `client_secret`, que se guarda solo en la bóveda y nunca en el JSON de configuración. El backend pide y guarda en caché el token, lo renueva al expirar y, ante un 401, reintenta la llamada una vez con un token recién renovado. Los secretos de OAuth quedan redactados en los mensajes de error y el formulario distingue estos servidores con una insignia «OAuth».
 
 ### Changed
 - Una delegación en marcha puede avisar a su conversación principal antes de terminar con `agent_wake_parent`: el padre ve el aviso como nota del chat y lo recibe como contexto intermedio marcado como no instrucción, con un tope de 3 avisos por ronda que se reinicia al retomar. El aviso no sustituye el informe final ni amplía permisos.

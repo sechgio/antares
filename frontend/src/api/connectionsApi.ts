@@ -45,6 +45,8 @@ export const connectionsApi = {
     _invoke<{ url: string; redirect_uri: string; opened: boolean }>('connections_connect', {
       provider,
     }),
+  connectionsCancel: (provider: string) =>
+    _invoke<{ success: boolean }>('connections_cancel', { provider }),
   connectionsDisconnect: (provider: string) =>
     _invoke<{ success: boolean }>('connections_disconnect', { provider }),
 };

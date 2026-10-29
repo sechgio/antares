@@ -64,6 +64,13 @@ async function handleConnectionsCall(method, params = {}) {
         return { handled: true, result: { ...result, opened: true } };
       }
 
+      case 'connections_cancel': {
+        const provider = String(params.provider || '');
+        session.cancelConnect(provider);
+        emit('connections.changed', { provider, cancelled: true });
+        return { handled: true, result: { success: true } };
+      }
+
       case 'connections_disconnect': {
         const provider = String(params.provider || '');
         const result = await session.disconnect(provider);
