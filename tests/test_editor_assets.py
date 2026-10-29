@@ -27,7 +27,10 @@ def test_symlink_token_rejected(tmp_path: Path, assets_dir: Path) -> None:
     real = tmp_path / "real.mp4"
     real.write_bytes(b"no es un video real")
     link = tmp_path / "link.mp4"
-    link.symlink_to(real)
+    try:
+        link.symlink_to(real)
+    except OSError:
+        pytest.skip("el sistema no permite crear enlaces simbólicos")
     with pytest.raises(AssetImportError, match="symlink"):
         import_file(str(link), assets_dir=assets_dir)
 
