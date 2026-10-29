@@ -66,7 +66,7 @@ export default function PermissionPicker({ value, onChange, disabled, pending, r
       ref={menu.triggerRef}
       variant="none"
       size="none"
-      className={`flex h-7 min-w-0 items-center gap-1.5 rounded-lg px-2 text-[12px] transition-colors hover:bg-[var(--bg-input)] disabled:opacity-50 ${value === 'full' ? 'bg-[var(--bg-input)] text-orange-500' : 'text-[var(--text-muted)]'}`}
+      className={`flex h-8 min-w-8 items-center justify-center gap-1 rounded-full px-2 text-[12px] transition-colors hover:bg-[var(--bg-input)] disabled:opacity-50 ${value === 'full' ? 'text-orange-500' : 'text-[var(--text-muted)]'}`}
       aria-label={`Permisos: ${selected.label}${ruleSummary ? `, ${ruleSummary}` : ''}`}
       aria-haspopup="menu"
       aria-expanded={isOpen}
@@ -81,8 +81,7 @@ export default function PermissionPicker({ value, onChange, disabled, pending, r
         }
       }}
     >
-      <Icon size={12} className="shrink-0" aria-hidden="true" />
-      <span className="agent-permission-label truncate">{selected.label}</span>
+      <Icon size={15} className="shrink-0" aria-hidden="true" />
       {pending > 0 && <span className="shrink-0 text-[var(--accent-yellow)]" aria-label={`${pending} por aprobar`}>· {pending}</span>}
     </Button>
     {isOpen && createPortal(

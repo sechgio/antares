@@ -1,8 +1,8 @@
 import { _invoke } from './core';
-import type { AgentDelegation, AgentRole } from './agentDelegation';
+import type { AgentDelegation, AgentRole, AgentRoom } from './agentDelegation';
 import type { CanvasDocument } from '../components/canvas/types';
 
-export type { AgentDelegation, AgentRole } from './agentDelegation';
+export type { AgentDelegation, AgentRole, AgentRoom, AgentRoomMember } from './agentDelegation';
 
 export type CanvasLayersResult = Required<Pick<CanvasDocument, 'id' | 'updatedAt' | 'layers' | 'fields'>> & {
   createdLayers: { id: string; name: string }[];
@@ -203,7 +203,8 @@ export interface AgentTask {
   retry_at?: number;
 }
 
-export interface AgentArtifact {
+export interface AgentDocumentArtifact {
+  kind?: 'document';
   id: string;
   family: string;
   template_id: string;
@@ -218,6 +219,14 @@ export interface AgentArtifact {
   };
   files: { name: string; sha256: string; pages: number; mime: string; size: number }[];
 }
+
+export interface AgentPageArtifact extends Omit<AgentDocumentArtifact, 'kind' | 'files'> {
+  kind: 'page';
+  title: string;
+  files: { name: string; sha256: string; mime: string; size: number }[];
+}
+
+export type AgentArtifact = AgentDocumentArtifact | AgentPageArtifact;
 
 export interface AgentQuestion {
   id: string;
@@ -356,6 +365,8 @@ export const agentApi = {
       token_budget?: { limit: number; used: number };
     }>('agent_messages_list', { session_id }),
 
+  agentRoomsList: (session_id: string) => _invoke<{ rooms: AgentRoom[] }>('agent_rooms_list', { session_id }),
+
   agentContextRemoveFile: (session_id: string, path: string) =>
     _invoke<{ removed: number }>('agent_context_remove_file', { session_id, path }),
 
@@ -442,8 +453,9 @@ export const agentApi = {
     _invoke<CanvasLayersResult>('agent_canvas_apply_layers', params),
 
   agentArtifactAction: (params: { session_id: string; artifact_id: string; file_index: number; action: 'preview' | 'review' | 'open' | 'save' | 'print';
+    color_scheme?: 'light' | 'dark';
     request_id?: string; sha256?: string; page?: number; printer_name?: string; copies?: number; pages?: string; duplex?: string; quality?: string }) =>
-    _invoke<{ png_base64?: string; pages?: number; sha256?: string; reviewed?: boolean; approval?: AgentApproval; cancelled?: boolean }>('agent_artifact_action', params),
+    _invoke<{ png_base64?: string; html?: string; pages?: number; sha256?: string; reviewed?: boolean; approval?: AgentApproval; cancelled?: boolean; opened?: boolean }>('agent_artifact_action', params),
 
   agentPrintersList: () => _invoke<{ printers: { name: string; default: boolean }[] }>('printers_list'),
 

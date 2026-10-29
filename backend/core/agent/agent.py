@@ -363,15 +363,24 @@ class AgentStore:
                 self._write_grants()
             return len(removed or {})
 
-    def add_artifact(self, session_id: str, artifact: JsonObject) -> JsonObject:
+    def add_artifact(self, session_id: str, artifact: JsonObject, *, expected_revision: str | None = None) -> JsonObject:
         record = {**artifact, "session_id": session_id, "created_at": _now_ms()}
         with self._lock:
-            entry = self._artifacts.setdefault(session_id, {"items": []})
+            entry = self._artifacts.get(session_id, {"items": []})
             existing = next((item for item in entry["items"] if item["id"] == record["id"]), None)
+            if expected_revision is not None:
+                if existing is None or existing.get("kind") != "page" or existing["template_revision"] != expected_revision:
+                    raise ValueError("La página cambió; lee artifacts_list antes de actualizarla")
+                record["created_at"] = existing["created_at"]
+                updated = {**entry, "items": [record if item is existing else item for item in entry["items"]]}
+                atomic_write_json(self._artifacts_path, {**self._artifacts, session_id: updated})
+                self._artifacts[session_id] = updated
+                return dict(record)
             if existing is not None:
                 return dict(existing)
-            entry["items"].append(record)
-            atomic_write_json(self._artifacts_path, self._artifacts)
+            updated = {**entry, "items": [*entry["items"], record]}
+            atomic_write_json(self._artifacts_path, {**self._artifacts, session_id: updated})
+            self._artifacts[session_id] = updated
         return dict(record)
 
     def artifacts_for(self, session_id: str) -> list[JsonObject]:

@@ -158,10 +158,32 @@ async function browserTest() {
 
     await browser.run('web_open', { url: 'example.com/pagina.html' }, { sessionId: 's1', resolvePath });
     assert(loaded[loaded.length - 1] === 'https://example.com/pagina.html', 'un dominio con .html sigue siendo una web');
+
+    const openedPage = await browser.openPage({ version: 1, title: 'Panel', html: '<h1>Panel</h1>',
+      script: '', data: {}, rows: [], columns: [] });
+    const pageTab = pages[pages.length - 1].webContents;
+    pageTab.id = 99;
+    assert(openedPage.active_tab !== 'agent' && preview.isPage(pageTab.getURL()),
+      'la tarjeta abre la página en una pestaña propia y conserva la pestaña del agente');
+    let external = null;
+    beforeRequest({ url: 'https://example.com/leak', webContentsId: 99, resourceType: 'subFrame' },
+      (result) => { external = result; });
+    assert(external?.cancel === true, 'la página no puede navegar sus subframes hacia una web externa');
+    let publicResource = null;
+    beforeRequest({ url: 'https://example.com/leak', webContentsId: 99, resourceType: 'image' },
+      (result) => { publicResource = result; });
+    assert(publicResource?.cancel === true, 'los recursos públicos también están bloqueados para páginas');
+    let own = null;
+    beforeRequest({ url: new URL('content.html', pageTab.getURL()).href, webContentsId: 99, resourceType: 'subFrame' },
+      (result) => { own = result; });
+    assert(own?.cancel === false, 'el marco de contenido autorizado sí carga');
+    browser.closeTab(openedPage.active_tab);
+    assert(!preview.isPage(openedPage.url), 'cerrar la pestaña libera su documento y su token');
   } finally { timers.restore(); }
 
   await browser.run('web_open', { url: 'index.html' }, { sessionId: 's1', resolvePath });
-  const tab = pages[pages.length - 1].webContents;
+  const agentUrl = browser.state().tabs.find((tab) => tab.id === 'agent').url;
+  const tab = pages.find((page) => page.webContents.getURL() === agentUrl).webContents;
   fs.writeFileSync(path.join(site, 'css', 'app.css'), 'h1{color:blue}');
   const deadline = Date.now() + 5_000;
   while (!tab.reloads && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));

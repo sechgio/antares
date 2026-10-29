@@ -16,7 +16,7 @@ const { METHODS, INTERNAL_METHODS: INTERNAL_SET, nativeDispatchFor } = require('
 
 const PUBLIC_METHODS = [
   'agent_sessions_list', 'agent_session_create', 'agent_session_delete',
-  'agent_messages_list', 'agent_message_send', 'agent_tools_list', 'agent_tools_set',
+  'agent_messages_list', 'agent_message_send', 'agent_tools_list', 'agent_tools_set', 'agent_rooms_list',
   'agent_turn_status', 'agent_turn_cancel', 'agent_approve', 'agent_deny', 'agent_attach', 'agent_context_remove_file',
   'agent_profiles_list', 'agent_profile_save', 'agent_profile_delete', 'agent_session_rename', 'agent_session_model_set',
   'agent_browser',
@@ -1061,8 +1061,12 @@ async function main() {
     const { supportsReasoning, thinkingLevelFor, modelDefinition } = require('../electron/agent-execution');
     assert(supportsReasoning('anthropic_messages', 'claude-sonnet-4-5') && !supportsReasoning('anthropic_messages', 'claude-3-5-haiku'),
       'Anthropic pide razonamiento solo a modelos que lo admiten');
-    assert(supportsReasoning('openai_chat', 'deepseek-r1:8b') && !supportsReasoning('openai_chat', 'gpt-4o') && !supportsReasoning('openai_chat', 'llama3.1'),
-      'los modelos compatibles genéricos no reciben parámetros de razonamiento');
+    assert(supportsReasoning('openai_chat', 'deepseek-r1:8b')
+      && supportsReasoning('openai_chat', 'deepseek-ai/DeepSeek-V4.1-Flash-1017')
+      && supportsReasoning('openai_chat', 'deepseek-v4:latest')
+      && !supportsReasoning('openai_chat', 'deepseek-v40') && !supportsReasoning('openai_chat', 'deepseek-v5')
+      && !supportsReasoning('openai_chat', 'gpt-4o') && !supportsReasoning('openai_chat', 'llama3.1'),
+      'solo los modelos de razonamiento conocidos reciben parámetros de razonamiento');
     assert(thinkingLevelFor([], 'high') === 'off' && thinkingLevelFor(['minimal', 'low', 'medium', 'high']) === 'low'
       && thinkingLevelFor(['minimal', 'low', 'medium', 'high'], 'xhigh') === 'high' && thinkingLevelFor(['low', 'medium'], 'minimal') === 'low',
       'el nivel elegido se ajusta al más cercano que admite el modelo');
@@ -1085,10 +1089,21 @@ async function main() {
     const anthropicInfo = { provider: 'anthropic', style: 'anthropic_messages', base_url: 'https://api.anthropic.com' };
     assert(modelDefinition(anthropicInfo, fable.id, 'anthropic-messages', fable, fable).compat.forceAdaptiveThinking === true,
       'los Claude con pensamiento adaptativo lo reciben del catálogo');
-    const custom = (reasoning) => ({ provider: 'custom-glm', style: 'openai_chat', base_url: 'http://127.0.0.1:8000/v1', custom: true, capabilities: { reasoning } });
+    const custom = (reasoning, provider = 'custom-glm') => ({ provider, style: 'openai_chat', base_url: 'http://127.0.0.1:8000/v1', custom: true, ...(reasoning === undefined ? {} : { capabilities: { reasoning } }) });
     assert(modelDefinition(custom(true), 'zai-org/GLM-5.3-Flash', 'openai-completions').reasoning === true
       && modelDefinition(custom(false), 'deepseek-r1', 'openai-completions').reasoning === false,
       'la capacidad declarada en el proveedor personalizado prevalece sobre el nombre');
+    assert(modelDefinition(custom(false, 'custom-deepseek'), 'deepseek-ai/DeepSeek-V4.1-Flash-1017', 'openai-completions').reasoning === false,
+      'un proveedor que declara que el modelo no razona no se sobrescribe por el nombre');
+    const deepseek = modelDefinition(custom(undefined, 'custom-deepseek'), 'deepseek-ai/DeepSeek-V4.1-Flash-1017', 'openai-completions');
+    assert(deepseek.reasoning === true && deepseek.thinkingLevelMap?.off === 'none'
+      && deepseek.thinkingLevelMap?.medium === null && deepseek.thinkingLevelMap?.max === 'max',
+      'DeepSeek V4 declara sus niveles aunque el proveedor personalizado no esté en el catálogo');
+    assert(JSON.stringify(getSupportedThinkingLevels(deepseek)) === JSON.stringify(['off', 'low', 'high', 'max']),
+      'DeepSeek V4 admite solo off, low, high y max');
+    const tagged = modelDefinition(custom(undefined, 'custom-deepseek'), 'deepseek-v4:latest', 'openai-completions');
+    assert(tagged.reasoning === true && JSON.stringify(getSupportedThinkingLevels(tagged)) === JSON.stringify(['off', 'low', 'high', 'max']),
+      'un identificador con etiqueta conserva los niveles de DeepSeek V4');
   }
 
   {
@@ -1996,6 +2011,45 @@ async function main() {
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'piensa más' });
     assert(await waitIdle(session.id), 'el turno con más razonamiento termina');
     assert(hits[1].reasoning_effort === 'high', 'el nivel elegido viaja en la petición al proveedor');
+    server.close();
+    await runtime.shutdown();
+  }
+
+  {
+    const hits = [];
+    const server = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => { body += c; });
+      req.on('end', () => {
+        hits.push({ url: req.url, body: JSON.parse(body) });
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        const chunk = (choices) => `data: ${JSON.stringify({ choices })}\n\n`;
+        res.write(chunk([{ delta: { role: 'assistant' } }]));
+        res.write(chunk([{ delta: { content: 'Listo' } }]));
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      });
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    const model = 'deepseek-ai/DeepSeek-V4.1-Flash-1017';
+    const { bridge } = makeBridge();
+    const wiredBridge = async (method, params) => method === 'agent_internal_provider'
+      ? { provider: 'custom-deepseek', style: 'openai_chat', base_url: `http://127.0.0.1:${server.address().port}/v1`, api_key: 'sk-wire', auth_type: 'api_key', extra_headers: {}, default_model: model, custom: true, capabilities: {} }
+      : bridge(method, params);
+    const { MemoryStorage } = await import('@earendil-works/pi-durable');
+    await runtime.open({ storage: new MemoryStorage(), bridge: wiredBridge, skipImport: true });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'custom-deepseek', model });
+    assert(JSON.stringify(session.reasoning_levels) === JSON.stringify(['low', 'high', 'max']),
+      'DeepSeek V4 muestra Bajo, Alto y Máximo en el selector');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'piensa' });
+    assert(await waitIdle(session.id), 'el turno de DeepSeek V4 termina');
+    assert(hits[0].url === '/v1/chat/completions' && hits[0].body.reasoning_effort === 'low',
+      'DeepSeek V4 envía el esfuerzo bajo por defecto');
+    await runtime.handlers.agent_session_reasoning_set({ id: session.id, reasoning_effort: 'max' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'piensa al máximo' });
+    assert(await waitIdle(session.id), 'el turno con Máximo termina');
+    assert(hits[1].body.reasoning_effort === 'max', 'DeepSeek V4 envía max al proveedor');
     server.close();
     await runtime.shutdown();
   }

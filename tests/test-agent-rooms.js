@@ -51,6 +51,7 @@ async function main() {
   runtime._internal._providerOverrides.set('faux', faux.provider);
   const respond = (context) => {
     const seen = allText(context);
+    if (seen.includes('SALA_PREGUNTA')) return fauxAssistantMessage('NECESITA ENTRADA: ¿Qué contrato reviso?');
     const roomTurn = (context.messages || []).some((message) => message.role === 'user'
       && JSON.stringify(message.content).includes('Te toca hablar'));
     if (!roomTurn) return fauxAssistantMessage('Sin turno');
@@ -89,6 +90,22 @@ async function main() {
     assert.equal(created.status, 'open');
     assert.equal(created.members.length, 2);
     assert.equal(created.round, 1);
+    const roster = await tasks.checkDelegations({}, parent.id);
+    const rostered = roster.delegations.find((item) => item.session_id === a.session_id);
+    assert.equal(rostered.room_id, created.room_id);
+    assert.equal(rostered.room.status, 'open');
+    assert.equal(rostered.room.round, 1);
+    assert.equal(rostered.room.rounds, 2);
+    assert.equal(rostered.room.turn_agent, 'Sala A');
+    const listed = await rooms.listRooms(parent.id);
+    const listedOpen = listed.rooms.find((room) => room.room_id === created.room_id);
+    assert.ok(listedOpen, 'la interfaz lista la sala abierta');
+    assert.equal(listedOpen.members.length, 2);
+    assert.ok(listedOpen.members.every((member) => typeof member.status === 'string'));
+    assert.equal(listedOpen.members.some((member) => member.awaiting_user), false);
+    assert.ok(!(await rooms.listRooms(a.session_id)).rooms.length, 'un delegado no lista las salas del padre');
+    const ipcList = await runtime.handlers.agent_rooms_list({ session_id: parent.id });
+    assert.ok(ipcList.rooms.some((room) => room.room_id === created.room_id), 'el IPC de solo lectura lista la sala');
     await assert.rejects(rooms.act({ action: 'create', topic: 'Otra', members: [a.session_id, b.session_id] }, parent.id),
       /Ya hay una sala abierta/, 'solo se admite una sala abierta por conversación');
     await assert.rejects(rooms.act({ action: 'create', topic: 'x', members: [a.session_id, parent.id] }, parent.id),
@@ -115,9 +132,79 @@ async function main() {
       .find((message) => String(message.content).startsWith('[Contexto de Antares]\nSala «Contrato y anexo» cerrada'));
     assert.ok(summary && String(summary.content).includes('no instrucciones ni aprobaciones del usuario'),
       'el resumen de la sala llega como contexto y no como instrucción');
+    assert.match(String(summary.content),
+      /Participación:\n- Sala A: 2 mensajes; último: «Dato A»\n- Sala B: 2 mensajes; último: «Dato B»/,
+      'el cierre resume la participación de cada miembro');
     const report = await tasks.checkDelegations({ session_id: roomA.id }, parent.id);
     assert.equal(report.status, 'delivered');
     assert.equal(report.room_id, undefined);
+    const transcriptA = await tasks.readTranscript({ session_id: roomA.id, max_turns: 4 }, parent.id);
+    assert.match(transcriptA.agent, /Sala A/);
+    assert.ok(transcriptA.messages.some((text) => text.includes('Aporté Dato A')), 'lee el texto de la delegación');
+    assert.equal(transcriptA.awaiting_user, false);
+    await assert.rejects(tasks.readTranscript({ session_id: roomA.id }, roomA.id), /no es una delegación/);
+    const closedList = await rooms.listRooms(parent.id);
+    const closedRoom = closedList.rooms.find((room) => room.room_id === created.room_id);
+    assert.equal(closedRoom.status, 'closed');
+    assert.match(closedRoom.transcript, /Dato A/);
+    const question = await delegate('Sala A', 'SALA_PREGUNTA: revisa el contrato', 'room-question');
+    await until(async () => (await messages(parent.id)).messages
+      .some((message) => String(message.content).includes('Se detuvo en una pregunta para el usuario')));
+    const asked = await tasks.readTranscript({ session_id: question.session_id }, parent.id);
+    assert.equal(asked.awaiting_user, true, 'la lectura avisa que espera al usuario');
+    assert.match(asked.messages.join('\n'), /NECESITA ENTRADA/);
+    const askedCheck = await tasks.checkDelegations({ session_id: question.session_id }, parent.id);
+    assert.equal(askedCheck.awaiting_user, true, 'el roster avisa que la delegación espera al usuario');
+    assert.match(askedCheck.question, /¿Qué contrato reviso\?/, 'el roster incluye la pregunta pendiente');
+    const questionSession = (await runtime.handlers.agent_sessions_list()).sessions
+      .find((session) => session.id === question.session_id);
+    assert.equal(questionSession.delegation.awaiting_user, true, 'el estado queda guardado para la sala');
+    const promptsB = (await messages(roomB.id)).messages.map((message) => String(message.content)).join('\n');
+    assert.match(promptsB, /Participantes: Sala A/, 'el turno nombra a los demás participantes');
+    assert.match(promptsB, /Mensajes nuevos desde tu último turno:\n- Ronda 2, Sala A: Dato A/,
+      'el turno muestra lo que se dijo desde la última intervención');
+    assert.match(promptsB, /Es la última ronda de la sala/, 'la ronda final avisa del cierre');
+
+    const multiA = await delegate('Sala A', 'SALA_SILENCIO_A: espera el turno', 'room-multi-a');
+    const multiB = await delegate('Sala B', 'SALA_SILENCIO_B: espera el turno', 'room-multi-b');
+    const multi = await rooms.act({ action: 'create', topic: 'Multi', members: [multiA.session_id, multiB.session_id],
+      rounds: 1, turn_seconds: 5 }, parent.id);
+    await assert.rejects(rooms.act({ action: 'post', message: 'Fuera', reply_to: parent.id }, multiA.session_id),
+      /reply_to debe ser un miembro de la sala/, 'solo se responde a un miembro');
+    const posted = await rooms.act({ action: 'post', messages: ['M1', 'M2'], turn_key: 'K-MULTI',
+      reply_to: multiB.session_id }, multiA.session_id);
+    assert.equal(posted.posted, true);
+    assert.equal(posted.recorded, true, 'el post confirma que quedó registrado');
+    assert.equal(posted.duplicate, undefined, 'el primer post se registra');
+    const repeated = await rooms.act({ action: 'post', messages: ['M1'], turn_key: 'K-MULTI' }, multiA.session_id);
+    assert.equal(repeated.posted, false);
+    assert.equal(repeated.duplicate, true, 'la misma turn_key no vuelve a publicar ni avanza');
+    const passed = await rooms.act({ action: 'pass', turn_key: 'K-PASS' }, multiB.session_id);
+    assert.equal(passed.closed, true);
+    const multiRead = await rooms.act({ action: 'read', room_id: multi.room_id }, parent.id);
+    assert.match(multiRead.transcript, /Sala A: M1 \(responde a Sala B\)/);
+    assert.match(multiRead.transcript, /Sala A: M2/);
+    assert.equal((multiRead.transcript.match(/M1/g) || []).length, 1, 'el reintento no duplica el mensaje');
+    const late = await rooms.act({ action: 'post', room_id: multi.room_id, messages: ['Tarde'] }, multiA.session_id);
+    assert.equal(late.recorded, false);
+    assert.equal(late.reason, 'closed');
+    const closedRetry = await rooms.act({ action: 'post', room_id: multi.room_id, messages: ['M1'],
+      turn_key: 'K-MULTI' }, multiA.session_id);
+    assert.equal(closedRetry.duplicate, true, 'la misma clave confirma el registro aunque la sala ya esté cerrada');
+    assert.equal(closedRetry.recorded, true);
+    assert.equal(closedRetry.reason, 'closed');
+
+    const cancelA = await delegate('Sala A', 'SALA_SILENCIO_A: espera el turno', 'room-cancel-a');
+    const cancelB = await delegate('Sala B', 'SALA_SILENCIO_B: espera el turno', 'room-cancel-b');
+    const cancelRoom = await rooms.act({ action: 'create', topic: 'Cancelada',
+      members: [cancelA.session_id, cancelB.session_id], rounds: 2, turn_seconds: 5 }, parent.id);
+    const cancelled = await rooms.act({ action: 'close', room_id: cancelRoom.room_id }, parent.id);
+    assert.equal(cancelled.closed, true);
+    assert.match(cancelled.transcript, /\(CANCELLED\)/, 'el turno en curso queda registrado al cerrar');
+    assert.equal(cancelled.close_reason, 'cerrada por la conversación principal');
+    const released = (await runtime.handlers.agent_sessions_list()).sessions
+      .find((session) => session.id === cancelA.session_id);
+    assert.ok(!released.delegation.room_id, 'cerrar libera a los miembros');
 
     const c = await delegate('Sala C', 'SALA_PASS: cede el turno', 'room-c');
     const d = await delegate('Sala D', 'SALA_CALLAR: escucha el turno', 'room-d');
@@ -138,7 +225,7 @@ async function main() {
       .some((message) => message.notice && message.content === 'Sala «Abandono» cerrada: completada.'), 25000);
     const skippedRoom = await rooms.act({ action: 'read', room_id: skipped.room_id }, parent.id);
     assert.match(skippedRoom.transcript, /Sala E: \(TIMEOUT\)/);
-    assert.match(skippedRoom.transcript, /Sala F: \(SKIPPED\)/, 'un miembro detenido se salta');
+    assert.match(skippedRoom.transcript, /Sala F: \(SKIPPED\) miembro detenido/, 'un miembro detenido se salta con motivo');
 
     console.log('[PASS] salas Fase 3b: turnos SENT en orden y rondas, PASS, SKIPPED y TIMEOUT, cierre con resumen '
       + 'como contexto, liberación de miembros y entrega posterior de cada informe.');
