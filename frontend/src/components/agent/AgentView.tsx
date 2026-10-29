@@ -1,4 +1,4 @@
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
 import type { AgentFilePreviewTarget } from '../../api/agentApi';
 import { FilePreviewContext } from './filePreviewContext';
@@ -29,6 +29,7 @@ import MemoryMenu from './MemoryMenu';
 import ContextChips, { FileCard } from './ContextChips';
 import AgentEditor from './AgentEditor';
 import ConversationMenu from './ConversationMenu';
+import SidebarItemMenu, { EMPTY_SIDEBAR_PREFS, arrangeSidebar, parseSidebarPrefs, toggleId, type SidebarPrefs } from './SidebarItemMenu';
 import AgentBrowserPanel from './AgentBrowserPanel';
 import ScheduledTasksPanel from './ScheduledTasksPanel';
 import SubagentRoster from './SubagentRoster';
@@ -42,6 +43,7 @@ const POLL_MS = 1500;
 const SESSION_KEY = 'antares-agent-session';
 const QUEUE_KEY = 'antares-agent-queue';
 const VIEW_KEY = 'antares-agent-transcript-view';
+const SIDEBAR_KEY = 'antares-agent-sidebar';
 const parseView = (raw: string): TranscriptView => (raw === 'thinking' || raw === 'verbose' ? raw : 'normal');
 const RESUME_TEXT = 'Reanuda el encargo donde lo dejaste: revisa el plan y los últimos resultados antes de repetir cualquier acción.';
 
@@ -120,28 +122,31 @@ export function groupSessions(list: AgentSession[], now = Date.now()): { label: 
   return groups.filter((group) => group.items.length > 0);
 }
 
+type SidebarMenuProps = Omit<ComponentProps<typeof SidebarItemMenu>, 'className' | 'children'>;
+
 function SessionRow({
   session,
   active,
   onSelect,
-  onDelete,
+  menu,
 }: {
   session: AgentSession;
   active: boolean;
   onSelect: () => void;
-  onDelete: () => void;
+  menu: SidebarMenuProps;
 }) {
   return (
-    <div
+    <SidebarItemMenu
+      {...menu}
       className={`group relative flex h-9 shrink-0 items-center rounded-lg px-2.5 transition-colors ${
         active
           ? 'bg-[var(--bg-input)]'
           : 'hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]'
-      }`}
+      } ${menu.hidden ? 'opacity-60' : ''}`}
     >
       <button
         type="button"
-        className={`flex h-full min-w-0 flex-1 items-center gap-1.5 text-left text-[13px] leading-[18px] group-hover:pr-6 group-focus-within:pr-6 ${active ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}
+        className={`flex h-full min-w-0 flex-1 items-center gap-1.5 text-left text-[13px] leading-[18px] group-hover:pr-6 group-focus-within:pr-6 group-data-[open]:pr-6 ${active || menu.unread ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'} ${menu.unread ? 'font-medium' : ''}`}
         title={session.title || 'Conversación'}
         aria-current={active ? 'page' : undefined}
         onClick={onSelect}
@@ -155,18 +160,14 @@ function SessionRow({
         <span className="truncate">
           {session.title || 'Conversación'}
         </span>
+        {menu.unread && <span aria-hidden="true" className="ml-auto h-2 w-2 shrink-0 rounded-full bg-[var(--accent-primary)]" />}
       </button>
-      <button
-        type="button"
-        className="invisible absolute right-1.5 rounded-md p-1 text-[var(--text-muted)] transition-colors hover:text-[var(--accent-red)] group-hover:visible group-focus-within:visible"
-        aria-label="Eliminar conversación"
-        title="Eliminar"
-        onClick={onDelete}
-      >
-        <X size={13} />
-      </button>
-    </div>
+    </SidebarItemMenu>
   );
+}
+
+function SidebarGroupLabel({ children }: { children: string }) {
+  return <span className="px-1.5 pb-1 pt-3 text-[12px] font-medium text-[var(--text-muted)]">{children}</span>;
 }
 
 export default function AgentView({ onConfigureProvider, onOpenModule }: { active?: boolean; onConfigureProvider?: () => void; onOpenModule?: (module: string, id?: string) => void }) {
@@ -180,6 +181,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [sessionId, setSessionId] = useState('');
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [transcriptView, setTranscriptView] = useLocalStorageState<TranscriptView>(VIEW_KEY, { parse: parseView, fallback: 'normal', serialize: (view) => view });
+  const [sidebarPrefs, setSidebarPrefs] = useLocalStorageState<SidebarPrefs>(SIDEBAR_KEY, { parse: parseSidebarPrefs, fallback: EMPTY_SIDEBAR_PREFS });
+  const [showHidden, setShowHidden] = useState(false);
   const [artifacts, setArtifacts] = useState<AgentArtifact[]>([]);
   const [questions, setQuestions] = useState<AgentQuestion[]>([]);
   const [panels, setPanels] = useState<AgentPanel[]>([]);
@@ -724,6 +727,70 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
 
+  const renameSession = async (id: string, title: string) => {
+    try {
+      await agentApi.agentSessionRename(id, title);
+      await refreshSessions();
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo renombrar la conversación'), type: 'error' });
+    }
+  };
+
+  const renameProfile = async (profile: AgentProfile, name: string) => {
+    try {
+      const res = await agentApi.agentProfileSave({
+        id: profile.id, name, color: profile.color, description: profile.description, role: profile.role,
+        memory_scope: profile.memory_scope, instructions: profile.instructions, starter: profile.starter,
+        daily_tokens: profile.daily_tokens ?? null, model: profile.model ?? null,
+        tools: profile.tools, tools_deny: profile.tools_deny ?? [],
+      });
+      setProfiles((prev) => prev.map((p) => p.id === profile.id ? res.profile : p).sort((a, b) => a.name.localeCompare(b.name, 'es')));
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo renombrar el agente'), type: 'error' });
+    }
+  };
+
+  const removeProfile = async (profile: AgentProfile) => {
+    const ok = await confirm({
+      title: 'Borrar agente',
+      description: `Se borrará «${profile.name}». Sus conversaciones se conservan.`,
+      confirmLabel: 'Borrar',
+      type: 'destructive',
+    });
+    if (!ok) return;
+    try {
+      await agentApi.agentProfileDelete(profile.id);
+      setProfiles((prev) => prev.filter((p) => p.id !== profile.id));
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo borrar el agente'), type: 'error' });
+    }
+  };
+
+  const markRead = (id: string) => {
+    if (sidebarPrefs.unread.includes(id)) setSidebarPrefs((p) => ({ ...p, unread: toggleId(p.unread, id, false) }));
+  };
+
+  const sidebarMenu = (id: string, name: string, noun: 'conversación' | 'agente') => ({
+    id,
+    name,
+    noun,
+    renameLabel: noun === 'agente' ? 'Cambiar nombre del agente' : 'Cambiar nombre',
+    pinned: sidebarPrefs.pinned.includes(id),
+    unread: sidebarPrefs.unread.includes(id),
+    hidden: sidebarPrefs.hidden.includes(id),
+    section: sidebarPrefs.sections[id],
+    onPin: (on: boolean) => setSidebarPrefs((p) => ({ ...p, pinned: toggleId(p.pinned, id, on) })),
+    onUnread: (on: boolean) => setSidebarPrefs((p) => ({ ...p, unread: toggleId(p.unread, id, on) })),
+    onHidden: (on: boolean) => setSidebarPrefs((p) => ({ ...p, hidden: toggleId(p.hidden, id, on) })),
+    onSection: (section: string | null) => setSidebarPrefs((p) => {
+      const sections = { ...p.sections };
+      if (section) sections[id] = section;
+      else delete sections[id];
+      return { ...p, sections };
+    }),
+    onCopied: () => addToast({ message: 'ID copiado', type: 'success' }),
+  });
+
   const recordReceipt = (receipt: SendReceipt) => {
     setSendReceipts((previous) => {
       const matches = (item: SendReceipt) => item.intent.session === receipt.intent.session && item.intent.requestId === receipt.intent.requestId;
@@ -1140,82 +1207,128 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           onChange={(value) => { setSidebarView(value); setSearchOpen(Boolean(value === 'agents' ? profileSearch : search)); }}
           options={[{ value: 'conversations', label: 'Conversaciones' }, { value: 'agents', label: 'Agentes' }]}
           aria-label="Vistas del agente"
-          className="mx-1 mt-2 flex shrink-0 gap-1 [&>button]:flex-none [&>button]:px-2.5 [&>button]:text-[12px] [&>button[aria-pressed=false]]:text-[var(--text-secondary)] [&>button[aria-pressed=true]]:bg-[var(--bg-input)] [&>button[aria-pressed=true]]:shadow-none [&>button[aria-pressed=true]]:ring-0"
+          className="mx-1 mt-2 flex shrink-0 gap-1 [&>button]:h-7 [&>button]:flex-none [&>button]:rounded-lg [&>button]:px-3 [&>button]:py-0 [&>button]:text-[12.5px] [&>button[aria-pressed=false]]:text-[var(--text-muted)] [&>button[aria-pressed=false]:hover]:text-[var(--text-primary)] [&>button[aria-pressed=true]]:bg-[var(--bg-input)] [&>button[aria-pressed=true]]:font-semibold [&>button[aria-pressed=true]]:shadow-none [&>button[aria-pressed=true]]:ring-[var(--border-medium)]"
         />
         <div className="custom-scrollbar mt-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1">
           {sidebarView === 'agents' ? <>
-          <div className="flex items-center justify-between px-1.5 pb-1 pt-1">
-            <span className="text-[12px] font-medium text-[var(--text-muted)]">Agentes guardados</span>
-            <button
-              type="button"
-              className="flex size-6 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
-              aria-label="Crear agente"
-              title="Crear un agente para una tarea repetitiva"
-              onClick={() => setEditing('new')}
-            >
-              <Plus size={14} />
-            </button>
-          </div>
-          {profiles.length === 0 && (
-            <button
-              type="button"
-              className="mb-1 rounded-xl px-2.5 py-2 text-left text-[12px] leading-relaxed text-[var(--text-muted)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)] hover:text-[var(--text-secondary)]"
-              onClick={() => setEditing('new')}
-            >
-              Crea un agente con tus indicaciones y herramientas para una tarea que repites.
-            </button>
-          )}
-          {profiles.length > 0 && visibleProfiles.length === 0 && <p className="px-2.5 py-3 text-[12px] text-[var(--text-secondary)]">
-            Sin agentes para «{profileSearch.trim()}».
-          </p>}
-          {visibleProfiles.map((profile) => (
-            <div key={profile.id} className={`group flex h-[50px] shrink-0 items-center gap-2 rounded-xl p-1.5 transition-colors ${activeProfile?.id === profile.id ? 'bg-[var(--bg-input)]' : 'hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]'}`}>
-              <AgentAvatar seed={profile.id} color={profile.color} name={profile.name} size={32} className="shrink-0" />
-              <button
-                type="button"
-                className="flex min-w-0 flex-1 flex-col text-left"
-                title={`Nueva conversación con ${profile.name}`}
-                onClick={() => void newSession(profile)}
-              >
-                <span className="truncate text-[13px] font-medium leading-5 text-[var(--text-primary)]">{profile.name}</span>
-                <span className="truncate text-[11px] leading-4 text-[var(--text-muted)]">{profile.description || 'Agente personalizado'}</span>
-              </button>
-              <button
-                type="button"
-                className="invisible shrink-0 rounded-md p-1 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] group-hover:visible focus-visible:visible"
-                aria-label={`Editar agente ${profile.name}`}
-                title="Editar"
-                onClick={() => setEditing(profile)}
-              >
-                <Pencil size={13} />
-              </button>
-            </div>
-          ))}
-          </> : <>
-          {sessions.length === 0 && (
-            <p className="px-2.5 py-3 text-[12px] text-[var(--text-muted)]">
-              Tus chats aparecerán aquí.
-            </p>
-          )}
-          {sessions.length > 0 && visibleSessions.length === 0 && (
-            <p className="px-2.5 py-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
-              Sin resultados para «{search.trim()}».
-            </p>
-          )}
-          {groupSessions(visibleSessions).map((group) => (
-            <section key={group.label} aria-label={group.label} className="flex flex-col gap-0.5">
-              <span className="px-1.5 pb-1 pt-3 text-[12px] font-medium text-[var(--text-muted)]">{group.label}</span>
-              {group.items.map((s) => (
-                <SessionRow
-                  key={s.id}
-                  session={s}
-                  active={s.id === sessionId}
-                  onSelect={() => setSessionId(s.id)}
-                  onDelete={() => void removeSession(s.id)}
-                />
+          {(() => {
+            const arranged = arrangeSidebar(visibleProfiles, sidebarPrefs, showHidden || Boolean(profileSearch.trim()));
+            const row = (profile: AgentProfile) => {
+              const menu = sidebarMenu(profile.id, profile.name, 'agente');
+              return (
+                <SidebarItemMenu
+                  key={profile.id}
+                  {...menu}
+                  onRename={(name) => renameProfile(profile, name)}
+                  onDelete={() => void removeProfile(profile)}
+                  className={`group relative flex h-[50px] shrink-0 items-center gap-2 rounded-xl p-1.5 pr-2 transition-colors hover:pr-8 focus-within:pr-8 data-[open]:pr-8 ${activeProfile?.id === profile.id ? 'bg-[var(--bg-input)]' : 'hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]'} ${menu.hidden ? 'opacity-60' : ''}`}
+                >
+                  <AgentAvatar seed={profile.id} color={profile.color} name={profile.name} size={32} className="shrink-0" />
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 flex-col text-left"
+                    title={`Nueva conversación con ${profile.name}`}
+                    onClick={() => { markRead(profile.id); void newSession(profile); }}
+                  >
+                    <span className={`truncate text-[13px] leading-5 text-[var(--text-primary)] ${menu.unread ? 'font-semibold' : 'font-medium'}`}>{profile.name}</span>
+                    <span className="truncate text-[11px] leading-4 text-[var(--text-muted)]">{profile.description || 'Agente personalizado'}</span>
+                  </button>
+                  {menu.unread && <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent-primary)] group-hover:hidden" />}
+                  <button
+                    type="button"
+                    className="hidden size-6 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_8%,transparent)] hover:text-[var(--text-primary)] group-hover:flex group-focus-within:flex group-data-[open]:flex"
+                    aria-label={`Editar agente ${profile.name}`}
+                    title="Editar"
+                    onClick={() => setEditing(profile)}
+                  >
+                    <Pencil size={13} />
+                  </button>
+                </SidebarItemMenu>
+              );
+            };
+            return <>
+              {arranged.pinned.length > 0 && <section aria-label="Fijados" className="flex flex-col gap-0.5"><SidebarGroupLabel>Fijados</SidebarGroupLabel>{arranged.pinned.map(row)}</section>}
+              {arranged.sections.map((group) => (
+                <section key={group.label} aria-label={group.label} className="flex flex-col gap-0.5"><SidebarGroupLabel>{group.label}</SidebarGroupLabel>{group.items.map(row)}</section>
               ))}
-            </section>
-          ))}
+              <div className="flex items-center justify-between px-1.5 pb-1 pt-3">
+                <span className="text-[12px] font-medium text-[var(--text-muted)]">Agentes guardados</span>
+                <button
+                  type="button"
+                  className="flex size-6 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+                  aria-label="Crear agente"
+                  title="Crear un agente para una tarea repetitiva"
+                  onClick={() => setEditing('new')}
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+              {profiles.length === 0 && (
+                <button
+                  type="button"
+                  className="mb-1 rounded-xl px-2.5 py-2 text-left text-[12px] leading-relaxed text-[var(--text-muted)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)] hover:text-[var(--text-secondary)]"
+                  onClick={() => setEditing('new')}
+                >
+                  Crea un agente con tus indicaciones y herramientas para una tarea que repites.
+                </button>
+              )}
+              {profiles.length > 0 && visibleProfiles.length === 0 && <p className="px-2.5 py-3 text-[12px] text-[var(--text-secondary)]">
+                Sin agentes para «{profileSearch.trim()}».
+              </p>}
+              {arranged.rest.map(row)}
+              {arranged.hiddenCount > 0 && !profileSearch.trim() && (
+                <button type="button" onClick={() => setShowHidden((v) => !v)}
+                  className="mt-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-secondary)]">
+                  {showHidden ? 'Ocultar elementos ocultos' : `Mostrar ocultos (${arranged.hiddenCount})`}
+                </button>
+              )}
+            </>;
+          })()}
+          </> : <>
+          {(() => {
+            const arranged = arrangeSidebar(visibleSessions, sidebarPrefs, showHidden || Boolean(search.trim()));
+            const row = (s: AgentSession) => (
+              <SessionRow
+                key={s.id}
+                session={s}
+                active={s.id === sessionId}
+                onSelect={() => { markRead(s.id); setSessionId(s.id); }}
+                menu={{
+                  ...sidebarMenu(s.id, s.title || 'Conversación', 'conversación'),
+                  onRename: (title) => renameSession(s.id, title),
+                  onDelete: () => void removeSession(s.id),
+                }}
+              />
+            );
+            return <>
+              {sessions.length === 0 && (
+                <p className="px-2.5 py-3 text-[12px] text-[var(--text-muted)]">
+                  Tus chats aparecerán aquí.
+                </p>
+              )}
+              {sessions.length > 0 && visibleSessions.length === 0 && (
+                <p className="px-2.5 py-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
+                  Sin resultados para «{search.trim()}».
+                </p>
+              )}
+              {[
+                ...(arranged.pinned.length ? [{ label: 'Fijados', items: arranged.pinned }] : []),
+                ...arranged.sections,
+                ...groupSessions(arranged.rest),
+              ].map((group) => (
+                <section key={group.label} aria-label={group.label} className="flex flex-col gap-0.5">
+                  <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+                  {group.items.map(row)}
+                </section>
+              ))}
+              {arranged.hiddenCount > 0 && !search.trim() && (
+                <button type="button" onClick={() => setShowHidden((v) => !v)}
+                  className="mt-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-secondary)]">
+                  {showHidden ? 'Ocultar elementos ocultos' : `Mostrar ocultos (${arranged.hiddenCount})`}
+                </button>
+              )}
+            </>;
+          })()}
           </>}
         </div>
 
@@ -1306,14 +1419,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               messages={messages}
               view={transcriptView}
               onView={setTranscriptView}
-              onRename={async (title) => {
-                try {
-                  await agentApi.agentSessionRename(session.id, title);
-                  await refreshSessions();
-                } catch (err) {
-                  addToast({ message: errorMessage(err, 'No se pudo renombrar la conversación'), type: 'error' });
-                }
-              }}
+              onRename={(title) => renameSession(session.id, title)}
               onDelete={() => void removeSession(session.id)}
               onCopied={() => addToast({ message: 'Conversación copiada', type: 'success' })}
             />
