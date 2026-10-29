@@ -231,7 +231,7 @@ function ChatVisual({ lang, source, fallback }: { lang: string; source: string; 
     }).catch(() => {});
   };
   return (
-    <section aria-label={title} className="w-full max-w-2xl overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+    <section aria-label={title} className="w-full overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
       <header className="flex items-center gap-2 border-b border-[var(--border-subtle)] px-3 py-2">
         <p className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-[var(--text-primary)]">{title}</p>
         <div className="flex rounded-lg bg-[color:color-mix(in_srgb,var(--text-primary)_6%,transparent)] p-0.5">
