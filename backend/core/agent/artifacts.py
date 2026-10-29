@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -32,18 +33,29 @@ def verified_file(store: AgentStore, session_id: str, params: JsonObject) -> tup
     if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(artifact["files"]):
         raise ValueError("Archivo de artefacto inválido")
     file = artifact["files"][index]
+    label = "La página" if artifact.get("kind") == "page" else "El PDF"
     path = drafts.inside(store.drafts_dir(session_id), str(file["path"]))
     if path is None or not path.is_file() or path.stat().st_size > 100 * 1024 * 1024:
-        raise ValueError("El PDF ya no está disponible en los borradores")
+        raise ValueError(f"{label} ya no está disponible en los borradores")
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     if digest != file["sha256"] or (params.get("sha256") and params["sha256"] != digest):
-        raise ValueError("El PDF cambió; vuelve a generarlo y revisarlo antes de continuar")
+        raise ValueError("La página cambió; vuelve a generarla antes de abrirla" if artifact.get("kind") == "page"
+                         else "El PDF cambió; vuelve a generarlo y revisarlo antes de continuar")
     return artifact, file, path
 
 
 def action(store: AgentStore, session_id: str, params: JsonObject) -> JsonObject:
     artifact, file, path = verified_file(store, session_id, params)
     operation = params.get("action")
+    if artifact.get("kind") == "page":
+        if operation != "file":
+            raise ValueError("Abre la página interactiva para consultar sus controles")
+        from backend.core.agent.pages import MAX_BYTES
+
+        content = path.read_bytes()
+        if len(content) > MAX_BYTES or hashlib.sha256(content).hexdigest() != file["sha256"]:
+            raise ValueError("La página cambió; vuelve a generarla antes de abrirla")
+        return {"page": json.loads(content), "name": file["name"], "sha256": file["sha256"]}
     if operation == "preview":
         import base64
 

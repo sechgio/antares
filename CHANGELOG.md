@@ -7,6 +7,10 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Agent crea páginas interactivas con HTML, JavaScript y datos completos de Excel/CSV autorizados, las conserva por conversación y permite abrirlas desde una tarjeta. Las actualizaciones verifican la revisión anterior; la ejecución queda aislada, sin red ni acceso a Node o al bridge de la aplicación.
+- Las páginas de Agent incluyen una miniatura sin scripts en el chat y una presentación uniforme para títulos, filtros, métricas y tablas, siguiendo el modo claro u oscuro de Antares.
+
 ### Changed
 - Un turno de sala cuyo miembro sigue ocupado con su propio turno recibe hasta dos prórrogas de un minuto antes de darse por vencido, y el vencimiento queda registrado con su motivo.
 - `agent_check` y el roster de delegaciones muestran si una delegación espera al usuario, con la pregunta pendiente, y la insignia de sala indica a quién le toca el turno.

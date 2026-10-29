@@ -1,13 +1,14 @@
 import { useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, ExternalLink, Eye, FileText, LayoutTemplate, Printer, Save, ShieldCheck } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { agentApi, type AgentArtifact } from '../../api/agentApi';
+import { agentApi, type AgentArtifact, type AgentDocumentArtifact } from '../../api/agentApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import ThemedSelect from '../ui/ThemedSelect';
 import { channelLabel } from './channels';
+import PageArtifactCard from './PageArtifactCard';
 
 function ArtifactAction({ label, icon: Icon, title = label, ...props }: {
   label: string; icon: LucideIcon; title?: string; disabled?: boolean; onClick: () => void;
@@ -46,6 +47,14 @@ export function ArtifactList({ artifacts, sessionId, onRefresh, onOpenModule }: 
 
 export default function ArtifactCard({ artifact, sessionId, onRefresh, onOpenModule }: {
   artifact: AgentArtifact; sessionId: string; onRefresh: () => void; onOpenModule?: (module: string, id?: string) => void;
+}) {
+  return artifact.kind === 'page'
+    ? <PageArtifactCard artifact={artifact} sessionId={sessionId} />
+    : <DocumentArtifactCard artifact={artifact} sessionId={sessionId} onRefresh={onRefresh} onOpenModule={onOpenModule} />;
+}
+
+function DocumentArtifactCard({ artifact, sessionId, onRefresh, onOpenModule }: {
+  artifact: AgentDocumentArtifact; sessionId: string; onRefresh: () => void; onOpenModule?: (module: string, id?: string) => void;
 }) {
   const { addToast } = useToast();
   const [fileIndex, setFileIndex] = useState(0);

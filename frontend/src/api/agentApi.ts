@@ -203,7 +203,8 @@ export interface AgentTask {
   retry_at?: number;
 }
 
-export interface AgentArtifact {
+export interface AgentDocumentArtifact {
+  kind?: 'document';
   id: string;
   family: string;
   template_id: string;
@@ -218,6 +219,14 @@ export interface AgentArtifact {
   };
   files: { name: string; sha256: string; pages: number; mime: string; size: number }[];
 }
+
+export interface AgentPageArtifact extends Omit<AgentDocumentArtifact, 'kind' | 'files'> {
+  kind: 'page';
+  title: string;
+  files: { name: string; sha256: string; mime: string; size: number }[];
+}
+
+export type AgentArtifact = AgentDocumentArtifact | AgentPageArtifact;
 
 export interface AgentQuestion {
   id: string;
@@ -444,8 +453,9 @@ export const agentApi = {
     _invoke<CanvasLayersResult>('agent_canvas_apply_layers', params),
 
   agentArtifactAction: (params: { session_id: string; artifact_id: string; file_index: number; action: 'preview' | 'review' | 'open' | 'save' | 'print';
+    color_scheme?: 'light' | 'dark';
     request_id?: string; sha256?: string; page?: number; printer_name?: string; copies?: number; pages?: string; duplex?: string; quality?: string }) =>
-    _invoke<{ png_base64?: string; pages?: number; sha256?: string; reviewed?: boolean; approval?: AgentApproval; cancelled?: boolean }>('agent_artifact_action', params),
+    _invoke<{ png_base64?: string; html?: string; pages?: number; sha256?: string; reviewed?: boolean; approval?: AgentApproval; cancelled?: boolean; opened?: boolean }>('agent_artifact_action', params),
 
   agentPrintersList: () => _invoke<{ printers: { name: string; default: boolean }[] }>('printers_list'),
 
