@@ -241,7 +241,7 @@ def resolve(skill_id: object, grants: dict[str, JsonObject], workspace: Path, li
     except (OSError, ValueError):
         raise ValueError("La skill ya no está disponible; vuelve a elegirla del catálogo") from None
     warning = None
-    if agent_id is not None and len(levels) > 1 and skill.path.parent.parent == levels[-1]:
+    if agent_id is not None and len(levels) > 1 and skill.path.parent.parent == levels[1]:
         warning = f"La skill {skill.name} no existe en el perfil del agente; se usa la versión compartida (_shared)."
     return {"id": skill.id, "name": skill.name, "warning": warning, "notice": _NOTICE}
 

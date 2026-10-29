@@ -14,6 +14,7 @@ from backend.handlers import agent_internal
 
 @pytest.fixture()
 def store(tmp_path, monkeypatch):
+    monkeypatch.setenv("SKILLS_EXTERNAL_HOMES", str(tmp_path / "external-skills"))
     instance = agent.AgentStore(tmp_path)
     monkeypatch.setattr(agent, "get_agent_store", lambda: instance)
     monkeypatch.setattr(agent_internal, "_resource_locks", {})
@@ -776,6 +777,16 @@ def test_grant_app_ignora_metodos_que_no_son_ui(store):
         {"approval_id": first["id"], "approve": True, "grant_app": True})["approval"]
     assert decided["status"] == "approved"
     assert store.grants_for("s1") == {}
+
+
+@pytest.mark.parametrize(("command", "risk"), [("Get-Date", "low"), ("Remove-Item file.txt", "high")])
+def test_shell_risk_is_persisted_without_autoapproval(store, command, risk):
+    approval = agent_internal.HANDLERS["agent_internal_approval_ensure"](
+        {"session_id": "s1", "call_id": "risk", "method": "shell_run", "params": {"command": command}})["approval"]
+    assert approval["status"] == "pending"
+    persisted = agent.AgentStore(store.base_dir).get_approval(approval["id"])
+    assert persisted["status"] == "pending"
+    assert persisted["risk"] == risk and persisted["risk_reason"]
 
 
 def _cua_ensure(call_id, method="cua_click", computer=None, **extra):

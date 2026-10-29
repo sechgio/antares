@@ -14,9 +14,8 @@ from __future__ import annotations
 
 import re
 import shlex
-from typing import Any
 
-JsonObject = dict[str, Any]
+from backend.core.integrations.types import JsonObject
 
 # Métodos cuyo texto de comando se inspecciona. Otros métodos no pasan por aquí.
 _SHELL_METHODS = frozenset({"shell_run", "shell_job_start", "powershell", "cmd", "terminal"})
