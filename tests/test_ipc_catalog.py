@@ -21,6 +21,12 @@ def test_page_open_reuses_artifact_action_contract():
                         entry["inputSchema"])
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate({"session_id": "s1", "artifact_id": "page", "action": "execute"}, entry["inputSchema"])
+    for scheme in ("light", "dark"):
+        jsonschema.validate({"session_id": "s1", "artifact_id": "page", "action": "preview", "color_scheme": scheme},
+                            entry["inputSchema"])
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"session_id": "s1", "artifact_id": "page", "action": "open", "color_scheme": "custom"},
+                            entry["inputSchema"])
 
 
 def test_agent_workspace_selection_uses_native_dialog_contract():

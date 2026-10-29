@@ -143,6 +143,10 @@ const SYSTEM_PROMPT =
   'AntaresPage.columns sus columnas y AntaresPage.data los datos adicionales. No construyas el panel con la muestra de file_read. ' +
   'La tarjeta abre una página aislada sin red, Node ni bridge; enlaza eventos con addEventListener y evita librerías externas. ' +
   'Para corregirla consulta artifacts_list y envía artifact_id y expected_revision a page_create. ' +
+  'Las páginas usan una estética sobria: encabezado breve, filtros agrupados, métricas sin cajas y tablas con líneas sutiles. ' +
+  'Aprovecha los estilos incluidos page-header, page-section, page-filters, page-metrics, page-metric, page-table y page-chart; ' +
+  'usa las variables --page-text, --page-muted, --page-line, --page-field y --page-accent, con espacio generoso y pocos colores. ' +
+  'Escribe títulos, etiquetas y controles en el HTML; reserva JavaScript para datos e interacción, así la miniatura conserva el contenido. ' +
   'Empieza a trabajar sin narrar la preparación ni la carga de contexto; informa resultados, cambios, fallos y lo que necesites del usuario. ' +
   'No afirmes que comprobaste algo si ningún resultado de herramienta lo muestra. ' +
   'Si no puedes completar el encargo, di qué intentaste y la única acción que lo desbloquea.';

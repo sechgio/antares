@@ -52,7 +52,7 @@ render(); window.ready = true;`,
         data: { text: '</script><img src=x onerror=bad()>' },
         rows: Array.from({ length: 235 }, (_, index) => ({ ot: index + 1, metrado: index < 11 ? 80 : 50 })),
         columns: ['ot', 'metrado'],
-      });
+      }, 'dark');
       const contents = webContents.getAllWebContents().find((item) => item.getURL() === result.url);
       assert(contents);
       let frame;
@@ -63,6 +63,7 @@ render(); window.ready = true;`,
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       assert(frame && await frame.executeJavaScript('window.ready === true'), 'el módulo de la página debe arrancar');
+      assert.equal(await frame.executeJavaScript('getComputedStyle(document.documentElement).colorScheme'), 'dark');
       assert.equal(await frame.executeJavaScript('document.querySelector("#summary").textContent'), '235 OT · 12080 ml');
       await frame.executeJavaScript('document.querySelector("#minimum").value = "80"; document.querySelector("#minimum").dispatchEvent(new Event("input"));');
       assert.equal(await frame.executeJavaScript('document.querySelector("#summary").textContent'), '11 OT · 880 ml');

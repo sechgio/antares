@@ -16,6 +16,9 @@ const pageAction = require('../shared/ipc-method-catalog.json').methods.agent_ar
 if (pageAction.handler !== 'native:agent' || !pageAction.inputSchema.properties.action.enum.includes('open')) {
   throw new Error('Las páginas deben abrirse mediante agent_artifact_action en el proceso principal');
 }
+if (JSON.stringify(pageAction.inputSchema.properties.color_scheme.enum) !== '["light","dark"]') {
+  throw new Error('La apariencia de las páginas debe limitarse a claro u oscuro');
+}
 
 function extractApiMethods(source, calleePattern = /_invoke(?:Invalidating)?\b/g) {
   const methods = new Set();

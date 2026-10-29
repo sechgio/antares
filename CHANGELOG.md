@@ -9,6 +9,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Added
 - Agent crea páginas interactivas con HTML, JavaScript y datos completos de Excel/CSV autorizados, las conserva por conversación y permite abrirlas desde una tarjeta. Las actualizaciones verifican la revisión anterior; la ejecución queda aislada, sin red ni acceso a Node o al bridge de la aplicación.
+- Las páginas de Agent incluyen una miniatura sin scripts en el chat y una presentación uniforme para títulos, filtros, métricas y tablas, siguiendo el modo claro u oscuro de Antares.
 
 ### Changed
 - La carpeta elegida en Agent se activa de inmediato como directorio de trabajo de la conversación, sin enviarla como adjunto. El agente conserva esa raíz en cada turno para leer, crear y editar archivos y ejecutar comandos, incluidos los de larga duración, con los modos de aprobación existentes.

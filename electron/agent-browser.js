@@ -703,11 +703,11 @@ async function navigate(action, url, id = activeTab) {
   return state();
 }
 
-async function openPage(page) {
+async function openPage(page, colorScheme) {
   const previous = activeTab;
   const id = newTab().active_tab;
   try {
-    const url = await preview.openPage(page);
+    const url = await preview.openPage(page, colorScheme);
     const tab = ensureTab(id);
     tab.pageUrl = url;
     notify('agent-open');

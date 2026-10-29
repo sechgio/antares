@@ -173,9 +173,9 @@ function owns(url) {
   return isPage(url) || (!!server && !!root && parsed.origin === origin && parsed.pathname.startsWith(`/${token}/`));
 }
 
-async function openPage(page) {
+async function openPage(page, colorScheme) {
   const { documents, CSP, SHELL_CSP } = require('./agent-pages');
-  const rendered = documents(page);
+  const rendered = documents(page, colorScheme);
   await listen();
   const prefix = `/page/${crypto.randomBytes(16).toString('hex')}/`;
   pages.set(`${prefix}index.html`, { html: rendered.shell, csp: SHELL_CSP });
