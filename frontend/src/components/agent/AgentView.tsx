@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownLeft, CornerDownRight, FileImage, FileSpreadsheet, FileText, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
 import { mcpApi, type McpServer } from '../../api/mcpApi';
-import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentDelegation, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentSkill, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
+import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentDelegation, type AgentRoom, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentSkill, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
@@ -30,6 +30,7 @@ import ConversationMenu from './ConversationMenu';
 import AgentBrowserPanel from './AgentBrowserPanel';
 import ScheduledTasksPanel from './ScheduledTasksPanel';
 import SubagentRoster from './SubagentRoster';
+import RoomRoster from './RoomRoster';
 import { METHOD_LABELS } from './methodLabels';
 import { useComposerAutocomplete, type ComposerSuggestion } from './useComposerAutocomplete';
 import { ApprovalCard, AssistantTurn, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel, groupTurns, placeArtifacts, type TranscriptView } from './AgentTimeline';
@@ -186,6 +187,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [pending, setPending] = useState<AgentApproval[]>([]);
   const [running, setRunning] = useState(false);
   const [delegations, setDelegations] = useState<AgentDelegation[]>([]);
+  const [rooms, setRooms] = useState<AgentRoom[]>([]);
   const [plan, setPlan] = useState<AgentPlan | null>(null);
   const [resumable, setResumable] = useState(false);
   const [tokenBudget, setTokenBudget] = useState<{ limit: number; used: number } | null>(null);
@@ -334,6 +336,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           setArtifacts(res.artifacts ?? []);
           setQuestions(res.questions ?? []);
           setDelegations(res.delegations ?? []);
+          void agentApi.agentRoomsList(id)
+            .then((list) => { if (id === sessionIdRef.current) setRooms(list.rooms ?? []); })
+            .catch(() => {});
           setContext(res.context ?? null);
           setUsage(res.usage ?? null);
           setContextWindow(res.context_window ?? null);
@@ -419,6 +424,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     setCompacting(false);
     setPending([]);
     setDelegations([]);
+    setRooms([]);
     setPlan(null);
     setResumable(false);
     setMessagesStale(false);
@@ -1342,6 +1348,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           {announcement && <span key={announcement.key}>{announcement.text}</span>}
         </div>
         <div className="mx-auto w-full max-w-[992px] shrink-0 px-4 pb-3">
+          {rooms.length > 0 && <RoomRoster rooms={rooms} />}
           {delegations.length > 0 && <SubagentRoster items={delegations} />}
           {attention && (
             <div role="region" aria-label="Atención del agente" className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2 px-3 py-2">

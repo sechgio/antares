@@ -16,7 +16,7 @@ const { METHODS, INTERNAL_METHODS: INTERNAL_SET, nativeDispatchFor } = require('
 
 const PUBLIC_METHODS = [
   'agent_sessions_list', 'agent_session_create', 'agent_session_delete',
-  'agent_messages_list', 'agent_message_send', 'agent_tools_list', 'agent_tools_set',
+  'agent_messages_list', 'agent_message_send', 'agent_tools_list', 'agent_tools_set', 'agent_rooms_list',
   'agent_turn_status', 'agent_turn_cancel', 'agent_approve', 'agent_deny', 'agent_attach', 'agent_context_remove_file',
   'agent_profiles_list', 'agent_profile_save', 'agent_profile_delete', 'agent_session_rename', 'agent_session_model_set',
   'agent_browser',

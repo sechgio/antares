@@ -1,8 +1,8 @@
 import { _invoke } from './core';
-import type { AgentDelegation, AgentRole } from './agentDelegation';
+import type { AgentDelegation, AgentRole, AgentRoom } from './agentDelegation';
 import type { CanvasDocument } from '../components/canvas/types';
 
-export type { AgentDelegation, AgentRole } from './agentDelegation';
+export type { AgentDelegation, AgentRole, AgentRoom, AgentRoomMember } from './agentDelegation';
 
 export type CanvasLayersResult = Required<Pick<CanvasDocument, 'id' | 'updatedAt' | 'layers' | 'fields'>> & {
   createdLayers: { id: string; name: string }[];
@@ -355,6 +355,8 @@ export const agentApi = {
       compacting?: boolean;
       token_budget?: { limit: number; used: number };
     }>('agent_messages_list', { session_id }),
+
+  agentRoomsList: (session_id: string) => _invoke<{ rooms: AgentRoom[] }>('agent_rooms_list', { session_id }),
 
   agentContextRemoveFile: (session_id: string, path: string) =>
     _invoke<{ removed: number }>('agent_context_remove_file', { session_id, path }),
