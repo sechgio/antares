@@ -945,7 +945,9 @@ async function messageSend(params) {
     : '';
   const context = [mentions.context, memory.context, attachedNote, skillsNote, skillIndex?.note, conversationNote,
     safetyNote, executionNote, botsNote,
-    invokedSkillNote]
+    invokedSkillNote, attached.length
+      ? `${shared.ATTACHMENTS_MARKER}\n${JSON.stringify(attached.map((item) => ({ path: item.path, folder: item.kind === 'folder' })))}`
+      : '']
     .filter(Boolean).join('\n\n');
   const images = await _inlineImages(conv, attached, (files.rejected || []).map((item) => item.path));
   const input = context || images.length

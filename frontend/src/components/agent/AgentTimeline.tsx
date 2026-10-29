@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppWindow, ArrowLeft, ArrowRight, Ban, BookOpen, Camera, ChevronDown, ChevronRight, CircleArrowRight, CircleCheck, CircleDashed, CircleX, Download, FilePen, FileText, FolderOpen, Globe, Hand, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Network, Package, Plug, RotateCw, Search, ShieldCheck, Terminal, TriangleAlert, Upload, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { agentApi, AgentApproval, AgentArtifact, AgentChannel, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
@@ -10,6 +10,8 @@ import { DiffStats, FileChangeStep, FileDiff } from './FileDiff';
 import { fileChange } from './diffLines';
 import type { FileChange } from './diffLines';
 import CopyButton from './CopyButton';
+import { FileCard } from './ContextChips';
+import { FilePreviewContext } from './filePreviewContext';
 import MessageMarkdown from './MessageMarkdown';
 import Reasoning from './Reasoning';
 import SubagentTrace from './SubagentTrace';
@@ -391,12 +393,23 @@ function ToolCallStep({ call, verbose }: { call: AgentToolCall; verbose?: boolea
 }
 
 function UserBubble({ msg }: { msg: AgentMessage }) {
+  const onPreview = useContext(FilePreviewContext);
   return (
-    <div className="agent-trace-in group flex items-end justify-end gap-1">
-      <CopyButton text={msg.content} label="Copiar mensaje" />
-      <div className="agent-message-user min-w-0 max-w-[min(600px,88%)] rounded-2xl px-4 py-3 text-[14px] leading-[22px] text-[var(--text-primary)]">
-        <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
-      </div>
+    <div className="agent-trace-in group flex min-w-0 flex-col items-end gap-1.5">
+      {!!msg.attachments?.length && <div aria-label="Archivos del mensaje" className="flex w-[320px] max-w-[88%] flex-col gap-1.5">
+        {msg.attachments.map((file, index) => <Button key={`${index}:${file.path}`} variant="none" size="none"
+          disabled={file.folder || !onPreview} aria-label={`Previsualizar ${file.path.split(/[\\/]/).pop() || file.path}`}
+          onClick={() => onPreview?.(file.path)}
+          className="flex min-w-0 items-center gap-3 rounded-2xl bg-[var(--bg-elevated)] p-3 text-left">
+          <FileCard path={file.path} folder={file.folder} />
+        </Button>)}
+      </div>}
+      {msg.content && <div className="flex w-full min-w-0 items-end justify-end gap-1">
+        <CopyButton text={msg.content} label="Copiar mensaje" />
+        <div className="agent-message-user min-w-0 max-w-[min(600px,88%)] rounded-2xl px-4 py-3 text-[14px] leading-[22px] text-[var(--text-primary)]">
+          <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
+        </div>
+      </div>}
     </div>
   );
 }

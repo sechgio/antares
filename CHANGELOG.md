@@ -13,6 +13,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Vista previa local de archivos del chat en un panel lateral: PDF e imágenes con zoom, Excel/CSV/TSV con hojas y páginas, Word (.docx) con texto y tablas, y archivos de texto o código. Se abre desde adjuntos, archivos autorizados y referencias locales de las respuestas.
 
 ### Changed
+- Los archivos enviados a Agent permanecen junto a su mensaje con vista previa; los accesos concedidos se consultan desde el encabezado, sin ocupar espacio encima del campo de texto.
 - Agents entrega imágenes y gráficos PNG, JPEG o WebP como una galería persistente en el chat, con ampliación, navegación y descarga mediante la herramienta `images_show`.
 - Un turno de sala cuyo miembro sigue ocupado con su propio turno recibe hasta dos prórrogas de un minuto antes de darse por vencido, y el vencimiento queda registrado con su motivo.
 - `agent_check` y el roster de delegaciones muestran si una delegación espera al usuario, con la pregunta pendiente, y la insignia de sala indica a quién le toca el turno.
@@ -58,6 +59,8 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - El navegador de Agent resuelve el DNS de cada destino antes de salir: un dominio público que resuelva a una dirección privada o local (DNS del atacante o rebinding) se bloquea en `web_open`, `web_download` y en cada petición de la sesión del navegador (redirecciones y subrecursos incluidos); sin resolución verificable no navega.
 
 ### Fixed
+- Agent vuelve a pedir el resultado una vez si el proveedor termina sin texto visible y muestra un error si el segundo intento también llega vacío.
+- Los modelos con razonamiento sin techo de salida en el catálogo (p. ej. DeepSeek V4 en un proveedor propio) reciben hasta 32 k tokens de salida en lugar de 8 k: con esfuerzo alto el razonamiento agotaba el presupuesto y el turno terminaba truncado, sin respuesta ni herramienta.
 - El navegador de Agent se retira cuando su panel queda fuera de pantalla y registra los errores al ocultarse durante la navegación entre vistas.
 - El paso en curso del plan de Agent vuelve a verse mientras el agente trabaja (el texto quedaba transparente).
 - El editor de agentes se abre a pantalla completa y desplaza su contenido dentro del panel: las opciones avanzadas ya no se salen por debajo de los botones ni el formulario queda aplastado en ventanas estrechas.

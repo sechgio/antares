@@ -244,6 +244,9 @@ async function main() {
       'openai-completions', undefined, OPENAI_MODELS['gpt-4o']);
     assert(declared.contextWindow === 32000 && declared.maxTokens === 8000,
       'la ventana declarada por el usuario manda sobre el catálogo');
+    assert(define({ custom: true, base_url: 'https://api.example.com/v1' }, 'deepseek-ai/DeepSeek-V4.1-Flash').maxTokens === 32000
+      && define({ custom: true, base_url: 'https://api.example.com/v1' }, 'mi-modelo').maxTokens === 8192,
+      'un modelo con razonamiento sin techo de catálogo deja sitio a pensar y responder');
     assert(!define({ custom: true, base_url: 'http://127.0.0.1:11434/v1' }, 'gpt-4o').cost.input,
       'un endpoint propio no hereda los precios del catálogo');
     const { catalogFor } = require('../electron/agent-execution');
@@ -1376,6 +1379,12 @@ async function main() {
     assert(switched.workspace === String.raw`C:\fotos` && state.workspaces.at(-1).session_id === session.id, 'la raíz activa se puede cambiar');
     const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(messages[0].content === 'usa los adjuntos', 'el transcript no muestra el bloque de adjuntos');
+    assert(JSON.stringify(messages[0].attachments) === JSON.stringify([
+      { path: String.raw`C:\datos\clientes.xlsx`, folder: false },
+      { path: String.raw`C:\datos\informe.pdf`, folder: false },
+      { path: String.raw`C:\fotos`, folder: true },
+    ]), 'los adjuntos persistidos pertenecen al mensaje que los envió');
+    assert(!messages[1].attachments, 'la respuesta del agente no hereda los adjuntos');
     let reused = null;
     try { await runtime.handlers.agent_message_send({ session_id: session.id, content: 'otra vez', attachments: ids }); } catch (err) { reused = err; }
     assert(reused && /ya no está disponible/.test(reused.message), 'un adjunto se usa una sola vez');

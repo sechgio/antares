@@ -22,12 +22,12 @@ function fileKind(path: string, folder: boolean) {
   return { Icon: Paperclip, label: extension ? extension.toUpperCase() : 'Archivo', tone: 'bg-[var(--bg-input)] text-[var(--text-secondary)]' };
 }
 
-function FileCard({ path, folder }: { path: string; folder: boolean }) {
+export function FileCard({ path, folder, preview }: { path: string; folder: boolean; preview?: string }) {
   const { Icon, label, tone } = fileKind(path, folder);
   return (
     <>
-      <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${tone}`} aria-hidden="true">
-        <Icon size={16} strokeWidth={1.75} />
+      <span className={`flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg ${tone}`} aria-hidden="true">
+        {preview ? <img src={preview} alt="" className="size-full object-cover" /> : <Icon size={16} strokeWidth={1.75} />}
       </span>
       <span className="flex min-w-0 flex-col text-left leading-tight">
         <span className="truncate text-[12.5px] font-medium text-[var(--text-primary)]">{baseName(path)}</span>
@@ -37,15 +37,16 @@ function FileCard({ path, folder }: { path: string; folder: boolean }) {
   );
 }
 
-export default function ContextChips({ context, onRemoveFile, onSetWorkspace }: {
+export default function ContextChips({ context, onRemoveFile, onSetWorkspace, showFiles = true }: {
   context: AgentContext | null;
   onRemoveFile: (path: string) => void;
   onSetWorkspace: (path: string) => void;
+  showFiles?: boolean;
 }) {
   const onPreview = useContext(FilePreviewContext);
   const modules = context?.modules ?? [];
   const workspace = context?.workspace ?? null;
-  const files = (context?.files ?? []).filter((file) => file.path !== workspace);
+  const files = showFiles ? (context?.files ?? []).filter((file) => file.path !== workspace) : [];
   const accounts = context?.accounts ?? [];
   const hasFolders = files.some((file) => file.folder);
   if (!modules.length && !files.length && !accounts.length) return null;

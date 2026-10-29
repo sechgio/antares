@@ -2,7 +2,7 @@ import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useS
 import { createPortal } from 'react-dom';
 import type { AgentFilePreviewTarget } from '../../api/agentApi';
 import { FilePreviewContext } from './filePreviewContext';
-import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownLeft, CornerDownRight, FileImage, FileSpreadsheet, FileText, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownLeft, CornerDownRight, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
 import { mcpApi, type McpServer } from '../../api/mcpApi';
 import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentDelegation, type AgentRoom, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentSkill, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
@@ -26,7 +26,7 @@ import ContextUsage from './ContextUsage';
 import { ArtifactList } from './ArtifactCard';
 import QuestionCard from './QuestionCard';
 import MemoryMenu from './MemoryMenu';
-import ContextChips from './ContextChips';
+import ContextChips, { FileCard } from './ContextChips';
 import AgentEditor from './AgentEditor';
 import ConversationMenu from './ConversationMenu';
 import AgentBrowserPanel from './AgentBrowserPanel';
@@ -304,6 +304,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     if (persistentAttention) announcedRef.current.add(attentionKey);
     setAnnouncement({ key: attentionKey, text: attentionText });
   }, [attentionKey, attentionText, persistentAttention]);
+  const contextMenu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
+    align: 'end', estimatedWidth: 360, estimatedHeight: 180, maxHeightCap: 360, stopEscapePropagation: true,
+  });
+  useEffect(() => { contextMenu.close(); }, [sessionId, contextMenu.close]);
   const toolsMenu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
     align: 'end',
     estimatedWidth: 360,
@@ -890,6 +894,16 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
 
+  const setWorkspace = async (path: string) => {
+    if (!sessionId) return;
+    try {
+      await agentApi.agentWorkspaceSet(sessionId, path);
+      await loadMessages(sessionId, false);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo cambiar el espacio de trabajo'), type: 'error' });
+    }
+  };
+
   const attach = async () => {
     try {
       const res = await agentApi.agentAttach('files');
@@ -1226,6 +1240,13 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               </span>
             </div>
             <span className="min-w-0 flex-1" />
+            {context?.files.some((file) => file.path !== context.workspace) && <Button
+              ref={contextMenu.triggerRef} variant="none" size="none" aria-label="Archivos y accesos"
+              aria-haspopup="dialog" aria-expanded={contextMenu.isOpen} title="Archivos y accesos"
+              onClick={contextMenu.toggle}
+              className="flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]">
+              <Paperclip size={14} />
+            </Button>}
             <button
               type="button"
               aria-label="Encargos programados"
@@ -1455,20 +1476,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               </ol>
             </section>
           )}
-          {session && (
-            <ContextChips
-              context={context}
-              onRemoveFile={removeFile}
-              onSetWorkspace={async (path) => {
-                try {
-                  await agentApi.agentWorkspaceSet(session.id, path);
-                  await loadMessages(session.id, false);
-                } catch (err) {
-                  addToast({ message: errorMessage(err, 'No se pudo cambiar el espacio de trabajo'), type: 'error' });
-                }
-              }}
-            />
-          )}
+          {session && <ContextChips context={context} showFiles={false}
+            onRemoveFile={removeFile} onSetWorkspace={setWorkspace} />}
           <div role="group" aria-label="Redactar mensaje"
             className={`agent-composer relative rounded-[26px] border bg-[var(--bg-elevated)] transition-[border-color,box-shadow] ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-subtle)]'}`}
             onDragOver={(event) => { if (!sessionId || !event.dataTransfer.types.includes('Files')) return; event.preventDefault(); setDragging(true); }}
@@ -1536,24 +1545,13 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             {attachments.length > 0 && (
               <div className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Adjuntos">
                 {attachments.map((item) => {
-                  const extension = item.kind === 'folder' ? '' : (/\.([\p{L}\p{N}]{1,5})$/u.exec(item.name)?.[1] ?? '').toLowerCase();
-                  const Icon = item.kind === 'folder' ? FolderOpen : ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(extension) ? FileImage
-                    : ['xlsx', 'xls', 'csv', 'ods'].includes(extension) ? FileSpreadsheet : ['pdf', 'doc', 'docx', 'txt', 'md'].includes(extension) ? FileText : Paperclip;
                   return (
-                    <div key={item.id} className="agent-attachment relative">
-                      <WithHoverTooltip label={item.name} placement="top">
-                        <Button variant="none" size="none" disabled={item.kind === 'folder'} aria-label={`Previsualizar ${item.name}`}
-                          onClick={() => { if (sessionId) { setBrowserOpen(false); setFilePreview({ sessionId, target: { kind: 'attachment', id: item.id, name: item.name } }); } }}
-                          className="flex size-14 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-[var(--text-secondary)]">
-                          {item.preview ? <img src={item.preview} alt="" className="size-full object-cover" /> : <>
-                            <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
-                            <span aria-hidden="true" className="max-w-full truncate px-1 text-[9.5px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
-                              {item.kind === 'folder' ? 'carpeta' : extension || 'archivo'}
-                            </span>
-                          </>}
-                          <span className="sr-only">{item.name}</span>
-                        </Button>
-                      </WithHoverTooltip>
+                    <div key={item.id} className="agent-attachment relative min-w-0 max-w-full">
+                      <Button variant="none" size="none" disabled={item.kind === 'folder'} aria-label={`Previsualizar ${item.name}`} title={item.name}
+                        onClick={() => { if (sessionId) { setBrowserOpen(false); setFilePreview({ sessionId, target: { kind: 'attachment', id: item.id, name: item.name } }); } }}
+                        className="flex w-[260px] max-w-full min-w-0 items-center gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-input)] p-2.5 pr-4">
+                        <FileCard path={item.name} folder={item.kind === 'folder'} preview={item.preview} />
+                      </Button>
                       <WithHoverTooltip label="Quitar archivo" placement="top" className="absolute -right-1.5 -top-1.5">
                         <button
                           type="button"
@@ -1771,6 +1769,20 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         <ScheduledTasksPanel sessions={sessions} sessionId={session.id} onClose={() => setTasksOpen(false)} />
       )}
 
+      {contextMenu.isOpen && session && createPortal(
+        <div ref={contextMenu.popupRef} role="dialog" aria-label="Archivos y accesos"
+          className="fixed z-[300] overflow-y-auto rounded-2xl border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-3 shadow-lg"
+          style={{ top: contextMenu.position?.top ?? -9999, left: contextMenu.position?.left ?? -9999,
+            width: contextMenu.position?.width ?? 360, maxHeight: contextMenu.position?.maxHeight ?? 360,
+            visibility: contextMenu.position ? 'visible' : 'hidden' }}>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-[13px] font-medium text-[var(--text-primary)]">Archivos y accesos</h2>
+            <Button variant="ghost" size="none" className="flex size-6 items-center justify-center" aria-label="Cerrar archivos y accesos" onClick={contextMenu.close}><X size={13} /></Button>
+          </div>
+          <ContextChips context={context && { ...context, modules: [], accounts: [] }}
+            onRemoveFile={removeFile} onSetWorkspace={setWorkspace} />
+        </div>, document.body,
+      )}
       {toolsMenu.isOpen && createPortal(
         <div
           ref={toolsMenu.popupRef}
