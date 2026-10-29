@@ -164,7 +164,9 @@ function makeBridge() {
 async function openFaux(responses, bridge, { faux: fauxOptions = {}, settings } = {}) {
   const { MemoryStorage } = await import('@earendil-works/pi-durable');
   const { fauxProvider } = await import('@earendil-works/pi-ai');
-  await runtime.open({ storage: new MemoryStorage(), bridge, skipImport: true, settings });
+  // Directorio propio: sin él, el registro de compactaciones caía en el del usuario.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-faux-'));
+  await runtime.open({ storage: new MemoryStorage(), bridge, skipImport: true, settings, dir });
   const faux = fauxProvider(fauxOptions);
   runtime._internal._providerOverrides.set('faux', faux.provider);
   faux.setResponses(responses);
