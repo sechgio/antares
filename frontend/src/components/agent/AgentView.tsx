@@ -4,7 +4,7 @@ import type { AgentFilePreviewTarget } from '../../api/agentApi';
 import { FilePreviewContext } from './filePreviewContext';
 import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownLeft, CornerDownRight, FileImage, FileSpreadsheet, FileText, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
 import { mcpApi, type McpServer } from '../../api/mcpApi';
-import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentDelegation, type AgentRoom, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentSkill, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
+import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentDelegation, type AgentRoom, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentPanel, type AgentPanelResponse, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentSkill, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
@@ -35,7 +35,7 @@ import SubagentRoster from './SubagentRoster';
 import RoomRoster from './RoomRoster';
 import { METHOD_LABELS } from './methodLabels';
 import { useComposerAutocomplete, type ComposerSuggestion } from './useComposerAutocomplete';
-import { ApprovalCard, AssistantTurn, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel, groupTurns, placeArtifacts, type TranscriptView } from './AgentTimeline';
+import { ApprovalCard, AssistantTurn, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel, groupTurns, placeArtifacts, placePanels, type TranscriptView } from './AgentTimeline';
 
 const AgentFilePreview = lazy(() => import('./AgentFilePreview'));
 const POLL_MS = 1500;
@@ -182,6 +182,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [transcriptView, setTranscriptView] = useLocalStorageState<TranscriptView>(VIEW_KEY, { parse: parseView, fallback: 'normal', serialize: (view) => view });
   const [artifacts, setArtifacts] = useState<AgentArtifact[]>([]);
   const [questions, setQuestions] = useState<AgentQuestion[]>([]);
+  const [panels, setPanels] = useState<AgentPanel[]>([]);
   const [context, setContext] = useState<AgentContext | null>(null);
   const [usage, setUsage] = useState<AgentUsage | null>(null);
   const [contextWindow, setContextWindow] = useState<number | null>(null);
@@ -276,7 +277,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const activeCall = messages.flatMap((message) => message.tool_calls ?? []).reverse().find((call) => call.status === 'running');
   const artifact = [...artifacts].reverse().find((item) => item.files.length > 0);
   const turns = useMemo(() => groupTurns(messages), [messages]);
-  const turnArtifacts = useMemo(() => placeArtifacts(turns, artifacts), [turns, artifacts]);
+  const turnArtifacts = useMemo(() => placeArtifacts(turns, artifacts.filter((artifact) => artifact.kind !== 'page'
+    || !panels.some((panel) => panel.type === 'page' && panel.props.artifact_id === artifact.id))), [turns, artifacts, panels]);
+  const turnPanels = useMemo(() => placePanels(turns, panels), [turns, panels]);
   const attention: ConversationAttention | null = sessionId !== sessionIdRef.current ? null : messagesStale
     ? { kind: 'stale', key: 'stale', text: 'No se pudo actualizar la conversación. El estado mostrado puede estar desactualizado.' }
     : pending[0]
@@ -340,6 +343,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           setMessages(res.messages);
           setArtifacts(res.artifacts ?? []);
           setQuestions(res.questions ?? []);
+          setPanels(res.panels ?? []);
           setDelegations(res.delegations ?? []);
           void agentApi.agentRoomsList(id)
             .then((list) => { if (id === sessionIdRef.current) setRooms(list.rooms ?? []); })
@@ -422,6 +426,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     setMessages([]);
     setArtifacts([]);
     setQuestions([]);
+    setPanels([]);
     setContext(null);
     setUsage(null);
     setContextWindow(null);
@@ -921,6 +926,17 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     }
   };
 
+  const respondPanel = async (panel: AgentPanel, response: AgentPanelResponse) => {
+    if (!sessionId) return;
+    try {
+      const { message } = await agentApi.agentPanelRespond(sessionId, panel.id, response);
+      setPanels((current) => current.map((item) => item.id === panel.id ? { ...item, status: 'answered', response } : item));
+      await send(false, message);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo enviar tu respuesta'), type: 'error' });
+    }
+  };
+
   const sendSuggestion = async (text: string) => {
     if (running || pending.length > 0) return;
     await send(false, text);
@@ -1318,6 +1334,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   {newDay && <DaySeparator label={label} />}
                   {turn.role === 'user' ? <MessageRow msg={turn.message} /> : (
                     <AssistantTurn messages={turn.messages} startedAt={turn.startedAt} agent={agentIdentity} onUndo={undoEffect} view={transcriptView}
+                      panels={turnPanels.get(turn.key)} sessionId={sessionId} onPanelRespond={respondPanel}
                       results={results && <ArtifactList artifacts={results} sessionId={sessionId}
                         onRefresh={() => void loadMessages(sessionId, false)} onOpenModule={onOpenModule} />} />
                   )}

@@ -112,9 +112,47 @@ import(source).catch(() => {
   };
 }
 
+// En el chat la página adopta los colores de Antares que envía el padre; solo se aceptan estas variables y valores de color.
+const EMBED_SCRIPT = `<script>(() => {
+  const report = () => parent.postMessage({ type: 'antares-page-height', height: document.body.getBoundingClientRect().height }, '*');
+  new ResizeObserver(report).observe(document.body);
+  report();
+  const allowed = ['--page-text', '--page-muted', '--page-line', '--page-field', '--page-accent'];
+  window.addEventListener('message', (event) => {
+    if (event.source !== parent || !event.data || event.data.type !== 'antares-page-theme' || typeof event.data.vars !== 'object') return;
+    for (const name of allowed) {
+      const value = event.data.vars[name];
+      if (typeof value === 'string' && /^[#a-z0-9(),.%\\s-]{1,80}$/i.test(value)) document.documentElement.style.setProperty(name, value);
+    }
+  });
+})();</script>`;
+
+const EMBED_STYLES = `<style>
+html, body { background: transparent; }
+html { overflow: hidden; }
+:root {
+  --page-muted: color-mix(in srgb, CanvasText 62%, transparent);
+  --page-line: color-mix(in srgb, CanvasText 12%, transparent);
+  --page-field: color-mix(in srgb, CanvasText 7%, transparent);
+}
+body { display: flow-root; max-width: none; padding: 0; }
+h1 { font-size: clamp(22px, 2.6vw, 28px); }
+h2 { margin: 28px 0 14px; font-size: 17px; }
+.page-header { margin-bottom: 24px; }
+.page-section { margin-top: 28px; }
+.page-filters { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px 16px; }
+.page-metrics { gap: 16px 24px; margin: 16px 0 20px; }
+.page-metric strong { font-size: 24px; }
+</style>`;
+
+function embedded(page, colorScheme) {
+  return documents(page, colorScheme).content.replace('</head>', () => `${EMBED_STYLES}</head>`)
+    .replace(/<\/body><\/html>$/, () => `${EMBED_SCRIPT}</body></html>`);
+}
+
 function preview(page, colorScheme) {
   const html = documents(page, colorScheme).content.replace('</head>', '<style>html{overflow:hidden}</style></head>');
   return sanitizeHtmlForPreview(html);
 }
 
-module.exports = { documents, preview, CSP, SHELL_CSP };
+module.exports = { documents, embedded, preview, CSP, SHELL_CSP };

@@ -249,6 +249,18 @@ export interface AgentQuestion {
   questions: { id: string; prompt: string; options?: string[] }[];
 }
 
+export interface AgentPanel {
+  id: string;
+  session_id: string;
+  call_id: string;
+  type: string;
+  props: Record<string, unknown>;
+  status: 'open' | 'answered';
+  response: AgentPanelResponse | null;
+  created_at: number;
+}
+export type AgentPanelResponse = { choice: string } | { values: Record<string, string | number | boolean> };
+
 export interface AgentBrowserTab {
   id: string;
   label: string;
@@ -372,6 +384,7 @@ export const agentApi = {
       pending_approvals: AgentApproval[];
       artifacts?: AgentArtifact[];
       questions?: AgentQuestion[];
+      panels?: AgentPanel[];
       context?: AgentContext;
       usage?: AgentUsage | null;
       context_window?: number;
@@ -471,15 +484,17 @@ export const agentApi = {
   agentCanvasApplyLayers: (params: Record<string, unknown>) =>
     _invoke<CanvasLayersResult>('agent_canvas_apply_layers', params),
 
-  agentArtifactAction: (params: { session_id: string; artifact_id: string; file_index: number; action: 'preview' | 'review' | 'open' | 'save' | 'print';
+  agentArtifactAction: (params: { session_id: string; artifact_id: string; file_index: number; action: 'preview' | 'embed' | 'review' | 'open' | 'save' | 'print';
     color_scheme?: 'light' | 'dark';
     request_id?: string; sha256?: string; page?: number; full_size?: boolean; printer_name?: string; copies?: number; pages?: string; duplex?: string; quality?: string }) =>
-    _invoke<{ png_base64?: string; html?: string; pages?: number; sha256?: string; reviewed?: boolean; approval?: AgentApproval; cancelled?: boolean; opened?: boolean }>('agent_artifact_action', params),
+    _invoke<{ png_base64?: string; html?: string; pages?: number; sha256?: string; reviewed?: boolean; approval?: AgentApproval; cancelled?: boolean; opened?: boolean; url?: string }>('agent_artifact_action', params),
 
   agentPrintersList: () => _invoke<{ printers: { name: string; default: boolean }[] }>('printers_list'),
 
   agentQuestionAnswer: (session_id: string, question_id: string, answers: Record<string, string>) =>
     _invoke<{ question: AgentQuestion }>('agent_question_answer', { session_id, question_id, answers }),
+  agentPanelRespond: (session_id: string, panel_id: string, response: AgentPanelResponse) =>
+    _invoke<{ panel: AgentPanel; message: string }>('agent_panel_respond', { session_id, panel_id, response }),
 
   agentProfilesList: () => _invoke<{ profiles: AgentProfile[] }>('agent_profiles_list'),
 
