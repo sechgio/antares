@@ -10,6 +10,7 @@ interface Props {
   provider: ConnectionProviderSpec;
   connecting: boolean;
   onConnect: (p: ConnectionProviderSpec) => void;
+  onCancel: (p: ConnectionProviderSpec) => void;
   onDisconnect: (p: ConnectionProviderSpec) => void;
   onSaveCreds: (
     p: ConnectionProviderSpec,
@@ -46,6 +47,7 @@ export default function ConnectionDetail({
   provider: p,
   connecting,
   onConnect,
+  onCancel,
   onDisconnect,
   onSaveCreds,
   onClose,
@@ -137,15 +139,28 @@ export default function ConnectionDetail({
               Desconectar
             </Button>
           ) : (
-            <Button
-              size="sm"
-              className="w-full"
-              disabled={!p.configured || connecting}
-              onClick={() => onConnect(p)}
-            >
-              <Link2 size={13} />
-              {connecting ? 'Abriendo navegador…' : `Conectar con ${p.label}`}
-            </Button>
+            <>
+              <Button
+                size="sm"
+                className="w-full"
+                disabled={!p.configured || connecting}
+                onClick={() => onConnect(p)}
+              >
+                <Link2 size={13} />
+                {connecting ? 'Abriendo navegador…' : `Conectar con ${p.label}`}
+              </Button>
+              {connecting && (
+                <>
+                  <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-secondary)]" role="status">
+                    Esperando autorización en el navegador… puedes seguir usando Antares; el estado se
+                    actualizará solo al completar.
+                  </p>
+                  <Button size="sm" variant="secondary" className="mt-2 w-full" onClick={() => onCancel(p)}>
+                    Cancelar conexión
+                  </Button>
+                </>
+              )}
+            </>
           )}
           {p.connected && p.expiry_date && (
             <p className="mt-2 text-[11px] text-[var(--text-secondary)]">

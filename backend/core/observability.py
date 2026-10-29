@@ -92,6 +92,7 @@ _TEXT_REDACTIONS = (
         re.compile(r"(?:[A-Za-z]:\\|\\\\|/(?:Users|home|tmp|var|private|opt|mnt|workspace)/)[^\s\"'`]+"),
         "[REDACTED]",
     ),
+    # tokens desnudos sin prefijo clave=valor ni Bearer: prefijos de proveedor
     (re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"), "[REDACTED]"),
     (re.compile(r"\b(?:gh[pous]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,})\b"), "[REDACTED]"),
     (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "[REDACTED]"),

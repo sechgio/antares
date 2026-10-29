@@ -27,9 +27,9 @@ function stateLabel(p: ConnectionProviderSpec): string {
     : p.state === 'unavailable' ? 'Sin verificar' : p.state === 'connecting' ? 'Conectando…' : 'Conectar';
 }
 
-function Row({ p, onOpen }: { p: ConnectionProviderSpec; onOpen: (p: ConnectionProviderSpec) => void }) {
+function Row({ p, connecting, onOpen }: { p: ConnectionProviderSpec; connecting?: boolean; onOpen: (p: ConnectionProviderSpec) => void }) {
   const attention = !p.connected && (p.state === 'missing_scopes' || p.state === 'reauth_required');
-  const label = stateLabel(p);
+  const label = connecting && !p.connected ? 'Conectando…' : stateLabel(p);
   return (
     <button
       type="button"
@@ -66,6 +66,7 @@ export default function ConnectionsView({ detailId, onDetailChange, onProvidersC
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [connecting, setConnecting] = useState<string | null>(null);
+  const [awaitingId, setAwaitingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
 
@@ -75,6 +76,7 @@ export default function ConnectionsView({ detailId, onDetailChange, onProvidersC
       setProviders(res.providers);
       setCategories(res.categories);
       onProvidersChange?.(res.providers);
+      setAwaitingId((id) => (id && res.providers.some((p) => p.id === id && p.connected) ? null : id));
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudieron cargar los complementos'), type: 'error' });
     } finally {
@@ -84,11 +86,17 @@ export default function ConnectionsView({ detailId, onDetailChange, onProvidersC
 
   useEffect(() => {
     void refresh();
-    const off = onNotify((method) => {
-      if (method === 'connections.changed') void refresh();
+    const off = onNotify((method, params) => {
+      if (method !== 'connections.changed') return;
+      const payload = (params ?? {}) as { error?: string; provider?: string };
+      if (payload.error) {
+        addToast({ message: payload.error, type: 'error' });
+        if (payload.provider) setAwaitingId((id) => (id === payload.provider ? null : id));
+      }
+      void refresh();
     });
     return off;
-  }, [refresh]);
+  }, [refresh, addToast]);
 
   const reload = async () => {
     setRefreshing(true);
@@ -117,9 +125,20 @@ export default function ConnectionsView({ detailId, onDetailChange, onProvidersC
   };
 
   const connect = async (p: ConnectionProviderSpec) => {
+    const permissions = p.scopes.length ? ` Permisos solicitados: ${p.scopes.join(', ')}.` : '';
+    const ok = await confirm({
+      title: `Autorizar ${p.label}`,
+      description:
+        `Se abrirá tu navegador para iniciar sesión en ${p.label}.${permissions} `
+        + `Al completar el acceso volverás a Antares; los tokens se guardan cifrados en este equipo. `,
+      confirmLabel: 'Abrir navegador y autorizar',
+      cancelLabel: 'Cancelar',
+    });
+    if (!ok) return;
     setConnecting(p.id);
     try {
       await connectionsApi.connectionsConnect(p.id);
+      setAwaitingId(p.id);
       addToast({
         message: `Se abrió el navegador para autorizar ${p.label}. Completa el acceso y vuelve aquí.`,
         type: 'success',
@@ -145,6 +164,17 @@ export default function ConnectionsView({ detailId, onDetailChange, onProvidersC
       await refresh();
     } catch (err) {
       addToast({ message: errorMessage(err, `No se pudo desconectar ${p.label}`), type: 'error' });
+    }
+  };
+
+  const cancel = async (p: ConnectionProviderSpec) => {
+    setAwaitingId((id) => (id === p.id ? null : id));
+    try {
+      await connectionsApi.connectionsCancel(p.id);
+    } catch {
+      // El flujo local termina solo; un fallo al cancelar no requiere acción.
+    } finally {
+      await refresh();
     }
   };
 
@@ -250,7 +280,7 @@ export default function ConnectionsView({ detailId, onDetailChange, onProvidersC
               <h2 className="mb-2 px-3 text-[15px] font-medium text-[var(--text-primary)]">{g.label}</h2>
               <div className="grid grid-cols-1 gap-x-6 gap-y-0.5 lg:grid-cols-2">
                 {g.items.map((p) => (
-                  <Row key={p.id} p={p} onOpen={(prov) => onDetailChange(prov.id)} />
+                  <Row key={p.id} p={p} connecting={connecting === p.id || awaitingId === p.id} onOpen={(prov) => onDetailChange(prov.id)} />
                 ))}
               </div>
             </section>
@@ -275,8 +305,9 @@ export default function ConnectionsView({ detailId, onDetailChange, onProvidersC
       {detail && (
         <ConnectionDetail
           provider={detail}
-          connecting={connecting === detail.id}
+          connecting={connecting === detail.id || awaitingId === detail.id}
           onConnect={(p) => void connect(p)}
+          onCancel={(p) => void cancel(p)}
           onDisconnect={(p) => void disconnect(p)}
           onSaveCreds={saveCreds}
           onClose={() => onDetailChange(null)}

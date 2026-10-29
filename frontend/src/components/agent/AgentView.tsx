@@ -1,8 +1,10 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownLeft, CornerDownRight, FileImage, FileSpreadsheet, FileText, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, ShieldCheck, Sparkles, Square, Wrench, X } from 'lucide-react';
+import type { AgentFilePreviewTarget } from '../../api/agentApi';
+import { FilePreviewContext } from './filePreviewContext';
+import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownLeft, CornerDownRight, FileImage, FileSpreadsheet, FileText, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
 import { mcpApi, type McpServer } from '../../api/mcpApi';
-import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentDelegation, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentSkill, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
+import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentDelegation, type AgentRoom, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentSkill, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
@@ -28,13 +30,14 @@ import ContextChips from './ContextChips';
 import AgentEditor from './AgentEditor';
 import ConversationMenu from './ConversationMenu';
 import AgentBrowserPanel from './AgentBrowserPanel';
-import AgentAuditPanel from './AgentAuditPanel';
 import ScheduledTasksPanel from './ScheduledTasksPanel';
 import SubagentRoster from './SubagentRoster';
+import RoomRoster from './RoomRoster';
 import { METHOD_LABELS } from './methodLabels';
 import { useComposerAutocomplete, type ComposerSuggestion } from './useComposerAutocomplete';
 import { ApprovalCard, AssistantTurn, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel, groupTurns, placeArtifacts, type TranscriptView } from './AgentTimeline';
 
+const AgentFilePreview = lazy(() => import('./AgentFilePreview'));
 const POLL_MS = 1500;
 const SESSION_KEY = 'antares-agent-session';
 const QUEUE_KEY = 'antares-agent-queue';
@@ -98,12 +101,6 @@ function activityText(tool?: string): string {
 function newRequestId(): string {
   return crypto.randomUUID();
 }
-
-const SUGGESTIONS = [
-  '¿Qué plantillas de reportes tengo disponibles?',
-  'Resume el estado de mis conexiones externas.',
-  '¿Qué ejecuciones recientes fallaron y por qué?',
-];
 
 export function groupSessions(list: AgentSession[], now = Date.now()): { label: string; items: AgentSession[] }[] {
   const startOfToday = new Date(now);
@@ -193,6 +190,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [pending, setPending] = useState<AgentApproval[]>([]);
   const [running, setRunning] = useState(false);
   const [delegations, setDelegations] = useState<AgentDelegation[]>([]);
+  const [rooms, setRooms] = useState<AgentRoom[]>([]);
   const [plan, setPlan] = useState<AgentPlan | null>(null);
   const [resumable, setResumable] = useState(false);
   const [tokenBudget, setTokenBudget] = useState<{ limit: number; used: number } | null>(null);
@@ -234,9 +232,11 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [deciding, setDeciding] = useState<{ id: string; approved: boolean } | null>(null);
   const decisionRef = useRef<string | null>(null);
   const [attachments, setAttachments] = useState<(AgentAttachment & { preview?: string })[]>([]);
+  const [filePreview, setFilePreview] = useState<{ sessionId: string; target: AgentFilePreviewTarget } | null>(null);
+  useEffect(() => { setFilePreview(null); }, [sessionId]);
+  const [selectingWorkspace, setSelectingWorkspace] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
-  const [auditOpen, setAuditOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [queued, setQueued] = useState<{ session: string; text: string; requestId: string; attachments?: string[]; failed?: boolean; correction?: boolean }[]>(() => {
     try {
@@ -341,6 +341,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           setArtifacts(res.artifacts ?? []);
           setQuestions(res.questions ?? []);
           setDelegations(res.delegations ?? []);
+          void agentApi.agentRoomsList(id)
+            .then((list) => { if (id === sessionIdRef.current) setRooms(list.rooms ?? []); })
+            .catch(() => {});
           setContext(res.context ?? null);
           setUsage(res.usage ?? null);
           setContextWindow(res.context_window ?? null);
@@ -426,6 +429,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     setCompacting(false);
     setPending([]);
     setDelegations([]);
+    setRooms([]);
     setPlan(null);
     setResumable(false);
     setMessagesStale(false);
@@ -789,7 +793,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const send = async (correction = false, suggestion?: string) => {
     const skill = suggestion === undefined ? activeSkill : null;
     const content = suggestion ?? (draft.trim() || (skill ? `/${skill.name}` : ''));
-    if (!content || sendInFlightRef.current || modelBusy || stopping || (correction && correctionInFlightRef.current)) return;
+    if (!content || sendInFlightRef.current || modelBusy || stopping || selectingWorkspace || (correction && correctionInFlightRef.current)) return;
     if (skill && (correction || running || pending.length > 0)) {
       addToast({ message: 'Espera a que termine el turno en curso para invocar una skill', type: 'warning' });
       return;
@@ -862,9 +866,33 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     if (ok) setQueued((q) => q.filter((i) => i !== correcting));
   };
 
-  const attach = async (kind: 'files' | 'folder') => {
+  const removeFile = async (path: string) => {
+    if (!sessionId) return;
     try {
-      const res = await agentApi.agentAttach(kind);
+      await agentApi.agentContextRemoveFile(sessionId, path);
+      await loadMessages(sessionId, false);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo retirar el archivo'), type: 'error' });
+    }
+  };
+
+  const selectWorkspace = async () => {
+    const id = sessionId;
+    if (!id || selectingWorkspace) return;
+    setSelectingWorkspace(true);
+    try {
+      await agentApi.agentWorkspaceSelect(id);
+      if (sessionIdRef.current === id) await loadMessages(id, false);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo seleccionar la carpeta de trabajo'), type: 'error' });
+    } finally {
+      setSelectingWorkspace(false);
+    }
+  };
+
+  const attach = async () => {
+    try {
+      const res = await agentApi.agentAttach('files');
       if (res.attachments.length) draftVersionRef.current += 1;
       setAttachments((prev) => [...prev, ...res.attachments]);
     } catch (err) {
@@ -955,8 +983,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
 
   const showHero = !sessionId || messages.length === 0;
   const activeProfile = session?.profile ? profiles.find((item) => item.id === session.profile?.id) ?? null : null;
-  const suggestionList = activeProfile?.starter ? [activeProfile.starter] : SUGGESTIONS;
-  const suggestionsHidden = !!draft.trim() || running || pending.length > 0;
   const agentIdentity = session
     ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? 'Antares', color: activeProfile?.color }
     : undefined;
@@ -982,8 +1008,11 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   };
 
   return (
+    <FilePreviewContext.Provider value={(resource) => {
+      if (sessionId) { setBrowserOpen(false); setFilePreview({ sessionId, target: { kind: 'resource', resource } }); }
+    }}>
     <div
-      className="agent-workspace relative flex h-full min-h-0 gap-3 bg-[var(--bg-surface)] p-2.5"
+      className="agent-workspace relative flex h-full min-h-0 bg-[var(--bg-surface)]"
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
           e.preventDefault();
@@ -1081,7 +1110,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           onChange={(value) => { setSidebarView(value); setSearchOpen(Boolean(value === 'agents' ? profileSearch : search)); }}
           options={[{ value: 'conversations', label: 'Conversaciones' }, { value: 'agents', label: 'Agentes' }]}
           aria-label="Vistas del agente"
-          className="mx-1 mt-2 flex shrink-0 gap-0.5 rounded-lg bg-[var(--bg-input)] p-0.5 [&>button]:text-[12px] [&>button[aria-pressed=false]]:text-[var(--text-secondary)]"
+          className="mx-1 mt-2 flex shrink-0 gap-1 [&>button]:flex-none [&>button]:px-2.5 [&>button]:text-[12px] [&>button[aria-pressed=false]]:text-[var(--text-secondary)] [&>button[aria-pressed=true]]:bg-[var(--bg-input)] [&>button[aria-pressed=true]]:shadow-none [&>button[aria-pressed=true]]:ring-0"
         />
         <div className="custom-scrollbar mt-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1">
           {sidebarView === 'agents' ? <>
@@ -1192,20 +1221,11 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         {session && (
           <header className="flex shrink-0 items-center gap-2 px-4 pb-2 pt-3 md:pl-12">
             <div className="flex h-8 min-w-0 items-center">
-              <span className="truncate text-[13px] font-medium leading-[18px] text-[var(--text-secondary)]">
+              <span className="truncate text-[14px] font-medium leading-5 text-[var(--text-primary)]">
                 {session.title || 'Conversación'}
               </span>
             </div>
             <span className="min-w-0 flex-1" />
-            <button
-              type="button"
-              aria-label="Historial de aprobaciones"
-              title="Historial de aprobaciones"
-              onClick={() => setAuditOpen(true)}
-              className="flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
-            >
-              <ShieldCheck size={14} />
-            </button>
             <button
               type="button"
               aria-label="Encargos programados"
@@ -1262,29 +1282,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             />
           </header>
         )}
-        {session && (
-          <ContextChips
-            context={context}
-            onRemoveFile={async (path) => {
-              try {
-                await agentApi.agentContextRemoveFile(session.id, path);
-                await loadMessages(session.id, false);
-              } catch (err) {
-                addToast({ message: errorMessage(err, 'No se pudo retirar el archivo'), type: 'error' });
-              }
-            }}
-            onSetWorkspace={async (path) => {
-              try {
-                await agentApi.agentWorkspaceSet(session.id, path);
-                await loadMessages(session.id, false);
-              } catch (err) {
-                addToast({ message: errorMessage(err, 'No se pudo cambiar el espacio de trabajo'), type: 'error' });
-              }
-            }}
-          />
-        )}
 
-        <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" tabIndex={-1} className="custom-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-4 pb-4 pt-3 [&>*]:mx-auto [&>*]:max-w-[720px]">
+        <div ref={listRef} onScroll={onListScroll} role="region" aria-label="Mensajes" tabIndex={-1} className="custom-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-4 pb-4 pt-3 [&>*]:mx-auto [&>*]:max-w-[960px]">
           {showHero ? (
             <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
               <AgentAvatar
@@ -1297,11 +1296,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 <h2 className="text-[22px] font-medium leading-8 tracking-tight text-[var(--text-primary)]">
                   {activeProfile ? activeProfile.name : '¿En qué trabajamos hoy?'}
                 </h2>
-                {(readyProviders.length === 0 || activeProfile?.description) && (
-                  <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-[19px] text-[var(--text-secondary)]">
-                    {readyProviders.length === 0 ? 'Configura un proveedor en «Proveedores» para empezar.' : activeProfile?.description}
-                  </p>
-                )}
+                <p className="mx-auto mt-2 max-w-sm text-[14px] leading-[22px] text-[var(--text-secondary)]">
+                  {readyProviders.length === 0 ? 'Configura un proveedor en «Proveedores» para empezar.'
+                    : activeProfile?.description || 'Puedo ayudarte a preparar informes, revisar documentos y organizar tu trabajo.'}
+                </p>
               </div>
               {readyProviders.length === 0 && onConfigureProvider && (
                 <Button size="sm" onClick={onConfigureProvider}>Configurar IA</Button>
@@ -1357,7 +1355,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         <div role="status" aria-label="Avisos del agente" aria-live="polite" aria-atomic="true" className="sr-only">
           {announcement && <span key={announcement.key}>{announcement.text}</span>}
         </div>
-        <div className="mx-auto w-full max-w-[752px] shrink-0 px-4 pb-3">
+        <div className="mx-auto w-full max-w-[992px] shrink-0 px-4 pb-3">
+          {rooms.length > 0 && <RoomRoster rooms={rooms} />}
           {delegations.length > 0 && <SubagentRoster items={delegations} />}
           {attention && (
             <div role="region" aria-label="Atención del agente" className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
@@ -1378,25 +1377,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               }}>
                 {attention.kind === 'stale' ? 'Reintentar actualización' : attention.kind === 'item' ? attention.action : 'Ver detalles'}
               </Button>
-            </div>
-          )}
-          {readyProviders.length > 0 && (
-            <div className="agent-suggestions" data-hidden={suggestionsHidden ? 'true' : undefined} inert={suggestionsHidden}>
-              <div role="group" aria-label="Sugerencias" className="agent-suggestion-list min-h-0 pb-2">
-                {suggestionList.map((suggestion, i) => (
-                  <Button
-                    key={`${sessionId}-${suggestion}`}
-                    variant="none"
-                    size="none"
-                    className="agent-suggestion"
-                    style={{ animationDelay: `${i * 60}ms` }}
-                    disabled={sending || modelBusy || running || stopping || pending.length > 0}
-                    onClick={() => void sendSuggestion(suggestion)}
-                  >
-                    {suggestion}
-                  </Button>
-                ))}
-              </div>
             </div>
           )}
           {queuedForSession.length > 0 && (
@@ -1475,8 +1455,22 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               </ol>
             </section>
           )}
+          {session && (
+            <ContextChips
+              context={context}
+              onRemoveFile={removeFile}
+              onSetWorkspace={async (path) => {
+                try {
+                  await agentApi.agentWorkspaceSet(session.id, path);
+                  await loadMessages(session.id, false);
+                } catch (err) {
+                  addToast({ message: errorMessage(err, 'No se pudo cambiar el espacio de trabajo'), type: 'error' });
+                }
+              }}
+            />
+          )}
           <div role="group" aria-label="Redactar mensaje"
-            className={`agent-composer relative rounded-2xl border bg-[var(--bg-elevated)] transition-colors ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
+            className={`agent-composer relative rounded-[26px] border bg-[var(--bg-elevated)] transition-[border-color,box-shadow] ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-subtle)]'}`}
             onDragOver={(event) => { if (!sessionId || !event.dataTransfer.types.includes('Files')) return; event.preventDefault(); setDragging(true); }}
             onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
             onDrop={(event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); void attachFiles([...event.dataTransfer.files]); }}>
@@ -1548,7 +1542,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   return (
                     <div key={item.id} className="agent-attachment relative">
                       <WithHoverTooltip label={item.name} placement="top">
-                        <div className="flex size-14 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-[var(--text-secondary)]">
+                        <Button variant="none" size="none" disabled={item.kind === 'folder'} aria-label={`Previsualizar ${item.name}`}
+                          onClick={() => { if (sessionId) { setBrowserOpen(false); setFilePreview({ sessionId, target: { kind: 'attachment', id: item.id, name: item.name } }); } }}
+                          className="flex size-14 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-[var(--text-secondary)]">
                           {item.preview ? <img src={item.preview} alt="" className="size-full object-cover" /> : <>
                             <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
                             <span aria-hidden="true" className="max-w-full truncate px-1 text-[9.5px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
@@ -1556,7 +1552,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                             </span>
                           </>}
                           <span className="sr-only">{item.name}</span>
-                        </div>
+                        </Button>
                       </WithHoverTooltip>
                       <WithHoverTooltip label="Quitar archivo" placement="top" className="absolute -right-1.5 -top-1.5">
                         <button
@@ -1573,7 +1569,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 })}
               </div>
             )}
-            <div className="px-4 pb-1 pt-4">
+            <div className="px-4 pt-3">
               <textarea
                 ref={draftRef}
                 rows={1}
@@ -1595,34 +1591,49 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 }}
                 placeholder={
                   running || pending.length > 0
-                    ? 'Añade una indicación o déjala para después…'
-                    : 'Escribe un mensaje, @ para mencionar un bot o un conector, / para usar una skill…'
+                    ? 'Añade una indicación…'
+                    : 'Cuéntame qué necesitas…'
                 }
                 aria-label="Mensaje para el agente"
-                className="block max-h-36 min-h-12 w-full min-w-0 resize-none bg-transparent py-0.5 text-[14px] leading-[22px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
+                title="Intro para enviar · Mayús+Intro para otra línea · @ para mencionar · / para usar una skill"
+                className="block max-h-36 min-h-9 w-full min-w-0 resize-none bg-transparent py-0.5 text-[14px] leading-[22px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
               />
             </div>
             <div className="agent-composer-toolbar flex min-w-0 items-center gap-1 px-2.5 pb-2.5">
               <button
                 type="button"
-                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
-                onClick={() => void attach('files')}
+                className="flex size-8 shrink-0 items-center justify-center rounded-full border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                onClick={() => void attach()}
                 disabled={!sessionId}
                 aria-label="Adjuntar archivos"
                 title="Adjuntar archivos (solo lectura para el agente)"
               >
                 <Plus size={16} />
               </button>
-              <button
-                type="button"
-                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
-                onClick={() => void attach('folder')}
-                disabled={!sessionId}
-                aria-label="Adjuntar carpeta"
-                title="Adjuntar una carpeta (el agente podrá leer sus archivos)"
+              <Button
+                variant="none"
+                size="none"
+                className={`flex h-8 min-w-8 max-w-44 shrink items-center justify-center gap-1.5 rounded-full text-xs text-[var(--text-secondary)] ${context?.workspace || selectingWorkspace ? 'px-2.5' : 'px-0'} transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50`}
+                onClick={() => void selectWorkspace()}
+                disabled={!sessionId || running || sending || selectingWorkspace}
+                aria-label="Seleccionar carpeta de trabajo"
+                title={context?.workspace ? `Trabajar en ${context.workspace}. Haz clic para cambiar de carpeta` : 'Elegir dónde el agente leerá, creará y editará archivos y ejecutará comandos'}
               >
-                <FolderOpen size={14} />
-              </button>
+                <FolderOpen size={14} className="shrink-0" />
+                <span className={context?.workspace || selectingWorkspace ? 'truncate' : 'sr-only'}>{selectingWorkspace ? 'Seleccionando…' : context?.workspace?.split(/[\\/]/).filter(Boolean).pop() || 'Carpeta de trabajo'}</span>
+              </Button>
+              {context?.workspace && (
+                <button
+                  type="button"
+                  className="-ml-1 flex size-6 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                  onClick={() => { if (context.workspace) void removeFile(context.workspace); }}
+                  disabled={!sessionId || selectingWorkspace}
+                  aria-label="Quitar la carpeta de trabajo"
+                  title="Quitar la carpeta de trabajo y volver a los borradores"
+                >
+                  <X size={12} />
+                </button>
+              )}
               {session && (
                 <PermissionPicker
                   key={session.id}
@@ -1640,7 +1651,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                     providers={readyProviders}
                     value={{ provider: session?.provider ?? provider, model: session?.model ?? model }}
                     onChange={(next) => void changeModel(next)}
-                    disabled={sending || modelBusy || running || stopping || pending.length > 0}
+                    disabled={sending || modelBusy || reasoningBusy || running || stopping || pending.length > 0}
                     className="min-w-0 max-w-[min(40vw,240px)]"
                   />
                 ) : (
@@ -1654,45 +1665,46 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                     key={session.id}
                     levels={session.reasoning_levels}
                     value={session.reasoning_effort ?? 'low'}
+                    model={session.model}
                     onChange={(effort) => void changeReasoning(effort)}
-                    disabled={reasoningBusy || modelBusy || running || stopping || pending.length > 0}
+                    disabled={sending || reasoningBusy || modelBusy || running || stopping || pending.length > 0}
                   />
                 )}
                 <ContextUsage usage={usage} model={session?.model ?? model} contextWindow={contextWindow} thresholds={compactionThresholds} compacting={compacting} />
               </div>
               {(running || pending.length > 0) && (
-                <div className="agent-turn-actions flex shrink-0 items-center gap-1">
-                  <Button variant="ghost" size="none" className="h-8 gap-1.5 rounded-lg px-2 text-[12px]" aria-label="Dejar para después"
+                <div className="agent-turn-actions flex shrink-0 items-center gap-0.5">
+                  <Button variant="ghost" size="none" className="size-8 rounded-full" aria-label="Dejar para después"
                     onClick={() => void send()} disabled={!draft.trim() || modelBusy || stopping || sending} title="Dejar para después (Intro)">
-                    <ListOrdered size={14} aria-hidden="true" /><span>Dejar para después</span>
+                    <ListOrdered size={15} aria-hidden="true" />
                   </Button>
-                  <Button variant="ghost" size="none" className="h-8 gap-1.5 rounded-lg px-2 text-[12px]" aria-label="Indicar ahora"
+                  <Button variant="ghost" size="none" className="size-8 rounded-full" aria-label="Indicar ahora"
                     onClick={() => void send(true)} disabled={!draft.trim() || modelBusy || stopping || sending || sendingCorrection} title="Indicar ahora">
-                    <CornerDownRight size={14} aria-hidden="true" /><span>Indicar ahora</span>
+                    <CornerDownRight size={15} aria-hidden="true" />
                   </Button>
                 </div>
               )}
               {(running || pending.length > 0) && (
                 <button
                   type="button"
-                  className="agent-stop flex size-8 shrink-0 items-center justify-center rounded-full text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--accent-red)]"
+                  className="agent-stop flex size-9 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50"
                   onClick={() => void cancelTurn()}
                   aria-label="Detener"
                   disabled={stopping}
                   title="Detener el turno"
                 >
-                  <Square size={12} />
+                  <Square size={11} fill="currentColor" />
                 </button>
               )}
               {!running && pending.length === 0 && <button
                 type="button"
-                className="agent-send flex size-8 shrink-0 items-center justify-center rounded-full transition-[background-color,color,transform] duration-150 active:scale-[0.96] motion-reduce:transform-none disabled:cursor-not-allowed"
+                className="agent-send flex size-9 shrink-0 items-center justify-center rounded-full transition-[background-color,color,transform] duration-150 active:scale-[0.96] motion-reduce:transform-none disabled:cursor-not-allowed"
                 onClick={() => void send()}
-                disabled={(!sessionId && !provider) || !draft.trim() || modelBusy || sending}
+                disabled={(!sessionId && !provider) || !draft.trim() || modelBusy || sending || selectingWorkspace}
                 aria-label="Enviar"
                 title="Enviar (Intro)"
               >
-                <ArrowUp size={17} aria-hidden="true" />
+                <ArrowUp size={18} strokeWidth={2.25} aria-hidden="true" />
               </button>}
             </div>
           </div>
@@ -1742,6 +1754,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         </div>
       </main>
 
+      {filePreview && filePreview.sessionId === sessionId && !browserOpen && <Suspense fallback={<p role="status" className="p-4 text-sm text-[var(--text-muted)]">Abriendo vista previa…</p>}>
+        <AgentFilePreview key={`${filePreview.sessionId}:${JSON.stringify(filePreview.target)}`} sessionId={filePreview.sessionId} target={filePreview.target}
+          onClose={() => setFilePreview(null)} />
+      </Suspense>}
       {browserOpen && <AgentBrowserPanel
         onClose={() => setBrowserOpen(false)}
         onAnnotate={sessionId ? (files, source, notes) => {
@@ -1751,9 +1767,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           else if (context) { draftVersionRef.current += 1; setDraft(`${draft.trimEnd()}\n${context}`); }
         } : undefined}
       />}
-      {auditOpen && session && (
-        <AgentAuditPanel sessions={sessions} sessionId={session.id} onClose={() => setAuditOpen(false)} />
-      )}
       {tasksOpen && session && (
         <ScheduledTasksPanel sessions={sessions} sessionId={session.id} onClose={() => setTasksOpen(false)} />
       )}
@@ -1787,12 +1800,12 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               aria-label="Limpiar búsqueda de herramientas" onClick={() => { setToolsQuery(''); toolsSearchRef.current?.focus(); }}><X size={12} /></Button>}
           </div>
           <SegmentedControl value={toolsFilter} onChange={setToolsFilter} aria-label="Filtrar herramientas"
-            className="flex shrink-0 gap-0.5 rounded-lg bg-[var(--bg-input)] p-0.5 [&>button]:text-[12px] [&>button[aria-pressed=false]]:text-[var(--text-secondary)]"
+            className="flex shrink-0 gap-1 [&>button]:flex-none [&>button]:px-2.5 [&>button]:text-[12px] [&>button[aria-pressed=false]]:text-[var(--text-secondary)] [&>button[aria-pressed=true]]:bg-[var(--bg-input)] [&>button[aria-pressed=true]]:shadow-none [&>button[aria-pressed=true]]:ring-0"
             options={[{ value: 'all', label: 'Todas' }, { value: 'skills', label: 'Skills' }, { value: 'mcp', label: 'MCP' }]} />
           {toolsFilter === 'skills' && <p className="shrink-0 text-[11px] leading-relaxed text-[var(--text-secondary)]">
-            Adjunta una carpeta con SKILL.md y pide al agente que busque una skill. Estas opciones habilitan sus herramientas de lectura, no instalan skills.
+            Elige una carpeta de trabajo con SKILL.md y pide al agente que busque una skill. Estas opciones habilitan sus herramientas de lectura, no instalan skills.
           </p>}
-          <div className="custom-scrollbar min-h-0 space-y-2 overflow-y-auto">
+          <div className="custom-scrollbar -mx-1.5 min-h-0 overflow-y-auto px-1.5">
             <ToolGroup label="Uso general" names={toolGroups.direct} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} expanded={!!toolsQuery.trim() || toolsFilter !== 'all'} />
             <ToolGroup label="Acciones sensibles" names={toolGroups.gated} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} expanded={!!toolsQuery.trim() || toolsFilter !== 'all'} />
             <ToolGroup label="MCP" names={toolGroups.mcp} enabledNames={enabledNames} onToggle={toggleTool} disabled={!sessionId || toolsBusy} expanded={!!toolsQuery.trim() || toolsFilter !== 'all'} />
@@ -1808,12 +1821,13 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           <Button variant="ghost" size="sm" disabled={!sessionId || toolsBusy} onClick={() => void saveTools(null)}>
             Restablecer herramientas
           </Button>
-          <p className="shrink-0 text-[10px] leading-relaxed text-[var(--text-muted)]">
+          <p className="shrink-0 text-[11px] leading-relaxed text-[var(--text-muted)]">
             {sessionId ? 'La selección se guarda para esta conversación. Las acciones siguen el modo de permisos elegido.' : 'Selecciona una conversación para configurar sus herramientas.'}
           </p>
         </div>,
         document.body,
       )}
     </div>
+    </FilePreviewContext.Provider>
   );
 }

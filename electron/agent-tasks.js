@@ -16,11 +16,18 @@ const DONE_WHEN_MAX = 1000;
 const ORIGIN_MAX = 400;
 const REPORT_TOOLS_SHOWN = 8;
 const NEEDS_INPUT = /NECESITA ENTRADA:\s*([\s\S]+)$/i;
+const MAX_TRANSCRIPT_TURNS = 8;
+const TRANSCRIPT_CHARS = 800;
 const MAX_ROUTINES = 3;
 const ROUTINE_MIN_MINUTES = 30;
 const PROFILE_ROLES = new Set(['explorer', 'reviewer', 'worker']);
 const ACTIVE_DELEGATION = new Set(['pending', 'working']);
 const FINISHED_DELEGATION = { delivered: 'entregada', cancelled: 'cancelada' };
+const DELIVERY_RETRY_STEPS_MS = [30 * 1000, 2 * 60 * 1000, 5 * 60 * 1000];
+const MAX_DELIVERY_ATTEMPTS = DELIVERY_RETRY_STEPS_MS.length;
+const MAX_PLAN_STEPS = 8;
+const MAX_PLAN_STEP_CHARS = 120;
+const PLAN_STATUS = { pending: 'pendiente', in_progress: 'en curso', done: 'hecho', failed: 'fallado' };
 const MAX_MESSAGE_CHARS = 4000;
 const MAX_STOP_REASON_CHARS = 400;
 const MAX_CONTINUATION_ROUNDS = 10;
@@ -93,7 +100,7 @@ const DELEGATE_TOOL = {
     + 'Si una delegación ya terminó y quieres ampliarla conservando su historial, llama agent_delegate con resume y su '
     + 'session_id. fork copia esta conversación como contexto del agente nuevo. max_rounds reanuda automáticamente al '
     + 'agente si queda sin respuesta final o con error, hasta ese número de veces, tras idle_minutes de inactividad y '
-    + 'con nudge como mensaje; una respuesta completa no se altera.',
+    + `con nudge como mensaje; una respuesta completa no se altera. ${shared.DELEGATION_GUIDE}`,
   inputSchema: { type: 'object', properties: {
     agent: { type: 'string' }, task: { type: 'string', minLength: 1, maxLength: 4000 },
     exclude_tools: { type: 'array', items: { type: 'string' }, description: 'Herramientas que el hijo no debe usar' },
@@ -119,14 +126,30 @@ const CHECK_TOOL = {
   } },
 };
 
+const TRANSCRIPT_TOOL = {
+  name: 'agent_transcript', kind: 'meta', module: 'agent', gated: false, replay_safe: true,
+  description: 'Lee sin modificar nada los últimos mensajes de una delegación de agent_delegate, para revisar su trabajo '
+    + 'antes del informe. Devuelve solo el texto del agente, no razonamiento, resultados de herramientas ni aprobaciones, '
+    + 'e indica si quedó esperando una respuesta del usuario.',
+  inputSchema: { type: 'object', properties: {
+    session_id: { type: 'string', description: 'Conversación hija que devolvió agent_delegate' },
+    max_turns: { type: 'integer', minimum: 1, maximum: MAX_TRANSCRIPT_TURNS,
+      description: 'Cantidad de mensajes recientes a devolver (por defecto 4)' },
+  }, required: ['session_id'] },
+};
+
+const MESSAGE_DELIVERY = { steer: 'steer', follow_up: 'followUp' };
 const MESSAGE_TOOL = {
   name: 'agent_message', kind: 'meta', module: 'agent', gated: false, replay_safe: true,
   description: 'Envía una instrucción adicional a una delegación de agent_delegate pendiente o en marcha, sin detenerla. '
-    + 'El mensaje se suma al encargo original y no concede permisos ni acceso nuevos. Úsala solo si el usuario cambia o '
-    + 'amplía el encargo; no repitas el encargo ni envíes mensajes por iniciativa propia.',
+    + 'El mensaje se suma al encargo original y no concede permisos ni acceso nuevos. Con delivery=steer (por defecto) '
+    + 'la delegación lo lee en el turno en curso; con delivery=follow_up lo recibe al terminar ese turno. Úsala solo si '
+    + 'el usuario cambia o amplía el encargo; no repitas el encargo ni envíes mensajes por iniciativa propia.',
   inputSchema: { type: 'object', properties: {
     session_id: { type: 'string', description: 'Conversación hija que devolvió agent_delegate' },
     message: { type: 'string', minLength: 1, maxLength: MAX_MESSAGE_CHARS },
+    delivery: { type: 'string', enum: Object.keys(MESSAGE_DELIVERY),
+      description: 'steer lo entrega en el turno en curso; follow_up lo entrega al terminarlo (por defecto steer)' },
   }, required: ['session_id', 'message'] },
 };
 
@@ -220,6 +243,7 @@ async function resumeDelegation({ profile, role, task, resumeId, sessionId, pare
     };
     delete current.delegation.started_at;
     delete current.delegation.retry_at;
+    current.delegation.delivery = { state: 'pending', attempts: 0 };
     delete current.delegation.result_request;
     delete current.delegation.inline_waits;
     delete current.delegation.cancelled_at;
@@ -320,6 +344,7 @@ async function delegate(profile, args, sessionId, api, context) {
           ...(levels ? { reasoning_levels: levels } : {}),
           profile: { id: profile.id, name: profile.name },
           delegation: { parent_session_id: sessionId, content: task, status: 'pending', depth,
+            delivery: { state: 'pending', attempts: 0 },
             ...lineage, ...(hookContext ? { hook_context: hookContext } : {}),
             ...(doneWhen ? { done_when: doneWhen } : {}), ...(origin ? { origin } : {}), ...(batch ? { batch } : {}),
             ...(continuation ? { continuation } : {}) } };
@@ -351,22 +376,35 @@ async function delegate(profile, args, sessionId, api, context) {
     ...(continuation ? { max_rounds: continuation.max_rounds } : {}), status: child.delegation.status, ...lineage };
 }
 
+async function parentPlanText(parentId) {
+  try {
+    return planBrief(await require('./agent-runtime').latestPlan(parentId));
+  } catch (err) {
+    console.warn('[agent] shared plan unavailable:',
+      require('./agent-execution').sanitizeProviderError(String(err?.message || err)));
+    return '';
+  }
+}
+
 async function startChild(child) {
   if (child.delegation.status !== 'pending') return;
   const state = shared.state;
   await require('./agent-execution').ensureProvider(child.provider, child.model);
   const conv = await conversation(child.id);
   const memory = await require('./agent-runtime').memoryContext(child, child.delegation.content);
+  const plan = await parentPlanText(child.delegation.parent_session_id);
   await require('./agent-projection').ensureWatcher(child);
   await conv.submit({ type: 'input', content: [
     { type: 'text', text: child.delegation.content },
-    { type: 'text', text: `${shared.CONTEXT_MARKER}\n${delegationBrief(child.delegation)}\n${memory.context || ''}` },
+    { type: 'text', text: `${shared.CONTEXT_MARKER}\n${delegationBrief(child.delegation, plan)}\n${memory.context || ''}` },
   ], requestId: `delegate:${child.id}:${Number(child.delegation.round) || 0}`, whenBusy: 'followUp' }, ctx());
   await state.harness.commit(async (tx) => {
     const current = (await tx.doc(state.SessionsDoc)).sessions[child.id];
     if (current && !current.deleted && current.delegation.status === 'pending') {
       current.delegation.status = 'working';
       current.delegation.started_at = Date.now();
+      current.delegation.delivery = { state: 'pending', attempts: 0 };
+      delete current.delegation.retry_at;
     }
   }, ctx());
   wakeWaiters();
@@ -392,9 +430,20 @@ function userRequest(entries) {
   return quoted(require('./agent-execution').sanitizeProviderError(first), ORIGIN_MAX);
 }
 
-function delegationBrief(job) {
+function planBrief(plan) {
+  if (!plan || !Array.isArray(plan.steps) || !plan.steps.length) return '';
+  const steps = plan.steps.slice(0, MAX_PLAN_STEPS).map((step, index) =>
+    `${index + 1}. [${PLAN_STATUS[step.status] || PLAN_STATUS.pending}] ${quoted(step.title, MAX_PLAN_STEP_CHARS)}`);
+  const rest = plan.steps.length > MAX_PLAN_STEPS ? `\n(+${plan.steps.length - MAX_PLAN_STEPS} pasos más en el plan)` : '';
+  return `Plan compartido de la conversación principal${plan.goal ? ` («${quoted(plan.goal, 200)}»)` : ''}:\n`
+    + `${steps.join('\n')}${rest}\n`
+    + 'Sitúa tu encargo dentro de ese plan y devuelve evidencia del paso que te toca; no lo des por hecho.';
+}
+
+function delegationBrief(job, sharedPlan = '') {
   return [
     job.origin ? `Este encargo forma parte de esta petición del usuario: «${job.origin}». Es contexto: haz solo tu encargo.` : '',
+    sharedPlan,
     job.done_when ? `Se da por terminado cuando: «${job.done_when}». Comprueba ese criterio antes de responder.` : '',
     job.round ? 'Esta es una continuación del encargo en esta misma conversación: retoma lo que ya hiciste y no repitas '
       + 'trabajo verificado.' : '',
@@ -427,11 +476,23 @@ async function delegationAnswer(child) {
   return delegationReport(child, await require('./agent-projection').allEntries(await conversation(child.id)));
 }
 
-function delegationReport(child, entries) {
+async function delegationSnapshot(child) {
+  const entries = await require('./agent-projection').allEntries(await conversation(child.id));
+  const text = lastAnswerText(entries);
+  return { child, report: delegationReport(child, entries),
+    awaiting_user: !child.last_error && NEEDS_INPUT.test(text),
+    question: child.last_error ? '' : (NEEDS_INPUT.exec(text)?.[1] || '') };
+}
+
+function lastAnswerText(entries) {
   const answer = entries.findLast((entry) => entry.kind === 'pi.assistant' && entry.model?.[0]
     && !entry.model[0].content.some((block) => block.type === 'toolCall'))?.model[0];
-  const text = unmarked(require('./agent-execution').sanitizeProviderError((answer?.content || [])
-    .filter((block) => block.type === 'text').map((block) => block.text).join('\n'))).trim().slice(0, 6000);
+  return unmarked(require('./agent-execution').sanitizeProviderError((answer?.content || [])
+    .filter((block) => block.type === 'text').map((block) => block.text).join('\n'))).trim();
+}
+
+function delegationReport(child, entries) {
+  const text = lastAnswerText(entries).slice(0, 6000);
   const question = !child.last_error && NEEDS_INPUT.exec(text)?.[1];
   const outcome = child.last_error ? 'error' : question ? 'necesita al usuario' : text ? 'completado' : 'sin respuesta';
   const name = child.profile?.name || 'delegado';
@@ -466,6 +527,7 @@ async function delegationActivity(child) {
   if (live && live.run) return 'trabajando';
   const inbox = await shared.state.harness.snapshot(shared.deps.pi.InboxDoc, child.conversationId, ctx());
   if (inbox && Array.isArray(inbox.items) && inbox.items.length) return 'con mensajes en cola';
+  if (job.delivery?.state === 'unreachable') return 'informe sin entregar';
   if (child.continuation) return 'aparcada esperando continuación';
   return 'sin turno en curso';
 }
@@ -499,7 +561,23 @@ async function describeDelegation(child) {
     described.max_rounds = Number(job.continuation.max_rounds) || 0;
   }
   if (job.cancelled_reason) described.reason = String(job.cancelled_reason).slice(0, MAX_STOP_REASON_CHARS);
-  if (job.room_id) described.room_id = String(job.room_id);
+  described.awaiting_user = job.awaiting_user === true;
+  if (job.awaiting_question) described.question = String(job.awaiting_question).slice(0, 200);
+  if (job.delivery) {
+    described.delivery = {
+      state: String(job.delivery.state || ''),
+      attempts: Number(job.delivery.attempts) || 0,
+      ...(job.delivery.retry_at ? { retry_at: Number(job.delivery.retry_at) } : {}),
+      ...(job.delivery.delivered_at ? { delivered_at: Number(job.delivery.delivered_at) } : {}),
+      ...(job.delivery.error ? { error: String(job.delivery.error).slice(0, 200) } : {}),
+    };
+  }
+  if (job.room_id) {
+    described.room_id = String(job.room_id);
+    const rooms = (await shared.state.harness.snapshot(shared.state.RoomsDoc, ctx()))?.rooms || {};
+    const room = rooms[job.room_id];
+    if (room) described.room = require('./agent-rooms').roomSummary(room, await sessions());
+  }
   try {
     const tool = await lastTool(await conversation(child.id));
     if (tool) described.last_tool = tool;
@@ -525,6 +603,31 @@ async function checkDelegations(args, sessionId) {
   return { delegations };
 }
 
+async function readTranscript(args, sessionId) {
+  const child = await requireDelegation(sessionId, args.session_id);
+  const wanted = Number(args.max_turns);
+  const limit = Number.isInteger(wanted) ? Math.min(Math.max(wanted, 1), MAX_TRANSCRIPT_TURNS) : 4;
+  const entries = await require('./agent-projection').allEntries(await conversation(child.id));
+  const turns = [];
+  for (const entry of entries) {
+    if (entry.kind !== 'pi.assistant' || !entry.model?.[0]) continue;
+    const text = (entry.model[0].content || [])
+      .filter((block) => block && block.type === 'text')
+      .map((block) => String(block.text || ''))
+      .join('\n').trim();
+    if (text) turns.push(text);
+  }
+  const recent = turns.slice(-limit).map((text) => text.slice(0, TRANSCRIPT_CHARS));
+  return {
+    session_id: child.id,
+    agent: child.profile?.name || 'delegado',
+    status: child.delegation?.status || '',
+    messages: recent,
+    awaiting_user: NEEDS_INPUT.test(turns.at(-1) || ''),
+    truncated: turns.length > recent.length,
+  };
+}
+
 async function sendMessage(args, sessionId, api) {
   const child = await requireDelegation(sessionId, args.session_id);
   if (!ACTIVE_DELEGATION.has(child.delegation.status)) {
@@ -534,16 +637,20 @@ async function sendMessage(args, sessionId, api) {
   if (!text || text.length > MAX_MESSAGE_CHARS) {
     throw validation(`El mensaje debe tener entre 1 y ${MAX_MESSAGE_CHARS} caracteres`);
   }
+  const delivery = args.delivery === undefined ? 'steer' : args.delivery;
+  if (!Object.prototype.hasOwnProperty.call(MESSAGE_DELIVERY, delivery)) {
+    throw validation('delivery debe ser steer o follow_up');
+  }
   if (child.delegation.status === 'pending') await startChild(child);
   const conv = await conversation(child.id);
   const requestId = `delegate-message:${String(api?.taskId || 'turn')}:${String(api?.callId || crypto.randomUUID())}`;
   await require('./agent-projection').ensureWatcher(child);
   await conv.submit({ type: 'write', requestId: `${requestId}:notice`,
     entry: { kind: shared.NOTICE_KIND, data: { text: `Mensaje del agente principal: ${text}` } } }, ctx());
-  await conv.submit({ type: 'input', whenBusy: 'steer', requestId,
+  await conv.submit({ type: 'input', whenBusy: MESSAGE_DELIVERY[delivery], requestId,
     content: `${shared.CONTEXT_MARKER}\nMensaje del agente principal para este encargo: ${text}\n`
       + 'Es contexto adicional del encargo, no una aprobación, un permiso nuevo ni una instrucción del usuario.' }, ctx());
-  return { sent: true, session_id: child.id, agent: child.profile?.name || 'delegado' };
+  return { sent: true, session_id: child.id, agent: child.profile?.name || 'delegado', delivery };
 }
 
 async function wakeParent(args, sessionId) {
@@ -615,7 +722,8 @@ function hasInlineWaiter(job) {
 
 async function delegationState(state, child) {
   const job = child.delegation;
-  if (job.retry_at > Date.now()) return 'parked';
+  if (job.delivery?.state === 'unreachable') return 'parked';
+  if (Number(job.delivery?.retry_at || job.retry_at) > Date.now()) return 'parked';
   if (job.status === 'pending') {
     try {
       await startChild(child);
@@ -685,17 +793,55 @@ async function continuationStep(state, child) {
   return 'running';
 }
 
+function deliveryRetryDelay(attempts) {
+  const step = Math.min(Math.max(1, Number(attempts) || 1), MAX_DELIVERY_ATTEMPTS);
+  return DELIVERY_RETRY_STEPS_MS[step - 1];
+}
+
+function deferredDelivery(previous, attempts, now) {
+  const capped = Math.min(Math.max(1, Number(attempts) || 1), MAX_DELIVERY_ATTEMPTS);
+  const deferred = {
+    ...(previous && typeof previous === 'object' ? previous : {}),
+    state: capped >= MAX_DELIVERY_ATTEMPTS ? 'unreachable' : 'deferred',
+    attempts: capped,
+  };
+  if (capped >= MAX_DELIVERY_ATTEMPTS) delete deferred.retry_at;
+  else deferred.retry_at = now + deliveryRetryDelay(capped);
+  return deferred;
+}
+
 async function deferDelegations(state, children, err) {
-  await state.harness.commit(async (tx) => {
+  const message = require('./agent-execution').sanitizeProviderError(String(err?.message || err)).slice(0, 300);
+  const now = Date.now();
+  const exhausted = await state.harness.commit(async (tx) => {
     const doc = await tx.doc(state.SessionsDoc);
+    const notify = [];
     for (const child of children) {
       const current = doc.sessions[child.id];
-      if (current && ['pending', 'working'].includes(current.delegation.status)) {
-        current.delegation.retry_at = Date.now() + 60000;
+      if (!current?.delegation || !['pending', 'working'].includes(current.delegation.status)) continue;
+      const attempts = Math.min((Number(current.delegation.delivery?.attempts) || 0) + 1, MAX_DELIVERY_ATTEMPTS);
+      current.delegation.delivery = { ...deferredDelivery(current.delegation.delivery, attempts, now), error: message };
+      delete current.delegation.retry_at;
+      if (attempts === MAX_DELIVERY_ATTEMPTS) {
+        notify.push({ id: child.id, attempts, round: Number(current.delegation.round) || 0,
+          parent: current.delegation.parent_session_id, name: current.profile?.name || 'delegado' });
       }
     }
+    return notify;
   }, ctx());
-  console.warn('[agent] delegation delivery failed:', require('./agent-execution').sanitizeProviderError(String(err?.message || err)));
+  for (const item of exhausted) {
+    try {
+      const parent = (await sessions())[item.parent];
+      if (!parent || parent.deleted) continue;
+      await (await conversation(parent.id)).submit({ type: 'write',
+        requestId: `delegate-delivery:${item.id}:${item.round}:${item.attempts}`,
+        entry: { kind: shared.NOTICE_KIND, data: { text: `La entrega de «${item.name}» falló tras `
+          + `${item.attempts} intentos (${message}). No se reintentará automáticamente; su informe sigue en la `
+          + `conversación ${item.id} y puedes leerlo con agent_transcript.` } } }, ctx());
+      wakeWaiters();
+    } catch { }
+  }
+  console.warn('[agent] delegation delivery failed:', message);
 }
 
 function stillDeliverable(map, children) {
@@ -714,7 +860,7 @@ async function deliverDelegations(state, parent, children, open) {
   const key = single ? `delegate:${ids[0]}:${rounds}`
     : `delegate-batch:${crypto.createHash('sha256').update(`${ids.join(':')}:${rounds}`).digest('hex').slice(0, 24)}`;
   const reports = [];
-  for (const child of children) reports.push({ child, report: await delegationAnswer(child) });
+  for (const child of children) reports.push(await delegationSnapshot(child));
   const conv = await conversation(parent.id);
   await require('./agent-projection').ensureWatcher(parent);
   if (!stillDeliverable(await sessions(), children)) return;
@@ -747,9 +893,16 @@ async function deliverDelegations(state, parent, children, open) {
     const doc = await tx.doc(state.SessionsDoc);
     for (const child of children) {
       const current = doc.sessions[child.id];
+      const snapshot = reports.find((item) => item.child.id === child.id);
       if (current && current.delegation.status === 'working') {
         current.delegation.status = 'delivered';
+        current.delegation.awaiting_user = snapshot?.awaiting_user === true;
+        if (snapshot?.question) current.delegation.awaiting_question = String(snapshot.question).slice(0, 200);
+        else delete current.delegation.awaiting_question;
         current.delegation.result_request = `${key}:result`;
+        current.delegation.delivery = { state: 'delivered', attempts: Number(current.delegation.delivery?.attempts) || 0,
+          delivered_at: Date.now() };
+        delete current.delegation.retry_at;
       }
     }
   }, ctx());
@@ -765,7 +918,7 @@ async function collectDelegations(state) {
     if (!job || child.deleted || !['pending', 'working'].includes(job.status)) continue;
     const parent = map[job.parent_session_id];
     if (!parent || parent.deleted) {
-      if (job.retry_at > Date.now()) continue;
+      if (Number(job.delivery?.retry_at || job.retry_at) > Date.now()) continue;
       try {
         await (await conversation(child.id)).abort(ctx(), { background: true });
         await state.harness.commit(async (tx) => {
@@ -1117,9 +1270,10 @@ async function stop() {
 }
 
 module.exports = {
-  TOOL, DELEGATE_TOOL, CHECK_TOOL, MESSAGE_TOOL, STOP_TOOL, WAKE_TOOL,
+  TOOL, DELEGATE_TOOL, CHECK_TOOL, MESSAGE_TOOL, STOP_TOOL, WAKE_TOOL, TRANSCRIPT_TOOL,
   schedule, delegate, delegationAnswer, cancelDelegations, start, stop,
-  checkDelegations, roster, sendMessage, stopDelegation, wakeParent, startChild,
+  checkDelegations, roster, sendMessage, stopDelegation, wakeParent, startChild, readTranscript,
   listTasks, saveTask, cancelTask, runTaskNow, queueControl: queue.queueControl,
-  _internal: { delegationBrief, delegationReport, userRequest },
+  _internal: { delegationBrief, delegationReport, planBrief, userRequest, deferredDelivery, deferDelegations,
+    delegationActivity },
 };

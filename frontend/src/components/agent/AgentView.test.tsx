@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { agentApi, type AgentApproval, type AgentPermissionMode, type AgentSession } from '../../api/agentApi';
+import { agentApi, type AgentApproval, type AgentPermissionMode, type AgentReasoningEffort, type AgentSession } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { mcpApi } from '../../api/mcpApi';
 import AgentView from './AgentView';
@@ -31,6 +31,29 @@ const session: AgentSession = {
   created_at: 1, updated_at: 1, last_error: null,
 };
 const empty: Snapshot = { messages: [], running: false, pending_approvals: [] };
+
+it('abre adjuntos y referencias en el visor sin enviar mensajes al agente', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
+    messages: [{ role: 'assistant', content: '[Notas](notas.txt)', ts: 1 }],
+    context: { modules: [], accounts: [], files: [{ path: 'C:\\datos.xlsx', folder: false }] },
+  });
+  vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({ attachments: [{ id: 'a1', name: 'informe.pdf', kind: 'files' }] });
+  const preview = vi.spyOn(agentApi, 'agentFilePreview').mockResolvedValue({ kind: 'text', name: 'notas.txt', size: 4, text: 'Vista local', truncated: false });
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  fireEvent.click(await screen.findByRole('button', { name: 'Previsualizar Notas' }));
+  expect(await screen.findByText('Vista local')).toBeInTheDocument();
+  expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'resource', resource: 'notas.txt' }, 0, 0);
+  fireEvent.click(screen.getByRole('button', { name: 'Previsualizar datos.xlsx' }));
+  await waitFor(() => expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'resource', resource: 'C:\\datos.xlsx' }, 0, 0));
+  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
+  fireEvent.click(screen.getByRole('button', { name: 'Previsualizar informe.pdf' }));
+  await waitFor(() => expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'attachment', id: 'a1', name: 'informe.pdf' }, 0, 0));
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByLabelText('Cerrar vista previa'));
+  expect(screen.queryByLabelText('Vista previa de archivo')).toBeNull();
+});
 const suggestionProvider: AiProviderSpec = {
   id: 'local', label: 'Local', description: '', docs: '', editable_base_url: false, default_base_url: '', default_model: 'prueba',
   provider: 'openai', configured: true, has_key: true, key_masked: null, base_url: '', needs_key: false,
@@ -422,6 +445,7 @@ it('regula el razonamiento con los niveles del modelo y lo guarda al soltar', as
   render(<AgentView />);
   await act(async () => {});
   fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Alto' }));
+  expect(within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByText(session.model)).toBeVisible();
   const slider = within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByRole('slider', { name: 'Nivel de razonamiento' });
   expect(slider).toHaveAttribute('max', '2');
   fireEvent.change(slider, { target: { value: '1' } });
@@ -450,6 +474,31 @@ it('ofrece el nivel máximo cuando el modelo lo admite', async () => {
   await act(async () => { fireEvent.keyUp(slider, { key: 'ArrowRight' }); });
   expect(save).toHaveBeenCalledWith(session.id, 'max');
   expect(screen.getByRole('button', { name: 'Razonamiento: Máximo' })).toBeEnabled();
+});
+
+it('bloquea ambos selectores mientras guarda el esfuerzo y conserva el valor si falla', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
+  const reasoning_levels: AgentReasoningEffort[] = ['low', 'medium', 'high'];
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [{ ...session, reasoning_levels, reasoning_effort: 'low' }] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const saving = deferred<{ session: AgentSession }>();
+  const save = vi.spyOn(agentApi, 'agentSessionReasoningSet').mockReturnValueOnce(saving.promise);
+  render(<AgentView />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Bajo' }));
+  const slider = screen.getByRole('slider');
+  fireEvent.change(slider, { target: { value: '2' } });
+  fireEvent.pointerUp(slider);
+  expect(save).toHaveBeenCalledExactlyOnceWith(session.id, 'high');
+  expect(screen.getByRole('button', { name: 'Razonamiento: Bajo' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Elegir proveedor y modelo' })).toBeDisabled();
+  expect(screen.queryByRole('dialog', { name: 'Nivel de razonamiento' })).not.toBeInTheDocument();
+  await act(async () => { saving.reject(new Error('No se pudo guardar el esfuerzo')); });
+  expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'No se pudo guardar el esfuerzo', type: 'error' }));
+  expect(screen.getByRole('button', { name: 'Elegir proveedor y modelo' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Bajo' }));
+  expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', 'Bajo');
 });
 
 it('cambia los permisos por conversación y conserva el modo si falla el guardado', async () => {
@@ -770,27 +819,51 @@ it('un envío pendiente en otra sesión no descarta los mensajes de la sesión s
   expect(screen.getByText('Mensaje de segunda')).toBeInTheDocument();
 });
 
-it('adjunta archivos y carpetas y los envía por id con el mensaje', async () => {
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+it('activa la carpeta de trabajo antes de enviar y mantiene solo archivos en los adjuntos', async () => {
+  const messages = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const select = vi.spyOn(agentApi, 'agentWorkspaceSelect').mockImplementation(async () => {
+    messages.mockResolvedValue({ ...empty, context: { modules: [], accounts: [], files: [{ path: 'C:\\fotos', folder: true }], workspace: 'C:\\fotos' } });
+    return { workspace: 'C:\\fotos' };
+  });
   const attach = vi.spyOn(agentApi, 'agentAttach')
-    .mockResolvedValueOnce({ attachments: [{ id: 'a1', name: 'clientes.xlsx', kind: 'files' }] })
-    .mockResolvedValueOnce({ attachments: [{ id: 'a2', name: 'fotos', kind: 'folder' }] });
+    .mockResolvedValueOnce({ attachments: [{ id: 'a1', name: 'clientes.xlsx', kind: 'files' }] });
   render(<AgentView />);
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar carpeta')); });
-  expect(attach.mock.calls).toEqual([['files'], ['folder']]);
+  await act(async () => { fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo')); });
+  expect(select).toHaveBeenCalledExactlyOnceWith('s1');
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  expect(attach.mock.calls).toEqual([['files']]);
   expect(screen.getByText('clientes.xlsx')).toBeInTheDocument();
-  expect(screen.getByText('fotos')).toBeInTheDocument();
+  expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('fotos');
   const tiles = within(screen.getByLabelText('Adjuntos'));
   expect(tiles.getByText('xlsx')).toBeVisible();
-  expect(tiles.getByText('carpeta')).toBeVisible();
+  expect(tiles.queryByText('carpeta')).not.toBeInTheDocument();
   expect(tiles.getByRole('button', { name: 'Quitar clientes.xlsx' }).parentElement).toHaveClass('absolute');
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Genera el informe' } });
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
-  expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Genera el informe', expect.any(String), ['a1', 'a2']);
+  expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Genera el informe', expect.any(String), ['a1']);
   expect(screen.queryByText('clientes.xlsx')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('fotos');
+});
+
+it('conserva la carpeta y el borrador al cancelar o fallar su selección', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
+    context: { modules: [], accounts: [], files: [{ path: 'C:\\proyecto', folder: true }], workspace: 'C:\\proyecto' } });
+  const select = vi.spyOn(agentApi, 'agentWorkspaceSelect').mockResolvedValueOnce({ workspace: 'C:\\proyecto' })
+    .mockRejectedValueOnce(new Error('Carpeta no disponible'));
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Revisa el proyecto' } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo')); });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo')); });
+  expect(select).toHaveBeenCalledTimes(2);
+  expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('proyecto');
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Revisa el proyecto');
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  expect(addToast).toHaveBeenCalledWith({ message: 'Carpeta no disponible', type: 'error' });
 });
 
 it('adjunta archivos soltados por ruta y capturas pegadas por contenido', async () => {
@@ -1131,6 +1204,26 @@ it('muestra el contexto de la conversación y permite retirar un archivo concedi
   expect(remove).toHaveBeenCalledWith('s1', 'C:\\docs\\informe.pdf');
 });
 
+it('permite quitar la carpeta de trabajo desde el compositor', async () => {
+  let snapshot: Snapshot = {
+    ...empty,
+    context: { modules: [], accounts: [], files: [{ path: 'C:\\proyecto', folder: true }], workspace: 'C:\\proyecto' },
+  };
+  vi.spyOn(agentApi, 'agentMessagesList').mockImplementation(async () => snapshot);
+  const remove = vi.spyOn(agentApi, 'agentContextRemoveFile').mockImplementation(async () => {
+    snapshot = { ...empty, context: { modules: [], accounts: [], files: [], workspace: null } };
+    return { removed: 1 };
+  });
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('proyecto');
+  await act(async () => { fireEvent.click(screen.getByLabelText('Quitar la carpeta de trabajo')); });
+  expect(remove).toHaveBeenCalledWith('s1', 'C:\\proyecto');
+  expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('Carpeta de trabajo');
+  expect(screen.queryByLabelText('Quitar la carpeta de trabajo')).toBeNull();
+});
+
 it('abre una conversación desde un agente guardado con su mensaje inicial', async () => {
   vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [
     { id: 'local', label: 'Local', configured: true, has_key: true, needs_key: false, default_model: 'prueba' },
@@ -1148,9 +1241,6 @@ it('abre una conversación desde un agente guardado con su mensaje inicial', asy
   await act(async () => { fireEvent.click(screen.getByTitle('Nueva conversación con Informe mensual')); });
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ profile_id: 'p1' }));
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Prepara el informe de este mes');
-  const suggestions = within(screen.getByRole('group', { name: 'Sugerencias' }));
-  expect(suggestions.getAllByRole('button')).toHaveLength(1);
-  expect(suggestions.getByRole('button', { name: 'Prepara el informe de este mes' })).toBeEnabled();
 });
 
 it('envía el primer texto una sola vez ante doble Enter y conserva lo escrito durante la creación', async () => {
@@ -1224,7 +1314,7 @@ it('conserva el primer borrador si falla la creación y permite volver a enviarl
   expect(input).toHaveValue('');
 });
 
-it.each(['texto', 'sugerencia'])('reintenta %s con la misma identidad si se pierde la respuesta de aceptación', async (source) => {
+it('reintenta el texto con la misma identidad si se pierde la respuesta de aceptación', async () => {
   vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [] });
@@ -1240,12 +1330,8 @@ it.each(['texto', 'sugerencia'])('reintenta %s con la misma identidad si se pier
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
   const submit = () => {
-    if (source === 'texto') {
-      fireEvent.change(input, { target: { value: 'Encargo aceptado' } });
-      fireEvent.click(screen.getByLabelText('Enviar'));
-    } else {
-      fireEvent.click(within(screen.getByRole('group', { name: 'Sugerencias' })).getAllByRole('button')[0]);
-    }
+    fireEvent.change(input, { target: { value: 'Encargo aceptado' } });
+    fireEvent.click(screen.getByLabelText('Enviar'));
   };
   await act(async () => { submit(); });
   await act(async () => { submit(); });
@@ -1273,60 +1359,15 @@ it('marca el estado desactualizado si falla el sondeo y lo recupera sin perder e
   expect(screen.getByText('Respuesta confirmada')).toBeVisible();
 });
 
-it('envía una sugerencia del composer creando una única conversación si no hay ninguna', async () => {
+it('muestra la bienvenida sin sugerencias de mensajes predefinidos', async () => {
   vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
   vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [] });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  const created = deferred<{ session: AgentSession }>();
-  const create = vi.spyOn(agentApi, 'agentSessionCreate').mockReturnValue(created.promise);
-  render(<AgentView />);
-  const group = await screen.findByRole('group', { name: 'Sugerencias' });
-  const buttons = within(group).getAllByRole('button');
-  expect(buttons).toHaveLength(3);
-  expect(within(group).getAllByRole('button', { hidden: true })).toHaveLength(3);
-  fireEvent.click(buttons[0]);
-  fireEvent.click(buttons[0]);
-  expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba' });
-  buttons.forEach((button) => expect(button).toBeDisabled());
-  await act(async () => { created.resolve({ session }); });
-  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', buttons[0].textContent, expect.any(String), []);
-});
-
-it('ofrece sugerencias en un chat con historial y permite reintentar un envío fallido sin borrar el borrador', async () => {
-  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta previa', ts: 1 }] });
-  vi.mocked(agentApi.agentMessageSend).mockRejectedValueOnce(new Error('No hay conexión')).mockResolvedValue({ accepted: true });
-  localStorage.setItem('antares-agent-session', 's1');
-  render(<AgentView />);
-  await screen.findByText('Respuesta previa');
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador sin enviar' } });
-  const suggestion = within(screen.getByRole('group', { name: 'Sugerencias' })).getAllByRole('button')[1];
-  await act(async () => { fireEvent.click(suggestion); });
-  expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'No hay conexión' }));
-  expect(suggestion).toBeEnabled();
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador sin enviar');
-  await act(async () => { fireEvent.click(suggestion); });
-  expect(agentApi.agentMessageSend).toHaveBeenLastCalledWith('s1', suggestion.textContent, expect.any(String), []);
-  const [first, second] = vi.mocked(agentApi.agentMessageSend).mock.calls;
-  expect(second[2]).toBe(first[2]);
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador sin enviar');
-  expect(screen.getByText('Respuesta previa')).toBeVisible();
-});
-
-it.each(['running', 'approval'])('deshabilita las sugerencias mientras el turno está en %s', async (state) => {
-  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
-    running: state === 'running',
-    pending_approvals: state === 'approval' ? [{ id: 'a1', session_id: 's1', call_id: 'c1', method: 'db_clear', params: {}, status: 'pending', created_at: 1, decided_at: null }] : [],
-  });
-  localStorage.setItem('antares-agent-session', 's1');
   render(<AgentView />);
   await act(async () => {});
-  within(screen.getByRole('group', { name: 'Sugerencias' })).getAllByRole('button').forEach((button) => {
-    expect(button).toBeDisabled();
-    fireEvent.click(button);
-  });
-  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  expect(screen.getByText(/^Puedo ayudarte a preparar informes/)).toBeVisible();
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveAttribute('placeholder', 'Cuéntame qué necesitas…');
+  expect(screen.queryByRole('group', { name: 'Sugerencias' })).not.toBeInTheDocument();
 });
 
 it('crea la conversación con el modelo real elegido en el selector', async () => {

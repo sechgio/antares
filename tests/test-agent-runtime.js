@@ -16,7 +16,7 @@ const { METHODS, INTERNAL_METHODS: INTERNAL_SET, nativeDispatchFor } = require('
 
 const PUBLIC_METHODS = [
   'agent_sessions_list', 'agent_session_create', 'agent_session_delete',
-  'agent_messages_list', 'agent_message_send', 'agent_tools_list', 'agent_tools_set',
+  'agent_messages_list', 'agent_message_send', 'agent_tools_list', 'agent_tools_set', 'agent_rooms_list',
   'agent_turn_status', 'agent_turn_cancel', 'agent_approve', 'agent_deny', 'agent_attach', 'agent_context_remove_file',
   'agent_profiles_list', 'agent_profile_save', 'agent_profile_delete', 'agent_session_rename', 'agent_session_model_set',
   'agent_browser',
@@ -38,7 +38,7 @@ const INTERNAL_RPCS = [
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function makeBridge() {
-  const state = { approvals: new Map(), seq: 0, dispatches: [], dispatchLog: [], grants: [], revoked: [], attention: {} };
+  const state = { approvals: new Map(), seq: 0, dispatches: [], dispatchLog: [], grants: [], revoked: [], attention: {}, workspaceBySession: new Map() };
   const bridge = async (method, params) => {
     switch (method) {
       case 'agent_internal_activity': return { attention: state.attention };
@@ -47,12 +47,13 @@ function makeBridge() {
         state.memoryCalls = [...(state.memoryCalls || []), params];
         return /plantilla/.test(params.text) ? { context: 'Memoria del agente:\n- Preferencia: Plantilla — usa la B', items: ['m1'] } : { context: '', items: [] };
       case 'agent_internal_artifacts':
-        return { artifacts: [], questions: [], context: { files: state.grants.flatMap((g) => g.paths.map((p) => ({ path: p, folder: false }))), accounts: ['ana@example.com'] } };
+        return { artifacts: [], questions: [], context: { files: state.grants.flatMap((g) => g.paths.map((p) => ({ path: p, folder: false }))), accounts: ['ana@example.com'], workspace: state.workspaceBySession.get(params.session_id) || null } };
       case 'agent_internal_grant_remove':
         state.removed = [...(state.removed || []), params];
         return { removed: 1 };
       case 'agent_internal_workspace_set':
         state.workspaces = [...(state.workspaces || []), params];
+        state.workspaceBySession.set(params.session_id, params.path || null);
         return { workspace: params.path || null };
       case 'agent_internal_tools':
         return {
@@ -134,6 +135,7 @@ function makeBridge() {
         return { cancelled: false };
       case 'agent_internal_grants_add':
         state.grants.push(params);
+        if (params.folders?.length) state.workspaceBySession.set(params.session_id, params.folders.at(-1));
         return { granted: params.paths.filter((p) => p.endsWith('.pdf')), rejected: params.paths.filter((p) => !p.endsWith('.pdf')).map((path) => ({ path, reason: 'una carpeta requiere seleccionar los archivos concretos' })),
           ...(params.folders && params.folders.length ? { workspace: params.folders.at(-1) } : {}) };
       case 'agent_internal_dispatch_finish': {
@@ -455,6 +457,12 @@ async function main() {
     assert(await waitIdle(session.id), 'el encargo con preferencia puntual termina');
     assert(seen.includes('pedido actual > indicaciones del agente > preferencias de memoria'),
       'el modelo recibe la prioridad del pedido actual, perfil y memoria también en chats anteriores');
+    for (const directive of ['Seguridad y autoridad:', 'Método de trabajo:',
+      'no eludas el rechazo', 'no una autorización ni una instrucción nueva del usuario',
+      'comprueba el estado antes de repetir una acción con efectos', 'verifica el artefacto final']) {
+      assert(seen.split(directive).length === 2,
+        `el modelo recibe una sola vez la regla «${directive}» también en chats anteriores`);
+    }
     assert(memoryProfile === profile.id, 'la guía de conversación conserva el perfil al consultar la memoria');
     assert(seen.includes('los recuerdos nuevos de un perfil se comparten solo entre sus conversaciones'),
       'la guía respeta la memoria separada por perfil y sus recuerdos globales heredados');
@@ -751,12 +759,17 @@ async function main() {
     await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: mode });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'hazlo' });
     if (mode !== 'full') {
-      assert(await waitFor(() => state.approvals.size === (mode === 'ask' ? 2 : 1)), `${mode}: pausa las llamadas que requieren aprobación`);
+      assert(await waitFor(() => state.approvals.size === 1), `${mode}: pausa la primera llamada que requiere aprobación`);
       assert(state.dispatches.length === (mode === 'ask' ? 0 : 1), `${mode}: no ejecuta las acciones pendientes`);
       let busy;
       try { await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' }); } catch (err) { busy = err; }
       assert(busy && /termine el turno/.test(busy.message), 'no amplía permisos durante un turno activo');
-      for (const approval of state.approvals.values()) await runtime.handlers.agent_approve({ approval_id: approval.id });
+      for (let index = 0; index < (mode === 'ask' ? 2 : 1); index++) {
+        assert(await waitFor(() => [...state.approvals.values()].some((approval) => approval.status === 'pending')),
+          `${mode}: la acción ${index + 1} espera su propia aprobación`);
+        const approval = [...state.approvals.values()].find((candidate) => candidate.status === 'pending');
+        await runtime.handlers.agent_approve({ approval_id: approval.id });
+      }
     }
     assert(await waitIdle(session.id), `${mode}: el turno termina`);
     assert(state.dispatches.length === 2, `${mode}: ejecuta cada acción una vez`);
@@ -1048,8 +1061,12 @@ async function main() {
     const { supportsReasoning, thinkingLevelFor, modelDefinition } = require('../electron/agent-execution');
     assert(supportsReasoning('anthropic_messages', 'claude-sonnet-4-5') && !supportsReasoning('anthropic_messages', 'claude-3-5-haiku'),
       'Anthropic pide razonamiento solo a modelos que lo admiten');
-    assert(supportsReasoning('openai_chat', 'deepseek-r1:8b') && !supportsReasoning('openai_chat', 'gpt-4o') && !supportsReasoning('openai_chat', 'llama3.1'),
-      'los modelos compatibles genéricos no reciben parámetros de razonamiento');
+    assert(supportsReasoning('openai_chat', 'deepseek-r1:8b')
+      && supportsReasoning('openai_chat', 'deepseek-ai/DeepSeek-V4.1-Flash-1017')
+      && supportsReasoning('openai_chat', 'deepseek-v4:latest')
+      && !supportsReasoning('openai_chat', 'deepseek-v40') && !supportsReasoning('openai_chat', 'deepseek-v5')
+      && !supportsReasoning('openai_chat', 'gpt-4o') && !supportsReasoning('openai_chat', 'llama3.1'),
+      'solo los modelos de razonamiento conocidos reciben parámetros de razonamiento');
     assert(thinkingLevelFor([], 'high') === 'off' && thinkingLevelFor(['minimal', 'low', 'medium', 'high']) === 'low'
       && thinkingLevelFor(['minimal', 'low', 'medium', 'high'], 'xhigh') === 'high' && thinkingLevelFor(['low', 'medium'], 'minimal') === 'low',
       'el nivel elegido se ajusta al más cercano que admite el modelo');
@@ -1072,10 +1089,21 @@ async function main() {
     const anthropicInfo = { provider: 'anthropic', style: 'anthropic_messages', base_url: 'https://api.anthropic.com' };
     assert(modelDefinition(anthropicInfo, fable.id, 'anthropic-messages', fable, fable).compat.forceAdaptiveThinking === true,
       'los Claude con pensamiento adaptativo lo reciben del catálogo');
-    const custom = (reasoning) => ({ provider: 'custom-glm', style: 'openai_chat', base_url: 'http://127.0.0.1:8000/v1', custom: true, capabilities: { reasoning } });
+    const custom = (reasoning, provider = 'custom-glm') => ({ provider, style: 'openai_chat', base_url: 'http://127.0.0.1:8000/v1', custom: true, ...(reasoning === undefined ? {} : { capabilities: { reasoning } }) });
     assert(modelDefinition(custom(true), 'zai-org/GLM-5.3-Flash', 'openai-completions').reasoning === true
       && modelDefinition(custom(false), 'deepseek-r1', 'openai-completions').reasoning === false,
       'la capacidad declarada en el proveedor personalizado prevalece sobre el nombre');
+    assert(modelDefinition(custom(false, 'custom-deepseek'), 'deepseek-ai/DeepSeek-V4.1-Flash-1017', 'openai-completions').reasoning === false,
+      'un proveedor que declara que el modelo no razona no se sobrescribe por el nombre');
+    const deepseek = modelDefinition(custom(undefined, 'custom-deepseek'), 'deepseek-ai/DeepSeek-V4.1-Flash-1017', 'openai-completions');
+    assert(deepseek.reasoning === true && deepseek.thinkingLevelMap?.off === 'none'
+      && deepseek.thinkingLevelMap?.medium === null && deepseek.thinkingLevelMap?.max === 'max',
+      'DeepSeek V4 declara sus niveles aunque el proveedor personalizado no esté en el catálogo');
+    assert(JSON.stringify(getSupportedThinkingLevels(deepseek)) === JSON.stringify(['off', 'low', 'high', 'max']),
+      'DeepSeek V4 admite solo off, low, high y max');
+    const tagged = modelDefinition(custom(undefined, 'custom-deepseek'), 'deepseek-v4:latest', 'openai-completions');
+    assert(tagged.reasoning === true && JSON.stringify(getSupportedThinkingLevels(tagged)) === JSON.stringify(['off', 'low', 'high', 'max']),
+      'un identificador con etiqueta conserva los niveles de DeepSeek V4');
   }
 
   {
@@ -1357,6 +1385,52 @@ async function main() {
 
   {
     const { bridge, state } = makeBridge();
+    const seen = [];
+    const folder = String.raw`C:\proyecto`;
+    await openFaux(Array.from({ length: 4 }, () => (context) => {
+      seen.push(JSON.stringify(context.messages.at(-1)));
+      return fauxAssistantMessage('ok');
+    }), bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const dialogs = [];
+    const picks = [{ canceled: false, filePaths: [folder] }, { canceled: true, filePaths: [] },
+      { canceled: false, filePaths: [String.raw`C:\no-disponible`] }];
+    runtime._internal.shared.dialog = { showOpenDialog: async (_win, options) => { dialogs.push(options); return picks.shift(); } };
+    const selected = await runtime.handlers.agent_workspace_set({ session_id: session.id, select: true, path: String.raw`C:\ignorar` });
+    assert(selected.workspace === folder && state.grants.at(-1).folders[0] === folder,
+      'seleccionar la carpeta la concede y activa sin enviar mensajes ni adjuntos');
+    assert(dialogs[0].properties.length === 1 && dialogs[0].properties[0] === 'openDirectory', 'se usa un diálogo nativo de carpeta');
+    assert(runtime._internal.shared.attachments.size === 0, 'la carpeta de trabajo no crea un adjunto de un solo uso');
+    const cancelled = await runtime.handlers.agent_workspace_set({ session_id: session.id, select: true });
+    assert(cancelled.workspace === folder && state.grants.length === 1, 'cancelar conserva la raíz y no concede nada');
+    const originalBridge = runtime._internal.shared.deps.bridge;
+    runtime._internal.shared.deps.bridge = async (method, params) => method === 'agent_internal_grants_add'
+      ? { granted: [], rejected: [{ path: params.folders[0], reason: 'Carpeta no disponible' }] } : bridge(method, params);
+    let denied = null;
+    try { await runtime.handlers.agent_workspace_set({ session_id: session.id, select: true }); } catch (err) { denied = err; }
+    assert(denied && /Carpeta no disponible/.test(denied.message), 'se informa si la carpeta seleccionada no puede concederse');
+    runtime._internal.shared.deps.bridge = originalBridge;
+    assert(state.workspaceBySession.get(session.id) === folder, 'una selección rechazada conserva el workspace anterior');
+    for (const content of ['crea un archivo', 'edítalo']) {
+      await runtime.handlers.agent_message_send({ session_id: session.id, content });
+      assert(await waitIdle(session.id), 'termina el turno sin adjuntos');
+    }
+    assert(seen.slice(0, 2).every((message) => message.includes(JSON.stringify(`Espacio de trabajo activo: ${folder}`).slice(1, -1))),
+      'cada turno conoce la carpeta persistente aunque no se adjunte nada');
+    const other = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: other.session.id, content: 'otra conversación' });
+    assert(await waitIdle(other.session.id), 'termina el turno de otra conversación');
+    assert(seen[2].includes('Sin carpeta de trabajo activa'), 'la raíz no se comparte con otras conversaciones');
+    await runtime.handlers.agent_workspace_set({ session_id: session.id });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'usa borradores' });
+    assert(await waitIdle(session.id), 'termina el turno sin raíz');
+    assert(seen[3].includes('Sin carpeta de trabajo activa'), 'el siguiente turno deja de usar una raíz desactivada');
+    runtime._internal.shared.dialog = null;
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
     const appData = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-drop-'));
     const previousAppData = process.env.LOCALAPPDATA;
     process.env.LOCALAPPDATA = appData;
@@ -1592,7 +1666,8 @@ async function main() {
     assert(last.some((message) => typeof message.content === 'string'
       && message.content.includes('[Contexto compactado por Antares')),
       'una ventana pequeña recibe un resumen estructurado en lugar del historial completo');
-    assert(last.some((message) => message.role === 'user' && String(message.content).includes('tercer turno')),
+    assert(last.some((message) => message.role === 'user' && (typeof message.content === 'string'
+      ? message.content.includes('tercer turno') : message.content.some((block) => block.type === 'text' && block.text === 'tercer turno'))),
       'el mensaje actual viaja intacto');
     assert(!JSON.stringify(last).includes('a'.repeat(500)), 'el texto antiguo ya no consume la ventana');
     const { usage } = await runtime.handlers.agent_messages_list({ session_id: session.id });
@@ -1936,6 +2011,45 @@ async function main() {
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'piensa más' });
     assert(await waitIdle(session.id), 'el turno con más razonamiento termina');
     assert(hits[1].reasoning_effort === 'high', 'el nivel elegido viaja en la petición al proveedor');
+    server.close();
+    await runtime.shutdown();
+  }
+
+  {
+    const hits = [];
+    const server = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => { body += c; });
+      req.on('end', () => {
+        hits.push({ url: req.url, body: JSON.parse(body) });
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        const chunk = (choices) => `data: ${JSON.stringify({ choices })}\n\n`;
+        res.write(chunk([{ delta: { role: 'assistant' } }]));
+        res.write(chunk([{ delta: { content: 'Listo' } }]));
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      });
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    const model = 'deepseek-ai/DeepSeek-V4.1-Flash-1017';
+    const { bridge } = makeBridge();
+    const wiredBridge = async (method, params) => method === 'agent_internal_provider'
+      ? { provider: 'custom-deepseek', style: 'openai_chat', base_url: `http://127.0.0.1:${server.address().port}/v1`, api_key: 'sk-wire', auth_type: 'api_key', extra_headers: {}, default_model: model, custom: true, capabilities: {} }
+      : bridge(method, params);
+    const { MemoryStorage } = await import('@earendil-works/pi-durable');
+    await runtime.open({ storage: new MemoryStorage(), bridge: wiredBridge, skipImport: true });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'custom-deepseek', model });
+    assert(JSON.stringify(session.reasoning_levels) === JSON.stringify(['low', 'high', 'max']),
+      'DeepSeek V4 muestra Bajo, Alto y Máximo en el selector');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'piensa' });
+    assert(await waitIdle(session.id), 'el turno de DeepSeek V4 termina');
+    assert(hits[0].url === '/v1/chat/completions' && hits[0].body.reasoning_effort === 'low',
+      'DeepSeek V4 envía el esfuerzo bajo por defecto');
+    await runtime.handlers.agent_session_reasoning_set({ id: session.id, reasoning_effort: 'max' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'piensa al máximo' });
+    assert(await waitIdle(session.id), 'el turno con Máximo termina');
+    assert(hits[1].body.reasoning_effort === 'max', 'DeepSeek V4 envía max al proveedor');
     server.close();
     await runtime.shutdown();
   }
@@ -2358,6 +2472,48 @@ async function main() {
     fs.rmSync(appData, { recursive: true, force: true });
   }
 
+  for (const gated of [true, false]) {
+    const { bridge } = makeBridge();
+    const started = [];
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    const orderedBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'ordered_probe', gated, kind: 'backend', module: 'computer',
+          inputSchema: { type: 'object', properties: { step: { type: 'integer' } } } });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'ordered_probe') {
+        started.push(params.params.step);
+        if (params.params.step === 1) await held;
+        return { result: JSON.stringify({ step: params.params.step }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('ordered_probe', { step: 1 }), fauxToolCall('ordered_probe', { step: 2 })],
+        { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Comprobado'),
+    ], orderedBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    try {
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'ejecuta las dos operaciones' });
+      assert(await waitFor(() => started.length >= 1), 'la primera operación empieza');
+      const overlapped = await waitFor(() => started.length === 2, gated ? 500 : 5000);
+      release();
+      assert(await waitIdle(session.id), 'la ronda de dos operaciones termina');
+      assert(overlapped === !gated, gated ? 'los efectos esperan a que termine el efecto anterior'
+        : 'dos lecturas independientes siguen ejecutándose en paralelo');
+      assert((gated ? started : [...started].sort()).join() === '1,2',
+        'cada operación se ejecuta una vez y los efectos conservan el orden de inicio');
+    } finally {
+      release();
+      await runtime.shutdown();
+    }
+  }
+
   {
     const { bridge } = makeBridge();
     const schema = { type: 'object', properties: {} };
@@ -2409,20 +2565,30 @@ async function main() {
     await runtime.shutdown();
   }
 
-  {
+  for (const scenario of [
+    { label: 'lectura idempotente recuperable', replay_safe: true, recoverable: true, expected: 4 },
+    { label: 'lectura idempotente reintentable', replay_safe: true, retryable: true, expected: 4 },
+    { label: 'lectura sin idempotencia declarada', retryable: true, expected: 3 },
+    { label: 'lectura idempotente incierta', replay_safe: true, retryable: true, uncertain: true, expected: 3 },
+    { label: 'acción incierta', retryable: true, uncertain: true, gated: true, expected: 1 },
+  ]) {
     const { bridge } = makeBridge();
     const schema = { type: 'object', properties: {} };
     let probes = 0;
+    const attempts = [];
     const retryBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'busy_probe', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
+        result.tools.push({ name: 'busy_probe', gated: !!scenario.gated, replay_safe: scenario.replay_safe,
+          kind: 'backend', module: 'computer', inputSchema: schema });
         return result;
       }
       if (method === 'agent_internal_dispatch' && params.name === 'busy_probe') {
         probes += 1;
+        attempts.push(Date.now());
         return { result: JSON.stringify(probes <= 3
-          ? { error: 'ocupado', code: 'USER_BUSY', retryable: true, retry_after_ms: 1200 }
+          ? { error: 'ocupado', code: 'USER_BUSY', retryable: scenario.retryable, recoverable: scenario.recoverable,
+            uncertain: scenario.uncertain, retry_after_ms: 1200 }
           : { ok: true }) };
       }
       return bridge(method, params);
@@ -2432,9 +2598,90 @@ async function main() {
       fauxAssistantMessage('Listo'),
     ], retryBridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    if (scenario.gated) await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'insiste' });
-    assert(await waitIdle(session.id), 'el turno con fallos retryable termina');
-    assert(probes === 4, 'un error retryable no consume el freno de repeticiones');
+    assert(await waitIdle(session.id), `el turno de ${scenario.label} termina`);
+    assert(probes === scenario.expected, `${scenario.label}: solo se ejecutan los intentos seguros`);
+    if (scenario.replay_safe && !scenario.gated && !scenario.uncertain) {
+      assert(attempts.slice(1).every((time, index) => time - attempts[index] >= 1100),
+        'una nueva llamada respeta retry_after_ms del error recuperable anterior');
+    }
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const last = listed.messages.flatMap((m) => m.tool_calls || []).filter((c) => c.name === 'busy_probe').at(-1);
+    if (scenario.gated && scenario.uncertain) {
+      assert(/podría haberse aplicado/.test(String(last.result || '')), 'la acción incierta exige verificar antes de repetir');
+    }
+    await runtime.shutdown();
+  }
+
+  for (const mode of ['signature', 'cause', 'uncertain']) {
+    const { bridge } = makeBridge();
+    let probes = 0;
+    const retryBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'retry_probe', gated: false, replay_safe: true, kind: 'backend', module: 'computer',
+          inputSchema: { type: 'object', properties: { step: { type: 'integer' } } } });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'retry_probe') {
+        probes += 1;
+        return { result: JSON.stringify({ error: mode === 'signature' && probes % 2 ? 'red ocupada' : 'servidor ocupado',
+          retryable: true, recoverable: true, ...(mode === 'uncertain' ? { uncertain: true } : {}) }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      ...Array.from({ length: 7 }, (_, step) => fauxAssistantMessage([
+        fauxToolCall('retry_probe', { step: mode === 'cause' ? step : 0 }),
+      ], { stopReason: 'toolUse' })),
+      fauxAssistantMessage('Necesito otra vía'),
+    ], retryBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'comprueba la recuperación' });
+    assert(await waitIdle(session.id), `la recuperación acotada termina: ${mode}`);
+    assert(probes === (mode === 'uncertain' ? 3 : 6), mode === 'uncertain'
+      ? 'un resultado incierto conserva el freno normal aunque diga retryable'
+      : `seis fallos recuperables bloquean la siguiente llamada por ${mode === 'cause' ? 'la misma causa con argumentos distintos' : 'firma con causas distintas'}`);
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const last = listed.messages.flatMap((message) => message.tool_calls || []).at(-1);
+    assert(/No la repitas/.test(String(last.result || '')), 'el modelo recibe el bloqueo para cambiar de enfoque');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    let probes = 0;
+    let retryRequested = false;
+    const retryBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'waiting_retry_probe', gated: false, replay_safe: true, kind: 'backend', module: 'computer',
+          inputSchema: { type: 'object', properties: {} } });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'waiting_retry_probe') {
+        probes += 1;
+        return { result: JSON.stringify({ error: 'ocupado', retryable: true, retry_after_ms: 60000 }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('waiting_retry_probe', {})], { stopReason: 'toolUse' }),
+      () => {
+        retryRequested = true;
+        return fauxAssistantMessage([fauxToolCall('waiting_retry_probe', {})], { stopReason: 'toolUse' });
+      },
+      fauxAssistantMessage('Fin'),
+    ], retryBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'espera y vuelve a consultar' });
+    assert(await waitFor(() => retryRequested), 'el modelo solicita una nueva consulta después del fallo');
+    await sleep(150);
+    const stoppedAt = Date.now();
+    await runtime.handlers.agent_turn_cancel({ session_id: session.id });
+    assert(await waitIdle(session.id) && Date.now() - stoppedAt < 2000, 'cancelar interrumpe la espera de recuperación');
+    assert(probes === 1, 'cancelar durante retry_after_ms evita ejecutar la llamada pendiente');
     await runtime.shutdown();
   }
 
@@ -2511,7 +2758,8 @@ async function main() {
     const gatedBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'gated_probe', gated: true, kind: 'backend', module: 'computer', inputSchema: schema });
+        result.tools.push({ name: 'gated_probe', gated: true, replay_safe: true,
+          kind: 'backend', module: 'computer', inputSchema: schema });
         return result;
       }
       if (method === 'agent_internal_dispatch' && params.name === 'gated_probe') {
@@ -2530,7 +2778,7 @@ async function main() {
     await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'avanza con efecto' });
     assert(await waitIdle(session.id), 'el turno con efecto gated termina');
-    assert(probes === 4, 'una acción gated con errores recuperables no se bloquea');
+    assert(probes === 3, 'una acción gated conserva el freno aunque declare replay_safe y errores recuperables');
     await runtime.shutdown();
   }
 

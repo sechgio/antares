@@ -80,7 +80,7 @@ export function FileDiff({ change, applied = false, className = 'max-h-72' }: {
   let hidden = 0;
   return (
     <div role="group" aria-label="Cambios del archivo" data-applied={applied || undefined}
-      className={`agent-terminal agent-diff overflow-auto rounded-lg border border-[var(--border-subtle)] py-1.5 font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)] ${className}`}>
+      className={`agent-terminal agent-diff overflow-auto rounded-lg py-1.5 font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)] ${className}`}>
       {change.hunks.map((hunk, h) => (
         <div key={h}>
           {h > 0 && <div className="agent-diff-gap select-none px-3 text-[var(--text-muted)]" aria-hidden="true">⋯</div>}

@@ -82,6 +82,10 @@ function assertAuthSessionCurrent(session) {
 }
 
 async function _refreshAccessToken(tokens, session = captureAuthSession()) {
+  // pendiente deduplicar: este refresh diverge de spotify-session._refreshTokens
+  // (body con client_secret, store por usuario con scopes, single-flight por
+  // generación de sesión) y de connections-session (refresh delegado en el
+  // backend vía connections_token_refresh).
   assertAuthSessionCurrent(session);
   const config = requireOAuthConfig();
   if (!tokens?.refresh_token) {

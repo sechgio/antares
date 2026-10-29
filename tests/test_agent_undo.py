@@ -12,6 +12,7 @@ from backend.core.agent import agent, agent_tools
 from backend.core.agent import undo as undo_journal
 from backend.core.exceptions import ValidationError
 from backend.handlers import agent_internal
+from tests.agent_store_seed import seed_session
 
 
 @pytest.fixture()
@@ -69,7 +70,7 @@ def _effects(session_id: str) -> list[dict]:
 
 
 def test_fs_write_new_file_undo_deletes_it(store):
-    session_id = store.create_session("provider", "model", "Undo")["id"]
+    session_id = seed_session(store)["id"]
     path = store.drafts_dir(session_id) / "nuevo.txt"
     _run(session_id, "call-1", "fs_write", {"path": "nuevo.txt", "content": "hola"}, source="rule")
 
@@ -85,7 +86,7 @@ def test_fs_write_new_file_undo_deletes_it(store):
 
 
 def test_fs_write_overwrite_undo_restores_previous_content(store):
-    session_id = store.create_session("provider", "model", "Undo")["id"]
+    session_id = seed_session(store)["id"]
     path = store.drafts_dir(session_id) / "existente.txt"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("original", encoding="utf-8")
@@ -100,7 +101,7 @@ def test_fs_write_overwrite_undo_restores_previous_content(store):
 
 
 def test_fs_edit_undo_restores_previous_content(store):
-    session_id = store.create_session("provider", "model", "Undo")["id"]
+    session_id = seed_session(store)["id"]
     path = store.drafts_dir(session_id) / "editable.txt"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("antes", encoding="utf-8")
@@ -115,7 +116,7 @@ def test_fs_edit_undo_restores_previous_content(store):
 
 
 def test_undo_refuses_to_overwrite_later_changes(store):
-    session_id = store.create_session("provider", "model", "Undo")["id"]
+    session_id = seed_session(store)["id"]
     path = store.drafts_dir(session_id) / "cambios.txt"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("original", encoding="utf-8")
@@ -131,7 +132,7 @@ def test_undo_refuses_to_overwrite_later_changes(store):
 
 
 def test_effects_expose_receipt_without_raw_result(store):
-    session_id = store.create_session("provider", "model", "Undo")["id"]
+    session_id = seed_session(store)["id"]
     _run(session_id, "call-5", "fs_write", {"path": "recibo.txt", "content": "ok"})
 
     [receipt] = _effects(session_id)
@@ -154,7 +155,7 @@ def _sha(path: Path) -> str:
 
 
 def test_drafts_save_new_file_undo_deletes_the_destination(store):
-    session_id = store.create_session("provider", "model", "Undo")["id"]
+    session_id = seed_session(store)["id"]
     _draft(store, session_id, "contenido")
     destination = store.base_dir / "entregas"
     destination.mkdir()
@@ -172,7 +173,7 @@ def test_drafts_save_new_file_undo_deletes_the_destination(store):
 
 
 def test_drafts_save_overwrite_undo_restores_the_destination(store):
-    session_id = store.create_session("provider", "model", "Undo")["id"]
+    session_id = seed_session(store)["id"]
     _draft(store, session_id, "nuevo")
     destination = store.base_dir / "entregas"
     destination.mkdir()

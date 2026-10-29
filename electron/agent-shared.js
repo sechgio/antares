@@ -6,6 +6,10 @@ const INTERRUPTED_RESULT = JSON.stringify({
 const NOTICE_KIND = 'antares.notice';
 const CONTEXT_MARKER = '[Contexto de Antares]';
 const CHECK_MARKER = '[Comprobación de Antares]';
+const DELEGATION_GUIDE = 'Cómo elegir la delegación: agent_delegate abre una conversación aparte con historial, '
+  + 'seguimiento, continuación y salas; sirve para encargos que pueden durar o varios agentes a la vez, y solo lee. '
+  + 'subagent_run devuelve el resultado en este mismo turno, agrupa varios encargos, admite output_schema y es la '
+  + 'única vía para worker, con cada efecto aprobado aquí. No uses las dos para el mismo encargo.';
 
 const shared = {
   deps: null,
@@ -36,6 +40,7 @@ const shared = {
   NOTICE_KIND,
   CONTEXT_MARKER,
   CHECK_MARKER,
+  DELEGATION_GUIDE,
 };
 
 // Los proveedores compatibles con OpenAI pueden repetir ids («call_0») entre turnos
@@ -103,6 +108,32 @@ async function commitSessions(change) {
   }, ctx());
 }
 
+function planFromParams(params) {
+  if (!params || !Array.isArray(params.steps)) return null;
+  return {
+    goal: String(params.goal || ''),
+    steps: params.steps.map((step) => ({
+      title: String((step && step.title) || ''),
+      status: ['pending', 'in_progress', 'done', 'failed'].includes(step && step.status) ? step.status : 'pending',
+      ...(step && step.evidence ? { evidence: String(step.evidence).slice(0, 300) } : {}),
+    })),
+  };
+}
+
+async function savePlan(sessionId, plan) {
+  if (!shared.state?.PlanDoc || !sessionId || !plan) return;
+  await shared.state.harness.commit(async (tx) => {
+    const doc = await tx.doc(shared.state.PlanDoc);
+    doc.plans[sessionId] = { ...plan, updated_at: Date.now() };
+  }, ctx()).catch(() => {});
+}
+
+async function readPlan(sessionId) {
+  if (!shared.state?.PlanDoc || !sessionId) return null;
+  const doc = await shared.state.harness.snapshot(shared.state.PlanDoc, ctx());
+  return doc?.plans?.[sessionId] || null;
+}
+
 async function requireSession(sessionId) {
   const session = (await sessions())[sessionId];
   if (!session || session.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
@@ -145,6 +176,9 @@ module.exports = {
   sessions,
   profiles,
   commitSessions,
+  planFromParams,
+  savePlan,
+  readPlan,
   requireSession,
   conversation,
   sessionForConversation,

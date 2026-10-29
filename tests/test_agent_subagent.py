@@ -8,11 +8,12 @@ import pytest
 from backend.core.agent import agent, agent_chat, memory, subagent
 from backend.core.agent.cancel import RunCancelled, _CancelEvent
 from backend.handlers import agent_internal
+from tests.agent_store_seed import seed_session
 
 
 def _session(tmp_path):
     store = agent.AgentStore(tmp_path)
-    session = store.create_session("ollama", "llama3.1", "Prueba")
+    session = seed_session(store, title="Prueba")
     return store, session
 
 

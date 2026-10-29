@@ -39,7 +39,7 @@ export function dayLabel(ts: number, now = Date.now()): string {
 export function DaySeparator({ label }: { label: string }) {
   return (
     <div className="flex justify-center py-1" role="separator" aria-label={label}>
-      <span className="rounded-full bg-[var(--bg-input)] px-[7px] py-1 text-[13px] font-medium leading-[18px] text-[var(--text-secondary)]">
+      <span className="text-[12px] font-medium leading-[18px] text-[var(--text-muted)]">
         {label}
       </span>
     </div>
@@ -141,14 +141,29 @@ function prettyJson(text: string): string {
   }
 }
 
+function errorText(text: string): string {
+  try {
+    const value: unknown = JSON.parse(text);
+    if (value && typeof value === 'object' && 'error' in value && typeof value.error === 'string') {
+      const details = Object.entries(value).filter(([key]) => key !== 'error').map(([key, item]) => `${key}: ${typeof item === 'string' ? item : JSON.stringify(item)}`);
+      return [value.error, details.join('\n')].filter(Boolean).join('\n\n');
+    }
+  } catch {
+    return text;
+  }
+  return prettyJson(text);
+}
+
 function ToolCode({ label, children, tone }: { label: string; children: string; tone?: 'error' }) {
   return (
     <div className="group/code">
-      <div className="mb-1 flex items-center justify-between text-[10.5px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+      <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-[var(--text-muted)]">
         {label}
         <CopyButton text={children} label={`Copiar ${label.toLowerCase()}`} className="group-hover/code:opacity-100" />
       </div>
-      <pre className={`agent-terminal max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-[var(--border-subtle)] px-3 py-2 font-mono text-[11.5px] leading-[18px] ${tone === 'error' ? 'text-[var(--accent-red)]' : 'text-[var(--text-secondary)]'}`}>
+      <pre className={`max-h-64 overflow-auto whitespace-pre-wrap rounded-lg px-3 py-2 ${tone === 'error'
+        ? 'bg-[color:color-mix(in_srgb,var(--accent-red)_9%,transparent)] break-words font-sans text-[12.5px] leading-5 text-[var(--accent-red)]'
+        : 'agent-terminal break-all font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)]'}`}>
         {children}
       </pre>
     </div>
@@ -262,13 +277,13 @@ function TerminalStep({ call, verbose }: { call: AgentToolCall; verbose?: boolea
   const command = typeof call.params.command === 'string' ? call.params.command : '';
   const output = shellOutput(call.result);
   const live = call.status === 'running';
-  const [open, setOpen] = useState(verbose || live || call.status === 'failed' || call.status === 'interrupted');
+  const [open, setOpen] = useState(verbose || live);
   const [seen, setSeen] = useState(call.status);
   const [mounted, setMounted] = useState(open);
   if (open && !mounted) setMounted(true);
   if (seen !== call.status) {
     setSeen(call.status);
-    if (call.status === 'running' || call.status === 'failed' || call.status === 'interrupted') setOpen(true);
+    if (call.status === 'running') setOpen(true);
   }
   const exitFailed = output?.exit != null && output.exit !== 0;
   const failed = call.status === 'failed' || call.status === 'denied' || exitFailed;
@@ -303,8 +318,8 @@ function TerminalStep({ call, verbose }: { call: AgentToolCall; verbose?: boolea
       <div className="agent-subagent-body overflow-hidden" inert={!open} aria-hidden={!open}>
       {mounted && (
         <div className={`${TASK_BODY} group/term mb-1.5 mt-1`}>
-          <div className="agent-terminal overflow-hidden rounded-lg border border-[var(--border-subtle)]">
-            <div className="flex min-h-7 items-center gap-2 border-b border-[var(--border-subtle)] px-3 text-[11px] text-[var(--text-muted)]">
+          <div className="agent-terminal overflow-hidden rounded-lg">
+            <div className="flex min-h-7 items-center gap-2 px-3 text-[11px] text-[var(--text-muted)]">
               <Terminal size={12} className="shrink-0" aria-hidden="true" />
               <span className="shrink-0 font-medium">Terminal</span>
               {typeof call.params.cwd === 'string' && <span className="min-w-0 truncate font-mono" title={call.params.cwd}>{call.params.cwd}</span>}
@@ -347,13 +362,13 @@ function ToolCallStep({ call, verbose }: { call: AgentToolCall; verbose?: boolea
   const arg = call.name === 'skills_read' ? skillName(call) : keyArgument(call.params);
   const row = (
     <>
-      <Icon size={14} className={`shrink-0 ${live ? 'animate-spin text-[var(--text-secondary)]' : failed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`} aria-hidden="true" />
+      <Icon size={14} className={`shrink-0 ${live ? 'animate-spin text-[var(--text-secondary)]' : 'text-[var(--text-muted)]'}`} aria-hidden="true" />
       <span title={arg ?? undefined} className={`min-w-0 truncate transition-colors ${failed ? 'text-[var(--accent-red)]' : denied ? 'text-[var(--text-muted)]' : 'group-hover:text-[var(--text-primary)]'}`}>
         {methodLabel(call.name)}
-        {arg && <span className={`ml-1.5 font-mono text-[12px] ${failed ? '' : 'text-[var(--text-muted)]'}`}>{arg}</span>}
+        {arg && <span className="ml-1.5 font-mono text-[12px] text-[var(--text-muted)]">{arg}</span>}
       </span>
       {call.gated && <ShieldCheck size={12} className="shrink-0 text-[var(--text-muted)]" aria-label="Acción sensible" />}
-      <span className={call.status === 'done' ? 'sr-only' : `shrink-0 text-[12px] ${failed ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`}>
+      <span className={call.status === 'done' || failed ? 'sr-only' : 'shrink-0 text-[12px] text-[var(--text-muted)]'}>
         {CALL_STATUS_LABEL[call.status] ?? call.status}
       </span>
       {live && <Elapsed since={call.started_at} />}
@@ -362,13 +377,14 @@ function ToolCallStep({ call, verbose }: { call: AgentToolCall; verbose?: boolea
   );
   if (denied || (!params && !detail)) return <div className={`group ${TASK_ROW}`}>{row}</div>;
   return (
-    <details className="group" open={verbose || failed || call.status === 'interrupted' || undefined}>
+    <details className="group" open={verbose || undefined}>
       <summary className={`agent-tool-row ${TASK_ROW} cursor-pointer list-none`}>{row}</summary>
       <div className={`${TASK_BODY} mb-1.5 mt-1 space-y-2`}>
         {params && <ToolCode label="Entrada">{params}</ToolCode>}
         {detail && (call.status === 'done' && (call.name === 'skills_list' || call.name === 'skills_read')
           ? <SkillOutput method={call.name} result={detail} />
-          : <ToolCode label={failed ? 'Error' : 'Salida'} tone={failed ? 'error' : undefined}>{prettyJson(detail)}</ToolCode>)}
+          : failed ? <ToolCode label="Error" tone="error">{errorText(detail)}</ToolCode>
+            : <ToolCode label="Salida">{prettyJson(detail)}</ToolCode>)}
       </div>
     </details>
   );
@@ -464,7 +480,7 @@ function ActivityItem({ entry, onUndo, view }: { entry: ActivityEntry; onUndo?: 
   if (entry.kind === 'reasoning') return <Reasoning text={entry.text} streaming={entry.streaming} ms={entry.ms} defaultOpen={view !== 'normal'} />;
   if (entry.kind === 'note') {
     return (
-      <div className="agent-activity-note py-1 text-[13px] leading-5 text-[var(--text-secondary)]">
+      <div className="agent-activity-note py-1 text-[14px] leading-[23px] text-[var(--text-secondary)]">
         <MessageMarkdown text={entry.text} />
       </div>
     );
@@ -490,6 +506,7 @@ function Activity({ entries, working, answering, duration, onUndo, view }: {
   const calls = entries.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []));
   const live = working && !answering;
   const open = expanded ?? (view === 'verbose' || live || calls.some((call) => NEEDS_REVIEW.includes(call.status)));
+  const latestNote = !open ? [...entries].reverse().find((entry) => entry.kind === 'note') : undefined;
   const firstReview = entries.findIndex((entry) => entry.kind === 'call' && NEEDS_REVIEW.includes(entry.call.status));
   const earlier = live && view !== 'verbose' && entries.length > LIVE_TAIL + 1
     ? Math.min(entries.length - LIVE_TAIL, firstReview === -1 ? Infinity : firstReview) : 0;
@@ -528,6 +545,7 @@ function Activity({ entries, working, answering, duration, onUndo, view }: {
         {review > 0 && <span className="shrink-0 text-[var(--accent-red)]">· {review} por revisar</span>}
         <ChevronRight size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${open ? 'rotate-90' : ''}`} aria-hidden="true" />
       </button>
+      {latestNote && <ActivityItem entry={latestNote} onUndo={onUndo} view={view} />}
       {open && (
         <div className={`${TASK_BODY} agent-activity-body mt-0.5 space-y-0.5`}>
           {earlier > 0 && (
@@ -660,15 +678,15 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
   return (
     <div className="agent-trace-in agent-turn group space-y-1.5">
       <div className="flex items-center gap-1.5">
-        {agent && <AgentAvatar seed={agent.seed} color={agent.color} name={agent.name} size={18} working={working} />}
-        <span className="text-[12px] font-medium leading-5 text-[var(--text-secondary)]">{agent?.name ?? 'Agente'}</span>
+        {agent && <AgentAvatar seed={agent.seed} color={agent.color} name={agent.name} size={24} working={working} />}
+        <span className="text-[13px] font-medium leading-5 text-[var(--text-secondary)]">{agent?.name ?? 'Agente'}</span>
         {answer && !answer.partial && <CopyButton text={answer.content} />}
       </div>
       {thought
         ? <Reasoning text={thought.text} streaming={thought.streaming} ms={thought.ms} defaultOpen={view !== 'normal'} />
         : entries.length > 0 && <Activity entries={entries} working={working} answering={!!answer} duration={duration} onUndo={onUndo} view={view} />}
       {answer && (
-        <div className="agent-message-answer min-w-0 max-w-full py-1 text-[14px] leading-[23px] text-[var(--text-primary)]">
+        <div className="agent-message-answer min-w-0 max-w-full py-1 text-[15px] leading-[26px] text-[var(--text-primary)]">
           <MessageMarkdown text={answer.content} streaming={!!answer.partial} />
         </div>
       )}
@@ -754,7 +772,7 @@ export function ApprovalCard({
   const change = fileChange(approval.method, params);
   return (
     <div role="group" aria-label="Confirmación de acción" className="agent-approval agent-trace-in">
-      <div className="w-full overflow-hidden rounded-xl border border-[var(--border-medium)] bg-[var(--bg-surface)]">
+      <div className="w-full overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
         <div className="min-w-0 space-y-2.5 p-3 pb-2">
           <div className="flex items-start gap-2.5">
             <Icon size={16} strokeWidth={1.75} aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--text-secondary)]" />
@@ -807,7 +825,7 @@ export function ApprovalCard({
             </p>
             <code className="mt-1 block text-[11px]">{approval.method}</code>
             {Object.keys(params).length > 0 && (
-              <pre className="agent-terminal mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-[var(--border-subtle)] p-2 text-[11px] text-[var(--text-secondary)]">
+              <pre className="agent-terminal mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-lg p-2 text-[11px] text-[var(--text-secondary)]">
                 {JSON.stringify(params, null, 2)}
               </pre>
             )}
@@ -889,7 +907,7 @@ export function PlanCard({ plan, running }: { plan: AgentPlan; running: boolean 
   const done = plan.steps.filter((step) => step.status === 'done').length;
   const complete = plan.steps.length > 0 && done === plan.steps.length;
   return (
-    <section aria-label="Plan del agente" className="agent-trace-in w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[13px] leading-5">
+    <section aria-label="Plan del agente" className="agent-trace-in w-full rounded-xl bg-[color:color-mix(in_srgb,var(--text-primary)_4%,transparent)] text-[13px] leading-5">
       <button
         type="button"
         aria-expanded={open}
@@ -949,13 +967,13 @@ export function ToolGroup({ label, names, enabledNames, onToggle, disabled, expa
 }) {
   if (names.length === 0) return null;
   return (
-    <details open={expanded || undefined} className="group rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
-        <ChevronRight size={11} className="shrink-0 transition-transform group-open:rotate-90" />
+    <details open={expanded || undefined} className="group">
+      <summary className="flex h-8 cursor-pointer list-none items-center gap-1.5 rounded-md px-1.5 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]">
+        <ChevronRight size={12} className="shrink-0 transition-transform group-open:rotate-90" />
         {label}
-        <span className="ml-auto tabular-nums text-[var(--text-muted)]">{names.length}</span>
+        <span className="ml-auto text-[11px] font-normal tabular-nums text-[var(--text-muted)]">{names.length}</span>
       </summary>
-      <ul className="mt-1.5 max-h-44 space-y-1 overflow-auto">
+      <ul className="space-y-1 pb-1.5 pl-6 pr-1.5 pt-0.5">
         {names.map((n) => (
           <li key={n} className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]" title={n}>
             <span className="min-w-0 flex-1 truncate">{methodLabel(n)}</span>

@@ -1,12 +1,14 @@
-import { lazy, Suspense, type ReactNode } from 'react';
+import { lazy, Suspense, useContext, type ReactNode } from 'react';
 import CopyButton from './CopyButton';
+import Button from '../ui/Button';
+import { FilePreviewContext, localPreviewResource } from './filePreviewContext';
 
 const ChatVisual = lazy(() => import('./ChatVisual'));
 const VISUAL_LABELS: Record<string, string> = { chart: 'gráfico', svg: 'ilustración', html: 'interfaz' };
 
 function VisualPlaceholder({ lang }: { lang: string }) {
   return (
-    <div role="status" className="w-full max-w-2xl overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+    <div role="status" className="w-full overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
       <p className="border-b border-[var(--border-subtle)] px-3 py-2 text-[12.5px] text-[var(--text-muted)]">Generando {VISUAL_LABELS[lang]}…</p>
       <div className="flex h-[150px] items-end gap-2 p-3 motion-safe:animate-pulse" aria-hidden="true">
         {[45, 70, 55, 85, 40, 65].map((height, i) => (
@@ -19,9 +21,9 @@ function VisualPlaceholder({ lang }: { lang: string }) {
 
 // Como en CommonMark, «_» pegado a letras o números no abre ni cierra énfasis:
 // gmail_search o mi_archivo_final.pdf se muestran tal cual.
-const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|(?<![\p{L}\p{N}_])__[^_\n]+__(?![\p{L}\p{N}_])|\*[^*\n]+\*|(?<![\p{L}\p{N}_])_[^_\n]+_(?![\p{L}\p{N}_])|\[[^\]\n]+\]\([^)\s]+\))/gu;
+const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|(?<![\p{L}\p{N}_])__[^_\n]+__(?![\p{L}\p{N}_])|\*[^*\n]+\*|(?<![\p{L}\p{N}_])_[^_\n]+_(?![\p{L}\p{N}_])|\[[^\]\n]+\]\((?:<[^>\n]+>|[^)\s]+)\))/gu;
 
-function inline(text: string, keyPrefix: string): ReactNode[] {
+function inline(text: string, keyPrefix: string, onPreview: ((resource: string) => void) | null): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   let index = 0;
@@ -31,13 +33,19 @@ function inline(text: string, keyPrefix: string): ReactNode[] {
     if (start > last) out.push(text.slice(last, start));
     const key = `${keyPrefix}-${index++}`;
     if (token.startsWith('`')) {
-      out.push(<code key={key} className="rounded-md bg-[color:color-mix(in_srgb,var(--text-primary)_8%,transparent)] px-1 py-px font-mono text-[12.5px]">{token.slice(1, -1)}</code>);
+      const value = token.slice(1, -1);
+      const resource = localPreviewResource(value);
+      const code = <code className="rounded-md bg-[color:color-mix(in_srgb,var(--text-primary)_8%,transparent)] px-1 py-px font-mono text-[12.5px]">{value}</code>;
+      out.push(resource && onPreview ? <Button key={key} variant="none" size="none" className="max-w-full text-left" aria-label={`Previsualizar ${value}`} onClick={() => onPreview(resource)}>{code}</Button> : <span key={key}>{code}</span>);
     } else if (token.startsWith('**') || token.startsWith('__')) {
       out.push(<strong key={key} className="font-semibold">{token.slice(2, -2)}</strong>);
     } else if (token.startsWith('[')) {
       const label = token.slice(1, token.indexOf(']'));
       const href = token.slice(token.indexOf('(') + 1, -1);
-      out.push(<span key={key} className="underline decoration-dotted underline-offset-2" title={href}>{label}</span>);
+      const resource = localPreviewResource(href);
+      out.push(resource && onPreview
+        ? <Button key={key} variant="none" size="none" className="max-w-full text-left underline decoration-dotted underline-offset-2" title={href} aria-label={`Previsualizar ${label}`} onClick={() => onPreview(resource)}>{label}</Button>
+        : <span key={key} className="underline decoration-dotted underline-offset-2" title={href}>{label}</span>);
     } else {
       out.push(<em key={key}>{token.slice(1, -1)}</em>);
     }
@@ -52,7 +60,29 @@ type Block =
   | { kind: 'h'; level: number; text: string }
   | { kind: 'ul' | 'ol'; items: string[] }
   | { kind: 'code'; text: string; lang?: string; open?: true }
+  | { kind: 'table'; headers: string[]; align: ('left' | 'center' | 'right')[]; rows: string[][] }
   | { kind: 'quote'; text: string };
+
+function tableCells(line: string): string[] {
+  const text = line.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '');
+  const cells: string[] = [];
+  let cell = '';
+  let fence = '';
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === '\\' && text[i + 1] === '|') { cell += '|'; i += 1; }
+    else if (text[i] === '`') {
+      let end = i + 1;
+      while (text[end] === '`') end += 1;
+      const run = text.slice(i, end);
+      if (!fence) fence = run;
+      else if (run === fence) fence = '';
+      cell += run;
+      i += run.length - 1;
+    } else if (text[i] === '|' && !fence) { cells.push(cell.trim()); cell = ''; }
+    else cell += text[i];
+  }
+  return [...cells, cell.trim()];
+}
 
 export function parseBlocks(source: string): Block[] {
   const blocks: Block[] = [];
@@ -64,6 +94,19 @@ export function parseBlocks(source: string): Block[] {
   };
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
+    if (line.includes('|') && i + 1 < lines.length) {
+      const headers = tableCells(line);
+      const separators = tableCells(lines[i + 1]);
+      if (headers.length === separators.length && separators.every((cell) => /^:?-{3,}:?$/.test(cell))) {
+        flush();
+        const rows: string[][] = [];
+        i += 2;
+        while (i < lines.length && lines[i].trim() && lines[i].includes('|')) rows.push(tableCells(lines[i++]));
+        i -= 1;
+        blocks.push({ kind: 'table', headers, rows, align: separators.map((cell) => cell.endsWith(':') ? cell.startsWith(':') ? 'center' : 'right' : 'left') });
+        continue;
+      }
+    }
     if (line.trim().startsWith('```')) {
       flush();
       const lang = line.trim().slice(3).trim().toLowerCase();
@@ -100,22 +143,38 @@ export function parseBlocks(source: string): Block[] {
 }
 
 export default function MessageMarkdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
+  const onPreview = useContext(FilePreviewContext);
+  const renderInline = (value: string, key: string) => inline(value, key, onPreview);
   const blocks = parseBlocks(text);
   return (
-    <>
+    <div className="agent-markdown min-w-0">
       {blocks.map((block, index) => {
         const key = `b${index}`;
         const cursor = streaming && index === blocks.length - 1
           ? <span className="ml-0.5 animate-pulse text-[var(--text-muted)]">▍</span> : null;
         switch (block.kind) {
-          case 'h':
-            return <p key={key} className={`font-semibold ${block.level <= 2 ? 'text-[15px]' : ''}`}>{inline(block.text, key)}{cursor}</p>;
+          case 'h': {
+            const Heading = block.level <= 2 ? 'h3' : 'h4';
+            return <Heading key={key} className="font-semibold">{renderInline(block.text, key)}{cursor}</Heading>;
+          }
+          case 'table':
+            return (
+              <div key={key} role="region" aria-label="Tabla de la respuesta" tabIndex={0} className="agent-markdown-table overflow-x-auto">
+                <table className="w-full border-collapse text-left text-[13px] leading-[21px]">
+                  <thead>
+                    <tr>{block.headers.map((cell, n) => <th key={n} scope="col" style={{ textAlign: block.align[n] }}>{renderInline(cell, `${key}-h${n}`)}</th>)}</tr>
+                  </thead>
+                  <tbody>{block.rows.map((row, r) => <tr key={r}>{block.headers.map((_, n) => <td key={n} style={{ textAlign: block.align[n] }}>{renderInline(row[n] ?? '', `${key}-${r}-${n}`)}</td>)}</tr>)}</tbody>
+                </table>
+                {cursor}
+              </div>
+            );
           case 'ul':
           case 'ol': {
             const List = block.kind;
             return (
               <List key={key} className={`space-y-1 pl-5 ${block.kind === 'ul' ? 'list-disc' : 'list-decimal'}`}>
-                {block.items.map((item, n) => <li key={n}>{inline(item, `${key}-${n}`)}</li>)}
+                {block.items.map((item, n) => <li key={n}>{renderInline(item, `${key}-${n}`)}</li>)}
                 {cursor}
               </List>
             );
@@ -146,11 +205,11 @@ export default function MessageMarkdown({ text, streaming = false }: { text: str
             );
           }
           case 'quote':
-            return <p key={key} className="border-l-2 border-[var(--border-medium)] pl-2.5 text-[var(--text-secondary)]">{inline(block.text, key)}{cursor}</p>;
+            return <p key={key} className="border-l-2 border-[var(--border-medium)] pl-2.5 text-[var(--text-secondary)]">{renderInline(block.text, key)}{cursor}</p>;
           default:
-            return <p key={key} className="whitespace-pre-wrap break-words">{inline(block.text, key)}{cursor}</p>;
+            return <p key={key} className="whitespace-pre-wrap break-words">{renderInline(block.text, key)}{cursor}</p>;
         }
       })}
-    </>
+    </div>
   );
 }

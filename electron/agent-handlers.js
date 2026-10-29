@@ -23,8 +23,15 @@ async function artifactAction(params) {
   await require('./agent-runtime').open();
   await require('./agent-shared').requireSession(String(params.session_id || ''));
   const { _callBackend } = require('./ipc-router');
-  if (['preview', 'review'].includes(params.action)) return _callBackend('agent_internal_artifact_action', params);
+  if (params.action === 'review') return _callBackend('agent_internal_artifact_action', params);
   const file = await _callBackend('agent_internal_artifact_action', { ...params, action: 'file' });
+  if (file.page) {
+    if (params.action === 'preview') return { html: require('./agent-pages').preview(file.page, params.color_scheme), sha256: file.sha256 };
+    if (params.action !== 'open') throw new Error('Las páginas interactivas se abren dentro de Agent');
+    await require('./agent-browser').openPage(file.page, params.color_scheme);
+    return { opened: true };
+  }
+  if (params.action === 'preview') return _callBackend('agent_internal_artifact_action', params);
   if (params.action === 'open') {
     const extension = require('node:path').extname(file.path).toLowerCase();
     if (FORBIDDEN_FALLBACK_EXTENSIONS.has(extension)) {
@@ -39,8 +46,9 @@ async function artifactAction(params) {
   if (params.action === 'save') {
     const { dialog } = require('electron');
     const win = require('./window-manager').getMainWindow();
-    const choice = await dialog.showSaveDialog(win, { title: 'Guardar PDF revisado', defaultPath: file.name,
-      filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+    const imageExtension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[file.mime];
+    const choice = await dialog.showSaveDialog(win, { title: imageExtension ? 'Guardar imagen' : 'Guardar PDF revisado', defaultPath: file.name,
+      filters: [{ name: imageExtension ? 'Imagen' : 'PDF', extensions: [imageExtension || 'pdf'] }] });
     if (choice.canceled || !choice.filePath) return { cancelled: true };
     const path = require('node:path');
     method = 'drafts_save';

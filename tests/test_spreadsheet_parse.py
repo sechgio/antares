@@ -25,6 +25,11 @@ def _write_xlsx(path: Path, rows: list[list[Any]]) -> None:
     wb.close()
 
 
+def _reset_spill_cache(ss) -> None:
+    with ss._spill_cache_lock:
+        ss._spill_cache.clear()
+
+
 def _xlsx_b64(rows: list[list[Any]]) -> str:
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -332,7 +337,7 @@ def test_get_rows_observes_indexed_spill_changes(tmp_path: Path, monkeypatch) ->
     assert second["has_more"] is True
 
 
-def test_clear_spreadsheet_caches_empties_cache(tmp_path: Path, monkeypatch) -> None:
+def test_spill_cache_reset_empties_cache(tmp_path: Path, monkeypatch) -> None:
     from backend.handlers import spreadsheet as ss
     from backend.handlers.spreadsheet import spreadsheet_get_rows
 
@@ -346,7 +351,7 @@ def test_clear_spreadsheet_caches_empties_cache(tmp_path: Path, monkeypatch) -> 
     spreadsheet_get_rows({"result_path": str(spill_path), "offset": 0, "limit": 10})
 
     assert len(ss._spill_cache) > 0
-    ss._clear_spreadsheet_caches()
+    _reset_spill_cache(ss)
     assert len(ss._spill_cache) == 0
 
 
@@ -360,7 +365,7 @@ def test_spill_cache_oversized_not_cached(tmp_path: Path, monkeypatch) -> None:
     rows = [["Col1", "Col2"], ["Val1", "Val2"]]
     _write_xlsx(staged, rows)
 
-    ss._clear_spreadsheet_caches()
+    _reset_spill_cache(ss)
     parsed = spreadsheet_parse({"path": str(staged), "format_hint": "xlsx"})
     res = spreadsheet_get_rows({"result_path": parsed["result_path"], "offset": 0, "limit": 10})
 

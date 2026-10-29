@@ -82,7 +82,6 @@ def _validate_action_paths(
 
 _MAX_TOOL_RESULT_CHARS = 6_000
 _MAX_RECEIPT_CHARS = 2 * 1024 * 1024
-_MAX_SESSIONS = 50
 _APPROVAL_TTL_MS = 24 * 3600 * 1000
 _INTERRUPTED_RESULT = json.dumps(
     {"error": "Acción interrumpida: el resultado puede ser incierto. Compruébalo antes de repetirla."},
@@ -242,70 +241,18 @@ class AgentStore:
     def _write_messages(self, session_id: str, messages: list[JsonObject]) -> None:
         atomic_write_json(self._messages_path(session_id), messages)
 
-    def create_session(self, provider: str, model: str, title: str) -> JsonObject:
-        session: JsonObject = {
-            "id": uuid.uuid4().hex[:12],
-            "title": title or "Conversación",
-            "provider": provider,
-            "model": model,
-            "created_at": _now_ms(),
-            "updated_at": _now_ms(),
-            "last_error": None,
-        }
-        with self._lock:
-            self._sessions[session["id"]] = session
-            if len(self._sessions) > _MAX_SESSIONS:
-                oldest = sorted(self._sessions.values(), key=lambda s: s.get("created_at") or 0)
-                for old in oldest[: len(self._sessions) - _MAX_SESSIONS]:
-                    self._sessions.pop(str(old["id"]), None)
-            self._write_sessions()
-        return session
-
     def get_session(self, session_id: str) -> JsonObject | None:
         with self._lock:
             session = self._sessions.get(session_id)
             return dict(session) if isinstance(session, dict) else None
 
-    def list_sessions(self) -> list[JsonObject]:
-        with self._lock:
-            return sorted(
-                (dict(s) for s in self._sessions.values()),
-                key=lambda s: s.get("updated_at") or 0,
-                reverse=True,
-            )
-
-    def touch_session(self, session_id: str, error: str | None = None) -> None:
-        with self._lock:
-            session = self._sessions.get(session_id)
-            if session is None:
-                return
-            session["updated_at"] = _now_ms()
-            session["last_error"] = error
-            self._write_sessions()
-
-    def delete_session(self, session_id: str) -> bool:
-        with self._lock:
-            removed = self._sessions.pop(session_id, None) is not None
-            if removed:
-                self._write_sessions()
-            self._approvals = {k: a for k, a in self._approvals.items() if a.get("session_id") != session_id}
-            self._write_approvals()
-            self.revoke_grants(session_id)
-            if self._artifacts.pop(session_id, None) is not None:
-                atomic_write_json(self._artifacts_path, self._artifacts)
-            self._questions = {key: item for key, item in self._questions.items() if item["session_id"] != session_id}
-            atomic_write_json(self._questions_path, self._questions)
-            self._messages_path(session_id).unlink(missing_ok=True)
-            for record in self._dispatches.values():
-                if record.get("session_id") == session_id:
-                    self._undo.discard(record.get("undo"))
-        return removed
-
-    def messages(self, session_id: str) -> list[JsonObject]:
-        with self._lock:
-            return [dict(m) for m in self._read_messages(session_id)]
-
     def mark_interrupted_turns(self) -> int:
+        """Marca en disco los turnos interrumpidos de sesiones heredadas.
+
+        ``sessions.json`` ya no recibe sesiones nuevas (la capa CRUD se eliminó;
+        Electron persiste sus propias conversaciones): ``get_session`` y este
+        método solo atienden datos preexistentes escritos por versiones anteriores.
+        """
         marked = 0
         with self._lock:
             for session_id in list(self._sessions):
@@ -343,42 +290,6 @@ class AgentStore:
                     self._write_messages(session_id, messages)
             self._write_sessions()
         return marked
-
-    def save_partial(self, session_id: str, text: str) -> None:
-        with self._lock:
-            if session_id in self._sessions:
-                self._sessions[session_id]["_partial_text"] = text
-                self._write_sessions()
-
-    def append_message(self, session_id: str, message: JsonObject) -> None:
-        with self._lock:
-            if session_id not in self._sessions:
-                return
-            messages = self._read_messages(session_id)
-            messages.append({**message, "ts": _now_ms()})
-            self._write_messages(session_id, messages)
-            session = self._sessions.get(session_id)
-            if session is not None and message.get("role") == "assistant":
-                session.pop("_partial_text", None)
-            if (
-                message.get("role") == "user"
-                and session is not None
-                and session.get("title") == "Conversación"
-                and message.get("content")
-            ):
-                session["title"] = str(message["content"]).strip()[:60] or "Conversación"
-            self.touch_session(session_id)
-
-    def update_tool_call(self, session_id: str, call_id: str, status: str, result: str) -> None:
-        with self._lock:
-            messages = self._read_messages(session_id)
-            for msg in reversed(messages):
-                for call in msg.get("tool_calls") or []:
-                    if call.get("id") == call_id:
-                        call["status"] = status
-                        call["result"] = result[:_MAX_TOOL_RESULT_CHARS]
-                        self._write_messages(session_id, messages)
-                        return
 
     def add_grants(self, session_id: str, records: list[JsonObject]) -> None:
         with self._lock:
@@ -452,15 +363,24 @@ class AgentStore:
                 self._write_grants()
             return len(removed or {})
 
-    def add_artifact(self, session_id: str, artifact: JsonObject) -> JsonObject:
+    def add_artifact(self, session_id: str, artifact: JsonObject, *, expected_revision: str | None = None) -> JsonObject:
         record = {**artifact, "session_id": session_id, "created_at": _now_ms()}
         with self._lock:
-            entry = self._artifacts.setdefault(session_id, {"items": []})
+            entry = self._artifacts.get(session_id, {"items": []})
             existing = next((item for item in entry["items"] if item["id"] == record["id"]), None)
+            if expected_revision is not None:
+                if existing is None or existing.get("kind") != "page" or existing["template_revision"] != expected_revision:
+                    raise ValueError("La página cambió; lee artifacts_list antes de actualizarla")
+                record["created_at"] = existing["created_at"]
+                updated = {**entry, "items": [record if item is existing else item for item in entry["items"]]}
+                atomic_write_json(self._artifacts_path, {**self._artifacts, session_id: updated})
+                self._artifacts[session_id] = updated
+                return dict(record)
             if existing is not None:
                 return dict(existing)
-            entry["items"].append(record)
-            atomic_write_json(self._artifacts_path, self._artifacts)
+            updated = {**entry, "items": [*entry["items"], record]}
+            atomic_write_json(self._artifacts_path, {**self._artifacts, session_id: updated})
+            self._artifacts[session_id] = updated
         return dict(record)
 
     def artifacts_for(self, session_id: str) -> list[JsonObject]:

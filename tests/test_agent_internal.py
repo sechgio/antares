@@ -10,6 +10,7 @@ from backend.core.agent import agent
 from backend.core.exceptions import NotFoundError, ValidationError
 from backend.core.integrations import ai_providers, mcp_servers
 from backend.handlers import agent_internal
+from tests.agent_store_seed import seed_session
 
 
 @pytest.fixture()
@@ -20,6 +21,45 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setattr(agent_internal, "_resource_locks", {})
     monkeypatch.setattr(agent_internal, "_native_leases", {})
     return instance
+
+
+def test_file_preview_checks_grants_workspace_drafts_and_revocation(store, tmp_path):
+    from backend.core.agent import resource_grants
+
+    preview = agent_internal.HANDLERS["agent_internal_file_preview"]
+    session = "preview-session"
+    external = tmp_path / "private.txt"
+    external.write_text("contenido autorizado", encoding="utf-8")
+    params = {"session_id": session, "resource": str(external)}
+    with pytest.raises(ValidationError, match="autorizado"):
+        preview(params)
+    store.add_grants(session, [resource_grants.grant_record(str(external), "request")])
+    assert preview(params)["text"] == "contenido autorizado"
+    with pytest.raises(ValidationError, match="autorizado"):
+        preview({**params, "session_id": "otra-sesion"})
+    store.revoke_grant(session, str(external))
+    with pytest.raises(ValidationError, match="autorizado"):
+        preview(params)
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    (workspace / "nota.txt").write_text("proyecto", encoding="utf-8")
+    store.add_grants(session, [resource_grants.folder_record(str(workspace), "request")])
+    store.set_workspace(session, str(workspace))
+    assert preview({"session_id": session, "resource": "nota.txt"})["text"] == "proyecto"
+    draft = store.drafts_dir(session) / "resultado.txt"
+    draft.parent.mkdir(parents=True, exist_ok=True)
+    draft.write_text("borrador", encoding="utf-8")
+    assert preview({"session_id": session, "resource": str(draft)})["text"] == "borrador"
+    with pytest.raises(ValidationError):
+        preview({"session_id": session, "resource": "../private.txt"})
+
+
+def test_selected_file_preview_does_not_persist_a_grant(store, tmp_path):
+    selected = tmp_path / "selected.txt"
+    selected.write_text("adjunto pendiente", encoding="utf-8")
+    result = agent_internal.HANDLERS["agent_internal_file_preview"]({"session_id": "s1", "selected_file": str(selected)})
+    assert result["text"] == "adjunto pendiente"
+    assert store.grants_for("s1") == {}
 
 
 def _provider_info(provider, **config):
@@ -54,7 +94,7 @@ def test_subagent_uses_the_durable_runtime_route(store, monkeypatch, legacy):
 
     monkeypatch.setattr(agent_internal._agent_chat, "chat", chat)
     monkeypatch.setattr(agent, "get_agent_runner", lambda: agent.AgentRunner(store, lambda _: None))
-    session_id = store.create_session("old-provider", "old-model", "Anterior")["id"] if legacy else "durable-session"
+    session_id = seed_session(store, "previous", provider="old-provider", model="old-model")["id"] if legacy else "durable-session"
     _dispatch(session_id=session_id, call_id="delegation", name="subagent_run", params={"task": "Revisa datos"},
               context={"subagent": {"id": "reader", "name": "Lector", "instructions": "Lee los datos",
                                     "tools": [], "enabled": [], "provider": "selected-provider", "model": "selected-model"}})
@@ -787,6 +827,46 @@ def test_shell_risk_is_persisted_without_autoapproval(store, command, risk):
     persisted = agent.AgentStore(store.base_dir).get_approval(approval["id"])
     assert persisted["status"] == "pending"
     assert persisted["risk"] == risk and persisted["risk_reason"]
+
+
+@pytest.mark.parametrize("method", ["shell_run", "shell_job_start"])
+@pytest.mark.parametrize("cwd", [None, "subcarpeta"])
+def test_shell_approval_is_bound_to_the_effective_workspace(store, tmp_path, monkeypatch, method, cwd):
+    folders = [tmp_path / "primero", tmp_path / "segundo"]
+    for folder in folders:
+        (folder / "subcarpeta").mkdir(parents=True)
+    attach = agent_internal.HANDLERS["agent_internal_grants_add"]
+    attach({"session_id": "s1", "paths": [], "folders": [str(folders[0])]})
+    params = {"command": "Set-Content marcador.txt 'hecho'", **({"cwd": cwd} if cwd else {})}
+    approval_id = _approve("s1", "shell-workspace", method, params)
+    attach({"session_id": "s1", "paths": [], "folders": [str(folders[1])]})
+    executed = []
+    monkeypatch.setattr(agent.get_agent_runner(), "_execute", lambda *args: executed.append(args) or '{}')
+
+    result = _dispatch(session_id="s1", call_id="shell-workspace", name=method,
+                       params=params, approval_id=approval_id)
+
+    assert result["result"] is not None and "error" in json.loads(result["result"])
+    assert not executed
+    assert not any((folder / "marcador.txt").exists() for folder in folders)
+
+
+@pytest.mark.parametrize("method", ["shell_run", "shell_job_start"])
+def test_shell_dispatch_uses_the_approved_absolute_working_folder(store, tmp_path, monkeypatch, method):
+    folder = tmp_path / "proyecto"
+    (folder / "subcarpeta").mkdir(parents=True)
+    agent_internal.HANDLERS["agent_internal_grants_add"](
+        {"session_id": "s1", "paths": [], "folders": [str(folder)]})
+    params = {"command": "Get-Location", "cwd": "subcarpeta"}
+    approval_id = _approve("s1", "shell-pinned", method, params)
+    executed = []
+    monkeypatch.setattr(agent.get_agent_runner(), "_execute", lambda call, token: executed.append(call) or '{}')
+
+    _dispatch(session_id="s1", call_id="shell-pinned", name=method, params=params, approval_id=approval_id)
+    assert json.loads(_wait_result("shell-pinned")["result"]) == {}
+    assert executed[0]["params"]["cwd"] == str(folder / "subcarpeta")
+    assert executed[0]["approved_context"]["shell"]["workspace"] == str(folder)
+    assert params["cwd"] == "subcarpeta"
 
 
 def _cua_ensure(call_id, method="cua_click", computer=None, **extra):

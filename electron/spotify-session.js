@@ -12,6 +12,11 @@ const {
   generateCodeVerifier: _generateCodeVerifier,
   generateCodeChallenge: _generateCodeChallenge,
 } = require('./autoimg-oauth-flow');
+const {
+  exchangeBrowserOAuthCode,
+  browserOAuthCallbackHandlers,
+  wireOAuthCallbackServer,
+} = require('./cloud-connector-common');
 
 const OAUTH_CONFIG_FILE = 'spotify-oauth-config.json';
 const OAUTH_CONFIG_NS = 'spotify:oauth';
@@ -135,6 +140,10 @@ function _isInvalidGrant(body) {
 }
 
 async function _refreshTokens(tokens) {
+  // pendiente deduplicar: este refresh diverge de google-session._refreshAccessToken
+  // (body con client_id sin client_secret, store plano sin scopes por usuario,
+  // single-flight global en vez de por sesión) y de connections-session
+  // (refresh delegado en el backend vía connections_token_refresh).
   const config = requireOAuthConfig();
   if (!tokens?.refresh_token) {
     clearTokens();
@@ -248,45 +257,28 @@ async function beginBrowserOAuthFlow(onComplete, onError) {
 
   const flow = { stop: null };
   _callbackFlow = flow;
-  startCallbackServer(port, {
-    expectedState: oauthState,
-    callbackPath,
-    onCode: async (code) => {
-      try {
-        await exchangeCode(code, redirectUri);
-        const status = await getAuthStatus();
-        onComplete(status);
-      } catch (err) {
-        onError(err);
-      } finally {
-        cancelBrowserOAuthFlow();
-      }
+  wireOAuthCallbackServer(
+    startCallbackServer(port, {
+      expectedState: oauthState,
+      callbackPath,
+      ...browserOAuthCallbackHandlers({
+        label: 'Spotify',
+        connect: async (code) => {
+          await exchangeCode(code, redirectUri);
+          return getAuthStatus();
+        },
+        onComplete,
+        onError,
+        cancel: cancelBrowserOAuthFlow,
+      }),
+    }),
+    {
+      isCurrent: () => _callbackFlow === flow,
+      setStop: (stop) => { flow.stop = stop; },
+      onError,
+      cancel: cancelBrowserOAuthFlow,
     },
-    onDenied: (reason) => {
-      onError(
-        new Error(
-          reason === 'access_denied' ? 'Autorización cancelada en Spotify' : String(reason),
-        ),
-      );
-      cancelBrowserOAuthFlow();
-    },
-    onTimeout: (err) => {
-      onError(err);
-      cancelBrowserOAuthFlow();
-    },
-  })
-    .then(({ stop }) => {
-      if (_callbackFlow === flow) {
-        flow.stop = stop;
-      } else {
-        stop();
-      }
-    })
-    .catch((err) => {
-      if (_callbackFlow !== flow) return;
-      onError(err);
-      cancelBrowserOAuthFlow();
-    });
+  );
 
   return { url, redirect_uri: redirectUri };
 }
@@ -296,25 +288,22 @@ async function exchangeCode(code, redirectUri) {
   const uri = redirectUri || _pendingRedirectUri;
   const codeVerifier = _pendingCodeVerifier;
   if (!uri || !codeVerifier) throw new Error('Flujo OAuth no iniciado');
-  const body = new URLSearchParams({
-    code,
-    client_id: cfg.clientId,
-    redirect_uri: uri,
-    grant_type: 'authorization_code',
-    code_verifier: codeVerifier,
+  const data = await exchangeBrowserOAuthCode({
+    fetch: fetchWithRetry,
+    tokenUrl: TOKEN_URL,
+    body: new URLSearchParams({
+      code,
+      client_id: cfg.clientId,
+      redirect_uri: uri,
+      grant_type: 'authorization_code',
+      code_verifier: codeVerifier,
+    }),
+    fetchOpts: { retries: 0, provider: 'spotify' },
+    invalidGrant: _isInvalidGrant,
+    reauthMessage: REAUTH_REQUIRED_MESSAGE,
+    oauthError: (errBody) => `Error OAuth de Spotify: ${errBody}`,
+    noRefreshTokenMessage: 'Spotify no devolvió un refresh token. Revoca el acceso en spotify.com/account/apps y vuelve a conectar.',
   });
-  const res = await fetchWithRetry(TOKEN_URL, { method: 'POST', body }, { retries: 0, provider: 'spotify' });
-  if (!res.ok) {
-    const errBody = await res.text();
-    if (_isInvalidGrant(errBody)) throw new Error(REAUTH_REQUIRED_MESSAGE);
-    throw new Error(`Error OAuth de Spotify: ${errBody}`);
-  }
-  const data = await res.json();
-  if (!data.access_token || typeof data.refresh_token !== 'string' || !data.refresh_token) {
-    throw new Error(
-      'Spotify no devolvió un refresh token. Revoca el acceso en spotify.com/account/apps y vuelve a conectar.',
-    );
-  }
   const tokens = {
     access_token: data.access_token,
     refresh_token: data.refresh_token,

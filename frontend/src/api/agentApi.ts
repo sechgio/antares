@@ -1,8 +1,8 @@
 import { _invoke } from './core';
-import type { AgentDelegation, AgentRole } from './agentDelegation';
+import type { AgentDelegation, AgentRole, AgentRoom } from './agentDelegation';
 import type { CanvasDocument } from '../components/canvas/types';
 
-export type { AgentDelegation, AgentRole } from './agentDelegation';
+export type { AgentDelegation, AgentRole, AgentRoom, AgentRoomMember } from './agentDelegation';
 
 export type CanvasLayersResult = Required<Pick<CanvasDocument, 'id' | 'updatedAt' | 'layers' | 'fields'>> & {
   createdLayers: { id: string; name: string }[];
@@ -126,6 +126,17 @@ export interface AgentAttachment {
   kind: 'files' | 'folder';
 }
 
+export type AgentFilePreviewTarget = { kind: 'attachment'; id: string; name: string } | { kind: 'resource'; resource: string };
+export type AgentDocumentBlock = { kind: 'paragraph'; text: string; style: string } | { kind: 'table'; rows: string[][] };
+export type AgentFilePreview = { name: string; size: number } & (
+  | { kind: 'pdf'; png_base64: string; pages: number; page: number }
+  | { kind: 'image'; png_base64: string; width: number; height: number }
+  | { kind: 'spreadsheet'; sheets: string[]; sheet: number; page: number; pages: number; total_rows: number;
+      total_columns: number; rows: string[][]; row_start: number; truncated: boolean }
+  | { kind: 'document'; blocks: AgentDocumentBlock[]; truncated: boolean }
+  | { kind: 'text'; text: string; truncated: boolean }
+);
+
 interface AgentMessageMentions {
   modules: string[];
   unknown: string[];
@@ -141,7 +152,6 @@ export interface AgentToolSpec {
 }
 
 export type AgentApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired';
-export type AgentApprovalFilterStatus = AgentApprovalStatus | 'all' | 'uncertain';
 
 export interface AgentApproval {
   id: string;
@@ -161,14 +171,6 @@ export interface AgentApproval {
     computer?: { app?: string; window?: string; element?: string }; subagent?: string; subagent_role?: AgentRole };
   resources?: { path: string; sha256?: string }[];
   dispatch?: { status: string; finished_at?: number };
-}
-
-export interface AgentGrant {
-  path: string;
-  mode?: string;
-  request_id?: string;
-  size?: number;
-  mtime_ns?: number;
 }
 
 export type AgentTaskStatus = 'pending' | 'delivering' | 'delivered' | 'cancelled' | 'uncertain';
@@ -212,7 +214,8 @@ export interface AgentTask {
   retry_at?: number;
 }
 
-export interface AgentArtifact {
+export interface AgentDocumentArtifact {
+  kind?: 'document';
   id: string;
   family: string;
   template_id: string;
@@ -227,6 +230,18 @@ export interface AgentArtifact {
   };
   files: { name: string; sha256: string; pages: number; mime: string; size: number }[];
 }
+
+export interface AgentImageArtifact extends Omit<AgentDocumentArtifact, 'kind' | 'files' | 'template_id' | 'template_revision'> {
+  kind: 'image'; family: 'image';
+  files: (Omit<AgentDocumentArtifact['files'][number], 'pages'> & { title: string; width: number; height: number })[];
+}
+export interface AgentPageArtifact extends Omit<AgentDocumentArtifact, 'kind' | 'files'> {
+  kind: 'page';
+  title: string;
+  files: { name: string; sha256: string; mime: string; size: number }[];
+}
+
+export type AgentArtifact = AgentDocumentArtifact | AgentPageArtifact | AgentImageArtifact;
 
 export interface AgentQuestion {
   id: string;
@@ -365,11 +380,16 @@ export const agentApi = {
       token_budget?: { limit: number; used: number };
     }>('agent_messages_list', { session_id }),
 
+  agentRoomsList: (session_id: string) => _invoke<{ rooms: AgentRoom[] }>('agent_rooms_list', { session_id }),
+
   agentContextRemoveFile: (session_id: string, path: string) =>
     _invoke<{ removed: number }>('agent_context_remove_file', { session_id, path }),
 
   agentWorkspaceSet: (session_id: string, path?: string) =>
     _invoke<{ workspace: string | null }>('agent_workspace_set', { session_id, ...(path ? { path } : {}) }),
+
+  agentWorkspaceSelect: (session_id: string) =>
+    _invoke<{ workspace: string | null }>('agent_workspace_set', { session_id, select: true }),
 
   agentMessageSend: (session_id: string, content: string, request_id: string, attachments: string[] = [], correction = false, skill_id?: string) =>
     _invoke<{ accepted: boolean; duplicate?: boolean; files?: AgentMessageFiles; mentions?: AgentMessageMentions }>(
@@ -380,6 +400,10 @@ export const agentApi = {
 
   agentAttach: (kind: 'files' | 'folder', dropped?: { paths?: string[]; data?: { name: string; data: string }[] }) =>
     _invoke<{ attachments: AgentAttachment[] }>('agent_attach', { kind, ...dropped }),
+
+  agentFilePreview: (session_id: string, target: AgentFilePreviewTarget, page = 0, sheet = 0) =>
+    _invoke<AgentFilePreview>('agent_file_preview', { session_id, page, sheet,
+      ...(target.kind === 'attachment' ? { attachment_id: target.id } : { resource: target.resource }) }),
 
   agentToolsList: (session_id?: string) => _invoke<{ tools: AgentToolSpec[] }>('agent_tools_list', session_id ? { session_id } : {}),
 
@@ -422,15 +446,6 @@ export const agentApi = {
   agentEffectUndo: (session_id: string, call_id: string) =>
     _invoke<{ undone: boolean; path: string; call_id: string }>('agent_effect_undo', { session_id, call_id }),
 
-  agentApprovalsHistory: (params: { session_id?: string; method?: string; status?: AgentApprovalFilterStatus; limit?: number } = {}) =>
-    _invoke<{ approvals: AgentApproval[] }>('agent_approvals_history', params),
-
-  agentGrantsList: (session_id: string) =>
-    _invoke<{ grants: AgentGrant[] }>('agent_grants_list', { session_id }),
-
-  agentGrantsRevoke: (session_id: string, path?: string) =>
-    _invoke<{ revoked: number }>('agent_grants_revoke', { session_id, ...(path ? { path } : {}) }),
-
   agentTasksList: (session_id?: string) =>
     _invoke<{ tasks: AgentTask[]; queues: AgentQueueState[] }>('agent_tasks_list', session_id ? { session_id } : {}),
 
@@ -457,8 +472,9 @@ export const agentApi = {
     _invoke<CanvasLayersResult>('agent_canvas_apply_layers', params),
 
   agentArtifactAction: (params: { session_id: string; artifact_id: string; file_index: number; action: 'preview' | 'review' | 'open' | 'save' | 'print';
-    request_id?: string; sha256?: string; page?: number; printer_name?: string; copies?: number; pages?: string; duplex?: string; quality?: string }) =>
-    _invoke<{ png_base64?: string; pages?: number; sha256?: string; reviewed?: boolean; approval?: AgentApproval; cancelled?: boolean }>('agent_artifact_action', params),
+    color_scheme?: 'light' | 'dark';
+    request_id?: string; sha256?: string; page?: number; full_size?: boolean; printer_name?: string; copies?: number; pages?: string; duplex?: string; quality?: string }) =>
+    _invoke<{ png_base64?: string; html?: string; pages?: number; sha256?: string; reviewed?: boolean; approval?: AgentApproval; cancelled?: boolean; opened?: boolean }>('agent_artifact_action', params),
 
   agentPrintersList: () => _invoke<{ printers: { name: string; default: boolean }[] }>('printers_list'),
 

@@ -237,6 +237,108 @@ def test_shell_reports_output_while_the_command_runs(store):
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_streams_partial_lines_and_split_utf8_while_running(store):
+    token = _CancelEvent()
+    command = (
+        "$bytes=[Text.Encoding]::UTF8.GetBytes('ñandú✓');$out=[Console]::OpenStandardOutput();"
+        "$out.Write($bytes,0,1);$out.Flush();Start-Sleep -Milliseconds 150;"
+        "$out.Write($bytes,1,$bytes.Length-1);$out.Flush();"
+        "[Console]::Error.Write('aviso');[Console]::Error.Flush();Start-Sleep -Seconds 3;[Console]::Write('fin')"
+    )
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(agent_tools.run, "shell_run", {"command": command}, store, "s1", token)
+        deadline = time.monotonic() + 10
+        while ("ñandú✓" not in token.progress or "aviso" not in token.progress) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not future.done() and "ñandú✓" in token.progress and "aviso" in token.progress
+        assert "fin" not in token.progress
+        result = future.result(timeout=15)
+    assert result["stdout"] == "ñandú✓fin" and result["stderr"] == "aviso"
+    assert "�" not in token.progress
+    assert _run(store, "shell_output", output_id=result["output_id"])["content"] == "ñandú✓fin"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_job_persists_partial_lines_during_a_silent_command(store, monkeypatch):
+    monkeypatch.setattr(computer_jobs, "_WRITE_INTERVAL_S", 1.5)
+    job = _run(store, "shell_job_start", command=(
+        "[Console]::Write('ñandú✓');[Console]::Out.Flush();"
+        "[Console]::Error.Write('aviso');[Console]::Error.Flush();Start-Sleep -Seconds 5"
+    ))
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            stdout = _run(store, "shell_output", output_id=job["output_id"])["content"]
+            stderr = _run(store, "shell_output", output_id=job["output_id"], stream="stderr")["content"]
+            if stdout and stderr:
+                break
+            time.sleep(0.05)
+        assert stdout == "ñandú✓" and stderr == "aviso"
+        assert _run(store, "shell_job_status", job_id=job["job_id"])["status"] == "running"
+        assert _wait_job(store, job["job_id"], {"exited"})["exit_code"] == 0
+    finally:
+        computer_jobs.cancel_session("s1")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_job_defers_incomplete_utf8_and_crlf_until_more_output(store, tmp_path, monkeypatch):
+    monkeypatch.setattr(computer_jobs, "_WRITE_INTERVAL_S", 0.1)
+    gates = [tmp_path / "utf8.ready", tmp_path / "newline.ready"]
+    paths = [str(gate).replace("'", "''") for gate in gates]
+    waits = [f"while (-not [IO.File]::Exists('{path}')) "
+             "{ Start-Sleep -Milliseconds 20 };" for path in paths]
+    job = _run(store, "shell_job_start", command=(
+        "$bytes=[Text.Encoding]::UTF8.GetBytes('unoñ');$out=[Console]::OpenStandardOutput();"
+        "$out.Write($bytes,0,4);$out.Flush();" + waits[0]
+        + "$out.Write($bytes,4,1);$out.WriteByte(13);$out.Flush();" + waits[1]
+        + "$tail=[Text.Encoding]::UTF8.GetBytes(\"`nfin`r\");$out.Write($tail,0,$tail.Length);$out.Flush()"
+    ))
+    try:
+        for expected, gate in zip(("uno", "unoñ"), gates, strict=True):
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                output = _run(store, "shell_output", output_id=job["output_id"])
+                if output["total_chars"] >= len(expected):
+                    break
+                time.sleep(0.05)
+            assert output["content"] == expected
+            assert _run(store, "shell_job_status", job_id=job["job_id"])["status"] == "running"
+            gate.touch()
+        assert _wait_job(store, job["job_id"], {"exited"})["exit_code"] == 0
+        assert _run(store, "shell_output", output_id=job["output_id"])["content"] == "unoñ\nfin\r"
+    finally:
+        for gate in gates:
+            gate.touch()
+        computer_jobs.cancel_session("s1")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_job_publishes_terminal_status_after_its_final_output(store, monkeypatch):
+    writing = threading.Event()
+    release = threading.Event()
+    write = computer_jobs.atomic_write_json
+
+    def hold_final_output(path, payload):
+        if payload.get("stdout") == "final":
+            writing.set()
+            if not release.wait(10):
+                raise OSError("La prueba no liberó la escritura final")
+        return write(path, payload)
+
+    monkeypatch.setattr(computer_jobs, "_WRITE_INTERVAL_S", 3600)
+    monkeypatch.setattr(computer_jobs, "atomic_write_json", hold_final_output)
+    job = _run(store, "shell_job_start", command="[Console]::Write('final')")
+    try:
+        assert writing.wait(10)
+        assert _run(store, "shell_output", output_id=job["output_id"])["content"] == ""
+        assert _run(store, "shell_job_status", job_id=job["job_id"])["status"] == "running"
+    finally:
+        release.set()
+    assert _wait_job(store, job["job_id"], {"exited"})["exit_code"] == 0
+    assert _run(store, "shell_output", output_id=job["output_id"])["content"] == "final"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
 def test_shell_job_runs_in_background_and_exposes_paged_output(store):
     job = _run(store, "shell_job_start", command="'uno'; Start-Sleep -Milliseconds 700; 'dos'", timeout_s=20)
     assert job["status"] == "running" and len(job["job_id"]) == 32
@@ -319,14 +421,45 @@ def test_attached_folder_becomes_the_conversation_workspace(store, tmp_path):
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
-def test_shell_runs_in_the_attached_folder_by_default(store, tmp_path):
+@pytest.mark.parametrize("tool", ["shell_run", "shell_job_start"])
+@pytest.mark.parametrize("cwd", [None, "subcarpeta"])
+def test_shell_runs_in_the_attached_folder_by_default(store, tmp_path, tool, cwd):
     folder = tmp_path / "proyecto"
     folder.mkdir()
+    (folder / "subcarpeta").mkdir()
     agent_internal.HANDLERS["agent_internal_grants_add"]({"session_id": "s1", "paths": [], "folders": [str(folder)]})
-    out = _run(store, "shell_run", command="Get-Location | % Path; $env:ANTARES_AGENT_WORKSPACE")
-    assert out["stdout"].splitlines() == [str(folder), str(folder)]
+    out = _run(store, tool, command="Get-Location | % Path; $env:ANTARES_AGENT_WORKSPACE", **({"cwd": cwd} if cwd else {}))
+    if tool == "shell_job_start":
+        assert _wait_job(store, out["job_id"], {"exited"})["exit_code"] == 0
+    output = _run(store, "shell_output", output_id=out["output_id"])["content"]
+    if tool == "shell_run":
+        assert out["stdout"] == output
+    assert output.splitlines() == [str(folder / cwd if cwd else folder), str(folder)]
     assert not list(folder.glob("shell-*.json"))
-    assert _run(store, "shell_output", output_id=out["output_id"])["content"].startswith(str(folder))
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_jobs_use_workspace_and_keep_logs_in_drafts(store, tmp_path):
+    folder = tmp_path / "proyecto"
+    folder.mkdir()
+    child = folder / "src"
+    child.mkdir()
+    agent_internal.HANDLERS["agent_internal_grants_add"]({"session_id": "s1", "paths": [], "folders": [str(folder)]})
+    for cwd in (None, "src"):
+        job = _run(store, "shell_job_start", command="Get-Location | % Path; $env:ANTARES_AGENT_WORKSPACE; 'hecho' | Set-Content salida.txt",
+                   **({"cwd": cwd} if cwd else {}))
+        finished = _wait_job(store, job["job_id"], {"exited"})
+        assert finished["status"] == "exited" and finished["exit_code"] == 0
+        target = child if cwd else folder
+        deadline = time.monotonic() + 5
+        while job["job_id"] in computer_jobs._JOBS and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert job["job_id"] not in computer_jobs._JOBS
+        output = _run(store, "shell_output", output_id=job["output_id"])
+        assert output["content"].splitlines() == [str(target), str(folder)]
+        assert (target / "salida.txt").read_text().strip() == "hecho"
+    assert not list(folder.rglob("shell-*.json"))
+    assert list(store.drafts_dir("s1").glob("shell-*.json"))
 
 
 def test_task_plan_requires_evidence_to_close_a_step():

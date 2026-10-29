@@ -18,7 +18,7 @@ type RumMetric = {
   navigationType?: string;
 };
 
-export function buildTelemetryPayload(metric: RumMetric) {
+function buildTelemetryPayload(metric: RumMetric) {
   return {
     name: metric.name,
     value: metric.value,

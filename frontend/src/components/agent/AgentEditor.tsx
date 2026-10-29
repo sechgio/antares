@@ -109,8 +109,11 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
   };
 
   return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4"
+      style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 72%, transparent)', backdropFilter: 'blur(4px)' }}>
     <form
       role="dialog"
+      aria-modal="true"
       aria-label={profile ? `Editar agente ${profile.name}` : 'Crear agente'}
       aria-busy={saving}
       onSubmit={(e) => { e.preventDefault(); void save(); }}
@@ -120,16 +123,16 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
           onClose();
         }
       }}
-      className="absolute inset-0 z-20 m-auto flex h-fit max-h-[calc(100%-32px)] w-[min(480px,calc(100%-32px))] flex-col rounded-[24px] bg-[var(--bg-surface)] shadow-[0_16px_40px_rgba(0,0,0,0.18),0_0_1px_rgba(0,0,0,0.32)]"
+      className="flex max-h-full w-full max-w-[520px] flex-col overflow-hidden rounded-2xl bg-[var(--bg-surface)] shadow-[0_16px_40px_rgba(0,0,0,0.18),0_0_1px_rgba(0,0,0,0.32)]"
     >
-      <header className="relative shrink-0 px-6 pb-2 pt-6">
-        <h2 className="pr-6 text-[18px] font-semibold text-[var(--text-primary)]">{profile ? 'Editar agente' : 'Conoce a tu agente'}</h2>
-        <p className="mt-1.5 text-[13px] leading-5 text-[var(--text-secondary)]">
+      <header className="relative shrink-0 px-6 pb-1 pt-5">
+        <h2 className="pr-8 text-[17px] font-semibold leading-6 text-[var(--text-primary)]">{profile ? 'Editar agente' : 'Conoce a tu agente'}</h2>
+        <p className="mt-1 text-[13px] leading-5 text-[var(--text-secondary)]">
           Dale un nombre y cuéntale cómo quieres que trabaje. Podrás cambiarlo después.
         </p>
         <button
           type="button"
-          className="absolute right-3 top-3 flex size-6 items-center justify-center rounded-full bg-[var(--bg-input)] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+          className="absolute right-4 top-4 flex size-7 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
           aria-label="Cerrar editor de agente"
           disabled={saving}
           onClick={onClose}
@@ -137,7 +140,8 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
           <X size={13} />
         </button>
       </header>
-      <fieldset disabled={saving} className="custom-scrollbar min-h-0 min-w-0 space-y-4 overflow-y-auto px-6 pb-2 pt-4">
+      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-6 pb-2 pt-4">
+      <fieldset disabled={saving} className="min-w-0 space-y-5">
         <div className="flex items-center gap-4">
           <AgentAvatar seed={profile?.id ?? (name || 'nuevo-agente')} color={color} name={name || 'Agente'} size={64} className="shrink-0" />
           <label className="min-w-0 flex-1 space-y-2">
@@ -163,8 +167,8 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
         </fieldset>
         <label className="block space-y-2">
           <span className="block text-xs font-medium text-[var(--text-secondary)]">Una instrucción permanente</span>
-          <Textarea required value={instructions} onChange={(e) => setInstructions(e.target.value)} maxLength={4000} rows={2}
-            aria-label="Indicaciones del agente" className="w-full text-[13px]"
+          <Textarea required value={instructions} onChange={(e) => setInstructions(e.target.value)} maxLength={4000} rows={5}
+            aria-label="Indicaciones del agente" className="w-full resize-y text-[13px] leading-5"
             placeholder="Responde de forma breve y muestra tu trabajo." />
         </label>
         <details open={Boolean(profile)} className="group">
@@ -262,7 +266,7 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
           <div className="mt-2 space-y-2">
             {groups.map((group) => (
               <div key={group.label}>
-                <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">{group.label}</p>
+                <p className="text-[11px] font-medium text-[var(--text-muted)]">{group.label}</p>
                 <ul className="mt-1 max-h-40 space-y-1 overflow-auto">
                   {group.items.map((tool) => (
                     <li key={tool.name} className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]" title={tool.name}>
@@ -295,14 +299,16 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
         </p>
         </details>
       </fieldset>
-      <footer className="flex shrink-0 flex-wrap items-center gap-2 px-6 pb-6 pt-4">
-        <Button type="submit" className="h-11 w-full rounded-xl" disabled={saving || !name.trim() || !instructions.trim()}>
-          {saving ? 'Guardando…' : profile ? 'Guardar' : canStartChat ? 'Crear y chatear' : 'Crear agente'}
-        </Button>
-        {profile && <Button variant="ghost" size="sm" disabled={saving} onClick={() => void remove()}>Borrar</Button>}
+      </div>
+      <footer className="flex shrink-0 items-center gap-2 border-t border-[var(--border-subtle)] px-6 py-4">
+        {profile && <Button variant="ghost" size="sm" className="text-[var(--accent-red)]" disabled={saving} onClick={() => void remove()}>Borrar</Button>}
         <span className="flex-1" />
         <Button variant="ghost" size="sm" disabled={saving} onClick={onClose}>Cancelar</Button>
+        <Button type="submit" size="sm" className="rounded-lg px-4" disabled={saving || !name.trim() || !instructions.trim()}>
+          {saving ? 'Guardando…' : profile ? 'Guardar' : canStartChat ? 'Crear y chatear' : 'Crear agente'}
+        </Button>
       </footer>
     </form>
+    </div>
   );
 }

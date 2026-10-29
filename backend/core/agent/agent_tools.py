@@ -12,6 +12,7 @@ from backend.core.agent import (
     documents,
     drafts,
     memory,
+    pages,
     questions,
     skills,
     task_plan,
@@ -28,7 +29,7 @@ SPECS: dict[str, JsonObject] = {
                  *canvas_edit.TOOL_SPECS, *artifacts.TOOL_SPECS, *questions.TOOL_SPECS, *memory.TOOL_SPECS,
                  *computer_files.TOOL_SPECS, *computer_shell.TOOL_SPECS, *computer_jobs.TOOL_SPECS,
                  *computer_desktop.TOOL_SPECS,
-                 *task_plan.TOOL_SPECS, *skills.TOOL_SPECS)
+                 *task_plan.TOOL_SPECS, *skills.TOOL_SPECS, *pages.TOOL_SPECS)
 }
 SPECS["mcp_status"] = {
     "name": "mcp_status", "module": "connections", "gated": False,
@@ -78,7 +79,8 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
     if name == "shell_output":
         return computer_shell.read_output(args, root)
     if name == "shell_job_start":
-        return computer_jobs.start(args, store.grants_for(session_id), root, session_id, token)
+        return computer_jobs.start(args, store.grants_for(session_id), root, session_id, token,
+                                   workspace=store.workspace_dir(session_id))
     if name == "shell_job_status":
         return computer_jobs.status(args, root, session_id)
     if name == "shell_job_cancel":
@@ -111,6 +113,10 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
         return canvas_edit.apply_layers(args)
     if name == "artifacts_list":
         return {"artifacts": store.artifacts_for(session_id)}
+    if name == "images_show":
+        return artifacts.show_images(store, session_id, args)
+    if name == "page_create":
+        return pages.create(args, store, session_id)
     if name in {"memory_search", "memory_remember", "procedure_learn"}:
         return memory.run(name, args, store, session_id, profile_id=profile_id, memory_scope=memory_scope)
     raise ValueError(f"Herramienta no disponible para el agente: {name}")

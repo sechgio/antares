@@ -12,6 +12,7 @@ import unicodedata
 import urllib.parse
 from collections.abc import Callable
 from pathlib import Path
+from typing import TypeVar
 
 from backend.core.integrations import http_guard, mcp_client, vault
 from backend.core.integrations.types import JsonObject
@@ -27,6 +28,8 @@ _ID_RE = re.compile(r"[^a-z0-9_-]+")
 _TOOL_NAME_RE = re.compile(r"[^a-zA-Z0-9_-]+")
 MAX_SERVERS = 20
 _MAX_SECRET_CHARS = 4000
+
+_T = TypeVar("_T")
 
 
 def _servers_path() -> Path:
@@ -69,17 +72,20 @@ def _save(servers: list[JsonObject]) -> None:
 
 def _public(server: JsonObject) -> JsonObject:
     secrets = vault.open_sealed(f"mcp:{server['id']}", _secrets_path(server["id"])) or {}
-    return {
+    public: JsonObject = {
         "id": server["id"],
         "name": server["name"],
         "transport": server["transport"],
         "url": server.get("url", ""),
         "command": server.get("command", ""),
         "args": server.get("args", []),
-        "secret_keys": sorted((secrets.get("headers") or {}).keys() or (secrets.get("env") or {}).keys()),
+        "secret_keys": sorted({key for group in ("headers", "env", "oauth") for key in (secrets.get(group) or {})}),
         "tools_count": server.get("tools_count"),
         "disabled_tools": server.get("disabled_tools", []),
     }
+    if server.get("oauth"):
+        public["oauth"] = server["oauth"]
+    return public
 
 
 def list_servers() -> list[JsonObject]:
@@ -102,6 +108,7 @@ def add_server(
     command: str = "",
     args: list[str] | None = None,
     secrets: JsonObject | None = None,
+    oauth: JsonObject | None = None,
 ) -> JsonObject:
     name = name.strip()
     if not name or len(name) > 80:
@@ -121,6 +128,29 @@ def add_server(
         command = command.strip()
         if not command:
             raise ValueError("El servidor stdio requiere un comando")
+    oauth_spec: JsonObject | None = None
+    if oauth:
+        if transport != "http":
+            raise ValueError("OAuth solo está disponible para servidores MCP HTTP")
+        token_url = str(oauth.get("token_url") or "").strip()
+        client_id = str(oauth.get("client_id") or "").strip()[:256]
+        if not token_url.startswith("https://") and not (_is_loopback_url(token_url) or http_guard._private_hosts_allowed()):
+            raise ValueError("La URL del endpoint de token debe usar https:// (http:// solo se admite en localhost)")
+        if not client_id:
+            raise ValueError("OAuth requiere un client_id")
+        if "client_secret" in oauth and not isinstance(oauth.get("client_secret"), str):
+            raise ValueError("client_secret debe ser un texto")
+        scopes_raw = oauth.get("scopes")
+        if scopes_raw is not None and (
+            not isinstance(scopes_raw, list) or len(scopes_raw) > 16 or any(not isinstance(s, str) for s in scopes_raw)
+        ):
+            raise ValueError("scopes debe ser una lista de hasta 16 textos")
+        oauth_spec = {
+            "token_url": token_url[:2048],
+            "client_id": client_id,
+            "scopes": [str(s).strip() for s in (scopes_raw or []) if str(s).strip()][:16],
+        }
+    oauth_secret = str((oauth or {}).get("client_secret") or "").strip()[:_MAX_SECRET_CHARS]
     with _lock:
         servers = _load()
         if len(servers) >= MAX_SERVERS:
@@ -139,16 +169,20 @@ def add_server(
             "command": command,
             "args": [str(a) for a in (args or [])][:32],
         }
+        if oauth_spec:
+            server["oauth"] = oauth_spec
         servers.append(server)
         _save(servers)
-        if secrets:
+        if secrets or oauth_secret:
             flat: dict[str, dict[str, str]] = {}
             for group in ("headers", "env"):
-                values = secrets.get(group)
+                values = secrets.get(group, {}) if isinstance(secrets, dict) else {}
                 if isinstance(values, dict):
                     flat[group] = {
                         str(k): str(v)[:_MAX_SECRET_CHARS] for k, v in list(values.items())[:16] if str(v).strip()
                     }
+            if oauth_secret:
+                flat["oauth"] = {"client_secret": oauth_secret}
             if any(flat.values()):
                 vault.seal(f"mcp:{server_id}", _secrets_path(server_id), flat)
         return _public(server)
@@ -188,13 +222,45 @@ def _redact(value: object, secrets: JsonObject) -> object:
         return [_redact(child, secrets) for child in value]
     if not isinstance(value, str):
         return value
-    for group in ("headers", "env"):
+    for group in ("headers", "env", "oauth"):
         for secret in (secrets.get(group) or {}).values():
             if isinstance(secret, str) and secret:
                 value = value.replace(secret, "<REDACTED>")
                 if secret.lower().startswith("bearer ") and len(secret[7:]) >= 8:
                     value = value.replace(secret[7:], "<REDACTED>")
+                if group == "oauth" and len(secret) >= 8:
+                    value = value.replace(secret, "<REDACTED>")
     return value
+
+
+def _http_headers(server: JsonObject, secrets: JsonObject, *, force_token: bool = False) -> dict[str, str]:
+    """Cabeceras HTTP del servidor: secretos del usuario más bearer OAuth si aplica."""
+    headers = {str(k): str(v) for k, v in (secrets.get("headers") or {}).items()}
+    oauth = server.get("oauth") or {}
+    token_url = oauth.get("token_url")
+    client_id = oauth.get("client_id")
+    if isinstance(token_url, str) and token_url and isinstance(client_id, str) and client_id:
+        token = mcp_client.client_credentials_token(
+            token_url,
+            client_id,
+            str((secrets.get("oauth") or {}).get("client_secret") or ""),
+            [str(s) for s in oauth.get("scopes") or []],
+            force=force_token,
+        )
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def _http_with_401_retry(server: JsonObject, secrets: JsonObject, call: Callable[[dict[str, str]], _T]) -> _T:
+    """Ejecuta la llamada HTTP; si un token OAuth fue rechazado (401), lo renueva una única vez."""
+    oauth = server.get("oauth") or {}
+    try:
+        return call(_http_headers(server, secrets))
+    except mcp_client.McpError as err:
+        if not (oauth.get("token_url") and oauth.get("client_id")) or "HTTP 401" not in str(err):
+            raise
+        mcp_client.clear_client_token(str(oauth["token_url"]), str(oauth["client_id"]))
+        return call(_http_headers(server, secrets, force_token=True))
 
 
 def approval_context(server_id: str, advertised_name: str, *, force: bool = True) -> JsonObject:
@@ -223,7 +289,9 @@ def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
     secrets = _secrets(server_id)
     try:
         if server["transport"] == "http":
-            tools = mcp_client.list_tools_http(server["url"], secrets.get("headers") or {})
+            tools = _http_with_401_retry(
+                server, secrets, lambda headers: mcp_client.list_tools_http(server["url"], headers),
+            )
         else:
             tools = mcp_client.list_tools_stdio(server["command"], server.get("args") or [], _stdio_env(secrets))
     except Exception as err:
@@ -302,8 +370,13 @@ def call_tool(
             raise ValueError("La herramienta MCP está deshabilitada; selecciónala en Conexiones")
     try:
         if server["transport"] == "http":
-            result = mcp_client.call_tool_http(server["url"], secrets.get("headers") or {}, tool, args,
-                                              **({"cancelled": cancelled} if cancelled else {}))
+            def _call(headers: dict[str, str]) -> JsonObject:
+                return mcp_client.call_tool_http(
+                    server["url"], headers, tool, args,
+                    **({"cancelled": cancelled} if cancelled else {}),
+                )
+
+            result = _http_with_401_retry(server, secrets, _call)
         else:
             result = mcp_client.call_tool_stdio(
                 server["command"], server.get("args") or [], _stdio_env(secrets), tool, args,

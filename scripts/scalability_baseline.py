@@ -11,6 +11,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.lib.percentile import nearest_rank_percentile as _nearest_rank  # noqa: E402
+
 SCALE_FACTORS = {"1x": 1, "5x": 5, "10x": 10}
 BASE_COUNTS = {
     "json_documents": 20,
@@ -203,12 +209,6 @@ def generate_fixtures(scale: str, *, seed: int = 1) -> dict[str, Any]:
         "concurrent_jobs": _concurrent_jobs(counts["concurrent_jobs"], seed, counts["images"]),
     }
     return {"scale": scale, "seed": seed, "counts": counts, "data": data}
-
-
-def _nearest_rank(values: list[float], quantile: float) -> float:
-    ordered = sorted(values)
-    rank = max(1, int((quantile * len(ordered)) + 0.999999999))
-    return ordered[rank - 1]
 
 
 class MetricCollector:

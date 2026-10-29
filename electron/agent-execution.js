@@ -13,6 +13,8 @@ const {
   validation,
   sessionForConversation,
   commitSessions,
+  planFromParams,
+  savePlan,
   requireSession,
   dispatchCallId,
   providerCallId,
@@ -31,6 +33,8 @@ const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno.
   + 'explica lo que queda pendiente y pide usar Reanudar para continuar.';
 const BUDGET_WARNING_STEPS = 32;
 const MAX_REPEATS = 3;
+const MAX_RECOVERABLE_FAILURES = 6;
+const MAX_RETRY_AFTER_MS = 30_000;
 const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, sigue con '
   + 'el siguiente y compruébalo; si no puedes completarlo, márcalo como failed en task_plan con la causa y di qué necesitas.';
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
@@ -62,6 +66,9 @@ const MAX_OPENAI_TOOLS = 128;
 
 const REASONING_OPENAI_MODEL = /deepseek-(r1|reasoner)|qwq|qwen3|gpt-oss|thinking/i;
 const REASONING_ANTHROPIC_MODEL = /claude-(3-7|(opus|sonnet|haiku|fable)-[4-9])/i;
+// DeepSeek V4 expone off/low/high/max; minimal, medium y xhigh no se envían.
+const DEEPSEEK_V4_MODEL = /\bdeepseek[-_ ]v4(?:[.\-_:]|$)/i;
+const DEEPSEEK_V4_LEVEL_MAP = { off: 'none', minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' };
 const VISION_MODEL = /gpt-4o|gpt-4\.1|gpt-5|\bo[34]\b|\bo[34]-|claude|gemini|vision|[-_/]vl\b|\bvl[-_]|llava|pixtral|grok-4|llama-4|gemma-3/i;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_CONTEXT_WINDOW = 128000;
@@ -72,7 +79,10 @@ function supportsVision(modelId) {
 }
 
 function supportsReasoning(style, modelId) {
-  return (style === 'anthropic_messages' ? REASONING_ANTHROPIC_MODEL : REASONING_OPENAI_MODEL).test(String(modelId || ''));
+  const id = String(modelId || '');
+  return style === 'anthropic_messages'
+    ? REASONING_ANTHROPIC_MODEL.test(id)
+    : (REASONING_OPENAI_MODEL.test(id) || DEEPSEEK_V4_MODEL.test(id));
 }
 
 const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -158,6 +168,8 @@ function modelDefinition(info, id, api, verified, catalogModel) {
   };
   const reasoning = typeof capabilities.reasoning === 'boolean' ? capabilities.reasoning
     : typeof catalog.reasoning === 'boolean' ? catalog.reasoning : supportsReasoning(info.style, id);
+  const thinkingLevelMap = catalog.thinkingLevelMap
+    || (reasoning && DEEPSEEK_V4_MODEL.test(id) ? DEEPSEEK_V4_LEVEL_MAP : undefined);
   return {
     id,
     name: id,
@@ -177,7 +189,7 @@ function modelDefinition(info, id, api, verified, catalogModel) {
     // la respuesta y con 8 k un nivel alto dejaba la respuesta truncada.
     maxTokens: Math.min(Number(catalog.maxTokens) || DEFAULT_MAX_TOKENS, Math.floor(contextWindow / 4)),
     reasoning,
-    ...(reasoning && catalog.thinkingLevelMap ? { thinkingLevelMap: catalog.thinkingLevelMap } : {}),
+    ...(reasoning && thinkingLevelMap ? { thinkingLevelMap } : {}),
     ...(Object.keys(compat).length ? { compat } : {}),
   };
 }
@@ -282,7 +294,7 @@ async function allToolSpecs() {
   const saved = Object.values(await profiles()).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   if (saved.length > 0) {
     const tasks = require('./agent-tasks');
-    for (const tool of [tasks.DELEGATE_TOOL, tasks.CHECK_TOOL, tasks.MESSAGE_TOOL, tasks.STOP_TOOL, tasks.WAKE_TOOL,
+    for (const tool of [tasks.DELEGATE_TOOL, tasks.CHECK_TOOL, tasks.TRANSCRIPT_TOOL, tasks.MESSAGE_TOOL, tasks.STOP_TOOL, tasks.WAKE_TOOL,
       require('./agent-rooms').TOOL]) {
       merged.set(tool.name, tool);
     }
@@ -292,6 +304,7 @@ async function allToolSpecs() {
         + `Por defecto solo lee; role=reviewer pide una revisión y role=worker solo funciona si la ficha del agente tiene ese rol, `
         + `con cada efecto aprobado en esta conversación. Admiten task o hasta ${SUBAGENT_MAX_TASKS} tasks agrupadas. `
         + `output_schema valida la respuesta como JSON Schema. No hay delegación recursiva (profundidad máxima ${SUBAGENT_MAX_DEPTH}). `
+        + `${shared.DELEGATION_GUIDE} `
         + `Agentes disponibles: ${saved.map((profile) => `«${profile.name}» (${String(profile.description || 'agente personalizado').slice(0, SUBAGENT_DESCRIPTION_MAX)})`).join('; ')}.`,
       gated: false,
       kind: 'subagent',
@@ -521,6 +534,7 @@ async function refreshTools() {
         ? spec.inputSchema
         : { type: 'object', properties: {} },
       replay: spec.replay_safe === true ? 'safe' : 'unsafe',
+      ...(spec.gated ? { executionMode: 'sequential' } : {}),
       execute: (args, api, context) => executeTool(spec, args, api, context),
     });
   });
@@ -674,10 +688,11 @@ function boundedSummary(value) {
   return collapsed.length > TURN_SUMMARY_CHARS ? `${collapsed.slice(0, TURN_SUMMARY_CHARS)}...` : collapsed;
 }
 
-function messageText(content) {
+function messageText(content, excludeContext = false) {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
-    return content.filter((part) => part && part.type === 'text').map((part) => part.text).join(' ');
+    return content.filter((part) => part && part.type === 'text'
+      && (!excludeContext || !String(part.text || '').startsWith(shared.CONTEXT_MARKER))).map((part) => part.text).join(' ');
   }
   return '';
 }
@@ -697,7 +712,7 @@ function noteTurnStart(api, messages) {
       session_id: sessionId,
       agent,
       started_at: new Date().toISOString(),
-      input_summary: boundedSummary(messageText(lastUserContent(messages))),
+      input_summary: boundedSummary(messageText(lastUserContent(messages), true)),
       tool_calls: [],
     };
   })().catch((err) => {
@@ -816,13 +831,21 @@ async function beforeTool(call, api, context) {
     repeated = { count: 0, outcome: undefined, exempt: false };
     calls.set(signature, repeated);
   }
+  if (repeated.uncertain) {
+    return { block: `El resultado anterior de ${call.name} quedó incierto y la acción podría haberse aplicado. `
+      + 'No la repitas: comprueba el estado con una herramienta de lectura o informa al usuario de qué necesitas para verificarlo.' };
+  }
+  const failing = turnState(api.conversationId).failures.get(call.name);
+  if ((repeated.recoveries || 0) >= MAX_RECOVERABLE_FAILURES || (failing?.recoveries || 0) >= MAX_RECOVERABLE_FAILURES) {
+    return { block: `Las últimas ${MAX_RECOVERABLE_FAILURES} recuperaciones de ${call.name} no resolvieron el fallo. No la repitas: `
+      + 'diagnostica la causa con otra herramienta, cambia de enfoque o informa al usuario de qué te bloquea.' };
+  }
   if (repeated.count >= MAX_REPEATS && !repeated.exempt) {
     const detail = spec.name === 'web_click' ? 'sin cambiar de página'
       : !spec.gated || spec.name === 'desktop_observe' ? 'con el mismo resultado o error' : 'con los mismos argumentos';
     return { block: `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno ${detail}. No la repitas: `
       + 'cambia de enfoque o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
   }
-  const failing = turnState(api.conversationId).failures.get(call.name);
   if (failing && failing.count >= MAX_REPEATS) {
     return { block: `Las últimas ${MAX_REPEATS} llamadas a ${call.name} fallaron por la misma causa aunque cambiaste los argumentos `
       + `(«${failing.message}»). No la repitas: diagnostica la causa con otra herramienta, cambia de enfoque `
@@ -830,6 +853,13 @@ async function beforeTool(call, api, context) {
   }
   if (session.delegation && !childControl && (spec.kind !== 'backend' || spec.replay_safe !== true)) {
     return { block: 'El agente delegado solo puede usar lecturas idempotentes autorizadas' };
+  }
+  const retryDelay = Math.max(repeated.retryAt || 0, failing?.retryAt || 0) - Date.now();
+  if (retryDelay > 0) {
+    await waitResource(context, Math.min(retryDelay, MAX_RETRY_AFTER_MS));
+    if (!childControl && !await toolEnabled(sessionId, call.name, context)) {
+      return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
+    }
   }
   const mode = session.permission_mode || 'auto';
   const rules = { ...shared.globalRules, ...(session.approval_rules || {}) };
@@ -1006,6 +1036,10 @@ async function executeTool(spec, args, api, context) {
   if (spec.name === 'task_plan' && !isError && parsed && Array.isArray(parsed.remaining)) {
     turnState(api.conversationId).remaining = parsed.remaining.map(String);
   }
+  if (spec.name === 'task_plan' && !isError) {
+    const plan = planFromParams(args);
+    if (plan) await savePlan(sessionId, plan);
+  }
   const image = isError || !await acceptsImages(api, context) ? null : await resultImage(parsed);
   const calls = turnState(api.conversationId).calls;
   const signature = callSignature(spec.name, args);
@@ -1025,11 +1059,15 @@ async function executeTool(spec, args, api, context) {
     ? stableJson({ url: parsed && parsed.page && parsed.page.url ? String(parsed.page.url) : '' })
     : outcome;
   const hash = crypto.createHash('sha256').update(progress).digest('hex');
-  const exempt = !!(isError && parsed && typeof parsed === 'object'
+  repeated.uncertain = !!(parsed && parsed.uncertain === true && (spec.gated || spec.replay_safe !== true));
+  const exempt = !!(!spec.gated && spec.replay_safe === true && isError && parsed && typeof parsed === 'object'
     && (parsed.retryable === true || parsed.recoverable === true) && parsed.uncertain !== true);
   if (exempt) {
     repeated.exempt = true;
     repeated.count = 0;
+    repeated.recoveries = (repeated.recoveries || 0) + 1;
+    repeated.retryAt = Date.now() + (Number.isFinite(parsed.retry_after_ms)
+      ? Math.min(MAX_RETRY_AFTER_MS, Math.max(0, parsed.retry_after_ms)) : 0);
   } else if (trackOutcome && repeated.outcome !== undefined && repeated.outcome !== hash) {
     repeated.count = 1;
     repeated.exempt = false;
@@ -1038,15 +1076,22 @@ async function executeTool(spec, args, api, context) {
     repeated.exempt = false;
   }
   if (trackOutcome) repeated.outcome = hash;
+  if (!isError) {
+    repeated.recoveries = 0;
+    repeated.retryAt = 0;
+  }
   const failures = turnState(api.conversationId).failures;
   if (!isError) {
     failures.delete(spec.name);
-  } else if (!exempt) {
+  } else {
     const message = String(typeof parsed.error === 'string' ? parsed.error : (parsed.error && parsed.error.message) || parsed.message || text);
     const key = errorSignature(message);
     const previous = failures.get(spec.name);
+    const sameCause = previous && previous.key === key;
     failures.set(spec.name, { key, message: message.replace(/\s+/g, ' ').slice(0, 160),
-      count: previous && previous.key === key ? previous.count + 1 : 1 });
+      count: exempt ? 0 : sameCause ? previous.count + 1 : 1,
+      recoveries: (sameCause ? previous.recoveries || 0 : 0) + (exempt ? 1 : 0),
+      retryAt: exempt ? repeated.retryAt : 0 });
   }
   noteToolResult(api, spec.name, text, isError);
   const hooks = require('./agent-hooks');
@@ -1073,6 +1118,9 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     }
     if (spec.name === 'agent_check') {
       return { text: JSON.stringify(await require('./agent-tasks').checkDelegations(args || {}, sessionId)) };
+    }
+    if (spec.name === 'agent_transcript') {
+      return { text: JSON.stringify(await require('./agent-tasks').readTranscript(args || {}, sessionId)) };
     }
     if (spec.name === 'agent_message') {
       return { text: JSON.stringify(await require('./agent-tasks').sendMessage(args || {}, sessionId, api)) };
@@ -1358,7 +1406,7 @@ async function toolEnabled(sessionId, name, context) {
   return (await conv.agent(context)).tools.some((tool) => tool.name === name);
 }
 
-function waitResource(context) {
+function waitResource(context, delayMs = 400) {
   const signal = context && context.abortSignal;
   return new Promise((resolve, reject) => {
     if (signal && signal.aborted) return reject(aborted());
@@ -1369,7 +1417,7 @@ function waitResource(context) {
     const timer = setTimeout(() => {
       if (signal) signal.removeEventListener('abort', onAbort);
       resolve();
-    }, 400);
+    }, delayMs);
     if (signal) signal.addEventListener('abort', onAbort, { once: true });
   });
 }

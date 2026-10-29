@@ -12,6 +12,71 @@ def _catalog() -> dict:
     return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
 
 
+def test_image_previews_share_the_existing_artifact_contract():
+    import jsonschema
+
+    from backend.core.agent import agent_tools, modules
+
+    methods = _catalog()["methods"]
+    public, private = (methods[name] for name in ("agent_artifact_action", "agent_internal_artifact_action"))
+    assert public["handler"] == "native:agent" and private["internal"] is True
+    assert public["inputSchema"]["properties"]["full_size"] == private["inputSchema"]["properties"]["full_size"]
+    for spec in (public, private):
+        assert spec["timeout"] == "long" and not spec.get("idempotent")
+        jsonschema.validate({"session_id": "s1", "artifact_id": "a1", "action": "preview", "full_size": True}, spec["inputSchema"])
+        jsonschema.validate({"session_id": "s1", "artifact_id": "a1", "action": "preview"}, spec["inputSchema"])
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({"full_size": "true"}, spec["inputSchema"])
+    assert agent_tools.SPECS["images_show"]["gated"] is False and modules.module_for("images_show") == "documents"
+
+
+def test_page_open_reuses_artifact_action_contract():
+    import jsonschema
+
+    entry = _catalog()["methods"]["agent_artifact_action"]
+    assert entry["handler"] == "native:agent" and entry["timeout"] == "long"
+    jsonschema.validate({"session_id": "s1", "artifact_id": "page", "action": "open", "sha256": "revision"},
+                        entry["inputSchema"])
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"session_id": "s1", "artifact_id": "page", "action": "execute"}, entry["inputSchema"])
+    for scheme in ("light", "dark"):
+        jsonschema.validate({"session_id": "s1", "artifact_id": "page", "action": "preview", "color_scheme": scheme},
+                            entry["inputSchema"])
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"session_id": "s1", "artifact_id": "page", "action": "open", "color_scheme": "custom"},
+                            entry["inputSchema"])
+
+
+def test_file_preview_requires_one_resource_and_keeps_selected_paths_private():
+    import jsonschema
+
+    methods = _catalog()["methods"]
+    entry = methods["agent_file_preview"]
+    assert entry["handler"] == "native:agent" and entry["idempotent"] is True
+    assert methods["agent_internal_file_preview"]["internal"] is True
+    assert methods["agent_internal_file_preview"]["lane"] == "heavy"
+    for target in ({"resource": "informe.pdf"}, {"attachment_id": "a1"}):
+        jsonschema.validate({"session_id": "s1", **target, "page": 0, "sheet": 0}, entry["inputSchema"])
+    for target in ({}, {"resource": "a.pdf", "attachment_id": "a1"}, {"selected_file": "C:\\secret.pdf"},
+                   {"resource": "a.pdf", "page": -1}, {"resource": "a.pdf", "sheet": True}):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate({"session_id": "s1", **target}, entry["inputSchema"])
+
+
+def test_agent_workspace_selection_uses_native_dialog_contract():
+    import jsonschema
+
+    entry = _catalog()["methods"]["agent_workspace_set"]
+    assert entry["handler"] == "native:agent" and not entry.get("idempotent")
+    assert entry["timeout"] == "long"
+    schema = entry["inputSchema"]
+    for params in ({"session_id": "s1", "select": True}, {"session_id": "s1", "path": "C:\\proyecto"},
+                   {"session_id": "s1"}):
+        jsonschema.validate(params, schema)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"session_id": "s1", "select": "C:\\proyecto"}, schema)
+
+
 def test_subagent_memory_scope_and_budget_are_private_dispatch_context():
     import jsonschema
 
