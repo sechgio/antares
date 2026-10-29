@@ -112,6 +112,8 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
         return canvas_edit.apply_layers(args)
     if name == "artifacts_list":
         return {"artifacts": store.artifacts_for(session_id)}
+    if name == "images_show":
+        return artifacts.show_images(store, session_id, args)
     if name in {"memory_search", "memory_remember", "procedure_learn"}:
         return memory.run(name, args, store, session_id, profile_id=profile_id, memory_scope=memory_scope)
     raise ValueError(f"Herramienta no disponible para el agente: {name}")

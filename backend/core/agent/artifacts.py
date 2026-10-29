@@ -4,6 +4,7 @@ import base64
 import hashlib
 import uuid
 from collections.abc import Callable
+from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,7 +22,80 @@ PRINT_SCHEMA: JsonObject = {"type": "object", "properties": {
     "quality": {"type": "string", "enum": ["draft", "normal", "high"]},
 }, "required": ["artifact_id", "file_index", "sha256", "printer_name"]}
 TOOL_SPECS: list[JsonObject] = [{"name": "artifact_print", "module": "printing", "gated": True,
-    "description": "Imprimir un PDF revisado con su hash y opciones exactas; requiere aprobación", "inputSchema": PRINT_SCHEMA}]
+    "description": "Imprimir un PDF revisado con su hash y opciones exactas; requiere aprobación", "inputSchema": PRINT_SCHEMA},
+    {"name": "images_show", "module": "documents", "gated": False,
+     "description": "Mostrar imágenes o gráficos ya generados en el chat como una galería persistente. "
+                    "Lee PNG, JPEG o WebP del espacio de trabajo o archivos autorizados; no genera imágenes "
+                    "ni ejecuta código. Admite hasta 8 imágenes de 25 MiB y 25 megapíxeles cada una (100 MiB en total).",
+     "inputSchema": {"type": "object", "properties": {"images": {"type": "array", "minItems": 1, "maxItems": 8,
+         "items": {"type": "object", "properties": {"path": {"type": "string"},
+                   "title": {"type": "string", "maxLength": 200}}, "required": ["path"]}}}, "required": ["images"]}}]
+
+_IMAGE_FORMATS = {"PNG": ("image/png", ".png"), "JPEG": ("image/jpeg", ".jpg"), "WEBP": ("image/webp", ".webp")}
+_MAX_IMAGE_BYTES = 25 * 1024 * 1024
+_MAX_IMAGE_PIXELS = 25_000_000
+
+
+def show_images(store: AgentStore, session_id: str, params: JsonObject) -> JsonObject:
+    from PIL import Image, UnidentifiedImageError
+
+    from backend.core.agent import computer_files
+
+    images = params.get("images")
+    if not isinstance(images, list) or not 1 <= len(images) <= 8:
+        raise ValueError("Indica entre 1 y 8 imágenes")
+    root = store.drafts_dir(session_id)
+    workspace = store.workspace_dir(session_id)
+    grants = store.grants_for(session_id)
+    files: list[JsonObject] = []
+    created: list[Path] = []
+    total = 0
+    try:
+        for item in images:
+            if not isinstance(item, dict):
+                raise ValueError("Indica la ruta de cada imagen")
+            title = item.get("title", "")
+            if not isinstance(title, str) or len(title) > 200:
+                raise ValueError("El título de la imagen admite hasta 200 caracteres")
+            value = item.get("path")
+            draft = drafts.inside(root, value) if isinstance(value, str) and Path(value).is_absolute() else None
+            source = computer_files.resolve(value, {}, root) if draft is not None else \
+                computer_files.resolve(value, grants, workspace)
+            if not source.is_file() or source.stat().st_size > _MAX_IMAGE_BYTES:
+                raise ValueError("Cada imagen debe ser un archivo de hasta 25 MiB")
+            with source.open("rb") as stream:
+                content = stream.read(_MAX_IMAGE_BYTES + 1)
+            total += len(content)
+            if len(content) > _MAX_IMAGE_BYTES or total > 100 * 1024 * 1024:
+                raise ValueError("Las imágenes exceden el tamaño permitido")
+            try:
+                with Image.open(BytesIO(content)) as image:
+                    if image.format not in _IMAGE_FORMATS:
+                        raise ValueError("Usa imágenes PNG, JPEG o WebP")
+                    mime, suffix = _IMAGE_FORMATS[image.format]
+                    width, height = image.size
+                    if width * height > _MAX_IMAGE_PIXELS:
+                        raise ValueError("Cada imagen admite hasta 25 megapíxeles")
+                    image.verify()
+                with Image.open(BytesIO(content)) as image:
+                    image.load()
+            except (UnidentifiedImageError, OSError, SyntaxError, Image.DecompressionBombError) as err:
+                raise ValueError("No se pudo leer una imagen PNG, JPEG o WebP válida") from err
+            name = drafts.safe_name(source.stem) + suffix
+            root.mkdir(parents=True, exist_ok=True)
+            target = root / f"{uuid.uuid4().hex[:12]}_{name}"
+            with target.open("xb") as stream:
+                stream.write(content)
+            created.append(target)
+            files.append({"path": str(target), "name": name, "title": title.strip() or name,
+                          "mime": mime, "size": len(content), "width": width, "height": height,
+                          "sha256": hashlib.sha256(content).hexdigest()})
+        return {"artifact": store.add_artifact(session_id, {
+            "id": uuid.uuid4().hex, "kind": "image", "family": "image", "module": "documents", "files": files})}
+    except Exception:
+        for target in created:
+            target.unlink(missing_ok=True)
+        raise
 
 
 def verified_file(store: AgentStore, session_id: str, params: JsonObject) -> tuple[JsonObject, JsonObject, Path]:
@@ -33,10 +107,19 @@ def verified_file(store: AgentStore, session_id: str, params: JsonObject) -> tup
         raise ValueError("Archivo de artefacto inválido")
     file = artifact["files"][index]
     path = drafts.inside(store.drafts_dir(session_id), str(file["path"]))
+    is_image = artifact.get("kind") == "image"
     if path is None or not path.is_file() or path.stat().st_size > 100 * 1024 * 1024:
+        if is_image:
+            raise ValueError("La imagen ya no está disponible en los borradores")
         raise ValueError("El PDF ya no está disponible en los borradores")
+    if is_image:
+        from backend.core.agent import computer_files
+
+        computer_files.resolve(str(path), {}, store.drafts_dir(session_id))
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     if digest != file["sha256"] or (params.get("sha256") and params["sha256"] != digest):
+        if is_image:
+            raise ValueError("La imagen cambió; vuelve a registrarla antes de continuar")
         raise ValueError("El PDF cambió; vuelve a generarlo y revisarlo antes de continuar")
     return artifact, file, path
 
@@ -44,9 +127,23 @@ def verified_file(store: AgentStore, session_id: str, params: JsonObject) -> tup
 def action(store: AgentStore, session_id: str, params: JsonObject) -> JsonObject:
     artifact, file, path = verified_file(store, session_id, params)
     operation = params.get("action")
-    if operation == "preview":
-        import base64
+    if artifact.get("kind") == "image":
+        if operation == "file":
+            return {"path": str(path), "name": file["name"], "sha256": file["sha256"], "mime": file["mime"]}
+        if operation != "preview":
+            raise ValueError("Esta acción solo admite documentos PDF")
+        from PIL import Image, ImageOps
 
+        limit = 2400 if params.get("full_size") is True else 360
+        with Image.open(path) as image:
+            if image.width * image.height > _MAX_IMAGE_PIXELS:
+                raise ValueError("La imagen excede 25 megapíxeles")
+            preview = ImageOps.exif_transpose(image)
+            preview.thumbnail((limit, limit))
+            png = BytesIO()
+            preview.save(png, format="PNG")
+        return {"png_base64": base64.b64encode(png.getvalue()).decode("ascii"), "sha256": file["sha256"]}
+    if operation == "preview":
         import pymupdf
 
         page_index = params.get("page", 0)
@@ -109,7 +206,9 @@ def backend_pdf(store: AgentStore, session_id: str, method: str, result: JsonObj
 def validate_print(store: AgentStore, session_id: str, params: JsonObject) -> None:
     from backend.core.printing import _DUPLEX_CODES, _QUALITY_DPI, _parse_pages, list_printers
 
-    _, file, _ = verified_file(store, session_id, params)
+    artifact, file, _ = verified_file(store, session_id, params)
+    if artifact.get("kind") == "image":
+        raise ValueError("La impresión solo admite documentos PDF")
     copies = params.get("copies", 1)
     if not isinstance(copies, int) or isinstance(copies, bool) or not 1 <= copies <= 99:
         raise ValueError("Las copias deben ser un entero entre 1 y 99")
@@ -132,6 +231,8 @@ def print_artifact(
     from backend.core.printing import print_pdf
 
     artifact, file, path = verified_file(store, session_id, params)
+    if artifact.get("kind") == "image":
+        raise ValueError("La impresión solo admite documentos PDF")
     if (artifact.get("reviewed") or {}).get(str(params.get("file_index", 0))) != file["sha256"]:
         raise ValueError("Revisa el PDF en el chat antes de imprimirlo")
     data = path.read_bytes()

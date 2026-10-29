@@ -39,8 +39,9 @@ async function artifactAction(params) {
   if (params.action === 'save') {
     const { dialog } = require('electron');
     const win = require('./window-manager').getMainWindow();
-    const choice = await dialog.showSaveDialog(win, { title: 'Guardar PDF revisado', defaultPath: file.name,
-      filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+    const imageExtension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[file.mime];
+    const choice = await dialog.showSaveDialog(win, { title: imageExtension ? 'Guardar imagen' : 'Guardar PDF revisado', defaultPath: file.name,
+      filters: [{ name: imageExtension ? 'Imagen' : 'PDF', extensions: [imageExtension || 'pdf'] }] });
     if (choice.canceled || !choice.filePath) return { cancelled: true };
     const path = require('node:path');
     method = 'drafts_save';
