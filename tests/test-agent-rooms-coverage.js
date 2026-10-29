@@ -172,6 +172,7 @@ async function main() {
     const firstGrace = await graceTurn();
     assert.equal(firstGrace.grace, 1, 'la primera prórroga queda contada');
     assert.ok(firstGrace.deadline > Date.now(), 'el turno sigue vivo mientras el miembro está ocupado');
+    assert.ok(firstGrace.deadline - Date.now() > 50000, 'la prórroga dura un minuto');
     await expire();
     await rooms.tickRooms(state);
     assert.equal((await graceTurn()).grace, 2, 'la segunda prórroga también queda contada');
