@@ -73,6 +73,7 @@ const VISION_MODEL = /gpt-4o|gpt-4\.1|gpt-5|\bo[34]\b|\bo[34]-|claude|gemini|vis
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_CONTEXT_WINDOW = 128000;
 const DEFAULT_MAX_TOKENS = 8192;
+const REASONING_MAX_TOKENS = 32768;
 
 function supportsVision(modelId) {
   return VISION_MODEL.test(String(modelId || ''));
@@ -187,7 +188,8 @@ function modelDefinition(info, id, api, verified, catalogModel) {
     contextWindow,
     // El techo de salida del catálogo: el razonamiento comparte max_tokens con
     // la respuesta y con 8 k un nivel alto dejaba la respuesta truncada.
-    maxTokens: Math.min(Number(catalog.maxTokens) || DEFAULT_MAX_TOKENS, Math.floor(contextWindow / 4)),
+    maxTokens: Math.min(Number(catalog.maxTokens) || (reasoning ? REASONING_MAX_TOKENS : DEFAULT_MAX_TOKENS),
+      Math.floor(contextWindow / 4)),
     reasoning,
     ...(reasoning && thinkingLevelMap ? { thinkingLevelMap } : {}),
     ...(Object.keys(compat).length ? { compat } : {}),
@@ -562,6 +564,11 @@ async function refreshTools() {
         afterResponse: async (message, api, context) => {
           try {
             const sessionId = await sessionForConversation(api.conversationId, api, context);
+            if (emptyAnswer(message) && turnState(api.conversationId).emptyAnswerRetried) {
+              message.stopReason = 'error';
+              message.errorMessage = 'El proveedor terminó sin una respuesta visible después de volver a pedir el resultado. Intenta enviar el encargo de nuevo.';
+              message.content.push({ type: 'text', text: message.errorMessage });
+            }
             await recordProfileUsage((await sessions())[sessionId], message.usage);
             if (message.stopReason !== 'toolUse') {
               try { require('./agent-browser').release(sessionId); } catch { }
@@ -574,7 +581,7 @@ async function refreshTools() {
                 && (shared.rounds.get(api.conversationId) || 0) < MAX_TOOL_STEPS) delete sessions[sessionId].continuation;
             });
           } finally {
-            if (message.stopReason !== 'toolUse') requiredSkills.delete(api.conversationId);
+            if (message.stopReason !== 'toolUse' && !emptyAnswer(message)) requiredSkills.delete(api.conversationId);
             await closeTurnLog(message, api);
           }
         },
@@ -700,6 +707,12 @@ function messageText(content, excludeContext = false) {
 function noteTurnStart(api, messages) {
   return (async () => {
     const turn = turnState(api.conversationId);
+    const input = [...messages].reverse().find((message) => message.role === 'user'
+      && !messageText(message.content).startsWith(shared.CHECK_MARKER));
+    if (turn.emptyAnswerInput !== input?.timestamp) {
+      turn.emptyAnswerInput = input?.timestamp;
+      delete turn.emptyAnswerRetried;
+    }
     if (turn.log) return;
     const sessionId = await sessionForConversation(api.conversationId, api, null) || '';
     let agent = '';
@@ -791,8 +804,20 @@ function errorSignature(message) {
     .replace(/\s+/g, ' ').trim().slice(0, 160);
 }
 
+function emptyAnswer(answer) {
+  return !answer.errorMessage && ['stop', 'length', 'toolUse'].includes(answer.stopReason)
+    && !messageText(answer.content).trim()
+    && !(answer.content || []).some((block) => block && block.type === 'toolCall');
+}
+
 function planCheck(answer, api) {
   const turn = shared.turns.get(api.conversationId);
+  if (turn && emptyAnswer(answer) && !turn.emptyAnswerRetried) {
+    turn.emptyAnswerRetried = true;
+    return { continue: `${shared.CHECK_MARKER} Tu respuesta terminó sin texto visible para el usuario. `
+      + 'Entrega el resultado usando la evidencia que ya obtuviste; si falta trabajo, continúa el encargo. '
+      + 'Si no puedes completarlo, explica el bloqueo concreto.' };
+  }
   if (!turn || turn.checked || !turn.remaining || !turn.remaining.length) return undefined;
   if (answer.errorMessage || answer.stopReason === 'aborted' || answer.stopReason === 'error') return undefined;
   if ((shared.rounds.get(api.conversationId) || 0) >= MAX_TOOL_STEPS) return undefined;

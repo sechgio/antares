@@ -86,6 +86,7 @@ export interface AgentToolCall {
 export interface AgentMessage {
   role: 'user' | 'assistant' | 'tool_result';
   content: string;
+  attachments?: AgentContext['files'];
   reasoning?: string;
   reasoning_ms?: number;
   tool_calls?: AgentToolCall[];
@@ -95,7 +96,6 @@ export interface AgentMessage {
   partial?: boolean;
   notice?: boolean;
 }
-
 export interface AgentUsageTurn {
   input: number;
   output: number;

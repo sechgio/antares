@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const runtime = require('../electron/agent-runtime');
+const { shared } = require('../electron/agent-shared');
 
 async function until(check, timeout = 20000) {
   const deadline = Date.now() + timeout;
@@ -61,6 +62,7 @@ async function main() {
   const respond = (context, _streamOptions, _state, requestModel) => {
     const input = lastUser(context);
     const source = JSON.stringify(context.messages);
+    if (input.startsWith(shared.CHECK_MARKER)) return fauxAssistantMessage('');
     if (input.includes('SOLO_CONTINUO')) {
       continuoSources.push(source);
       if (input.includes('SEGUNDA PARTE')) return fauxAssistantMessage('Segunda parte terminada');

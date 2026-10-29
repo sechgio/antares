@@ -2,6 +2,26 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { expect, it, vi } from 'vitest';
 import { ApprovalCard, AssistantTurn, MessageRow, PlanCard, ThinkingRow, groupTurns, placeArtifacts, stepsSummary } from './AgentTimeline';
 import { reasoningRecap } from './Reasoning';
+import { FilePreviewContext } from './filePreviewContext';
+
+it('conserva los archivos junto al mensaje y abre su vista previa sin mostrar rutas internas', () => {
+  const preview = vi.fn();
+  const { container, rerender } = render(<FilePreviewContext.Provider value={preview}><MessageRow msg={{
+    role: 'user', content: 'Compara los NIS de este Excel.', ts: 1,
+    attachments: [{ path: 'C:\\datos\\CUADRO OT HIDRO DVD 29.xlsx', folder: false }, { path: 'C:\\fotos', folder: true }],
+  }} /></FilePreviewContext.Provider>);
+  const files = screen.getByLabelText('Archivos del mensaje');
+  expect(files).toHaveTextContent('CUADRO OT HIDRO DVD 29.xlsxHoja de cálculo');
+  expect(files).toHaveTextContent('fotosCarpeta');
+  expect(screen.getByText('Compara los NIS de este Excel.')).toBeVisible();
+  expect(container.textContent).not.toContain('C:\\datos');
+  fireEvent.click(within(files).getByRole('button', { name: 'Previsualizar CUADRO OT HIDRO DVD 29.xlsx' }));
+  expect(preview).toHaveBeenCalledExactlyOnceWith('C:\\datos\\CUADRO OT HIDRO DVD 29.xlsx');
+  expect(within(files).getByRole('button', { name: 'Previsualizar fotos' })).toBeDisabled();
+  rerender(<MessageRow msg={{ role: 'user', content: 'Mensaje anterior sin adjuntos.', ts: 1 }} />);
+  expect(screen.queryByLabelText('Archivos del mensaje')).toBeNull();
+  expect(screen.getByText('Mensaje anterior sin adjuntos.')).toBeVisible();
+});
 
 it('muestra el descubrimiento y la lectura de skills en la traza', () => {
   render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [
