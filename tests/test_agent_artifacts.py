@@ -262,3 +262,23 @@ def test_images_dispatch_returns_the_chat_artifact_and_replays_without_duplicate
     preview = artifacts.action(reopened, "s1", {"artifact_id": artifact["id"], "file_index": 0,
                                "sha256": artifact["files"][0]["sha256"], "action": "preview"})
     assert preview["png_base64"]
+
+
+def test_image_preview_checks_the_exact_bytes_it_renders(tmp_path, monkeypatch):
+    from PIL import Image
+
+    store = agent.AgentStore(tmp_path)
+    source = store.drafts_dir("s1") / "chart.png"
+    source.parent.mkdir(parents=True)
+    Image.new("RGB", (50, 50), "blue").save(source)
+    artifact = artifacts.show_images(store, "s1", {"images": [{"path": str(source)}]})["artifact"]
+    verified = artifacts.verified_file
+
+    def replace_after_verification(*args):
+        result = verified(*args)
+        Image.new("RGB", (50, 50), "red").save(result[2])
+        return result
+
+    monkeypatch.setattr(artifacts, "verified_file", replace_after_verification)
+    with pytest.raises(ValueError, match="cambió"):
+        artifacts.action(store, "s1", {"artifact_id": artifact["id"], "file_index": 0, "action": "preview"})

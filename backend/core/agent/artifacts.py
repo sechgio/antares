@@ -145,7 +145,11 @@ def action(store: AgentStore, session_id: str, params: JsonObject) -> JsonObject
         from PIL import Image, ImageOps
 
         limit = 2400 if params.get("full_size") is True else 360
-        with Image.open(path) as image:
+        with path.open("rb") as stream:
+            content = stream.read(_MAX_IMAGE_BYTES + 1)
+        if hashlib.sha256(content).hexdigest() != file["sha256"]:
+            raise ValueError("La imagen cambió; vuelve a registrarla antes de continuar")
+        with Image.open(BytesIO(content)) as image:
             if image.width * image.height > _MAX_IMAGE_PIXELS:
                 raise ValueError("La imagen excede 25 megapíxeles")
             preview = ImageOps.exif_transpose(image)
