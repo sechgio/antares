@@ -23,8 +23,15 @@ async function artifactAction(params) {
   await require('./agent-runtime').open();
   await require('./agent-shared').requireSession(String(params.session_id || ''));
   const { _callBackend } = require('./ipc-router');
-  if (['preview', 'review'].includes(params.action)) return _callBackend('agent_internal_artifact_action', params);
+  if (params.action === 'review') return _callBackend('agent_internal_artifact_action', params);
   const file = await _callBackend('agent_internal_artifact_action', { ...params, action: 'file' });
+  if (file.page) {
+    if (params.action === 'preview') return { html: require('./agent-pages').preview(file.page, params.color_scheme), sha256: file.sha256 };
+    if (params.action !== 'open') throw new Error('Las páginas interactivas se abren dentro de Agent');
+    await require('./agent-browser').openPage(file.page, params.color_scheme);
+    return { opened: true };
+  }
+  if (params.action === 'preview') return _callBackend('agent_internal_artifact_action', params);
   if (params.action === 'open') {
     const extension = require('node:path').extname(file.path).toLowerCase();
     if (FORBIDDEN_FALLBACK_EXTENSIONS.has(extension)) {

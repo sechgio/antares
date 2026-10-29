@@ -12,6 +12,14 @@ const VALID_HANDLERS = /^(backend:[a-z0-9_]+|native:(dialog|autoimg|ubicaciones|
 const VALID_TIMEOUTS = new Set(['normal', 'long', 'heavy']);
 const VALID_LANES = new Set(['sync', 'light', 'heavy']);
 
+const pageAction = require('../shared/ipc-method-catalog.json').methods.agent_artifact_action;
+if (pageAction.handler !== 'native:agent' || !pageAction.inputSchema.properties.action.enum.includes('open')) {
+  throw new Error('Las páginas deben abrirse mediante agent_artifact_action en el proceso principal');
+}
+if (JSON.stringify(pageAction.inputSchema.properties.color_scheme.enum) !== '["light","dark"]') {
+  throw new Error('La apariencia de las páginas debe limitarse a claro u oscuro');
+}
+
 function extractApiMethods(source, calleePattern = /_invoke(?:Invalidating)?\b/g) {
   const methods = new Set();
   let at;
@@ -82,7 +90,7 @@ function main() {
   const internalImagePreview = catalog.METHODS.agent_internal_artifact_action;
   if (!apiMethods.has('agent_artifact_action') || imagePreview.handler !== 'native:agent'
     || internalImagePreview.internal !== true
-    || JSON.stringify(imagePreview.inputSchema) !== JSON.stringify(internalImagePreview.inputSchema)
+    || JSON.stringify(imagePreview.inputSchema.properties.full_size) !== JSON.stringify(internalImagePreview.inputSchema.properties.full_size)
     || imagePreview.inputSchema.properties.full_size.type !== 'boolean'
     || catalog.IDEMPOTENT_METHODS.has('agent_artifact_action')) {
     throw new Error('El preview de imágenes debe conservar el contrato privado de artefactos y la allowlist');

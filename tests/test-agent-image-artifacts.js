@@ -22,8 +22,8 @@ async function main() {
   const { handleAgentCall } = require('../electron/agent-handlers');
   const params = { session_id: 's1', artifact_id: 'a1', file_index: 2, sha256: 'hash' };
   await handleAgentCall('agent_artifact_action', { ...params, action: 'preview', full_size: true });
-  assert(calls.length === 1 && calls[0].method === 'agent_internal_artifact_action'
-    && calls[0].params.full_size === true && calls[0].params.file_index === 2,
+  assert(calls.length === 2 && calls[0].params.action === 'file' && calls[1].method === 'agent_internal_artifact_action'
+    && calls[1].params.full_size === true && calls[1].params.file_index === 2,
   'la ampliación conserva sesión, índice y hash en el lector privado');
   for (const [type, extension] of [['image/png', 'png'], ['image/jpeg', 'jpg'], ['image/webp', 'webp'], [undefined, 'pdf']]) {
     mime = type;

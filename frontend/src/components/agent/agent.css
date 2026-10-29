@@ -151,6 +151,21 @@
 }
 .agent-artifact { transition: border-color 120ms var(--ease-out); }
 .agent-artifact:hover { border-color: var(--border-medium); }
+.agent-page-card { position: relative; width: 100%; overflow: hidden; border-radius: 18px; background: var(--bg-elevated); }
+.agent-page-card__button { position: absolute; inset: 0; z-index: 1; display: block; width: 100%; border-radius: inherit; }
+.agent-page-card__button:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: -3px; box-shadow: none; }
+.agent-page-card__preview { position: relative; aspect-ratio: 2 / 1; overflow: hidden; pointer-events: none; }
+.agent-page-card__preview iframe { display: block; width: 200%; height: 200%; border: 0; transform: scale(.5); transform-origin: top left; }
+.agent-page-card__preview::after { content: ''; position: absolute; inset: auto 0 0; height: 34%; background: linear-gradient(transparent, var(--bg-elevated)); }
+.agent-page-card__placeholder { padding: 28px 30px; color: var(--text-primary); font-size: 18px; font-weight: 550; }
+.agent-page-card__skeleton { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 28px; }
+.agent-page-card__skeleton i { height: 24px; border-radius: 5px; background: var(--bg-input); }
+.agent-page-card__footer { display: flex; align-items: center; gap: 12px; padding: 16px 18px 18px; }
+.agent-page-card__icon { display: grid; place-items: center; flex-shrink: 0; width: 38px; height: 38px; border-radius: 9px; color: var(--text-secondary); background: var(--bg-input); }
+.agent-page-card__arrow { flex-shrink: 0; color: var(--text-muted); }
+@media (hover: hover) and (pointer: fine) {
+  .agent-page-card:hover .agent-page-card__arrow { color: var(--text-primary); }
+}
 @keyframes agentActivityIn {
   from { opacity: 0; transform: translateY(-2px); }
 }
