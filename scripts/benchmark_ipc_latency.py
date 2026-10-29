@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import base64
 import json
-import math
 import os
 import shutil
 import statistics
@@ -19,17 +18,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from scripts.lib.percentile import nearest_rank_percentile  # noqa: E402
+
 QUICK_SAMPLES = 25
 HEAVY_SAMPLES = 30
 TIMEOUT_SECONDS = 45.0
-
-
-def nearest_rank_percentile(values: list[float], q: float) -> float:
-    if not values:
-        raise ValueError("values must be non-empty")
-    ordered = sorted(values)
-    rank = max(1, math.ceil(q * len(ordered)))
-    return ordered[rank - 1]
 
 
 def registry_methods() -> list[str]:
