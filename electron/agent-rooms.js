@@ -87,8 +87,6 @@ function transcript(room, limit = MAX_TRANSCRIPT) {
   return room.log.slice(-limit).map((entry) => logLine(entry)).join('\n');
 }
 
-// El cierre resume a cada participante antes de la transcripción: quién habló,
-// cuánto y cómo terminó su último turno.
 function memberSummary(room, map) {
   return room.members.map((id) => {
     const entries = room.log.filter((entry) => entry.member === id);
@@ -108,8 +106,6 @@ function memberSummary(room, map) {
   }).join('\n');
 }
 
-// El turno ve a los demás participantes, lo que se dijo desde su última
-// intervención y si la sala está por cerrarse.
 function turnContext(room, member) {
   let own = -1;
   room.log.forEach((entry, index) => { if (entry.member === member) own = index; });
@@ -142,8 +138,6 @@ function publicRoom(room, map) {
   };
 }
 
-// Resumen compacto para el roster: evita que el padre tenga que abrir la sala
-// para saber en qué ronda va o a quién le toca.
 function roomSummary(room, map = {}) {
   const open = room.status === 'open';
   return {
@@ -199,8 +193,6 @@ async function submitTurn(state, room, turn) {
   }
 }
 
-// El plazo del turno corre desde que el miembro lo recibe: si la entrega tardó,
-// se le devuelve ese tiempo en lugar de dejarlo sin margen.
 async function markDelivered(state, roomId, turn, startedAt) {
   if (Date.now() - startedAt < DELIVERY_GRACE_MS) return;
   await state.harness.commit(async (tx) => {
@@ -221,9 +213,6 @@ async function isCurrentTurn(state, roomId, turn) {
     && room.turn.round === turn.round && room.turn.index === turn.index);
 }
 
-// Un turno asignado en un arranque anterior no se da por vencido al abrir la
-// app: se le devuelve su ventana completa y se reentrega, por si el cierre
-// anterior lo perdió. El identificador del arranque evita repetirlo.
 async function resumeTurn(state, roomId, turn) {
   return state.harness.commit(async (tx) => {
     const doc = await tx.doc(state.RoomsDoc);
@@ -238,9 +227,6 @@ async function resumeTurn(state, roomId, turn) {
   }, ctx());
 }
 
-// Prórroga acotada: el turno sigue asignado, pero el miembro está ocupado con
-// otro turno y el input de la sala espera en su cola. Se cuenta cada prórroga
-// para que el plazo no se renueve sin límite.
 async function extendTurn(state, roomId, turn) {
   const now = Date.now();
   await state.harness.commit(async (tx) => {
@@ -253,9 +239,7 @@ async function extendTurn(state, roomId, turn) {
   }, ctx()).catch(() => {});
 }
 
-// Reintenta la entrega antes de dar el turno por perdido. submit() es
-// idempotente por requestId, así que un reintento no duplica el aviso ni la entrada.
-// Si otro avance ganó el turno mientras esperábamos, no se entrega nada.
+// pi-durable deduplica `submit` por requestId, así que un reintento no repite el aviso.
 async function deliver(state, roomId, room, turn) {
   const startedAt = Date.now();
   let status = 'error';
@@ -308,8 +292,6 @@ async function settle(state, roomId, memberId, outcome, messages = [], turnKey =
   const result = await state.harness.commit(async (tx) => {
     const doc = await tx.doc(state.RoomsDoc);
     const room = doc.rooms[roomId];
-    // Un reintento con la misma clave ya quedó registrado: no avanza el turno
-    // ni duplica el mensaje, aunque la sala se haya cerrado entretanto.
     if (room && key) {
       const seen = room.log.find((entry) => entry.turn_key === key && (!memberId || entry.member === memberId));
       if (seen) return { duplicate: true, outcome: seen.outcome, room: plain(room) };
@@ -368,8 +350,6 @@ async function finish(state, roomId, reason) {
     if (!current || current.status !== 'open') return null;
     const map = await tx.doc(state.SessionsDoc);
     const now = Date.now();
-    // El turno en curso no se contestó: queda registrado como CANCELLED para
-    // que el resumen del padre no oculte trabajo que se descartó al cerrar.
     if (current.turn && current.turn.member) {
       current.log.push({
         round: current.turn.round,
@@ -468,8 +448,6 @@ function targetRoom(rooms, args, caller) {
   return room;
 }
 
-// Lectura para la interfaz: solo las salas de esta conversación principal.
-// Reutiliza el mismo resumen que ve el agente, sin abrir salas ajenas.
 async function listRooms(sessionId) {
   const caller = await requireSession(sessionId);
   if (caller.delegation) return { rooms: [] };
@@ -530,8 +508,6 @@ async function act(args, sessionId) {
   const room = targetRoom(rooms, args, caller);
   if (!caller.delegation) throw validation('Solo un miembro de la sala puede postear o pasar');
   if (room.status !== 'open') {
-    // Un reintento con la misma clave confirma que el post quedó registrado
-    // aunque la sala se haya cerrado entretanto; el turno no avanza.
     const key = typeof args.turn_key === 'string' ? args.turn_key.trim().slice(0, MAX_TURN_KEY) : '';
     const seen = key ? room.log.find((entry) => entry.turn_key === key && entry.member === caller.id) : null;
     return { room_id: room.id, outcome: seen?.outcome || null, recorded: Boolean(seen), posted: false,
@@ -572,8 +548,6 @@ async function tickRooms(state) {
       continue;
     }
     if (!active(room.turn.member)) {
-      // Un miembro que terminó con error del proveedor no se calló: se registra
-      // como ERROR para que el padre no lo lea como un silencio deliberado.
       const member = map[room.turn.member];
       const cancelled = member?.delegation?.status === 'cancelled';
       const failed = Boolean(member?.last_error) && !cancelled;
@@ -589,9 +563,6 @@ async function tickRooms(state) {
       continue;
     }
     if (room.turn.deadline <= Date.now()) {
-      // El miembro ocupado con su propio turno no perdió el turno de la sala:
-      // recibe hasta dos prórrogas antes de darlo por vencido. Solo cuenta si
-      // tiene un turno vivo o el input de la sala esperando en su cola.
       const member = map[room.turn.member];
       const activity = member && !member.deleted && member.delegation
         ? await require('./agent-tasks')._internal.delegationActivity(member) : '';

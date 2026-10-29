@@ -761,7 +761,6 @@ function _latestPlan(messages, saved) {
   return null;
 }
 
-// Plan vigente de una conversación, para que sus delegaciones sepan en qué paso encajan.
 async function latestPlan(sessionId) {
   const session = await requireSession(sessionId);
   const saved = planFromParams(await readPlan(sessionId));

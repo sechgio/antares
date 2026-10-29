@@ -1,7 +1,5 @@
 'use strict';
 
-// Cobertura de las rutas de sala que el resto de la suite no ejercita:
-// retención de salas cerradas, turno imposible (UNDELIVERED) y miembro ocupado.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -96,7 +94,6 @@ async function main() {
   const state = runtime._internal.state();
   const roomText = async (roomId, parentId) => (await rooms.act({ action: 'read', room_id: roomId }, parentId)).transcript;
   try {
-    // --- Retención: TTL de 24 h y tope de 50 salas cerradas ---
     const now = Date.now();
     await state.harness.commit(async (tx) => {
       const doc = await tx.doc(state.RoomsDoc);
@@ -129,7 +126,6 @@ async function main() {
       { agent: saved[name].id, task }, parent.id,
       { taskId, agent: async () => ({ tools: [{ name: 'canvas_list' }] }) }, {});
 
-    // --- Miembro ocupado: el turno espera a que termine su propio turno ---
     await tasks.start();
     const first = await delegate('Ocupada A', 'OCUPADO_A: prepara el informe', 'coverage-a');
     const releaseBusy = gate();
@@ -153,7 +149,6 @@ async function main() {
     assert.ok(ownAnswer < roomPost, 'el turno de la sala no interrumpe el turno en curso del miembro');
     await tasks.stop();
 
-    // --- Plazo: prórroga acotada mientras el miembro sigue ocupado ---
     const graceRelease = gate();
     const graceA = await delegate('Ocupada A', 'GRACE_A: abre la sala', 'coverage-grace-a');
     const graceB = await delegate('Ocupada B', 'GRACE_B: sigue ocupado', 'coverage-grace-b');
@@ -183,7 +178,6 @@ async function main() {
     assert.equal(graceRead.status, 'closed', 'la sala cierra cuando se agotan las prórrogas');
     graceRelease();
 
-    // --- Turno imposible: el proveedor del siguiente miembro no arranca ---
     const third = await delegate('Imposible C', 'IMPOSIBLE_C: abre la sala', 'coverage-c');
     const fourth = await delegate('Imposible D', 'IMPOSIBLE_D: nunca arranca', 'coverage-d');
     await commitSessions((map) => { map[fourth.session_id].model = 'unavailable'; });
@@ -210,7 +204,6 @@ async function main() {
       execution.ensureProvider = ensureProvider;
     }
 
-    // --- Miembro con error: el fallo se registra como ERROR, no como silencio ---
     const failedA = await delegate('Ocupada A', 'ERROR_A: abre la sala', 'coverage-error-a');
     const failedB = await delegate('Ocupada B', 'ERROR_B: falla el proveedor', 'coverage-error-b');
     const failed = await rooms.act({ action: 'create', topic: 'Miembro con error',

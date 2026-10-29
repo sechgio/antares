@@ -6,8 +6,6 @@ const INTERRUPTED_RESULT = JSON.stringify({
 const NOTICE_KIND = 'antares.notice';
 const CONTEXT_MARKER = '[Contexto de Antares]';
 const CHECK_MARKER = '[Comprobación de Antares]';
-// Guía única para elegir entre las dos delegaciones: el prompt y ambas
-// descripciones la comparten para que no se contradigan.
 const DELEGATION_GUIDE = 'Cómo elegir la delegación: agent_delegate abre una conversación aparte con historial, '
   + 'seguimiento, continuación y salas; sirve para encargos que pueden durar o varios agentes a la vez, y solo lee. '
   + 'subagent_run devuelve el resultado en este mismo turno, agrupa varios encargos, admite output_schema y es la '
@@ -110,8 +108,6 @@ async function commitSessions(change) {
   }, ctx());
 }
 
-// El plan de task_plan se normaliza en un solo sitio: lo escribe el turno y lo
-// releen tanto el roster como el encargo de una delegación.
 function planFromParams(params) {
   if (!params || !Array.isArray(params.steps)) return null;
   return {
@@ -124,8 +120,6 @@ function planFromParams(params) {
   };
 }
 
-// El plan vigente se guarda en su propio documento para que una delegación lo
-// lea al arrancar sin reconstruir el historial de la conversación principal.
 async function savePlan(sessionId, plan) {
   if (!shared.state?.PlanDoc || !sessionId || !plan) return;
   await shared.state.harness.commit(async (tx) => {

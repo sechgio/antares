@@ -23,8 +23,6 @@ const ROUTINE_MIN_MINUTES = 30;
 const PROFILE_ROLES = new Set(['explorer', 'reviewer', 'worker']);
 const ACTIVE_DELEGATION = new Set(['pending', 'working']);
 const FINISHED_DELEGATION = { delivered: 'entregada', cancelled: 'cancelada' };
-// La entrega se reintenta con espera creciente; tras el tercer fallo queda
-// aparcada sin reintentos automáticos para no martillear un proveedor caído.
 const DELIVERY_RETRY_STEPS_MS = [30 * 1000, 2 * 60 * 1000, 5 * 60 * 1000];
 const MAX_DELIVERY_ATTEMPTS = DELIVERY_RETRY_STEPS_MS.length;
 const MAX_PLAN_STEPS = 8;
@@ -378,8 +376,6 @@ async function delegate(profile, args, sessionId, api, context) {
     ...(continuation ? { max_rounds: continuation.max_rounds } : {}), status: child.delegation.status, ...lineage };
 }
 
-// El plan que la conversación principal ya publicó viaja con el encargo. Un
-// fallo al leerlo no bloquea el arranque: el encargo sigue sin ese contexto.
 async function parentPlanText(parentId) {
   try {
     return planBrief(await require('./agent-runtime').latestPlan(parentId));
@@ -434,8 +430,6 @@ function userRequest(entries) {
   return quoted(require('./agent-execution').sanitizeProviderError(first), ORIGIN_MAX);
 }
 
-// Resumen acotado del plan: la delegación sabe en qué paso encaja sin recibir
-// el plan entero ni tomarlo como trabajo ya hecho.
 function planBrief(plan) {
   if (!plan || !Array.isArray(plan.steps) || !plan.steps.length) return '';
   const steps = plan.steps.slice(0, MAX_PLAN_STEPS).map((step, index) =>
@@ -567,7 +561,6 @@ async function describeDelegation(child) {
     described.max_rounds = Number(job.continuation.max_rounds) || 0;
   }
   if (job.cancelled_reason) described.reason = String(job.cancelled_reason).slice(0, MAX_STOP_REASON_CHARS);
-  // El padre puede ver que la delegación espera al usuario sin abrir su conversación.
   described.awaiting_user = job.awaiting_user === true;
   if (job.awaiting_question) described.question = String(job.awaiting_question).slice(0, 200);
   if (job.delivery) {
@@ -610,8 +603,6 @@ async function checkDelegations(args, sessionId) {
   return { delegations };
 }
 
-// Lectura acotada del trabajo de una delegación propia: solo el texto que
-// produjo el agente, nunca sus herramientas, razonamiento ni aprobaciones.
 async function readTranscript(args, sessionId) {
   const child = await requireDelegation(sessionId, args.session_id);
   const wanted = Number(args.max_turns);
@@ -802,7 +793,6 @@ async function continuationStep(state, child) {
   return 'running';
 }
 
-// Espera creciente acotada: 30 s, 2 min y 5 min; no hay cuarto intento.
 function deliveryRetryDelay(attempts) {
   const step = Math.min(Math.max(1, Number(attempts) || 1), MAX_DELIVERY_ATTEMPTS);
   return DELIVERY_RETRY_STEPS_MS[step - 1];
@@ -820,8 +810,6 @@ function deferredDelivery(previous, attempts, now) {
   return deferred;
 }
 
-// Un fallo al arrancar o al entregar el informe no se pierde: queda como intento
-// fallido con su error y una espera creciente. Al tercero el padre recibe un aviso.
 async function deferDelegations(state, children, err) {
   const message = require('./agent-execution').sanitizeProviderError(String(err?.message || err)).slice(0, 300);
   const now = Date.now();
