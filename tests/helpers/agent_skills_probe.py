@@ -8,6 +8,7 @@ from backend.core.agent import skills
 options = json.load(sys.stdin)
 root = Path(options["root"])
 os.environ["SKILLS_HOME"] = str(root / "base-skills")
+os.environ["SKILLS_EXTERNAL_HOMES"] = str(root / "external-skills")
 library = root / "probe-library"
 ids = {}
 for item in options.get("catalog", []):

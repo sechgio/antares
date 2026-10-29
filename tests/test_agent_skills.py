@@ -9,6 +9,7 @@ from backend.core.agent import agent, agent_chat, agent_tools, computer_files, r
 @pytest.fixture()
 def store(tmp_path, monkeypatch):
     monkeypatch.setenv("SKILLS_HOME", str(tmp_path / "configured-skills"))
+    monkeypatch.setenv("SKILLS_EXTERNAL_HOMES", str(tmp_path / "external-skills"))
     monkeypatch.delenv("ORBS_SHARED_HOME", raising=False)
     return agent.AgentStore(tmp_path / "agent")
 
@@ -231,6 +232,22 @@ def test_layered_skills_do_not_grant_general_file_access(store, tmp_path, monkey
     with pytest.raises(ValueError, match="autorizad"):
         computer_files.resolve(str(target), {}, workspace)
     assert store.grants_for("skills-session") == {}
+
+
+def test_external_skills_keep_shared_fallback_and_do_not_grant_file_access(store, tmp_path):
+    external = install(tmp_path / "external-skills", name="external-review")
+    install(tmp_path / "configured-skills/_shared")
+    workspace, library = store.drafts_dir("skills-session"), store.base_dir / "skills"
+    catalog = skills.library_catalog(library)
+    listed = {entry["name"]: entry["id"] for entry in catalog["skills"]}
+    assert set(listed) == {"external-review", "pdf-review"}
+    fallback = skills.resolve(listed["pdf-review"], {}, workspace, library, agent_id="reader")
+    assert "_shared" in fallback["warning"]
+    content = skills.run("skills_read", {"skill_id": listed["external-review"]}, {}, workspace, library,
+                         agent_id="reader")
+    assert content["name"] == "external-review"
+    with pytest.raises(ValueError, match="autorizad"):
+        computer_files.resolve(str(external), {}, workspace)
 
 
 def test_shadowed_shared_id_cannot_be_read(store, tmp_path):
