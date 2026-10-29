@@ -598,8 +598,12 @@ async function compactRequest(messages, api, context) {
   const model = session && shared.state.models.getModel(session.provider, session.model);
   const budget = requestBudget(model && model.contextWindow, model && model.maxTokens);
   if (!budget) return undefined;
-  tokenEstimator ||= (await import('@earendil-works/pi-ai/utils/estimate')).estimateContextTokens;
-  return compactMessages(messages, { budget, estimate: (list) => tokenEstimator(list).tokens });
+  tokenEstimator ||= await import('@earendil-works/pi-ai/utils/estimate');
+  return compactMessages(messages, {
+    budget,
+    estimate: (list) => tokenEstimator.estimateContextTokens(list).tokens,
+    messageTokens: tokenEstimator.estimateMessageTokens,
+  });
 }
 
 // pi-durable escribe el prompt base al preparar la primera generación, detrás

@@ -313,7 +313,6 @@ async function delegate(profile, args, sessionId, api, context) {
     const batch = live?.run?.taskId ? String(live.run.taskId) : '';
     let agentModel = { provider: parent.provider, modelId: parent.model };
     let style = parent.style;
-    let levels;
     const hooks = require('./agent-hooks');
     const hookProfile = require('./agent-profiles').resolvePortableProfile(
       shared.state.portableProfiles, parent.conversationId);
@@ -323,11 +322,13 @@ async function delegate(profile, args, sessionId, api, context) {
       const info = await execution.providerInfo(profile.model.provider);
       agentModel = { provider: profile.model.provider, modelId: profile.model.model };
       style = info.style || 'openai_chat';
-      levels = await execution.reasoningLevels(agentModel.provider, agentModel.modelId);
     }
+    // Sin nivel explícito pi-durable arranca sin razonamiento: la delegación
+    // hereda el esfuerzo de la conversación principal, ajustado a su modelo.
+    const levels = await execution.reasoningLevels(agentModel.provider, agentModel.modelId);
     const options = {
       ownership: { kind: 'ownerless' },
-      agent: { model: agentModel, ...(levels ? { thinkingLevel: execution.thinkingLevelFor(levels) } : {}),
+      agent: { model: agentModel, thinkingLevel: execution.thinkingLevelFor(levels, parent.reasoning_effort),
         tools: tools.map((tool) => ({ name: tool.name })),
         instructions: `Eres el agente «${profile.name}» de Antares, con rol ${role === 'reviewer' ? 'revisor' : 'explorador'}. `
           + `Responde en español. ${ROLE_PROMPT[role]} `
@@ -341,7 +342,8 @@ async function delegate(profile, args, sessionId, api, context) {
         if (doc.sessions[id]) throw validation('El encargo ya está registrado');
         doc.sessions[id] = { id, conversationId, title: `Delegación: ${profile.name}`, provider: agentModel.provider,
           model: agentModel.modelId, style, created_at: now, updated_at: now, last_error: null,
-          ...(levels ? { reasoning_levels: levels } : {}),
+          reasoning_levels: levels,
+          ...(parent.reasoning_effort ? { reasoning_effort: parent.reasoning_effort } : {}),
           profile: { id: profile.id, name: profile.name },
           delegation: { parent_session_id: sessionId, content: task, status: 'pending', depth,
             delivery: { state: 'pending', attempts: 0 },

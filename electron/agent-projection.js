@@ -326,14 +326,17 @@ async function projectMessages(conv, session) {
       messages.push({ role: 'assistant', content: String((entry.data && entry.data.text) || ''), notice: true, ts: entryTs(entry, msg) });
       continue;
     }
+    // El resumen es contexto del modelo, no conversación: el chat sigue fluido y
+    // el medidor cuenta la compactación. Solo se avisa del resumen de emergencia.
     if (entry.kind === 'pi.compaction') {
+      const { unwrapCompactionSummary, isEmergencySummary } = require('./agent-compaction');
       const raw = textOf(msg);
-      const summary = require('./agent-compaction').unwrapCompactionSummary(raw) || raw.trim();
-      if (summary) {
+      if (isEmergencySummary(unwrapCompactionSummary(raw) || raw.trim())) {
         const reason = COMPACTION_REASONS[(entry.data && entry.data.reason)] || 'contexto comprimido';
         messages.push({
           role: 'assistant',
-          content: `🗜 Contexto compactado — ${reason}\n\n${summary}`,
+          content: `⚠ Contexto compactado con un resumen de emergencia — ${reason}. `
+            + 'El modelo no pudo resumir y se conservó un extracto mecánico; puede faltar detalle de lo anterior.',
           notice: true,
           ts: entryTs(entry, msg),
         });

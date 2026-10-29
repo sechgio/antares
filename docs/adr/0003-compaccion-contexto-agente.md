@@ -75,10 +75,17 @@ continuar con un contexto corrupto; un fallo por caída emite además un aviso e
 la conversación. Cada compactación y cada rechazo quedan en el registro JSONL
 `compactions-log.jsonl` del directorio de estado.
 
+El resumen se pide sin razonamiento y con el techo de salida de pi-durable (80 %
+de `reserveTokens`): con razonamiento, sus tokens comparten `max_tokens` con el
+resumen en los modelos OpenAI-compatibles y el resumen acababa cortado. Los
+fallos transitorios se reintentan con la política `retry` antes del resumen de
+emergencia, y el gasto de cada llamada se anota en `pi.usage`.
+
 La UI (`ContextUsage`) muestra la ventana real del modelo, el porcentaje frente
-a los umbrales y el estado «Compactando…»; la proyección de mensajes añade una
-entrada «🗜 Contexto compactado» con el motivo y el resumen, para que el usuario
-vea qué se conservó.
+a los umbrales, el estado «Compactando…» y el número de compactaciones. El
+resumen es contexto del modelo, no conversación: la proyección de mensajes no lo
+muestra en el chat, salvo un aviso breve cuando se recurrió al resumen de
+emergencia.
 
 **Coexistencia con el guardián mecánico.** Antares además compacta cada petición
 individual de forma mecánica y sin modelo (`compactMessages`/`requestBudget` en
