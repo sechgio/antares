@@ -10,6 +10,7 @@ export interface McpServer {
   secret_keys: string[];
   tools_count: number | null;
   disabled_tools?: string[];
+  oauth?: { token_url: string; client_id: string; scopes: string[] } | null;
 }
 
 export interface McpTool {
@@ -28,6 +29,7 @@ export const mcpApi = {
     command?: string;
     args?: string[];
     secrets?: { headers?: Record<string, string>; env?: Record<string, string> };
+    oauth?: { token_url: string; client_id: string; client_secret?: string; scopes?: string[] };
   }) => _invoke<{ server: McpServer }>('mcp_server_add', p),
 
   mcpServerDelete: (server: string) =>
