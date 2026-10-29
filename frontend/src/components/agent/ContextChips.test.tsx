@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import ContextChips from './ContextChips';
 
-it('muestra la raíz activa y permite cambiarla a otra carpeta adjunta', () => {
+it('no duplica la raíz activa y permite cambiarla a otra carpeta adjunta', () => {
   const onSetWorkspace = vi.fn();
   render(
     <ContextChips
@@ -16,11 +16,23 @@ it('muestra la raíz activa y permite cambiarla a otra carpeta adjunta', () => {
       onSetWorkspace={onSetWorkspace}
     />,
   );
-  expect(screen.getByLabelText('Espacio de trabajo activo')).toHaveTextContent('web');
+  expect(screen.queryByLabelText('Espacio de trabajo activo')).toBeNull();
+  expect(screen.queryByTitle('C:\\web')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Usar web como espacio de trabajo' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Usar nota.txt como espacio de trabajo' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Usar otra como espacio de trabajo' }));
   expect(onSetWorkspace).toHaveBeenCalledWith('C:\\otra');
+});
+
+it('no muestra la fila cuando solo está la carpeta de trabajo', () => {
+  const { container } = render(
+    <ContextChips
+      context={{ modules: [], accounts: [], files: [{ path: 'C:\\web', folder: true }], workspace: 'C:\\web' }}
+      onRemoveFile={vi.fn()}
+      onSetWorkspace={vi.fn()}
+    />,
+  );
+  expect(container).toBeEmptyDOMElement();
 });
 
 it('indica los borradores cuando hay carpetas pero ninguna raíz activa', () => {

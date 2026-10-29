@@ -39,3 +39,30 @@ it('marca la última herramienta fallida sin ocultar el resto del roster', () =>
   expect(screen.getByText('Revisor')).toBeInTheDocument();
   expect(screen.getByText('Consultar las plantillas disponibles · error')).toBeInTheDocument();
 });
+
+it('muestra la ronda de la sala y el turno en curso', () => {
+  render(<SubagentRoster items={[delegation({
+    room: { id: 'room-1', topic: 'Contrato y anexo', status: 'open', round: 2, rounds: 3, members: 2,
+      turn_member: 'delegate-1', turn_agent: 'Investigador' },
+  })]} />);
+  expect(screen.getByText('Sala 2/3 · turno de Investigador')).toBeInTheDocument();
+  expect(screen.getByTitle('Contrato y anexo · turno de Investigador')).toBeInTheDocument();
+  expect(screen.getByText('trabajando')).toBeInTheDocument();
+});
+
+it('avisa cuando la delegación espera al usuario', () => {
+  render(<SubagentRoster items={[delegation({ awaiting_user: true, question: '¿Qué contrato reviso?' })]} />);
+  const waiting = screen.getByText('espera al usuario');
+  expect(waiting).toBeInTheDocument();
+  expect(waiting).toHaveAttribute('title', '¿Qué contrato reviso?');
+});
+
+it('marca la entrega aplazada y la que sigue fallando', () => {
+  render(<SubagentRoster items={[
+    delegation({ delivery: { state: 'deferred', attempts: 2, retry_at: Date.now() + 120000, error: 'proveedor caído' } }),
+    delegation({ session_id: 'delegate-2', agent: 'Revisor', delivery: { state: 'unreachable', attempts: 3 } }),
+  ]} />);
+  expect(screen.getByText('reintento · 2')).toBeInTheDocument();
+  expect(screen.getByText('sin entrega · 3')).toBeInTheDocument();
+  expect(screen.getByTitle(/proveedor caído/)).toBeInTheDocument();
+});

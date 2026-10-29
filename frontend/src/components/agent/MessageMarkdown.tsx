@@ -6,7 +6,7 @@ const VISUAL_LABELS: Record<string, string> = { chart: 'gráfico', svg: 'ilustra
 
 function VisualPlaceholder({ lang }: { lang: string }) {
   return (
-    <div role="status" className="w-full max-w-2xl overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+    <div role="status" className="w-full overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
       <p className="border-b border-[var(--border-subtle)] px-3 py-2 text-[12.5px] text-[var(--text-muted)]">Generando {VISUAL_LABELS[lang]}…</p>
       <div className="flex h-[150px] items-end gap-2 p-3 motion-safe:animate-pulse" aria-hidden="true">
         {[45, 70, 55, 85, 40, 65].map((height, i) => (

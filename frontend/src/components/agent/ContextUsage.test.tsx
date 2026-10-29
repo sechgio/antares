@@ -54,7 +54,7 @@ it('muestra el coste del turno y de la sesión con la ventana real del modelo', 
   }} model="modelo-propio" />);
   const trigger = screen.getByRole('button', { name: 'Contexto usado' });
   expect(trigger).toHaveTextContent('78,1%');
-  expect(trigger).toHaveTextContent('$0,0125');
+  expect(trigger).not.toHaveTextContent('$0,0125');
   fireEvent.mouseEnter(trigger);
   const card = screen.getByRole('tooltip');
   expect(card).toHaveTextContent('50 k / 64 k');

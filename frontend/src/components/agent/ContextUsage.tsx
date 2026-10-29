@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import type { AgentUsage } from '../../api/agentApi';
 
 const CONTEXT_WINDOWS: [RegExp, number][] = [
@@ -28,25 +28,35 @@ export function formatCost(value: number): string {
   return `$${new Intl.NumberFormat('es', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value)}`;
 }
 
-function Ring({ ratio, level }: { ratio: number; level: 'ok' | 'warn' | 'critical' }) {
-  const radius = 6;
+function Ring({ ratio, level, spinning }: { ratio: number; level: 'ok' | 'warn' | 'critical'; spinning?: boolean }) {
+  const radius = 7;
   const circumference = 2 * Math.PI * radius;
-  const color = level === 'critical' ? 'var(--accent-red)' : level === 'warn' ? 'var(--accent-yellow)' : 'currentColor';
+  const color = level === 'critical' ? 'var(--accent-red)' : level === 'warn' ? 'var(--accent-yellow)' : 'var(--text-secondary)';
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" className="-rotate-90 shrink-0">
-      <circle cx="8" cy="8" r={radius} fill="none" stroke="currentColor" strokeWidth="2" opacity="0.2" />
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" className={`-rotate-90 shrink-0 ${spinning ? 'animate-spin motion-reduce:animate-none' : ''}`}>
+      <circle cx="9" cy="9" r={radius} fill="none" stroke="currentColor" strokeWidth="2" opacity="0.18" />
       <circle
-        cx="8"
-        cy="8"
+        cx="9"
+        cy="9"
         r={radius}
         fill="none"
         stroke={color}
         strokeWidth="2"
         strokeLinecap="round"
         strokeDasharray={circumference}
-        strokeDashoffset={circumference * (1 - ratio)}
+        strokeDashoffset={circumference * (1 - (spinning ? 0.25 : Math.max(ratio, 0.02)))}
+        className="transition-[stroke-dashoffset] duration-500"
       />
     </svg>
+  );
+}
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-[var(--text-muted)]">{label}</span>
+      <span className="text-[var(--text-primary)]">{children}</span>
+    </div>
   );
 }
 
@@ -86,90 +96,61 @@ export default function ContextUsage({ usage, model, contextWindow, thresholds, 
         type="button"
         aria-label="Contexto usado"
         aria-describedby={open ? cardId : undefined}
-        className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] tabular-nums transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] ${level === 'warn' ? 'text-[var(--accent-yellow)]' : level === 'critical' ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`}
+        className={`inline-flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-full px-1.5 text-[12px] tabular-nums transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] ${level === 'warn' ? 'text-[var(--accent-yellow)]' : level === 'critical' ? 'text-[var(--accent-red)]' : 'text-[var(--text-muted)]'}`}
       >
-        {max && <Ring ratio={ratio} level={level} />}
-        {compacting ? 'Compactando…' : max ? percent : formatTokens(used)}
-        {cost > 0 && <span className="text-[var(--text-muted)]">· {formatCost(cost)}</span>}
+        {(max || compacting) && <Ring ratio={ratio} level={level} spinning={compacting} />}
+        {compacting ? <span className="sr-only">Compactando…</span> : max ? <span className="sr-only">{percent}</span> : formatTokens(used)}
       </button>
       {open && (
         <div
           id={cardId}
           role="tooltip"
-          className="agent-popover-in absolute bottom-full right-0 z-[300] mb-2 w-60 overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[12px] shadow-md"
+          className="agent-popover-in absolute bottom-full right-0 z-[300] mb-2 w-64 overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[12px] shadow-[0_16px_40px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.06)]"
         >
-          <div className="space-y-2 p-3">
-            <div className="flex items-center justify-between gap-3 tabular-nums">
-              <span className="font-medium text-[var(--text-primary)]">{max ? percent : 'Tokens'}</span>
+          <div className="p-3.5">
+            {compacting && <p className="mb-1 text-[11px] text-[var(--text-muted)]">Compactando el contexto…</p>}
+            <div className="flex items-baseline justify-between gap-3 tabular-nums">
+              <span className={`text-[22px] font-semibold leading-7 ${level === 'critical' ? 'text-[var(--accent-red)]' : level === 'warn' ? 'text-[var(--accent-yellow)]' : 'text-[var(--text-primary)]'}`}>{max ? percent : 'Tokens'}</span>
               <span className="text-[var(--text-muted)]">
                 {formatTokens(used)}{max ? ` / ${formatTokens(max)}` : ''}
               </span>
             </div>
             {max && (
-              <div
-                role="progressbar"
-                aria-label="Proporción del contexto usada"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={Math.round(ratio * 100)}
-                className="h-1.5 overflow-hidden rounded-full bg-[var(--bg-input)]"
-              >
+              <div className="relative mt-2.5">
                 <div
-                  className={`h-full rounded-full transition-[width] ${level === 'critical' ? 'bg-[var(--accent-red)]' : level === 'warn' ? 'bg-[var(--accent-yellow)]' : 'bg-[var(--text-primary)]'}`}
-                  style={{ width: `${ratio * 100}%` }}
-                />
+                  role="progressbar"
+                  aria-label="Proporción del contexto usada"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(ratio * 100)}
+                  className="h-1.5 overflow-hidden rounded-full bg-[var(--bg-input)]"
+                >
+                  <div
+                    className={`h-full rounded-full transition-[width] duration-500 ${level === 'critical' ? 'bg-[var(--accent-red)]' : level === 'warn' ? 'bg-[var(--accent-yellow)]' : 'bg-[var(--accent-primary)]'}`}
+                    style={{ width: `${ratio * 100}%` }}
+                  />
+                </div>
+                {thresholds && [thresholds.warn, thresholds.compact].map((mark, i) => mark < max && (
+                  <span key={i} title={`${i ? 'Compactación' : 'Aviso'}: ${formatTokens(mark)}`} className={`absolute -top-0.5 h-2.5 w-px ${i ? 'bg-[var(--accent-red)]' : 'bg-[var(--accent-yellow)]'} opacity-70`} style={{ left: `${(mark / max) * 100}%` }} />
+                ))}
               </div>
-            )}
-            {compacting && (
-              <div className="text-[var(--text-muted)]">Compactando el contexto…</div>
             )}
           </div>
-          <div className="space-y-1.5 border-t border-[var(--border-subtle)] p-3 tabular-nums">
-            <div className="flex justify-between"><span className="text-[var(--text-muted)]">Entrada</span><span className="text-[var(--text-primary)]">{formatTokens(usage?.input ?? 0)}</span></div>
-            <div className="flex justify-between"><span className="text-[var(--text-muted)]">Salida</span><span className="text-[var(--text-primary)]">{formatTokens(usage?.output ?? 0)}</span></div>
+          <div className="space-y-1.5 border-t border-[var(--border-subtle)] px-3.5 py-3 tabular-nums">
+            <Row label="Entrada">{formatTokens(usage?.input ?? 0)}</Row>
+            <Row label="Salida">{formatTokens(usage?.output ?? 0)}</Row>
             {!!usage?.cached && !!usage?.prompt && (
-              <div className="flex justify-between">
-                <span className="text-[var(--text-muted)]">En caché</span>
-                <span className="text-[var(--text-primary)]">
-                  {formatTokens(usage.cached ?? 0)} · {new Intl.NumberFormat('es', { maximumFractionDigits: 0 }).format(((usage.cached ?? 0) / usage.prompt) * 100)}%
-                </span>
-              </div>
-            )}
-            {max && thresholds && (
-              <>
-                <div className="flex justify-between"><span className="text-[var(--text-muted)]">Aviso</span><span className="text-[var(--text-primary)]">{formatTokens(thresholds.warn)}</span></div>
-                <div className="flex justify-between"><span className="text-[var(--text-muted)]">Compactación</span><span className="text-[var(--text-primary)]">{formatTokens(thresholds.compact)}</span></div>
-              </>
+              <Row label="En caché">
+                {formatTokens(usage.cached ?? 0)} · {new Intl.NumberFormat('es', { maximumFractionDigits: 0 }).format(((usage.cached ?? 0) / usage.prompt) * 100)}%
+              </Row>
             )}
           </div>
           {(turn || showCost || compactions > 0) && (
-            <div className="space-y-1.5 border-t border-[var(--border-subtle)] p-3 tabular-nums">
-              {turn && (
-                <div className="flex justify-between">
-                  <span className="text-[var(--text-muted)]">Último turno</span>
-                  <span className="text-[var(--text-primary)]">
-                    {formatTokens(turn.input)} ent. · {formatTokens(turn.output)} sal.
-                  </span>
-                </div>
-              )}
-              {showCost && (
-                <div className="flex justify-between">
-                  <span className="text-[var(--text-muted)]">Coste del turno</span>
-                  <span className="text-[var(--text-primary)]">{formatCost(turn?.cost ?? 0)}</span>
-                </div>
-              )}
-              {showCost && (
-                <div className="flex justify-between">
-                  <span className="text-[var(--text-muted)]">Coste de la sesión</span>
-                  <span className="text-[var(--text-primary)]">{formatCost(cost)}</span>
-                </div>
-              )}
-              {compactions > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-[var(--text-muted)]">Compactaciones</span>
-                  <span className="text-[var(--text-primary)]">{compactions}</span>
-                </div>
-              )}
+            <div className="space-y-1.5 border-t border-[var(--border-subtle)] px-3.5 py-3 tabular-nums">
+              {turn && <Row label="Último turno">{formatTokens(turn.input)} ent. · {formatTokens(turn.output)} sal.</Row>}
+              {showCost && <Row label="Coste del turno">{formatCost(turn?.cost ?? 0)}</Row>}
+              {showCost && <Row label="Coste de la sesión">{formatCost(cost)}</Row>}
+              {compactions > 0 && <Row label="Compactaciones">{compactions}</Row>}
             </div>
           )}
         </div>
