@@ -75,7 +75,7 @@ function plain(value) {
 function logLine(entry, limit = 0) {
   const marker = entry.outcome === 'SENT'
     ? `${entry.text}${entry.reply_to ? ` (responde a ${entry.reply_to})` : ''}`
-    : `(${entry.outcome})`;
+    : `(${entry.outcome})${entry.reason ? ` ${entry.reason}` : ''}`;
   const clipped = limit && marker.length > limit ? `${marker.slice(0, limit)}…` : marker;
   return `- Ronda ${entry.round + 1}, ${entry.agent}: ${clipped}`;
 }
@@ -513,7 +513,12 @@ async function act(args, sessionId) {
   const room = targetRoom(rooms, args, caller);
   if (!caller.delegation) throw validation('Solo un miembro de la sala puede postear o pasar');
   if (room.status !== 'open') {
-    return { room_id: room.id, outcome: null, recorded: false, posted: false, reason: 'closed' };
+    // Un reintento con la misma clave confirma que el post quedó registrado
+    // aunque la sala se haya cerrado entretanto; el turno no avanza.
+    const key = typeof args.turn_key === 'string' ? args.turn_key.trim().slice(0, MAX_TURN_KEY) : '';
+    const seen = key ? room.log.find((entry) => entry.turn_key === key && entry.member === caller.id) : null;
+    return { room_id: room.id, outcome: seen?.outcome || null, recorded: Boolean(seen), posted: false,
+      ...(seen ? { duplicate: true } : {}), reason: 'closed' };
   }
   if (args.action === 'pass') {
     const result = await settle(state, room.id, caller.id, 'PASS', [], args.turn_key);
@@ -523,7 +528,7 @@ async function act(args, sessionId) {
   const messages = messagesOf(args);
   const replyTo = replyTarget(room, caller, args.reply_to);
   const result = await settle(state, room.id, caller.id, 'SENT', messages, args.turn_key, '', replyTo);
-  return { posted: !result.duplicate, ...(result.duplicate ? { duplicate: true } : {}),
+  return { posted: !result.duplicate, recorded: !result.duplicate, ...(result.duplicate ? { duplicate: true } : {}),
     room_id: room.id, outcome: result.outcome || 'SENT', ...(result.closed ? { closed: true } : {}) };
 }
 
@@ -550,7 +555,13 @@ async function tickRooms(state) {
       continue;
     }
     if (!active(room.turn.member)) {
-      await settle(state, room.id, room.turn.member, 'SKIPPED').catch(() => {});
+      // Un miembro que terminó con error del proveedor no se calló: se registra
+      // como ERROR para que el padre no lo lea como un silencio deliberado.
+      const member = map[room.turn.member];
+      const cancelled = member?.delegation?.status === 'cancelled';
+      const failed = Boolean(member?.last_error) && !cancelled;
+      await settle(state, room.id, room.turn.member, failed ? 'ERROR' : 'SKIPPED', [], '',
+        failed ? `error del proveedor: ${member.last_error}` : cancelled ? 'miembro detenido' : '').catch(() => {});
       changed = true;
       continue;
     }

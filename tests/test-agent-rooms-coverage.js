@@ -74,13 +74,16 @@ async function main() {
     if (roomTurn) {
       const label = seen.includes('OCUPADO_A') ? 'Habló A'
         : seen.includes('OCUPADO_B') ? 'Habló B'
-          : seen.includes('IMPOSIBLE_C') ? 'Habló C' : '';
+          : seen.includes('IMPOSIBLE_C') ? 'Habló C'
+            : seen.includes('ERROR_A') ? 'Habló A' : '';
       if (!label) return fauxAssistantMessage('Sin turno');
       return roomCalls(context) < 1
         ? fauxAssistantMessage([fauxToolCall('agent_room', { action: 'post', message: label })], { stopReason: 'toolUse' })
         : fauxAssistantMessage(`Aporté ${label}`);
     }
-    if (seen.includes('OCUPADO_A') || seen.includes('IMPOSIBLE_C')) return fauxAssistantMessage('Listo');
+    if (seen.includes('OCUPADO_A') || seen.includes('IMPOSIBLE_C') || seen.includes('ERROR_A')) {
+      return fauxAssistantMessage('Listo');
+    }
     return fauxAssistantMessage('Sin turno');
   };
   faux.setResponses(Array.from({ length: 120 }, () => respond));
@@ -162,7 +165,8 @@ async function main() {
         .some((message) => message.notice && message.content === 'Sala «Turno imposible» cerrada: completada.'));
       const brokenRead = await rooms.act({ action: 'read', room_id: broken.room_id }, parent.id);
       assert.match(brokenRead.transcript, /Habló C/, 'el primer miembro sí participó');
-      assert.match(brokenRead.transcript, /\(UNDELIVERED\)/, 'el turno que no se pudo entregar queda registrado');
+      assert.match(brokenRead.transcript, /\(UNDELIVERED\) no se pudo entregar el turno/,
+        'el turno que no se pudo entregar queda registrado con su motivo');
       const brokenSummary = (await messages(parent.id)).messages
         .find((message) => String(message.content).startsWith('[Contexto de Antares]\nSala «Turno imposible» cerrada'));
       assert.match(String(brokenSummary?.content || ''), /UNDELIVERED; no se pudo entregar el turno/,
@@ -172,7 +176,27 @@ async function main() {
       execution.ensureProvider = ensureProvider;
     }
 
-    console.log('[PASS] cobertura de salas: retención por TTL y tope, miembro ocupado y turno imposible.');
+    // --- Miembro con error: el fallo se registra como ERROR, no como silencio ---
+    const failedA = await delegate('Ocupada A', 'ERROR_A: abre la sala', 'coverage-error-a');
+    const failedB = await delegate('Ocupada B', 'ERROR_B: falla el proveedor', 'coverage-error-b');
+    const failed = await rooms.act({ action: 'create', topic: 'Miembro con error',
+      members: [failedA.session_id, failedB.session_id], rounds: 1, turn_seconds: 30 }, parent.id);
+    await commitSessions((map) => {
+      map[failedB.session_id].last_error = 'Proveedor caído';
+      map[failedB.session_id].delegation.status = 'delivered';
+    });
+    await until(async () => /Habló A/.test(await roomText(failed.room_id, parent.id)));
+    await until(async () => {
+      await rooms.tickRooms(state);
+      return /\(ERROR\)/.test(await roomText(failed.room_id, parent.id));
+    });
+    const failedRead = await rooms.act({ action: 'read', room_id: failed.room_id }, parent.id);
+    assert.match(failedRead.transcript, /\(ERROR\) error del proveedor: Proveedor caído/,
+      'un miembro con error del proveedor no se reporta como silencio');
+    assert.equal(failedRead.close_reason, 'completada', 'la sala cierra tras registrar el error');
+
+    console.log('[PASS] cobertura de salas: retención por TTL y tope, miembro ocupado, turno imposible '
+      + 'y miembro con error.');
   } finally {
     await tasks.stop();
     await runtime.shutdown();

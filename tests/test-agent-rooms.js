@@ -171,6 +171,7 @@ async function main() {
     const posted = await rooms.act({ action: 'post', messages: ['M1', 'M2'], turn_key: 'K-MULTI',
       reply_to: multiB.session_id }, multiA.session_id);
     assert.equal(posted.posted, true);
+    assert.equal(posted.recorded, true, 'el post confirma que quedó registrado');
     assert.equal(posted.duplicate, undefined, 'el primer post se registra');
     const repeated = await rooms.act({ action: 'post', messages: ['M1'], turn_key: 'K-MULTI' }, multiA.session_id);
     assert.equal(repeated.posted, false);
@@ -184,6 +185,11 @@ async function main() {
     const late = await rooms.act({ action: 'post', room_id: multi.room_id, messages: ['Tarde'] }, multiA.session_id);
     assert.equal(late.recorded, false);
     assert.equal(late.reason, 'closed');
+    const closedRetry = await rooms.act({ action: 'post', room_id: multi.room_id, messages: ['M1'],
+      turn_key: 'K-MULTI' }, multiA.session_id);
+    assert.equal(closedRetry.duplicate, true, 'la misma clave confirma el registro aunque la sala ya esté cerrada');
+    assert.equal(closedRetry.recorded, true);
+    assert.equal(closedRetry.reason, 'closed');
 
     const cancelA = await delegate('Sala A', 'SALA_SILENCIO_A: espera el turno', 'room-cancel-a');
     const cancelB = await delegate('Sala B', 'SALA_SILENCIO_B: espera el turno', 'room-cancel-b');
@@ -216,7 +222,7 @@ async function main() {
       .some((message) => message.notice && message.content === 'Sala «Abandono» cerrada: completada.'), 25000);
     const skippedRoom = await rooms.act({ action: 'read', room_id: skipped.room_id }, parent.id);
     assert.match(skippedRoom.transcript, /Sala E: \(TIMEOUT\)/);
-    assert.match(skippedRoom.transcript, /Sala F: \(SKIPPED\)/, 'un miembro detenido se salta');
+    assert.match(skippedRoom.transcript, /Sala F: \(SKIPPED\) miembro detenido/, 'un miembro detenido se salta con motivo');
 
     console.log('[PASS] salas Fase 3b: turnos SENT en orden y rondas, PASS, SKIPPED y TIMEOUT, cierre con resumen '
       + 'como contexto, liberación de miembros y entrega posterior de cada informe.');

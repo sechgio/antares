@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- Las salas de Agent registran como `ERROR` el turno de un miembro que terminó con fallo del proveedor y muestran el motivo de cada turno terminal en la transcripción; un reintento con la misma `turn_key` en una sala ya cerrada confirma que el mensaje quedó registrado.
 - Las salas de delegaciones de Agent registran el turno que quedó sin responder al cerrarse, marcan los turnos que no se pudieron entregar, aceptan hasta tres mensajes por turno sin duplicarse si se reintenta con la misma `turn_key`, y el roster muestra la ronda y a quién le toca hablar.
 - El turno de una sala de Agent nombra a los demás participantes, resume los mensajes nuevos desde la última intervención y avisa cuando es la última ronda; el plazo empieza a contar al recibirlo y la entrega se reintenta antes de darla por perdida.
 - Agent puede leer el texto reciente de una delegación con `agent_transcript`, sin razonamiento, herramientas ni aprobaciones, y avisa si quedó esperando al usuario; la sala acepta `reply_to` para responder a un participante concreto.
