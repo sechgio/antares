@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { agentApi, type AgentApproval, type AgentPermissionMode, type AgentReasoningEffort, type AgentSession } from '../../api/agentApi';
+import { agentApi, type AgentApproval, type AgentPanel, type AgentPermissionMode, type AgentReasoningEffort, type AgentSession } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { mcpApi } from '../../api/mcpApi';
 import AgentView from './AgentView';
@@ -1933,4 +1933,26 @@ it('invoca una skill con «/»: filtra el catálogo, elige con el teclado y env�
   await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Revisa el contrato', expect.any(String), [], false, 'a'.repeat(24));
   expect(screen.queryByLabelText('Skill activa')).not.toBeInTheDocument();
+});
+
+it('responde un panel del chat como mensaje de usuario con referencia al panel', async () => {
+  const panel: AgentPanel = { id: 'p1', session_id: 's1', call_id: 'show', type: 'choice', props: { prompt: '¿Qué formato?', options: ['PDF', 'Excel'] },
+    status: 'open', response: null, created_at: 1 };
+  let saved: AgentPanel = panel;
+  vi.spyOn(agentApi, 'agentMessagesList').mockImplementation(async () => ({ ...empty, panels: [saved], messages: [
+    { role: 'user', content: 'Exporta el informe', ts: 1 },
+    { role: 'assistant', content: '', ts: 2, tool_calls: [{ id: 'show', name: 'panel_show', params: {}, gated: false, status: 'done' }] },
+  ] }));
+  const respond = vi.spyOn(agentApi, 'agentPanelRespond').mockImplementation(async () => {
+    saved = { ...panel, status: 'answered', response: { choice: 'Excel' } };
+    return { panel: saved, message: '[panel:p1] Opción elegida: Excel' };
+  });
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  const card = await screen.findByRole('region', { name: '¿Qué formato?' });
+  await act(async () => { fireEvent.click(within(card).getByRole('button', { name: 'Excel' })); });
+  expect(respond).toHaveBeenCalledExactlyOnceWith('s1', 'p1', { choice: 'Excel' });
+  await waitFor(() => expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', '[panel:p1] Opción elegida: Excel', expect.any(String), []));
+  expect(screen.getByRole('region', { name: '¿Qué formato?' })).toHaveAttribute('data-panel-state', 'answered');
 });

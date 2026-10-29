@@ -184,6 +184,16 @@ async function openPage(page, colorScheme) {
   return `${origin}${prefix}index.html`;
 }
 
+async function embedPage(page, colorScheme) {
+  const { embedded, CSP } = require('./agent-pages');
+  const html = embedded(page, colorScheme);
+  await listen();
+  const pathname = `/page/${crypto.randomBytes(16).toString('hex')}/content.html`;
+  pages.set(pathname, { html, csp: CSP });
+  while (pages.size > 16) pages.delete(pages.keys().next().value);
+  return `${origin}${pathname}`;
+}
+
 function isPage(url) {
   try {
     const parsed = new URL(url);
@@ -210,4 +220,4 @@ function close() {
   pages.clear();
 }
 
-module.exports = { open, owns, openPage, isPage, releasePage, close };
+module.exports = { open, owns, openPage, embedPage, isPage, releasePage, close };

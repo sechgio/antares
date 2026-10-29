@@ -36,6 +36,10 @@ function run() {
   }
   const prodScriptSources = prodCsp.match(/(?:^|;)\s*script-src\s+([^;]+)/)?.[1] ?? '';
   assert(prodScriptSources.trim() === "'self'", 'production scripts are restricted to self');
+  const prodFrameSources = prodCsp.match(/(?:^|;)\s*frame-src\s+([^;]+)/)?.[1] ?? '';
+  assert(prodFrameSources.trim() === "'self' http://127.0.0.1:*", 'production frames only self and the loopback page server');
+  assert(/startsWith\('http:\/\/127\.0\.0\.1:'\) && require\('\.\/agent-preview'\)\.isPage\(details\.url\)/.test(source),
+    'only registered agent pages keep their own CSP');
 
   assert(
     source.includes('onBeforeSendHeaders') && /delete\s+requestHeaders\.(R|r)eferer/.test(source),

@@ -781,6 +781,7 @@ def _artifacts(params: JsonObject) -> JsonObject:
              for record in _store().grants_for(session_id).values()]
     return {"artifacts": _store().artifacts_for(session_id),
             "questions": _store().questions_for(session_id),
+            "panels": _store().panels_for(session_id),
             "context": {"files": sorted(files, key=lambda f: f["path"]), "accounts": _store().accounts_for(session_id),
                         "workspace": _workspace_path(session_id)}}
 
@@ -874,6 +875,16 @@ def _question_answer(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+@validate_params("session_id", "panel_id", "response")
+def _panel_respond(params: JsonObject) -> JsonObject:
+    try:
+        panel, message = _store().respond_panel(str(params["session_id"]), str(params["panel_id"]), params["response"])
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+    return {"panel": panel, "message": message}
+
+
+@with_locale
 @validate_params("session_id", "artifact_id", "action")
 def _artifact_action(params: JsonObject) -> JsonObject:
     try:
@@ -940,6 +951,7 @@ HANDLERS = {
     "agent_internal_artifact_effect": _artifact_effect,
     "agent_internal_activity": _activity,
     "agent_question_answer": _question_answer,
+    "agent_panel_respond": _panel_respond,
     "agent_internal_memory_context": _memory_context,
     "agent_internal_grant_remove": _grant_remove,
     "agent_internal_workspace_set": _workspace_set,

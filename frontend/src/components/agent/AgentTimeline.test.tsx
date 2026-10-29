@@ -1,6 +1,7 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import { ApprovalCard, AssistantTurn, MessageRow, PlanCard, ThinkingRow, groupTurns, placeArtifacts, stepsSummary } from './AgentTimeline';
+import { agentApi, type AgentMessage, type AgentPanel } from '../../api/agentApi';
+import { ApprovalCard, AssistantTurn, MessageRow, PlanCard, ThinkingRow, groupTurns, placeArtifacts, placePanels, stepsSummary } from './AgentTimeline';
 import { reasoningRecap } from './Reasoning';
 import { FilePreviewContext } from './filePreviewContext';
 
@@ -22,6 +23,9 @@ it('conserva los archivos junto al mensaje y abre su vista previa sin mostrar ru
   expect(screen.queryByLabelText('Archivos del mensaje')).toBeNull();
   expect(screen.getByText('Mensaje anterior sin adjuntos.')).toBeVisible();
 });
+
+const { addToast } = vi.hoisted(() => ({ addToast: vi.fn() }));
+vi.mock('../../hooks/useToast', () => ({ useToast: () => ({ addToast }) }));
 
 it('muestra el descubrimiento y la lectura de skills en la traza', () => {
   render(<MessageRow msg={{ role: 'assistant', content: '', ts: 1, tool_calls: [
@@ -850,4 +854,137 @@ it('pregunta por la acción concreta y permite rechazarla o aprobarla', () => {
   rerender(<ApprovalCard busy onDecide={decide} approval={{ ...approval, method: 'metodo_desconocido' }} />);
   expect(screen.getByRole('group', { name: 'Confirmación de acción' })).toHaveTextContent('Acción sin descripción disponible');
   expect(screen.getByRole('button', { name: 'Permitir esta acción' })).toBeDisabled();
+});
+
+const panelTurn: AgentMessage[] = [{ role: 'assistant', content: 'Elige una opción', ts: 1, tool_calls: [
+  { id: 'show', name: 'panel_show', params: {}, gated: false, status: 'done', result: '{"panel":{"id":"p1","type":"choice"}}' },
+] }];
+const makePanel = (type: string, props: Record<string, unknown>, extra: Partial<AgentPanel> = {}): AgentPanel => ({
+  id: 'p1', session_id: 's1', call_id: 'show', type, props, status: 'open', response: null, created_at: 1, ...extra });
+const renderPanel = (panel: AgentPanel, onPanelRespond = vi.fn().mockResolvedValue(undefined)) => ({
+  onPanelRespond, ...render(<AssistantTurn messages={panelTurn} panels={[panel]} sessionId="s1" onPanelRespond={onPanelRespond} />) });
+
+it('pinta un panel choice dentro del turno y responde con la opción elegida', async () => {
+  const { onPanelRespond } = renderPanel(makePanel('choice', { prompt: '¿Qué formato?', options: ['PDF', 'Excel'] }));
+  const panel = screen.getByRole('region', { name: '¿Qué formato?' });
+  expect(panel).toHaveAttribute('data-panel-state', 'open');
+  fireEvent.click(within(panel).getByRole('button', { name: 'Excel' }));
+  await waitFor(() => expect(onPanelRespond).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }), { choice: 'Excel' }));
+});
+
+it('deja un panel respondido deshabilitado y marcado al re-renderizarlo desde la sesión', () => {
+  renderPanel(makePanel('choice', { prompt: '¿Qué formato?', options: ['PDF', 'Excel'] }, { status: 'answered', response: { choice: 'PDF' } }));
+  const panel = screen.getByRole('region', { name: '¿Qué formato?' });
+  expect(panel).toHaveAttribute('data-panel-state', 'answered');
+  expect(within(panel).getByText('Respondido')).toBeVisible();
+  expect(within(panel).getByRole('button', { name: 'PDF' })).toHaveAttribute('aria-pressed', 'true');
+  for (const button of within(panel).getAllByRole('button')) expect(button).toBeDisabled();
+});
+
+it('envía un formulario con sus valores y lo deshabilita tras la respuesta', async () => {
+  const fields = [{ name: 'zona', label: 'Zona', required: true }, { name: 'cantidad', label: 'Cantidad', type: 'number' },
+    { name: 'urgente', label: 'Urgente', type: 'checkbox' }];
+  const { onPanelRespond, rerender } = renderPanel(makePanel('form', { title: 'Datos de la orden', submit_label: 'Enviar orden', fields }));
+  const submit = screen.getByRole('button', { name: 'Enviar orden' });
+  expect(submit).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Zona *'), { target: { value: 'Norte' } });
+  fireEvent.change(screen.getByLabelText('Cantidad'), { target: { value: '3' } });
+  fireEvent.click(screen.getByLabelText('Urgente'));
+  fireEvent.click(submit);
+  const values = { zona: 'Norte', cantidad: 3, urgente: true };
+  await waitFor(() => expect(onPanelRespond).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }), { values }));
+  rerender(<AssistantTurn messages={panelTurn} sessionId="s1" onPanelRespond={onPanelRespond}
+    panels={[makePanel('form', { title: 'Datos de la orden', fields }, { status: 'answered', response: { values } })]} />);
+  const answered = screen.getByRole('region', { name: 'Datos de la orden' });
+  expect(answered).toHaveAttribute('data-panel-state', 'answered');
+  expect(within(answered).queryByRole('textbox')).toBeNull();
+  expect(within(answered).queryByRole('button', { name: 'Enviar orden' })).toBeNull();
+  expect(within(answered).getByText('Zona').nextSibling).toHaveTextContent('Norte');
+  expect(within(answered).getByText('Urgente').nextSibling).toHaveTextContent('Sí');
+});
+
+it('filtra las filas de un panel table', () => {
+  renderPanel(makePanel('table', { title: 'Órdenes', columns: ['OT', 'Zona', 'Metrado'], rows: [[101, 'Norte', 80.5], [102, 'Sur', null], [103, 'Norte', 1230]] }));
+  const table = screen.getByRole('region', { name: 'Órdenes' });
+  expect(within(table).getByRole('columnheader', { name: 'Metrado' })).toHaveClass('is-numeric');
+  expect(within(table).getByText('80,5')).toHaveClass('is-numeric');
+  expect(within(table).getByText('—')).toHaveClass('is-empty');
+  expect(within(table).getAllByRole('row')).toHaveLength(4);
+  fireEvent.change(within(table).getByLabelText('Filtrar filas'), { target: { value: 'sur' } });
+  expect(within(table).getAllByRole('row')).toHaveLength(2);
+  expect(within(table).getByText('1 de 3')).toBeVisible();
+  fireEvent.change(within(table).getByLabelText('Filtrar filas'), { target: { value: 'oeste' } });
+  expect(within(table).getByText('Ninguna fila coincide con «oeste».')).toBeVisible();
+});
+
+it('muestra unas pocas filas en el chat y la tabla completa a pantalla completa', () => {
+  const rows = Array.from({ length: 20 }, (_, index) => [index + 1, index % 2 ? 'Sur' : 'Norte']);
+  renderPanel(makePanel('table', { title: 'Órdenes', columns: ['OT', 'Zona'], rows }));
+  const table = screen.getByRole('region', { name: 'Órdenes' });
+  expect(within(table).getAllByRole('row')).toHaveLength(9);
+  fireEvent.click(within(table).getByRole('button', { name: 'Ver las 20 filas' }));
+  const viewer = screen.getByRole('dialog', { name: 'Órdenes' });
+  expect(within(viewer).getAllByRole('row')).toHaveLength(21);
+  fireEvent.change(within(viewer).getByLabelText('Filtrar filas'), { target: { value: 'sur' } });
+  expect(within(viewer).getAllByRole('row')).toHaveLength(11);
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(within(table).getByText('10 de 20')).toBeVisible();
+});
+
+it('embebe un panel page en un iframe aislado con altura por postMessage y vista completa', async () => {
+  const action = vi.spyOn(agentApi, 'agentArtifactAction').mockImplementation(async (params) =>
+    params.action === 'embed' ? { url: 'http://127.0.0.1:4100/page/abc/content.html', sha256: 'h1' } : { opened: true });
+  renderPanel(makePanel('page', { artifact_id: 'a1', sha256: 'h1', title: 'Avance' }));
+  const frame = await screen.findByTitle('Avance') as HTMLIFrameElement;
+  expect(action).toHaveBeenCalledWith(expect.objectContaining({ action: 'embed', artifact_id: 'a1', sha256: 'h1', session_id: 's1' }));
+  expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
+  expect(frame).toHaveAttribute('src', 'http://127.0.0.1:4100/page/abc/content.html');
+  expect(frame).toHaveClass('is-loading');
+  document.documentElement.style.setProperty('--accent-primary', '#7c3aed');
+  const post = vi.spyOn(frame.contentWindow!, 'postMessage');
+  fireEvent.load(frame);
+  expect(post).toHaveBeenCalledWith({ type: 'antares-page-theme', vars: expect.objectContaining({ '--page-accent': '#7c3aed' }) }, '*');
+  document.documentElement.style.removeProperty('--accent-primary');
+  act(() => { window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: { type: 'antares-page-height', height: 500.2 } })); });
+  expect(frame.style.height).toBe('501px');
+  expect(frame).not.toHaveClass('is-loading');
+  act(() => { window.dispatchEvent(new MessageEvent('message', { source: window, data: { type: 'antares-page-height', height: 90 } })); });
+  expect(frame.style.height).toBe('501px');
+  expect(screen.queryByRole('button', { name: 'Ver todo' })).toBeNull();
+  act(() => { window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: { type: 'antares-page-height', height: 1800 } })); });
+  expect(frame.style.height).toBe('1800px');
+  fireEvent.click(screen.getByRole('button', { name: 'Ver todo' }));
+  const viewer = screen.getByRole('dialog', { name: 'Avance' });
+  expect(within(viewer).getByTitle('Avance (pantalla completa)')).toHaveAttribute('sandbox', 'allow-scripts');
+  fireEvent.click(within(viewer).getByRole('button', { name: 'Abrir en una ventana aparte' }));
+  await waitFor(() => expect(action).toHaveBeenCalledWith(expect.objectContaining({ action: 'open', artifact_id: 'a1' })));
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir página Avance en vista completa' }));
+  expect(screen.getByRole('dialog', { name: 'Avance' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar vista completa' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  action.mockRestore();
+});
+
+it.each([
+  ['props inválidas', makePanel('choice', { prompt: '¿Formato?' })],
+  ['tipo desconocido', makePanel('chart', { series: [1, 2] })],
+])('muestra el JSON como fallback ante %s', (_label, panel) => {
+  renderPanel(panel);
+  const fallback = screen.getByRole('region', { name: 'No se pudo mostrar el panel' });
+  expect(fallback).toHaveTextContent(`"type": "${panel.type}"`);
+  expect(within(fallback).queryByRole('button')).toBeNull();
+});
+
+it('coloca cada panel en el turno de su llamada', () => {
+  const turns = groupTurns([
+    { role: 'user', content: 'Hola', ts: 1 }, ...panelTurn,
+    { role: 'user', content: 'Sigue', ts: 3 }, { role: 'assistant', content: 'Listo', ts: 4 },
+  ]);
+  const placed = placePanels(turns, [makePanel('choice', {}), makePanel('table', {}, { id: 'p2', call_id: 'perdida' })]);
+  const [first, second] = turns.filter((turn) => turn.role === 'assistant');
+  expect(placed.get(first.key)?.map((panel) => panel.id)).toEqual(['p1']);
+  expect(placed.get(second.key)?.map((panel) => panel.id)).toEqual(['p2']);
 });

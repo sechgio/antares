@@ -717,7 +717,7 @@ async function messagesList(params) {
   const conv = await conversation(sessionId);
   await projection.ensureWatcher(session);
   const { messages, pending, usage } = await projection.projectMessages(conv, session);
-  const { artifacts, questions, context } = await bridge('agent_internal_artifacts', { session_id: sessionId });
+  const { artifacts, questions, panels, context } = await bridge('agent_internal_artifacts', { session_id: sessionId });
   const partial = projection.partialText(session.conversationId);
   const partialReasoning = projection.partialReasoning(session.conversationId);
   if (partial || partialReasoning) {
@@ -746,6 +746,7 @@ async function messagesList(params) {
     pending_approvals: pending,
     artifacts,
     questions,
+    panels: panels || [],
     context: { modules: session.modules || [], files: (context && context.files) || [], accounts: (context && context.accounts) || [],
       workspace: (context && context.workspace) || null },
     usage: usage || null,
