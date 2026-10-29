@@ -25,10 +25,21 @@ export default function SubagentRoster({ items }: { items: AgentDelegation[] }) 
             <span className="truncate font-medium text-[var(--text-primary)]">{item.agent}</span>
             {item.room && (
               <span
-                className="shrink-0 rounded-full border border-[var(--border-subtle)] px-1.5 py-px text-[9.5px] text-[var(--text-muted)]"
+                className="max-w-[11rem] shrink-0 truncate rounded-full border border-[var(--border-subtle)] px-1.5 py-px text-[9.5px] text-[var(--text-muted)]"
                 title={item.room.turn_agent ? `${item.room.topic} · turno de ${item.room.turn_agent}` : item.room.topic}
               >
-                {item.room.status === 'open' ? `Sala ${item.room.round}/${item.room.rounds}` : 'Sala cerrada'}
+                {item.room.status === 'open'
+                  ? `Sala ${item.room.round}/${item.room.rounds}`
+                    + `${item.room.turn_agent ? ` · turno de ${item.room.turn_agent}` : ''}`
+                  : 'Sala cerrada'}
+              </span>
+            )}
+            {item.awaiting_user && (
+              <span
+                className="shrink-0 rounded-full border border-[var(--border-subtle)] px-1.5 py-px text-[9.5px] text-[var(--text-muted)]"
+                title={item.question || 'La delegación espera una respuesta del usuario'}
+              >
+                espera al usuario
               </span>
             )}
             <span className="shrink-0 text-[var(--text-muted)]">{item.state}</span>

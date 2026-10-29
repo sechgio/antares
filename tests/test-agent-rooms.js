@@ -153,6 +153,9 @@ async function main() {
     const asked = await tasks.readTranscript({ session_id: question.session_id }, parent.id);
     assert.equal(asked.awaiting_user, true, 'la lectura avisa que espera al usuario');
     assert.match(asked.messages.join('\n'), /NECESITA ENTRADA/);
+    const askedCheck = await tasks.checkDelegations({ session_id: question.session_id }, parent.id);
+    assert.equal(askedCheck.awaiting_user, true, 'el roster avisa que la delegación espera al usuario');
+    assert.match(askedCheck.question, /¿Qué contrato reviso\?/, 'el roster incluye la pregunta pendiente');
     const questionSession = (await runtime.handlers.agent_sessions_list()).sessions
       .find((session) => session.id === question.session_id);
     assert.equal(questionSession.delegation.awaiting_user, true, 'el estado queda guardado para la sala');

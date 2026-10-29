@@ -45,9 +45,16 @@ it('muestra la ronda de la sala y el turno en curso', () => {
     room: { id: 'room-1', topic: 'Contrato y anexo', status: 'open', round: 2, rounds: 3, members: 2,
       turn_member: 'delegate-1', turn_agent: 'Investigador' },
   })]} />);
-  expect(screen.getByText('Sala 2/3')).toBeInTheDocument();
+  expect(screen.getByText('Sala 2/3 · turno de Investigador')).toBeInTheDocument();
   expect(screen.getByTitle('Contrato y anexo · turno de Investigador')).toBeInTheDocument();
   expect(screen.getByText('trabajando')).toBeInTheDocument();
+});
+
+it('avisa cuando la delegación espera al usuario', () => {
+  render(<SubagentRoster items={[delegation({ awaiting_user: true, question: '¿Qué contrato reviso?' })]} />);
+  const waiting = screen.getByText('espera al usuario');
+  expect(waiting).toBeInTheDocument();
+  expect(waiting).toHaveAttribute('title', '¿Qué contrato reviso?');
 });
 
 it('marca la entrega aplazada y la que sigue fallando', () => {

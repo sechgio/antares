@@ -12,6 +12,8 @@ export interface AgentDelegation {
   rounds?: number;
   max_rounds?: number;
   reason?: string;
+  awaiting_user?: boolean;
+  question?: string;
   delivery?: {
     state: string;
     attempts: number;

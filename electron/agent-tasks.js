@@ -485,8 +485,10 @@ async function delegationAnswer(child) {
 
 async function delegationSnapshot(child) {
   const entries = await require('./agent-projection').allEntries(await conversation(child.id));
+  const text = lastAnswerText(entries);
   return { child, report: delegationReport(child, entries),
-    awaiting_user: !child.last_error && NEEDS_INPUT.test(lastAnswerText(entries)) };
+    awaiting_user: !child.last_error && NEEDS_INPUT.test(text),
+    question: child.last_error ? '' : (NEEDS_INPUT.exec(text)?.[1] || '') };
 }
 
 function lastAnswerText(entries) {
@@ -565,6 +567,9 @@ async function describeDelegation(child) {
     described.max_rounds = Number(job.continuation.max_rounds) || 0;
   }
   if (job.cancelled_reason) described.reason = String(job.cancelled_reason).slice(0, MAX_STOP_REASON_CHARS);
+  // El padre puede ver que la delegación espera al usuario sin abrir su conversación.
+  described.awaiting_user = job.awaiting_user === true;
+  if (job.awaiting_question) described.question = String(job.awaiting_question).slice(0, 200);
   if (job.delivery) {
     described.delivery = {
       state: String(job.delivery.state || ''),
@@ -900,6 +905,8 @@ async function deliverDelegations(state, parent, children, open) {
       if (current && current.delegation.status === 'working') {
         current.delegation.status = 'delivered';
         current.delegation.awaiting_user = snapshot?.awaiting_user === true;
+        if (snapshot?.question) current.delegation.awaiting_question = String(snapshot.question).slice(0, 200);
+        else delete current.delegation.awaiting_question;
         current.delegation.result_request = `${key}:result`;
         current.delegation.delivery = { state: 'delivered', attempts: Number(current.delegation.delivery?.attempts) || 0,
           delivered_at: Date.now() };
