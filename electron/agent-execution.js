@@ -66,6 +66,9 @@ const MAX_OPENAI_TOOLS = 128;
 
 const REASONING_OPENAI_MODEL = /deepseek-(r1|reasoner)|qwq|qwen3|gpt-oss|thinking/i;
 const REASONING_ANTHROPIC_MODEL = /claude-(3-7|(opus|sonnet|haiku|fable)-[4-9])/i;
+// DeepSeek V4 expone off/low/high/max; minimal, medium y xhigh no se envían.
+const DEEPSEEK_V4_MODEL = /\bdeepseek[-_ ]v4(?:[.\-_:]|$)/i;
+const DEEPSEEK_V4_LEVEL_MAP = { off: 'none', minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' };
 const VISION_MODEL = /gpt-4o|gpt-4\.1|gpt-5|\bo[34]\b|\bo[34]-|claude|gemini|vision|[-_/]vl\b|\bvl[-_]|llava|pixtral|grok-4|llama-4|gemma-3/i;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_CONTEXT_WINDOW = 128000;
@@ -76,7 +79,10 @@ function supportsVision(modelId) {
 }
 
 function supportsReasoning(style, modelId) {
-  return (style === 'anthropic_messages' ? REASONING_ANTHROPIC_MODEL : REASONING_OPENAI_MODEL).test(String(modelId || ''));
+  const id = String(modelId || '');
+  return style === 'anthropic_messages'
+    ? REASONING_ANTHROPIC_MODEL.test(id)
+    : (REASONING_OPENAI_MODEL.test(id) || DEEPSEEK_V4_MODEL.test(id));
 }
 
 const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -162,6 +168,8 @@ function modelDefinition(info, id, api, verified, catalogModel) {
   };
   const reasoning = typeof capabilities.reasoning === 'boolean' ? capabilities.reasoning
     : typeof catalog.reasoning === 'boolean' ? catalog.reasoning : supportsReasoning(info.style, id);
+  const thinkingLevelMap = catalog.thinkingLevelMap
+    || (reasoning && DEEPSEEK_V4_MODEL.test(id) ? DEEPSEEK_V4_LEVEL_MAP : undefined);
   return {
     id,
     name: id,
@@ -181,7 +189,7 @@ function modelDefinition(info, id, api, verified, catalogModel) {
     // la respuesta y con 8 k un nivel alto dejaba la respuesta truncada.
     maxTokens: Math.min(Number(catalog.maxTokens) || DEFAULT_MAX_TOKENS, Math.floor(contextWindow / 4)),
     reasoning,
-    ...(reasoning && catalog.thinkingLevelMap ? { thinkingLevelMap: catalog.thinkingLevelMap } : {}),
+    ...(reasoning && thinkingLevelMap ? { thinkingLevelMap } : {}),
     ...(Object.keys(compat).length ? { compat } : {}),
   };
 }
