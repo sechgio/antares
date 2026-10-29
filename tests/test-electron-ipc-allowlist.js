@@ -86,6 +86,12 @@ function main() {
   const preloadMethods = extractPreloadMethods(preloadSource);
   const knownUsedMethods = new Set([...apiMethods, ...preloadMethods]);
   const allowed = catalog.METHOD_NAMES;
+  if (!apiMethods.has('agent_file_preview') || !allowed.has('agent_file_preview')
+    || catalog.METHODS.agent_file_preview.handler !== 'native:agent'
+    || !catalog.IDEMPOTENT_METHODS.has('agent_file_preview')
+    || !catalog.INTERNAL_METHODS.has('agent_internal_file_preview')) {
+    throw new Error('La vista de archivos debe pasar por el agente y mantener privadas las rutas seleccionadas.');
+  }
   if (!apiMethods.has('agent_workspace_set') || !allowed.has('agent_workspace_set')
     || catalog.METHODS.agent_workspace_set.handler !== 'native:agent'
     || catalog.METHODS.agent_workspace_set.timeout !== 'long'

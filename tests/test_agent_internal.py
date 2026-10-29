@@ -21,6 +21,45 @@ def store(tmp_path, monkeypatch):
     return instance
 
 
+def test_file_preview_checks_grants_workspace_drafts_and_revocation(store, tmp_path):
+    from backend.core.agent import resource_grants
+
+    preview = agent_internal.HANDLERS["agent_internal_file_preview"]
+    session = "preview-session"
+    external = tmp_path / "private.txt"
+    external.write_text("contenido autorizado", encoding="utf-8")
+    params = {"session_id": session, "resource": str(external)}
+    with pytest.raises(ValidationError, match="autorizado"):
+        preview(params)
+    store.add_grants(session, [resource_grants.grant_record(str(external), "request")])
+    assert preview(params)["text"] == "contenido autorizado"
+    with pytest.raises(ValidationError, match="autorizado"):
+        preview({**params, "session_id": "otra-sesion"})
+    store.revoke_grant(session, str(external))
+    with pytest.raises(ValidationError, match="autorizado"):
+        preview(params)
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    (workspace / "nota.txt").write_text("proyecto", encoding="utf-8")
+    store.add_grants(session, [resource_grants.folder_record(str(workspace), "request")])
+    store.set_workspace(session, str(workspace))
+    assert preview({"session_id": session, "resource": "nota.txt"})["text"] == "proyecto"
+    draft = store.drafts_dir(session) / "resultado.txt"
+    draft.parent.mkdir(parents=True, exist_ok=True)
+    draft.write_text("borrador", encoding="utf-8")
+    assert preview({"session_id": session, "resource": str(draft)})["text"] == "borrador"
+    with pytest.raises(ValidationError):
+        preview({"session_id": session, "resource": "../private.txt"})
+
+
+def test_selected_file_preview_does_not_persist_a_grant(store, tmp_path):
+    selected = tmp_path / "selected.txt"
+    selected.write_text("adjunto pendiente", encoding="utf-8")
+    result = agent_internal.HANDLERS["agent_internal_file_preview"]({"session_id": "s1", "selected_file": str(selected)})
+    assert result["text"] == "adjunto pendiente"
+    assert store.grants_for("s1") == {}
+
+
 def _provider_info(provider, **config):
     return agent_internal.HANDLERS["agent_internal_provider"]({"provider": provider, **config})
 
