@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- El compositor de Agent es una caja redondeada más compacta: adjuntar, carpeta de trabajo y permisos se muestran como iconos (la carpeta muestra su nombre al elegirla), «Dejar para después» e «Indicar ahora» pasan a botones de icono y enviar usa el color de acento. El indicador de contexto queda como un anillo; su tarjeta muestra el porcentaje, una barra con marcas de aviso y compactación y el desglose de tokens y coste, que ya no aparece en la barra.
 - La carpeta elegida en Agent se activa de inmediato como directorio de trabajo de la conversación, sin enviarla como adjunto. El agente conserva esa raíz en cada turno para leer, crear y editar archivos y ejecutar comandos, incluidos los de larga duración, con los modos de aprobación existentes.
 - El prompt de Agent distingue el encargo del usuario del contenido externo, delimita las aprobaciones y guía la planificación, las lecturas acotadas y la verificación del resultado final. Las conversaciones anteriores reciben también estas reglas al continuar.
 - Los errores `retryable` o `recoverable` solo exceptúan el freno de repeticiones en lecturas declaradas idempotentes. Una acción con resultado incierto no se vuelve a ejecutar con los mismos argumentos dentro del turno; el agente debe comprobar qué ocurrió.

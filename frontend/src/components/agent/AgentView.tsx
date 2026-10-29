@@ -1455,7 +1455,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
             />
           )}
           <div role="group" aria-label="Redactar mensaje"
-            className={`agent-composer relative rounded-2xl border bg-[var(--bg-elevated)] transition-colors ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-subtle)]'}`}
+            className={`agent-composer relative rounded-[26px] border bg-[var(--bg-elevated)] transition-[border-color,box-shadow] ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-subtle)]'}`}
             onDragOver={(event) => { if (!sessionId || !event.dataTransfer.types.includes('Files')) return; event.preventDefault(); setDragging(true); }}
             onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
             onDrop={(event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); setDragging(false); void attachFiles([...event.dataTransfer.files]); }}>
@@ -1552,7 +1552,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 })}
               </div>
             )}
-            <div className="px-4 pb-1 pt-4">
+            <div className="px-4 pt-3">
               <textarea
                 ref={draftRef}
                 rows={1}
@@ -1574,18 +1574,18 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 }}
                 placeholder={
                   running || pending.length > 0
-                    ? 'Añade una indicación o déjala para después…'
+                    ? 'Añade una indicación…'
                     : 'Cuéntame qué necesitas…'
                 }
                 aria-label="Mensaje para el agente"
                 title="Intro para enviar · Mayús+Intro para otra línea · @ para mencionar · / para usar una skill"
-                className="block max-h-36 min-h-12 w-full min-w-0 resize-none bg-transparent py-0.5 text-[14px] leading-[22px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
+                className="block max-h-36 min-h-9 w-full min-w-0 resize-none bg-transparent py-0.5 text-[14px] leading-[22px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
               />
             </div>
             <div className="agent-composer-toolbar flex min-w-0 items-center gap-1 px-2.5 pb-2.5">
               <button
                 type="button"
-                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                className="flex size-8 shrink-0 items-center justify-center rounded-full border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
                 onClick={() => void attach()}
                 disabled={!sessionId}
                 aria-label="Adjuntar archivos"
@@ -1596,19 +1596,19 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               <Button
                 variant="none"
                 size="none"
-                className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 rounded-lg px-2 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                className={`flex h-8 min-w-8 max-w-44 shrink items-center justify-center gap-1.5 rounded-full text-xs text-[var(--text-secondary)] ${context?.workspace || selectingWorkspace ? 'px-2.5' : 'px-0'} transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50`}
                 onClick={() => void selectWorkspace()}
                 disabled={!sessionId || running || sending || selectingWorkspace}
                 aria-label="Seleccionar carpeta de trabajo"
                 title={context?.workspace ? `Trabajar en ${context.workspace}. Haz clic para cambiar de carpeta` : 'Elegir dónde el agente leerá, creará y editará archivos y ejecutará comandos'}
               >
                 <FolderOpen size={14} className="shrink-0" />
-                <span className="truncate">{selectingWorkspace ? 'Seleccionando…' : context?.workspace?.split(/[\\/]/).filter(Boolean).pop() || 'Carpeta de trabajo'}</span>
+                <span className={context?.workspace || selectingWorkspace ? 'truncate' : 'sr-only'}>{selectingWorkspace ? 'Seleccionando…' : context?.workspace?.split(/[\\/]/).filter(Boolean).pop() || 'Carpeta de trabajo'}</span>
               </Button>
               {context?.workspace && (
                 <button
                   type="button"
-                  className="flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                  className="-ml-1 flex size-6 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
                   onClick={() => { if (context.workspace) void removeFile(context.workspace); }}
                   disabled={!sessionId || selectingWorkspace}
                   aria-label="Quitar la carpeta de trabajo"
@@ -1656,38 +1656,38 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 <ContextUsage usage={usage} model={session?.model ?? model} contextWindow={contextWindow} thresholds={compactionThresholds} compacting={compacting} />
               </div>
               {(running || pending.length > 0) && (
-                <div className="agent-turn-actions flex shrink-0 items-center gap-1">
-                  <Button variant="ghost" size="none" className="h-8 gap-1.5 rounded-lg px-2 text-[12px]" aria-label="Dejar para después"
+                <div className="agent-turn-actions flex shrink-0 items-center gap-0.5">
+                  <Button variant="ghost" size="none" className="size-8 rounded-full" aria-label="Dejar para después"
                     onClick={() => void send()} disabled={!draft.trim() || modelBusy || stopping || sending} title="Dejar para después (Intro)">
-                    <ListOrdered size={14} aria-hidden="true" /><span>Dejar para después</span>
+                    <ListOrdered size={15} aria-hidden="true" />
                   </Button>
-                  <Button variant="ghost" size="none" className="h-8 gap-1.5 rounded-lg px-2 text-[12px]" aria-label="Indicar ahora"
+                  <Button variant="ghost" size="none" className="size-8 rounded-full" aria-label="Indicar ahora"
                     onClick={() => void send(true)} disabled={!draft.trim() || modelBusy || stopping || sending || sendingCorrection} title="Indicar ahora">
-                    <CornerDownRight size={14} aria-hidden="true" /><span>Indicar ahora</span>
+                    <CornerDownRight size={15} aria-hidden="true" />
                   </Button>
                 </div>
               )}
               {(running || pending.length > 0) && (
                 <button
                   type="button"
-                  className="agent-stop flex size-8 shrink-0 items-center justify-center rounded-full text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--accent-red)]"
+                  className="agent-stop flex size-9 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50"
                   onClick={() => void cancelTurn()}
                   aria-label="Detener"
                   disabled={stopping}
                   title="Detener el turno"
                 >
-                  <Square size={12} />
+                  <Square size={11} fill="currentColor" />
                 </button>
               )}
               {!running && pending.length === 0 && <button
                 type="button"
-                className="agent-send flex size-8 shrink-0 items-center justify-center rounded-full transition-[background-color,color,transform] duration-150 active:scale-[0.96] motion-reduce:transform-none disabled:cursor-not-allowed"
+                className="agent-send flex size-9 shrink-0 items-center justify-center rounded-full transition-[background-color,color,transform] duration-150 active:scale-[0.96] motion-reduce:transform-none disabled:cursor-not-allowed"
                 onClick={() => void send()}
                 disabled={(!sessionId && !provider) || !draft.trim() || modelBusy || sending || selectingWorkspace}
                 aria-label="Enviar"
                 title="Enviar (Intro)"
               >
-                <ArrowUp size={17} aria-hidden="true" />
+                <ArrowUp size={18} strokeWidth={2.25} aria-hidden="true" />
               </button>}
             </div>
           </div>
