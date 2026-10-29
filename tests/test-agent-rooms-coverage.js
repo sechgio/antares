@@ -41,16 +41,19 @@ async function main() {
   const execution = require('../electron/agent-execution');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-rooms-coverage-'));
   let reads = 0;
-  let blocked = false;
-  let releaseDispatch;
-  const dispatchGate = new Promise((resolve) => { releaseDispatch = resolve; });
+  let holdDispatch = null;
+  const gate = () => {
+    let release;
+    holdDispatch = new Promise((resolve) => { release = resolve; });
+    return () => { holdDispatch = null; release(); };
+  };
   const bridge = async (method, params) => {
     if (method === 'agent_internal_tools') return { tools: [
       { name: 'canvas_list', kind: 'backend', gated: false, replay_safe: true, inputSchema: { type: 'object', properties: {} } },
     ] };
     if (method === 'agent_internal_dispatch') {
       reads += 1;
-      if (blocked) await dispatchGate;
+      if (holdDispatch) await holdDispatch;
       return { result: JSON.stringify({ documents: ['Comprobante'] }) };
     }
     if (method === 'agent_internal_provider') return { style: 'openai_chat', base_url: 'http://unused', api_key: 'test' };
@@ -66,7 +69,7 @@ async function main() {
   const respond = (context) => {
     const seen = allText(context);
     const roomTurn = seen.includes('Te toca hablar');
-    if (!roomTurn && seen.includes('OCUPADO_B')) {
+    if (!roomTurn && (seen.includes('OCUPADO_B') || seen.includes('GRACE_B'))) {
       return seen.includes('Comprobante')
         ? fauxAssistantMessage('Encargo propio terminado')
         : fauxAssistantMessage([fauxToolCall('canvas_list', { page: 1 })], { stopReason: 'toolUse' });
@@ -75,13 +78,14 @@ async function main() {
       const label = seen.includes('OCUPADO_A') ? 'Habló A'
         : seen.includes('OCUPADO_B') ? 'Habló B'
           : seen.includes('IMPOSIBLE_C') ? 'Habló C'
-            : seen.includes('ERROR_A') ? 'Habló A' : '';
+            : seen.includes('ERROR_A') || seen.includes('GRACE_A') ? 'Habló A' : '';
       if (!label) return fauxAssistantMessage('Sin turno');
       return roomCalls(context) < 1
         ? fauxAssistantMessage([fauxToolCall('agent_room', { action: 'post', message: label })], { stopReason: 'toolUse' })
         : fauxAssistantMessage(`Aporté ${label}`);
     }
-    if (seen.includes('OCUPADO_A') || seen.includes('IMPOSIBLE_C') || seen.includes('ERROR_A')) {
+    if (seen.includes('OCUPADO_A') || seen.includes('IMPOSIBLE_C') || seen.includes('ERROR_A')
+      || seen.includes('GRACE_A')) {
       return fauxAssistantMessage('Listo');
     }
     return fauxAssistantMessage('Sin turno');
@@ -128,7 +132,7 @@ async function main() {
     // --- Miembro ocupado: el turno espera a que termine su propio turno ---
     await tasks.start();
     const first = await delegate('Ocupada A', 'OCUPADO_A: prepara el informe', 'coverage-a');
-    blocked = true;
+    const releaseBusy = gate();
     const second = await delegate('Ocupada B', 'OCUPADO_B: revisa el anexo', 'coverage-b');
     await until(() => reads > 0);
     const busy = await rooms.act({ action: 'create', topic: 'Miembro ocupado',
@@ -137,7 +141,7 @@ async function main() {
     const waiting = await rooms.act({ action: 'read', room_id: busy.room_id }, parent.id);
     assert.equal(waiting.status, 'open', 'la sala sigue abierta mientras el miembro ocupado no responde');
     assert.ok(!/Habló B/.test(waiting.transcript), 'el turno del miembro ocupado no se adelanta');
-    releaseDispatch();
+    releaseBusy();
     await until(async () => (await messages(parent.id)).messages
       .some((message) => message.notice && message.content === 'Sala «Miembro ocupado» cerrada: completada.'));
     const busyRead = await rooms.act({ action: 'read', room_id: busy.room_id }, parent.id);
@@ -148,6 +152,35 @@ async function main() {
     assert.ok(ownAnswer !== -1 && roomPost !== -1, 'el miembro ocupado termina su encargo y luego postea');
     assert.ok(ownAnswer < roomPost, 'el turno de la sala no interrumpe el turno en curso del miembro');
     await tasks.stop();
+
+    // --- Plazo: prórroga acotada mientras el miembro sigue ocupado ---
+    const graceRelease = gate();
+    const graceA = await delegate('Ocupada A', 'GRACE_A: abre la sala', 'coverage-grace-a');
+    const graceB = await delegate('Ocupada B', 'GRACE_B: sigue ocupado', 'coverage-grace-b');
+    const graceBefore = reads;
+    const graceRoom = await rooms.act({ action: 'create', topic: 'Plazo con prórroga',
+      members: [graceA.session_id, graceB.session_id], rounds: 1, turn_seconds: 30 }, parent.id);
+    await until(async () => /Habló A/.test(await roomText(graceRoom.room_id, parent.id)));
+    await until(() => reads > graceBefore);
+    const expire = () => state.harness.commit(async (tx) => {
+      const doc = await tx.doc(state.RoomsDoc);
+      doc.rooms[graceRoom.room_id].turn.deadline = Date.now() - 1;
+    }, ctx());
+    const graceTurn = async () => (await state.harness.snapshot(state.RoomsDoc, ctx())).rooms[graceRoom.room_id]?.turn || {};
+    await expire();
+    await rooms.tickRooms(state);
+    const firstGrace = await graceTurn();
+    assert.equal(firstGrace.grace, 1, 'la primera prórroga queda contada');
+    assert.ok(firstGrace.deadline > Date.now(), 'el turno sigue vivo mientras el miembro está ocupado');
+    await expire();
+    await rooms.tickRooms(state);
+    assert.equal((await graceTurn()).grace, 2, 'la segunda prórroga también queda contada');
+    await expire();
+    await rooms.tickRooms(state);
+    const graceRead = await rooms.act({ action: 'read', room_id: graceRoom.room_id }, parent.id);
+    assert.match(graceRead.transcript, /\(TIMEOUT\) plazo agotado/, 'sin prórrogas el turno vence con motivo');
+    assert.equal(graceRead.status, 'closed', 'la sala cierra cuando se agotan las prórrogas');
+    graceRelease();
 
     // --- Turno imposible: el proveedor del siguiente miembro no arranca ---
     const third = await delegate('Imposible C', 'IMPOSIBLE_C: abre la sala', 'coverage-c');
@@ -195,8 +228,8 @@ async function main() {
       'un miembro con error del proveedor no se reporta como silencio');
     assert.equal(failedRead.close_reason, 'completada', 'la sala cierra tras registrar el error');
 
-    console.log('[PASS] cobertura de salas: retención por TTL y tope, miembro ocupado, turno imposible '
-      + 'y miembro con error.');
+    console.log('[PASS] cobertura de salas: retención por TTL y tope, miembro ocupado, prórroga de plazo, '
+      + 'turno imposible y miembro con error.');
   } finally {
     await tasks.stop();
     await runtime.shutdown();

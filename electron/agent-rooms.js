@@ -19,6 +19,8 @@ const MAX_LISTED_ROOMS = 10;
 const MAX_NEW_MESSAGES = 6;
 const MAX_CONTEXT_CHARS = 400;
 const DELIVERY_GRACE_MS = 1000;
+const TURN_GRACE_MS = 60 * 1000;
+const MAX_TURN_GRACES = 2;
 const DELIVERY_BACKOFF_MS = [0, 250, 750];
 const MAX_ROOMS = 50;
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
@@ -236,6 +238,21 @@ async function resumeTurn(state, roomId, turn) {
   }, ctx());
 }
 
+// Prórroga acotada: el turno sigue asignado, pero el miembro está ocupado con
+// otro turno y el input de la sala espera en su cola. Se cuenta cada prórroga
+// para que el plazo no se renueve sin límite.
+async function extendTurn(state, roomId, turn) {
+  const now = Date.now();
+  await state.harness.commit(async (tx) => {
+    const doc = await tx.doc(state.RoomsDoc);
+    const room = doc.rooms[roomId];
+    if (!room || room.status !== 'open') return;
+    if (room.turn.member !== turn.member || room.turn.round !== turn.round || room.turn.index !== turn.index) return;
+    room.turn.grace = (Number(room.turn.grace) || 0) + 1;
+    room.turn.deadline = now + TURN_GRACE_MS;
+  }, ctx()).catch(() => {});
+}
+
 // Reintenta la entrega antes de dar el turno por perdido. submit() es
 // idempotente por requestId, así que un reintento no duplica el aviso ni la entrada.
 // Si otro avance ganó el turno mientras esperábamos, no se entrega nada.
@@ -300,12 +317,12 @@ async function settle(state, roomId, memberId, outcome, messages = [], turnKey =
     if (!room || room.status !== 'open') return { closedRoom: true };
     if (memberId && room.turn.member !== memberId) return { wrongTurn: true };
     const map = await tx.doc(state.SessionsDoc);
-    const member = memberId || room.turn.member;
-    const agent = memberName(map.sessions, member);
+    const ownerId = memberId || room.turn.member;
+    const agent = memberName(map.sessions, ownerId);
     const replyName = outcome === 'SENT' && replyTo ? memberName(map.sessions, replyTo) : '';
     const now = Date.now();
     room.log.push(...(outcome === 'SENT' ? posts : ['']).map((message) => ({
-      round: room.turn.round, member, agent, outcome,
+      round: room.turn.round, member: ownerId, agent, outcome,
       ...(outcome === 'SENT' ? { text: message, ...(replyName ? { reply_to: replyName } : {}) } : {}),
       ...(note ? { reason: note } : {}),
       ...(key ? { turn_key: key } : {}),
@@ -572,7 +589,19 @@ async function tickRooms(state) {
       continue;
     }
     if (room.turn.deadline <= Date.now()) {
-      await settle(state, room.id, room.turn.member, 'TIMEOUT').catch(() => {});
+      // El miembro ocupado con su propio turno no perdió el turno de la sala:
+      // recibe hasta dos prórrogas antes de darlo por vencido. Solo cuenta si
+      // tiene un turno vivo o el input de la sala esperando en su cola.
+      const member = map[room.turn.member];
+      const activity = member && !member.deleted && member.delegation
+        ? await require('./agent-tasks')._internal.delegationActivity(member) : '';
+      const busy = activity === 'trabajando' || activity === 'con mensajes en cola';
+      if (busy && (Number(room.turn.grace) || 0) < MAX_TURN_GRACES) {
+        await extendTurn(state, room.id, room.turn);
+        changed = true;
+        continue;
+      }
+      await settle(state, room.id, room.turn.member, 'TIMEOUT', [], '', 'plazo agotado').catch(() => {});
       changed = true;
     }
   }
