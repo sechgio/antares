@@ -110,6 +110,36 @@ async function commitSessions(change) {
   }, ctx());
 }
 
+// El plan de task_plan se normaliza en un solo sitio: lo escribe el turno y lo
+// releen tanto el roster como el encargo de una delegación.
+function planFromParams(params) {
+  if (!params || !Array.isArray(params.steps)) return null;
+  return {
+    goal: String(params.goal || ''),
+    steps: params.steps.map((step) => ({
+      title: String((step && step.title) || ''),
+      status: ['pending', 'in_progress', 'done', 'failed'].includes(step && step.status) ? step.status : 'pending',
+      ...(step && step.evidence ? { evidence: String(step.evidence).slice(0, 300) } : {}),
+    })),
+  };
+}
+
+// El plan vigente se guarda en su propio documento para que una delegación lo
+// lea al arrancar sin reconstruir el historial de la conversación principal.
+async function savePlan(sessionId, plan) {
+  if (!shared.state?.PlanDoc || !sessionId || !plan) return;
+  await shared.state.harness.commit(async (tx) => {
+    const doc = await tx.doc(shared.state.PlanDoc);
+    doc.plans[sessionId] = { ...plan, updated_at: Date.now() };
+  }, ctx()).catch(() => {});
+}
+
+async function readPlan(sessionId) {
+  if (!shared.state?.PlanDoc || !sessionId) return null;
+  const doc = await shared.state.harness.snapshot(shared.state.PlanDoc, ctx());
+  return doc?.plans?.[sessionId] || null;
+}
+
 async function requireSession(sessionId) {
   const session = (await sessions())[sessionId];
   if (!session || session.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
@@ -152,6 +182,9 @@ module.exports = {
   sessions,
   profiles,
   commitSessions,
+  planFromParams,
+  savePlan,
+  readPlan,
   requireSession,
   conversation,
   sessionForConversation,

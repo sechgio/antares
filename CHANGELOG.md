@@ -8,14 +8,15 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- Un turno de sala cuyo miembro sigue ocupado con su propio turno recibe hasta dos prórrogas de un minuto antes de darse por vencido, y el vencimiento queda registrado con su motivo.
 - `agent_check` y el roster de delegaciones muestran si una delegación espera al usuario, con la pregunta pendiente, y la insignia de sala indica a quién le toca el turno.
 - Las salas de Agent registran como `ERROR` el turno de un miembro que terminó con fallo del proveedor y muestran el motivo de cada turno terminal en la transcripción; un reintento con la misma `turn_key` en una sala ya cerrada confirma que el mensaje quedó registrado.
 - Las salas de delegaciones de Agent registran el turno que quedó sin responder al cerrarse, marcan los turnos que no se pudieron entregar, aceptan hasta tres mensajes por turno sin duplicarse si se reintenta con la misma `turn_key`, y el roster muestra la ronda y a quién le toca hablar.
 - El turno de una sala de Agent nombra a los demás participantes, resume los mensajes nuevos desde la última intervención y avisa cuando es la última ronda; el plazo empieza a contar al recibirlo y la entrega se reintenta antes de darla por perdida.
 - Agent puede leer el texto reciente de una delegación con `agent_transcript`, sin razonamiento, herramientas ni aprobaciones, y avisa si quedó esperando al usuario; la sala acepta `reply_to` para responder a un participante concreto.
 - Las salas de Agent se ven en la conversación con su tema, ronda, turno, participantes, quién espera al usuario y la transcripción, mediante una lectura de solo lectura que no abre salas ni amplía permisos.
-- La entrega del informe de una delegación de Agent registra su estado e intentos, reintenta con espera creciente acotada y avisa a la conversación principal cuando acumula tres fallos; el roster muestra el reintento pendiente.
-- La conversación principal comparte su plan vigente con cada delegación al arrancar o retomar: la delegación recibe la meta, los pasos y su estado en un resumen acotado, sin tomarlo como trabajo hecho.
+- La entrega del informe de una delegación de Agent registra su estado e intentos, reintenta con espera acotada (30 s, 2 min y 5 min) y, cuando acumula tres fallos, avisa a la conversación principal y deja de reintentar sola; el roster muestra el reintento pendiente y, agotado, que el informe quedó sin entregar.
+- La conversación principal comparte su plan vigente con cada delegación al arrancar o retomar: el plan se guarda en su propio documento al cerrar `task_plan`, de modo que la delegación recibe la meta, los pasos y su estado en un resumen acotado sin releer el historial ni tomarlo como trabajo hecho.
 - `agent_message` acepta `delivery` (`steer` o `follow_up`) para elegir si la delegación lee el mensaje en el turno en curso o al terminarlo, y devuelve el modo aplicado.
 - El cierre de una sala de Agent resume la participación de cada miembro, con sus mensajes, su último texto y cómo terminó su turno, antes de la transcripción.
 - Un turno de sala asignado antes de cerrar la app recibe una ventana nueva y se reentrega al volver, en lugar de vencerse por el tiempo que la aplicación estuvo cerrada.

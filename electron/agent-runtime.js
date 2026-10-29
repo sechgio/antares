@@ -13,6 +13,8 @@ const {
   sessions,
   profiles: _profiles,
   commitSessions,
+  planFromParams,
+  readPlan,
   requireSession,
   conversation,
   providerCallId,
@@ -211,6 +213,9 @@ async function _open(options = {}) {
     const RoomsDoc = pi.defineDoc({
       kind: 'antares.agent.rooms', version: 1, scope: 'session', initial: () => ({ rooms: {} }),
     });
+    const PlanDoc = pi.defineDoc({
+      kind: 'antares.agent.plans', version: 1, scope: 'session', initial: () => ({ plans: {} }),
+    });
     const registry = pi.createRegistry();
     // Retención larga: una aprobación o una pausa de más de 5 minutos no vacía
     // la caché del prefijo (solo la reciben las APIs oficiales, ver modelDefinition).
@@ -233,6 +238,7 @@ async function _open(options = {}) {
       WaitsDoc,
       BudgetDoc,
       RoomsDoc,
+      PlanDoc,
       compaction: settings.compaction,
       dir,
       ctx: ctx(),
@@ -713,7 +719,7 @@ async function messagesList(params) {
   }
   const running = projection.isRunning(session.conversationId);
   const delegations = await require('./agent-tasks').roster(sessionId);
-  const plan = _latestPlan(messages);
+  const plan = _latestPlan(messages, await readPlan(sessionId));
   const stopped = messages.length > 0 && messages[messages.length - 1].content === CANCELLED_NOTE;
   const contextWindow = execution.contextWindowFor(session);
   const budget = await execution.profileBudget(await execution.sessionProfile(session));
@@ -740,20 +746,16 @@ async function roomsList(params) {
   return require('./agent-rooms').listRooms(String((params && params.session_id) || ''));
 }
 
-function _latestPlan(messages) {
+function _latestPlan(messages, saved) {
+  const stored = planFromParams(saved);
+  if (stored) return stored;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const calls = messages[i].tool_calls || [];
     for (let j = calls.length - 1; j >= 0; j -= 1) {
       const call = calls[j];
-      if (call.name !== 'task_plan' || call.status !== 'done' || !Array.isArray(call.params.steps)) continue;
-      return {
-        goal: String(call.params.goal || ''),
-        steps: call.params.steps.map((step) => ({
-          title: String((step && step.title) || ''),
-          status: ['pending', 'in_progress', 'done', 'failed'].includes(step && step.status) ? step.status : 'pending',
-          ...(step && step.evidence ? { evidence: String(step.evidence).slice(0, 300) } : {}),
-        })),
-      };
+      if (call.name !== 'task_plan' || call.status !== 'done') continue;
+      const plan = planFromParams(call.params);
+      if (plan) return plan;
     }
   }
   return null;
@@ -762,6 +764,8 @@ function _latestPlan(messages) {
 // Plan vigente de una conversación, para que sus delegaciones sepan en qué paso encajan.
 async function latestPlan(sessionId) {
   const session = await requireSession(sessionId);
+  const saved = planFromParams(await readPlan(sessionId));
+  if (saved) return saved;
   const { messages } = await projection.projectMessages(await conversation(sessionId), session);
   return _latestPlan(messages);
 }

@@ -13,6 +13,8 @@ const {
   validation,
   sessionForConversation,
   commitSessions,
+  planFromParams,
+  savePlan,
   requireSession,
   dispatchCallId,
   providerCallId,
@@ -1025,6 +1027,10 @@ async function executeTool(spec, args, api, context) {
   }
   if (spec.name === 'task_plan' && !isError && parsed && Array.isArray(parsed.remaining)) {
     turnState(api.conversationId).remaining = parsed.remaining.map(String);
+  }
+  if (spec.name === 'task_plan' && !isError) {
+    const plan = planFromParams(args);
+    if (plan) await savePlan(sessionId, plan);
   }
   const image = isError || !await acceptsImages(api, context) ? null : await resultImage(parsed);
   const calls = turnState(api.conversationId).calls;

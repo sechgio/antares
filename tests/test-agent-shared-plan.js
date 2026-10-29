@@ -81,6 +81,11 @@ async function main() {
     await until(async () => !(await runtime.handlers.agent_turn_status({ session_id: parent.id })).running);
     const planned = await messages(parent.id);
     assert.equal(planned.plan?.goal, 'Cerrar el trimestre', 'el padre publicó el plan');
+    const state = runtime._internal.state();
+    const stored = await state.harness.snapshot(state.PlanDoc, state.ctx);
+    assert.equal(stored.plans[parent.id]?.goal, 'Cerrar el trimestre', 'el plan vigente queda en su documento');
+    assert.deepEqual(stored.plans[parent.id].steps.map((step) => step.status), ['done', 'in_progress']);
+    assert.equal(typeof stored.plans[parent.id].updated_at, 'number', 'el plan guardado se fecha');
 
     const delegated = await tasks.delegate(profile, { agent: profile.id, task: 'Revisa el contrato' },
       parent.id, apiFor('plan-turno-1', 'call-1'), {});
@@ -93,8 +98,19 @@ async function main() {
     assert.match(brief, /2\. \[en curso\] Contrastar el anexo/);
     assert.match(brief, /Sitúa tu encargo dentro de ese plan/);
 
-    console.log('[PASS] plan compartido: el resumen acota meta, pasos y estado, y el plan vigente del padre llega '
-      + 'al encargo de la delegación sin tomarlo como trabajo hecho.');
+    await state.harness.commit(async (tx) => {
+      const doc = await tx.doc(state.PlanDoc);
+      doc.plans[parent.id] = {
+        goal: 'Cerrar el trimestre',
+        steps: [{ title: 'Contrastar el anexo', status: 'done', evidence: 'anexo contrastado' }],
+        updated_at: Date.now(),
+      };
+    }, state.ctx);
+    const reread = await runtime.latestPlan(parent.id);
+    assert.equal(reread.steps[0].status, 'done', 'la delegación lee el plan guardado aunque el historial aún diga in_progress');
+
+    console.log('[PASS] plan compartido: el resumen acota meta, pasos y estado, el plan vigente se guarda en su '
+      + 'documento y la delegación lo lee de ahí sin tomarlo como trabajo hecho.');
   } finally {
     await tasks.stop();
     await runtime.shutdown();
