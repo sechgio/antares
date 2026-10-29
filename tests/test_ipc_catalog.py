@@ -12,6 +12,17 @@ def _catalog() -> dict:
     return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
 
 
+def test_page_open_reuses_artifact_action_contract():
+    import jsonschema
+
+    entry = _catalog()["methods"]["agent_artifact_action"]
+    assert entry["handler"] == "native:agent" and entry["timeout"] == "long"
+    jsonschema.validate({"session_id": "s1", "artifact_id": "page", "action": "open", "sha256": "revision"},
+                        entry["inputSchema"])
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"session_id": "s1", "artifact_id": "page", "action": "execute"}, entry["inputSchema"])
+
+
 def test_agent_workspace_selection_uses_native_dialog_contract():
     import jsonschema
 

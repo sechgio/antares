@@ -12,6 +12,7 @@ from backend.core.agent import (
     documents,
     drafts,
     memory,
+    pages,
     questions,
     skills,
     task_plan,
@@ -28,7 +29,7 @@ SPECS: dict[str, JsonObject] = {
                  *canvas_edit.TOOL_SPECS, *artifacts.TOOL_SPECS, *questions.TOOL_SPECS, *memory.TOOL_SPECS,
                  *computer_files.TOOL_SPECS, *computer_shell.TOOL_SPECS, *computer_jobs.TOOL_SPECS,
                  *computer_desktop.TOOL_SPECS,
-                 *task_plan.TOOL_SPECS, *skills.TOOL_SPECS)
+                 *task_plan.TOOL_SPECS, *skills.TOOL_SPECS, *pages.TOOL_SPECS)
 }
 SPECS["mcp_status"] = {
     "name": "mcp_status", "module": "connections", "gated": False,
@@ -112,6 +113,8 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
         return canvas_edit.apply_layers(args)
     if name == "artifacts_list":
         return {"artifacts": store.artifacts_for(session_id)}
+    if name == "page_create":
+        return pages.create(args, store, session_id)
     if name in {"memory_search", "memory_remember", "procedure_learn"}:
         return memory.run(name, args, store, session_id, profile_id=profile_id, memory_scope=memory_scope)
     raise ValueError(f"Herramienta no disponible para el agente: {name}")

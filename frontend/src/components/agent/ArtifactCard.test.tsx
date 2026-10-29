@@ -72,3 +72,24 @@ it('las respuestas se envían a la conversación y pregunta originales', async (
   fireEvent.click(screen.getByRole('button', { name: 'Responder y continuar' }));
   await waitFor(() => expect(answer).toHaveBeenCalledWith('s1', 'q1', { template: 'B' }));
 });
+
+it('abre una página con su conversación y revisión sin acciones de PDF', async () => {
+  const action = vi.spyOn(agentApi, 'agentArtifactAction').mockResolvedValue({ opened: true });
+  const page: AgentArtifact = { ...artifact, kind: 'page', family: 'page', title: 'Trabajos de octubre',
+    files: [{ name: 'Trabajos.html', mime: 'application/vnd.antares.page+json', size: 1200, sha256: 'revision' }] };
+  render(<ArtifactCard artifact={page} sessionId="s1" onRefresh={vi.fn()} />);
+  expect(screen.getByRole('region', { name: 'Página Trabajos de octubre' })).toHaveTextContent('Página interactiva');
+  expect(screen.queryByRole('button', { name: 'Imprimir' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Vista previa' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir página' }));
+  await waitFor(() => expect(action).toHaveBeenCalledWith({ session_id: 's1', artifact_id: 'a1',
+    file_index: 0, action: 'open', sha256: 'revision' }));
+});
+
+it('permite reintentar la apertura de una página fallida', async () => {
+  vi.spyOn(agentApi, 'agentArtifactAction').mockRejectedValue(new Error('La página cambió'));
+  render(<ArtifactCard artifact={{ ...artifact, kind: 'page', title: 'Informe' }} sessionId="s1" onRefresh={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir página' }));
+  await waitFor(() => expect(addToast).toHaveBeenCalledWith({ message: 'La página cambió', type: 'error' }));
+  expect(screen.getByRole('button', { name: 'Abrir página' })).toBeEnabled();
+});

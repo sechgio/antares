@@ -12,6 +12,11 @@ const VALID_HANDLERS = /^(backend:[a-z0-9_]+|native:(dialog|autoimg|ubicaciones|
 const VALID_TIMEOUTS = new Set(['normal', 'long', 'heavy']);
 const VALID_LANES = new Set(['sync', 'light', 'heavy']);
 
+const pageAction = require('../shared/ipc-method-catalog.json').methods.agent_artifact_action;
+if (pageAction.handler !== 'native:agent' || !pageAction.inputSchema.properties.action.enum.includes('open')) {
+  throw new Error('Las páginas deben abrirse mediante agent_artifact_action en el proceso principal');
+}
+
 function extractApiMethods(source, calleePattern = /_invoke(?:Invalidating)?\b/g) {
   const methods = new Set();
   let at;

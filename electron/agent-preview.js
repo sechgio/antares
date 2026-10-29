@@ -23,6 +23,7 @@ const TYPES = {
 };
 
 let server = null;
+let starting = null;
 let origin = '';
 let token = '';
 let root = '';
@@ -30,6 +31,7 @@ let fileRoot = '';
 let watcher = null;
 let reloadTimer = null;
 let onChange = null;
+const pages = new Map();
 
 function key(value) {
   const resolved = path.resolve(value);
@@ -52,6 +54,13 @@ async function handle(req, res) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return deny(405);
   // Un dominio que resuelva a 127.0.0.1 (rebinding) llega con su propio Host.
   if (!hosts().has(String(req.headers.host || '').toLowerCase())) return deny(403);
+  const page = pages.get(String(req.url || '').split(/[?#]/)[0]);
+  if (page) {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': page.csp,
+      'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store',
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), clipboard-read=(), clipboard-write=()' });
+    return res.end(req.method === 'HEAD' ? undefined : page.html);
+  }
   const prefix = `/${token}/`;
   const pathname = String(req.url || '').split(/[?#]/)[0];
   if (!root || !pathname.startsWith(prefix)) return deny(404);
@@ -88,8 +97,9 @@ async function handle(req, res) {
 
 function listen() {
   if (server) return Promise.resolve();
+  if (starting) return starting;
   const created = http.createServer((req, res) => { handle(req, res).catch(() => res.destroy()); });
-  return new Promise((resolve, reject) => {
+  starting = new Promise((resolve, reject) => {
     created.once('error', reject);
     created.listen(0, HOST, () => {
       created.removeListener('error', reject);
@@ -98,7 +108,8 @@ function listen() {
       origin = `http://${HOST}:${created.address().port}`;
       resolve();
     });
-  });
+  }).finally(() => { starting = null; });
+  return starting;
 }
 
 function stopWatching() {
@@ -159,7 +170,32 @@ function owns(url) {
     if (!fileRoot) return false;
     try { return inside(fileURLToPath(parsed), fileRoot); } catch { return false; }
   }
-  return !!server && !!root && parsed.origin === origin && parsed.pathname.startsWith(`/${token}/`);
+  return isPage(url) || (!!server && !!root && parsed.origin === origin && parsed.pathname.startsWith(`/${token}/`));
+}
+
+async function openPage(page) {
+  const { documents, CSP, SHELL_CSP } = require('./agent-pages');
+  const rendered = documents(page);
+  await listen();
+  const prefix = `/page/${crypto.randomBytes(16).toString('hex')}/`;
+  pages.set(`${prefix}index.html`, { html: rendered.shell, csp: SHELL_CSP });
+  pages.set(`${prefix}content.html`, { html: rendered.content, csp: CSP });
+  while (pages.size > 16) pages.delete(pages.keys().next().value);
+  return `${origin}${prefix}index.html`;
+}
+
+function isPage(url) {
+  try {
+    const parsed = new URL(url);
+    return !!server && parsed.origin === origin && pages.has(parsed.pathname);
+  } catch { return false; }
+}
+
+function releasePage(url) {
+  if (!isPage(url)) return;
+  const prefix = new URL(url).pathname.replace(/[^/]+$/, '');
+  pages.delete(`${prefix}index.html`);
+  pages.delete(`${prefix}content.html`);
 }
 
 function close() {
@@ -171,6 +207,7 @@ function close() {
   root = '';
   fileRoot = '';
   onChange = null;
+  pages.clear();
 }
 
-module.exports = { open, owns, close };
+module.exports = { open, owns, openPage, isPage, releasePage, close };
