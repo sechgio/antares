@@ -126,6 +126,17 @@ export interface AgentAttachment {
   kind: 'files' | 'folder';
 }
 
+export type AgentFilePreviewTarget = { kind: 'attachment'; id: string; name: string } | { kind: 'resource'; resource: string };
+export type AgentDocumentBlock = { kind: 'paragraph'; text: string; style: string } | { kind: 'table'; rows: string[][] };
+export type AgentFilePreview = { name: string; size: number } & (
+  | { kind: 'pdf'; png_base64: string; pages: number; page: number }
+  | { kind: 'image'; png_base64: string; width: number; height: number }
+  | { kind: 'spreadsheet'; sheets: string[]; sheet: number; page: number; pages: number; total_rows: number;
+      total_columns: number; rows: string[][]; row_start: number; truncated: boolean }
+  | { kind: 'document'; blocks: AgentDocumentBlock[]; truncated: boolean }
+  | { kind: 'text'; text: string; truncated: boolean }
+);
+
 interface AgentMessageMentions {
   modules: string[];
   unknown: string[];
@@ -203,9 +214,12 @@ export interface AgentTask {
   retry_at?: number;
 }
 
-interface AgentArtifactBase {
+export interface AgentDocumentArtifact {
+  kind?: 'document';
   id: string;
   family: string;
+  template_id: string;
+  template_revision: string;
   module?: string;
   sources?: { ids?: string[]; kind: string }[];
   reviewed?: Record<string, string>;
@@ -214,21 +228,13 @@ interface AgentArtifactBase {
     approval_source?: AgentApprovalSource | null;
     status?: string | null;
   };
-}
-
-export interface AgentDocumentArtifact extends AgentArtifactBase {
-  kind?: 'document';
-  template_id: string;
-  template_revision: string;
   files: { name: string; sha256: string; pages: number; mime: string; size: number }[];
 }
 
-export interface AgentImageArtifact extends AgentArtifactBase {
-  kind: 'image';
-  family: 'image';
-  files: { name: string; title: string; sha256: string; mime: string; size: number; width: number; height: number }[];
+export interface AgentImageArtifact extends Omit<AgentDocumentArtifact, 'kind' | 'files' | 'template_id' | 'template_revision'> {
+  kind: 'image'; family: 'image';
+  files: (Omit<AgentDocumentArtifact['files'][number], 'pages'> & { title: string; width: number; height: number })[];
 }
-
 export interface AgentPageArtifact extends Omit<AgentDocumentArtifact, 'kind' | 'files'> {
   kind: 'page';
   title: string;
@@ -394,6 +400,10 @@ export const agentApi = {
 
   agentAttach: (kind: 'files' | 'folder', dropped?: { paths?: string[]; data?: { name: string; data: string }[] }) =>
     _invoke<{ attachments: AgentAttachment[] }>('agent_attach', { kind, ...dropped }),
+
+  agentFilePreview: (session_id: string, target: AgentFilePreviewTarget, page = 0, sheet = 0) =>
+    _invoke<AgentFilePreview>('agent_file_preview', { session_id, page, sheet,
+      ...(target.kind === 'attachment' ? { attachment_id: target.id } : { resource: target.resource }) }),
 
   agentToolsList: (session_id?: string) => _invoke<{ tools: AgentToolSpec[] }>('agent_tools_list', session_id ? { session_id } : {}),
 

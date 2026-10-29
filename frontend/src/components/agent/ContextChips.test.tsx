@@ -1,6 +1,18 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import ContextChips from './ContextChips';
+import { FilePreviewContext } from './filePreviewContext';
+
+it('previsualiza el archivo autorizado sin retirar su permiso', () => {
+  const open = vi.fn();
+  const remove = vi.fn();
+  render(<FilePreviewContext.Provider value={open}><ContextChips
+    context={{ modules: [], accounts: [], files: [{ path: 'C:\\datos.xlsx', folder: false }] }}
+    onRemoveFile={remove} onSetWorkspace={vi.fn()} /></FilePreviewContext.Provider>);
+  fireEvent.click(screen.getByRole('button', { name: 'Previsualizar datos.xlsx' }));
+  expect(open).toHaveBeenCalledWith('C:\\datos.xlsx');
+  expect(remove).not.toHaveBeenCalled();
+});
 
 it('no duplica la raíz activa y permite cambiarla a otra carpeta adjunta', () => {
   const onSetWorkspace = vi.fn();

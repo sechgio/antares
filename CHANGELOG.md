@@ -10,6 +10,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Added
 - Agent crea páginas interactivas con HTML, JavaScript y datos completos de Excel/CSV autorizados, las conserva por conversación y permite abrirlas desde una tarjeta. Las actualizaciones verifican la revisión anterior; la ejecución queda aislada, sin red ni acceso a Node o al bridge de la aplicación.
 - Las páginas de Agent incluyen una miniatura sin scripts en el chat y una presentación uniforme para títulos, filtros, métricas y tablas, siguiendo el modo claro u oscuro de Antares.
+- Vista previa local de archivos del chat en un panel lateral: PDF e imágenes con zoom, Excel/CSV/TSV con hojas y páginas, Word (.docx) con texto y tablas, y archivos de texto o código. Se abre desde adjuntos, archivos autorizados y referencias locales de las respuestas.
 
 ### Changed
 - Agents entrega imágenes y gráficos PNG, JPEG o WebP como una galería persistente en el chat, con ampliación, navegación y descarga mediante la herramienta `images_show`.

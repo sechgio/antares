@@ -999,6 +999,24 @@ async function messageSend(params) {
   };
 }
 
+async function filePreview(params) {
+  const sessionId = String(params.session_id || '');
+  await requireSession(sessionId);
+  const { resource, attachment_id: attachmentId, page = 0, sheet = 0 } = params;
+  const hasResource = typeof resource === 'string' && !!resource;
+  const hasAttachment = typeof attachmentId === 'string' && !!attachmentId;
+  if (![page, sheet].every((value) => Number.isSafeInteger(value) && value >= 0)
+    || hasResource === hasAttachment || (resource !== undefined && !hasResource) || (attachmentId !== undefined && !hasAttachment)) {
+    throw validation('Indica un archivo y una página u hoja válidos');
+  }
+  if (hasAttachment) {
+    const [item] = _takeAttachments([attachmentId]);
+    if (item.kind === 'folder') throw validation('Selecciona un archivo para previsualizar');
+    return bridge('agent_internal_file_preview', { session_id: sessionId, selected_file: item.path, page, sheet });
+  }
+  return bridge('agent_internal_file_preview', { session_id: sessionId, resource, page, sheet });
+}
+
 async function attach(params) {
   const kind = params && params.kind === 'folder' ? 'folder' : 'files';
   let filePaths;
@@ -1430,6 +1448,7 @@ module.exports = {
     agent_turn_status: turnStatus,
     agent_turn_cancel: turnCancel,
     agent_attach: attach,
+    agent_file_preview: filePreview,
     agent_context_remove_file: contextRemoveFile,
     agent_workspace_set: workspaceSet,
     agent_browser: browserAction,

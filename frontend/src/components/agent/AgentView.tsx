@@ -1,5 +1,7 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import type { AgentFilePreviewTarget } from '../../api/agentApi';
+import { FilePreviewContext } from './filePreviewContext';
 import { ArrowDown, ArrowUp, CalendarClock, ChevronDown, CornerDownLeft, CornerDownRight, FileImage, FileSpreadsheet, FileText, FolderOpen, Globe, ListOrdered, PanelLeftClose, PanelLeftOpen, Paperclip, Pencil, Play, Plug, Plus, Search, Settings2, Sparkles, Square, Wrench, X } from 'lucide-react';
 import { mcpApi, type McpServer } from '../../api/mcpApi';
 import { agentApi, type AgentApprovalRules, type AgentChannel, type AgentPermissionMode, type AgentReasoningEffort, type AgentContext, type AgentDelegation, type AgentRoom, type AgentPlan, type AgentProfile, type AgentArtifact, type AgentQuestion, type AgentAttachment, type AgentApproval, type AgentMessage, type AgentSession, type AgentSkill, type AgentToolSpec, type AgentUsage } from '../../api/agentApi';
@@ -35,6 +37,7 @@ import { METHOD_LABELS } from './methodLabels';
 import { useComposerAutocomplete, type ComposerSuggestion } from './useComposerAutocomplete';
 import { ApprovalCard, AssistantTurn, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel, groupTurns, placeArtifacts, type TranscriptView } from './AgentTimeline';
 
+const AgentFilePreview = lazy(() => import('./AgentFilePreview'));
 const POLL_MS = 1500;
 const SESSION_KEY = 'antares-agent-session';
 const QUEUE_KEY = 'antares-agent-queue';
@@ -229,6 +232,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [deciding, setDeciding] = useState<{ id: string; approved: boolean } | null>(null);
   const decisionRef = useRef<string | null>(null);
   const [attachments, setAttachments] = useState<(AgentAttachment & { preview?: string })[]>([]);
+  const [filePreview, setFilePreview] = useState<{ sessionId: string; target: AgentFilePreviewTarget } | null>(null);
+  useEffect(() => { setFilePreview(null); }, [sessionId]);
   const [selectingWorkspace, setSelectingWorkspace] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
@@ -1003,6 +1008,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   };
 
   return (
+    <FilePreviewContext.Provider value={(resource) => {
+      if (sessionId) { setBrowserOpen(false); setFilePreview({ sessionId, target: { kind: 'resource', resource } }); }
+    }}>
     <div
       className="agent-workspace relative flex h-full min-h-0 bg-[var(--bg-surface)]"
       onKeyDown={(e) => {
@@ -1534,7 +1542,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   return (
                     <div key={item.id} className="agent-attachment relative">
                       <WithHoverTooltip label={item.name} placement="top">
-                        <div className="flex size-14 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-[var(--text-secondary)]">
+                        <Button variant="none" size="none" disabled={item.kind === 'folder'} aria-label={`Previsualizar ${item.name}`}
+                          onClick={() => { if (sessionId) { setBrowserOpen(false); setFilePreview({ sessionId, target: { kind: 'attachment', id: item.id, name: item.name } }); } }}
+                          className="flex size-14 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] text-[var(--text-secondary)]">
                           {item.preview ? <img src={item.preview} alt="" className="size-full object-cover" /> : <>
                             <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
                             <span aria-hidden="true" className="max-w-full truncate px-1 text-[9.5px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
@@ -1542,7 +1552,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                             </span>
                           </>}
                           <span className="sr-only">{item.name}</span>
-                        </div>
+                        </Button>
                       </WithHoverTooltip>
                       <WithHoverTooltip label="Quitar archivo" placement="top" className="absolute -right-1.5 -top-1.5">
                         <button
@@ -1744,6 +1754,10 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         </div>
       </main>
 
+      {filePreview && filePreview.sessionId === sessionId && !browserOpen && <Suspense fallback={<p role="status" className="p-4 text-sm text-[var(--text-muted)]">Abriendo vista previa…</p>}>
+        <AgentFilePreview key={`${filePreview.sessionId}:${JSON.stringify(filePreview.target)}`} sessionId={filePreview.sessionId} target={filePreview.target}
+          onClose={() => setFilePreview(null)} />
+      </Suspense>}
       {browserOpen && <AgentBrowserPanel
         onClose={() => setBrowserOpen(false)}
         onAnnotate={sessionId ? (files, source, notes) => {
@@ -1814,5 +1828,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         document.body,
       )}
     </div>
+    </FilePreviewContext.Provider>
   );
 }
