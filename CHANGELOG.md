@@ -26,6 +26,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - La entrega del informe de una delegación de Agent registra su estado e intentos, reintenta con espera acotada (30 s, 2 min y 5 min) y, cuando acumula tres fallos, avisa a la conversación principal y deja de reintentar sola; el roster muestra el reintento pendiente y, agotado, que el informe quedó sin entregar.
 - El plan de Agent admite dependencias entre pasos con ids estables, calcula los pasos listos y bloqueados, y devuelve el siguiente paso; el prompt pide mantener un solo paso en curso.
 - La comprobación de plan vuelve a pedir avance cuando cambia el trabajo pendiente, con un máximo de dos comprobaciones por turno, en lugar de una sola comprobación fija.
+- El motor de Agent recuerda actualizar `task_plan` cada diez pasos de herramienta sin cambios en el plan, antes del aviso de presupuesto y del final del turno.
 - La conversación principal comparte su plan vigente con cada delegación al arrancar o retomar: el plan se guarda en su propio documento al cerrar `task_plan`, de modo que la delegación recibe la meta, los pasos y su estado en un resumen acotado sin releer el historial ni tomarlo como trabajo hecho.
 - `agent_message` acepta `delivery` (`steer` o `follow_up`) para elegir si la delegación lee el mensaje en el turno en curso o al terminarlo, y devuelve el modo aplicado.
 - El cierre de una sala de Agent resume la participación de cada miembro, con sus mensajes, su último texto y cómo terminó su turno, antes de la transcripción.
