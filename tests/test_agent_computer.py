@@ -91,9 +91,61 @@ def test_edit_applies_several_edits_atomically_and_returns_a_numbered_snippet(st
     assert result["replacements"] == 2
     assert path.read_text(encoding="utf-8") == "def a():\n    return 10\n\n\ndef b():\n    return 20\n"
     assert result["snippet"].splitlines() == ["2\t    return 10", "3\t", "4\t", "5\tdef b():", "6\t    return 20"]
+    assert "-    return 1\n+    return 10" in result["diff"]
+    assert "-    return 2\n+    return 20" in result["diff"]
     with pytest.raises(ValueError, match="Edición 2: No se encontró"):
         _run(store, "fs_edit", path="app.py", edits=[{"old": "return 10", "new": "x"}, {"old": "zzz", "new": "y"}])
     assert "return 10" in path.read_text(encoding="utf-8")
+
+
+def test_edit_preserves_cp1252_and_reports_the_encoding(store):
+    path = store.drafts_dir("s1") / "latin.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes("café\n".encode("cp1252"))
+    _run(store, "fs_read", path="latin.txt")
+    result = _run(store, "fs_edit", path="latin.txt", old="café", new="café!")
+    assert result["encoding"] == "cp1252"
+    assert path.read_bytes() == "café!\n".encode("cp1252")
+
+
+def test_edit_preserves_utf8_bom_and_returns_a_diff(store):
+    path = store.drafts_dir("s1") / "bom.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\xef\xbb\xbfhola\n")
+    _run(store, "fs_read", path="bom.txt")
+    result = _run(store, "fs_edit", path="bom.txt", old="hola", new="adiós")
+    assert result["encoding"] == "utf-8-sig" and "-hola\n+adiós" in result["diff"]
+    assert path.read_bytes() == b"\xef\xbb\xbfadi\xc3\xb3s\n"
+
+
+def test_edit_rejects_text_outside_the_source_encoding_without_writing(store):
+    path = store.drafts_dir("s1") / "latin.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes("café\n".encode("cp1252"))
+    _run(store, "fs_read", path="latin.txt")
+    with pytest.raises(ValueError, match="cp1252"):
+        _run(store, "fs_edit", path="latin.txt", old="café", new="café →")
+    assert path.read_bytes() == "café\n".encode("cp1252")
+
+
+def test_edit_refuses_binary_and_delegated_formats(store):
+    _run(store, "fs_write", path="salida.pdf", content="%PDF-1.7")
+    with pytest.raises(ValueError, match="solo edita texto"):
+        _run(store, "fs_edit", path="salida.pdf", old="1.7", new="2.0")
+    _run(store, "fs_write", path="datos.bin", content="a\x00b")
+    with pytest.raises(ValueError, match="binario"):
+        _run(store, "fs_edit", path="datos.bin", old="a", new="c")
+
+
+def test_edit_no_op_returns_without_rewriting(store, monkeypatch):
+    _run(store, "fs_write", path="igual.txt", content="hola")
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("una edición sin cambios no debe escribir")
+
+    monkeypatch.setattr(computer_files, "_atomic_write", forbidden)
+    result = _run(store, "fs_edit", path="igual.txt", old="hola", new="hola")
+    assert result["replacements"] == 1 and result["diff"] == ""
 
 
 def test_edit_matches_lf_fragments_in_crlf_files(store):
