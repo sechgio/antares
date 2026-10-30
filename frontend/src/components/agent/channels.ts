@@ -6,7 +6,7 @@ interface ChannelInfo {
   description: string;
 }
 
-export const CHANNELS = catalog.channels as Record<AgentChannel, ChannelInfo>;
+const CHANNELS = catalog.channels as Record<AgentChannel, ChannelInfo>;
 
 export function channelLabel(channel?: string | null): string | null {
   return channel && Object.prototype.hasOwnProperty.call(CHANNELS, channel)
