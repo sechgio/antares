@@ -2576,6 +2576,60 @@ async function main() {
     await runtime.shutdown();
   }
 
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    let plans = 0;
+    const recheckBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'task_plan', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'task_plan') {
+        plans += 1;
+        const steps = params.params.steps || [];
+        const remaining = steps.filter((step) => step.status !== 'done' && step.status !== 'failed')
+          .map((step) => step.title);
+        const next = remaining[0] || null;
+        return { result: JSON.stringify({
+          recorded: true,
+          remaining,
+          ready: remaining,
+          needs_in_progress: !steps.some((step) => step.status === 'in_progress'),
+          next_step: next,
+          next: next ? `Sigue con: ${next}` : 'Todos los pasos tienen evidencia',
+        }) };
+      }
+      return bridge(method, params);
+    };
+    const faux = await openFaux([
+      fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Cerrar', steps: [
+        { id: 'leer', title: 'Leer', status: 'pending' },
+        { id: 'escribir', title: 'Escribir', status: 'pending', dependencies: ['leer'] },
+      ] })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Leí los datos.'),
+      fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Cerrar', steps: [
+        { id: 'leer', title: 'Leer', status: 'done', evidence: 'fs_read devolvió 12 filas' },
+        { id: 'escribir', title: 'Escribir', status: 'in_progress' },
+      ] })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Escribí el informe.'),
+      fauxAssistantMessage('Terminado: leí los datos y escribí el informe.'),
+    ], recheckBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'cierra el encargo' });
+    assert(await waitIdle(session.id), 'el turno con dos comprobaciones termina');
+    assert(plans === 2, 'el plan se actualiza dos veces');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const texts = listed.messages.filter((m) => m.role === 'assistant').map((m) => m.content);
+    assert(texts.includes('Leí los datos.') && texts.includes('Escribí el informe.')
+      && texts.at(-1).startsWith('Terminado:'), 'la segunda comprobación también continúa el encargo');
+    assert(listed.messages.filter((m) => m.role === 'user').length === 1,
+      'las dos comprobaciones internas no se muestran como mensajes del usuario');
+    assert(faux.getPendingResponseCount() === 0, 'la comprobación se detiene tras la segunda');
+    await runtime.shutdown();
+  }
+
   for (const scenario of [
     { label: 'lectura idempotente recuperable', replay_safe: true, recoverable: true, expected: 4 },
     { label: 'lectura idempotente reintentable', replay_safe: true, retryable: true, expected: 4 },

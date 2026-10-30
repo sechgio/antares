@@ -469,9 +469,39 @@ def test_task_plan_requires_evidence_to_close_a_step():
         {"title": "Crear archivo", "status": "done", "evidence": "fs_read muestra 3 líneas"},
         {"title": "Abrir web", "status": "in_progress"},
     ]})
-    assert out == {"recorded": True, "done": 1, "total": 2, "remaining": ["Abrir web"], "next": "Sigue con: Abrir web"}
+    assert out == {
+        "recorded": True, "done": 1, "total": 2, "remaining": ["Abrir web"], "ready": ["Abrir web"],
+        "needs_in_progress": False, "next_step": "Abrir web", "next": "Sigue con: Abrir web",
+    }
     closed = task_plan.update({"goal": "g", "steps": [{"title": "a", "status": "done", "evidence": "visto"}]})
     assert closed["remaining"] == [] and "comprueba el objetivo" in closed["next"]
+
+
+def test_task_plan_resolves_dependencies_and_ready_steps():
+    out = task_plan.update({"goal": "g", "steps": [
+        {"id": "leer", "title": "Leer", "status": "done", "evidence": "12 filas"},
+        {"title": "Editar", "status": "pending", "dependencies": ["leer"]},
+        {"title": "Publicar", "status": "pending", "dependencies": ["Editar"]},
+    ]})
+    assert out["ready"] == ["Editar"]
+    assert out["remaining"] == ["Editar", "Publicar"]
+    assert out["blocked"] == [{"title": "Publicar", "waiting_for": ["Editar"]}]
+    assert out["needs_in_progress"] is True
+    assert out["next_step"] == "Editar" and out["next"] == "Sigue con: Editar"
+
+    with pytest.raises(ValueError, match="no existe"):
+        task_plan.update({"goal": "g", "steps": [
+            {"title": "a", "status": "pending", "dependencies": ["b"]},
+        ]})
+    with pytest.raises(ValueError, match="sí mismo"):
+        task_plan.update({"goal": "g", "steps": [
+            {"title": "a", "status": "pending", "dependencies": ["a"]},
+        ]})
+    with pytest.raises(ValueError, match="circulares"):
+        task_plan.update({"goal": "g", "steps": [
+            {"title": "a", "status": "pending", "dependencies": ["b"]},
+            {"title": "b", "status": "pending", "dependencies": ["a"]},
+        ]})
 
 
 def test_desktop_keys_and_coordinates_are_validated():

@@ -33,10 +33,12 @@ const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno.
   + 'explica lo que queda pendiente y pide usar Reanudar para continuar.';
 const BUDGET_WARNING_STEPS = 32;
 const MAX_REPEATS = 3;
+const MAX_PLAN_CHECKS = 2;
 const MAX_RECOVERABLE_FAILURES = 6;
 const MAX_RETRY_AFTER_MS = 30_000;
-const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, sigue con '
-  + 'el siguiente y compruébalo; si no puedes completarlo, márcalo como failed en task_plan con la causa y di qué necesitas.';
+const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, retómalo: '
+  + 'mantén un solo paso in_progress y atiende {next}; comprueba el resultado y, si el paso no puede completarse, '
+  + 'replantea el plan o márcalo como failed con la causa y di qué necesitas.';
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
 const SUBAGENT_TOOL = 'subagent_run';
 const SUBAGENT_DESCRIPTION_MAX = 80;
@@ -686,7 +688,9 @@ async function pauseForBudget(api, context, reason = 'tool_budget') {
 function turnState(conversationId) {
   let turn = shared.turns.get(conversationId);
   if (!turn) {
-    turn = { calls: new Map(), failures: new Map(), remaining: null, checked: false };
+    turn = {
+      calls: new Map(), failures: new Map(), remaining: null, checks: 0, lastCheck: null, planNext: null,
+    };
     shared.turns.set(conversationId, turn);
   }
   return turn;
@@ -822,12 +826,18 @@ function planCheck(answer, api) {
       + 'Entrega el resultado usando la evidencia que ya obtuviste; si falta trabajo, continúa el encargo. '
       + 'Si no puedes completarlo, explica el bloqueo concreto.' };
   }
-  if (!turn || turn.checked || !turn.remaining || !turn.remaining.length) return undefined;
+  if (!turn || !turn.remaining || !turn.remaining.length) return undefined;
+  if ((turn.checks || 0) >= MAX_PLAN_CHECKS) return undefined;
   if (answer.errorMessage || answer.stopReason === 'aborted' || answer.stopReason === 'error') return undefined;
   if ((shared.rounds.get(api.conversationId) || 0) >= MAX_TOOL_STEPS) return undefined;
-  turn.checked = true;
+  const signature = JSON.stringify(turn.remaining.slice().sort());
+  if (turn.lastCheck === signature) return undefined;
+  turn.checks = (turn.checks || 0) + 1;
+  turn.lastCheck = signature;
   const steps = turn.remaining.map((title) => `«${title}»`).join(', ');
-  return { continue: `${shared.CHECK_MARKER} ${PLAN_CHECK_TEXT.replace('{steps}', steps)}` };
+  const next = turn.planNext ? `«${turn.planNext}»` : 'el siguiente paso';
+  const notice = PLAN_CHECK_TEXT.replace('{steps}', () => steps).replace('{next}', () => next);
+  return { continue: `${shared.CHECK_MARKER} ${notice}` };
 }
 
 function webAlwaysAllowed(name, context) {
@@ -1063,7 +1073,9 @@ async function executeTool(spec, args, api, context) {
     requiredSkills.delete(api.conversationId);
   }
   if (spec.name === 'task_plan' && !isError && parsed && Array.isArray(parsed.remaining)) {
-    turnState(api.conversationId).remaining = parsed.remaining.map(String);
+    const turn = turnState(api.conversationId);
+    turn.remaining = parsed.remaining.map(String);
+    turn.planNext = typeof parsed.next_step === 'string' ? parsed.next_step : null;
   }
   if (spec.name === 'task_plan' && !isError) {
     const plan = planFromParams(args);
