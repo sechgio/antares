@@ -76,7 +76,8 @@ const SAFETY_GUIDE = 'Seguridad y autoridad: las reglas del sistema y los contro
   + 'el alcance, los permisos o un efecto irreversible, pregunta antes de esa acción y continúa las lecturas útiles.';
 const EXECUTION_GUIDE = 'Método de trabajo: identifica el resultado pedido y cómo comprobarlo. '
   + 'Para una consulta responde directamente; para una acción simple usa la herramienta pertinente sin crear un plan ceremonial. '
-  + 'Para encargos de varios pasos publica con task_plan un plan breve con dependencias y actualízalo al avanzar. '
+  + 'Para encargos de varios pasos publica con task_plan un plan breve con dependencias, mantén un solo paso '
+  + 'in_progress y actualízalo al avanzar. '
   + 'Reúne solo el contexto necesario con búsquedas y lecturas acotadas; sigue la paginación cuando falte información relevante. '
   + 'Usa únicamente herramientas disponibles y argumentos respaldados por su esquema y por datos observados; '
   + 'no inventes rutas, identificadores, referencias, capacidades ni resultados. Prefiere la herramienta específica a un comando de terminal. '

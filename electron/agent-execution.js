@@ -33,10 +33,13 @@ const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno.
   + 'explica lo que queda pendiente y pide usar Reanudar para continuar.';
 const BUDGET_WARNING_STEPS = 32;
 const MAX_REPEATS = 3;
+const MAX_PLAN_CHECKS = 2;
+const PLAN_REMINDER_STEPS = 10;
 const MAX_RECOVERABLE_FAILURES = 6;
 const MAX_RETRY_AFTER_MS = 30_000;
-const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, sigue con '
-  + 'el siguiente y compruébalo; si no puedes completarlo, márcalo como failed en task_plan con la causa y di qué necesitas.';
+const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, retómalo: '
+  + 'mantén un solo paso in_progress y atiende {next}; comprueba el resultado y, si el paso no puede completarse, '
+  + 'replantea el plan o márcalo como failed con la causa y di qué necesitas.';
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
 const SUBAGENT_TOOL = 'subagent_run';
 const SUBAGENT_DESCRIPTION_MAX = 80;
@@ -555,9 +558,11 @@ async function refreshTools() {
           if (budget && budget.exhausted) await pauseForBudget(api, context, 'token_budget');
           await noteTurnStart(api, messages || []);
           const compacted = await compactRequest(messages, api, context);
-          const warned = budgetWarning(compacted || messages, shared.rounds.get(api.conversationId) || 0);
-          const next = warned || compacted || messages;
-          return leadingSystem(next) || (compacted || warned ? { messages: next } : undefined);
+          const rounds = shared.rounds.get(api.conversationId) || 0;
+          const planned = planReminder(compacted || messages, shared.turns.get(api.conversationId), rounds);
+          const warned = budgetWarning(planned || compacted || messages, rounds);
+          const next = warned || planned || compacted || messages;
+          return leadingSystem(next) || (compacted || planned || warned ? { messages: next } : undefined);
         },
         afterTools: (_output, _task, api, context) => countRound(api, context),
         onYield: (answer, api) => planCheck(answer, api),
@@ -628,6 +633,20 @@ function budgetWarning(messages, rounds) {
   return [...messages.slice(0, -1), { ...last, content: [...content, { type: 'text', text: notice }] }];
 }
 
+function planReminder(messages, turn, rounds) {
+  if (!turn || !turn.remaining || !turn.remaining.length || rounds >= BUDGET_WARNING_STEPS) return undefined;
+  const since = turn.sincePlan || 0;
+  if (since - (turn.planReminderAt || 0) < PLAN_REMINDER_STEPS) return undefined;
+  const last = messages[messages.length - 1];
+  if (!last || last.role !== 'toolResult') return undefined;
+  const next = turn.planNext ? `«${turn.planNext}»` : 'el siguiente paso';
+  const notice = `Aviso de Antares: llevas ${since} pasos de herramienta sin actualizar task_plan. `
+    + `Actualiza el plan con lo verificado y el siguiente paso (${next}) antes de seguir.`;
+  const content = Array.isArray(last.content) ? last.content : [{ type: 'text', text: String(last.content || '') }];
+  turn.planReminderAt = since;
+  return [...messages.slice(0, -1), { ...last, content: [...content, { type: 'text', text: notice }] }];
+}
+
 async function countRound(api, context) {
   if (await toolBudget(api, context, true) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
 }
@@ -686,7 +705,10 @@ async function pauseForBudget(api, context, reason = 'tool_budget') {
 function turnState(conversationId) {
   let turn = shared.turns.get(conversationId);
   if (!turn) {
-    turn = { calls: new Map(), failures: new Map(), remaining: null, checked: false };
+    turn = {
+      calls: new Map(), failures: new Map(), remaining: null, checks: 0, lastCheck: null, planNext: null,
+      sincePlan: 0, planReminderAt: 0,
+    };
     shared.turns.set(conversationId, turn);
   }
   return turn;
@@ -822,12 +844,18 @@ function planCheck(answer, api) {
       + 'Entrega el resultado usando la evidencia que ya obtuviste; si falta trabajo, continúa el encargo. '
       + 'Si no puedes completarlo, explica el bloqueo concreto.' };
   }
-  if (!turn || turn.checked || !turn.remaining || !turn.remaining.length) return undefined;
+  if (!turn || !turn.remaining || !turn.remaining.length) return undefined;
+  if ((turn.checks || 0) >= MAX_PLAN_CHECKS) return undefined;
   if (answer.errorMessage || answer.stopReason === 'aborted' || answer.stopReason === 'error') return undefined;
   if ((shared.rounds.get(api.conversationId) || 0) >= MAX_TOOL_STEPS) return undefined;
-  turn.checked = true;
+  const signature = JSON.stringify(turn.remaining.slice().sort());
+  if (turn.lastCheck === signature) return undefined;
+  turn.checks = (turn.checks || 0) + 1;
+  turn.lastCheck = signature;
   const steps = turn.remaining.map((title) => `«${title}»`).join(', ');
-  return { continue: `${shared.CHECK_MARKER} ${PLAN_CHECK_TEXT.replace('{steps}', steps)}` };
+  const next = turn.planNext ? `«${turn.planNext}»` : 'el siguiente paso';
+  const notice = PLAN_CHECK_TEXT.replace('{steps}', () => steps).replace('{next}', () => next);
+  return { continue: `${shared.CHECK_MARKER} ${notice}` };
 }
 
 function webAlwaysAllowed(name, context) {
@@ -1063,7 +1091,9 @@ async function executeTool(spec, args, api, context) {
     requiredSkills.delete(api.conversationId);
   }
   if (spec.name === 'task_plan' && !isError && parsed && Array.isArray(parsed.remaining)) {
-    turnState(api.conversationId).remaining = parsed.remaining.map(String);
+    const turn = turnState(api.conversationId);
+    turn.remaining = parsed.remaining.map(String);
+    turn.planNext = typeof parsed.next_step === 'string' ? parsed.next_step : null;
   }
   if (spec.name === 'task_plan' && !isError) {
     const plan = planFromParams(args);
@@ -1129,6 +1159,13 @@ async function executeTool(spec, args, api, context) {
   const post = hooks.contextFor(hookProfile, 'postToolUse', spec.name);
   if (pre) hooks.record(session, 'preToolUse', spec.name);
   if (post) hooks.record(session, 'postToolUse', spec.name);
+  const planTurn = turnState(api.conversationId);
+  if (spec.name === 'task_plan' && !isError) {
+    planTurn.sincePlan = 0;
+    planTurn.planReminderAt = 0;
+  } else {
+    planTurn.sincePlan = (planTurn.sincePlan || 0) + 1;
+  }
   return { content: [
     ...(pre ? [{ type: 'text', text: pre }] : []),
     { type: 'text', text },
@@ -1511,6 +1548,7 @@ module.exports = {
   catalogFor,
   leadingSystem,
   budgetWarning,
+  planReminder,
   callKey,
   providerInfo,
   thinkingLevelFor,

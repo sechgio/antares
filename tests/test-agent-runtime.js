@@ -218,13 +218,26 @@ async function main() {
       'el prompt base encabeza la petición y los cambios posteriores quedan en su sitio');
     assert(leadingSystem([system, user]) === undefined && leadingSystem([user]) === undefined,
       'una petición que ya empieza por el prompt no se toca');
-    const { budgetWarning } = require('../electron/agent-execution');
+    const { budgetWarning, planReminder } = require('../electron/agent-execution');
     const result = { role: 'toolResult', toolCallId: 't', toolName: 'fs_read', content: [{ type: 'text', text: 'ok' }] };
     assert(budgetWarning([user, result], 31) === undefined && budgetWarning([user, result], 40) === undefined
       && budgetWarning([result, user], 35) === undefined, 'el aviso solo aparece entre el paso 32 y el límite, tras un resultado');
     const warned = budgetWarning([user, result], 32);
     assert(warned[0] === user && warned[1].content[0].text === 'ok' && /llevas 32 de 40 pasos/.test(warned[1].content[1].text)
       && result.content.length === 1, 'el aviso se añade a una copia del último resultado sin tocar el guardado');
+    const planTurn = { remaining: ['Publicar'], planNext: 'Publicar', sincePlan: 9, planReminderAt: 0 };
+    assert(planReminder([user, result], planTurn, 9) === undefined, 'el recordatorio de plan espera diez pasos');
+    planTurn.sincePlan = 10;
+    const reminded = planReminder([user, result], planTurn, 10);
+    assert(reminded[1].content[0].text === 'ok' && /sin actualizar task_plan/.test(reminded[1].content[1].text)
+      && /«Publicar»/.test(reminded[1].content[1].text) && result.content.length === 1,
+    'el recordatorio de plan nombra el siguiente paso y no toca el resultado guardado');
+    assert(planReminder([user, result], planTurn, 10) === undefined, 'el recordatorio no se repite en la misma petición');
+    planTurn.sincePlan = 20;
+    assert(planReminder([user, result], planTurn, 20) !== undefined, 'el recordatorio vuelve diez pasos después');
+    assert(planReminder([user, result], { ...planTurn, remaining: [] }, 20) === undefined,
+      'sin trabajo pendiente no hay recordatorio de plan');
+    assert(planReminder([user, result], planTurn, 32) === undefined, 'el aviso de presupuesto cubre el final del turno');
     assert(define({ custom: true, base_url: 'https://openrouter.ai/api/v1' }, 'anthropic/claude-opus-5-5').compat
       .cacheControlFormat === 'anthropic', 'Claude vía OpenRouter lleva cache_control aunque el proveedor sea propio');
     assert(define({ custom: true, base_url: 'http://x.local/v1', capabilities: { vision: true } }, 'mi-modelo').input.includes('image'),
@@ -2573,6 +2586,101 @@ async function main() {
       'la petición interna de comprobación no aparece como mensaje del usuario');
     assert(listed.messages.filter((m) => m.role === 'user').length === 1, 'el chat solo muestra el mensaje del usuario');
     assert(faux.getPendingResponseCount() === 0, 'la comprobación se pide una sola vez');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    let plans = 0;
+    const recheckBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'task_plan', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'task_plan') {
+        plans += 1;
+        const steps = params.params.steps || [];
+        const remaining = steps.filter((step) => step.status !== 'done' && step.status !== 'failed')
+          .map((step) => step.title);
+        const next = remaining[0] || null;
+        return { result: JSON.stringify({
+          recorded: true,
+          remaining,
+          ready: remaining,
+          needs_in_progress: !steps.some((step) => step.status === 'in_progress'),
+          next_step: next,
+          next: next ? `Sigue con: ${next}` : 'Todos los pasos tienen evidencia',
+        }) };
+      }
+      return bridge(method, params);
+    };
+    const faux = await openFaux([
+      fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Cerrar', steps: [
+        { id: 'leer', title: 'Leer', status: 'pending' },
+        { id: 'escribir', title: 'Escribir', status: 'pending', dependencies: ['leer'] },
+      ] })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Leí los datos.'),
+      fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Cerrar', steps: [
+        { id: 'leer', title: 'Leer', status: 'done', evidence: 'fs_read devolvió 12 filas' },
+        { id: 'escribir', title: 'Escribir', status: 'in_progress' },
+      ] })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Escribí el informe.'),
+      fauxAssistantMessage('Terminado: leí los datos y escribí el informe.'),
+    ], recheckBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'cierra el encargo' });
+    assert(await waitIdle(session.id), 'el turno con dos comprobaciones termina');
+    assert(plans === 2, 'el plan se actualiza dos veces');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const texts = listed.messages.filter((m) => m.role === 'assistant').map((m) => m.content);
+    assert(texts.includes('Leí los datos.') && texts.includes('Escribí el informe.')
+      && texts.at(-1).startsWith('Terminado:'), 'la segunda comprobación también continúa el encargo');
+    assert(listed.messages.filter((m) => m.role === 'user').length === 1,
+      'las dos comprobaciones internas no se muestran como mensajes del usuario');
+    assert(faux.getPendingResponseCount() === 0, 'la comprobación se detiene tras la segunda');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    const probeBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push({ name: 'task_plan', gated: false, kind: 'backend', module: 'computer', inputSchema: schema },
+          { name: 'plan_probe', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'task_plan') {
+        const remaining = params.params.steps
+          .filter((step) => step.status !== 'done' && step.status !== 'failed').map((step) => step.title);
+        return { result: JSON.stringify({ recorded: true, remaining, next_step: remaining[0] || null }) };
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'plan_probe') {
+        return { result: JSON.stringify({ n: params.params.n }) };
+      }
+      return bridge(method, params);
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Cerrar', steps: [
+        { title: 'Leer', status: 'pending' },
+      ] })], { stopReason: 'toolUse' }),
+      ...[1, 2, 3].map((n) => fauxAssistantMessage([fauxToolCall('plan_probe', { n })], { stopReason: 'toolUse' })),
+      fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Cerrar', steps: [
+        { title: 'Leer', status: 'done', evidence: 'leído' },
+      ] })], { stopReason: 'toolUse' }),
+      ...[4, 5, 6].map((n) => fauxAssistantMessage([fauxToolCall('plan_probe', { n })], { stopReason: 'toolUse' })),
+      fauxAssistantMessage('Terminado'),
+    ], probeBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'cierra' });
+    assert(await waitIdle(session.id), 'el turno con recordatorio de plan termina');
+    const conversationId = (await require('../electron/agent-shared').requireSession(session.id)).conversationId;
+    const turn = runtime._internal.shared.turns.get(conversationId);
+    assert(turn && turn.sincePlan === 3,
+      'actualizar task_plan reinicia el contador y los tres pasos posteriores lo avanzan');
     await runtime.shutdown();
   }
 
