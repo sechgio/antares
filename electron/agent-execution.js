@@ -33,6 +33,11 @@ const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno.
   + 'explica lo que queda pendiente y pide usar Reanudar para continuar.';
 const BUDGET_WARNING_STEPS = 32;
 const MAX_REPEATS = 3;
+// Techo absoluto por firma: el polling con resultados nuevos no puede superarlo.
+const MAX_REPEAT_CALLS = 10;
+const MAX_SILENT_TURNS = 5;
+const SILENT_TURN_NOTE = `El agente encadenó ${MAX_SILENT_TURNS} turnos seguidos sin salida visible. `
+  + 'Detuve el turno para evitar un bucle; intenta enviar el encargo de nuevo.';
 const MAX_RECOVERABLE_FAILURES = 6;
 const MAX_RETRY_AFTER_MS = 30_000;
 const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, sigue con '
@@ -559,12 +564,30 @@ async function refreshTools() {
           const next = warned || compacted || messages;
           return leadingSystem(next) || (compacted || warned ? { messages: next } : undefined);
         },
-        afterTools: (_output, _task, api, context) => countRound(api, context),
+        afterTools: (_output, results, api, context) => finishToolRound(results, api, context),
         onYield: (answer, api) => planCheck(answer, api),
         afterResponse: async (message, api, context) => {
           try {
             const sessionId = await sessionForConversation(api.conversationId, api, context);
-            if (emptyAnswer(message) && turnState(api.conversationId).emptyAnswerRetried) {
+            const turn = turnState(api.conversationId);
+            const visible = !!messageText(message.content).trim();
+            if (visible) {
+              turn.silentTurns = 0;
+              turn.pendingSilent = false;
+            } else if (!message.errorMessage && message.stopReason !== 'aborted' && message.stopReason !== 'error') {
+              if ((message.content || []).some((block) => block && block.type === 'toolCall')) {
+                turn.pendingSilent = true;
+                turn.roundProgress = false;
+              } else {
+                turn.silentTurns = (turn.silentTurns || 0) + 1;
+              }
+              if (turn.silentTurns >= MAX_SILENT_TURNS) {
+                message.stopReason = 'error';
+                message.errorMessage = SILENT_TURN_NOTE;
+                message.content.push({ type: 'text', text: SILENT_TURN_NOTE });
+              }
+            }
+            if (emptyAnswer(message) && turn.emptyAnswerRetried) {
               message.stopReason = 'error';
               message.errorMessage = 'El proveedor terminó sin una respuesta visible después de volver a pedir el resultado. Intenta enviar el encargo de nuevo.';
               message.content.push({ type: 'text', text: message.errorMessage });
@@ -628,6 +651,29 @@ function budgetWarning(messages, rounds) {
   return [...messages.slice(0, -1), { ...last, content: [...content, { type: 'text', text: notice }] }];
 }
 
+async function finishToolRound(results, api, context) {
+  const turn = turnState(api.conversationId);
+  if (turn.pendingSilent) {
+    turn.pendingSilent = false;
+    let progressed = !!turn.roundProgress;
+    try {
+      for (const id of results || []) {
+        const entry = await api.entry(id, context);
+        const message = entry && Array.isArray(entry.model) ? entry.model[0] : null;
+        if (!message || !message.isError) continue;
+        const diagnostics = entry.data && Array.isArray(entry.data.diagnostics) ? entry.data.diagnostics : [];
+        if (!diagnostics.some((diagnostic) => diagnostic && diagnostic.code === 'blocked')) progressed = true;
+      }
+    } catch (err) {
+      console.error('[agent] no se pudo revisar la ronda de herramientas:', (err && err.message) || err);
+      progressed = true;
+    }
+    turn.silentTurns = progressed ? 0 : (turn.silentTurns || 0) + 1;
+    turn.roundProgress = false;
+  }
+  await countRound(api, context);
+}
+
 async function countRound(api, context) {
   if (await toolBudget(api, context, true) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
 }
@@ -686,7 +732,7 @@ async function pauseForBudget(api, context, reason = 'tool_budget') {
 function turnState(conversationId) {
   let turn = shared.turns.get(conversationId);
   if (!turn) {
-    turn = { calls: new Map(), failures: new Map(), remaining: null, checked: false };
+    turn = { calls: new Map(), failures: new Map(), remaining: null, checked: false, silentTurns: 0 };
     shared.turns.set(conversationId, turn);
   }
   return turn;
@@ -716,6 +762,9 @@ function noteTurnStart(api, messages) {
     if (turn.emptyAnswerInput !== input?.timestamp) {
       turn.emptyAnswerInput = input?.timestamp;
       delete turn.emptyAnswerRetried;
+      turn.silentTurns = 0;
+      turn.pendingSilent = false;
+      turn.roundProgress = false;
     }
     if (turn.log) return;
     const sessionId = await sessionForConversation(api.conversationId, api, null) || '';
@@ -857,7 +906,7 @@ async function beforeTool(call, api, context) {
   const signature = callSignature(call.name, call.arguments);
   let repeated = calls.get(signature);
   if (!repeated) {
-    repeated = { count: 0, outcome: undefined, exempt: false };
+    repeated = { count: 0, calls: 0, outcome: undefined, exempt: false };
     calls.set(signature, repeated);
   }
   if (repeated.uncertain) {
@@ -874,6 +923,10 @@ async function beforeTool(call, api, context) {
       : !spec.gated || spec.name === 'desktop_observe' ? 'con el mismo resultado o error' : 'con los mismos argumentos';
     return { block: `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno ${detail}. No la repitas: `
       + 'cambia de enfoque o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
+  }
+  if ((repeated.calls || 0) >= MAX_REPEAT_CALLS) {
+    return { block: `Ya llamaste a ${call.name} ${MAX_REPEAT_CALLS} veces en este turno, aun con resultados distintos. `
+      + 'No sigas sondeando: resume lo que comprobaste y pide al usuario cómo continuar.' };
   }
   if (failing && failing.count >= MAX_REPEATS) {
     return { block: `Las últimas ${MAX_REPEATS} llamadas a ${call.name} fallaron por la misma causa aunque cambiaste los argumentos `
@@ -1070,13 +1123,15 @@ async function executeTool(spec, args, api, context) {
     if (plan) await savePlan(sessionId, plan);
   }
   const image = isError || !await acceptsImages(api, context) ? null : await resultImage(parsed);
-  const calls = turnState(api.conversationId).calls;
+  const turn = turnState(api.conversationId);
+  const calls = turn.calls;
   const signature = callSignature(spec.name, args);
   let repeated = calls.get(signature);
   if (!repeated) {
-    repeated = { count: 0, outcome: undefined, exempt: false };
+    repeated = { count: 0, calls: 0, outcome: undefined, exempt: false };
     calls.set(signature, repeated);
   }
+  repeated.calls = (repeated.calls || 0) + 1;
   let outcome = stableJson(parsed ?? text);
   const capture = parsed && (parsed.image || (parsed.observation && parsed.observation.image));
   if (capture && typeof capture.path === 'string') {
@@ -1088,6 +1143,9 @@ async function executeTool(spec, args, api, context) {
     ? stableJson({ url: parsed && parsed.page && parsed.page.url ? String(parsed.page.url) : '' })
     : outcome;
   const hash = crypto.createHash('sha256').update(progress).digest('hex');
+  if (!isError && (!trackOutcome || repeated.outcome === undefined || repeated.outcome !== hash)) {
+    turn.roundProgress = true;
+  }
   repeated.uncertain = !!(parsed && parsed.uncertain === true && (spec.gated || spec.replay_safe !== true));
   const exempt = !!(!spec.gated && spec.replay_safe === true && isError && parsed && typeof parsed === 'object'
     && (parsed.retryable === true || parsed.recoverable === true) && parsed.uncertain !== true);

@@ -342,6 +342,20 @@ def test_stream_response_emits_deltas_for_native_protocol():
     assert res["content"][0]["text"] == "Hola"
 
 
+def test_stream_response_detects_silence_and_discards_partial_text():
+    class Stalled:
+        def __init__(self):
+            self.lines = [b'data: {"choices":[{"index":0,"delta":{"content":"parcial"}}]}\n\n']
+
+        def readline(self, _limit):
+            if self.lines:
+                return self.lines.pop(0)
+            raise TimeoutError
+
+    with pytest.raises(ValueError, match="dejó de enviar datos"):
+        agent_chat._stream_response(Stalled(), silence_s=0.01)
+
+
 def test_recovery_does_not_duplicate_a_response_written_before_checkpoint_cleanup(tmp_path):
     store = _store(tmp_path)
     session = seed_session(store, "s1", _partial_text="Progreso")
