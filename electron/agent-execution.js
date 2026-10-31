@@ -555,9 +555,11 @@ async function refreshTools() {
           if (budget && budget.exhausted) await pauseForBudget(api, context, 'token_budget');
           await noteTurnStart(api, messages || []);
           const compacted = await compactRequest(messages, api, context);
-          const warned = budgetWarning(compacted || messages, shared.rounds.get(api.conversationId) || 0);
-          const next = warned || compacted || messages;
-          return leadingSystem(next) || (compacted || warned ? { messages: next } : undefined);
+          const prepared = compacted || messages;
+          const enveloped = envelopeToolResults(prepared);
+          const warned = budgetWarning(enveloped, shared.rounds.get(api.conversationId) || 0);
+          const next = warned || enveloped;
+          return leadingSystem(next) || (compacted || warned || enveloped !== prepared ? { messages: next } : undefined);
         },
         afterTools: (_output, _task, api, context) => countRound(api, context),
         onYield: (answer, api) => planCheck(answer, api),
@@ -616,6 +618,50 @@ function leadingSystem(messages) {
   const index = messages.findIndex((message) => message.role === 'system');
   if (index <= 0) return undefined;
   return { messages: [messages[index], ...messages.slice(0, index), ...messages.slice(index + 1)] };
+}
+
+// Las salidas de herramientas externas llegan al modelo dentro de un bloque
+// delimitado; una etiqueta falsa en el contenido no puede cerrarlo ni abrir
+// otro. Los resultados de control (skills, memoria, pregunta al usuario) no se
+// envuelven porque su contenido sí son instrucciones de trabajo.
+const CONTROL_TOOL_RESULTS = new Set([
+  'ask_user', 'skills_list', 'skills_read', 'memory_search', 'memory_remember', 'procedure_learn',
+  'tools_load', 'task_plan',
+]);
+
+function escapeToolOutputTags(text) {
+  return String(text).replace(/<(\/?)\s*tool_output\b/gi, '&lt;$1tool_output');
+}
+
+function toolOutputBlock(toolName, text) {
+  const origin = (String(toolName || 'herramienta').replace(/[^A-Za-z0-9_.:-]+/g, '_').slice(0, 80)
+    || 'herramienta');
+  return `<tool_output origin="${origin}">\n${escapeToolOutputTags(text)}\n</tool_output>`;
+}
+
+function envelopeToolResults(messages) {
+  if (!Array.isArray(messages)) return messages;
+  let changed = false;
+  const next = messages.map((message) => {
+    if (!message || message.role !== 'toolResult' || CONTROL_TOOL_RESULTS.has(message.toolName)) return message;
+    const content = Array.isArray(message.content)
+      ? message.content
+      : [{ type: 'text', text: String(message.content || '') }];
+    const body = content
+      .filter((block) => block && block.type === 'text')
+      .map((block) => block.text || '')
+      .join('\n');
+    if (!body) return message;
+    changed = true;
+    return {
+      ...message,
+      content: [
+        { type: 'text', text: toolOutputBlock(message.toolName, body) },
+        ...content.filter((block) => !block || block.type !== 'text'),
+      ],
+    };
+  });
+  return changed ? next : messages;
 }
 
 function budgetWarning(messages, rounds) {
@@ -1511,6 +1557,8 @@ module.exports = {
   catalogFor,
   leadingSystem,
   budgetWarning,
+  envelopeToolResults,
+  toolOutputBlock,
   callKey,
   providerInfo,
   thinkingLevelFor,
