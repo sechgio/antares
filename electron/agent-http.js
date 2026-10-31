@@ -5,6 +5,9 @@ const net = require('node:net');
 
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 const MAX_TIMEOUT_MS = 10_000;
+const MAX_RETRY_AFTER_MS = 30_000;
+const RETRY_BASE_DELAY_MS = 1_000;
+const RETRY_JITTER_RATIO = 0.25;
 
 function _ipv4Private(address) {
   const parts = address.split('.').map(Number);
@@ -44,6 +47,48 @@ function _parse(raw) {
   const loopback = LOOPBACK.has(host);
   if (url.protocol === 'http:' && !loopback) throw new Error('La espera HTTP solo usa http en localhost; fuera de local usa https');
   return { url, host, loopback };
+}
+
+function _headerValue(headers, name) {
+  if (!headers) return null;
+  if (typeof headers.get === 'function') return headers.get(name);
+  const key = Object.keys(headers).find((candidate) => candidate.toLowerCase() === name);
+  return key === undefined ? null : headers[key];
+}
+
+function isRetryableStatus(status) {
+  return status === 429 || (status >= 500 && status <= 599);
+}
+
+function clampRetryAfterMs(value, maxDelayMs = MAX_RETRY_AFTER_MS) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  return Math.min(Math.max(value, 0), maxDelayMs);
+}
+
+function retryAfterMs(headers, maxDelayMs = MAX_RETRY_AFTER_MS, now = Date.now()) {
+  const raw = _headerValue(headers, 'retry-after');
+  if (raw === null || raw === undefined || String(raw).trim() === '') return null;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) return clampRetryAfterMs(seconds * 1_000, maxDelayMs);
+  const date = Date.parse(String(raw));
+  if (!Number.isFinite(date)) return null;
+  return clampRetryAfterMs(date - now, maxDelayMs);
+}
+
+function retryDelayMs(attempt, options = {}) {
+  const {
+    retryAfter = null,
+    baseDelayMs = RETRY_BASE_DELAY_MS,
+    maxDelayMs = MAX_RETRY_AFTER_MS,
+    random = Math.random,
+  } = options;
+  if (retryAfter !== null && retryAfter !== undefined && Number.isFinite(retryAfter)) {
+    return clampRetryAfterMs(retryAfter, maxDelayMs);
+  }
+  const step = Number.isFinite(attempt) ? Math.max(0, Math.floor(attempt)) : 0;
+  const exponential = Math.min(baseDelayMs * 2 ** step, maxDelayMs);
+  const jitter = Math.floor(random() * Math.min(exponential * RETRY_JITTER_RATIO, maxDelayMs - exponential));
+  return Math.min(exponential + jitter, maxDelayMs);
 }
 
 async function validate(raw) {
@@ -89,4 +134,13 @@ async function check(raw, options = {}) {
   return { ...result, expected, ready: result.status === expected };
 }
 
-module.exports = { check, validate, _private };
+module.exports = {
+  check,
+  validate,
+  _private,
+  MAX_RETRY_AFTER_MS,
+  isRetryableStatus,
+  retryAfterMs,
+  retryDelayMs,
+  clampRetryAfterMs,
+};

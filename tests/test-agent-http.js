@@ -2,7 +2,15 @@
 
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { check, validate } = require('../electron/agent-http');
+const {
+  check,
+  validate,
+  MAX_RETRY_AFTER_MS,
+  isRetryableStatus,
+  retryAfterMs,
+  retryDelayMs,
+  clampRetryAfterMs,
+} = require('../electron/agent-http');
 
 async function rejects(promise, pattern) {
   try {
@@ -15,6 +23,32 @@ async function rejects(promise, pattern) {
 }
 
 async function main() {
+  assert.equal(MAX_RETRY_AFTER_MS, 30_000);
+  for (const status of [429, 500, 501, 502, 503, 504, 529, 599]) {
+    assert.equal(isRetryableStatus(status), true, `${status} es reintentable`);
+  }
+  for (const status of [400, 401, 404, 408, 600]) {
+    assert.equal(isRetryableStatus(status), false, `${status} no es reintentable`);
+  }
+  const retryHeader = (value) => ({ get: (name) => (name.toLowerCase() === 'retry-after' ? value : null) });
+  assert.equal(retryAfterMs(retryHeader('2')), 2_000);
+  assert.equal(retryAfterMs(retryHeader('45')), MAX_RETRY_AFTER_MS);
+  assert.equal(retryAfterMs(retryHeader('-1')), 0);
+  assert.equal(retryAfterMs(retryHeader('soon')), null);
+  assert.equal(retryAfterMs({ 'Retry-After': '3' }), 3_000);
+  const dateNow = Date.parse('2026-10-31T12:00:00Z');
+  assert.equal(retryAfterMs(retryHeader(new Date(dateNow + 10_000).toUTCString()), MAX_RETRY_AFTER_MS, dateNow), 10_000);
+  assert.equal(clampRetryAfterMs(60_000), MAX_RETRY_AFTER_MS);
+  assert.equal(clampRetryAfterMs(-1), 0);
+  assert.equal(clampRetryAfterMs(undefined), 0);
+  assert.equal(retryDelayMs(0, { random: () => 0 }), 1_000);
+  assert.equal(retryDelayMs(1, { random: () => 0 }), 2_000);
+  assert.equal(retryDelayMs(2, { random: () => 0 }), 4_000);
+  assert.equal(retryDelayMs(10, { random: () => 0 }), MAX_RETRY_AFTER_MS);
+  assert.equal(retryDelayMs(0, { random: () => 0.5 }), 1_125);
+  assert.equal(retryDelayMs(0, { retryAfter: 12_000, random: () => 0 }), 12_000);
+  assert.equal(retryDelayMs(0, { retryAfter: 60_000 }), MAX_RETRY_AFTER_MS);
+
   const server = http.createServer((req, res) => {
     if (req.url === '/ok') { res.writeHead(200); res.end('ok'); return; }
     if (req.url === '/created') { res.writeHead(204); res.end(); return; }

@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const { channelFor, channelLabel } = require('./agent-channels');
+const { clampRetryAfterMs } = require('./agent-http');
 
 const {
   shared,
@@ -34,7 +35,6 @@ const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno.
 const BUDGET_WARNING_STEPS = 32;
 const MAX_REPEATS = 3;
 const MAX_RECOVERABLE_FAILURES = 6;
-const MAX_RETRY_AFTER_MS = 30_000;
 const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, sigue con '
   + 'el siguiente y compruébalo; si no puedes completarlo, márcalo como failed en task_plan con la causa y di qué necesitas.';
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
@@ -885,7 +885,7 @@ async function beforeTool(call, api, context) {
   }
   const retryDelay = Math.max(repeated.retryAt || 0, failing?.retryAt || 0) - Date.now();
   if (retryDelay > 0) {
-    await waitResource(context, Math.min(retryDelay, MAX_RETRY_AFTER_MS));
+    await waitResource(context, clampRetryAfterMs(retryDelay));
     if (!childControl && !await toolEnabled(sessionId, call.name, context)) {
       return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
     }
@@ -1095,8 +1095,7 @@ async function executeTool(spec, args, api, context) {
     repeated.exempt = true;
     repeated.count = 0;
     repeated.recoveries = (repeated.recoveries || 0) + 1;
-    repeated.retryAt = Date.now() + (Number.isFinite(parsed.retry_after_ms)
-      ? Math.min(MAX_RETRY_AFTER_MS, Math.max(0, parsed.retry_after_ms)) : 0);
+    repeated.retryAt = Date.now() + clampRetryAfterMs(parsed.retry_after_ms);
   } else if (trackOutcome && repeated.outcome !== undefined && repeated.outcome !== hash) {
     repeated.count = 1;
     repeated.exempt = false;
@@ -1326,7 +1325,7 @@ async function dispatchNative(spec, request, context) {
       ...(err?.code ? { code: String(err.code) } : {}),
       ...(err?.retryable === true ? { retryable: true } : {}),
       ...(err?.recoverable === true ? { recoverable: true } : {}),
-      ...(Number.isFinite(err?.retryAfterMs) ? { retry_after_ms: Math.max(0, Math.round(err.retryAfterMs)) } : {}),
+      ...(Number.isFinite(err?.retryAfterMs) ? { retry_after_ms: Math.round(clampRetryAfterMs(err.retryAfterMs)) } : {}),
       ...(uncertain ? { interrupted: true, uncertain: true } : {}),
     });
   }
