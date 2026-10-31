@@ -60,6 +60,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - El navegador de Agent resuelve el DNS de cada destino antes de salir: un dominio público que resuelva a una dirección privada o local (DNS del atacante o rebinding) se bloquea en `web_open`, `web_download` y en cada petición de la sesión del navegador (redirecciones y subrecursos incluidos); sin resolución verificable no navega.
 
 ### Fixed
+- `npm run dev` comprueba y repara las dependencias de la raíz y del frontend, restaura el binario de Electron si falta y avisa de archivos bloqueados antes de reinstalar con Antares abierto.
 - La compactación del contexto de Agent pide el resumen sin razonamiento y con el techo de salida de pi-durable: con modelos como DeepSeek V4 el razonamiento agotaba los 2048 tokens y siempre caía en el resumen de emergencia. Reintenta los fallos transitorios del proveedor y suma el gasto del resumen al medidor; el resumen ya no se muestra en el chat, salvo un aviso breve si fue de emergencia.
 - Las delegaciones de Agent razonan con el esfuerzo de la conversación principal; antes arrancaban sin razonamiento, o en bajo si su ficha fijaba un modelo.
 - El guardián que ajusta cada petición de Agent a la ventana del modelo mide cuánto ahorra cada recorte: antes partía del uso fijo que informa el proveedor, ningún recorte bajaba la cifra y un exceso pequeño acababa plegando toda la conversación en un resumen mecánico.
