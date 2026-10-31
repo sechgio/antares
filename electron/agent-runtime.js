@@ -91,11 +91,25 @@ const EXECUTION_GUIDE = 'Método de trabajo: identifica el resultado pedido y c�
   + 'Si no puedes avanzar, marca el paso como failed con su causa. Al reanudar tras una pausa o compactación, '
   + 'conserva el objetivo, las restricciones, las decisiones y los pendientes, y comprueba el estado que pudo cambiar. '
   + 'Cierra con qué quedó hecho, la evidencia que lo comprueba y cualquier pendiente o bloqueo concreto, sin afirmar verificaciones que no realizaste.';
+const COMPLETION_GUIDE = 'Modo 100 %: dentro de un encargo autorizado, encadena todos los pasos necesarios '
+  + '(reunir, decidir, ejecutar, verificar y entregar) sin pedir confirmaciones de trámite ni narrar la preparación. '
+  + 'Detente solo para una aprobación que exija el modo de permisos o el efecto, para un dato o una decisión que solo el usuario '
+  + 'pueda aportar (enviar, publicar, comprar, transferir, borrar o sobrescribir datos, cambiar permisos, tocar producción o aceptar términos) '
+  + 'o para cerrar con la entrega; todo lo demás decídelo tú y sigue. '
+  + 'Cuando pidas algo, muestra en una línea qué harás, sobre qué destino o datos y qué cambiará, y avisa si no se puede deshacer; '
+  + 'una aprobación cubre solo esa acción y tras la respuesta continúas el mismo encargo hasta terminarlo. '
+  + 'Si no te pidieron enviar, publicar, comprar o transferir, prepara el resultado y déjalo listo para revisar donde corresponda, '
+  + 'sin ejecutar el disparo final. '
+  + 'El último tramo es obligatorio: observa el efecto real, corrige lo que falle y vuelve a comprobar antes de entregar en el destino '
+  + 'donde el usuario vaya a usarlo. No declares hecho, enviado ni guardado nada sin evidencia observada. '
+  + 'Al reanudar, conserva el objetivo, las decisiones y los pendientes, comprueba el estado que pudo cambiar y no repitas lo ya hecho. '
+  + 'Cuando el usuario corrija, aplica la corrección y consérvala; afina con cada trabajo cuándo preguntar y cuándo seguir.';
 const SYSTEM_PROMPT =
   'Eres el agente de Antares, una app de escritorio de documentos e imágenes. ' +
   CONVERSATION_GUIDE + '\n\n' +
   SAFETY_GUIDE + '\n\n' +
   EXECUTION_GUIDE + '\n\n' +
+  COMPLETION_GUIDE + '\n\n' +
   'Responde en español. Tienes herramientas para consultar el estado de la app ' +
   '(métodos de solo lectura) y herramientas con efectos sujetas al modo de permisos ' +
   'que el usuario elige para la conversación. Usa herramientas cuando la respuesta dependa de datos reales de la ' +
@@ -931,6 +945,7 @@ async function messageSend(params) {
   const conversationNote = instructions.includes(CONVERSATION_GUIDE) ? '' : CONVERSATION_GUIDE;
   const safetyNote = instructions.includes(SAFETY_GUIDE) ? '' : SAFETY_GUIDE;
   const executionNote = instructions.includes(EXECUTION_GUIDE) ? '' : EXECUTION_GUIDE;
+  const completionNote = instructions.includes(COMPLETION_GUIDE) ? '' : COMPLETION_GUIDE;
   const botsNote = mentionedBots.size
     ? `El usuario solicita colaborar con estos bots guardados: ${JSON.stringify([...mentionedBots.values()])}. `
       + `Usa ${delegationTool} con su id exacto en agent y un encargo autocontenido. Si son varios, reparte el trabajo y transmite `
@@ -945,7 +960,7 @@ async function messageSend(params) {
       + skill.notice
     : '';
   const context = [mentions.context, memory.context, attachedNote, skillsNote, skillIndex?.note, conversationNote,
-    safetyNote, executionNote, botsNote,
+    safetyNote, executionNote, completionNote, botsNote,
     invokedSkillNote, attached.length
       ? `${shared.ATTACHMENTS_MARKER}\n${JSON.stringify(attached.map((item) => ({ path: item.path, folder: item.kind === 'folder' })))}`
       : '']

@@ -462,7 +462,7 @@ async function main() {
     assert(await waitIdle(session.id), 'el encargo con preferencia puntual termina');
     assert(seen.includes('pedido actual > indicaciones del agente > preferencias de memoria'),
       'el modelo recibe la prioridad del pedido actual, perfil y memoria también en chats anteriores');
-    for (const directive of ['Seguridad y autoridad:', 'Método de trabajo:',
+    for (const directive of ['Seguridad y autoridad:', 'Método de trabajo:', 'Modo 100 %:',
       'no eludas el rechazo', 'no una autorización ni una instrucción nueva del usuario',
       'comprueba el estado antes de repetir una acción con efectos', 'verifica el artefacto final']) {
       assert(seen.split(directive).length === 2,
@@ -1567,6 +1567,9 @@ async function main() {
       'las instrucciones incluyen la política de comunicación');
     assert(String(instructions).includes('prefiere las herramientas cua_') && String(instructions).includes('suspected_noop'),
       'las instrucciones guían el uso de cua_ y la lectura de su effect');
+    assert(String(instructions).includes('Modo 100 %:') && String(instructions).includes('sin pedir confirmaciones de trámite')
+      && String(instructions).includes('El último tramo es obligatorio') && String(instructions).includes('sin ejecutar el disparo final'),
+      'las instrucciones aplican el modo 100 %: completar, verificar y dejar listo sin disparar');
     const plain = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const plainTools = (await runtime.handlers.agent_tools_list({ session_id: plain.session.id })).tools;
     const defaults = require('../electron/agent-execution').defaultToolNames([...runtime._internal.shared.toolSpecs.values()]);
