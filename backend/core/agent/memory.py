@@ -6,6 +6,7 @@ import threading
 import time
 import unicodedata
 import uuid
+from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -35,23 +36,27 @@ _SECRET_RE = re.compile(
     r"|(?:password|contraseña|clave|api[_ -]?key|token|secret|client[_ ]secret)\s*[:=]\s*\S+)",
     re.IGNORECASE,
 )
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 _TEXT = {"type": "string", "maxLength": MAX_TEXT}
 TOOL_SPECS: list[JsonObject] = [
     {
         "name": "memory_search", "module": "agent", "gated": False,
-        "description": "Memoria · memory_search (solo lectura): buscar preferencias, hechos y procedimientos guardados",
+        "description": ("Memoria · memory_search (solo lectura): buscar preferencias, hechos, procedimientos "
+                        "y entradas del diario guardados"),
         "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
     },
     {
         "name": "memory_remember", "module": "agent", "gated": True,
         "description": (
-            "Memoria · memory_remember: guardar una preferencia o un hecho duradero que el usuario indicó. "
-            "Nunca guardes contraseñas, claves ni tokens"
+            "Memoria · memory_remember: guardar una preferencia, un hecho duradero o una entrada del diario "
+            "que el usuario indicó. Nunca guardes contraseñas, claves ni tokens"
         ),
         "inputSchema": {"type": "object", "properties": {
-            "kind": {"type": "string", "enum": ["preference", "fact"]},
+            "kind": {"type": "string", "enum": ["preference", "fact", "journal"]},
             "title": {"type": "string", "maxLength": MAX_TITLE}, "content": _TEXT,
+            "date": {"type": "string", "pattern": _DATE_RE.pattern,
+                     "description": "Fecha del diario en formato AAAA-MM-DD; si se omite, hoy"},
         }, "required": ["kind", "title", "content"]},
     },
     {
@@ -115,6 +120,21 @@ def _steps(value: object) -> list[JsonObject]:
     return steps
 
 
+def _journal_date(value: object) -> str:
+    if value is None or value == "":
+        return date.today().isoformat()
+    if not isinstance(value, str) or not _DATE_RE.fullmatch(value.strip()):
+        raise ValueError("La fecha del diario debe usar AAAA-MM-DD")
+    try:
+        return date.fromisoformat(value.strip()).isoformat()
+    except ValueError as err:
+        raise ValueError("La fecha del diario debe usar AAAA-MM-DD") from err
+
+
+def _journal_age(view: JsonObject) -> int:
+    return max(0, (date.today() - date.fromisoformat(str(view["date"]))).days)
+
+
 class MemoryStore:
     def __init__(self, base_dir: Path) -> None:
         self._path = base_dir / "memory.json"
@@ -161,11 +181,13 @@ class MemoryStore:
         self._items[str(item["id"])] = item
         return item
 
-    def _same(self, kind: str, title: str, session_id: str) -> JsonObject | None:
+    def _same(self, kind: str, title: str, session_id: str, day: str | None = None) -> JsonObject | None:
         key = _key(title)
         profile_id = self._profiles.get(session_id)
-        return next((item for item in self._items.values() if item["kind"] == kind and item["key"] == key
-                     and item.get("profile_id") == profile_id), None)
+        return next((item for item in self._items.values()
+                     if item["kind"] == kind and item["key"] == key
+                     and item.get("profile_id") == profile_id
+                     and (kind != "journal" or item["versions"][-1].get("date") == day)), None)
 
     def _visible(self, item: JsonObject, session_id: str, *, profile_id: str | None = None,
                  memory_scope: str | None = None) -> bool:
@@ -188,21 +210,27 @@ class MemoryStore:
 
     def remember(self, session_id: str, params: JsonObject) -> JsonObject:
         kind = params.get("kind")
-        if kind not in ("preference", "fact"):
-            raise ValueError("kind debe ser preference o fact")
+        if kind not in ("preference", "fact", "journal"):
+            raise ValueError("kind debe ser preference, fact o journal")
+        if kind != "journal" and params.get("date"):
+            raise ValueError("Solo el diario lleva fecha")
         title = _clean(params.get("title"), "un título", MAX_TITLE)
         content = _clean(params.get("content"), "el contenido", MAX_TEXT)
+        journal_date = _journal_date(params.get("date")) if kind == "journal" else None
         source = {"kind": "agent", "session_id": session_id}
+        data = {"content": content}
+        if journal_date:
+            data["date"] = journal_date
         with self._lock:
             self._check_writable(session_id)
-            existing = self._same(str(kind), title, session_id)
+            existing = self._same(str(kind), title, session_id, journal_date)
             if existing is not None and existing["versions"][-1]["source"]["kind"] == "user":
                 raise ValueError("El usuario corrigió este recuerdo; propón el cambio en el chat en lugar de reemplazarlo")
             if existing is None:
-                item = self._create(str(kind), title, {"content": content}, source)
+                item = self._create(str(kind), title, data, source)
             else:
                 item = existing
-                self._add_version(item, {"content": content}, source)
+                self._add_version(item, data, source)
             self._write()
             return self._view(item)
 
@@ -264,6 +292,13 @@ class MemoryStore:
                         data["when"] = _clean(params.get("when"), "cuándo aplica", MAX_TEXT)
                     if "steps" in params:
                         data["steps"] = _steps(params.get("steps"))
+                elif item["kind"] == "journal":
+                    if "content" in params:
+                        data["content"] = _clean(params.get("content"), "el contenido", MAX_TEXT)
+                    if "date" in params:
+                        data["date"] = _journal_date(params.get("date"))
+                    if not {"content", "date", "title"} & params.keys():
+                        raise ValueError("Indica el contenido o la fecha del diario")
                 else:
                     data["content"] = _clean(params.get("content"), "el contenido", MAX_TEXT)
                 if "title" in params:
@@ -305,13 +340,15 @@ class MemoryStore:
                         item, session_id, profile_id=profile_id, memory_scope=memory_scope)):
                     continue
                 view = self._view(item)
-                text = " ".join(str(view.get(k) or "") for k in ("title", "content", "when"))
+                text = " ".join(str(view.get(k) or "") for k in ("title", "content", "when", "date"))
                 text += " " + " ".join(f"{s['tool']} {s['purpose']}" for s in view.get("steps") or [])
-                score = len(words & _words(text))
-                if score or not words:
-                    scored.append((score, int(item["updated_at"]), view))
-            scored.sort(key=lambda entry: (-entry[0], -entry[1]))
-            return [view for _, _, view in scored[:limit]]
+                matches = len(words & _words(text))
+                if words and not matches:
+                    continue
+                age = _journal_age(view) if item["kind"] == "journal" else 0
+                scored.append((matches, age, int(item["updated_at"]), view))
+            scored.sort(key=lambda entry: (-entry[0], entry[1], -entry[2]))
+            return [entry[3] for entry in scored[:limit]]
 
     def _invalid(self, view: JsonObject, versions: dict[str, str], templates: set[str] | None,
                  accounts: dict[str, str] | None = None) -> str | None:
@@ -352,6 +389,8 @@ class MemoryStore:
             chosen: list[tuple[int, JsonObject]] = []
             for item in self._items.values():
                 if item["status"] != "active" or not self._visible(item, session_id):
+                    continue
+                if item["kind"] == "journal":
                     continue
                 view = self._view(item)
                 if item["kind"] == "procedure":

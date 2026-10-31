@@ -325,13 +325,14 @@ export interface AgentContext {
 
 export interface AgentMemoryItem {
   id: string;
-  kind: 'preference' | 'fact' | 'procedure';
+  kind: 'preference' | 'fact' | 'journal' | 'procedure';
   title: string;
   status: 'active' | 'disabled' | 'suspended';
   reason: string | null;
   version: number;
   updated_at: number;
   content?: string;
+  date?: string;
   when?: string;
   steps?: { tool: string; purpose: string }[];
   source: { kind: 'user' | 'agent'; session_id?: string; op_ids?: string[]; artifact_ids?: string[]; reverted_to?: number };

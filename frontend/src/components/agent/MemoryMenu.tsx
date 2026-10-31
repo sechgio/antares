@@ -13,6 +13,7 @@ import { METHOD_LABELS } from './methodLabels';
 const KIND_LABELS: Record<AgentMemoryItem['kind'], string> = {
   preference: 'Preferencia',
   fact: 'Hecho',
+  journal: 'Diario',
   procedure: 'Procedimiento',
 };
 
@@ -131,6 +132,9 @@ export default function MemoryMenu() {
                       {item.status === 'disabled' ? 'Desactivado' : `Suspendido: ${item.reason ?? 'revísalo antes de reutilizarlo'}`}
                     </p>
                   )}
+                  {item.kind === 'journal' && item.date && (
+                    <p className="tabular-nums text-[10px] text-[var(--text-muted)]">{item.date}</p>
+                  )}
                   {editing?.id === item.id ? (
                     <Textarea
                       aria-label={`Corregir ${item.title}`}
@@ -180,7 +184,9 @@ export default function MemoryMenu() {
           </ul>
           {items.length === 0 && (
             <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
-              {loading ? 'Cargando memoria…' : 'El agente aún no ha guardado preferencias ni procedimientos.'}
+              {loading
+                ? 'Cargando memoria…'
+                : 'El agente aún no ha guardado preferencias, hechos, procedimientos ni entradas del diario.'}
             </p>
           )}
           <p className="shrink-0 text-[10px] leading-relaxed text-[var(--text-muted)]">

@@ -1,4 +1,5 @@
 import json
+from datetime import date, timedelta
 
 import pytest
 
@@ -248,3 +249,100 @@ def test_relevant_fact_is_not_starved_by_long_preferences(store):
     context = mem.context("s1", "proyecto orquídea violeta", VERSIONS)
     assert fact["id"] in context["items"]
     assert len(context["context"]) <= memory.CONTEXT_CHARS + 200
+
+
+def test_journal_stores_date_and_source_and_only_appears_in_search(store, tmp_path):
+    mem = memory.memory_for(store)
+    today = date.today().isoformat()
+    journal = mem.remember("s1", {"kind": "journal", "title": "Reunión de obra",
+                                  "content": "Se acordó revisar el metrado"})
+    assert journal["kind"] == "journal" and journal["date"] == today
+    assert journal["source"] == {"kind": "agent", "session_id": "s1"}
+    assert journal["version"] == 1 and len(journal["versions"]) == 1
+    context = mem.context("s1", "reunión metrado", VERSIONS)
+    assert journal["id"] not in context["items"] and "Reunión de obra" not in context["context"]
+    found = mem.search("reunión", session_id="s1")
+    assert [item["id"] for item in found] == [journal["id"]]
+    assert found[0]["date"] == today
+    assert mem.search(today, session_id="s1")[0]["id"] == journal["id"]
+    reloaded = memory.MemoryStore(tmp_path)
+    assert next(item for item in reloaded.items() if item["id"] == journal["id"])["date"] == today
+
+
+def test_journal_search_weights_recency(store):
+    mem = memory.memory_for(store)
+    old = mem.remember("s1", {"kind": "journal", "title": "Visita antigua", "content": "Revisión de avance",
+                              "date": (date.today() - timedelta(days=400)).isoformat()})
+    new = mem.remember("s1", {"kind": "journal", "title": "Visita reciente", "content": "Revisión de avance"})
+    results = mem.search("revisión avance", session_id="s1")
+    assert [item["id"] for item in results] == [new["id"], old["id"]]
+
+
+def test_journal_search_orders_by_date_within_the_same_month(store):
+    mem = memory.memory_for(store)
+    newer = mem.remember("s1", {"kind": "journal", "title": "Visita de hoy", "content": "Revisión de avance"})
+    older = mem.remember("s1", {"kind": "journal", "title": "Visita de hace 5 días", "content": "Revisión de avance",
+                                "date": (date.today() - timedelta(days=5)).isoformat()})
+    results = mem.search("revisión avance", session_id="s1")
+    assert [item["id"] for item in results] == [newer["id"], older["id"]]
+
+
+def test_journal_does_not_outrank_other_kinds_at_equal_relevance(store):
+    mem = memory.memory_for(store)
+    mem.remember("s1", {"kind": "journal", "title": "Visita antigua", "content": "Revisión de avance",
+                        "date": (date.today() - timedelta(days=5)).isoformat()})
+    preference = mem.remember("s1", {"kind": "preference", "title": "Revisión breve", "content": "usar viñetas"})
+    results = mem.search("revisión", session_id="s1")
+    assert results[0]["id"] == preference["id"]
+
+
+def test_only_the_journal_accepts_a_date(store):
+    mem = memory.memory_for(store)
+    fact = mem.remember("s1", {"kind": "fact", "title": "Dato duradero", "content": "Sin fecha"})
+    assert "date" not in fact
+    with pytest.raises(ValueError, match="diario"):
+        mem.remember("s1", {"kind": "fact", "title": "Otro dato", "content": "Con fecha", "date": "2020-01-01"})
+
+
+def test_journal_keeps_versions_and_user_correction_prevails(store):
+    mem = memory.memory_for(store)
+    journal = mem.remember("s1", {"kind": "journal", "title": "Incidente", "content": "Fue un corte de luz",
+                                  "date": "2026-10-01"})
+    edited = mem.update(journal["id"], {"action": "edit", "content": "Fue un corte de agua", "date": "2026-10-02"})
+    assert edited["version"] == 2 and edited["content"] == "Fue un corte de agua" and edited["date"] == "2026-10-02"
+    assert edited["source"] == {"kind": "user"}
+    with pytest.raises(ValueError, match="corrigió"):
+        mem.remember("s1", {"kind": "journal", "title": "Incidente", "content": "Otra versión", "date": "2026-10-02"})
+    other = mem.remember("s1", {"kind": "journal", "title": "Incidente", "content": "Otra versión",
+                                "date": "2026-10-03"})
+    assert other["id"] != journal["id"]
+    reverted = mem.update(journal["id"], {"action": "revert", "version": 1})
+    assert reverted["content"] == "Fue un corte de luz" and reverted["date"] == "2026-10-01"
+    assert reverted["version"] == 3 and reverted["source"]["reverted_to"] == 1
+
+
+def test_journal_date_is_optional_and_validated(store):
+    mem = memory.memory_for(store)
+    default = mem.remember("s1", {"kind": "journal", "title": "Hoy", "content": "Sin fecha"})
+    assert default["date"] == date.today().isoformat()
+    edited = mem.update(default["id"], {"action": "edit", "date": "2026-01-02"})
+    assert edited["date"] == "2026-01-02" and edited["content"] == "Sin fecha" and edited["version"] == 2
+    with pytest.raises(ValueError, match="AAAA-MM-DD"):
+        mem.remember("s1", {"kind": "journal", "title": "Mal", "content": "x", "date": "02/01/2026"})
+    with pytest.raises(ValueError, match="AAAA-MM-DD"):
+        mem.update(default["id"], {"action": "edit", "date": "2026-13-01"})
+
+
+def test_handlers_list_journal_and_context_never_injects_it(store):
+    mem = memory.memory_for(store)
+    journal = mem.remember("s1", {"kind": "journal", "title": "Bitácora", "content": "Se revisó el expediente"})
+    listed = agent_internal.HANDLERS["agent_memory_list"]({})["items"]
+    assert journal["id"] in [item["id"] for item in listed]
+    context = agent_internal.HANDLERS["agent_internal_memory_context"](
+        {"session_id": "s2", "text": "bitácora expediente"})
+    assert journal["id"] not in context["items"]
+    updated = agent_internal.HANDLERS["agent_memory_update"](
+        {"id": journal["id"], "action": "edit", "date": "2026-02-03"})
+    assert updated["item"]["date"] == "2026-02-03"
+    found = agent_tools.run("memory_search", {"query": "expediente"}, store, "s2")["items"]
+    assert [item["id"] for item in found] == [journal["id"]]
