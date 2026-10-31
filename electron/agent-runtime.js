@@ -318,7 +318,10 @@ function toPublicSession(current) {
   rest.reasoning_levels = rest.reasoning_levels
     ? [...rest.reasoning_levels]
     : (execution.supportsReasoning(style, rest.model) ? LEGACY_REASONING : []);
-  return rest;
+  // Los documentos leídos con tx.doc() son drafts de Chord: sus objetos y
+  // arrays anidados son proxies que Electron no puede clonar al responder por
+  // IPC. La sesión es JSON durable, así que se materializa antes de salir.
+  return JSON.parse(JSON.stringify(rest));
 }
 
 async function _syncListedReasoning() {

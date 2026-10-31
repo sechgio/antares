@@ -344,6 +344,12 @@ export interface AgentSkill {
   description: string;
 }
 
+export interface AgentSkillCreateParams {
+  name: string;
+  description: string;
+  body?: string;
+}
+
 export const agentApi = {
   agentSessionsList: () => _invoke<{ sessions: AgentSession[] }>('agent_sessions_list'),
 
@@ -506,6 +512,9 @@ export const agentApi = {
   agentMemoryList: () => _invoke<{ items: AgentMemoryItem[] }>('agent_memory_list'),
   agentSkillsList: () =>
     _invoke<{ skills: AgentSkill[]; library: string; warnings: string[]; truncated: boolean }>('agent_skills_list'),
+
+  agentSkillCreate: (p: AgentSkillCreateParams) =>
+    _invoke<{ skill: AgentSkill }>('agent_skill_create', p),
 
   agentMemoryUpdate: (params: { id: string; action: 'edit' | 'disable' | 'enable' | 'revert'; content?: string; when?: string; version?: number }) =>
     _invoke<{ item: AgentMemoryItem }>('agent_memory_update', params),

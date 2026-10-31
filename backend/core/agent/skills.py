@@ -13,6 +13,7 @@ import yaml
 
 from backend.core.agent import computer_files
 from backend.core.integrations.types import JsonObject
+from backend.utils.atomic_write import atomic_write_text
 
 _MAX_BYTES = 64 * 1024
 _PAGE_CHARS = 4000
@@ -219,6 +220,34 @@ def library_catalog(library: Path) -> JsonObject:
     catalog, warnings, truncated = _catalog({}, library, library, levels)
     return {"skills": [{"id": skill.id, "name": skill.name, "description": skill.description} for skill in catalog],
             "library": str(library), "warnings": warnings, "truncated": truncated}
+
+
+def create(library: Path, name: object, description: object, body: object = "") -> JsonObject:
+    """Crea una skill local en la biblioteca y devuelve su entrada de catálogo.
+
+    Aplica las mismas reglas de validación que el lector (`_skill`), escribe
+    el SKILL.md de forma atómica y rechaza sobrescribir una skill existente.
+    """
+    if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?", name) \
+            or "--" in name:
+        raise ValueError("El nombre debe usar hasta 64 letras minúsculas, números o guiones")
+    if not isinstance(description, str) or not description.strip() or len(description) > 1024:
+        raise ValueError("La descripción debe contener entre 1 y 1024 caracteres")
+    if not isinstance(body, str):
+        raise ValueError("Las instrucciones de la skill deben ser texto")
+    folder = library / name
+    target = folder / "SKILL.md"
+    if folder.is_symlink() or target.is_symlink():
+        raise ValueError("La ruta de la skill no puede ser un enlace simbólico")
+    if target.exists():
+        raise ValueError(f"La skill ya existe: {name}")
+    frontmatter = yaml.safe_dump(
+        {"name": name, "description": description.strip()}, allow_unicode=True, sort_keys=False).strip()
+    text = f"---\n{frontmatter}\n---\n" + body.rstrip() + "\n"
+    if len(text.encode("utf-8")) > _MAX_BYTES:
+        raise ValueError("La skill excede 64 KiB")
+    atomic_write_text(target, text)
+    return {"id": _skill_id(target), "name": name, "description": description.strip()}
 
 
 def resolve(skill_id: object, grants: dict[str, JsonObject], workspace: Path, library: Path,

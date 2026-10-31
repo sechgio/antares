@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, ArrowRight, Bot, FileUp, Globe, Hand, Loader2, Maximize2, Minimize2, MoreVertical, PenLine, Plus, RotateCw, X } from 'lucide-react';
 import { agentApi, type AgentBrowserState } from '../../api/agentApi';
@@ -7,6 +7,7 @@ import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import BrowserAnnotator from './BrowserAnnotator';
+import useAgentBrowserViewport from './useAgentBrowserViewport';
 import { ANNOTATABLE_FILES, fileSource, type AnnotationSource } from './annotationSource';
 
 const EMPTY: AgentBrowserState = {
@@ -14,7 +15,6 @@ const EMPTY: AgentBrowserState = {
   busy_until: 0, busy_reason: '', active_tab: 'agent', tabs: [],
 };
 
-const OVERLAY = '[role="menu"], [role="dialog"], [role="listbox"], [role="alertdialog"]';
 const MAX_USER_TABS = 8;
 const MENU_ITEM = 'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-input)] disabled:pointer-events-none disabled:opacity-40';
 
@@ -38,8 +38,8 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
   const menu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
     align: 'end', estimatedWidth: 240, estimatedHeight: 100, stopEscapePropagation: true,
   });
-  const annotatingRef = useRef(false);
-  const reportRef = useRef<() => void>(() => {});
+  const { frozenPage, pagePaused, annotatingRef, capturingRef, reportRef, dockViewport, releaseFrozen } =
+    useAgentBrowserViewport({ viewportRef, panelRef, open: state.open, setLayout });
   const minWidth = layout.available ? Math.min(340, layout.available / 2) : 340;
   const maxWidth = layout.available ? Math.max(minWidth, layout.available - 320) : 760;
   const clampWidth = (value: number) => Math.min(maxWidth, Math.max(minWidth, value));
@@ -70,66 +70,6 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
     if (!editing) setAddress(state.url);
   }, [state.url, editing]);
 
-  useLayoutEffect(() => {
-    const element = viewportRef.current;
-    if (!element) return undefined;
-    let frame = 0;
-    const report = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const panel = panelRef.current;
-        const conversation = panel?.previousElementSibling;
-        if (panel && conversation) {
-          const width = panel.getBoundingClientRect().width;
-          const available = width + conversation.getBoundingClientRect().width;
-          setLayout((prev) => prev.width === width && prev.available === available ? prev : { width, available });
-        }
-        const rect = element.getBoundingClientRect();
-        // Solo se retira si está medido y completamente fuera de pantalla; un rect en
-        // ceros significa que el layout aún no midió, no que esté oculto.
-        const measured = rect.width > 0 && rect.height > 0;
-        const offscreen = measured && (rect.right <= 0 || rect.bottom <= 0
-          || rect.left >= window.innerWidth || rect.top >= window.innerHeight);
-        // La vista nativa pinta encima del DOM: si un menú o diálogo la pisa,
-        // se desacopla mientras siga abierto para que no lo tape.
-        const covered = Array.from(document.querySelectorAll(OVERLAY)).some((overlay) => {
-          const box = overlay.getBoundingClientRect();
-          return box.width > 0 && box.height > 0 && box.left < rect.right && box.right > rect.left && box.top < rect.bottom && box.bottom > rect.top;
-        });
-        // La vista nativa se pinta por coordenadas de pantalla, no es DOM: con la
-        // ventana oculta se retira y al volver se acopla de nuevo.
-        const bounds = document.hidden || covered || offscreen || annotatingRef.current ? null : {
-          x: rect.left + element.clientLeft,
-          y: rect.top + element.clientTop,
-          width: element.clientWidth || rect.width,
-          height: element.clientHeight || rect.height,
-        };
-        const key = JSON.stringify(bounds);
-        if (key === sent) return;
-        sent = key;
-        void agentApi.agentBrowser('bounds', { bounds }).catch(() => {});
-      });
-    };
-    let sent = '';
-    reportRef.current = report;
-    report();
-    const observer = new ResizeObserver(report);
-    observer.observe(element);
-    if (panelRef.current?.parentElement) observer.observe(panelRef.current.parentElement);
-    const overlays = new MutationObserver(report);
-    overlays.observe(document.body, { childList: true });
-    window.addEventListener('resize', report);
-    document.addEventListener('visibilitychange', report);
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-      overlays.disconnect();
-      window.removeEventListener('resize', report);
-      document.removeEventListener('visibilitychange', report);
-      void agentApi.agentBrowser('bounds', { bounds: null }).catch(() => {});
-    };
-  }, []);
-
   const run = async (action: 'open' | 'back' | 'forward' | 'reload' | 'tab' | 'new' | 'close' | 'control' | 'allow',
     extra: { url?: string; user?: boolean; tab?: string } = {}) => {
     try {
@@ -149,15 +89,27 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
     if (!open) {
       annotatingRef.current = false;
       setShot(null);
+      releaseFrozen();
       reportRef.current();
       return;
     }
+    capturingRef.current = true;
     try {
+      // El menú desacopla la vista nativa para no taparlo; hay que reacoplarla
+      // y dejar que pinte antes de leer el raster de la página.
+      if (!(await dockViewport())) throw new Error('El navegador no está visible');
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      // Reacoplar otra vez por si el cierre del menú disparó un desacople.
+      await dockViewport();
       const capture = await agentApi.agentBrowserCapture();
+      capturingRef.current = false;
+      releaseFrozen();
       annotatingRef.current = true;
       setShot({ source: { name: capture.url, count: 1, page: async () => capture }, web: true });
       reportRef.current();
     } catch (err) {
+      capturingRef.current = false;
+      reportRef.current();
       addToast({ message: errorMessage(err, 'No se pudo capturar la página'), type: 'error' });
     }
   };
@@ -166,6 +118,7 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
     if (!file) return;
     try {
       const source = await fileSource(file);
+      releaseFrozen();
       annotatingRef.current = true;
       setShot({ source, web: false });
       reportRef.current();
@@ -174,12 +127,13 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
     }
   };
 
-  const iconButton = 'flex size-6 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:pointer-events-none disabled:opacity-40';
+  const iconButton = 'flex size-6 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:pointer-events-none disabled:opacity-40';
+  const navButton = 'flex size-6 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:pointer-events-none disabled:opacity-40';
 
   return (
     <div
       ref={panelRef}
-      className="relative -mr-2.5 flex w-[clamp(340px,44%,760px)] shrink-0"
+      className="relative flex w-[clamp(340px,44%,760px)] shrink-0"
       style={{ width: width === null ? undefined : clampWidth(width), maxWidth: layout.available ? maxWidth : undefined }}
     >
       <div
@@ -214,16 +168,16 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
           setWidth(clampWidth(next));
         }}
       />
-    <aside aria-label="Navegador del agente" className="agent-browser flex min-w-0 flex-1 flex-col overflow-hidden rounded-l-lg border border-r-0 border-[var(--border-medium)] bg-[var(--bg-base)]">
-      <div className="flex h-9 shrink-0 items-center gap-1 pl-1.5 pr-1.5">
-        <div role="tablist" aria-label="Pestañas del navegador" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
+    <aside aria-label="Navegador del agente" className="agent-browser flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--bg-surface)]">
+      <div className="flex h-[34px] shrink-0 items-center gap-1 pl-2 pr-2">
+        <div role="tablist" aria-label="Pestañas del navegador" className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
           {tabs.map((tab) => {
             const agent = tab.id === 'agent';
             const name = tab.title || tab.label;
             return (
               <div
                 key={tab.id}
-                className={`group flex min-w-0 max-w-[180px] shrink items-center rounded-md transition-colors ${tab.active
+                className={`group flex h-6 min-w-0 max-w-[180px] shrink items-center rounded-[4px] transition-colors ${tab.active
                   ? 'bg-[var(--bg-input)] text-[var(--text-primary)]'
                   : 'text-[var(--text-secondary)] hover:bg-[color-mix(in_srgb,var(--bg-input)_60%,transparent)] hover:text-[var(--text-primary)]'}`}
               >
@@ -235,11 +189,13 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
                   title={tab.url || name}
                   onClick={() => void run('tab', { tab: tab.id })}
                   onAuxClick={(event) => { if (event.button === 1 && !agent) void run('close', { tab: tab.id }); }}
-                  className="flex h-6 min-w-0 flex-1 items-center gap-1.5 pl-2 pr-1 text-left text-[12.5px]"
+                  className={`flex h-6 min-w-0 flex-1 items-center gap-1.5 pl-2 pr-1 text-left text-[12.5px] ${tab.active ? 'font-semibold' : 'font-medium'}`}
                 >
                   {tab.loading
-                    ? <Loader2 size={12} className="shrink-0 animate-spin text-[var(--text-muted)]" />
-                    : agent && <Bot size={12} className="shrink-0 text-[var(--text-muted)]" />}
+                    ? <Loader2 size={11} className="shrink-0 animate-spin text-[var(--text-muted)]" />
+                    : agent
+                      ? <Bot size={11} className="shrink-0 text-[var(--text-muted)]" />
+                      : <Globe size={11} className="shrink-0 text-[var(--text-muted)]" aria-hidden="true" />}
                   <span className="min-w-0 truncate">{name}</span>
                   {tab.user_control && (
                     <span className="size-1.5 shrink-0 rounded-full bg-[var(--accent-yellow)]" title="Tienes el control" />
@@ -348,19 +304,19 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
         </div>,
         document.body,
       )}
-      <div className="relative flex shrink-0 items-center gap-0.5 px-2 pb-1.5">
+      <div className="relative flex h-7 shrink-0 items-center gap-0.5 border-t border-[var(--border-subtle)] px-2">
         {state.open && state.loading && <div role="progressbar" aria-label="Cargando la página" className="agent-browser-progress" />}
-        <button type="button" className={iconButton} aria-label="Atrás" disabled={!state.can_go_back} onClick={() => void run('back')}>
+        <button type="button" className={navButton} aria-label="Atrás" disabled={!state.can_go_back} onClick={() => void run('back')}>
           <ArrowLeft size={14} />
         </button>
-        <button type="button" className={iconButton} aria-label="Adelante" disabled={!state.can_go_forward} onClick={() => void run('forward')}>
+        <button type="button" className={navButton} aria-label="Adelante" disabled={!state.can_go_forward} onClick={() => void run('forward')}>
           <ArrowRight size={14} />
         </button>
-        <button type="button" className={iconButton} aria-label="Recargar" disabled={!state.open} onClick={() => void run('reload')}>
+        <button type="button" className={navButton} aria-label="Recargar" disabled={!state.open} onClick={() => void run('reload')}>
           {state.loading ? <Loader2 size={13} className="animate-spin" /> : <RotateCw size={13} />}
         </button>
         <form
-          className="ml-1 min-w-0 flex-1"
+          className="mx-1 min-w-0 flex-1"
           onSubmit={(event) => {
             event.preventDefault();
             if (!address.trim()) return;
@@ -378,12 +334,14 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
             placeholder="Busca o escribe una URL"
             aria-label="Dirección del navegador del agente"
             spellCheck={false}
-            className="h-7 w-full rounded-lg border border-transparent bg-[var(--bg-input)] px-2.5 text-[12.5px] text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-muted)] focus:border-[var(--text-muted)]"
+            className={`agent-browser-address h-6 w-full rounded-md bg-transparent px-2 text-[12px] outline-none transition-colors placeholder:text-[var(--text-muted)] hover:bg-[color-mix(in_srgb,var(--bg-input)_22%,transparent)] focus:bg-[color-mix(in_srgb,var(--bg-input)_35%,transparent)] focus:shadow-[inset_0_-1px_0_0_var(--border-medium)] ${editing && address
+              ? 'text-left text-[var(--text-primary)]'
+              : 'text-center text-[var(--text-secondary)]'}`}
           />
         </form>
       </div>
       {!userTab && state.user_control && (
-        <div role="status" className="flex shrink-0 items-center gap-2 border-t border-[var(--border-medium)] bg-[color-mix(in_srgb,var(--accent-yellow)_10%,transparent)] px-3 py-1.5 text-[12px] text-[var(--accent-yellow)]">
+        <div role="status" className="flex shrink-0 items-center gap-2 border-t border-[var(--border-subtle)] px-3 py-1.5 text-[12px] text-[var(--accent-yellow)]">
           <span className="min-w-0 flex-1">Tienes el control: el agente no usará el navegador hasta que se lo devuelvas.</span>
           <button
             type="button"
@@ -395,7 +353,7 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
         </div>
       )}
       {!userTab && !state.user_control && busySeconds > 0 && (
-        <div role="status" className="flex shrink-0 items-center gap-2 border-t border-[var(--border-medium)] bg-[color-mix(in_srgb,var(--accent-primary)_8%,transparent)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)]">
+        <div role="status" className="flex shrink-0 items-center gap-2 border-t border-[var(--border-subtle)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)]">
           <span className="min-w-0 flex-1">El agente espera porque usaste la página. Se reanudará en {busySeconds} s.</span>
           <button
             type="button"
@@ -406,7 +364,23 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
           </button>
         </div>
       )}
-      <div ref={viewportRef} data-testid="agent-browser-viewport" className="relative min-h-0 flex-1 overflow-hidden border-t border-[var(--border-medium)] bg-[var(--bg-base)]">
+      <div ref={viewportRef} data-testid="agent-browser-viewport" className="relative min-h-0 flex-1 overflow-hidden border-t border-[var(--border-subtle)] bg-[var(--bg-base)]">
+        {frozenPage && state.open && (
+          <img
+            src={frozenPage}
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+            data-testid="agent-browser-frozen"
+            className="pointer-events-none absolute inset-0 z-[1] size-full object-fill"
+          />
+        )}
+        {pagePaused && !frozenPage && state.open && !shot && (
+          <div className="pointer-events-none absolute inset-0 z-[1] flex flex-col items-center justify-center gap-1 bg-[var(--bg-surface)] px-6 text-center">
+            <Globe size={20} strokeWidth={1.5} className="text-[var(--text-muted)]" />
+            <p className="text-[12px] text-[var(--text-muted)]">Vista en pausa</p>
+          </div>
+        )}
         {!state.open && (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
             <Globe size={22} strokeWidth={1.5} className="mb-1.5 text-[var(--text-muted)]" />

@@ -1,8 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshCw, Search, Sparkles } from 'lucide-react';
-import { agentApi, type AgentSkill } from '../../api/agentApi';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Plus, RefreshCw, Search, Sparkles } from 'lucide-react';
+import { agentApi, type AgentSkill, type AgentSkillCreateParams } from '../../api/agentApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
+import Button from '../ui/Button';
+import { DialogSurface } from '../ui/Dialog';
+import Input from '../ui/Input';
+import Textarea from '../ui/Textarea';
+
+const NAME_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
+
+function slugifyName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
 
 export default function SkillsView() {
   const { addToast } = useToast();
@@ -12,6 +22,12 @@ export default function SkillsView() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [body, setBody] = useState('');
+  const [formError, setFormError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -32,6 +48,45 @@ export default function SkillsView() {
     void refresh();
   }, [refresh]);
 
+  const openCreate = () => {
+    setName('');
+    setDescription('');
+    setBody('');
+    setFormError('');
+    setCreating(true);
+  };
+
+  const handleCreate = async (event: FormEvent) => {
+    event.preventDefault();
+    const trimmedName = slugifyName(name);
+    const trimmedDescription = description.trim();
+    if (!NAME_PATTERN.test(trimmedName) || trimmedName.includes('--')) {
+      setFormError('El nombre solo admite letras minúsculas, números y guiones simples, sin espacios.');
+      return;
+    }
+    if (!trimmedDescription) {
+      setFormError('La descripción es obligatoria.');
+      return;
+    }
+    const params: AgentSkillCreateParams = { name: trimmedName, description: trimmedDescription };
+    const trimmedBody = body.trim();
+    if (trimmedBody) {
+      params.body = trimmedBody;
+    }
+    setSubmitting(true);
+    setFormError('');
+    try {
+      await agentApi.agentSkillCreate(params);
+      addToast({ message: `Habilidad «${trimmedName}» creada`, type: 'success' });
+      setCreating(false);
+      await refresh();
+    } catch (err) {
+      setFormError(errorMessage(err, 'No se pudo crear la habilidad'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     return q ? skills.filter((s) => `${s.name} ${s.description}`.toLowerCase().includes(q)) : skills;
@@ -48,6 +103,10 @@ export default function SkillsView() {
             </p>
           </div>
           <div className="flex items-center gap-1.5">
+            <Button variant="primary" size="sm" onClick={openCreate} className="h-9 rounded-full px-4">
+              <Plus size={15} />
+              Nueva habilidad
+            </Button>
             <label className="flex h-9 w-64 items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3.5 focus-within:border-[var(--border-active)]">
               <Search size={14} className="shrink-0 text-[var(--text-secondary)]" />
               <input
@@ -98,7 +157,7 @@ export default function SkillsView() {
                 </p>
                 {!skills.length && library && (
                   <p className="mt-2 text-[12px] text-[var(--text-muted)]">
-                    Añade una carpeta con un SKILL.md en <span className="font-mono">{library}</span>
+                    Usa «Nueva habilidad» o añade una carpeta con un SKILL.md en <span className="font-mono">{library}</span>
                   </p>
                 )}
               </div>
@@ -116,6 +175,61 @@ export default function SkillsView() {
           </>
         )}
       </div>
+
+      {creating && (
+        <DialogSurface portal onClose={() => setCreating(false)} labelledBy="new-skill-title" className="max-w-[30rem] p-6">
+          <h3 id="new-skill-title" className="text-[16px] font-semibold text-[var(--text-primary)]">Nueva habilidad</h3>
+          <p className="mt-1 text-[13px] leading-5 text-[var(--text-secondary)]">
+            Se creará una carpeta con un SKILL.md en la biblioteca de habilidades.
+          </p>
+          <form className="mt-5 space-y-4" onSubmit={handleCreate}>
+            <div className="space-y-1.5">
+              <label htmlFor="new-skill-name" className="block text-[12px] font-medium text-[var(--text-secondary)]">Nombre</label>
+              <Input
+                id="new-skill-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="mi-skill"
+                autoFocus
+                spellCheck={false}
+                className="w-full"
+              />
+              <p className="text-[11.5px] text-[var(--text-muted)]">Se autoformatea: minúsculas, números y guiones simples.</p>
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="new-skill-description" className="block text-[12px] font-medium text-[var(--text-secondary)]">Descripción</label>
+              <Textarea
+                id="new-skill-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Para qué sirve esta habilidad"
+                rows={2}
+                maxLength={1024}
+                className="w-full"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="new-skill-body" className="block text-[12px] font-medium text-[var(--text-secondary)]">Instrucciones (opcional)</label>
+              <Textarea
+                id="new-skill-body"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="Pasos y reglas que el agente debe seguir al usarla…"
+                rows={6}
+                maxLength={55296}
+                className="w-full font-mono"
+              />
+            </div>
+            {formError && <p role="alert" className="text-[12.5px] text-[var(--accent-red)]">{formError}</p>}
+            <div className="flex items-center justify-end gap-3 pt-1">
+              <Button variant="secondary" type="button" onClick={() => setCreating(false)}>Cancelar</Button>
+              <Button variant="primary" type="submit" disabled={submitting}>
+                {submitting ? 'Creando…' : 'Crear habilidad'}
+              </Button>
+            </div>
+          </form>
+        </DialogSurface>
+      )}
     </div>
   );
 }

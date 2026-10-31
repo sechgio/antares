@@ -661,6 +661,14 @@ async function main() {
     next.setResponses([fauxAssistantMessage('respuesta del nuevo modelo')]);
     const changed = await runtime.handlers.agent_session_model_set({ id: session.id, provider: 'otro', model: next.models[0].id });
     assert(changed.session.id === session.id && changed.session.provider === 'otro', 'cambiar proveedor conserva la conversación');
+    const { profile } = await runtime.handlers.agent_profile_save({
+      name: 'Perfil clonable', description: '', instructions: 'Responde breve.', starter: '', tools: null,
+    });
+    const { session: profiled } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: profile.id });
+    const profiledChange = await runtime.handlers.agent_session_model_set({ id: profiled.id, provider: 'otro', model: next.models[0].id });
+    let cloneError = null;
+    try { structuredClone(profiledChange); } catch (err) { cloneError = err; }
+    assert(!cloneError, `la respuesta de un cambio de modelo con perfil cruza el IPC: ${cloneError && cloneError.message}`);
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'segunda consulta' });
     assert(await waitIdle(session.id), 'el turno usa el proveedor elegido');
     const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });

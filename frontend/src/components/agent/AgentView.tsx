@@ -488,6 +488,33 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     setShowJump(false);
   }, [sessionId]);
 
+  // Los paneles, imágenes y pasos crecen sin cambiar el texto del último
+  // mensaje; seguir cualquier cambio de altura mantiene el final a la vista.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    let frame = 0;
+    const follow = new ResizeObserver(() => {
+      if (!atBottomRef.current || frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (atBottomRef.current) list.scrollTo({ top: list.scrollHeight });
+      });
+    });
+    const watch = () => {
+      follow.disconnect();
+      for (const child of list.children) follow.observe(child);
+    };
+    watch();
+    const children = new MutationObserver(watch);
+    children.observe(list, { childList: true });
+    return () => {
+      children.disconnect();
+      follow.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, []);
+
   const onListScroll = () => {
     const el = listRef.current;
     if (!el) return;
@@ -1457,7 +1484,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               const newDay = !!label && (!previous?.ts || dayLabel(previous.ts) !== label);
               const results = turnArtifacts.get(turn.key);
               return (
-                <div key={`${sessionId}-${turn.role}-${turn.key}`} className="space-y-4">
+                <div key={`${sessionId}-${turn.role}-${turn.key}`} className="agent-transcript-turn space-y-4">
                   {newDay && <DaySeparator label={label} />}
                   {turn.role === 'user' ? <MessageRow msg={turn.message} /> : (
                     <AssistantTurn messages={turn.messages} startedAt={turn.startedAt} agent={agentIdentity} onUndo={undoEffect} view={transcriptView}

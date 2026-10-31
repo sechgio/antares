@@ -222,6 +222,46 @@ def test_skills_list_handler_lists_library_metadata_for_the_ui(store, monkeypatc
     assert "INSTRUCCION_PRIVADA" not in json.dumps(result)
 
 
+def test_create_writes_skill_visible_in_catalog_and_readable(store):
+    entry = skills.create(store.base_dir / "skills", "pdf-review", "Revisa documentos PDF", "Revisa cada página.")
+    assert entry["name"] == "pdf-review" and entry["description"] == "Revisa documentos PDF"
+    catalog = skills.library_catalog(store.base_dir / "skills")
+    assert entry in catalog["skills"] and catalog["warnings"] == []
+    text = (store.base_dir / "skills" / "pdf-review" / "SKILL.md").read_text(encoding="utf-8")
+    assert text.startswith("---\nname: pdf-review\ndescription: Revisa documentos PDF\n---\n")
+    assert "Revisa cada página." in text
+
+
+def test_create_rejects_duplicates_invalid_names_empty_description_and_oversized_body(store):
+    library = store.base_dir / "skills"
+    skills.create(library, "pdf-review", "Revisa PDFs")
+    with pytest.raises(ValueError, match="ya existe"):
+        skills.create(library, "pdf-review", "Otra descripción")
+    for name in ("My Skill", "-leading", "trailing-", "a--b", "ñandu", "", "a" * 65):
+        with pytest.raises(ValueError, match="nombre"):
+            skills.create(library, name, "Descripción")
+    with pytest.raises(ValueError, match="descripción"):
+        skills.create(library, "vacia", "   ")
+    with pytest.raises(ValueError, match="64 KiB"):
+        skills.create(library, "gigante", "Descripción", "x" * 70_000)
+
+
+def test_skill_create_handler_writes_catalog_entry_and_wraps_errors(store, monkeypatch):
+    from backend.core.exceptions import ValidationError
+    from backend.handlers import agent_internal
+
+    monkeypatch.setattr(agent_internal, "_store", lambda: store)
+    handler = agent_internal.HANDLERS["agent_skill_create"]
+    result = handler({"name": "pdf-review", "description": "Revisa documentos PDF", "body": "Revisa cada página."})
+    assert result["skill"]["name"] == "pdf-review"
+    listed = agent_internal.HANDLERS["agent_skills_list"]({})["skills"]
+    assert [entry["id"] for entry in listed] == [result["skill"]["id"]]
+    with pytest.raises(ValidationError, match="ya existe"):
+        handler({"name": "pdf-review", "description": "Duplicada"})
+    with pytest.raises(ValidationError, match="nombre"):
+        handler({"name": "NO VALIDO", "description": "Descripción"})
+
+
 def test_layered_skills_do_not_grant_general_file_access(store, tmp_path, monkeypatch):
     home = tmp_path / "configured-skills"
     target = install(home / "_shared")

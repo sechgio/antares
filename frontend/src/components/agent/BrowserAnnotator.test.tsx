@@ -26,6 +26,8 @@ it('congela la página, retira la vista nativa mientras se anota y envía la cap
   const onAnnotate = vi.fn();
   render(<AgentBrowserPanel onClose={vi.fn()} onAnnotate={onAnnotate} />);
   await waitFor(() => expect(call).toHaveBeenCalledWith('state'));
+  vi.spyOn(screen.getByTestId('agent-browser-viewport'), 'getBoundingClientRect')
+    .mockReturnValue(new DOMRect(600, 80, 400, 500));
   fireEvent.click(screen.getByRole('button', { name: 'Más opciones del navegador' }));
   await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Anotar la página' })).toBeEnabled());
 
@@ -61,6 +63,8 @@ it('selecciona el elemento real bajo el puntero y lleva su contexto y las notas 
   const onAnnotate = vi.fn();
   render(<AgentBrowserPanel onClose={vi.fn()} onAnnotate={onAnnotate} />);
   await waitFor(() => expect(screen.getByRole('button', { name: 'Más opciones del navegador' })).toBeInTheDocument());
+  vi.spyOn(screen.getByTestId('agent-browser-viewport'), 'getBoundingClientRect')
+    .mockReturnValue(new DOMRect(600, 80, 400, 500));
   fireEvent.click(screen.getByRole('button', { name: 'Más opciones del navegador' }));
   await act(async () => { fireEvent.click(await screen.findByRole('menuitem', { name: 'Anotar la página' })); });
 

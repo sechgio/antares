@@ -12,8 +12,12 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Agent muestra paneles interactivos dentro del chat con la herramienta `panel_show`: preguntas con botones, formularios y tablas filtrables. Las páginas de `page_create` se ejecutan inline en un iframe aislado, sin red ni bridge, con altura automática; las páginas largas y las tablas se recortan en el chat sin scroll anidado y se abren en un visor a pantalla completa dentro de Antares (Esc para cerrar). Responder un panel lo envía al agente como mensaje con `[panel:<id>]` y lo deja respondido; los paneles se conservan con la conversación.
 - Las páginas de Agent incluyen una miniatura sin scripts en el chat y una presentación uniforme para títulos, filtros, métricas y tablas, siguiendo el modo claro u oscuro de Antares.
 - Vista previa local de archivos del chat en un panel lateral: PDF e imágenes con zoom, Excel/CSV/TSV con hojas y páginas, Word (.docx) con texto y tablas, y archivos de texto o código. Se abre desde adjuntos, archivos autorizados y referencias locales de las respuestas.
+- En Complementos → Habilidades, «Nueva habilidad» crea una skill local con nombre normalizado, descripción e instrucciones opcionales; escribe el `SKILL.md` de forma atómica, rechaza duplicados y la deja disponible en el catálogo (`agent_skill_create`).
+- La vista previa local del navegador de Agent abre también PDF e imágenes, además de HTML, tanto con una ruta del espacio de trabajo como con `file://`.
 
 ### Changed
+- El navegador de Agent congela la página cuando un menú o diálogo la tapa y la reacopla al cerrarse, en lugar de dejar un hueco negro; la barra de pestañas, la omnibox y el separador adoptan un estilo plano y compacto.
+- El chat de Agent sigue el final cuando un turno crece sin mensajes nuevos (paneles, imágenes o pasos) mientras el usuario está abajo, y deja de pintar los turnos fuera de pantalla.
 - Los archivos enviados a Agent permanecen junto a su mensaje con vista previa; los accesos concedidos se consultan desde el encabezado, sin ocupar espacio encima del campo de texto.
 - Agents entrega imágenes y gráficos PNG, JPEG o WebP como una galería persistente en el chat, con ampliación, navegación y descarga mediante la herramienta `images_show`.
 - Un turno de sala cuyo miembro sigue ocupado con su propio turno recibe hasta dos prórrogas de un minuto antes de darse por vencido, y el vencimiento queda registrado con su motivo.
@@ -61,6 +65,8 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - `npm run dev` comprueba y repara las dependencias de la raíz y del frontend, restaura el binario de Electron si falta y avisa de archivos bloqueados antes de reinstalar con Antares abierto.
+- Anotar el navegador de Agent recaptura la página con CDP y vuelve a acoplar la vista antes de leer el raster, con `capturePage` como respaldo si CDP no está disponible.
+- Cambiar el modelo de una conversación de Agent con perfil ya cruza el IPC: la sesión se materializa como JSON antes de responder, sin proxies no clonables.
 - La compactación del contexto de Agent pide el resumen sin razonamiento y con el techo de salida de pi-durable: con modelos como DeepSeek V4 el razonamiento agotaba los 2048 tokens y siempre caía en el resumen de emergencia. Reintenta los fallos transitorios del proveedor y suma el gasto del resumen al medidor; el resumen ya no se muestra en el chat, salvo un aviso breve si fue de emergencia.
 - Las delegaciones de Agent razonan con el esfuerzo de la conversación principal; antes arrancaban sin razonamiento, o en bajo si su ficha fijaba un modelo.
 - El guardián que ajusta cada petición de Agent a la ventana del modelo mide cuánto ahorra cada recorte: antes partía del uso fijo que informa el proveedor, ningún recorte bajaba la cifra y un exceso pequeño acababa plegando toda la conversación en un resumen mecánico.
