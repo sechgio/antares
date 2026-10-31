@@ -1,7 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
+import contract from '../../../../shared/agent-plan.json';
 import { agentApi, type AgentMessage, type AgentPanel } from '../../api/agentApi';
-import { ApprovalCard, AssistantTurn, MessageRow, PlanCard, ThinkingRow, groupTurns, placeArtifacts, placePanels, stepsSummary } from './AgentTimeline';
+import { AGENT_PLAN_STATUSES } from '../../api/agentPlan';
+import { ApprovalCard, AssistantTurn, MessageRow, ThinkingRow, groupTurns, placeArtifacts, placePanels, stepsSummary } from './AgentTimeline';
+import { PlanCard } from './AgentPlanCard';
 import { reasoningRecap } from './Reasoning';
 import { FilePreviewContext } from './filePreviewContext';
 
@@ -228,7 +231,7 @@ it.each([
   [['shell_run', 'shell_run', 'fs_read', 'web_open', 'web_click', 'web_type'], 'Hizo 3 acciones en el navegador, ejecutó 2 comandos y leyó c.txt'],
   [['fs_read', 'fs_read', 'shell_run', 'shell_run', 'shell_run', 'fs_search', 'cua_click', 'templates_catalog'],
     'Ejecutó 3 comandos, leyó a.txt y b.txt y 3 pasos más'],
-  [['task_plan'], '1 paso'],
+  [['task_plan'], ''],
   [['skills_list'], 'Buscó skills'],
   [['mcp2__drive-25cd107f1dee__buscar-021181d13e7c', 'mcp2__drive-25cd107f1dee__leer-021181d13e7c'], 'Usó el conector drive'],
   [['mcp2__drive-25cd107f1dee__buscar-021181d13e7c', 'mcp2__slack-25cd107f1dee__enviar-021181d13e7c'], 'Usó 2 conectores'],
@@ -725,6 +728,28 @@ it.each([
   expect(screen.getByText(/Archivo que se reemplaza: .*informe/)).toBeInTheDocument();
   expect(screen.getByText('Borrador: nuevo.pdf')).toBeInTheDocument();
   expect(screen.getByText('Cuenta: ana@example.com')).toBeInTheDocument();
+});
+
+it('no duplica el plan como fila de herramienta', () => {
+  render(<AssistantTurn view="normal" messages={[{
+    role: 'assistant', content: '', ts: 1,
+    tool_calls: [{ id: 'plan', name: 'task_plan', params: { goal: 'g', steps: [] }, status: 'done', gated: false }],
+  }]} />);
+  expect(screen.queryByText(/Actualizar el plan del encargo/)).toBeNull();
+});
+
+it('resume los fallos y anuncia el estado de cada paso', () => {
+  render(<PlanCard running={false} plan={{ goal: 'Cerrar el mes', steps: [
+    { title: 'Leer', status: 'failed' },
+    { title: 'Revisar', status: 'pending' },
+  ] }} />);
+  expect(screen.getByText('1 fallido')).toBeInTheDocument();
+  expect(screen.getByText('Fallido.')).toHaveClass('sr-only');
+  expect(screen.getByText('Pendiente.')).toHaveClass('sr-only');
+});
+
+it('mantiene los estados del plan alineados con el contrato compartido', () => {
+  expect([...AGENT_PLAN_STATUSES]).toEqual(contract.statuses);
 });
 
 it('muestra el plan con su progreso y la evidencia de cada paso', () => {

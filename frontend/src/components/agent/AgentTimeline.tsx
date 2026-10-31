@@ -1,7 +1,7 @@
 import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AppWindow, ArrowLeft, ArrowRight, Ban, BookOpen, Camera, ChevronDown, ChevronRight, CircleArrowRight, CircleCheck, CircleDashed, CircleX, Download, FilePen, FileText, FolderOpen, Globe, Hand, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Network, Package, Plug, RotateCw, Search, ShieldCheck, Terminal, TriangleAlert, Upload, Wrench } from 'lucide-react';
+import { AppWindow, ArrowLeft, ArrowRight, Ban, BookOpen, Camera, ChevronDown, ChevronRight, CircleCheck, Download, FilePen, FileText, FolderOpen, Globe, Hand, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Network, Package, Plug, RotateCw, Search, ShieldCheck, Terminal, TriangleAlert, Upload, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { agentApi, AgentApproval, AgentArtifact, AgentChannel, AgentMessage, AgentPanel, AgentPlan, AgentToolCall } from '../../api/agentApi';
+import type { agentApi, AgentApproval, AgentArtifact, AgentChannel, AgentMessage, AgentPanel, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
 import Toggle from '../ui/Toggle';
 import AgentAvatar from './AgentAvatar';
@@ -468,7 +468,7 @@ export function stepsSummary(calls: AgentToolCall[]): string {
     const kind = STEP_KINDS.findIndex((step) => step.match(call.name));
     groups.set(kind, [...(groups.get(kind) ?? []), call]);
   }
-  if (groups.size === 0) return count(calls.length, 'paso', 'pasos');
+  if (groups.size === 0) return '';
   const sorted = [...groups].sort((a, b) => b[1].length - a[1].length);
   const shown = sorted.slice(0, sorted.length > 3 ? 2 : 3);
   const labels = shown.map(([kind, group], index) => {
@@ -536,7 +536,7 @@ function Activity({ entries, working, answering, duration, onUndo, view }: {
   const review = calls.filter((call) => call.status === 'failed' || call.status === 'interrupted').length;
   const notes = entries.filter((entry) => entry.kind === 'note').length;
   const icons = [...new Set(calls.map((call) => (call.name === 'shell_run' ? Terminal : toolIcon(call.name))))].slice(0, 4);
-  const steps = notes > 0 ? `${stepsSummary(calls)} · ${count(notes, 'nota', 'notas')}` : stepsSummary(calls);
+  const steps = [stepsSummary(calls), notes > 0 ? count(notes, 'nota', 'notas') : ''].filter(Boolean).join(' · ');
   return (
     <div className="w-full">
       <button
@@ -704,6 +704,7 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
     }
     if (message.content && message !== answer) entries.push({ kind: 'note', key: `note-${index}`, text: message.content });
     for (const call of message.tool_calls ?? []) {
+      if (call.name === 'task_plan') continue;
       entries.push({ kind: 'call', key: call.id, call });
       for (const panel of panels.filter((item) => item.call_id === call.id)) entries.push({ kind: 'panel', key: `panel-${panel.id}`, panel });
     }
@@ -923,67 +924,6 @@ export function ApprovalCard({
         </div>
       </div>
     </div>
-  );
-}
-
-function PlanStepIcon({ status }: { status: AgentPlan['steps'][number]['status'] }) {
-  if (status === 'done') return <CircleCheck size={14} className="text-[var(--text-muted)]" aria-label="Hecho" />;
-  if (status === 'failed') return <CircleX size={14} className="text-[var(--accent-red)]" aria-label="Fallido" />;
-  if (status === 'in_progress') return <CircleArrowRight size={14} className="text-[var(--text-primary)]" aria-label="En curso" />;
-  return <CircleDashed size={14} className="text-[var(--text-muted)] opacity-70" aria-label="Pendiente" />;
-}
-
-function PlanProgress({ done, total }: { done: number; total: number }) {
-  if (total > 0 && done === total) return <CircleCheck size={14} className="agent-plan-icon shrink-0 text-[var(--accent-green)]" data-animate aria-hidden="true" />;
-  const length = 2 * Math.PI * 5;
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" className="shrink-0 -rotate-90" aria-hidden="true">
-      <circle cx="7" cy="7" r="5" fill="none" strokeWidth="1.5" className="stroke-[var(--border-medium)]" />
-      <circle cx="7" cy="7" r="5" fill="none" strokeWidth="1.5" strokeLinecap="round" strokeDasharray={length}
-        strokeDashoffset={length * (1 - (total ? done / total : 0))} className="agent-plan-progress stroke-[var(--accent-green)]" />
-    </svg>
-  );
-}
-
-export function PlanCard({ plan, running }: { plan: AgentPlan; running: boolean }) {
-  const [open, setOpen] = useState(true);
-  const done = plan.steps.filter((step) => step.status === 'done').length;
-  const complete = plan.steps.length > 0 && done === plan.steps.length;
-  return (
-    <section aria-label="Plan del agente" className="agent-trace-in w-full rounded-xl bg-[color:color-mix(in_srgb,var(--text-primary)_4%,transparent)] text-[13px] leading-5">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="group flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-      >
-        <PlanProgress done={done} total={plan.steps.length} />
-        <span className="shrink-0 font-medium text-[var(--text-primary)]">{complete ? 'Plan completado' : 'Plan'}</span>
-        <span className="min-w-0 flex-1 truncate text-[var(--text-muted)]" title={plan.goal}>{plan.goal}</span>
-        <span className="shrink-0 tabular-nums text-[12px] text-[var(--text-muted)]" aria-label={`${done} de ${plan.steps.length} hechos`}>{done}/{plan.steps.length}</span>
-        <ChevronDown size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${open ? '' : '-rotate-90'}`} aria-hidden="true" />
-      </button>
-      <div className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-        <div className="agent-subagent-body overflow-hidden" inert={!open} aria-hidden={!open}>
-          <ol className="space-y-1 px-3 pb-2.5">
-            {plan.steps.map((step, index) => (
-              <li key={`${index}-${step.title}`} className="flex items-start gap-2">
-                <span key={step.status} data-animate={running || undefined} className="agent-plan-icon flex h-5 shrink-0 items-center"><PlanStepIcon status={step.status} /></span>
-                <span className="min-w-0">
-                  <span data-done={step.status === 'done' || undefined} className={`agent-plan-title ${
-                    step.status === 'in_progress' ? (running ? 'agent-shimmer' : 'text-[var(--text-primary)]')
-                      : step.status === 'pending' ? 'text-[var(--text-muted)]'
-                        : step.status === 'failed' ? 'text-[var(--accent-red)]'
-                          : 'text-[var(--text-muted)]'
-                  }`}>{step.title}</span>
-                  {step.evidence && <span className="block text-[11.5px] leading-4 text-[var(--text-muted)]">{step.evidence}</span>}
-                </span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </div>
-    </section>
   );
 }
 

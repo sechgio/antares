@@ -1,6 +1,9 @@
 import { _invoke } from './core';
 import type { AgentDelegation, AgentRole, AgentRoom } from './agentDelegation';
+import type { AgentPlanStatus } from './agentPlan';
 import type { CanvasDocument } from '../components/canvas/types';
+
+export type { AgentPlanStatus } from './agentPlan';
 
 export type { AgentDelegation, AgentRole, AgentRoom, AgentRoomMember } from './agentDelegation';
 
@@ -313,7 +316,7 @@ export interface AgentBrowserBounds {
 
 export interface AgentPlan {
   goal: string;
-  steps: { title: string; status: 'pending' | 'in_progress' | 'done' | 'failed'; evidence?: string }[];
+  steps: { title: string; status: AgentPlanStatus; evidence?: string }[];
 }
 
 export interface AgentContext {
