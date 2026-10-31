@@ -16,6 +16,7 @@ try {
     'MCP tiene su propio canal, también con los nombres actuales mcp2__');
   assert(channelFor('document_generate', 'documents') === 'documents', 'los documentos tienen su canal');
   assert(channelFor('memory_remember', 'agent') === 'memory', 'la memoria tiene su canal');
+  assert(channelFor('skill_create', 'agent') === 'other', 'el alta de skills no se auto-permite por canal');
   assert(channelFor('task_schedule', 'agent') === 'agenda', 'la agenda tiene su canal');
   assert(channelFor('drafts_save', 'drafts') === 'other', 'drafts_save siempre pide aprobación: su carpeta de destino no está confinada');
   assert(channelFor('metodo_nuevo', 'conversion') === 'other', 'un método desconocido cae en otros');

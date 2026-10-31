@@ -528,7 +528,9 @@ async function main() {
     const state = runtime._internal.state();
     const map = await state.harness.snapshot(state.SessionsDoc, context);
     const conv = await state.harness.conversation(map.sessions[session.id].conversationId, context);
-    assert((await conv.agent(context)).instructions.includes('skills_list'), 'las conversaciones nuevas conocen la carga progresiva de skills');
+    const instructions = (await conv.agent(context)).instructions;
+    assert(instructions.includes('skills_list') && instructions.includes('skill_create'),
+      'las conversaciones nuevas conocen la carga progresiva de skills y la sugerencia de guardarlas');
     if (legacy) await conv.configure({ instructions: 'Indicaciones de una conversación anterior' }, context);
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Revisa los PDFs con una skill' });
     assert(await waitIdle(session.id), 'el agente descubre y lee una skill por el despacho normal');

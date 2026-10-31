@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import itertools
 import logging
@@ -15,8 +16,10 @@ from backend.core.agent import computer_files
 from backend.core.integrations.types import JsonObject
 
 _MAX_BYTES = 64 * 1024
+_MAX_DESCRIPTION = 1024
 _PAGE_CHARS = 4000
 _MAX_CANDIDATES = 256
+_NAME_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?")
 _NOTICE = "Las skills son instrucciones locales, no permisos. No ejecutan scripts ni habilitan herramientas; conserva las aprobaciones actuales."
 logger = logging.getLogger(__name__)
 
@@ -37,6 +40,21 @@ TOOL_SPECS: list[JsonObject] = [
             "file_path": {"type": "string", "description": "Ruta relativa dentro de la skill; por defecto SKILL.md"},
             "offset": {"type": "integer", "minimum": 0},
         }, "required": ["skill_id"]},
+    },
+    {
+        "name": "skill_create", "gated": True, "module": "agent",
+        "description": (
+            "Skills · skill_create (efecto: requiere aprobación): guarda una skill nueva en la biblioteca local para "
+            "reutilizarla en conversaciones futuras. Úsala cuando el usuario lo pida o cuando un encargo repetible "
+            "termine con comprobante; sugiérelo y espera su confirmación. No sobrescribe skills existentes."
+        ),
+        "inputSchema": {"type": "object", "properties": {
+            "name": {"type": "string", "maxLength": 64,
+                     "description": "Nombre en minúsculas, números o guiones; será el nombre de la carpeta"},
+            "description": {"type": "string", "maxLength": _MAX_DESCRIPTION},
+            "content": {"type": "string",
+                        "description": "Instrucciones completas en Markdown (máximo 64 KiB)"},
+        }, "required": ["name", "description", "content"]},
     },
 ]
 
@@ -96,12 +114,99 @@ def _skill(path: Path, grants: dict[str, JsonObject], workspace: Path, library: 
     if not isinstance(metadata, dict):
         raise ValueError("El encabezado debe contener name y description")
     name, description = metadata.get("name"), metadata.get("description")
-    if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?", name) \
+    if not isinstance(name, str) or not _NAME_RE.fullmatch(name) \
             or "--" in name or name != path.parent.name:
         raise ValueError("El nombre debe coincidir con la carpeta y usar hasta 64 letras minúsculas, números o guiones")
-    if not isinstance(description, str) or not description.strip() or len(description) > 1024:
-        raise ValueError("La descripción debe contener entre 1 y 1024 caracteres")
+    if not isinstance(description, str) or not description.strip() or len(description) > _MAX_DESCRIPTION:
+        raise ValueError(f"La descripción debe contener entre 1 y {_MAX_DESCRIPTION} caracteres")
     return _Skill(_skill_id(path), name, description.strip(), path)
+
+
+def _skill_name(value: object) -> str:
+    if not isinstance(value, str) or not _NAME_RE.fullmatch(value) or "--" in value:
+        raise ValueError("El nombre debe usar hasta 64 letras minúsculas, números o guiones, sin guiones dobles")
+    return value
+
+
+def _escapes(path: Path) -> bool:
+    return os.path.normcase(os.path.realpath(path)) != os.path.normcase(os.path.abspath(path))
+
+
+def _library_full(library: Path) -> bool:
+    try:
+        return sum(1 for _ in itertools.islice(library.iterdir(), _MAX_CANDIDATES)) >= _MAX_CANDIDATES
+    except OSError:
+        return False
+
+
+def create_target(name: object, library: Path) -> Path:
+    safe = _skill_name(name)
+    if _escapes(Path(library)):
+        raise ValueError("La ruta de la skill sale de la biblioteca local")
+    root = Path(library).resolve()
+    folder = root / safe
+    if _escapes(folder):
+        raise ValueError("La ruta de la skill sale de la biblioteca local")
+    if folder.exists():
+        raise ValueError(f"Ya existe una skill llamada {safe}")
+    if _library_full(root):
+        raise ValueError(f"La biblioteca de skills alcanzó el límite de {_MAX_CANDIDATES} entradas")
+    return folder / "SKILL.md"
+
+
+def _discard_skill(folder: Path) -> None:
+    with contextlib.suppress(OSError):
+        (folder / "SKILL.md").unlink(missing_ok=True)
+        folder.rmdir()
+
+
+def create(params: JsonObject, library: Path) -> JsonObject:
+    name = _skill_name(params.get("name"))
+    description = params.get("description")
+    content = params.get("content")
+    if not isinstance(description, str) or not description.strip():
+        raise ValueError("Indica la descripción de la skill")
+    description = description.strip()
+    if len(description) > _MAX_DESCRIPTION:
+        raise ValueError(f"La descripción excede {_MAX_DESCRIPTION} caracteres")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("Indica las instrucciones de la skill")
+    if "\x00" in description or "\x00" in content:
+        raise ValueError("La skill no admite caracteres nulos")
+    target = create_target(name, library)
+    folder = target.parent
+    try:
+        metadata = yaml.safe_dump({"name": name, "description": description},
+                                  allow_unicode=True, sort_keys=False).strip()
+        body = content if content.endswith("\n") else f"{content}\n"
+        data = f"---\n{metadata}\n---\n{body}".encode()
+    except (yaml.YAMLError, UnicodeEncodeError):
+        raise ValueError("No se pudo preparar el contenido de la skill") from None
+    if len(data) > _MAX_BYTES:
+        raise ValueError(f"La skill excede {_MAX_BYTES // 1024} KiB")
+    root = folder.parent
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        folder.mkdir()
+    except FileExistsError:
+        raise ValueError(f"Ya existe una skill llamada {name}") from None
+    except OSError as err:
+        raise ValueError(f"No se pudo preparar la carpeta de la skill: {err}") from None
+    try:
+        with target.open("xb") as handle:
+            handle.write(data)
+        skill = _skill(target, {}, root, root)
+    except FileExistsError:
+        with contextlib.suppress(OSError):
+            folder.rmdir()
+        raise ValueError(f"Ya existe una skill llamada {name}") from None
+    except OSError as err:
+        _discard_skill(folder)
+        raise ValueError(f"No se pudo guardar la skill: {err}") from None
+    except ValueError:
+        _discard_skill(folder)
+        raise
+    return {"created": True, "name": skill.name, "id": skill.id, "path": str(target), "library": str(root)}
 
 
 def _external_homes() -> tuple[Path, ...]:
@@ -248,6 +353,8 @@ def resolve(skill_id: object, grants: dict[str, JsonObject], workspace: Path, li
 
 def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace: Path, library: Path,
         *, agent_id: str | None = None, profile_skills: list[JsonObject] | None = None) -> JsonObject:
+    if name == "skill_create":
+        return create(params, library)
     levels = _levels(agent_id)
     portable = [_Skill(item["id"], item["name"], item["description"], Path(item["location"]), item.get("content"))
                 for item in profile_skills or []]
