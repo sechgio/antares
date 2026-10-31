@@ -1567,8 +1567,8 @@ async function main() {
       'las instrucciones incluyen la política de comunicación');
     assert(String(instructions).includes('prefiere las herramientas cua_') && String(instructions).includes('suspected_noop'),
       'las instrucciones guían el uso de cua_ y la lectura de su effect');
-    assert(String(instructions).includes('Modo 100 %:') && String(instructions).includes('sin pedir confirmaciones de trámite')
-      && String(instructions).includes('El último tramo es obligatorio') && String(instructions).includes('sin ejecutar el disparo final'),
+    assert(String(instructions).includes('Modo 100 %:') && String(instructions).includes('no pidas confirmaciones de trámite')
+      && String(instructions).includes('corrige y vuelve a comprobar') && String(instructions).includes('sin ejecutar el disparo final'),
       'las instrucciones aplican el modo 100 %: completar, verificar y dejar listo sin disparar');
     const plain = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const plainTools = (await runtime.handlers.agent_tools_list({ session_id: plain.session.id })).tools;

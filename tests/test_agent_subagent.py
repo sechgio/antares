@@ -38,6 +38,12 @@ def _call(session, **overrides):
     }
 
 
+def test_subagent_prompt_exige_comprobar_el_efecto_real():
+    prompt = subagent.system_prompt("Investigador", "Consulta el catálogo.")
+
+    assert "Comprueba el efecto real con las herramientas antes de afirmar que la tarea quedó hecha." in prompt
+
+
 def test_subagent_ejecuta_lecturas_y_devuelve_traza(tmp_path, monkeypatch):
     store, session = _session(tmp_path)
     replies = [
