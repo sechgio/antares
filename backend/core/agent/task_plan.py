@@ -1,15 +1,21 @@
 from __future__ import annotations
 
-from backend.core.integrations.types import JsonObject
+import json
 
-_STATUSES = ("pending", "in_progress", "done", "failed")
-_MAX_STEPS = 20
+from backend.core.integrations.types import JsonObject
+from backend.utils.paths import resource_path
+
+_CONTRACT = json.loads(resource_path("shared/agent-plan.json").read_text(encoding="utf-8"))
+_STATUSES = tuple(_CONTRACT["statuses"])
+_MAX_STEPS = int(_CONTRACT["max_steps"])
+_MAX_TITLE_CHARS = int(_CONTRACT["max_title_chars"])
+_MAX_EVIDENCE_CHARS = int(_CONTRACT["max_evidence_chars"])
 
 TOOL_SPECS: list[JsonObject] = [
     {
         "name": "task_plan",
         "gated": False,
-        "module": "computer",
+        "module": "plan",
         "description": (
             "Plan · task_plan (sin efectos): publica o actualiza el plan visible del encargo. Envía siempre la lista "
             "completa de pasos; marca un paso «done» solo con la evidencia observada que lo comprueba"
@@ -52,12 +58,17 @@ def update(params: JsonObject) -> JsonObject:
         status = str(item.get("status") or "pending")
         if status not in _STATUSES:
             raise ValueError(f"Estado no válido: {status}")
-        if status == "done" and not str(item.get("evidence") or "").strip():
+        evidence = str(item.get("evidence") or "").strip()
+        if status == "done" and not evidence:
             raise ValueError(f"Indica la evidencia que comprueba «{item['title']}» antes de marcarlo como hecho")
-        steps.append({"title": str(item["title"]).strip()[:160], "status": status})
+        step: JsonObject = {"title": str(item["title"]).strip()[:_MAX_TITLE_CHARS], "status": status}
+        if evidence:
+            step["evidence"] = evidence[:_MAX_EVIDENCE_CHARS]
+        steps.append(step)
     remaining = [s["title"] for s in steps if s["status"] in {"pending", "in_progress"}]
     failed = [s["title"] for s in steps if s["status"] == "failed"]
-    result: JsonObject = {"recorded": True, "done": len(steps) - len(remaining) - len(failed),
+    result: JsonObject = {"recorded": True, "plan": {"goal": goal, "steps": steps},
+                          "done": len(steps) - len(remaining) - len(failed),
                           "total": len(steps), "remaining": remaining}
     if failed:
         result["failed"] = failed

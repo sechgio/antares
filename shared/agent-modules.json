@@ -133,6 +133,12 @@
       "handlers": [],
       "methods": ["memory_search", "memory_remember", "procedure_learn"]
     },
+    "plan": {
+      "label": "Plan del encargo",
+      "aliases": ["plan", "pasos", "pendientes"],
+      "handlers": [],
+      "methods": ["task_plan"]
+    },
     "agenda": {
       "label": "Agenda",
       "aliases": ["agenda", "encargos", "programados", "recordatorios"],
@@ -156,7 +162,7 @@
       "aliases": ["equipo", "pc", "computadora", "archivos", "terminal", "powershell", "navegador", "web", "internet", "escritorio", "windows"],
       "handlers": [],
       "methods": ["fs_list", "fs_read", "fs_search", "fs_write", "fs_edit", "shell_run", "shell_job_start",
-        "shell_job_status", "shell_job_cancel", "task_plan",
+        "shell_job_status", "shell_job_cancel",
         "desktop_observe", "desktop_click", "desktop_type", "desktop_key", "desktop_scroll", "desktop_launch", "desktop_focus",
         "cua_list_windows", "cua_list_apps", "cua_screen_size", "cua_window_state", "cua_zoom", "cua_click", "cua_drag",
         "cua_scroll", "cua_type_text", "cua_press_key", "cua_hotkey", "cua_set_value", "cua_invoke_menu", "cua_launch_app",

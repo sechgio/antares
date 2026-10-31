@@ -58,6 +58,7 @@
     ["design_", "documents"]
   ],
   "modules": {
+    "plan": "other",
     "computer": "desktop",
     "documents": "documents",
     "drafts": "documents",

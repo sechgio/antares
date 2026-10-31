@@ -15,6 +15,7 @@ const {
   commitSessions,
   planFromParams,
   readPlan,
+  deleteSessionAndPlan,
   requireSession,
   conversation,
   providerCallId,
@@ -699,7 +700,7 @@ async function sessionDelete(params) {
   await bridge('agent_internal_grants_revoke', { session_id: sessionId }).catch(() => {});
   await bridge('agent_internal_shell_jobs_cancel_session', { session_id: sessionId }).catch(() => {});
   await require('./agent-events').cancelSession(sessionId).catch(() => {});
-  await commitSessions((map) => { delete map[sessionId]; });
+  await deleteSessionAndPlan(sessionId);
   const watcher = shared.watchers.get(session.conversationId);
   if (watcher) {
     watcher.stop().catch(() => {});
@@ -761,9 +762,9 @@ async function roomsList(params) {
   return require('./agent-rooms').listRooms(String((params && params.session_id) || ''));
 }
 
+// El historial es la fuente de verdad; el doc guardado cubre compactación e
+// importación, donde la llamada original puede ya no estar en la conversación.
 function _latestPlan(messages, saved) {
-  const stored = planFromParams(saved);
-  if (stored) return stored;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const calls = messages[i].tool_calls || [];
     for (let j = calls.length - 1; j >= 0; j -= 1) {
@@ -773,15 +774,14 @@ function _latestPlan(messages, saved) {
       if (plan) return plan;
     }
   }
-  return null;
+  return planFromParams(saved);
 }
 
 async function latestPlan(sessionId) {
   const session = await requireSession(sessionId);
-  const saved = planFromParams(await readPlan(sessionId));
-  if (saved) return saved;
+  const saved = await readPlan(sessionId);
   const { messages } = await projection.projectMessages(await conversation(sessionId), session);
-  return _latestPlan(messages);
+  return _latestPlan(messages, saved);
 }
 
 async function browserAction(params) {

@@ -44,7 +44,7 @@ const SUBAGENT_MAX_DEPTH = 1;
 const SUBAGENT_MAX_TASKS = 4;
 const TOOLS_LOAD = 'tools_load';
 const requiredSkills = new Map();
-const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent']);
+const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent', 'plan']);
 const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD, 'task_schedule']);
 const MEMORY_TOOLS = ['memory_search', 'memory_remember', 'procedure_learn'];
 const UI_ACTION_TOOLS = new Set(['cua_click', 'cua_drag', 'cua_scroll', 'cua_type_text', 'cua_press_key', 'cua_hotkey',
@@ -1066,7 +1066,7 @@ async function executeTool(spec, args, api, context) {
     turnState(api.conversationId).remaining = parsed.remaining.map(String);
   }
   if (spec.name === 'task_plan' && !isError) {
-    const plan = planFromParams(args);
+    const plan = planFromParams(parsed && parsed.plan) || planFromParams(args);
     if (plan) await savePlan(sessionId, plan);
   }
   const image = isError || !await acceptsImages(api, context) ? null : await resultImage(parsed);
