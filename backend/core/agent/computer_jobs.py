@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.core.agent import computer_files, computer_shell
+from backend.core.agent import progress as agent_progress
 from backend.core.agent.cancel import RunCancelled
 from backend.core.integrations.types import JsonObject
 from backend.utils.atomic_write import atomic_write_json
@@ -27,6 +28,7 @@ _MAX_JOB_SECONDS = 1800
 _MAX_COMMAND_CHARS = 8_000
 _MAX_OUTPUT_CHARS = 4_000_000
 _MAX_BUFFER_BYTES = 8_000_000
+_MAX_NOTIFY_OUTPUT_CHARS = 1_200
 _WRITE_INTERVAL_S = 0.75
 _JOB_ID = re.compile(r"[a-f0-9]{32}")
 _PRELUDE = (
@@ -106,6 +108,7 @@ class _Job:
     exit_code: int | None = None
     ended_at: float | None = None
     status: str = "running"
+    command: str = ""
     written_at: float = 0.0
     dirty: bool = False
     dropped_stdout: int = 0
@@ -163,16 +166,27 @@ def _snapshot(job: _Job) -> JsonObject:
     }
 
 
-def _flush(job: _Job) -> None:
+def _command_name(command: str) -> str:
+    clean = re.sub(r"\s+", " ", command).strip()
+    return clean if len(clean) <= 80 else f"{clean[:80]}…"
+
+
+def _notify(session_id: str, job_id: str, event: str, **fields: object) -> None:
+    agent_progress.emit(session_id, "shell_job", event, id=job_id, job_id=job_id, **fields)
+
+
+def _flush(job: _Job) -> JsonObject:
     with job.lock:
         job.dirty = False
         job.written_at = time.monotonic()
+    snapshot = _snapshot(job)
     try:
-        atomic_write_json(_output_path(job.root, job.id), _snapshot(job))
+        atomic_write_json(_output_path(job.root, job.id), snapshot)
     except OSError:
         with job.lock:
             job.dirty = True
         raise
+    return snapshot
 
 
 def _meta(job: _Job, status: str) -> JsonObject:
@@ -209,10 +223,20 @@ def _finish(job: _Job, status: str) -> None:
         _write_meta(job, status)
     except OSError:
         logger.warning("No se pudo persistir el job %s", job.id, exc_info=True)
+    duration = (job.ended_at or time.time()) - job.started_at
     with _LOCK:
         job.status = status
         _JOBS.pop(job.id, None)
-    duration = (job.ended_at or time.time()) - job.started_at
+    _notify(
+        job.session_id,
+        job.id,
+        "error" if status in {"failed", "timed_out"} else "finish",
+        name=_command_name(job.command),
+        status=status,
+        exit_code=job.exit_code,
+        duration_s=round(duration, 2),
+        cancellable=False,
+    )
     logger.info("Shell job %s terminó con estado %s en %.1f s", job.id, status, duration)
 
 
@@ -230,9 +254,20 @@ def _monitor(job: _Job) -> None:
             due = job.dirty and time.monotonic() - job.written_at >= _WRITE_INTERVAL_S
         if due:
             try:
-                _flush(job)
+                snapshot = _flush(job)
             except OSError:
                 logger.warning("No se pudo escribir la salida del job %s", job.id, exc_info=True)
+            else:
+                _notify(
+                    job.session_id,
+                    job.id,
+                    "step",
+                    name=_command_name(job.command),
+                    status="running",
+                    stdout=str(snapshot.get("stdout") or "")[-_MAX_NOTIFY_OUTPUT_CHARS:],
+                    stderr=str(snapshot.get("stderr") or "")[-_MAX_NOTIFY_OUTPUT_CHARS:],
+                    cancellable=True,
+                )
         time.sleep(0.1)
     process.wait()
     job.exit_code = process.returncode
@@ -280,7 +315,7 @@ def start(params: JsonObject, grants: dict[str, JsonObject], root: Path, session
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         job = _Job(id=job_id, session_id=session_id, root=root, process=process,
-                   started_at=time.time(), deadline=time.monotonic() + timeout)
+                   started_at=time.time(), deadline=time.monotonic() + timeout, command=command)
         _JOBS[job_id] = job
     if token is not None and getattr(token, "cancelled", False):
         with _LOCK:
@@ -293,6 +328,14 @@ def start(params: JsonObject, grants: dict[str, JsonObject], root: Path, session
         _write_meta(job, "running")
     except OSError:
         logger.warning("No se pudo registrar el job %s", job.id, exc_info=True)
+    _notify(
+        job.session_id,
+        job.id,
+        "start",
+        name=_command_name(job.command),
+        status="running",
+        cancellable=True,
+    )
     assert process.stdout is not None and process.stderr is not None
     job.readers = [
         threading.Thread(target=_pump, args=(job, "stdout", process.stdout), daemon=True),
@@ -344,6 +387,7 @@ def status(params: JsonObject, root: Path, session_id: str) -> JsonObject:
         data["status"] = "interrupted"
         data["ended_at"] = time.time()
         atomic_write_json(_meta_path(root, job_id), data)
+        _notify(session_id, job_id, "finish", name=job_id, status="interrupted", cancellable=False)
     return {
         "job_id": job_id,
         "status": data.get("status"),
@@ -370,6 +414,7 @@ def cancel(params: JsonObject, root: Path, session_id: str) -> JsonObject:
         data["status"] = "interrupted"
         data["ended_at"] = time.time()
         atomic_write_json(_meta_path(root, job_id), data)
+        _notify(session_id, job_id, "finish", name=job_id, status="interrupted", cancellable=False)
     return {"job_id": job_id, "cancelled": False, "status": data.get("status")}
 
 

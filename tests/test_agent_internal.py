@@ -400,6 +400,8 @@ def test_dispatch_result_unknown_and_cancel(store):
         _dispatch_result("inexistente")
     out = agent_internal.HANDLERS["agent_internal_dispatch_cancel"]({"session_id": "s1", "call_id": "inexistente"})
     assert out == {"cancelled": False}
+    out = agent_internal.HANDLERS["agent_dispatch_cancel"]({"session_id": "s1", "call_id": "inexistente"})
+    assert out == {"cancelled": False}
 
 
 def _approve(session_id, call_id, method, params, *, channel=None, source="manual"):

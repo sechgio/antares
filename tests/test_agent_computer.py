@@ -35,6 +35,12 @@ def _run(store, name, **args):
     return agent_tools.run(name, args, store, "s1")
 
 
+def _capture_progress(events):
+    def capture(session_id, source, event, **fields):
+        events.append(("agent.progress", {"session_id": session_id, "source": source, "event": event, **fields}))
+    return capture
+
+
 def test_computer_tools_are_registered_with_their_permission_level():
     specs = {s["name"]: s for s in agent_chat.tool_specs()}
     for name in ("fs_list", "fs_read", "fs_search", "task_plan"):
@@ -353,6 +359,58 @@ def test_shell_job_runs_in_background_and_exposes_paged_output(store):
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_job_emits_progress_and_cancel_events(store, monkeypatch):
+    monkeypatch.setattr(computer_jobs, "_WRITE_INTERVAL_S", 0.1)
+    events = []
+    monkeypatch.setattr(computer_jobs.agent_progress, "emit", _capture_progress(events))
+    try:
+        job = _run(store, "shell_job_start", command="[Console]::Write('parcial'); Start-Sleep -Seconds 3", timeout_s=20)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if any(params.get("event") == "step" and "parcial" in (params.get("stdout") or "")
+                   for method, params in events if method == "agent.progress"):
+                break
+            time.sleep(0.05)
+        assert any(params.get("event") == "step" and "parcial" in (params.get("stdout") or "")
+                   for method, params in events if method == "agent.progress")
+        assert _run(store, "shell_job_cancel", job_id=job["job_id"])["cancelled"] is True
+        assert _wait_job(store, job["job_id"], {"cancelled"}, timeout=15)["status"] == "cancelled"
+        _wait_progress(events, job["job_id"], "finish")
+        job_events = [params for method, params in events
+                      if method == "agent.progress" and params.get("id") == job["job_id"]]
+        assert job_events[0]["event"] == "start" and job_events[0]["source"] == "shell_job"
+        assert job_events[0]["session_id"] == "s1" and job_events[0]["cancellable"] is True
+        assert job_events[-1]["event"] == "finish" and job_events[-1]["status"] == "cancelled"
+        assert job_events[-1]["cancellable"] is False
+    finally:
+        computer_jobs.kill_all()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_job_emits_error_when_it_fails(store, monkeypatch):
+    events = []
+    monkeypatch.setattr(computer_jobs.agent_progress, "emit", _capture_progress(events))
+    try:
+        job = _run(store, "shell_job_start", command="exit 2")
+        assert _wait_job(store, job["job_id"], {"failed"}, timeout=15)["exit_code"] == 2
+        errors = _wait_progress(events, job["job_id"], "error")
+        assert errors[-1]["status"] == "failed" and errors[-1]["exit_code"] == 2
+    finally:
+        computer_jobs.kill_all()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_agent_shell_job_cancel_is_exposed_to_the_renderer(store):
+    job = _run(store, "shell_job_start", command="Start-Sleep -Seconds 30", timeout_s=60)
+    try:
+        result = agent_internal.HANDLERS["agent_shell_job_cancel"]({"session_id": "s1", "job_id": job["job_id"]})
+        assert result["cancelled"] is True
+        assert _wait_job(store, job["job_id"], {"cancelled"}, timeout=15)["status"] == "cancelled"
+    finally:
+        computer_jobs.kill_all()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
 def test_shell_job_cancel_timeout_concurrency_and_cleanup(store):
     try:
         slow = _run(store, "shell_job_start", command="Start-Sleep -Seconds 30", timeout_s=60)
@@ -381,6 +439,17 @@ def _wait_job(store, job_id, expected, timeout=15):
             return status
         time.sleep(0.05)
     raise AssertionError(f"El job {job_id} no llegó a {expected}")
+
+
+def _wait_progress(events, job_id, event, timeout=5):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        matches = [params for method, params in events
+                   if method == "agent.progress" and params.get("id") == job_id and params.get("event") == event]
+        if matches:
+            return matches
+        time.sleep(0.05)
+    raise AssertionError(f"El job {job_id} no emitió {event}")
 
 
 def test_cancel_event_keeps_the_start_of_long_progress():

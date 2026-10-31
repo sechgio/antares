@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AlertTriangle, Check, ChevronRight, Clock3, FileJson, Loader2, ShieldCheck, Waypoints } from 'lucide-react';
 import type { AgentToolCall } from '../../api/agentApi';
 import AgentAvatar from './AgentAvatar';
+import { STATUS_LABEL } from './agentStatus';
 import { METHOD_LABELS } from './methodLabels';
 
 interface SubagentStep {
@@ -83,21 +84,6 @@ function parseSubagentReceipt(result: string | null | undefined): SubagentReceip
     return null;
   }
 }
-
-const STATUS_LABEL: Record<string, string> = {
-  done: 'completado',
-  empty: 'sin resultados',
-  limit: 'límite de pasos',
-  token_budget: 'presupuesto agotado',
-  invalid: 'contrato incumplido',
-  partial: 'parcial',
-  failed: 'falló',
-  denied: 'rechazada',
-  interrupted: 'interrumpida',
-  queued: 'en cola',
-  pending: 'pendiente',
-  submitted: 'enviada',
-};
 
 const ROLE_LABEL: Record<string, string> = {
   explorer: 'explorador',

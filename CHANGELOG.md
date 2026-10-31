@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent muestra el progreso en vivo de subagentes y jobs de PowerShell, con inicio, pasos, fin o error y un botón para cancelar cada uno desde la conversación.
 - Agent crea páginas interactivas con HTML, JavaScript y datos completos de Excel/CSV autorizados, las conserva por conversación y permite abrirlas desde una tarjeta. Las actualizaciones verifican la revisión anterior; la ejecución queda aislada, sin red ni acceso a Node o al bridge de la aplicación.
 - Agent muestra paneles interactivos dentro del chat con la herramienta `panel_show`: preguntas con botones, formularios y tablas filtrables. Las páginas de `page_create` se ejecutan inline en un iframe aislado, sin red ni bridge, con altura automática; las páginas largas y las tablas se recortan en el chat sin scroll anidado y se abren en un visor a pantalla completa dentro de Antares (Esc para cerrar). Responder un panel lo envía al agente como mensaje con `[panel:<id>]` y lo deja respondido; los paneles se conservan con la conversación.
 - Las páginas de Agent incluyen una miniatura sin scripts en el chat y una presentación uniforme para títulos, filtros, métricas y tablas, siguiendo el modo claro u oscuro de Antares.

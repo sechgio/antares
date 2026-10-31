@@ -18,12 +18,14 @@ function deferred<T>() {
 }
 
 function agentUpdates() {
-  let notify: (method: string, params: unknown) => void = () => {};
+  const listeners = new Set<(method: string, params: unknown) => void>();
   vi.spyOn(window.electronAPI, 'onNotify').mockImplementation((callback) => {
-    notify = callback;
-    return () => { notify = () => {}; };
+    listeners.add(callback);
+    return () => { listeners.delete(callback); };
   });
-  return () => notify('agent.changed', { session_id: 's1' });
+  return (method = 'agent.changed', params: unknown = { session_id: 's1' }) => {
+    for (const listener of [...listeners]) listener(method, params);
+  };
 }
 
 const session: AgentSession = {
@@ -1121,6 +1123,81 @@ it('detener pausa la cola y conserva las tareas pendientes para un envío explí
   expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([
     { session: session.id, text: 'Siguiente tarea', requestId: expect.any(String), attachments: [], failed: true },
   ]);
+});
+
+it('muestra el progreso en vivo de subagentes y jobs y permite cancelarlos', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
+  const dispatchCancel = vi.spyOn(agentApi, 'agentDispatchCancel').mockResolvedValue({ cancelled: true });
+  const jobId = 'a'.repeat(32);
+  const jobCancel = vi.spyOn(agentApi, 'agentShellJobCancel').mockResolvedValue({
+    job_id: jobId, cancelled: true, status: 'cancelling',
+  });
+  const update = agentUpdates();
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => {
+    update('agent.progress', {
+      session_id: 's2', source: 'subagent', event: 'start', id: 'ajeno', name: 'Ajeno', cancellable: true,
+    });
+  });
+  expect(screen.queryByRole('region', { name: 'Progreso en vivo' })).toBeNull();
+  await act(async () => {
+    update('agent.progress', {
+      session_id: session.id, source: 'subagent', event: 'start', id: 'call-1',
+      name: 'Investigador', status: 'running', task: 'Busca datos', cancellable: true,
+    });
+  });
+  const panel = screen.getByRole('region', { name: 'Progreso en vivo' });
+  expect(within(panel).getByText('Investigador')).toBeInTheDocument();
+  expect(within(panel).getByText('inicio · Busca datos')).toBeInTheDocument();
+  await act(async () => { fireEvent.click(within(panel).getByRole('button', { name: 'Cancelar Investigador' })); });
+  await waitFor(() => expect(dispatchCancel).toHaveBeenCalledWith(session.id, 'call-1'));
+  await waitFor(() => expect(within(panel).getByText('fin · cancelado · Cancelado')).toBeInTheDocument());
+  await act(async () => {
+    update('agent.progress', {
+      session_id: session.id, source: 'shell_job', event: 'start', id: jobId,
+      name: 'npm run build', status: 'running', cancellable: true,
+    });
+  });
+  expect(within(panel).getByText('npm run build')).toBeInTheDocument();
+  await act(async () => {
+    update('agent.progress', {
+      session_id: session.id, source: 'shell_job', event: 'step', id: jobId,
+      name: 'npm run build', status: 'running', stdout: 'Compilando…', cancellable: true,
+    });
+  });
+  expect(within(panel).getByText('Compilando…')).toBeInTheDocument();
+  await act(async () => { fireEvent.click(within(panel).getByRole('button', { name: 'Cancelar npm run build' })); });
+  await waitFor(() => expect(jobCancel).toHaveBeenCalledWith(session.id, jobId));
+  await act(async () => {
+    update('agent.progress', {
+      session_id: session.id, source: 'shell_job', event: 'finish', id: jobId,
+      name: 'npm run build', status: 'exited', detail: 'terminado', cancellable: false,
+    });
+  });
+  expect(within(panel).queryByRole('button', { name: 'Cancelar npm run build' })).toBeNull();
+  expect(within(panel).getByText('fin · completado · terminado')).toBeInTheDocument();
+});
+
+it('marca el progreso como finalizado si la cancelación llega tarde', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
+  vi.spyOn(agentApi, 'agentDispatchCancel').mockResolvedValue({ cancelled: false });
+  const update = agentUpdates();
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => {
+    update('agent.progress', {
+      session_id: session.id, source: 'subagent', event: 'start', id: 'call-2',
+      name: 'Investigador', status: 'running', task: 'Busca datos', cancellable: true,
+    });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar Investigador' }));
+  });
+  expect(await screen.findByText('fin · finalizado · La ejecución ya había terminado')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Cancelar Investigador' })).toBeNull();
 });
 
 it('recupera una aprobación pendiente sin aprobarla al montar y permite detenerla', async () => {
