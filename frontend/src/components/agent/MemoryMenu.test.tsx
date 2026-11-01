@@ -82,6 +82,17 @@ it('hace visible el alcance de la memoria por perfil y la prioridad del pedido y
   expect(screen.getByText('Indicado en una conversación')).toBeInTheDocument();
 });
 
+it('corrige la fecha del diario junto con su contenido', async () => {
+  const corrected = { ...journal, version: 2, source: { kind: 'user' as const } };
+  const update = vi.spyOn(agentApi, 'agentMemoryUpdate').mockResolvedValue({ item: corrected });
+  vi.mocked(agentApi.agentMemoryList).mockResolvedValue({ items: [journal] });
+  await open();
+  fireEvent.click(screen.getByText('Corregir'));
+  fireEvent.change(screen.getByLabelText('Fecha de Visita de obra'), { target: { value: '2026-11-02' } });
+  await act(async () => { fireEvent.click(screen.getByText('Guardar corrección')); });
+  expect(update).toHaveBeenLastCalledWith({ id: 'j1', action: 'edit', content: 'Se revisó el metrado', date: '2026-11-02' });
+});
+
 it('muestra el diario con su etiqueta y su fecha', async () => {
   vi.mocked(agentApi.agentMemoryList).mockResolvedValue({ items: [journal] });
   await open();

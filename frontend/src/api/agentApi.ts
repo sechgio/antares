@@ -508,7 +508,7 @@ export const agentApi = {
   agentSkillsList: () =>
     _invoke<{ skills: AgentSkill[]; library: string; warnings: string[]; truncated: boolean }>('agent_skills_list'),
 
-  agentMemoryUpdate: (params: { id: string; action: 'edit' | 'disable' | 'enable' | 'revert'; content?: string; when?: string; version?: number }) =>
+  agentMemoryUpdate: (params: { id: string; action: 'edit' | 'disable' | 'enable' | 'revert'; content?: string; date?: string; when?: string; version?: number }) =>
     _invoke<{ item: AgentMemoryItem }>('agent_memory_update', params),
 
   agentMemoryDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_memory_delete', { id }),

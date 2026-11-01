@@ -7,6 +7,7 @@ import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
 import Button from '../ui/Button';
+import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import { METHOD_LABELS } from './methodLabels';
 
@@ -30,7 +31,7 @@ export default function MemoryMenu() {
   const { confirm } = useDialog();
   const [items, setItems] = useState<AgentMemoryItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; text: string; date?: string } | null>(null);
   const menu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
     align: 'end',
     estimatedWidth: 340,
@@ -136,13 +137,24 @@ export default function MemoryMenu() {
                     <p className="tabular-nums text-[10px] text-[var(--text-muted)]">{item.date}</p>
                   )}
                   {editing?.id === item.id ? (
-                    <Textarea
-                      aria-label={`Corregir ${item.title}`}
-                      className="w-full text-[11px]"
-                      rows={3}
-                      value={editing.text}
-                      onChange={(e) => setEditing({ id: item.id, text: e.target.value })}
-                    />
+                    <>
+                      <Textarea
+                        aria-label={`Corregir ${item.title}`}
+                        className="w-full text-[11px]"
+                        rows={3}
+                        value={editing.text}
+                        onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+                      />
+                      {item.kind === 'journal' && (
+                        <Input
+                          type="date"
+                          className="w-full"
+                          aria-label={`Fecha de ${item.title}`}
+                          value={editing.date ?? ''}
+                          onChange={(e) => setEditing({ ...editing, date: e.target.value })}
+                        />
+                      )}
+                    </>
                   ) : (
                     <p className="whitespace-pre-wrap text-[var(--text-secondary)]">{text}</p>
                   )}
@@ -158,14 +170,19 @@ export default function MemoryMenu() {
                     {editing?.id === item.id ? (
                       <>
                         <Button size="sm" variant="secondary" disabled={!editing.text.trim()}
-                          onClick={() => void apply({ id: item.id, action: 'edit', ...(item.kind === 'procedure' ? { when: editing.text } : { content: editing.text }) })}>
+                          onClick={() => void apply({
+                            id: item.id,
+                            action: 'edit',
+                            ...(item.kind === 'procedure' ? { when: editing.text } : { content: editing.text }),
+                            ...(item.kind === 'journal' && editing.date ? { date: editing.date } : {}),
+                          })}>
                           Guardar corrección
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancelar</Button>
                       </>
                     ) : (
                       <>
-                        <Button size="sm" variant="ghost" onClick={() => setEditing({ id: item.id, text })}>Corregir</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditing({ id: item.id, text, ...(item.kind === 'journal' ? { date: item.date } : {}) })}>Corregir</Button>
                         <Button size="sm" variant="ghost" onClick={() => void apply({ id: item.id, action: item.status === 'active' ? 'disable' : 'enable' })}>
                           {item.status === 'active' ? 'Desactivar' : 'Activar'}
                         </Button>

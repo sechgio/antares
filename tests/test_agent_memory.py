@@ -302,6 +302,21 @@ def test_only_the_journal_accepts_a_date(store):
     assert "date" not in fact
     with pytest.raises(ValueError, match="diario"):
         mem.remember("s1", {"kind": "fact", "title": "Otro dato", "content": "Con fecha", "date": "2020-01-01"})
+    with pytest.raises(ValueError, match="diario"):
+        mem.update(fact["id"], {"action": "edit", "content": "Con fecha", "date": "2020-01-01"})
+    assert mem.search("duradero", session_id="s1")[0]["content"] == "Sin fecha"
+
+
+def test_search_degrades_a_journal_entry_without_a_valid_date(store, tmp_path):
+    mem = memory.memory_for(store)
+    journal = mem.remember("s1", {"kind": "journal", "title": "Bitácora", "content": "Revisión de avance"})
+    path = tmp_path / "memory.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["items"][journal["id"]]["versions"][-1]["date"] = "no-es-una-fecha"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    reloaded = memory.MemoryStore(tmp_path)
+    found = reloaded.search("revisión", session_id="s1")
+    assert [item["id"] for item in found] == [journal["id"]]
 
 
 def test_journal_keeps_versions_and_user_correction_prevails(store):

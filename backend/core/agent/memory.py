@@ -132,7 +132,10 @@ def _journal_date(value: object) -> str:
 
 
 def _journal_age(view: JsonObject) -> int:
-    return max(0, (date.today() - date.fromisoformat(str(view["date"]))).days)
+    try:
+        return max(0, (date.today() - date.fromisoformat(str(view.get("date") or ""))).days)
+    except ValueError:
+        return 0
 
 
 class MemoryStore:
@@ -287,6 +290,8 @@ class MemoryStore:
             current = next(v for v in item["versions"] if v["version"] == item["version"])
             data = {k: v for k, v in current.items() if k not in {"version", "source", "created_at"}}
             if action == "edit":
+                if item["kind"] != "journal" and params.get("date"):
+                    raise ValueError("Solo el diario lleva fecha")
                 if item["kind"] == "procedure":
                     if "when" in params:
                         data["when"] = _clean(params.get("when"), "cuándo aplica", MAX_TEXT)
