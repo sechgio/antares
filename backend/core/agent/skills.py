@@ -168,7 +168,9 @@ def _publish(target: Path, data: bytes) -> None:
     # Temporal con creación exclusiva y publicación por enlace: nunca
     # sobrescribe un SKILL.md que otro proceso haya publicado antes.
     with atomic_output_file(target, extension=".md", write_token=True) as output:
-        output.tmp_path.write_bytes(data)
+        fd = os.open(output.tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
 
 
 def create(library: Path, name: object, description: object, content: object = "") -> JsonObject:
