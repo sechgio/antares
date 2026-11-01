@@ -9,6 +9,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const { control_tool_results: CONTROL_TOOL_RESULT_NAMES } = require('../shared/agent-tool-output.json');
 const { shared, bridge, ctx, sessionForConversation } = require('./agent-shared');
 
 const DEFAULT_POLICY = Object.freeze({
@@ -25,6 +26,9 @@ const POLICY_KEYS = [
 const AUDIT_LOG = 'compactions-log.jsonl';
 const TOOL_RESULT_CLIP = 2000;
 const EMERGENCY_CLIP = 300;
+// Los resultados de control contienen instrucciones de trabajo, no datos
+// externos; la barrera dato/directriz no debe degradarlos a cita.
+const CONTROL_TOOL_RESULTS = new Set(CONTROL_TOOL_RESULT_NAMES);
 
 const CONTEXT_MARKER = shared.CONTEXT_MARKER;
 const CHECK_MARKER = shared.CHECK_MARKER;
@@ -186,7 +190,7 @@ function serializeTranscript(messages) {
 
 function guardDataDirectives(summary, messages) {
   const toolData = (messages || [])
-    .filter((message) => message.role === 'toolResult')
+    .filter((message) => message.role === 'toolResult' && !CONTROL_TOOL_RESULTS.has(message.toolName))
     .map((message) => normalizeText(blockText(message.content).join('\n')))
     .filter(Boolean);
   if (!toolData.length) return summary;
@@ -369,5 +373,6 @@ module.exports = {
   unwrapCompactionSummary,
   emergencySummary,
   isEmergencySummary,
+  guardDataDirectives,
   beforeCompact,
 };

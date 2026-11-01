@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const { channelFor, channelLabel } = require('./agent-channels');
+const { control_tool_results: CONTROL_TOOL_RESULT_NAMES } = require('../shared/agent-tool-output.json');
 
 const {
   shared,
@@ -624,10 +625,7 @@ function leadingSystem(messages) {
 // delimitado; una etiqueta falsa en el contenido no puede cerrarlo ni abrir
 // otro. Los resultados de control (skills, memoria, pregunta al usuario) no se
 // envuelven porque su contenido sí son instrucciones de trabajo.
-const CONTROL_TOOL_RESULTS = new Set([
-  'ask_user', 'skills_list', 'skills_read', 'memory_search', 'memory_remember', 'procedure_learn',
-  'tools_load', 'task_plan',
-]);
+const CONTROL_TOOL_RESULTS = new Set(CONTROL_TOOL_RESULT_NAMES);
 
 function escapeToolOutputTags(text) {
   return String(text).replace(/<(\/?)\s*tool_output\b/gi, '&lt;$1tool_output');

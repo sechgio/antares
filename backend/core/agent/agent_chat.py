@@ -13,6 +13,7 @@ from typing import Any
 from backend.core.integrations import ai_providers, http_guard, mcp_servers
 from backend.core.integrations.types import JsonObject
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, backend_methods, input_schema_for, is_idempotent
+from backend.utils.paths import resource_path
 
 MAX_MESSAGE_CHARS = 12_000
 _MAX_TOOL_RESULT_CHARS = 6_000
@@ -90,10 +91,9 @@ _TOOL_OUTPUT_TAG_RE = re.compile(r"<(\/?)\s*tool_output\b", re.IGNORECASE)
 _TOOL_OUTPUT_ORIGIN_RE = re.compile(r"[^A-Za-z0-9_.:-]+")
 # Resultados de control: su contenido sí son instrucciones de trabajo (skills,
 # memoria o la respuesta del usuario), así que no se envuelven como dato.
-_CONTROL_TOOL_RESULTS = frozenset({
-    "ask_user", "skills_list", "skills_read", "memory_search", "memory_remember", "procedure_learn",
-    "tools_load", "task_plan",
-})
+_CONTROL_TOOL_RESULTS = frozenset(
+    json.loads(resource_path("shared/agent-tool-output.json").read_text(encoding="utf-8"))["control_tool_results"]
+)
 
 
 def _tool_output_block(name: object, content: str) -> str:
