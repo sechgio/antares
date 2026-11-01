@@ -50,7 +50,10 @@ const PLAN_STATUSES = new Set(PLAN_CONTRACT.statuses);
 const MAX_PLAN_STEPS = Number(PLAN_CONTRACT.max_steps) || 20;
 const MAX_PLAN_TITLE_CHARS = Number(PLAN_CONTRACT.max_title_chars) || 160;
 const MAX_PLAN_EVIDENCE_CHARS = Number(PLAN_CONTRACT.max_evidence_chars) || 300;
+const MAX_PLAN_ID_CHARS = Number(PLAN_CONTRACT.max_id_chars) || 64;
+const MAX_PLAN_STEP_DEPENDENCIES = Number(PLAN_CONTRACT.max_step_dependencies) || 20;
 const planWrites = new Map();
+const deletedPlans = new Set();
 
 // Los proveedores compatibles con OpenAI pueden repetir ids («call_0») entre turnos
 // o dejarlos vacíos; la tarea de pi-durable identifica cada llamada de forma estable.
@@ -134,10 +137,17 @@ function planFromParams(params) {
     if (!title) continue;
     const status = PLAN_STATUSES.has(step && step.status) ? step.status : 'pending';
     const evidence = String((step && step.evidence) || '').trim();
+    const id = String((step && step.id) || '').slice(0, MAX_PLAN_ID_CHARS);
+    const dependencies = Array.isArray(step && step.dependencies)
+      ? step.dependencies.filter((dependency) => dependency != null && String(dependency).trim())
+        .map(String).slice(0, MAX_PLAN_STEP_DEPENDENCIES)
+      : [];
     steps.push({
+      ...(id ? { id } : {}),
       title: title.slice(0, MAX_PLAN_TITLE_CHARS),
       status,
       ...(evidence ? { evidence: evidence.slice(0, MAX_PLAN_EVIDENCE_CHARS) } : {}),
+      ...(dependencies.length ? { dependencies } : {}),
     });
   }
   if (!steps.length) return null;
@@ -148,7 +158,9 @@ async function savePlan(sessionId, plan) {
   const state = shared.state;
   const normalized = planFromParams(plan);
   if (!state?.PlanDoc || !sessionId || !normalized) return false;
+  if (deletedPlans.has(sessionId)) return false;
   const write = async () => {
+    if (deletedPlans.has(sessionId)) return false;
     try {
       await state.harness.commit(async (tx) => {
         const doc = await tx.doc(state.PlanDoc);
@@ -183,18 +195,25 @@ async function readPlan(sessionId) {
 }
 
 async function deleteSessionAndPlan(sessionId) {
-  const pending = planWrites.get(sessionId);
-  if (pending) await pending;
-  const state = shared.state;
-  if (!state?.SessionsDoc) throw new Error('El agente no está abierto');
-  return state.harness.commit(async (tx) => {
-    const sessionsDoc = await tx.doc(state.SessionsDoc);
-    delete sessionsDoc.sessions[sessionId];
-    if (state.PlanDoc) {
-      const plansDoc = await tx.doc(state.PlanDoc);
-      delete plansDoc.plans[sessionId];
-    }
-  }, ctx());
+  // Marca antes de drenar: un task_plan en vuelo no puede recrear el plan tras el borrado.
+  deletedPlans.add(sessionId);
+  try {
+    const pending = planWrites.get(sessionId);
+    if (pending) await pending;
+    const state = shared.state;
+    if (!state?.SessionsDoc) throw new Error('El agente no está abierto');
+    return await state.harness.commit(async (tx) => {
+      const sessionsDoc = await tx.doc(state.SessionsDoc);
+      delete sessionsDoc.sessions[sessionId];
+      if (state.PlanDoc) {
+        const plansDoc = await tx.doc(state.PlanDoc);
+        delete plansDoc.plans[sessionId];
+      }
+    }, ctx());
+  } catch (err) {
+    deletedPlans.delete(sessionId);
+    throw err;
+  }
 }
 
 async function requireSession(sessionId) {

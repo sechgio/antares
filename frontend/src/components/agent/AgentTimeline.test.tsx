@@ -738,6 +738,18 @@ it('no duplica el plan como fila de herramienta', () => {
   expect(screen.queryByText(/Actualizar el plan del encargo/)).toBeNull();
 });
 
+it('muestra una actualización fallida del plan como paso', () => {
+  render(<AssistantTurn view="normal" messages={[{
+    role: 'assistant', content: '', ts: 1,
+    tool_calls: [{
+      id: 'plan', name: 'task_plan', params: { goal: 'g', steps: [] }, status: 'failed' as const, gated: false,
+      result: '{"error":"Indica la evidencia que comprueba el paso"}',
+    }],
+  }]} />);
+  expect(screen.getByText('Actualizar el plan del encargo')).toBeInTheDocument();
+  expect(screen.getByText(/Indica la evidencia que comprueba el paso/)).toBeInTheDocument();
+});
+
 it('resume los fallos y anuncia el estado de cada paso', () => {
   render(<PlanCard running={false} plan={{ goal: 'Cerrar el mes', steps: [
     { title: 'Leer', status: 'failed' },

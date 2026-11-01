@@ -35,4 +35,23 @@ assert.equal(long.steps[0].evidence.length, contract.max_evidence_chars, 'el pla
 assert.equal(planFromParams({ goal: 'g', steps: [] }), null, 'un plan sin pasos no se persiste');
 assert.equal(planFromParams({ goal: 'g', steps: [{ title: '   ' }] }), null, 'un plan sin títulos no se persiste');
 
+assert.equal(contract.max_id_chars, 64, 'el contrato limita los ids de los pasos');
+assert.equal(contract.max_step_dependencies, 20, 'el contrato limita las dependencias por paso');
+
+const identified = planFromParams({ goal: 'g', steps: [
+  { id: 'revisar', title: 'Revisar', status: 'done', evidence: 'visto', dependencies: ['preparar', ''] },
+] });
+assert.equal(identified.steps[0].id, 'revisar', 'el id estable se conserva');
+assert.deepEqual(identified.steps[0].dependencies, ['preparar'], 'las dependencias no vacías se conservan');
+const capped = planFromParams({ goal: 'g', steps: [{
+  id: 'x'.repeat(contract.max_id_chars + 10),
+  title: 'Paso',
+  status: 'pending',
+  dependencies: Array.from({ length: contract.max_step_dependencies + 5 }, (_, index) => `d${index}`),
+}] });
+assert.equal(capped.steps[0].id.length, contract.max_id_chars, 'el id se recorta al tope');
+assert.equal(capped.steps[0].dependencies.length, contract.max_step_dependencies, 'las dependencias se recortan al tope');
+assert.equal('id' in planFromParams({ goal: 'g', steps: [{ title: 'x' }] }).steps[0], false,
+  'sin id estable no se inventa uno');
+
 console.log('[PASS] contrato del plan: estados, límites y normalización compartidos coinciden.');

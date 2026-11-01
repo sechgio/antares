@@ -704,7 +704,7 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
     }
     if (message.content && message !== answer) entries.push({ kind: 'note', key: `note-${index}`, text: message.content });
     for (const call of message.tool_calls ?? []) {
-      if (call.name === 'task_plan') continue;
+      if (call.name === 'task_plan' && call.status === 'done') continue;
       entries.push({ kind: 'call', key: call.id, call });
       for (const panel of panels.filter((item) => item.call_id === call.id)) entries.push({ kind: 'panel', key: `panel-${panel.id}`, panel });
     }

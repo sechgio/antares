@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const runtime = require('../electron/agent-runtime');
 const tasks = require('../electron/agent-tasks');
-const { conversation, readPlan, savePlan, sessions } = require('../electron/agent-shared');
+const { conversation, deleteSessionAndPlan, readPlan, savePlan, sessions } = require('../electron/agent-shared');
 const projection = require('../electron/agent-projection');
 
 async function until(check, timeout = 20000) {
@@ -67,8 +67,8 @@ async function main() {
   runtime._internal._providerOverrides.set('faux', faux.provider);
   faux.setResponses([
     fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Cerrar el trimestre', steps: [
-      { title: 'Revisar el contrato', status: 'done', evidence: 'contrato revisado' },
-      { title: 'Contrastar el anexo', status: 'in_progress' },
+      { id: 'revisar', title: 'Revisar el contrato', status: 'done', evidence: 'contrato revisado' },
+      { id: 'contrastar', title: 'Contrastar el anexo', status: 'in_progress', dependencies: ['revisar'] },
     ] })], { stopReason: 'toolUse' }),
     fauxAssistantMessage('Plan anotado'),
     fauxAssistantMessage('Informe del hijo'),
@@ -93,6 +93,10 @@ async function main() {
     assert.equal(stored.plans[parent.id]?.goal, 'Cerrar el trimestre', 'el plan vigente queda en su documento');
     assert.deepEqual(stored.plans[parent.id].steps.map((step) => step.status), ['done', 'in_progress']);
     assert.equal(stored.plans[parent.id].steps[0].evidence, 'contrato revisado', 'el doc conserva la evidencia canonical');
+    assert.deepEqual(stored.plans[parent.id].steps.map((step) => step.id), ['revisar', 'contrastar'],
+      'el doc conserva los ids estables');
+    assert.deepEqual(stored.plans[parent.id].steps[1].dependencies, ['revisar'],
+      'el doc conserva las dependencias');
     assert.equal(typeof stored.plans[parent.id].updated_at, 'number', 'el plan guardado se fecha');
 
     const warn = console.warn;
@@ -152,9 +156,53 @@ async function main() {
     assert.equal(reopened.plan?.steps[1]?.status, 'in_progress', 'el plan sobrevive al reinicio y el historial manda');
     const reopenedState = runtime._internal.state();
 
+    const planDoc = reopenedState.PlanDoc;
+    reopenedState.PlanDoc = undefined;
+    try {
+      faux.setResponses([
+        fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Cerrar el trimestre', steps: [
+          { title: 'Cerrar el trimestre', status: 'done', evidence: 'cerrado' },
+        ] })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('Plan anotado sin respaldo'),
+      ]);
+      await runtime.handlers.agent_message_send({ session_id: parent.id, content: 'Actualiza el plan' });
+      await until(async () => !(await runtime.handlers.agent_turn_status({ session_id: parent.id })).running);
+      const listed = await messages(parent.id);
+      const call = listed.messages.flatMap((message) => message.tool_calls || [])
+        .filter((item) => item.name === 'task_plan').at(-1);
+      assert.match(String(call?.result || ''), /no se pudo guardar su respaldo persistente/,
+        'un fallo de persistencia se informa en el resultado de task_plan');
+    } finally {
+      reopenedState.PlanDoc = planDoc;
+    }
+
     await runtime.handlers.agent_session_delete({ id: parent.id });
     const afterDelete = await reopenedState.harness.snapshot(reopenedState.PlanDoc, reopenedState.ctx);
     assert.equal(afterDelete.plans[parent.id], undefined, 'el borrado elimina el plan');
+
+    // Una escritura en vuelo y otra posterior no pueden recrear el plan tras el borrado.
+    const raceCommit = reopenedState.harness.commit.bind(reopenedState.harness);
+    let releaseWrite;
+    const gate = new Promise((resolve) => { releaseWrite = resolve; });
+    reopenedState.harness.commit = async (change, context) => {
+      await gate;
+      return raceCommit(change, context);
+    };
+    try {
+      const inFlight = savePlan(child.id, { goal: 'Plan tardío', steps: [{ title: 'Recrear', status: 'pending' }] });
+      await new Promise((resolve) => setImmediate(resolve));
+      const deleting = deleteSessionAndPlan(child.id);
+      assert.equal(await savePlan(child.id, { goal: 'Plan posterior', steps: [{ title: 'Otra', status: 'pending' }] }), false,
+        'un guardado posterior al borrado se rechaza');
+      releaseWrite();
+      await inFlight;
+      await deleting;
+    } finally {
+      releaseWrite();
+      reopenedState.harness.commit = raceCommit;
+    }
+    const afterRace = await reopenedState.harness.snapshot(reopenedState.PlanDoc, reopenedState.ctx);
+    assert.equal(afterRace.plans[child.id], undefined, 'el borrado drena la escritura en vuelo y no deja plan huérfano');
 
     console.log('[PASS] plan compartido: el historial es la fuente de verdad, el doc cubre la conversación sin '
       + 'task_plan, el plan sobrevive al reinicio y el borrado limpia su documento.');

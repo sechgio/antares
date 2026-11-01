@@ -10,6 +10,8 @@ _STATUSES = tuple(_CONTRACT["statuses"])
 _MAX_STEPS = int(_CONTRACT["max_steps"])
 _MAX_TITLE_CHARS = int(_CONTRACT["max_title_chars"])
 _MAX_EVIDENCE_CHARS = int(_CONTRACT["max_evidence_chars"])
+_MAX_ID_CHARS = int(_CONTRACT["max_id_chars"])
+_MAX_STEP_DEPENDENCIES = int(_CONTRACT["max_step_dependencies"])
 
 TOOL_SPECS: list[JsonObject] = [
     {
@@ -30,9 +32,16 @@ TOOL_SPECS: list[JsonObject] = [
                     "items": {
                         "type": "object",
                         "properties": {
+                            "id": {"type": "string", "description": "Identificador estable del paso"},
                             "title": {"type": "string"},
                             "status": {"type": "string", "enum": list(_STATUSES)},
                             "evidence": {"type": "string", "description": "Qué observaste que demuestra el estado"},
+                            "dependencies": {
+                                "type": "array",
+                                "maxItems": _MAX_STEP_DEPENDENCIES,
+                                "items": {"type": "string"},
+                                "description": "Ids de pasos que deben estar «done» antes de empezar",
+                            },
                         },
                         "required": ["title", "status"],
                     },
@@ -62,6 +71,25 @@ def update(params: JsonObject) -> JsonObject:
         if status == "done" and not evidence:
             raise ValueError(f"Indica la evidencia que comprueba «{item['title']}» antes de marcarlo como hecho")
         step: JsonObject = {"title": str(item["title"]).strip()[:_MAX_TITLE_CHARS], "status": status}
+        step_id = str(item.get("id") or "").strip()[:_MAX_ID_CHARS]
+        if step_id:
+            step["id"] = step_id
+        raw_dependencies = item.get("dependencies") or []
+        if not isinstance(raw_dependencies, list):
+            raise ValueError(f"Las dependencias de «{item['title']}» deben ser una lista de ids")
+        dependencies: list[str] = []
+        seen: set[str] = set()
+        for dependency in raw_dependencies:
+            if len(dependencies) >= _MAX_STEP_DEPENDENCIES:
+                break
+            dependency_id = str(dependency or "").strip()[:_MAX_ID_CHARS]
+            key = dependency_id.casefold()
+            if not dependency_id or key in seen:
+                continue
+            seen.add(key)
+            dependencies.append(dependency_id)
+        if dependencies:
+            step["dependencies"] = dependencies
         if evidence:
             step["evidence"] = evidence[:_MAX_EVIDENCE_CHARS]
         steps.append(step)

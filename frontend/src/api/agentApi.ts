@@ -316,7 +316,7 @@ export interface AgentBrowserBounds {
 
 export interface AgentPlan {
   goal: string;
-  steps: { title: string; status: AgentPlanStatus; evidence?: string }[];
+  steps: { id?: string; title: string; status: AgentPlanStatus; evidence?: string; dependencies?: string[] }[];
 }
 
 export interface AgentContext {

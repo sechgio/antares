@@ -484,12 +484,28 @@ def test_task_plan_requires_evidence_to_close_a_step():
     assert closed["remaining"] == [] and "comprueba el objetivo" in closed["next"]
 
 
+def test_task_plan_preserves_ids_and_dependencies():
+    out = task_plan.update({"goal": "g", "steps": [
+        {"id": "revisar", "title": "Revisar", "status": "done", "evidence": "visto"},
+        {"id": "x" * (task_plan._MAX_ID_CHARS + 5), "title": "Contrastar", "status": "in_progress",
+         "dependencies": ["revisar", "", "revisar"] + [f"d{index}" for index in range(30)]},
+    ]})
+    steps = out["plan"]["steps"]
+    assert steps[0] == {"id": "revisar", "title": "Revisar", "status": "done", "evidence": "visto"}
+    assert len(steps[1]["id"]) == task_plan._MAX_ID_CHARS
+    assert steps[1]["dependencies"] == ["revisar"] + [
+        f"d{index}" for index in range(task_plan._MAX_STEP_DEPENDENCIES - 1)
+    ]
+
+
 def test_task_plan_contract_matches_shared_definition():
     contract = json.loads(resource_path("shared/agent-plan.json").read_text(encoding="utf-8"))
     assert list(task_plan._STATUSES) == contract["statuses"]
     assert contract["max_steps"] == task_plan._MAX_STEPS
     assert contract["max_title_chars"] == task_plan._MAX_TITLE_CHARS
     assert contract["max_evidence_chars"] == task_plan._MAX_EVIDENCE_CHARS
+    assert contract["max_id_chars"] == task_plan._MAX_ID_CHARS
+    assert contract["max_step_dependencies"] == task_plan._MAX_STEP_DEPENDENCIES
     normalized = task_plan.update({"goal": "  g  ", "steps": [
         {"title": " x" * 200, "status": "pending", "evidence": " e" * 200},
     ]})
