@@ -234,6 +234,64 @@ def test_skill_create_writes_inside_library_without_overwriting(store):
     assert target.read_text(encoding="utf-8") == original
 
 
+def test_skill_create_and_complementos_share_one_contract(store):
+    library = store.base_dir / "skills"
+    entry = skills.create(library, "sin-instrucciones", "Solo descripción")
+    assert entry["description"] == "Solo descripción"
+    assert (library / "sin-instrucciones" / "SKILL.md").is_file()
+    with pytest.raises(ValueError, match="instrucciones"):
+        run(store, "skill_create", name="otra", description="Revisa")
+    created = run(store, "skill_create", name="compartida", description="Primera", content="Pasos")
+    with pytest.raises(ValueError, match="ya existe"):
+        skills.create(library, "compartida", "Segunda", "Otros")
+    assert (library / "compartida" / "SKILL.md").read_text(encoding="utf-8").count("Primera") == 1
+    assert created["name"] == "compartida"
+
+
+def test_skill_create_recovers_an_interrupted_empty_folder(store):
+    folder = store.base_dir / "skills" / "reanudada"
+    folder.mkdir(parents=True)
+    created = run(store, "skill_create", name="reanudada", description="Revisa", content="Pasos")
+    assert created["created"] is True
+    assert (folder / "SKILL.md").is_file()
+
+
+def test_skill_create_leaves_no_partial_file_after_a_write_failure(store, monkeypatch):
+    target = store.base_dir / "skills" / "interrumpida" / "SKILL.md"
+
+    def fail_fsync(_fd):
+        raise OSError("disco lleno")
+
+    monkeypatch.setattr(skills.os, "fsync", fail_fsync)
+    with pytest.raises(ValueError, match="No se pudo guardar"):
+        skills.create(store.base_dir / "skills", "interrumpida", "Revisa", "Pasos")
+    assert not target.exists() and not target.parent.exists()
+    monkeypatch.undo()
+    assert skills.create(store.base_dir / "skills", "interrumpida", "Revisa", "Pasos")["name"] == "interrumpida"
+    assert target.is_file()
+
+
+def test_publish_does_not_overwrite_an_existing_skill_file(tmp_path):
+    target = tmp_path / "SKILL.md"
+    target.write_text("original", encoding="utf-8")
+    with pytest.raises(FileExistsError):
+        skills._publish(target, b"nuevo")
+    assert target.read_text(encoding="utf-8") == "original"
+
+
+def test_skill_create_allows_a_symlinked_ancestor(tmp_path):
+    real = tmp_path / "perfil-real"
+    (real / "skills").mkdir(parents=True)
+    linked = tmp_path / "perfil-enlazado"
+    try:
+        linked.symlink_to(real, target_is_directory=True)
+    except OSError:
+        pytest.skip("El sistema no permite crear enlaces simbólicos")
+    created = skills.create(linked / "skills", "ancestro-enlazado", "Revisa", "Pasos")
+    assert created["name"] == "ancestro-enlazado"
+    assert (real / "skills" / "ancestro-enlazado" / "SKILL.md").is_file()
+
+
 @pytest.mark.parametrize("name", [
     "../escape", "a/b", "a\\b", "C:evil", "", "UPPER", "a--b", ".oculta", "pdf_review", "a" * 65,
 ])
@@ -253,7 +311,7 @@ def test_skill_create_rejects_symlinked_skill_folder(store, tmp_path):
         folder.symlink_to(outside, target_is_directory=True)
     except OSError:
         pytest.skip("El sistema no permite crear enlaces simbólicos")
-    with pytest.raises(ValueError, match="biblioteca"):
+    with pytest.raises(ValueError, match="enlace"):
         run(store, "skill_create", name="linked", description="Revisa", content="Revisa")
     assert not (outside / "SKILL.md").exists()
 
