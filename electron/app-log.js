@@ -56,6 +56,24 @@ const EVENT_FIELDS = new Set([
   'rum_rating',
   'rum_id',
   'rum_navigation_type',
+  'style',
+  'prompt',
+  'cache_read',
+  'cache_write',
+  'output',
+  'cache_read_percent',
+  'session',
+  'request_hash',
+  'break',
+  'history_index',
+  'messages',
+  'previous_messages',
+  'system_blocks',
+  'system_json_chars',
+  'tools',
+  'system_hash',
+  'tools_hash',
+  'history_hash',
 ]);
 const SENSITIVE_TEXT_RE = [
   /(\b(?:authorization|proxy-authorization)\s*[:=]\s*(?:bearer|basic)\s+)[^\s,;]+/gi,
@@ -219,7 +237,21 @@ function _normaliseEventField(key, value) {
     const text = String(value ?? '').trim().toLowerCase();
     return RUM_NAV_TYPES.has(text) ? text : undefined;
   }
-  if (['pid', 'backend_pid', 'bytes', 'attempt', 'count', 'dropped_events', 'ok_count', 'err_count', 'timeout_ms'].includes(key)) {
+  if (key === 'history_index') {
+    if (value === null) return null;
+    return Number.isInteger(value) && value >= 0 ? value : undefined;
+  }
+  if (key === 'cache_read_percent') {
+    if (value === null) return null;
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100
+      ? Math.round(value * 10) / 10
+      : undefined;
+  }
+  if ([
+    'pid', 'backend_pid', 'bytes', 'attempt', 'count', 'dropped_events', 'ok_count', 'err_count', 'timeout_ms',
+    'prompt', 'cache_read', 'cache_write', 'output', 'messages', 'previous_messages', 'system_blocks',
+    'system_json_chars', 'tools',
+  ].includes(key)) {
     return Number.isInteger(value) && value >= 0 ? value : undefined;
   }
   if (key === 'duration_ms') {

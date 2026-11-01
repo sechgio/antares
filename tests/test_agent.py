@@ -1,4 +1,5 @@
 import json
+import logging
 import threading
 
 import pytest
@@ -105,6 +106,34 @@ def test_chat_conserva_tokens_sin_contar_cache(monkeypatch, style):
     monkeypatch.setattr(agent_chat, "_post_json", lambda *args: response)
     chat = agent_chat._chat_openai if style == "openai" else agent_chat._chat_anthropic
     assert chat("https://example.com", {}, "model", [], False, None)["usage"] == {"input": 8, "output": 3}
+
+
+@pytest.mark.parametrize("style", ["openai", "anthropic"])
+def test_usage_registra_porcentaje_de_cache_sin_cambiarlo(caplog, style):
+    caplog.set_level(logging.INFO, logger="backend.core.agent.agent_chat")
+    if style == "openai":
+        data = {"usage": {"prompt_tokens": 20, "completion_tokens": 3,
+                          "prompt_tokens_details": {"cached_tokens": 12, "cache_write_tokens": 4}}}
+        expected = {"prompt": 20, "cache_read": 12, "cache_write": 4, "cache_read_percent": 60.0}
+    else:
+        data = {"usage": {"input_tokens": 8, "output_tokens": 3,
+                          "cache_read_input_tokens": 12, "cache_creation_input_tokens": 5}}
+        expected = {"prompt": 25, "cache_read": 12, "cache_write": 5, "cache_read_percent": 48.0}
+    assert agent_chat._usage(data, style) == {"usage": {"input": 8, "output": 3}}
+    record = next(record for record in caplog.records
+                  if getattr(record, "observability_event", None) == "agent.cache_usage")
+    assert record.observability_fields == {"style": style, "output": 3, **expected}
+    assert record.getMessage() == ""
+
+
+def test_usage_no_falla_si_la_telemetria_falla(monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("telemetry")
+
+    monkeypatch.setattr(agent_chat, "log_event", boom)
+    data = {"usage": {"prompt_tokens": 20, "completion_tokens": 3,
+                      "prompt_tokens_details": {"cached_tokens": 12}}}
+    assert agent_chat._usage(data, "openai") == {"usage": {"input": 8, "output": 3}}
 
 
 def test_approval_flow(tmp_path):

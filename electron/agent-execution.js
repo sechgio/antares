@@ -1,9 +1,11 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { withCacheTelemetry } = require('./agent-cache-telemetry');
 const { channelFor, channelLabel } = require('./agent-channels');
-const script = require('./agent-script');
+const { stableJson } = require('./stable-json');
 const { clampRetryAfterMs } = require('./agent-http');
+const script = require('./agent-script');
 
 const {
   shared,
@@ -260,7 +262,11 @@ async function buildProvider(record) {
       },
     },
     models: [...modelIds].map((id) => modelDefinition(info, id, api, anthropic ? catalog[id] : undefined, catalog[id])),
-    api: anthropic ? shared.deps.aiAnthropic.anthropicMessagesApi() : cappedOpenAIApi(shared.deps.aiOpenai.openAICompletionsApi()),
+    // La telemetría va dentro del tope de OpenAI para observar la lista final,
+    // no la anterior al recorte; en Anthropic no hay transformación previa.
+    api: anthropic
+      ? withCacheTelemetry(shared.deps.aiAnthropic.anthropicMessagesApi())
+      : cappedOpenAIApi(withCacheTelemetry(shared.deps.aiOpenai.openAICompletionsApi())),
   });
 }
 
@@ -818,14 +824,6 @@ async function closeTurnLog(message, api) {
   } catch (err) {
     console.error('[agent] registro de turnos: no se pudo escribir', record.turn_id, ':', (err && err.message) || err);
   }
-}
-
-function stableJson(value) {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value === undefined ? null : value);
 }
 
 function callSignature(name, args) {

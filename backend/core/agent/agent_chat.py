@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import http.client
 import json
+import logging
 import os
 import random
 import time
@@ -16,6 +17,7 @@ from typing import Any
 from backend.core.integrations import ai_providers, http_guard, mcp_servers
 from backend.core.integrations.types import JsonObject
 from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS, backend_methods, input_schema_for, is_idempotent
+from backend.core.observability import log_event
 
 MAX_MESSAGE_CHARS = 12_000
 _MAX_TOOL_RESULT_CHARS = 6_000
@@ -32,6 +34,8 @@ _RETRY_AFTER_CAP_S = 30.0
 _RETRY_JITTER_RATIO = 0.25
 _ERR_BODY_MAX_BYTES = 4_096
 _ERR_MSG_MAX_CHARS = 300
+
+logger = logging.getLogger(__name__)
 
 _DENIED_PREFIXES = ("ai_provider_", "ai_providers_", "connections_token_", "agent_", "editor_", "mcp_server")
 _DENIED_METHODS = frozenset({"db_clear", "mcp_tool_call", "telemetry", "canvas_save", "canvas_save_history", "print_pdf"})
@@ -483,6 +487,22 @@ def _openai_wire(messages: list[JsonObject], system: str | None) -> list[JsonObj
     return wire
 
 
+def _log_cache_usage(style: str, prompt: int, cache_read: int, cache_write: int, output: int) -> None:
+    # La telemetría nunca debe cambiar el resultado de la petición.
+    with contextlib.suppress(Exception):
+        log_event(
+            logger,
+            logging.INFO,
+            "agent.cache_usage",
+            style=style,
+            prompt=prompt,
+            cache_read=cache_read,
+            cache_write=cache_write,
+            output=output,
+            cache_read_percent=round(cache_read * 100 / prompt, 1) if prompt else None,
+        )
+
+
 def _usage(data: JsonObject, style: str) -> JsonObject:
     raw = data.get("usage")
     if not isinstance(raw, dict):
@@ -494,9 +514,17 @@ def _usage(data: JsonObject, style: str) -> JsonObject:
     if style == "openai":
         details = raw.get("prompt_tokens_details")
         cached = count(details.get("cached_tokens")) if isinstance(details, dict) else 0
-        return {"usage": {"input": max(0, count(raw.get("prompt_tokens")) - cached),
-                          "output": count(raw.get("completion_tokens"))}}
-    return {"usage": {"input": count(raw.get("input_tokens")), "output": count(raw.get("output_tokens"))}}
+        cache_write = count(details.get("cache_write_tokens")) if isinstance(details, dict) else 0
+        prompt = count(raw.get("prompt_tokens"))
+        output = count(raw.get("completion_tokens"))
+        _log_cache_usage(style, prompt, cached, cache_write, output)
+        return {"usage": {"input": max(0, prompt - cached), "output": output}}
+    input_tokens = count(raw.get("input_tokens"))
+    cache_read = count(raw.get("cache_read_input_tokens"))
+    cache_write = count(raw.get("cache_creation_input_tokens"))
+    output = count(raw.get("output_tokens"))
+    _log_cache_usage(style, input_tokens + cache_read + cache_write, cache_read, cache_write, output)
+    return {"usage": {"input": input_tokens, "output": output}}
 
 
 def _chat_openai(
