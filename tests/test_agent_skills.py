@@ -246,6 +246,22 @@ def test_create_rejects_duplicates_invalid_names_empty_description_and_oversized
         skills.create(library, "gigante", "Descripción", "x" * 70_000)
 
 
+def test_create_does_not_overwrite_a_skill_that_appears_during_the_write(store, monkeypatch):
+    library = store.base_dir / "skills"
+    real_target = skills.create_target
+
+    def racing_target(name, path):
+        target = real_target(name, path)
+        target.parent.mkdir(parents=True)
+        target.write_text("---\nname: pdf-review\ndescription: Original\n---\nORIGINAL\n", encoding="utf-8")
+        return target
+
+    monkeypatch.setattr(skills, "create_target", racing_target)
+    with pytest.raises(ValueError, match="ya existe"):
+        skills.create(library, "pdf-review", "Revisa PDFs", "Nueva")
+    assert "ORIGINAL" in (library / "pdf-review" / "SKILL.md").read_text(encoding="utf-8")
+
+
 def test_skill_create_handler_writes_catalog_entry_and_wraps_errors(store, monkeypatch):
     from backend.core.exceptions import ValidationError
     from backend.handlers import agent_internal
