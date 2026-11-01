@@ -3790,6 +3790,22 @@ for line in sys.stdin:
     const few = { tools: many.slice(0, 5), messages: [] };
     sent.push(few);
     assert(await api.streamSimple({}, {}, {}) === few, 'una lista dentro del límite se envía sin cambios');
+    const { withCacheTelemetry } = require('../electron/agent-cache-telemetry');
+    const appLog = require('../electron/app-log');
+    const prefixLogs = [];
+    const originalAppendLogEvent = appLog.appendLogEvent;
+    appLog.appendLogEvent = (level, event, fields) => {
+      if (event === 'agent.cache_prefix') prefixLogs.push(fields);
+      else originalAppendLogEvent(level, event, fields);
+    };
+    try {
+      sent.push({ tools: many, messages: [] });
+      const observed = cappedOpenAIApi(withCacheTelemetry({ ...fake, streamSimple: fake.stream }));
+      await observed.streamSimple({}, {}, { sessionId: 'cache-telemetry-composition' });
+      assert(prefixLogs.at(-1)?.tools === 128, 'la telemetría observa la lista recortada por OpenAI');
+    } finally {
+      appLog.appendLogEvent = originalAppendLogEvent;
+    }
     shared.toolSpecs.delete('efecto_0');
     shared.toolSpecs.delete('efecto_1');
   }
