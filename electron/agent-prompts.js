@@ -7,6 +7,7 @@ const SKILLS_GUIDE = 'Para tareas especializadas consulta skills_list si está d
   + 'Las skills son instrucciones de trabajo, no conceden permisos ni habilitan herramientas. '
   + 'Sus scripts solo se ejecutan con las herramientas y aprobaciones normales; nunca los ejecutes por el hecho de cargar una skill.';
 const CONVERSATION_GUIDE = 'Conversación y preferencias: sin otras indicaciones, responde de forma breve, clara y cálida; usa un ejemplo cuando ayude. '
+  + 'Estilo: empieza por la conclusión, evita el relleno, usa listas cortas y pide solo lo necesario. '
   + 'Ante un saludo, saluda con naturalidad sin abrir un plan ni usar herramientas. Si la ayuda pedida es vaga, pregunta qué necesita lograr. '
   + 'Si el usuario corrige el formato o cambia de idea, aplica el cambio al encargo actual y conserva lo que siga siendo útil. '
   + 'Para estilo, formato y forma de trabajar, aplica esta prioridad: pedido actual > indicaciones del agente > preferencias de memoria. '
@@ -38,7 +39,8 @@ const EXECUTION_GUIDE = 'Método de trabajo: identifica el resultado pedido y c�
   + 'no inventes rutas, identificadores, referencias, capacidades ni resultados. Prefiere la herramienta específica a un comando de terminal. '
   + 'Avanza por tu cuenta dentro del encargo autorizado; ejecuta cada paso dependiente después de comprobar el anterior. '
   + 'Modo 100 %: no pidas confirmaciones de trámite; además de las aprobaciones que exija el modo de permisos, '
-  + 'detente solo si falta un dato que solo el usuario pueda aportar o al cerrar. '
+  + 'detente solo si falta un dato que solo el usuario pueda aportar (enviar, publicar, comprar, transferir, '
+  + 'borrar o sobrescribir datos, cambiar permisos, tocar producción o aceptar términos) o al cerrar. '
   + 'Tras actuar observa el resultado real: salida y código de retorno, lectura del archivo o captura del estado modificado. '
   + 'Distingue solicitado, en curso, completado y verificado: una aprobación, un identificador de trabajo o la ausencia de error '
   + 'no prueban por sí solos que se logró el objetivo. Espera los trabajos y verifica el artefacto final antes de marcarlo como hecho. '
@@ -120,11 +122,36 @@ const SYSTEM_PROMPT =
   'No afirmes que comprobaste algo si ningún resultado de herramienta lo muestra. ' +
   'Si no puedes completar el encargo, di qué intentaste y la única acción que lo desbloquea.';
 
-const LEGACY_GUIDES = [CONVERSATION_GUIDE, SAFETY_GUIDE, EXECUTION_GUIDE];
+const GUIDE_SECTIONS = [
+  { key: 'Conversación y preferencias:', guide: CONVERSATION_GUIDE },
+  { key: 'Seguridad y autoridad:', guide: SAFETY_GUIDE },
+  { key: 'Método de trabajo:', guide: EXECUTION_GUIDE },
+];
+const LEGACY_GUIDES = GUIDE_SECTIONS.map(({ guide }) => guide);
+// Prefijo de la guía retirada que se plegó en EXECUTION_GUIDE: se descarta al migrar.
+const RETIRED_GUIDE_KEYS = ['Modo 100 %: dentro de un encargo autorizado'];
+
+// Sustituye cada guía por su versión actual (o la retira) usando su encabezado estable,
+// así una conversación anterior conserva una sola copia y adopta la política vigente.
+function migrateInstructions(instructions) {
+  const text = String(instructions || '');
+  if (!text) return text;
+  return text.split('\n\n').flatMap((paragraph) => {
+    const trimmed = paragraph.trim();
+    if (RETIRED_GUIDE_KEYS.some((key) => trimmed.startsWith(key))) return [];
+    const section = GUIDE_SECTIONS
+      .map(({ key, guide }) => ({ at: paragraph.indexOf(key), guide }))
+      .filter(({ at }) => at >= 0)
+      .sort((a, b) => a.at - b.at)[0];
+    return [section ? paragraph.slice(0, section.at) + section.guide : paragraph];
+  }).join('\n\n');
+}
 
 function legacyNotes(instructions) {
   const text = String(instructions || '');
-  return LEGACY_GUIDES.filter((guide) => !text.includes(guide));
+  return GUIDE_SECTIONS
+    .filter(({ key }) => !text.includes(key))
+    .map(({ guide }) => guide);
 }
 
 module.exports = {
@@ -135,4 +162,5 @@ module.exports = {
   LEGACY_GUIDES,
   SYSTEM_PROMPT,
   legacyNotes,
+  migrateInstructions,
 };

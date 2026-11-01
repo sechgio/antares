@@ -24,7 +24,7 @@ const projection = require('./agent-projection');
 const { validateRules } = require('./agent-channels');
 const compactionPolicy = require('./agent-compaction');
 const { loadAgentProfile, resolvePortableProfile } = require('./agent-profiles');
-const { SKILLS_GUIDE, SYSTEM_PROMPT, legacyNotes } = require('./agent-prompts');
+const { SKILLS_GUIDE, SYSTEM_PROMPT, legacyNotes, migrateInstructions } = require('./agent-prompts');
 
 const MAX_MESSAGE_CHARS = 12_000;
 const MAX_REQUEST_ID_CHARS = 100;
@@ -817,7 +817,9 @@ async function messageSend(params) {
   ].filter(Boolean).join('\n\n');
   const memory = await memoryContext(session, content);
   const agentConfig = await conv.agent(ctx());
-  const instructions = String(agentConfig.instructions || '');
+  const storedInstructions = String(agentConfig.instructions || '');
+  const instructions = migrateInstructions(storedInstructions);
+  if (instructions !== storedInstructions) await conv.configure({ instructions }, ctx());
   const skillsNote = instructions.includes(SKILLS_GUIDE) ? '' : SKILLS_GUIDE;
   const skillIndex = await skillsIndex(session, agentConfig.tools);
   const legacyGuidance = legacyNotes(instructions);

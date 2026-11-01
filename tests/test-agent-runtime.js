@@ -490,6 +490,43 @@ async function main() {
     await runtime.shutdown();
   }
 
+  {
+    const { bridge } = makeBridge();
+    let seen = '';
+    await openFaux([(context) => {
+      seen = JSON.stringify(context.messages);
+      return fauxAssistantMessage('Respuesta tras migrar el prompt');
+    }], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const state = runtime._internal.state();
+    const context = state.ctx;
+    const sessionDoc = await state.harness.snapshot(state.SessionsDoc, context);
+    const conv = await state.harness.conversation(sessionDoc.sessions[session.id].conversationId, context);
+    const oldPrompt = [
+      'Eres el agente de Antares. Conversación y preferencias: versión anterior sin la regla de estilo.',
+      'Seguridad y autoridad: versión anterior sin la política de aprobaciones.',
+      'Método de trabajo: versión anterior sin el modo 100 %.',
+      'Modo 100 %: dentro de un encargo autorizado, encadena todos los pasos. El último tramo es obligatorio.',
+      'Indicaciones propias: conserva el tono del perfil.',
+    ].join('\n\n');
+    await conv.configure({ instructions: oldPrompt }, context);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Continúa el encargo anterior' });
+    assert(await waitIdle(session.id), 'la conversación anterior migra su prompt y termina');
+    for (const directive of ['Conversación y preferencias:', 'Seguridad y autoridad:', 'Método de trabajo:']) {
+      assert(seen.split(directive).length === 2, `el prompt migrado contiene una sola vez «${directive}»`);
+    }
+    assert(!seen.includes('versión anterior') && !seen.includes('El último tramo es obligatorio'),
+      'la política vieja sustituida no llega al modelo');
+    assert(seen.includes('detente solo si falta un dato que solo el usuario pueda aportar (enviar, publicar, comprar, transferir'),
+      'la política nueva conserva el freno de las acciones irreversibles');
+    assert(seen.includes('empieza por la conclusión'), 'la política nueva incluye la regla de estilo');
+    assert(seen.includes('conserva el tono del perfil'), 'la migración conserva las indicaciones propias');
+    const migrated = (await conv.agent(context)).instructions;
+    assert(migrated.includes('Modo 100 %: no pidas confirmaciones de trámite') && !migrated.includes('versión anterior'),
+      'la conversación guarda el prompt migrado para los siguientes turnos');
+    await runtime.shutdown();
+  }
+
   for (const legacy of [false, true]) {
     const { bridge } = makeBridge();
     const calls = [];
