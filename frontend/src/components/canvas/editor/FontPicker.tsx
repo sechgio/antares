@@ -1,5 +1,4 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Search, X } from 'lucide-react';
 import { useAnchoredPopover, type PopoverPosition } from '@/hooks/useAnchoredPopover';
 import {
@@ -8,6 +7,7 @@ import {
   getFontByStack,
 } from '../ops/fontCatalog';
 import Button from '@/components/ui/Button';
+import { ThemedSelectPanel, usePortalHost } from '@/components/ui/ThemedSelect';
 
 interface FontPickerProps {
   value: string;
@@ -30,7 +30,6 @@ export default function FontPicker({
   disabled = false,
 }: FontPickerProps) {
   const [query, setQuery] = useState('');
-  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const positioner = useCallback((rect: DOMRect): PopoverPosition => {
@@ -62,6 +61,7 @@ export default function FontPicker({
     close,
     toggle,
   } = useAnchoredPopover<HTMLDivElement>({ positioner });
+  const portalRoot = usePortalHost(isOpen, containerRef);
 
   const selected = getFontByStack(value) ?? CANVAS_FONTS[0];
   const displayLabel = selected?.label ?? value;
@@ -73,17 +73,11 @@ export default function FontPicker({
   }, [query]);
 
   useLayoutEffect(() => {
-    if (!isOpen) {
-      setPortalRoot(null);
-      return;
-    }
+    if (!isOpen) return;
     ensureCanvasFontsLoaded();
-    const host =
-      (containerRef.current?.closest('.canvas-app') as HTMLElement | null) ?? document.body;
-    setPortalRoot(host);
     setQuery('');
     requestAnimationFrame(() => searchRef.current?.focus());
-  }, [isOpen, containerRef]);
+  }, [isOpen]);
 
   const handleSelect = (stack: string) => {
     if (disabled) return;
@@ -116,27 +110,37 @@ export default function FontPicker({
       </Button>
 
       {isOpen &&
-        portalRoot &&
-        createPortal(
-          <div
-            ref={menuRef}
-            role="listbox"
-            aria-label={ariaLabel}
-            data-placement="side"
-            className="fixed z-[300] flex flex-col overflow-hidden rounded-lg border shadow-lg"
-            style={{
-              top: menuBox?.top ?? -9999,
-              left: menuBox?.left ?? -9999,
-              width: menuBox?.width ?? MENU_WIDTH,
-              height: menuBox?.maxHeight ?? MENU_MAX_H,
-              maxHeight: menuBox?.maxHeight ?? MENU_MAX_H,
-              visibility: menuBox ? 'visible' : 'hidden',
-              background: 'var(--cv-panel-elevated, #ffffff)',
-              borderColor: 'var(--cv-border-strong, #c9d0d8)',
-              boxShadow: 'var(--cv-shadow-float, 0 12px 28px rgba(26, 35, 50, 0.14))',
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
+        portalRoot && (
+        <ThemedSelectPanel
+          host={portalRoot}
+          panelRef={menuRef}
+          ariaLabel={ariaLabel}
+          dataPlacement="side"
+          position={menuBox}
+          className="fixed z-[300] flex flex-col overflow-hidden rounded-lg border shadow-lg"
+          positionStyle={(position) => ({
+            top: position.top,
+            left: position.left,
+            width: position.width ?? MENU_WIDTH,
+            height: position.maxHeight ?? MENU_MAX_H,
+            maxHeight: position.maxHeight ?? MENU_MAX_H,
+            visibility: 'visible',
+            background: 'var(--cv-panel-elevated, #ffffff)',
+            borderColor: 'var(--cv-border-strong, #c9d0d8)',
+            boxShadow: 'var(--cv-shadow-float, 0 12px 28px rgba(26, 35, 50, 0.14))',
+          })}
+          hiddenStyle={{
+            top: -9999,
+            left: -9999,
+            width: MENU_WIDTH,
+            height: MENU_MAX_H,
+            maxHeight: MENU_MAX_H,
+            visibility: 'hidden',
+            background: 'var(--cv-panel-elevated, #ffffff)',
+            borderColor: 'var(--cv-border-strong, #c9d0d8)',
+            boxShadow: 'var(--cv-shadow-float, 0 12px 28px rgba(26, 35, 50, 0.14))',
+          }}
+        >
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--cv-border,#e2e8f0)] bg-[var(--cv-panel-elevated)] px-2.5 py-2">
               <span
                 className="truncate text-[12px] font-medium text-[var(--cv-text,#1a2332)]"
@@ -200,8 +204,7 @@ export default function FontPicker({
                 })
               )}
             </div>
-          </div>,
-          portalRoot,
+        </ThemedSelectPanel>
         )}
     </div>
   );

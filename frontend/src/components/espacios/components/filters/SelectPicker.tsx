@@ -1,8 +1,8 @@
 import { Check, ChevronDown } from 'lucide-react';
 import { useId, useLayoutEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { useAnchoredPopover } from '../../../../hooks/useAnchoredPopover';
 import Button from '@/components/ui/Button';
+import { ThemedSelectPanel } from '@/components/ui/ThemedSelect';
 
 interface SelectPickerOption {
   value: string;
@@ -91,21 +91,19 @@ export default function SelectPicker({
         />
       </Button>
 
-      {open &&
-        createPortal(
-          <div
-            ref={menuRef}
-            id={menuId}
-            role="listbox"
-            aria-label={ariaLabel}
-            className="fixed z-[200] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1 shadow-[0_12px_40px_color-mix(in_srgb,var(--bg-base)_55%,transparent),0_0_0_1px_color-mix(in_srgb,var(--border-medium)_40%,transparent)]"
-            style={
-              position
-                ? { top: position.top, left: position.left, minWidth: position.width }
-                : { top: -9999, left: -9999, visibility: 'hidden' }
-            }
-            onMouseDown={(e) => e.stopPropagation()}
-          >
+      {open && (
+        <ThemedSelectPanel
+          id={menuId}
+          panelRef={menuRef}
+          ariaLabel={ariaLabel}
+          position={position}
+          className="fixed z-[200] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1 shadow-[0_12px_40px_color-mix(in_srgb,var(--bg-base)_55%,transparent),0_0_0_1px_color-mix(in_srgb,var(--border-medium)_40%,transparent)]"
+          positionStyle={(position) => ({
+            top: position.top,
+            left: position.left,
+            minWidth: position.width,
+          })}
+        >
             {options.map((opt) => {
               const isSelected = opt.value === value;
               return (
@@ -152,9 +150,8 @@ export default function SelectPicker({
                 </Button>
               );
             })}
-          </div>,
-          document.body,
-        )}
+        </ThemedSelectPanel>
+      )}
     </div>
   );
 }
