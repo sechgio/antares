@@ -190,6 +190,9 @@ def _intent(session_id: str, method: str, params: JsonObject, context: JsonObjec
         store = _store()
         resources = _agent.read_resources(method, params, store.grants_for(session_id), store.drafts_dir(session_id))
         resources = [{**record, **resource_grants.revision(str(record["path"]))} for record in resources]
+        if method == "skill_create":
+            target = skills.create_target(params.get("name"), store.base_dir / "skills")
+            resources.append({"path": str(target), "exists": False})
         if method == "drafts_save":
             root = store.drafts_dir(session_id)
             source = drafts.inside(root, str(root / str(params.get("name") or "")))

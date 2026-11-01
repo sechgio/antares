@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import fnmatch
 import itertools
 import json
@@ -26,10 +27,12 @@ _SEARCH_SKIP_DIRS = frozenset({"node_modules", "__pycache__"})
 _MAX_EDITS = 50
 _SNIPPET_CONTEXT = 3
 _MAX_SNIPPET_CHARS = 1_500
-_TEXT_ENCODINGS = ("utf-8-sig", "cp1252", "latin-1")
+_MAX_DIFF_CHARS = 2_000
+_TEXT_ENCODINGS = ("utf-8", "cp1252", "latin-1")
 _MAX_SEEN = 2_000
 _NUMBERED = re.compile(r"\s*\d+\t")
 _DELEGATED = {".pdf", ".csv", ".xlsx", ".xlsm", ".xls", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
+_BINARY_EDIT = _DELEGATED - {".csv"}
 
 _PATH = {"type": "string", "description": "Ruta absoluta autorizada o nombre relativo dentro del espacio de trabajo"}
 TOOL_SPECS: list[JsonObject] = [
@@ -109,7 +112,8 @@ TOOL_SPECS: list[JsonObject] = [
         "description": (
             "Equipo · fs_edit (efecto: requiere aprobación del usuario): reemplaza un fragmento exacto de un "
             "archivo de texto o Word (.docx); léelo antes con fs_read. Con edits aplica varios reemplazos en orden "
-            "y de forma atómica (solo texto). Devuelve un fragmento numerado del resultado para verificarlo"
+            "y de forma atómica (solo texto), conserva la codificación y devuelve un diff acotado y un fragmento "
+            "numerado del resultado para verificarlo"
         ),
         "inputSchema": {
             "type": "object",
@@ -258,13 +262,19 @@ def list_path(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> 
     return {"path": str(folder), "entries": entries, "truncated": len(children) > _MAX_LIST}
 
 
-def _decode(data: bytes) -> str:
+def _decode_with_encoding(data: bytes) -> tuple[str, str]:
+    if data.startswith(b"\xef\xbb\xbf"):
+        return data.decode("utf-8-sig"), "utf-8-sig"
     for encoding in _TEXT_ENCODINGS:
         try:
-            return data.decode(encoding)
+            return data.decode(encoding), encoding
         except UnicodeDecodeError:
             continue
-    return data.decode("utf-8", errors="replace")
+    return data.decode("utf-8", errors="replace"), "utf-8"
+
+
+def _decode(data: bytes) -> str:
+    return _decode_with_encoding(data)[0]
 
 
 def _docx_text(path: Path) -> str:
@@ -507,11 +517,19 @@ def _snippet(text: str, start: int, new: str) -> str:
     return "\n".join(f"{number}\t{line}" for number, line in enumerate(lines[low:high], low + 1))[:_MAX_SNIPPET_CHARS]
 
 
+def _diff(before: str, after: str, name: str) -> str:
+    changes = difflib.unified_diff(before.splitlines(), after.splitlines(),
+                                   fromfile=f"a/{name}", tofile=f"b/{name}", lineterm="")
+    return clip_text("\n".join(changes), _MAX_DIFF_CHARS)
+
+
 def edit(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> JsonObject:
     path = resolve(params.get("path"), grants, root, write=True)
     edits = _edit_list(params)
     if not path.is_file():
         raise ValueError("El archivo no existe")
+    if path.suffix.lower() in _BINARY_EDIT:
+        raise ValueError("fs_edit solo edita texto o Word (.docx); usa la herramienta específica para este formato")
     _require_seen(path, root)
     if path.suffix.lower() == ".docx":
         if len(edits) > 1:
@@ -522,7 +540,10 @@ def edit(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> JsonO
         _remember(path, root)
         return {"path": str(path), "replacements": count, "size": path.stat().st_size}
     raw = path.read_bytes()
-    text = _decode(raw)
+    if b"\x00" in raw[:4096]:
+        raise ValueError("El archivo es binario; usa una herramienta específica para su formato")
+    text, encoding = _decode_with_encoding(raw)
+    before = text
     count = start = 0
     for index, (old, new, replace_all) in enumerate(edits, 1):
         try:
@@ -530,10 +551,21 @@ def edit(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> JsonO
         except ValueError as error:
             raise ValueError(f"Edición {index}: {error}" if len(edits) > 1 else str(error)) from None
         count += hits
-    encoding = "utf-8-sig" if raw.startswith(b"\xef\xbb\xbf") else "utf-8"
+    if text == before:
+        _remember(path, root)
+        return {"path": str(path), "replacements": count, "size": path.stat().st_size,
+                "encoding": encoding, "diff": "", "snippet": _snippet(text, start, edits[-1][1])}
+    try:
+        text.encode(encoding)
+    except UnicodeEncodeError:
+        raise ValueError(
+            f"El archivo usa {encoding}; el texto nuevo no se puede representar en esa codificación. "
+            "Reescríbelo con fs_write para convertirlo a UTF-8."
+        ) from None
     _atomic_write(path, lambda temp: temp.write_text(text, encoding=encoding, newline=""))
     _remember(path, root)
     return {"path": str(path), "replacements": count, "size": path.stat().st_size,
+            "encoding": encoding, "diff": _diff(before, text, path.name),
             "snippet": _snippet(text, start, edits[-1][1])}
 
 
