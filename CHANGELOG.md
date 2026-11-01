@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent ejecuta `script_run`: JavaScript en un sandbox sin red ni archivos, con `print`, `tools.list` y `tools.call` limitado a las lecturas habilitadas. Las llamadas independientes corren en paralelo, la salida visible se acota y el volcado (hasta el límite del archivo) queda en un archivo de la conversación.
 - Agent guarda skills reutilizables con `skill_create`, con aprobación y sin sobrescribir las existentes; tras un encargo repetible terminado con comprobante, propone guardar sus instrucciones como skill.
 - Agent crea páginas interactivas con HTML, JavaScript y datos completos de Excel/CSV autorizados, las conserva por conversación y permite abrirlas desde una tarjeta. Las actualizaciones verifican la revisión anterior; la ejecución queda aislada, sin red ni acceso a Node o al bridge de la aplicación.
 - Agent muestra paneles interactivos dentro del chat con la herramienta `panel_show`: preguntas con botones, formularios y tablas filtrables. Las páginas de `page_create` se ejecutan inline en un iframe aislado, sin red ni bridge, con altura automática; las páginas largas y las tablas se recortan en el chat sin scroll anidado y se abren en un visor a pantalla completa dentro de Antares (Esc para cerrar). Responder un panel lo envía al agente como mensaje con `[panel:<id>]` y lo deja respondido; los paneles se conservan con la conversación.
