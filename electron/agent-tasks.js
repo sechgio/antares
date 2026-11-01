@@ -58,6 +58,15 @@ function nextOccurrence(task, dueAt, now) {
   return dueAt + (Math.floor((now - dueAt) / task.interval_ms) + 1) * task.interval_ms;
 }
 
+function completeDelivery(task, current) {
+  if (current.interval_ms) {
+    current.due_at = nextOccurrence(current, task.due_at, Date.now());
+    current.status = 'pending';
+  } else current.status = 'delivered';
+  delete current.retry_at;
+  recordRun(current, { at: Date.now(), due_at: task.due_at, status: 'delivered', silent: !!current.silent });
+}
+
 const TOOL = {
   name: 'task_schedule', kind: 'meta', module: 'agenda', gated: true, replay_safe: true,
   description: 'Gestiona encargos propios de esta conversación solo cuando el usuario lo pide. Antares debe seguir '
@@ -1211,14 +1220,9 @@ async function tick() {
         await state.harness.commit(async (tx) => {
           const current = (await tx.doc(state.TasksDoc)).tasks[task.id];
           if (current.status !== 'delivering' || current.claim_id !== claimToken) return;
-          if (current.interval_ms) {
-            current.due_at = nextOccurrence(current, task.due_at, Date.now());
-            current.status = 'pending';
-          } else current.status = 'delivered';
           delete current.claim_id;
           delete current.claimed_at;
-          delete current.retry_at;
-          recordRun(current, { at: Date.now(), due_at: task.due_at, status: 'delivered', silent: !!current.silent });
+          completeDelivery(task, current);
         }, ctx());
       } catch (err) {
         const message = require('./agent-execution').sanitizeProviderError(String(err?.message || err)).slice(0, 300);
@@ -1229,12 +1233,7 @@ async function tick() {
             delete current.claim_id;
             delete current.claimed_at;
             if (submitted) {
-              if (current.interval_ms) {
-                current.due_at = nextOccurrence(current, task.due_at, Date.now());
-                current.status = 'pending';
-              } else current.status = 'delivered';
-              delete current.retry_at;
-              recordRun(current, { at: Date.now(), due_at: task.due_at, status: 'delivered', silent: !!current.silent });
+              completeDelivery(task, current);
             } else {
               current.status = 'pending';
               current.retry_at = Date.now() + 60000;

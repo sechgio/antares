@@ -313,7 +313,13 @@ export interface AgentBrowserBounds {
 
 export interface AgentPlan {
   goal: string;
-  steps: { title: string; status: 'pending' | 'in_progress' | 'done' | 'failed'; evidence?: string }[];
+  steps: {
+    id?: string;
+    title: string;
+    status: 'pending' | 'in_progress' | 'done' | 'failed';
+    evidence?: string;
+    dependencies?: string[];
+  }[];
 }
 
 export interface AgentContext {
