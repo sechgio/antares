@@ -26,7 +26,7 @@ async function main() {
   async function fixture(withSkill = false) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-agent-recovery-'));
     const faux = fauxProvider();
-    const state = { reads: 0, requests: 0, holdRead: false, waiting: false, fail: null };
+    const state = { reads: 0, requests: 0, holdRead: false, waiting: false, fail: null, changing: false };
     const bridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         if (state.fail === 'tools') { state.fail = null; throw new Error('Catálogo temporalmente no disponible'); }
@@ -42,7 +42,8 @@ async function main() {
       if (method === 'agent_internal_dispatch') {
         if (params.name === 'skills_read') { state.skillReads = (state.skillReads || 0) + 1; return { result: '{}' }; }
         state.reads += 1;
-        return { result: state.holdRead ? null : state.result ?? JSON.stringify({ page: params.params.page }) };
+        return { result: state.holdRead ? null : state.result
+          ?? (state.changing ? JSON.stringify({ tick: state.reads }) : JSON.stringify({ page: params.params.page })) };
       }
       if (method === 'agent_internal_dispatch_result') return { result: state.holdRead ? null : '{}' };
       if (method === 'agent_internal_dispatch_cancel') return { cancelled: true };
@@ -134,6 +135,35 @@ async function main() {
         await f.idle();
         assert.ok((await f.messages()).messages.some((message) => message.content === 'Resultado después de reintentar'));
         assert.equal((await runtime.handlers.agent_sessions_list()).sessions.find((session) => session.id === f.session.id).last_error, null);
+      } finally { await f.close(); }
+    },
+    async hard_stop_polling() {
+      const f = await fixture();
+      try {
+        f.state.changing = true;
+        f.faux.setResponses([...Array.from({ length: 11 }, () => f.read(1)),
+          fauxAssistantMessage('Sondeo detenido')]);
+        await f.send('Sondea hasta encontrar un cambio');
+        await f.idle();
+        assert.equal(f.state.reads, 10, 'el tope duro detiene el sondeo aunque cambie el resultado');
+        const calls = (await f.messages()).messages.flatMap((message) => message.tool_calls || [])
+          .filter((call) => call.name === 'canvas_list');
+        assert.match(String(calls.at(-1).result), /10 veces en este turno, aun con resultados distintos/);
+      } finally { await f.close(); }
+    },
+    async silent_turn_cap() {
+      const f = await fixture();
+      try {
+        f.faux.setResponses([...Array.from({ length: 7 }, () => f.read(1)),
+          () => { throw new Error('No debe pedir otra respuesta'); }]);
+        await f.send('Sondea el mismo resultado');
+        await f.idle();
+        assert.equal(f.state.reads, 3, 'el tope de silencio detiene el sondeo repetido');
+        assert.equal(f.state.requests, 7, 'no se pide una respuesta adicional');
+        const session = (await runtime.handlers.agent_sessions_list()).sessions.find((s) => s.id === f.session.id);
+        assert.match(session.last_error, /turnos seguidos sin salida visible/,
+          'la conversación muestra por qué se detuvo el sondeo');
+        assert.equal((await runtime.activitySnapshot()).find((s) => s.id === f.session.id).status, 'failed');
       } finally { await f.close(); }
     },
     async visible_answer() {
