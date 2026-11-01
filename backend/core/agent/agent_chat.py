@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
+import os
 import re
 import time
 import urllib.error
@@ -19,6 +21,7 @@ MAX_MESSAGE_CHARS = 12_000
 _MAX_TOOL_RESULT_CHARS = 6_000
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _CHAT_TIMEOUT_S = 120.0
+_DEFAULT_STREAM_SILENCE_S = 30.0
 _ALLOWED_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
 _MAX_IMAGES_PER_MESSAGE = 8
 _MAX_IMAGE_B64_CHARS = 4 * 1024 * 1024
@@ -206,7 +209,40 @@ def _retry_delay_s(err: urllib.error.HTTPError, attempt: int) -> float:
     return max(0.0, min(delay, _RETRY_AFTER_CAP_S))
 
 
-def _stream_response(res: http.client.HTTPResponse, on_delta: Callable[[str], None] | None = None) -> JsonObject:
+def _retry_wait_s(attempt: int, err: urllib.error.HTTPError | None = None) -> float:
+    """Espera común de los reintentos HTTP y de silencio."""
+    return _retry_delay_s(err, attempt) if err is not None else _RETRY_DELAYS_S[attempt]
+
+
+def _stream_silence_s() -> float:
+    raw = os.environ.get("ANTARES_STREAM_SILENCE_S")
+    if raw is None:
+        return _DEFAULT_STREAM_SILENCE_S
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return _DEFAULT_STREAM_SILENCE_S
+
+
+def _set_read_timeout(res: http.client.HTTPResponse, seconds: float) -> None:
+    # HTTPResponse no expone el socket; acotar su timeout limita cada lectura al umbral de silencio.
+    sock = getattr(getattr(getattr(res, "fp", None), "raw", None), "_sock", None)
+    if sock is not None:
+        with contextlib.suppress(OSError):
+            sock.settimeout(seconds)
+
+
+class _StreamSilence(ValueError):
+    """El proveedor dejó de enviar eventos durante más tiempo del permitido."""
+
+
+def _stream_response(
+    res: http.client.HTTPResponse,
+    on_delta: Callable[[str], None] | None = None,
+    *,
+    silence_s: float | None = None,
+    deadline: float | None = None,
+) -> JsonObject:
     message: JsonObject = {"content": "", "tool_calls": []}
     calls: dict[int, JsonObject] = {}
     blocks: dict[int, JsonObject] = {}
@@ -217,17 +253,35 @@ def _stream_response(res: http.client.HTTPResponse, on_delta: Callable[[str], No
     native = False
     started = False
     complete = False
-    deadline = time.monotonic() + _CHAT_TIMEOUT_S
+    silence = _stream_silence_s() if silence_s is None else max(0.0, silence_s)
+    last_event = time.monotonic()
+    if deadline is None:
+        deadline = last_event + _CHAT_TIMEOUT_S
     while True:
-        if time.monotonic() >= deadline:
+        now = time.monotonic()
+        if now >= deadline:
             raise ValueError("El streaming del proveedor excedió el tiempo máximo")
-        raw = res.readline(_MAX_RESPONSE_BYTES - total + 1)
+        if silence > 0:
+            remaining = silence - (now - last_event)
+            if remaining <= 0:
+                raise _StreamSilence(f"El streaming del proveedor dejó de enviar datos durante {silence:g} s")
+            _set_read_timeout(res, min(remaining, deadline - now))
+        try:
+            raw = res.readline(_MAX_RESPONSE_BYTES - total + 1)
+        except TimeoutError as err:
+            if silence <= 0:
+                raise
+            if time.monotonic() >= deadline:
+                raise ValueError("El streaming del proveedor excedió el tiempo máximo") from err
+            raise _StreamSilence(f"El streaming del proveedor dejó de enviar datos durante {silence:g} s") from err
         total += len(raw)
         if total > _MAX_RESPONSE_BYTES:
             raise ValueError("La respuesta del proveedor supera el tamaño máximo permitido")
         if not raw:
             break
         line = raw.decode("utf-8").rstrip("\r\n")
+        if line and not line.startswith(":"):
+            last_event = time.monotonic()
         if line.startswith("data:"):
             lines.append(line[5:].lstrip(" "))
         if line or not lines:
@@ -291,6 +345,8 @@ def _post_json(
     url: str, headers: dict[str, str], payload: JsonObject, on_delta: Callable[[str], None] | None = None
 ) -> JsonObject:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    # Plazo total compartido por los reintentos de silencio: no se reinicia en cada intento.
+    deadline = time.monotonic() + _CHAT_TIMEOUT_S
     for attempt in range(len(_RETRY_DELAYS_S) + 1):
         req = urllib.request.Request(
             url,
@@ -306,7 +362,7 @@ def _post_json(
         try:
             with http_guard.no_redirect_opener.open(req, timeout=_CHAT_TIMEOUT_S) as res:
                 if res.headers.get_content_type() == "text/event-stream":
-                    return _stream_response(res, on_delta)
+                    return _stream_response(res, on_delta, deadline=deadline)
                 raw = res.read(_MAX_RESPONSE_BYTES + 1)
             if len(raw) > _MAX_RESPONSE_BYTES:
                 raise ValueError("La respuesta del proveedor supera el tamaño máximo permitido")
@@ -315,7 +371,7 @@ def _post_json(
         except urllib.error.HTTPError as err:
             if err.code in _RETRYABLE_HTTP and attempt < len(_RETRY_DELAYS_S):
                 err.close()
-                time.sleep(_retry_delay_s(err, attempt))
+                time.sleep(_retry_wait_s(attempt, err))
                 continue
             raise ValueError(_provider_http_error(err, headers)) from None
         except urllib.error.URLError as err:
@@ -324,6 +380,14 @@ def _post_json(
             raise ValueError(_safe_error(f"Conexión interrumpida con el proveedor: {err}", headers)) from None
         except (UnicodeError, json.JSONDecodeError, TypeError, AttributeError, KeyError, IndexError):
             raise ValueError("El proveedor devolvió una respuesta inválida") from None
+        except _StreamSilence as err:
+            if attempt < len(_RETRY_DELAYS_S) and time.monotonic() + _retry_wait_s(attempt) < deadline:
+                # La respuesta parcial ya llegó a on_delta: vaciarla antes de empezar de nuevo.
+                if on_delta:
+                    on_delta("")
+                time.sleep(_retry_wait_s(attempt))
+                continue
+            raise ValueError(_safe_error(str(err), headers)) from None
         except ValueError as err:
             raise ValueError(_safe_error(str(err), headers)) from None
     raise ValueError("El proveedor no completó la solicitud tras los reintentos")
