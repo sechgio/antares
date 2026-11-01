@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import re
 
+import pytest
+
 from scripts.scalability_baseline import (
     BASE_COUNTS,
     MAX_RECORDED_ERRORS,
@@ -96,6 +98,7 @@ def test_serialization_is_json_safe_and_preserves_metadata() -> None:
     assert decoded["measurements"][0]["latency_ms"]["p99"] == 1.25
 
 
+@pytest.mark.slow
 def test_offline_baseline_executes_all_named_scenarios_with_representative_fixtures() -> None:
     result = run_offline_baseline("1x", seed=17)
 
@@ -135,6 +138,23 @@ def test_offline_baseline_executes_all_named_scenarios_with_representative_fixtu
     assert payloads["autoimg"]["source_checksum"] == "synthetic-checksum-017-0000"
 
 
+def test_serialized_payload_stays_bounded_without_the_full_baseline_run() -> None:
+    # Contrato barato extraído del baseline 10x: serialize_result nunca
+    # embute el corpus completo; el límite se comprueba con los fixtures
+    # 10x y un resultado representativo, sin ejecutar el baseline completo.
+    collector = MetricCollector("images", "10x")
+    collector.observe(duration_ms=1.0, ipc_bytes=0, request_count=1)
+    result = serialize_result(
+        fixtures=generate_fixtures("10x", seed=3),
+        measurements=[collector.finish(peak_rss_bytes=64)],
+        metadata={"machine": "synthetic"},
+    )
+
+    encoded = json.dumps(result, sort_keys=True).encode("utf-8")
+    assert len(encoded) < 64 * 1024 * 1024
+
+
+@pytest.mark.slow
 def test_offline_baseline_at_ten_x_samples_rss_and_records_job_waits_with_bounded_payload() -> None:
     sampled_rss = iter((128, 256, 512) * 5_000)
     result = run_offline_baseline("10x", seed=3, rss_sampler=lambda: next(sampled_rss))
