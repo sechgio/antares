@@ -17,6 +17,12 @@ const suspended: AgentMemoryItem = {
   ...procedure, id: 'm2', title: 'Sellado', status: 'suspended', reason: 'La herramienta sellador_apply cambió', version: 1,
   versions: [{ version: 1, created_at: 1, source: { kind: 'agent' } }],
 };
+const journal: AgentMemoryItem = {
+  id: 'j1', kind: 'journal', title: 'Visita de obra', status: 'active', reason: null, version: 1, updated_at: 1,
+  date: '2026-10-30', content: 'Se revisó el metrado',
+  source: { kind: 'agent', session_id: 's1' },
+  versions: [{ version: 1, created_at: 1, source: { kind: 'agent', session_id: 's1' } }],
+};
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -73,5 +79,25 @@ it('hace visible el alcance de la memoria por perfil y la prioridad del pedido y
   await open();
   expect(screen.getByText(/Cada perfil conserva sus propios recuerdos; los recuerdos globales anteriores siguen disponibles/)).toBeVisible();
   expect(screen.getByText(/Tu pedido actual tiene prioridad; después, las indicaciones del agente y, por último, las preferencias de memoria/)).toBeVisible();
+  expect(screen.getByText('Indicado en una conversación')).toBeInTheDocument();
+});
+
+it('corrige la fecha del diario junto con su contenido', async () => {
+  const corrected = { ...journal, version: 2, source: { kind: 'user' as const } };
+  const update = vi.spyOn(agentApi, 'agentMemoryUpdate').mockResolvedValue({ item: corrected });
+  vi.mocked(agentApi.agentMemoryList).mockResolvedValue({ items: [journal] });
+  await open();
+  fireEvent.click(screen.getByText('Corregir'));
+  fireEvent.change(screen.getByLabelText('Fecha de Visita de obra'), { target: { value: '2026-11-02' } });
+  await act(async () => { fireEvent.click(screen.getByText('Guardar corrección')); });
+  expect(update).toHaveBeenLastCalledWith({ id: 'j1', action: 'edit', content: 'Se revisó el metrado', date: '2026-11-02' });
+});
+
+it('muestra el diario con su etiqueta y su fecha', async () => {
+  vi.mocked(agentApi.agentMemoryList).mockResolvedValue({ items: [journal] });
+  await open();
+  expect(screen.getByText('Diario')).toBeInTheDocument();
+  expect(screen.getByText('2026-10-30')).toBeInTheDocument();
+  expect(screen.getByText('Se revisó el metrado')).toBeInTheDocument();
   expect(screen.getByText('Indicado en una conversación')).toBeInTheDocument();
 });

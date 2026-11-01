@@ -143,6 +143,17 @@ def test_private_memory_context_accepts_legacy_calls_and_checks_profile_scope():
             jsonschema.validate({**params, "profile_id": profile_id}, entry["inputSchema"])
 
 
+def test_agent_memory_update_declares_optional_journal_date():
+    import jsonschema
+
+    schema = _catalog()["methods"]["agent_memory_update"]["inputSchema"]
+    assert schema["properties"]["date"]["pattern"] == r"^\d{4}-\d{2}-\d{2}$"
+    jsonschema.validate({"id": "m1", "action": "edit", "date": "2026-10-30"}, schema)
+    jsonschema.validate({"id": "m1", "action": "disable"}, schema)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"id": "m1", "action": "edit", "date": "30/10/2026"}, schema)
+
+
 def test_agent_model_selection_is_a_renderer_command_not_an_agent_tool():
     from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
 

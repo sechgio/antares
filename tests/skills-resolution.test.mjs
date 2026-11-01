@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +18,13 @@ os.chdir(root)
 workspace, library = root / 'workspace', root / 'library'
 workspace.mkdir(exist_ok=True)
 library.mkdir(exist_ok=True)
+if options.get('action') == 'create':
+    try:
+        result = skills.run('skill_create', options['params'], {}, workspace, library, agent_id=options.get('agent'))
+    except ValueError as error:
+        result = {'error': str(error)}
+    print(json.dumps(result))
+    sys.exit(0)
 scans, opened = [], []
 original_iterdir, original_open = Path.iterdir, Path.open
 def track_iterdir(folder):
@@ -55,10 +62,10 @@ function install(relative, body = 'Instrucciones', header = true) {
   return target;
 }
 
-function load(agent = 'reader', env = {}) {
+function runProbe(options, env = {}) {
   return JSON.parse(execFileSync('uv', ['run', '--project', repo, '--locked', '--extra', 'dev', 'python', '-c', probe], {
     cwd: repo,
-    input: JSON.stringify({ root, agent }),
+    input: JSON.stringify({ root, ...options }),
     encoding: 'utf8',
     env: { ...process.env, PYTHONPATH: repo, PYTHONUTF8: '1', SKILLS_HOME: '', ORBS_SHARED_HOME: '',
       SKILLS_EXTERNAL_HOMES: path.join(root, 'external-skills'), ...env },
@@ -66,6 +73,14 @@ function load(agent = 'reader', env = {}) {
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
   }));
+}
+
+function load(agent = 'reader', env = {}) {
+  return runProbe({ agent }, env);
+}
+
+function create(params) {
+  return runProbe({ action: 'create', params });
 }
 
 it('prioriza la propia y nunca abre la compartida reemplazada', () => {
@@ -159,4 +174,31 @@ it('usa el entorno Python seleccionado mediante UV_PROJECT_ENVIRONMENT', () => {
   const environment = path.resolve(repo, process.env.UV_PROJECT_ENVIRONMENT || '.venv');
   const result = load('reader', { UV_PROJECT_ENVIRONMENT: environment });
   expect(path.normalize(result.python)).toBe(path.join(environment, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'));
+});
+
+it('crea una skill en la biblioteca sin sobrescribir la existente', () => {
+  const created = create({
+    name: 'weekly-report',
+    description: 'Prepara: informe semanal',
+    content: '# Pasos\n\n1. Revisa los datos.',
+  });
+  expect(created.created).toBe(true);
+  const target = path.join(root, 'library', 'weekly-report', 'SKILL.md');
+  expect(path.normalize(created.path)).toBe(path.normalize(target));
+  const original = readFileSync(target, 'utf8');
+  expect(original).toContain('name: weekly-report');
+  expect(original).toContain('1. Revisa los datos.');
+  expect(load().catalog.skills.find(skill => skill.name === 'weekly-report').description)
+    .toBe('Prepara: informe semanal');
+  const repeated = create({ name: 'weekly-report', description: 'Otra', content: 'Otra' });
+  expect(repeated.error).toMatch(/existe/);
+  expect(readFileSync(target, 'utf8')).toBe(original);
+});
+
+it('rechaza nombres que salen de la biblioteca al crear una skill', () => {
+  for (const name of ['../escape', 'a/b', 'a\\b', 'C:evil', '', 'UPPER']) {
+    expect(create({ name, description: 'Revisa', content: 'Revisa' }).error).toMatch(/nombre/);
+  }
+  expect(existsSync(path.join(root, 'escape'))).toBe(false);
+  expect(existsSync(path.join(root, 'library', '..', 'escape'))).toBe(false);
 });

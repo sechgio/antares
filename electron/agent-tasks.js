@@ -341,6 +341,7 @@ async function delegate(profile, args, sessionId, api, context) {
         tools: tools.map((tool) => ({ name: tool.name })),
         instructions: `Eres el agente «${profile.name}» de Antares, con rol ${role === 'reviewer' ? 'revisor' : 'explorador'}. `
           + `Responde en español. ${ROLE_PROMPT[role]} `
+          + 'Estilo: empieza por la conclusión, evita el relleno, usa listas cortas y pide solo lo necesario. '
           + 'No puedes delegar, acceder a otros chats ni concederte acceso a archivos. '
           + 'Si algo bloquea tu encargo y la conversación principal debe saberlo antes de tu informe, avísale con '
           + `agent_wake_parent (máximo ${MAX_WAKES_PER_ROUND} veces por ronda); no lo uses para narrar avances. `

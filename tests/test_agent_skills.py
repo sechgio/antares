@@ -21,8 +21,8 @@ def install(folder: Path, name: str = "pdf-review", description: str = "Revisa d
     return target
 
 
-def run(store, name, session_id="skills-session", **params):
-    return agent_tools.run(name, params, store, session_id)
+def run(store, tool, session_id="skills-session", **params):
+    return agent_tools.run(tool, params, store, session_id)
 
 
 def test_catalog_discovers_metadata_without_loading_instructions(store):

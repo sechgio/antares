@@ -541,7 +541,9 @@ async function main() {
     const state = runtime._internal.state();
     const map = await state.harness.snapshot(state.SessionsDoc, context);
     const conv = await state.harness.conversation(map.sessions[session.id].conversationId, context);
-    assert((await conv.agent(context)).instructions.includes('skills_list'), 'las conversaciones nuevas conocen la carga progresiva de skills');
+    const instructions = (await conv.agent(context)).instructions;
+    assert(instructions.includes('skills_list') && instructions.includes('skill_create'),
+      'las conversaciones nuevas conocen la carga progresiva de skills y la sugerencia de guardarlas');
     if (legacy) await conv.configure({ instructions: 'Indicaciones de una conversación anterior' }, context);
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Revisa los PDFs con una skill' });
     assert(await waitIdle(session.id), 'el agente descubre y lee una skill por el despacho normal');
@@ -1588,6 +1590,8 @@ async function main() {
       'las instrucciones incluyen la política de comunicación');
     assert(String(instructions).includes('prefiere las herramientas cua_') && String(instructions).includes('suspected_noop'),
       'las instrucciones guían el uso de cua_ y la lectura de su effect');
+    assert(['empieza por la conclusión', 'evita el relleno', 'listas cortas', 'pide solo lo necesario']
+      .every((rule) => String(instructions).includes(rule)), 'las instrucciones incluyen las reglas de estilo de respuesta');
     const plain = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const plainTools = (await runtime.handlers.agent_tools_list({ session_id: plain.session.id })).tools;
     const defaults = require('../electron/agent-execution').defaultToolNames([...runtime._internal.shared.toolSpecs.values()]);

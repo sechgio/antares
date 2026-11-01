@@ -8,16 +8,19 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent guarda skills reutilizables con `skill_create`, con aprobación y sin sobrescribir las existentes; tras un encargo repetible terminado con comprobante, propone guardar sus instrucciones como skill.
 - Agent crea páginas interactivas con HTML, JavaScript y datos completos de Excel/CSV autorizados, las conserva por conversación y permite abrirlas desde una tarjeta. Las actualizaciones verifican la revisión anterior; la ejecución queda aislada, sin red ni acceso a Node o al bridge de la aplicación.
 - Agent muestra paneles interactivos dentro del chat con la herramienta `panel_show`: preguntas con botones, formularios y tablas filtrables. Las páginas de `page_create` se ejecutan inline en un iframe aislado, sin red ni bridge, con altura automática; las páginas largas y las tablas se recortan en el chat sin scroll anidado y se abren en un visor a pantalla completa dentro de Antares (Esc para cerrar). Responder un panel lo envía al agente como mensaje con `[panel:<id>]` y lo deja respondido; los paneles se conservan con la conversación.
 - Las páginas de Agent incluyen una miniatura sin scripts en el chat y una presentación uniforme para títulos, filtros, métricas y tablas, siguiendo el modo claro u oscuro de Antares.
 - Vista previa local de archivos del chat en un panel lateral: PDF e imágenes con zoom, Excel/CSV/TSV con hojas y páginas, Word (.docx) con texto y tablas, y archivos de texto o código. Se abre desde adjuntos, archivos autorizados y referencias locales de las respuestas.
 - En Complementos → Habilidades, «Nueva habilidad» crea una skill local con nombre normalizado, descripción e instrucciones opcionales; escribe el `SKILL.md` de forma atómica, rechaza duplicados y la deja disponible en el catálogo (`agent_skill_create`).
 - La vista previa local del navegador de Agent abre también PDF e imágenes, además de HTML, tanto con una ruta del espacio de trabajo como con `file://`.
+- La memoria del agente admite entradas de diario con fecha (hoy por defecto) y autoría por versión. No se inyectan en cada turno: solo se consultan con `memory_search`, que ordena las coincidencias por relevancia y después por la fecha del diario; las preferencias y los hechos conservan su comportamiento y las correcciones del usuario siguen prevaleciendo.
 
 ### Changed
 - El navegador de Agent congela la página cuando un menú o diálogo la tapa y la reacopla al cerrarse, en lugar de dejar un hueco negro; la barra de pestañas, la omnibox y el separador adoptan un estilo plano y compacto.
 - El chat de Agent sigue el final cuando un turno crece sin mensajes nuevos (paneles, imágenes o pasos) mientras el usuario está abajo, y deja de pintar los turnos fuera de pantalla.
+- El prompt de Agent y el de sus subagentes empiezan por la conclusión, evitan el relleno, usan listas cortas y piden solo lo necesario.
 - Los archivos enviados a Agent permanecen junto a su mensaje con vista previa; los accesos concedidos se consultan desde el encabezado, sin ocupar espacio encima del campo de texto.
 - Agents entrega imágenes y gráficos PNG, JPEG o WebP como una galería persistente en el chat, con ampliación, navegación y descarga mediante la herramienta `images_show`.
 - Un turno de sala cuyo miembro sigue ocupado con su propio turno recibe hasta dos prórrogas de un minuto antes de darse por vencido, y el vencimiento queda registrado con su motivo.

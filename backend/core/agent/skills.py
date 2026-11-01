@@ -42,6 +42,21 @@ TOOL_SPECS: list[JsonObject] = [
             "offset": {"type": "integer", "minimum": 0},
         }, "required": ["skill_id"]},
     },
+    {
+        "name": "skill_create", "gated": True, "module": "agent",
+        "description": (
+            "Skills · skill_create (efecto: requiere aprobación): guarda una skill nueva en la biblioteca local para "
+            "reutilizarla en conversaciones futuras. Úsala cuando el usuario lo pida o cuando un encargo repetible "
+            "termine con comprobante; sugiérelo y espera su confirmación. No sobrescribe skills existentes."
+        ),
+        "inputSchema": {"type": "object", "properties": {
+            "name": {"type": "string", "maxLength": 64,
+                     "description": "Nombre en minúsculas, números o guiones; será el nombre de la carpeta"},
+            "description": {"type": "string", "maxLength": _MAX_DESCRIPTION},
+            "content": {"type": "string",
+                        "description": "Instrucciones completas en Markdown (máximo 64 KiB)"},
+        }, "required": ["name", "description", "content"]},
+    },
 ]
 
 
@@ -100,11 +115,11 @@ def _skill(path: Path, grants: dict[str, JsonObject], workspace: Path, library: 
     if not isinstance(metadata, dict):
         raise ValueError("El encabezado debe contener name y description")
     name, description = metadata.get("name"), metadata.get("description")
-    if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?", name) \
+    if not isinstance(name, str) or not _NAME_RE.fullmatch(name) \
             or "--" in name or name != path.parent.name:
         raise ValueError("El nombre debe coincidir con la carpeta y usar hasta 64 letras minúsculas, números o guiones")
-    if not isinstance(description, str) or not description.strip() or len(description) > 1024:
-        raise ValueError("La descripción debe contener entre 1 y 1024 caracteres")
+    if not isinstance(description, str) or not description.strip() or len(description) > _MAX_DESCRIPTION:
+        raise ValueError(f"La descripción debe contener entre 1 y {_MAX_DESCRIPTION} caracteres")
     return _Skill(_skill_id(path), name, description.strip(), path)
 
 
@@ -341,8 +356,20 @@ def resolve(skill_id: object, grants: dict[str, JsonObject], workspace: Path, li
     return {"id": skill.id, "name": skill.name, "warning": warning, "notice": _NOTICE}
 
 
+def create_from_tool(params: JsonObject, library: Path) -> JsonObject:
+    content = params.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("Indica las instrucciones de la skill")
+    target = create_target(params.get("name"), library)
+    skill = create(library, params.get("name"), params.get("description"), content)
+    return {"created": True, "name": skill["name"], "id": skill["id"], "path": str(target),
+            "library": str(target.parent.parent)}
+
+
 def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace: Path, library: Path,
         *, agent_id: str | None = None, profile_skills: list[JsonObject] | None = None) -> JsonObject:
+    if name == "skill_create":
+        return create_from_tool(params, library)
     levels = _levels(agent_id)
     portable = [_Skill(item["id"], item["name"], item["description"], Path(item["location"]), item.get("content"))
                 for item in profile_skills or []]
