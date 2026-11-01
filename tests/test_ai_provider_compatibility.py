@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -14,6 +15,7 @@ def provider_server(tmp_path, monkeypatch):
     monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
     monkeypatch.setattr(vault, "user_data_path", lambda rel: tmp_path / rel)
     requests = []
+    silent_attempts = {}
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -37,6 +39,27 @@ def provider_server(tmp_path, monkeypatch):
             elif payload["model"].startswith("stream"):
                 assert payload.get("stream") is True
                 native = self.path.endswith("/messages")
+                if payload["model"] in {"stream-silent", "stream-silent-always"}:
+                    attempt = silent_attempts.get(payload["model"], 0)
+                    silent_attempts[payload["model"]] = attempt + 1
+                    if payload["model"] == "stream-silent-always" or attempt == 0:
+                        partial = (
+                            b'data: {"type":"message_start"}\r\n\r\n'
+                            b'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\r\n\r\n'
+                            b'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"parcial"}}\r\n\r\n'
+                            if native else
+                            b'data: {"choices":[{"index":0,"delta":{"content":"parcial"}}]}\r\n\r\n'
+                        )
+                        self.send_response(200)
+                        self.send_header("Content-Type", "text/event-stream")
+                        self.end_headers()
+                        try:
+                            self.wfile.write(partial)
+                            self.wfile.flush()
+                            time.sleep(0.5)
+                        except (BrokenPipeError, ConnectionResetError):
+                            pass
+                        return
                 if native:
                     events = [
                         {"type": "message_start", "message": {"id": "msg-1", "type": "message", "role": "assistant", "content": [], "model": "stream", "stop_reason": None, "stop_sequence": None, "usage": {"input_tokens": 1, "output_tokens": 0}}},
@@ -223,6 +246,47 @@ def test_streaming_text_and_fragmented_tool_arguments(provider_server, monkeypat
     reply = agent_chat.chat(provider, "stream", [{"role": "user", "content": "Hola"}])
     assert reply == {"text": "Sí", "calls": [{"id": "call-1", "name": "formats", "params": {"n": 2}}]}
     assert len(requests) == 1
+
+
+@pytest.mark.parametrize("provider", ["openai", "anthropic"])
+def test_silent_stream_retries_and_discards_partial_text(provider_server, monkeypatch, provider):
+    base, requests = provider_server
+    ai_providers.put_config(provider, {"api_key": "test-key-1234", "base_url": base})
+    monkeypatch.setattr(agent_chat, "_DEFAULT_STREAM_SILENCE_S", 0.1)
+    monkeypatch.setattr(agent_chat, "_RETRY_DELAYS_S", (0.0, 0.0))
+    monkeypatch.setattr(agent_chat, "tool_specs", lambda: [])
+    seen = []
+    reply = agent_chat.chat(provider, "stream-silent", [{"role": "user", "content": "Hola"}], on_delta=seen.append)
+    assert reply == {"text": "Sí", "calls": [{"id": "call-1", "name": "formats", "params": {"n": 2}}]}
+    assert seen == ["parcial", "", "Sí"]
+    assert len(requests) == 2
+    assert "parcial" not in json.dumps(reply)
+
+
+@pytest.mark.parametrize("provider", ["openai", "anthropic"])
+def test_silent_stream_retries_are_bounded(provider_server, monkeypatch, provider):
+    base, requests = provider_server
+    ai_providers.put_config(provider, {"api_key": "test-key-1234", "base_url": base})
+    monkeypatch.setattr(agent_chat, "_DEFAULT_STREAM_SILENCE_S", 0.05)
+    monkeypatch.setattr(agent_chat, "_RETRY_DELAYS_S", (0.0, 0.0))
+    with pytest.raises(ValueError, match="dejó de enviar datos") as error:
+        agent_chat.chat(provider, "stream-silent-always", [{"role": "user", "content": "Hola"}], with_tools=False)
+    assert "test-key-1234" not in str(error.value)
+    assert len(requests) == 3
+
+
+@pytest.mark.parametrize("provider", ["openai", "anthropic"])
+def test_silent_stream_retries_share_the_total_deadline(provider_server, monkeypatch, provider):
+    base, _requests = provider_server
+    ai_providers.put_config(provider, {"api_key": "test-key-1234", "base_url": base})
+    monkeypatch.setattr(agent_chat, "_DEFAULT_STREAM_SILENCE_S", 0.4)
+    monkeypatch.setattr(agent_chat, "_CHAT_TIMEOUT_S", 0.45)
+    monkeypatch.setattr(agent_chat, "_RETRY_DELAYS_S", (0.0, 0.0))
+    started = time.monotonic()
+    with pytest.raises(ValueError, match=r"excedió el tiempo máximo|dejó de enviar datos"):
+        agent_chat.chat(provider, "stream-silent-always", [{"role": "user", "content": "Hola"}], with_tools=False)
+    # Sin plazo compartido, tres intentos de 0,4 s superarían 1,2 s.
+    assert time.monotonic() - started < 0.9
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
