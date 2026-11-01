@@ -28,7 +28,7 @@ export function parseAgentProgress(session: string, params: unknown): AgentProgr
   const event = (['start', 'step', 'finish', 'error'] as const).find((phase) => phase === raw.event) ?? null;
   const id = typeof raw.id === 'string' ? raw.id : typeof raw.job_id === 'string' ? raw.job_id : '';
   if (!source || !event || !id) return null;
-  const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : source === 'shell_job' ? 'Job' : 'Subagente';
+  const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : '';
   const detail = [raw.detail, raw.tool, raw.task]
     .find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim() ?? '';
   const output = [raw.stdout, raw.stderr]
@@ -65,6 +65,10 @@ export function mergeAgentProgress(current: AgentProgressItem[], next: AgentProg
   return items.filter((item) => active.includes(item) || terminal.includes(item));
 }
 
+export function progressName(item: AgentProgressItem): string {
+  return item.name || (item.source === 'shell_job' ? 'Job' : 'Subagente');
+}
+
 export function progressLabel(item: AgentProgressItem): string {
   if (item.event === 'start') return item.detail ? `inicio · ${item.detail}` : 'inicio';
   if (item.event === 'step') return item.detail ? `paso · ${item.detail}` : 'paso';
@@ -88,25 +92,24 @@ export default function AgentProgress({ items, cancelling, onCancel }: {
       </div>
       <ul className="custom-scrollbar max-h-40 overflow-y-auto px-1 pb-1">
         {items.map((item) => {
-          const running = isActiveProgress(item);
           return (
             <li key={item.key} className="agent-progress-item flex min-w-0 items-start gap-2 rounded-lg px-2 py-1.5">
               <span className="mt-0.5 shrink-0 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]">
                 {item.source === 'shell_job' ? 'Job' : 'Subagente'}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[12px] font-medium text-[var(--text-primary)]" title={item.name}>{item.name}</p>
+                <p className="truncate text-[12px] font-medium text-[var(--text-primary)]" title={progressName(item)}>{progressName(item)}</p>
                 <p className="truncate text-[11px] text-[var(--text-muted)]" title={progressLabel(item)}>{progressLabel(item)}</p>
                 {item.output && (
                   <pre className="mt-0.5 max-h-16 overflow-hidden whitespace-pre-wrap break-words font-mono text-[10px] leading-4 text-[var(--text-muted)]">{item.output.slice(-400)}</pre>
                 )}
               </div>
-              {running && (
+              {item.cancellable && (
                 <Button
                   variant="ghost"
                   size="sm"
                   className="shrink-0 text-[11px]"
-                  aria-label={`Cancelar ${item.name}`}
+                  aria-label={`Cancelar ${progressName(item)}`}
                   title="Cancelar"
                   disabled={cancelling === item.key}
                   onClick={() => onCancel(item)}

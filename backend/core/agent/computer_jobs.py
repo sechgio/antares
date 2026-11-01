@@ -194,6 +194,7 @@ def _meta(job: _Job, status: str) -> JsonObject:
         "job_id": job.id,
         "session_id": job.session_id,
         "status": status,
+        "name": _command_name(job.command),
         "exit_code": job.exit_code,
         "output_id": job.id,
         "started_at": job.started_at,
@@ -201,6 +202,14 @@ def _meta(job: _Job, status: str) -> JsonObject:
         "timed_out": job.timed_out,
         "cancelled": status == "cancelled",
     }
+
+
+def _notify_interrupted(session_id: str, job_id: str, data: JsonObject) -> None:
+    fields: dict[str, object] = {"status": "interrupted", "cancellable": False}
+    name = data.get("name")
+    if isinstance(name, str) and name.strip():
+        fields["name"] = name
+    _notify(session_id, job_id, "finish", **fields)
 
 
 def _write_meta(job: _Job, status: str) -> None:
@@ -387,7 +396,7 @@ def status(params: JsonObject, root: Path, session_id: str) -> JsonObject:
         data["status"] = "interrupted"
         data["ended_at"] = time.time()
         atomic_write_json(_meta_path(root, job_id), data)
-        _notify(session_id, job_id, "finish", name=job_id, status="interrupted", cancellable=False)
+        _notify_interrupted(session_id, job_id, data)
     return {
         "job_id": job_id,
         "status": data.get("status"),
@@ -414,7 +423,7 @@ def cancel(params: JsonObject, root: Path, session_id: str) -> JsonObject:
         data["status"] = "interrupted"
         data["ended_at"] = time.time()
         atomic_write_json(_meta_path(root, job_id), data)
-        _notify(session_id, job_id, "finish", name=job_id, status="interrupted", cancellable=False)
+        _notify_interrupted(session_id, job_id, data)
     return {"job_id": job_id, "cancelled": False, "status": data.get("status")}
 
 

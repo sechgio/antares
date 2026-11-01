@@ -1178,6 +1178,13 @@ it('muestra el progreso en vivo de subagentes y jobs y permite cancelarlos', asy
   });
   expect(within(panel).queryByRole('button', { name: 'Cancelar npm run build' })).toBeNull();
   expect(within(panel).getByText('fin · completado · terminado')).toBeInTheDocument();
+  await act(async () => {
+    update('agent.progress', {
+      session_id: session.id, source: 'subagent', event: 'step', id: 'call-3',
+      name: 'No cancelable', status: 'running', detail: 'trabajando', cancellable: false,
+    });
+  });
+  expect(within(panel).queryByRole('button', { name: 'Cancelar No cancelable' })).toBeNull();
 });
 
 it('marca el progreso como finalizado si la cancelación llega tarde', async () => {

@@ -386,6 +386,65 @@ def test_shell_job_emits_progress_and_cancel_events(store, monkeypatch):
         computer_jobs.kill_all()
 
 
+def _write_running_meta(store, job_id, **extra):
+    root = store.drafts_dir("s1")
+    computer_jobs.atomic_write_json(computer_jobs._meta_path(root, job_id), {
+        "job_id": job_id,
+        "session_id": "s1",
+        "status": "running",
+        "started_at": time.time(),
+        "output_id": job_id,
+        **extra,
+    })
+
+
+def _interrupted_finish(events):
+    return [params for _, params in events if params.get("event") == "finish"][-1]
+
+
+def test_interrupted_status_keeps_the_job_name(store, monkeypatch):
+    events = []
+    monkeypatch.setattr(computer_jobs.agent_progress, "emit", _capture_progress(events))
+    job_id = "b" * 32
+    _write_running_meta(store, job_id, name="npm run build")
+
+    assert _run(store, "shell_job_status", job_id=job_id)["status"] == "interrupted"
+    finish = _interrupted_finish(events)
+    assert finish["name"] == "npm run build" and finish["status"] == "interrupted"
+    assert finish["cancellable"] is False
+
+
+def test_interrupted_cancel_keeps_the_job_name(store, monkeypatch):
+    events = []
+    monkeypatch.setattr(computer_jobs.agent_progress, "emit", _capture_progress(events))
+    job_id = "c" * 32
+    _write_running_meta(store, job_id, name="npm run build")
+
+    assert _run(store, "shell_job_cancel", job_id=job_id)["status"] == "interrupted"
+    assert _interrupted_finish(events)["name"] == "npm run build"
+
+
+def test_interrupted_status_without_a_stored_name_omits_it(store, monkeypatch):
+    events = []
+    monkeypatch.setattr(computer_jobs.agent_progress, "emit", _capture_progress(events))
+    job_id = "d" * 32
+    _write_running_meta(store, job_id)
+
+    assert _run(store, "shell_job_status", job_id=job_id)["status"] == "interrupted"
+    assert "name" not in _interrupted_finish(events)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_job_meta_persists_the_command_name(store):
+    job = _run(store, "shell_job_start", command="'hola'", timeout_s=20)
+    try:
+        meta = json.loads(computer_jobs._meta_path(store.drafts_dir("s1"), job["job_id"]).read_text(encoding="utf-8"))
+        assert meta["name"] == "'hola'"
+    finally:
+        _wait_job(store, job["job_id"], {"exited"}, timeout=15)
+        computer_jobs.kill_all()
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
 def test_shell_job_emits_error_when_it_fails(store, monkeypatch):
     events = []
