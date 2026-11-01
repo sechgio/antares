@@ -1582,6 +1582,8 @@ async function main() {
       'las instrucciones incluyen la política de comunicación');
     assert(String(instructions).includes('prefiere las herramientas cua_') && String(instructions).includes('suspected_noop'),
       'las instrucciones guían el uso de cua_ y la lectura de su effect');
+    assert(['empieza por la conclusión', 'evita el relleno', 'listas cortas', 'pide solo lo necesario']
+      .every((rule) => String(instructions).includes(rule)), 'las instrucciones incluyen las reglas de estilo de respuesta');
     const plain = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const plainTools = (await runtime.handlers.agent_tools_list({ session_id: plain.session.id })).tools;
     const defaults = require('../electron/agent-execution').defaultToolNames([...runtime._internal.shared.toolSpecs.values()]);

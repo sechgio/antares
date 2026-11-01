@@ -16,6 +16,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - La memoria del agente admite entradas de diario con fecha (hoy por defecto) y autoría por versión. No se inyectan en cada turno: solo se consultan con `memory_search`, que ordena las coincidencias por relevancia y después por la fecha del diario; las preferencias y los hechos conservan su comportamiento y las correcciones del usuario siguen prevaleciendo.
 
 ### Changed
+- El prompt de Agent y el de sus subagentes empiezan por la conclusión, evitan el relleno, usan listas cortas y piden solo lo necesario.
 - Los archivos enviados a Agent permanecen junto a su mensaje con vista previa; los accesos concedidos se consultan desde el encabezado, sin ocupar espacio encima del campo de texto.
 - Agents entrega imágenes y gráficos PNG, JPEG o WebP como una galería persistente en el chat, con ampliación, navegación y descarga mediante la herramienta `images_show`.
 - Un turno de sala cuyo miembro sigue ocupado con su propio turno recibe hasta dos prórrogas de un minuto antes de darse por vencido, y el vencimiento queda registrado con su motivo.
