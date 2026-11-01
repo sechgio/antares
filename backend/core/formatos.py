@@ -365,6 +365,7 @@ def add_uploaded_format(
                     raw = contents.get_data()
                     total_size += len(raw)
                 except Exception:
+                    # El límite descomprimido sigue aplicando aunque un stream falle.
                     pass
             if total_size > MAX_UPLOAD_PDF_BYTES * MAX_UNCOMPRESSED_RATIO:
                 msg = "PDF excede el límite de contenido descomprimido"

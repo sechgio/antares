@@ -11,7 +11,7 @@ type AudioEffectType = 'eq' | 'reverse' | 'denoise' | 'pitch';
 type HeavyEffectType = 'vidstab' | 'chromakey' | 'pitch' | 'denoise' | 'reverse';
 type BackgroundType = 'solid' | 'blur';
 type QualityPreset = 'draft' | 'balanced' | 'high';
-export type Container = 'mp4' | 'mkv' | 'mov' | 'webm';
+type Container = 'mp4' | 'mkv' | 'mov' | 'webm';
 type VideoCodec = 'h264' | 'vp9';
 type AudioCodec = 'aac' | 'opus';
 

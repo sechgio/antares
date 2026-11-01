@@ -578,7 +578,7 @@ function Activity({ entries, working, answering, duration, onUndo, view }: {
   );
 }
 
-export type TimelineTurn =
+type TimelineTurn =
   | { key: number; role: 'user'; message: AgentMessage }
   | { key: number; role: 'assistant'; messages: AgentMessage[]; startedAt?: number };
 

@@ -131,7 +131,7 @@
       "label": "Memoria del agente",
       "aliases": ["memoria", "procedimientos", "recuerdos"],
       "handlers": [],
-      "methods": ["memory_search", "memory_remember", "procedure_learn"]
+      "methods": ["memory_search", "memory_remember", "procedure_learn", "skill_create"]
     },
     "plan": {
       "label": "Plan del encargo",
