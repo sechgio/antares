@@ -341,12 +341,23 @@ def test_no_input_if_user_breaks_lease_while_observing(monkeypatch, action, para
     assert "effect" not in order
 
 
+def _warm_worker() -> None:
+    """Calienta el worker del driver fuera del tramo cronometrado.
+
+    El worker importa comtypes (win32) al arrancar; esa importación tarda
+    segundos en frío y consumiría la ventana de 0,05 s de los tests de
+    timeout antes de que el job llegue a ejecutarse.
+    """
+    driver._run_on_worker(lambda: None, 30.0)
+
+
 def test_timeout_cancels_old_job_even_after_next_lease_begins(monkeypatch):
     order: list[str] = []
     guard = _preparar_entorno(monkeypatch, order)
     release = threading.Event()
     entered = threading.Event()
     worker = driver._run_on_worker
+    _warm_worker()
     calls = 0
 
     def observe(*_):
@@ -372,7 +383,7 @@ def test_timeout_cancels_old_job_even_after_next_lease_begins(monkeypatch):
     try:
         with pytest.raises(DriverError, match="tiempo límite"):
             driver.perform_action("w1", "click", "e0", {})
-        assert entered.is_set()
+        assert entered.wait(2)
         result = driver.perform_action("w1", "click", "e0", {})
         assert result["performed"] is True
         assert order.count("action") == 1
@@ -386,6 +397,7 @@ def test_timed_out_typing_does_not_send_input_after_guard_resets(monkeypatch):
     entered = threading.Event()
     sent = []
     guard = _StubGuard()
+    _warm_worker()
     monkeypatch.setattr(driver, "_GUARD", guard)
     monkeypatch.setattr(driver, "_ensure_element_focus", lambda *_: None)
 
@@ -404,7 +416,7 @@ def test_timed_out_typing_does_not_send_input_after_guard_resets(monkeypatch):
     try:
         with pytest.raises(DriverError, match="tiempo límite"):
             driver._run_on_worker(type_later, 0.05)
-        assert entered.is_set()
+        assert entered.wait(2)
         guard.broken = False
         release.set()
         driver._run_on_worker(lambda: None, 2.0)
@@ -418,6 +430,7 @@ def test_timed_out_launch_does_not_start_app(monkeypatch):
     entered = threading.Event()
     launched = []
     worker = driver._run_on_worker
+    _warm_worker()
 
     def prepare():
         entered.set()
@@ -429,7 +442,7 @@ def test_timed_out_launch_does_not_start_app(monkeypatch):
     try:
         with pytest.raises(DriverError, match="tiempo límite"):
             driver.launch_app("notepad")
-        assert entered.is_set()
+        assert entered.wait(2)
         release.set()
         worker(lambda: None, 2.0)
         assert launched == []
