@@ -372,24 +372,19 @@ def test_stream_silence_threshold_is_configurable(monkeypatch):
     assert agent_chat._stream_silence_s() == agent_chat._DEFAULT_STREAM_SILENCE_S
 
 
-def test_set_read_timeout_reaches_the_response_socket():
-    class Socket:
-        timeout = None
+def test_set_read_timeout_reaches_a_real_response_socket():
+    import http.client
+    import socket
 
-        def settimeout(self, value):
-            self.timeout = value
-
-    class Raw:
-        _sock = Socket()
-
-    class Fp:
-        raw = Raw()
-
-    class Response:
-        fp = Fp()
-
-    agent_chat._set_read_timeout(Response(), 1.5)
-    assert Response.fp.raw._sock.timeout == 1.5
+    client, server = socket.socketpair()
+    res = http.client.HTTPResponse(client)
+    try:
+        agent_chat._set_read_timeout(res, 1.5)
+        assert client.gettimeout() == 1.5
+    finally:
+        res.close()
+        client.close()
+        server.close()
 
 
 def test_recovery_does_not_duplicate_a_response_written_before_checkpoint_cleanup(tmp_path):
