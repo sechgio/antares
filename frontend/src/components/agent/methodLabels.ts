@@ -11,6 +11,7 @@ export const METHOD_LABELS: Record<string, string> = {
   sessions_search: 'Buscar en conversaciones anteriores',
   skills_list: 'Buscar skills disponibles',
   skills_read: 'Leer una skill',
+  skill_create: 'Guardar una skill',
   fs_list: 'Listar una carpeta',
   fs_read: 'Leer un archivo',
   fs_search: 'Buscar en archivos',
