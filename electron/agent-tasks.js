@@ -1278,6 +1278,6 @@ module.exports = {
   schedule, delegate, delegationAnswer, cancelDelegations, start, stop,
   checkDelegations, roster, sendMessage, stopDelegation, wakeParent, startChild, readTranscript,
   listTasks, saveTask, cancelTask, runTaskNow, queueControl: queue.queueControl,
-  _internal: { delegationBrief, delegationReport, planBrief, userRequest, deferredDelivery, deferDelegations,
-    delegationActivity },
+  _internal: { delegationBrief, delegationReport, planBrief, PLAN_STATUS, userRequest, deferredDelivery,
+    deferDelegations, delegationActivity },
 };
