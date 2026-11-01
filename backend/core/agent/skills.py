@@ -214,16 +214,6 @@ def create(library: Path, name: object, description: object, content: object = "
     return {"id": _skill_id(target), "name": safe, "description": description}
 
 
-def create_from_tool(params: JsonObject, library: Path) -> JsonObject:
-    content = params.get("content")
-    if not isinstance(content, str) or not content.strip():
-        raise ValueError("Indica las instrucciones de la skill")
-    target = create_target(params.get("name"), library)
-    skill = create(library, params.get("name"), params.get("description"), content)
-    return {"created": True, "name": skill["name"], "id": skill["id"], "path": str(target),
-            "library": str(target.parent.parent)}
-
-
 def _external_homes() -> tuple[Path, ...]:
     """Carpetas de skills de otras herramientas (Claude Code, Codex).
 
@@ -364,6 +354,16 @@ def resolve(skill_id: object, grants: dict[str, JsonObject], workspace: Path, li
     if agent_id is not None and len(levels) > 1 and skill.path.parent.parent == levels[1]:
         warning = f"La skill {skill.name} no existe en el perfil del agente; se usa la versión compartida (_shared)."
     return {"id": skill.id, "name": skill.name, "warning": warning, "notice": _NOTICE}
+
+
+def create_from_tool(params: JsonObject, library: Path) -> JsonObject:
+    content = params.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("Indica las instrucciones de la skill")
+    target = create_target(params.get("name"), library)
+    skill = create(library, params.get("name"), params.get("description"), content)
+    return {"created": True, "name": skill["name"], "id": skill["id"], "path": str(target),
+            "library": str(target.parent.parent)}
 
 
 def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace: Path, library: Path,
