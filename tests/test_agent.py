@@ -371,6 +371,51 @@ def test_stream_response_emits_deltas_for_native_protocol():
     assert res["content"][0]["text"] == "Hola"
 
 
+def test_stream_response_detects_silence():
+    class Stalled:
+        def __init__(self):
+            self.lines = [b'data: {"choices":[{"index":0,"delta":{"content":"parcial"}}]}\n\n']
+
+        def readline(self, _limit):
+            if self.lines:
+                return self.lines.pop(0)
+            raise TimeoutError
+
+    with pytest.raises(ValueError, match="dejó de enviar datos"):
+        agent_chat._stream_response(Stalled(), silence_s=0.01)
+
+
+def test_stream_response_can_disable_silence_detection():
+    class Stalled:
+        def readline(self, _limit):
+            raise TimeoutError
+
+    with pytest.raises(TimeoutError):
+        agent_chat._stream_response(Stalled(), silence_s=0)
+
+
+def test_stream_silence_threshold_is_configurable(monkeypatch):
+    monkeypatch.setenv("ANTARES_STREAM_SILENCE_S", "0.5")
+    assert agent_chat._stream_silence_s() == 0.5
+    monkeypatch.setenv("ANTARES_STREAM_SILENCE_S", "no-numérico")
+    assert agent_chat._stream_silence_s() == agent_chat._DEFAULT_STREAM_SILENCE_S
+
+
+def test_set_read_timeout_reaches_a_real_response_socket():
+    import http.client
+    import socket
+
+    client, server = socket.socketpair()
+    res = http.client.HTTPResponse(client)
+    try:
+        agent_chat._set_read_timeout(res, 1.5)
+        assert client.gettimeout() == 1.5
+    finally:
+        res.close()
+        client.close()
+        server.close()
+
+
 def test_recovery_does_not_duplicate_a_response_written_before_checkpoint_cleanup(tmp_path):
     store = _store(tmp_path)
     session = seed_session(store, "s1", _partial_text="Progreso")

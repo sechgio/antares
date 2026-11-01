@@ -29,6 +29,7 @@ const { resolvePortableProfile } = require('./agent-profiles');
 const compaction = require('./agent-compaction');
 
 const { appendTurn } = require('./turn-log');
+const { MAX_CALLS_PER_SIGNATURE, trackSilentTurn, trackSilentToolRound } = require('./agent-turn-policy');
 
 const MAX_TOOL_STEPS = 40;
 const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno. Conservé un punto de continuación; '
@@ -565,12 +566,19 @@ async function refreshTools() {
           const next = warned || compacted || messages;
           return leadingSystem(next) || (compacted || warned ? { messages: next } : undefined);
         },
-        afterTools: (_output, _task, api, context) => countRound(api, context),
+        afterTools: async (_output, results, api, context) => {
+          await trackSilentToolRound(turnState(api.conversationId), results, api, context);
+          await countRound(api, context);
+        },
         onYield: (answer, api) => planCheck(answer, api),
         afterResponse: async (message, api, context) => {
           try {
             const sessionId = await sessionForConversation(api.conversationId, api, context);
-            if (emptyAnswer(message) && turnState(api.conversationId).emptyAnswerRetried) {
+            const turn = turnState(api.conversationId);
+            trackSilentTurn(message, turn, !!messageText(message.content).trim());
+            // emptyAnswerRetried da una segunda petición tras una respuesta vacía;
+            // el contador de silencio es el tope duro si el proveedor la ignora.
+            if (emptyAnswer(message) && turn.emptyAnswerRetried) {
               message.stopReason = 'error';
               message.errorMessage = 'El proveedor terminó sin una respuesta visible después de volver a pedir el resultado. Intenta enviar el encargo de nuevo.';
               message.content.push({ type: 'text', text: message.errorMessage });
@@ -692,7 +700,10 @@ async function pauseForBudget(api, context, reason = 'tool_budget') {
 function turnState(conversationId) {
   let turn = shared.turns.get(conversationId);
   if (!turn) {
-    turn = { calls: new Map(), failures: new Map(), remaining: null, checked: false };
+    turn = {
+      calls: new Map(), failures: new Map(), remaining: null, checked: false,
+      silentTurns: 0, pendingSilent: false, roundProgress: false,
+    };
     shared.turns.set(conversationId, turn);
   }
   return turn;
@@ -722,6 +733,9 @@ function noteTurnStart(api, messages) {
     if (turn.emptyAnswerInput !== input?.timestamp) {
       turn.emptyAnswerInput = input?.timestamp;
       delete turn.emptyAnswerRetried;
+      turn.silentTurns = 0;
+      turn.pendingSilent = false;
+      turn.roundProgress = false;
     }
     if (turn.log) return;
     const sessionId = await sessionForConversation(api.conversationId, api, null) || '';
@@ -855,7 +869,7 @@ async function beforeTool(call, api, context) {
   const signature = callSignature(call.name, call.arguments);
   let repeated = calls.get(signature);
   if (!repeated) {
-    repeated = { count: 0, outcome: undefined, exempt: false };
+    repeated = { count: 0, executions: 0, outcome: undefined, exempt: false };
     calls.set(signature, repeated);
   }
   if (repeated.uncertain) {
@@ -872,6 +886,10 @@ async function beforeTool(call, api, context) {
       : !spec.gated || spec.name === 'desktop_observe' ? 'con el mismo resultado o error' : 'con los mismos argumentos';
     return { block: `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno ${detail}. No la repitas: `
       + 'cambia de enfoque o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
+  }
+  if (repeated.executions >= MAX_CALLS_PER_SIGNATURE) {
+    return { block: `Ya llamaste a ${call.name} ${MAX_CALLS_PER_SIGNATURE} veces en este turno, aun con resultados distintos. `
+      + 'No sigas sondeando: resume lo que comprobaste y pide al usuario cómo continuar.' };
   }
   if (failing && failing.count >= MAX_REPEATS) {
     return { block: `Las últimas ${MAX_REPEATS} llamadas a ${call.name} fallaron por la misma causa aunque cambiaste los argumentos `
@@ -1068,13 +1086,15 @@ async function executeTool(spec, args, api, context) {
     if (plan) await savePlan(sessionId, plan);
   }
   const image = isError || !await acceptsImages(api, context) ? null : await resultImage(parsed);
-  const calls = turnState(api.conversationId).calls;
+  const turn = turnState(api.conversationId);
+  const calls = turn.calls;
   const signature = callSignature(spec.name, args);
   let repeated = calls.get(signature);
   if (!repeated) {
-    repeated = { count: 0, outcome: undefined, exempt: false };
+    repeated = { count: 0, executions: 0, outcome: undefined, exempt: false };
     calls.set(signature, repeated);
   }
+  repeated.executions += 1;
   let outcome = stableJson(parsed ?? text);
   const capture = parsed && (parsed.image || (parsed.observation && parsed.observation.image));
   if (capture && typeof capture.path === 'string') {
@@ -1086,6 +1106,9 @@ async function executeTool(spec, args, api, context) {
     ? stableJson({ url: parsed && parsed.page && parsed.page.url ? String(parsed.page.url) : '' })
     : outcome;
   const hash = crypto.createHash('sha256').update(progress).digest('hex');
+  if (!isError && (!trackOutcome || repeated.outcome === undefined || repeated.outcome !== hash)) {
+    turn.roundProgress = true;
+  }
   repeated.uncertain = !!(parsed && parsed.uncertain === true && (spec.gated || spec.replay_safe !== true));
   const exempt = !!(!spec.gated && spec.replay_safe === true && isError && parsed && typeof parsed === 'object'
     && (parsed.retryable === true || parsed.recoverable === true) && parsed.uncertain !== true);
