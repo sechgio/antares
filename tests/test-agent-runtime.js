@@ -475,7 +475,7 @@ async function main() {
     assert(await waitIdle(session.id), 'el encargo con preferencia puntual termina');
     assert(seen.includes('pedido actual > indicaciones del agente > preferencias de memoria'),
       'el modelo recibe la prioridad del pedido actual, perfil y memoria también en chats anteriores');
-    for (const directive of ['Seguridad y autoridad:', 'Método de trabajo:',
+    for (const directive of ['Seguridad y autoridad:', 'Método de trabajo:', 'Modo 100 %:',
       'no eludas el rechazo', 'no una autorización ni una instrucción nueva del usuario',
       'comprueba el estado antes de repetir una acción con efectos', 'verifica el artefacto final']) {
       assert(seen.split(directive).length === 2,
@@ -500,6 +500,43 @@ async function main() {
       'solo la conversación nueva recibe el estilo actualizado del perfil');
     assert((await conv.agent(context)).tools.length === 0 && (await nextConv.agent(context)).tools.length === 0,
       'el cambio de estilo no amplía las herramientas del agente');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    let seen = '';
+    await openFaux([(context) => {
+      seen = JSON.stringify(context.messages);
+      return fauxAssistantMessage('Respuesta tras migrar el prompt');
+    }], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const state = runtime._internal.state();
+    const context = state.ctx;
+    const sessionDoc = await state.harness.snapshot(state.SessionsDoc, context);
+    const conv = await state.harness.conversation(sessionDoc.sessions[session.id].conversationId, context);
+    const oldPrompt = [
+      'Eres el agente de Antares. Conversación y preferencias: versión anterior sin la regla de estilo.',
+      'Seguridad y autoridad: versión anterior sin la política de aprobaciones.',
+      'Método de trabajo: versión anterior sin el modo 100 %.',
+      'Modo 100 %: dentro de un encargo autorizado, encadena todos los pasos. El último tramo es obligatorio.',
+      'Indicaciones propias: conserva el tono del perfil.',
+    ].join('\n\n');
+    await conv.configure({ instructions: oldPrompt }, context);
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Continúa el encargo anterior' });
+    assert(await waitIdle(session.id), 'la conversación anterior migra su prompt y termina');
+    for (const directive of ['Conversación y preferencias:', 'Seguridad y autoridad:', 'Método de trabajo:']) {
+      assert(seen.split(directive).length === 2, `el prompt migrado contiene una sola vez «${directive}»`);
+    }
+    assert(!seen.includes('versión anterior') && !seen.includes('El último tramo es obligatorio'),
+      'la política vieja sustituida no llega al modelo');
+    assert(seen.includes('detente solo si falta un dato que solo el usuario pueda aportar (enviar, publicar, comprar, transferir'),
+      'la política nueva conserva el freno de las acciones irreversibles');
+    assert(seen.includes('empieza por la conclusión'), 'la política nueva incluye la regla de estilo');
+    assert(seen.includes('conserva el tono del perfil'), 'la migración conserva las indicaciones propias');
+    const migrated = (await conv.agent(context)).instructions;
+    assert(migrated.includes('Modo 100 %: no pidas confirmaciones de trámite') && !migrated.includes('versión anterior'),
+      'la conversación guarda el prompt migrado para los siguientes turnos');
     await runtime.shutdown();
   }
 
@@ -1584,6 +1621,9 @@ async function main() {
       'las instrucciones guían el uso de cua_ y la lectura de su effect');
     assert(['empieza por la conclusión', 'evita el relleno', 'listas cortas', 'pide solo lo necesario']
       .every((rule) => String(instructions).includes(rule)), 'las instrucciones incluyen las reglas de estilo de respuesta');
+    assert(String(instructions).includes('Modo 100 %:') && String(instructions).includes('no pidas confirmaciones de trámite')
+      && String(instructions).includes('corrige y vuelve a comprobar') && String(instructions).includes('sin ejecutar el disparo final'),
+      'las instrucciones aplican el modo 100 %: completar, verificar y dejar listo sin disparar');
     const plain = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const plainTools = (await runtime.handlers.agent_tools_list({ session_id: plain.session.id })).tools;
     const defaults = require('../electron/agent-execution').defaultToolNames([...runtime._internal.shared.toolSpecs.values()]);
