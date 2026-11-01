@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent muestra el progreso en vivo de subagentes y jobs de PowerShell, con inicio, pasos, fin o error y un botón para cancelar cada uno desde la conversación.
 - Agent ejecuta `script_run`: JavaScript en un sandbox sin red ni archivos, con `print`, `tools.list` y `tools.call` limitado a las lecturas habilitadas. Las llamadas independientes corren en paralelo, la salida visible se acota y el volcado (hasta el límite del archivo) queda en un archivo de la conversación.
 - Agent guarda skills reutilizables con `skill_create`, con aprobación y sin sobrescribir las existentes; tras un encargo repetible terminado con comprobante, propone guardar sus instrucciones como skill.
 - Agent registra telemetría local del prefijo cacheable (system, tools, historial) y del porcentaje de caché leído, con hashes y conteos; los eventos usan el log estructurado de observabilidad y no incluyen contenido del usuario.

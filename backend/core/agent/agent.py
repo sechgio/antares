@@ -14,6 +14,7 @@ from datetime import date
 from pathlib import Path
 
 from backend.core.agent import agent_tools, drafts, resource_grants, subagent
+from backend.core.agent import progress as agent_progress
 from backend.core.agent import undo as undo_journal
 from backend.core.agent.agent_chat import replay_safe, result_failed, scrub_secrets, tool_specs
 from backend.core.agent.cancel import RunCancelled, _CancelEvent, await_or_cancel
@@ -817,6 +818,21 @@ class AgentRunner:
         usage: JsonObject = {"input": 0, "output": 0}
         usage_days: dict[str, int] = {}
 
+        def on_progress(event: JsonObject) -> None:
+            if session_id:
+                event_name = str(event.get("event") or "")
+                fields = {key: value for key, value in event.items() if key != "event"}
+                agent_progress.emit(session_id, "subagent", event_name, **fields)
+            if token is not None:
+                phase = {"start": "inicio", "step": "paso", "finish": "fin", "error": "error"}.get(
+                    str(event.get("event") or ""), "progreso",
+                )
+                detail = str(
+                    event.get("detail") or event.get("task") or event.get("tool") or event.get("status") or "",
+                ).strip()
+                label = str(event.get("name") or "Subagente")
+                token.report(f"\n{label} · {phase}" + (f": {detail}" if detail else ""))
+
         def record_usage(current: JsonObject) -> None:
             for key in usage:
                 usage[key] += int(current.get(key) or 0)
@@ -873,6 +889,8 @@ class AgentRunner:
                         remaining_tokens=(max(0, int(profile["remaining_tokens"]) - sum(usage.values()))
                                           if profile.get("remaining_tokens") is not None else None),
                         on_usage=record_usage,
+                        on_event=on_progress,
+                        progress_id=str(call.get("id") or ""),
                     )
                 )
             except RunCancelled:

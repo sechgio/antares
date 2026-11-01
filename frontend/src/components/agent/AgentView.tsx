@@ -34,6 +34,8 @@ import AgentBrowserPanel from './AgentBrowserPanel';
 import ScheduledTasksPanel from './ScheduledTasksPanel';
 import SubagentRoster from './SubagentRoster';
 import RoomRoster from './RoomRoster';
+import AgentProgress from './AgentProgress';
+import { useAgentProgress } from './useAgentProgress';
 import { METHOD_LABELS } from './methodLabels';
 import { useComposerAutocomplete, type ComposerSuggestion } from './useComposerAutocomplete';
 import { ApprovalCard, AssistantTurn, DaySeparator, MessageRow, ThinkingRow, ToolGroup, dayLabel, groupTurns, placeArtifacts, placePanels, type TranscriptView } from './AgentTimeline';
@@ -380,6 +382,12 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     },
     [addToast],
   );
+
+  const {
+    items: progress,
+    cancelling: cancellingProgress,
+    cancel: cancelProgress,
+  } = useAgentProgress(sessionId, loadMessages, (message) => addToast({ message, type: 'error' }));
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -1529,6 +1537,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         </div>
         <div className="mx-auto w-full max-w-[992px] shrink-0 px-4 pb-3">
           {rooms.length > 0 && <RoomRoster rooms={rooms} />}
+          <AgentProgress items={progress} cancelling={cancellingProgress} onCancel={(item) => void cancelProgress(item)} />
           {delegations.length > 0 && <SubagentRoster items={delegations} />}
           {attention && (
             <div role="region" aria-label="Atención del agente" className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2 px-3 py-2">

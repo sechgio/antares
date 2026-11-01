@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 import uuid
@@ -12,6 +13,8 @@ from backend.core.agent import agent_chat
 from backend.core.agent.cancel import RunCancelled
 from backend.core.integrations import mcp_servers
 from backend.core.integrations.types import JsonObject
+
+logger = logging.getLogger(__name__)
 
 TOOL_NAME = "subagent_run"
 
@@ -245,6 +248,15 @@ def _trim_receipt(receipt: JsonObject, limit: int = MAX_RECEIPT_CHARS) -> JsonOb
     return receipt
 
 
+def _progress(callback: Callable[[JsonObject], None] | None, event: str, **fields: object) -> None:
+    if callback is None:
+        return
+    try:
+        callback({"event": event, "at": int(time.time() * 1000), **fields})
+    except Exception:
+        logger.warning("No se pudo emitir el progreso del subagente", exc_info=True)
+
+
 def run(
     *,
     provider: str,
@@ -258,6 +270,8 @@ def run(
     cancelled: Callable[[], bool] | None = None,
     remaining_tokens: int | None = None,
     on_usage: Callable[[JsonObject], None] | None = None,
+    on_event: Callable[[JsonObject], None] | None = None,
+    progress_id: str | None = None,
 ) -> JsonObject:
     started = time.monotonic()
     role = normalize_role(role)
@@ -269,6 +283,34 @@ def run(
     offered = {str(spec.get("name") or "") for spec in tools}
     messages: list[JsonObject] = [{"role": "user", "content": task}]
     steps: list[JsonObject] = []
+    progress_key = progress_id or str(agent.get("id") or name)
+    terminated = False
+
+    def stop() -> None:
+        nonlocal terminated
+        if not terminated:
+            terminated = True
+            _progress(
+                on_event,
+                "finish",
+                id=progress_key,
+                name=name,
+                status="cancelled",
+                detail="Cancelado",
+                steps=len(steps),
+                cancellable=False,
+            )
+        raise RunCancelled()
+
+    _progress(
+        on_event,
+        "start",
+        id=progress_key,
+        name=name,
+        status="running",
+        task=_excerpt(task, MAX_STEP_DETAIL_CHARS),
+        cancellable=True,
+    )
     summary = ""
     output: object = None
     has_output = False
@@ -281,19 +323,33 @@ def run(
 
     while rounds < MAX_STEPS:
         if cancelled is not None and cancelled():
-            raise RunCancelled()
+            stop()
         if remaining_tokens is not None and tokens >= remaining_tokens:
             status = "token_budget"
             summary = "Este agente agotó su presupuesto diario de tokens; amplíalo o continúa mañana."
             finished = True
             break
-        reply = agent_chat.chat(
-            provider,
-            model,
-            messages,
-            system=system_prompt(name, str(agent.get("instructions") or ""), role, output_schema),
-            tools=tools,
-        )
+        try:
+            reply = agent_chat.chat(
+                provider,
+                model,
+                messages,
+                system=system_prompt(name, str(agent.get("instructions") or ""), role, output_schema),
+                tools=tools,
+            )
+        except RunCancelled:
+            stop()
+        except Exception as err:
+            _progress(
+                on_event,
+                "error",
+                id=progress_key,
+                name=name,
+                status="error",
+                detail=agent_chat.scrub_secrets(str(err))[:MAX_STEP_DETAIL_CHARS],
+                cancellable=False,
+            )
+            raise
         usage = reply.get("usage")
         if isinstance(usage, dict):
             tokens += int(usage.get("input") or 0) + int(usage.get("output") or 0)
@@ -342,7 +398,7 @@ def run(
         messages.append({"role": "assistant", "content": text, "tool_calls": normalized})
         for call in normalized:
             if cancelled is not None and cancelled():
-                raise RunCancelled()
+                stop()
             tool_name = str(call["name"])
             result: str
             if tool_name not in offered:
@@ -355,7 +411,7 @@ def run(
                     params = call["params"]
                     result = str(execute(tool_name, params if isinstance(params, dict) else {}))
                 except RunCancelled:
-                    raise
+                    stop()
                 except Exception as err:
                     result = json.dumps({"error": str(err)[:500]}, ensure_ascii=False)
             failed = agent_chat.result_failed(result)
@@ -365,6 +421,17 @@ def run(
                     "status": "failed" if failed else "done",
                     **({"detail": _error_detail(result)} if failed else {}),
                 }
+            )
+            _progress(
+                on_event,
+                "step",
+                id=progress_key,
+                name=name,
+                tool=tool_name,
+                status=steps[-1]["status"],
+                detail=steps[-1].get("detail", ""),
+                step=len(steps),
+                cancellable=True,
             )
             messages.append(
                 {
@@ -380,7 +447,7 @@ def run(
     elif status == "empty":
         summary = "El subagente terminó sin un resumen; revisa sus pasos."
     if cancelled is not None and cancelled():
-        raise RunCancelled()
+        stop()
     receipt: JsonObject = {
         "agent": {"id": str(agent.get("id") or ""), "name": name},
         "status": status,
@@ -397,6 +464,16 @@ def run(
     if schema_error:
         receipt["schema_valid"] = False
         receipt["schema_error"] = schema_error
+    _progress(
+        on_event,
+        "finish",
+        id=progress_key,
+        name=name,
+        status=status,
+        detail=_excerpt(summary, MAX_STEP_DETAIL_CHARS),
+        steps=len(steps),
+        cancellable=False,
+    )
     return _trim_receipt(receipt)
 
 

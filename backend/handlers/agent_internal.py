@@ -327,6 +327,17 @@ def _shell_job_status(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+@validate_params("session_id", "job_id")
+def _shell_job_cancel(params: JsonObject) -> JsonObject:
+    store = _store()
+    session_id = str(params["session_id"])
+    try:
+        return computer_jobs.cancel({"job_id": params["job_id"]}, store.drafts_dir(session_id), session_id)
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
 @validate_params("session_id")
 def _shell_jobs_cancel_session(params: JsonObject) -> JsonObject:
     return {"cancelled": computer_jobs.cancel_session(str(params["session_id"]))}
@@ -944,6 +955,7 @@ HANDLERS = {
     "agent_internal_dispatch": _dispatch,
     "agent_internal_dispatch_result": _dispatch_result,
     "agent_internal_dispatch_cancel": _dispatch_cancel,
+    "agent_dispatch_cancel": _dispatch_cancel,
     "agent_internal_dispatch_finish": _dispatch_finish,
     "agent_internal_effects": _effects,
     "agent_internal_effect_undo": _effect_undo,
@@ -954,6 +966,7 @@ HANDLERS = {
     "agent_internal_path_status": _path_status,
     "agent_internal_file_preview": _file_preview,
     "agent_internal_shell_job_status": _shell_job_status,
+    "agent_shell_job_cancel": _shell_job_cancel,
     "agent_internal_shell_jobs_cancel_session": _shell_jobs_cancel_session,
     "agent_internal_mentions": _mentions,
     "agent_internal_document_plan": _document_plan,

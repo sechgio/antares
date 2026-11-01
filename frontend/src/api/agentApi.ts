@@ -451,6 +451,12 @@ export const agentApi = {
   agentTurnCancel: (session_id: string) =>
     _invoke<{ cancelled: boolean }>('agent_turn_cancel', { session_id }),
 
+  agentDispatchCancel: (session_id: string, call_id: string) =>
+    _invoke<{ cancelled: boolean }>('agent_dispatch_cancel', { session_id, call_id }),
+
+  agentShellJobCancel: (session_id: string, job_id: string) =>
+    _invoke<{ job_id: string; cancelled: boolean; status: string }>('agent_shell_job_cancel', { session_id, job_id }),
+
   agentApprove: (approval_id: string, options?: boolean | { remember?: boolean; grantApp?: boolean; channel?: AgentChannel; rule?: 'allow' | 'deny' }) =>
     _invoke<{ approval: AgentApproval }>('agent_approve', {
       approval_id,

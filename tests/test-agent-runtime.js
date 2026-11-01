@@ -3555,6 +3555,7 @@ from pathlib import Path
 from backend.core.agent import agent, agent_chat
 from backend.handlers import agent_internal
 from backend.core.integrations.types import JsonObject
+from backend.ipc_protocol import send_response
 
 store = agent.AgentStore(Path(sys.argv[1]))
 reads = []
@@ -3599,9 +3600,9 @@ for line in sys.stdin:
             if method == "agent_internal_dispatch_cancel":
                 cancellations += 1
             result = agent_internal.HANDLERS[method](params)
-        print(json.dumps({"id": request["id"], "result": result}, ensure_ascii=False), flush=True)
+        send_response(result, request["id"])
     except Exception as error:
-        print(json.dumps({"id": request["id"], "error": str(error)}), flush=True)
+        send_response(None, request["id"], error=str(error))
 `;
     const child = spawn('uv', ['run', '--project', path.resolve(__dirname, '..'), '--locked', '--extra', 'dev',
       'python', '-u', '-c', script, dir], {
