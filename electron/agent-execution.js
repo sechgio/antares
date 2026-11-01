@@ -5,6 +5,7 @@ const { withCacheTelemetry } = require('./agent-cache-telemetry');
 const { channelFor, channelLabel } = require('./agent-channels');
 const { stableJson } = require('./stable-json');
 const { clampRetryAfterMs } = require('./agent-http');
+const script = require('./agent-script');
 
 const {
   shared,
@@ -45,6 +46,7 @@ const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar:
   + 'replantea el plan o márcalo como failed con la causa y di qué necesitas.';
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
 const SUBAGENT_TOOL = 'subagent_run';
+const SCRIPT_TOOL = script.SCRIPT_TOOL;
 const SUBAGENT_DESCRIPTION_MAX = 80;
 const SUBAGENT_MAX_DEPTH = 1;
 const SUBAGENT_MAX_TASKS = 4;
@@ -1101,7 +1103,7 @@ async function executeTool(spec, args, api, context) {
   const rect = parsed && (Array.isArray(parsed.window_rect) ? parsed.window_rect
     : (parsed.window && Array.isArray(parsed.window.rect) ? parsed.window.rect : null));
   if (rect) turnState(api.conversationId).uiRect = rect;
-  const isError = !!(parsed && typeof parsed === 'object' && (parsed.error !== undefined || parsed.isError === true));
+  const isError = script.toolFailure(parsed);
   if (spec.name === 'skills_read' && !isError && requiredSkills.get(api.conversationId) === (args || {}).skill_id) {
     requiredSkills.delete(api.conversationId);
   }
@@ -1198,6 +1200,7 @@ async function executeTool(spec, args, api, context) {
 }
 
 async function dispatchTool(spec, args, sessionId, api, context) {
+  if (spec.name === SCRIPT_TOOL) return dispatchScript(args, sessionId, api, context);
   const portableProfile = resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
   if (spec.kind === 'meta') {
     if (spec.name === 'agent_delegate') {
@@ -1350,6 +1353,21 @@ async function dispatchMeta(spec, args, sessionId, api, context, options = {}) {
     result: text,
   });
   return String(finished.result);
+}
+
+async function dispatchScript(args, sessionId, api, context) {
+  // Las llamadas internas no consumen los pasos del turno; MAX_CALLS acota el script.
+  return script.dispatchScript(args, sessionId, api, context, {
+    toolSpecs: shared.toolSpecs,
+    conversation,
+    profileToolFilter,
+    requireSession,
+    draftsDir: (id) => nativeTools().draftsDir(id),
+    runTool: (spec, toolArgs, toolApi, toolContext, options) => script.runScriptedTool(
+      spec, toolArgs, toolApi, toolContext,
+      { ...options, beforeTool, executeTool, abortError: aborted },
+    ),
+  });
 }
 
 async function dispatchNative(spec, request, context) {
