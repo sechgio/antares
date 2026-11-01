@@ -276,6 +276,20 @@ def test_silent_stream_retries_are_bounded(provider_server, monkeypatch, provide
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic"])
+def test_silent_stream_retries_share_the_total_deadline(provider_server, monkeypatch, provider):
+    base, _requests = provider_server
+    ai_providers.put_config(provider, {"api_key": "test-key-1234", "base_url": base})
+    monkeypatch.setattr(agent_chat, "_DEFAULT_STREAM_SILENCE_S", 0.4)
+    monkeypatch.setattr(agent_chat, "_CHAT_TIMEOUT_S", 0.45)
+    monkeypatch.setattr(agent_chat, "_RETRY_DELAYS_S", (0.0, 0.0))
+    started = time.monotonic()
+    with pytest.raises(ValueError, match=r"excedió el tiempo máximo|dejó de enviar datos"):
+        agent_chat.chat(provider, "stream-silent-always", [{"role": "user", "content": "Hola"}], with_tools=False)
+    # Sin plazo compartido, tres intentos de 0,4 s superarían 1,2 s.
+    assert time.monotonic() - started < 0.9
+
+
+@pytest.mark.parametrize("provider", ["openai", "anthropic"])
 @pytest.mark.parametrize("model", ["stream-incomplete", "stream-error", "stream-bad-arguments", "bad-json", "invalid-tools", "invalid-text"])
 def test_broken_response_never_returns_partial_success_or_retries(provider_server, provider, model):
     base, requests = provider_server

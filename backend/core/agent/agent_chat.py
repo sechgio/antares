@@ -218,6 +218,7 @@ def _stream_response(
     on_delta: Callable[[str], None] | None = None,
     *,
     silence_s: float | None = None,
+    deadline: float | None = None,
 ) -> JsonObject:
     message: JsonObject = {"content": "", "tool_calls": []}
     calls: dict[int, JsonObject] = {}
@@ -231,7 +232,8 @@ def _stream_response(
     complete = False
     silence = _stream_silence_s() if silence_s is None else max(0.0, silence_s)
     last_event = time.monotonic()
-    deadline = last_event + _CHAT_TIMEOUT_S
+    if deadline is None:
+        deadline = last_event + _CHAT_TIMEOUT_S
     while True:
         now = time.monotonic()
         if now >= deadline:
@@ -320,6 +322,8 @@ def _post_json(
     url: str, headers: dict[str, str], payload: JsonObject, on_delta: Callable[[str], None] | None = None
 ) -> JsonObject:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    # Plazo total compartido por los reintentos de silencio: no se reinicia en cada intento.
+    deadline = time.monotonic() + _CHAT_TIMEOUT_S
     for attempt in range(len(_RETRY_DELAYS_S) + 1):
         req = urllib.request.Request(
             url,
@@ -335,7 +339,7 @@ def _post_json(
         try:
             with http_guard.no_redirect_opener.open(req, timeout=_CHAT_TIMEOUT_S) as res:
                 if res.headers.get_content_type() == "text/event-stream":
-                    return _stream_response(res, on_delta)
+                    return _stream_response(res, on_delta, deadline=deadline)
                 raw = res.read(_MAX_RESPONSE_BYTES + 1)
             if len(raw) > _MAX_RESPONSE_BYTES:
                 raise ValueError("La respuesta del proveedor supera el tamaño máximo permitido")
@@ -354,7 +358,7 @@ def _post_json(
         except (UnicodeError, json.JSONDecodeError, TypeError, AttributeError, KeyError, IndexError):
             raise ValueError("El proveedor devolvió una respuesta inválida") from None
         except _StreamSilence as err:
-            if attempt < len(_RETRY_DELAYS_S):
+            if attempt < len(_RETRY_DELAYS_S) and time.monotonic() + _retry_wait_s(attempt) < deadline:
                 # La respuesta parcial ya llegó a on_delta: vaciarla antes de empezar de nuevo.
                 if on_delta:
                     on_delta("")
