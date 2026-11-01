@@ -77,3 +77,24 @@ it('crea una habilidad nueva y refresca el catálogo', async () => {
   await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
   expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
 });
+
+it('normaliza las vocales acentuadas al crear una habilidad', async () => {
+  vi.spyOn(agentApi, 'agentSkillsList').mockResolvedValue({
+    skills: [], library: 'C:/skills', warnings: [], truncated: false,
+  });
+  const create = vi.spyOn(agentApi, 'agentSkillCreate').mockResolvedValue({
+    skill: { id: 'c'.repeat(24), name: 'analisis-de-pdf', description: 'Analiza documentos PDF' },
+  });
+  render(<ComplementosView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Habilidades' }));
+  await screen.findByText('Todavía no hay habilidades instaladas.');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Nueva habilidad' }));
+  fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Análisis de PDF' } });
+  fireEvent.change(screen.getByLabelText('Descripción'), { target: { value: 'Analiza documentos PDF' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Crear habilidad' }));
+
+  await waitFor(() => expect(create).toHaveBeenCalledWith({
+    name: 'analisis-de-pdf', description: 'Analiza documentos PDF',
+  }));
+});
