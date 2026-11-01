@@ -33,12 +33,12 @@ class _JsonResponse:
         return self._payload[:amount]
 
 
-@pytest.mark.parametrize("code", [429, 500, 501, 502, 503, 504, 529, 599])
-def test_retryable_statuses_include_429_and_5xx(code: int) -> None:
+@pytest.mark.parametrize("code", [429, 500, 502, 503, 504, 529])
+def test_retryable_statuses_include_429_and_transient_5xx(code: int) -> None:
     assert code in agent_chat._RETRYABLE_HTTP
 
 
-@pytest.mark.parametrize("code", [400, 401, 404, 408, 600])
+@pytest.mark.parametrize("code", [400, 401, 404, 408, 501, 505, 511, 599, 600])
 def test_non_retryable_statuses_are_not_retried(code: int) -> None:
     assert code not in agent_chat._RETRYABLE_HTTP
 
@@ -99,3 +99,18 @@ def test_post_json_retries_5xx_with_simulated_sleep(monkeypatch: pytest.MonkeyPa
 
     assert agent_chat._post_json("https://provider.test/chat", {}, {"model": "test"}) == {"ok": True}
     assert delays == [1.25, 5.0]
+
+
+def test_post_json_does_not_retry_permanent_501(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[int] = []
+
+    def open_once(*_args: object, **_kwargs: object) -> _JsonResponse:
+        calls.append(1)
+        raise _http_error(501)
+
+    monkeypatch.setattr(agent_chat.http_guard.no_redirect_opener, "open", open_once)
+    monkeypatch.setattr(agent_chat.time, "sleep", lambda _seconds: pytest.fail("501 no se reintenta"))
+
+    with pytest.raises(ValueError, match="HTTP 501"):
+        agent_chat._post_json("https://provider.test/chat", {}, {"model": "test"})
+    assert len(calls) == 1

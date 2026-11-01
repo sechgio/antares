@@ -25,7 +25,8 @@ _DEFAULT_STREAM_SILENCE_S = 30.0
 _ALLOWED_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
 _MAX_IMAGES_PER_MESSAGE = 8
 _MAX_IMAGE_B64_CHARS = 4 * 1024 * 1024
-_RETRYABLE_HTTP = frozenset({429, *range(500, 600)})
+# Solo los 5xx que el proveedor puede resolver solo; 501, 505 y 511 son permanentes.
+_RETRYABLE_HTTP = frozenset({429, 500, 502, 503, 504, 529})
 _RETRY_DELAYS_S = (1.0, 4.0)
 _RETRY_AFTER_CAP_S = 30.0
 _RETRY_JITTER_RATIO = 0.25
