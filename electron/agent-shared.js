@@ -114,11 +114,19 @@ function planFromParams(params) {
   if (!params || !Array.isArray(params.steps)) return null;
   return {
     goal: String(params.goal || ''),
-    steps: params.steps.map((step) => ({
-      title: String((step && step.title) || ''),
-      status: ['pending', 'in_progress', 'done', 'failed'].includes(step && step.status) ? step.status : 'pending',
-      ...(step && step.evidence ? { evidence: String(step.evidence).slice(0, 300) } : {}),
-    })),
+    steps: params.steps.map((step) => {
+      const dependencies = Array.isArray(step && step.dependencies)
+        ? step.dependencies.filter((dependency) => dependency != null && String(dependency).trim())
+          .map(String).slice(0, 20)
+        : [];
+      return {
+        ...(step && step.id ? { id: String(step.id).slice(0, 64) } : {}),
+        title: String((step && step.title) || ''),
+        status: ['pending', 'in_progress', 'done', 'failed'].includes(step && step.status) ? step.status : 'pending',
+        ...(step && step.evidence ? { evidence: String(step.evidence).slice(0, 300) } : {}),
+        ...(dependencies.length ? { dependencies } : {}),
+      };
+    }),
   };
 }
 

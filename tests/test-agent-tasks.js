@@ -323,6 +323,7 @@ async function main() {
     assert.ok(delegationSources.some((source) => source.includes('SOLO_AUDITOR_PERSISTENTE')
       && source.includes('petición del usuario: «Delega la investigación»')
       && source.includes('terminado cuando: «Hay al menos un documento listado»')), 'el hijo recibe el origen y el criterio de terminado');
+    assert.ok(delegationSources.some((source) => ['empieza por la conclusión', 'evita el relleno', 'listas cortas', 'pide solo lo necesario'].every((rule) => source.includes(rule))), 'el hijo recibe las reglas de estilo');
     assert.ok(delegationSources.some((source) => source.includes('Resultado del agente Auditor')
       && source.includes('Informe de «Auditor»: completado.')
       && source.includes('1 llamadas a herramientas (1 correctas) con canvas_list')), 'el padre recibe la evidencia observada');
