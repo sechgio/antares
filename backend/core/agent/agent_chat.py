@@ -427,9 +427,10 @@ def _usage(data: JsonObject, style: str) -> JsonObject:
     if style == "openai":
         details = raw.get("prompt_tokens_details")
         cached = count(details.get("cached_tokens")) if isinstance(details, dict) else 0
+        cache_write = count(details.get("cache_write_tokens")) if isinstance(details, dict) else 0
         prompt = count(raw.get("prompt_tokens"))
         output = count(raw.get("completion_tokens"))
-        _log_cache_usage(style, prompt, cached, 0, output)
+        _log_cache_usage(style, prompt, cached, cache_write, output)
         return {"usage": {"input": max(0, prompt - cached), "output": output}}
     input_tokens = count(raw.get("input_tokens"))
     cache_read = count(raw.get("cache_read_input_tokens"))

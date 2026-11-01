@@ -113,8 +113,8 @@ def test_usage_registra_porcentaje_de_cache_sin_cambiarlo(caplog, style):
     caplog.set_level(logging.INFO, logger="backend.core.agent.agent_chat")
     if style == "openai":
         data = {"usage": {"prompt_tokens": 20, "completion_tokens": 3,
-                          "prompt_tokens_details": {"cached_tokens": 12}}}
-        expected = {"prompt": 20, "cache_read": 12, "cache_write": 0, "cache_read_percent": 60.0}
+                          "prompt_tokens_details": {"cached_tokens": 12, "cache_write_tokens": 4}}}
+        expected = {"prompt": 20, "cache_read": 12, "cache_write": 4, "cache_read_percent": 60.0}
     else:
         data = {"usage": {"input_tokens": 8, "output_tokens": 3,
                           "cache_read_input_tokens": 12, "cache_creation_input_tokens": 5}}
