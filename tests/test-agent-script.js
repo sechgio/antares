@@ -188,6 +188,55 @@ async function main() {
     assert(syntax.error && /SyntaxError/.test(syntax.error), 'un script inválido devuelve el error de sintaxis');
     assert(syntax.saved_path && fs.existsSync(syntax.saved_path), 'un script fallido también deja su volcado');
 
+    const startedSync = Date.now();
+    const syncTimeout = await script.runScript({
+      dir,
+      timeoutMs: 60_000,
+      code: `while (true) {}`,
+      tools: [],
+      callTool: async () => null,
+    });
+    assert(syncTimeout.error && /timed out/i.test(syncTimeout.error) && Date.now() - startedSync < 10_000,
+      'el timeout del vm cubre la parte síncrona del script');
+
+    const emptyName = await script.runScript({
+      dir,
+      timeoutMs: 5_000,
+      code: `try { await tools.call('', {}); return 'NO'; }
+        catch (error) { return String(error.message || error); }`,
+      tools: [],
+      callTool: async () => { throw new Error('no debería ejecutarse'); },
+    });
+    assert(emptyName.result === 'El nombre de la herramienta no puede estar vacío',
+      'tools.call con nombre vacío rechaza en vez de dejar la promesa pendiente');
+
+    const builder = fs.readFileSync(path.join(__dirname, '..', 'electron-builder.yml'), 'utf8');
+    assert(/asarUnpack:[\s\S]{0,300}electron\/agent-script-worker\.js/.test(builder),
+      'el worker de script_run se descomprime de app.asar');
+
+    const chord = await import('@earendil-works/chord/context');
+    const marker = chord.createContextKey('script-test');
+    const baseContext = chord.withContextValue(marker, 'conservado', chord.BACKGROUND_CONTEXT);
+    const controller = new AbortController();
+    let observedContext = null;
+    await script.runScriptedTool(
+      { name: 'fs_read', kind: 'backend', gated: false, replay_safe: true },
+      {},
+      {},
+      baseContext,
+      {
+        callId: 'script-test-call',
+        signal: controller.signal,
+        beforeTool: async (_call, _api, context) => { observedContext = context; return null; },
+        executeTool: async () => ({ content: [{ type: 'text', text: '{"ok":true}' }] }),
+        abortError: () => new Error('cancelado'),
+      },
+    );
+    assert(observedContext && observedContext.value(marker) === 'conservado',
+      'la llamada interna conserva el Context de chord y su value()');
+    assert(observedContext !== baseContext && observedContext.abortSignal === controller.signal,
+      'la llamada interna deriva su Context con withAbortSignal');
+
     const started = Date.now();
     const timeout = await script.runScript({
       dir,

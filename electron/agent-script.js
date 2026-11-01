@@ -20,6 +20,17 @@ const SCRIPT_TOOL = 'script_run';
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
+// chord es ESM; se carga una sola vez y solo cuando una llamada interna lleva señal.
+let chordContext = null;
+const loadChordContext = () => (chordContext ||= import('@earendil-works/chord/context'));
+
+// En la app empaquetada el worker se descomprime (asarUnpack); en desarrollo la
+// ruta resuelta ya apunta al archivo real.
+function workerEntry() {
+  return require.resolve('./agent-script-worker')
+    .replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
+}
+
 // Allowlist explícita: una nativa nueva no entra al sandbox hasta que se
 // clasifique aquí. No se deduce del módulo ni de `gated`, porque ambos son
 // fail-open cuando alguien añade una herramienta de escritura.
@@ -152,7 +163,7 @@ async function runScriptedTool(toolSpec, args, api, context, options = {}) {
   if (signal && signal.aborted) throw abortError();
   const nestedApi = Object.create(api);
   Object.defineProperty(nestedApi, 'callId', { value: callId, enumerable: true });
-  const nestedContext = signal ? { ...context, abortSignal: signal } : context;
+  const nestedContext = signal ? (await loadChordContext()).withAbortSignal(signal, context) : context;
   const blocked = await beforeTool({ id: callId, name: toolSpec.name, arguments: args }, nestedApi, nestedContext);
   if (blocked && blocked.block) throw new Error(blocked.block);
   if (signal && signal.aborted) throw abortError();
@@ -231,7 +242,7 @@ async function runScript(options = {}) {
   try {
     // El worker vive aparte para que el sandbox no cargue el orquestador del
     // agente; el flag evita que el hilo hijo ejecute la lógica del padre.
-    worker = new Worker(require.resolve('./agent-script-worker'), {
+    worker = new Worker(workerEntry(), {
       workerData: {
         [WORKER_FLAG]: true,
         code,
@@ -364,7 +375,11 @@ async function runScript(options = {}) {
       if (message.type === 'call') {
         const id = Number(message.id);
         const name = String(message.name || '');
-        if (!Number.isInteger(id) || !name) return;
+        if (!Number.isInteger(id)) return;
+        if (!name) {
+          respond(id, false, 'El nombre de la herramienta no puede estar vacío');
+          return;
+        }
         calls += 1;
         if (calls > maxCalls) {
           respond(id, false, `El script excedió el límite de ${maxCalls} llamadas a herramientas`);

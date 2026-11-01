@@ -166,21 +166,19 @@ function startWorker(data) {
     bridge.settle(Number(message.id), message.ok === true, String(message.text || ''));
   });
 
+  // La invocación va dentro del vm: el timeout cubre también la parte síncrona
+  // del cuerpo, no solo la evaluación que crea la función.
   const runner = `(async () => {
 ${String(data.code || '')}
-})`;
-  let fn;
+})()`;
+  let result;
   try {
-    fn = new vm.Script(runner, { filename: 'antares-script-user.js' }).runInContext(context, { timeout: syncTimeout });
+    result = new vm.Script(runner, { filename: 'antares-script-user.js' }).runInContext(context, { timeout: syncTimeout });
   } catch (error) {
     bridge.finish(null, error);
     return;
   }
-  try {
-    fn().then((result) => bridge.finish(result, null), (error) => bridge.finish(null, error));
-  } catch (error) {
-    bridge.finish(null, error);
-  }
+  Promise.resolve(result).then((value) => bridge.finish(value, null), (error) => bridge.finish(null, error));
 }
 
 if (!isMainThread && workerData && workerData[WORKER_FLAG]) {
