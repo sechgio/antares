@@ -48,7 +48,7 @@ const SUBAGENT_MAX_DEPTH = 1;
 const SUBAGENT_MAX_TASKS = 4;
 const TOOLS_LOAD = 'tools_load';
 const requiredSkills = new Map();
-const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent']);
+const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent', 'plan']);
 const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD, 'task_schedule']);
 const MEMORY_TOOLS = ['memory_search', 'memory_remember', 'procedure_learn'];
 const UI_ACTION_TOOLS = new Set(['cua_click', 'cua_drag', 'cua_scroll', 'cua_type_text', 'cua_press_key', 'cua_hotkey',
@@ -1089,6 +1089,7 @@ async function executeTool(spec, args, api, context) {
   if (uiAction) require('./agent-overlay').showOverlay(sessionId, turnState(api.conversationId).uiRect);
   let text;
   let added;
+  let planWarning = '';
   try {
     ({ text, added } = await dispatchTool(spec, args, sessionId, api, context));
   } catch (err) {
@@ -1112,8 +1113,11 @@ async function executeTool(spec, args, api, context) {
     turn.planNext = typeof parsed.next_step === 'string' ? parsed.next_step : null;
   }
   if (spec.name === 'task_plan' && !isError) {
-    const plan = planFromParams(args);
-    if (plan) await savePlan(sessionId, plan);
+    const plan = planFromParams(parsed && parsed.plan) || planFromParams(args);
+    if (plan && !await savePlan(sessionId, plan)) {
+      planWarning = 'El plan se publicó en la conversación, pero no se pudo guardar su respaldo persistente; '
+        + 'la próxima lectura lo reconstruirá desde el historial.';
+    }
   }
   const image = isError || !await acceptsImages(api, context) ? null : await resultImage(parsed);
   const turn = turnState(api.conversationId);
@@ -1189,6 +1193,7 @@ async function executeTool(spec, args, api, context) {
   return { content: [
     ...(pre ? [{ type: 'text', text: pre }] : []),
     { type: 'text', text },
+    ...(planWarning ? [{ type: 'text', text: planWarning }] : []),
     ...(image ? [image] : []),
     ...(post ? [{ type: 'text', text: post }] : []),
   ], isError, ...(added && added.length ? { control: { addTools: added } } : {}) };

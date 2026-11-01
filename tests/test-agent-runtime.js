@@ -2485,7 +2485,7 @@ async function main() {
     const computerBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'task_plan', gated: false, kind: 'backend', module: 'computer', inputSchema: schema },
+        result.tools.push({ name: 'task_plan', gated: false, kind: 'backend', module: 'plan', inputSchema: schema },
           { name: 'desktop_peek', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
         return result;
       }
@@ -2589,7 +2589,7 @@ async function main() {
     const loopBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);
-        result.tools.push({ name: 'task_plan', gated: false, kind: 'backend', module: 'computer', inputSchema: schema },
+        result.tools.push({ name: 'task_plan', gated: false, kind: 'backend', module: 'plan', inputSchema: schema },
           { name: 'page_probe', gated: false, kind: 'backend', module: 'computer', inputSchema: schema });
         return result;
       }

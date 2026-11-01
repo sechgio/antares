@@ -36,7 +36,8 @@ import SubagentRoster from './SubagentRoster';
 import RoomRoster from './RoomRoster';
 import { METHOD_LABELS } from './methodLabels';
 import { useComposerAutocomplete, type ComposerSuggestion } from './useComposerAutocomplete';
-import { ApprovalCard, AssistantTurn, DaySeparator, MessageRow, PlanCard, ThinkingRow, ToolGroup, dayLabel, groupTurns, placeArtifacts, placePanels, type TranscriptView } from './AgentTimeline';
+import { ApprovalCard, AssistantTurn, DaySeparator, MessageRow, ThinkingRow, ToolGroup, dayLabel, groupTurns, placeArtifacts, placePanels, type TranscriptView } from './AgentTimeline';
+import { PlanCard } from './AgentPlanCard';
 
 const AgentFilePreview = lazy(() => import('./AgentFilePreview'));
 const POLL_MS = 1500;
