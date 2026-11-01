@@ -331,13 +331,14 @@ export interface AgentContext {
 
 export interface AgentMemoryItem {
   id: string;
-  kind: 'preference' | 'fact' | 'procedure';
+  kind: 'preference' | 'fact' | 'journal' | 'procedure';
   title: string;
   status: 'active' | 'disabled' | 'suspended';
   reason: string | null;
   version: number;
   updated_at: number;
   content?: string;
+  date?: string;
   when?: string;
   steps?: { tool: string; purpose: string }[];
   source: { kind: 'user' | 'agent'; session_id?: string; op_ids?: string[]; artifact_ids?: string[]; reverted_to?: number };
@@ -513,7 +514,7 @@ export const agentApi = {
   agentSkillsList: () =>
     _invoke<{ skills: AgentSkill[]; library: string; warnings: string[]; truncated: boolean }>('agent_skills_list'),
 
-  agentMemoryUpdate: (params: { id: string; action: 'edit' | 'disable' | 'enable' | 'revert'; content?: string; when?: string; version?: number }) =>
+  agentMemoryUpdate: (params: { id: string; action: 'edit' | 'disable' | 'enable' | 'revert'; content?: string; date?: string; when?: string; version?: number }) =>
     _invoke<{ item: AgentMemoryItem }>('agent_memory_update', params),
 
   agentMemoryDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_memory_delete', { id }),
