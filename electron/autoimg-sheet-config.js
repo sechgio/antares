@@ -63,10 +63,7 @@ async function ensureSheetId() {
   await sheets.restorePersistedSheet();
   const restored = sheets.getSheetId();
   if (restored) return restored;
-  let sheetId = '';
-  try {
-    sheetId = await readConfigValue('SHEET_ID');
-  } catch {}
+  let sheetId = await readConfigValue('SHEET_ID');
   if (!sheetId) {
     const stored = sheets.getStoredSheetConfig?.() || {};
     sheetId = stored.sheet_id || '';
@@ -108,16 +105,15 @@ async function persistSheetIdConfig(sheetId) {
 }
 
 async function getRenameDestConfig() {
-  let folderId = '';
-  try {
-    folderId = (await readConfigValue(RENAME_DEST_CONFIG_KEY)) || '';
-  } catch {}
+  let folderId = (await readConfigValue(RENAME_DEST_CONFIG_KEY)) || '';
   const local = loadRenameDest();
   if (!folderId && local.folder_id) folderId = local.folder_id;
   if (folderId && folderId !== local.folder_id) {
     try {
       saveRenameDest(folderId, local.name || '');
-    } catch {}
+    } catch {
+      // Best-effort: el Sheet es la fuente de verdad; el espejo local solo acelera arranques.
+    }
   }
   return { folder_id: folderId, name: local.name || '' };
 }

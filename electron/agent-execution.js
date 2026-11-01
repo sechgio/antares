@@ -1564,7 +1564,6 @@ module.exports = {
   profileToolFilter,
   sessionProfile,
   TOOLS_LOAD,
-  supportsVision,
   modelDefinition,
   catalogFor,
   leadingSystem,
