@@ -64,6 +64,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Las delegaciones de Agent razonan con el esfuerzo de la conversación principal; antes arrancaban sin razonamiento, o en bajo si su ficha fijaba un modelo.
 - El guardián que ajusta cada petición de Agent a la ventana del modelo mide cuánto ahorra cada recorte: antes partía del uso fijo que informa el proveedor, ningún recorte bajaba la cifra y un exceso pequeño acababa plegando toda la conversación en un resumen mecánico.
 - Agent vuelve a pedir el resultado una vez si el proveedor termina sin texto visible y muestra un error si el segundo intento también llega vacío.
+- Agent reintenta un streaming que deja de enviar eventos durante el umbral configurable `ANTARES_STREAM_SILENCE_S` (30 s por defecto) y descarta la respuesta parcial; además corta el sondeo que supera 10 llamadas por firma y detiene el turno cuando acumula 5 turnos seguidos sin salida visible, con una última respuesta de gracia.
 - Los modelos con razonamiento sin techo de salida en el catálogo (p. ej. DeepSeek V4 en un proveedor propio) reciben hasta 32 k tokens de salida en lugar de 8 k: con esfuerzo alto el razonamiento agotaba el presupuesto y el turno terminaba truncado, sin respuesta ni herramienta.
 - El navegador de Agent se retira cuando su panel queda fuera de pantalla y registra los errores al ocultarse durante la navegación entre vistas.
 - El paso en curso del plan de Agent vuelve a verse mientras el agente trabaja (el texto quedaba transparente).
