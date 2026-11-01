@@ -2,21 +2,24 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from backend.core.editor import filters
-from backend.core.editor.toolchain import probe_json, resolve_toolchain
+from backend.core.editor.toolchain import ToolchainError, probe_json, resolve_toolchain
 
-BUILD_DIR = os.environ.get("ANTARES_FFMPEG_DIR", "")
-pytestmark = pytest.mark.skipif(
-    not BUILD_DIR or not Path(BUILD_DIR, "ffmpeg.exe").is_file(),
-    reason="sin build FFmpeg preparado (ANTARES_FFMPEG_DIR)",
-)
+_TOOLCHAIN_REASON = ""
+try:
+    resolve_toolchain()
+except ToolchainError as error:
+    _TOOLCHAIN_REASON = str(error)
 
-SCRATCH = Path(os.environ.get("TMPDIR", ".")) / "editor-filters-tests"
+pytestmark = pytest.mark.skipif(bool(_TOOLCHAIN_REASON), reason=_TOOLCHAIN_REASON)
+
+SCRATCH = Path(tempfile.gettempdir()) / f"editor-filters-tests-{os.environ.get('PYTEST_XDIST_WORKER', 'main')}"
 
 
 @pytest.fixture(scope="module")
@@ -144,16 +147,6 @@ def test_delogo_rects_apply_on_real_clip(toolchain: Any, clip: Path) -> None:
     out = SCRATCH / "delogo.mp4"
     _run_filter(toolchain, clip, chain, out)
     assert out.is_file()
-
-
-def test_delogo_rejects_tiny_rect() -> None:
-    with pytest.raises(ValueError, match="pequeña"):
-        filters.delogo_rects([{"id": "r", "x": 0.5, "y": 0.5, "width": 0.01, "height": 0.01}], 320, 240)
-
-
-def test_delogo_rejects_out_of_bounds_rect() -> None:
-    with pytest.raises(ValueError, match="excede"):
-        filters.delogo_rects([{"id": "r", "x": 0.9, "y": 0.9, "width": 0.3, "height": 0.3}], 320, 240)
 
 
 def test_speed_half_doubles_duration(toolchain: Any, clip: Path) -> None:

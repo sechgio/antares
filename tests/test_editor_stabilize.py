@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -12,15 +13,17 @@ from backend.core.editor.effects import (
     chromakey_chain,
     stabilize_chains,
 )
-from backend.core.editor.toolchain import resolve_toolchain
+from backend.core.editor.toolchain import ToolchainError, resolve_toolchain
 
-BUILD_DIR = os.environ.get("ANTARES_FFMPEG_DIR", "")
-pytestmark = pytest.mark.skipif(
-    not BUILD_DIR or not Path(BUILD_DIR, "ffmpeg.exe").is_file(),
-    reason="sin build FFmpeg preparado (ANTARES_FFMPEG_DIR)",
-)
+_TOOLCHAIN_REASON = ""
+try:
+    resolve_toolchain()
+except ToolchainError as error:
+    _TOOLCHAIN_REASON = str(error)
 
-SCRATCH = Path(os.environ.get("TMPDIR", ".")) / "editor-stabilize-tests"
+pytestmark = pytest.mark.skipif(bool(_TOOLCHAIN_REASON), reason=_TOOLCHAIN_REASON)
+
+SCRATCH = Path(tempfile.gettempdir()) / f"editor-stabilize-tests-{os.environ.get('PYTEST_XDIST_WORKER', 'main')}"
 
 
 @pytest.fixture(scope="module")
