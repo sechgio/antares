@@ -1,19 +1,24 @@
 from __future__ import annotations
 
+import json
 import unicodedata
 
 from backend.core.integrations.types import JsonObject
+from backend.utils.paths import resource_path
 
-_STATUSES = ("pending", "in_progress", "done", "failed")
-_MAX_STEPS = 20
-_MAX_ID = 64
-_MAX_DEPENDENCIES = 20
+_CONTRACT = json.loads(resource_path("shared/agent-plan.json").read_text(encoding="utf-8"))
+_STATUSES = tuple(_CONTRACT["statuses"])
+_MAX_STEPS = int(_CONTRACT["max_steps"])
+_MAX_TITLE_CHARS = int(_CONTRACT["max_title_chars"])
+_MAX_EVIDENCE_CHARS = int(_CONTRACT["max_evidence_chars"])
+_MAX_ID_CHARS = int(_CONTRACT["max_id_chars"])
+_MAX_STEP_DEPENDENCIES = int(_CONTRACT["max_step_dependencies"])
 
 TOOL_SPECS: list[JsonObject] = [
     {
         "name": "task_plan",
         "gated": False,
-        "module": "computer",
+        "module": "plan",
         "description": (
             "Plan · task_plan (sin efectos): publica o actualiza el plan visible del encargo. Envía siempre la lista "
             "completa de pasos; usa ids estables y dependencies para los pasos que deben estar «done» antes de empezar. "
@@ -38,7 +43,7 @@ TOOL_SPECS: list[JsonObject] = [
                             "evidence": {"type": "string", "description": "Qué observaste que demuestra el estado"},
                             "dependencies": {
                                 "type": "array",
-                                "maxItems": _MAX_DEPENDENCIES,
+                                "maxItems": _MAX_STEP_DEPENDENCIES,
                                 "items": {"type": "string"},
                                 "description": "Ids o títulos de pasos que deben estar «done» antes de empezar",
                             },
@@ -56,7 +61,7 @@ TOOL_SPECS: list[JsonObject] = [
 def _slug(title: str, index: int) -> str:
     plain = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode("ascii")
     slug = "-".join(part for part in "".join(ch.lower() if ch.isalnum() else "-" for ch in plain).split("-") if part)
-    return slug[:_MAX_ID].strip("-") or f"paso-{index + 1}"
+    return slug[:_MAX_ID_CHARS].strip("-") or f"paso-{index + 1}"
 
 
 def _parse_steps(raw: list) -> tuple[list[JsonObject], dict[str, int], dict[str, int | None]]:
@@ -69,13 +74,14 @@ def _parse_steps(raw: list) -> tuple[list[JsonObject], dict[str, int], dict[str,
         title = str(item.get("title") or "").strip()
         if not title:
             raise ValueError("Cada paso necesita un título")
-        title = title[:160]
+        title = title[:_MAX_TITLE_CHARS]
         status = str(item.get("status") or "pending")
         if status not in _STATUSES:
             raise ValueError(f"Estado no válido: {status}")
-        if status == "done" and not str(item.get("evidence") or "").strip():
+        evidence = str(item.get("evidence") or "").strip()[:_MAX_EVIDENCE_CHARS]
+        if status == "done" and not evidence:
             raise ValueError(f"Indica la evidencia que comprueba «{title}» antes de marcarlo como hecho")
-        step_id = str(item.get("id") or "").strip()[:_MAX_ID] or _slug(title, index)
+        step_id = str(item.get("id") or "").strip()[:_MAX_ID_CHARS] or _slug(title, index)
         key = step_id.casefold()
         if key in by_id:
             raise ValueError(f"El identificador «{step_id}» está repetido en el plan")
@@ -84,8 +90,8 @@ def _parse_steps(raw: list) -> tuple[list[JsonObject], dict[str, int], dict[str,
             raw_dependencies = []
         if not isinstance(raw_dependencies, list):
             raise ValueError(f"Las dependencias de «{title}» deben ser una lista de ids o títulos")
-        if len(raw_dependencies) > _MAX_DEPENDENCIES:
-            raise ValueError(f"«{title}» admite hasta {_MAX_DEPENDENCIES} dependencias")
+        if len(raw_dependencies) > _MAX_STEP_DEPENDENCIES:
+            raise ValueError(f"«{title}» admite hasta {_MAX_STEP_DEPENDENCIES} dependencias")
         dependencies = []
         for dependency in raw_dependencies:
             dependency_id = str(dependency or "").strip()
@@ -95,7 +101,10 @@ def _parse_steps(raw: list) -> tuple[list[JsonObject], dict[str, int], dict[str,
         title_key = title.casefold()
         by_title[title_key] = None if title_key in by_title else index
         by_id[key] = index
-        steps.append({"id": step_id, "title": title, "status": status, "dependencies": dependencies})
+        step: JsonObject = {"id": step_id, "title": title, "status": status, "dependencies": dependencies}
+        if evidence:
+            step["evidence"] = evidence
+        steps.append(step)
     return steps, by_id, by_title
 
 
@@ -148,7 +157,7 @@ def _reject_cycles(steps: list[JsonObject], resolved: list[list[int]]) -> None:
         visit(index, [])
 
 
-def _result(steps: list[JsonObject], resolved: list[list[int]]) -> JsonObject:
+def _result(goal: str, steps: list[JsonObject], resolved: list[list[int]]) -> JsonObject:
     titles = {step["id"]: step["title"] for step in steps}
     done_ids = {step["id"] for step in steps if step["status"] == "done"}
     remaining = [step for step in steps if step["status"] in {"pending", "in_progress"}]
@@ -195,6 +204,7 @@ def _result(steps: list[JsonObject], resolved: list[list[int]]) -> JsonObject:
 
     result: JsonObject = {
         "recorded": True,
+        "plan": {"goal": goal, "steps": steps},
         "done": len(done_ids),
         "total": len(steps),
         "remaining": [step["title"] for step in remaining],
@@ -220,4 +230,4 @@ def update(params: JsonObject) -> JsonObject:
     steps, by_id, by_title = _parse_steps(raw)
     resolved = _resolve_dependencies(steps, by_id, by_title)
     _reject_cycles(steps, resolved)
-    return _result(steps, resolved)
+    return _result(goal, steps, resolved)

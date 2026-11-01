@@ -45,6 +45,16 @@ const shared = {
   DELEGATION_GUIDE,
 };
 
+const PLAN_CONTRACT = require('../shared/agent-plan.json');
+const PLAN_STATUSES = new Set(PLAN_CONTRACT.statuses);
+const MAX_PLAN_STEPS = Number(PLAN_CONTRACT.max_steps) || 20;
+const MAX_PLAN_TITLE_CHARS = Number(PLAN_CONTRACT.max_title_chars) || 160;
+const MAX_PLAN_EVIDENCE_CHARS = Number(PLAN_CONTRACT.max_evidence_chars) || 300;
+const MAX_PLAN_ID_CHARS = Number(PLAN_CONTRACT.max_id_chars) || 64;
+const MAX_PLAN_STEP_DEPENDENCIES = Number(PLAN_CONTRACT.max_step_dependencies) || 20;
+const planWrites = new Map();
+const deletedPlans = new Set();
+
 // Los proveedores compatibles con OpenAI pueden repetir ids («call_0») entre turnos
 // o dejarlos vacíos; la tarea de pi-durable identifica cada llamada de forma estable.
 const TASK_SUFFIX = '@task:';
@@ -110,38 +120,100 @@ async function commitSessions(change) {
   }, ctx());
 }
 
+function planErrorDetail(err) {
+  const raw = String((err && (err.message || err.name || err.code)) || err || 'unknown');
+  try {
+    return require('./agent-execution').sanitizeProviderError(raw).slice(0, 300);
+  } catch {
+    return raw.slice(0, 120);
+  }
+}
+
 function planFromParams(params) {
-  if (!params || !Array.isArray(params.steps)) return null;
-  return {
-    goal: String(params.goal || ''),
-    steps: params.steps.map((step) => {
-      const dependencies = Array.isArray(step && step.dependencies)
-        ? step.dependencies.filter((dependency) => dependency != null && String(dependency).trim())
-          .map(String).slice(0, 20)
-        : [];
-      return {
-        ...(step && step.id ? { id: String(step.id).slice(0, 64) } : {}),
-        title: String((step && step.title) || ''),
-        status: ['pending', 'in_progress', 'done', 'failed'].includes(step && step.status) ? step.status : 'pending',
-        ...(step && step.evidence ? { evidence: String(step.evidence).slice(0, 300) } : {}),
-        ...(dependencies.length ? { dependencies } : {}),
-      };
-    }),
-  };
+  if (!params || !Array.isArray(params.steps) || !params.steps.length) return null;
+  const steps = [];
+  for (const step of params.steps.slice(0, MAX_PLAN_STEPS)) {
+    const title = String((step && step.title) || '').trim();
+    if (!title) continue;
+    const status = PLAN_STATUSES.has(step && step.status) ? step.status : 'pending';
+    const evidence = String((step && step.evidence) || '').trim();
+    const id = String((step && step.id) || '').slice(0, MAX_PLAN_ID_CHARS);
+    const dependencies = Array.isArray(step && step.dependencies)
+      ? step.dependencies.filter((dependency) => dependency != null && String(dependency).trim())
+        .map(String).slice(0, MAX_PLAN_STEP_DEPENDENCIES)
+      : [];
+    steps.push({
+      ...(id ? { id } : {}),
+      title: title.slice(0, MAX_PLAN_TITLE_CHARS),
+      status,
+      ...(evidence ? { evidence: evidence.slice(0, MAX_PLAN_EVIDENCE_CHARS) } : {}),
+      ...(dependencies.length ? { dependencies } : {}),
+    });
+  }
+  if (!steps.length) return null;
+  return { goal: String(params.goal || '').trim(), steps };
 }
 
 async function savePlan(sessionId, plan) {
-  if (!shared.state?.PlanDoc || !sessionId || !plan) return;
-  await shared.state.harness.commit(async (tx) => {
-    const doc = await tx.doc(shared.state.PlanDoc);
-    doc.plans[sessionId] = { ...plan, updated_at: Date.now() };
-  }, ctx()).catch(() => {});
+  const state = shared.state;
+  const normalized = planFromParams(plan);
+  if (!state?.PlanDoc || !sessionId || !normalized) return false;
+  if (deletedPlans.has(sessionId)) return false;
+  const write = async () => {
+    if (deletedPlans.has(sessionId)) return false;
+    try {
+      await state.harness.commit(async (tx) => {
+        const doc = await tx.doc(state.PlanDoc);
+        doc.plans[sessionId] = { ...normalized, updated_at: Date.now() };
+      }, ctx());
+      return true;
+    } catch (err) {
+      console.warn('[agent] plan save failed:', planErrorDetail(err));
+      return false;
+    }
+  };
+  const previous = planWrites.get(sessionId) || Promise.resolve();
+  const queued = previous.then(write, write);
+  planWrites.set(sessionId, queued);
+  const cleanup = () => {
+    if (planWrites.get(sessionId) === queued) planWrites.delete(sessionId);
+  };
+  queued.then(cleanup, cleanup);
+  return queued;
 }
 
 async function readPlan(sessionId) {
-  if (!shared.state?.PlanDoc || !sessionId) return null;
-  const doc = await shared.state.harness.snapshot(shared.state.PlanDoc, ctx());
-  return doc?.plans?.[sessionId] || null;
+  const state = shared.state;
+  if (!state?.PlanDoc || !sessionId) return null;
+  try {
+    const doc = await state.harness.snapshot(state.PlanDoc, ctx());
+    return doc?.plans?.[sessionId] || null;
+  } catch (err) {
+    console.warn('[agent] plan read failed:', planErrorDetail(err));
+    return null;
+  }
+}
+
+async function deleteSessionAndPlan(sessionId) {
+  // Marca antes de drenar: un task_plan en vuelo no puede recrear el plan tras el borrado.
+  deletedPlans.add(sessionId);
+  try {
+    const pending = planWrites.get(sessionId);
+    if (pending) await pending;
+    const state = shared.state;
+    if (!state?.SessionsDoc) throw new Error('El agente no está abierto');
+    return await state.harness.commit(async (tx) => {
+      const sessionsDoc = await tx.doc(state.SessionsDoc);
+      delete sessionsDoc.sessions[sessionId];
+      if (state.PlanDoc) {
+        const plansDoc = await tx.doc(state.PlanDoc);
+        delete plansDoc.plans[sessionId];
+      }
+    }, ctx());
+  } catch (err) {
+    deletedPlans.delete(sessionId);
+    throw err;
+  }
 }
 
 async function requireSession(sessionId) {
@@ -189,6 +261,7 @@ module.exports = {
   planFromParams,
   savePlan,
   readPlan,
+  deleteSessionAndPlan,
   requireSession,
   conversation,
   sessionForConversation,

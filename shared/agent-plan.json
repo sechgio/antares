@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "statuses": ["pending", "in_progress", "done", "failed"],
+  "max_steps": 20,
+  "max_title_chars": 160,
+  "max_evidence_chars": 300,
+  "max_id_chars": 64,
+  "max_step_dependencies": 20
+}

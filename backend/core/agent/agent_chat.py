@@ -5,11 +5,13 @@ import http.client
 import json
 import logging
 import os
+import random
 import time
 import urllib.error
 import urllib.request
 import uuid
 from collections.abc import Callable
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 from backend.core.integrations import ai_providers, http_guard, mcp_servers
@@ -25,9 +27,11 @@ _DEFAULT_STREAM_SILENCE_S = 30.0
 _ALLOWED_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
 _MAX_IMAGES_PER_MESSAGE = 8
 _MAX_IMAGE_B64_CHARS = 4 * 1024 * 1024
-_RETRYABLE_HTTP = frozenset({429, 500, 502, 503, 529})
+# Solo los 5xx que el proveedor puede resolver solo; 501, 505 y 511 son permanentes.
+_RETRYABLE_HTTP = frozenset({429, 500, 502, 503, 504, 529})
 _RETRY_DELAYS_S = (1.0, 4.0)
-_RETRY_AFTER_CAP_S = 15.0
+_RETRY_AFTER_CAP_S = 30.0
+_RETRY_JITTER_RATIO = 0.25
 _ERR_BODY_MAX_BYTES = 4_096
 _ERR_MSG_MAX_CHARS = 300
 
@@ -181,13 +185,33 @@ def _provider_http_error(err: urllib.error.HTTPError, headers: dict[str, str]) -
     )
 
 
-def _retry_delay_s(err: urllib.error.HTTPError, attempt: int) -> float:
-    retry_after = err.headers.get("Retry-After") if err.headers else None
+def _retry_after_s(headers: Any) -> float | None:
+    raw = headers.get("Retry-After") if headers else None
+    if raw is None:
+        return None
     try:
-        delay = float(retry_after) if retry_after else _RETRY_DELAYS_S[attempt]
+        return float(raw)
     except (TypeError, ValueError):
-        delay = _RETRY_DELAYS_S[attempt]
-    return max(0.0, min(delay, _RETRY_AFTER_CAP_S))
+        pass
+    try:
+        when = parsedate_to_datetime(str(raw))
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if when is None:
+        return None
+    try:
+        return max(0.0, when.timestamp() - time.time())
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _retry_delay_s(err: urllib.error.HTTPError, attempt: int) -> float:
+    retry_after = _retry_after_s(err.headers)
+    if retry_after is not None:
+        return max(0.0, min(retry_after, _RETRY_AFTER_CAP_S))
+    base = _RETRY_DELAYS_S[attempt]
+    jitter = random.uniform(0.0, base * _RETRY_JITTER_RATIO)
+    return min(base + jitter, _RETRY_AFTER_CAP_S)
 
 
 def _retry_wait_s(attempt: int, err: urllib.error.HTTPError | None = None) -> float:

@@ -5,6 +5,7 @@ const net = require('node:net');
 
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 const MAX_TIMEOUT_MS = 10_000;
+const MAX_RETRY_AFTER_MS = 30_000;
 
 function _ipv4Private(address) {
   const parts = address.split('.').map(Number);
@@ -44,6 +45,11 @@ function _parse(raw) {
   const loopback = LOOPBACK.has(host);
   if (url.protocol === 'http:' && !loopback) throw new Error('La espera HTTP solo usa http en localhost; fuera de local usa https');
   return { url, host, loopback };
+}
+
+function clampRetryAfterMs(value, maxDelayMs = MAX_RETRY_AFTER_MS) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  return Math.min(Math.max(value, 0), maxDelayMs);
 }
 
 async function validate(raw) {
@@ -89,4 +95,10 @@ async function check(raw, options = {}) {
   return { ...result, expected, ready: result.status === expected };
 }
 
-module.exports = { check, validate, _private };
+module.exports = {
+  check,
+  validate,
+  _private,
+  MAX_RETRY_AFTER_MS,
+  clampRetryAfterMs,
+};
