@@ -41,6 +41,46 @@ def test_count_and_dropped_events_stay_integers_and_reject_bool() -> None:
     assert "ok_count" not in event
 
 
+def test_cache_fields_are_normalised() -> None:
+    event = build_event(
+        "agent.cache_usage",
+        "INFO",
+        fields={
+            "style": "anthropic",
+            "prompt": 25,
+            "cache_read": 12,
+            "cache_write": 5,
+            "output": 3,
+            "cache_read_percent": 48.0,
+        },
+    )
+    assert event["style"] == "anthropic"
+    assert event["prompt"] == 25
+    assert event["cache_read"] == 12
+    assert event["cache_write"] == 5
+    assert event["output"] == 3
+    assert event["cache_read_percent"] == 48.0
+
+    nulls = build_event(
+        "agent.cache_prefix",
+        "INFO",
+        fields={"history_index": None, "cache_read_percent": None, "system_json_chars": 42, "tools": 1},
+    )
+    assert nulls["history_index"] is None
+    assert nulls["cache_read_percent"] is None
+    assert nulls["system_json_chars"] == 42
+    assert nulls["tools"] == 1
+
+    invalid = build_event(
+        "agent.cache_prefix",
+        "INFO",
+        fields={"history_index": -1, "cache_read_percent": 101, "system_json_chars": True},
+    )
+    assert "history_index" not in invalid
+    assert "cache_read_percent" not in invalid
+    assert "system_json_chars" not in invalid
+
+
 def test_non_finite_duration_ms_is_dropped_without_crashing() -> None:
     event = build_event("test.evt", "INFO", fields={"duration_ms": math.inf})
     assert "duration_ms" not in event

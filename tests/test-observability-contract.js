@@ -5,6 +5,26 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const contract = require('../shared/observability-contract.json');
 const CONTRACT_FIELDS = new Set([...contract.required_fields, ...contract.optional_fields]);
+const CACHE_FIELDS = [
+  'style',
+  'prompt',
+  'cache_read',
+  'cache_write',
+  'output',
+  'cache_read_percent',
+  'session',
+  'request_hash',
+  'break',
+  'history_index',
+  'messages',
+  'previous_messages',
+  'system_blocks',
+  'system_json_chars',
+  'tools',
+  'system_hash',
+  'tools_hash',
+  'history_hash',
+];
 
 function readSrc(rel) {
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -50,6 +70,11 @@ function main() {
   assertSubset(extractPySet(observabilitySrc, '_EVENT_FIELDS'), CONTRACT_FIELDS, '_EVENT_FIELDS backend');
   assertSubset(extractJsSet(rendererSrc, 'ALLOWED_EVENT_FIELDS'), CONTRACT_FIELDS, 'ALLOWED_EVENT_FIELDS renderer');
   assertSubset(extractJsSet(rendererSrc, 'ALLOWED_LEVELS'), new Set(contract.levels), 'ALLOWED_LEVELS renderer');
+  for (const field of CACHE_FIELDS) {
+    assert(CONTRACT_FIELDS.has(field), `el contrato no declara '${field}'`);
+    assert(extractJsSet(appLogSrc, 'EVENT_FIELDS').has(field), `EVENT_FIELDS no acepta '${field}'`);
+    assert(extractPySet(observabilitySrc, '_EVENT_FIELDS').has(field), `_EVENT_FIELDS no acepta '${field}'`);
+  }
   assertSubset(extractJsSet(rendererSrc, 'ALLOWED_OUTCOMES'), new Set(contract.outcomes), 'ALLOWED_OUTCOMES renderer');
 
   const TOP_LEVEL = new Set(['platform', 'backend_version']);

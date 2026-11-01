@@ -36,31 +36,49 @@ _RUM_ID_MAX_LENGTH = 30
 _EVENT_FIELDS = {
     "attempt",
     "backend_pid",
+    "break",
     "bytes",
+    "cache_read",
+    "cache_read_percent",
+    "cache_write",
     "count",
     "dropped_events",
     "duration_ms",
     "err_count",
     "error_code",
+    "history_hash",
+    "history_index",
     "job_id",
     "lane",
     "message",
+    "messages",
     "method",
     "ok_count",
     "operation_id",
     "outcome",
+    "output",
+    "previous_messages",
     "pid",
+    "prompt",
     "provider",
     "reason",
+    "request_hash",
     "request_id",
     "rum_id",
     "rum_name",
     "rum_navigation_type",
     "rum_rating",
     "rum_value",
+    "session",
     "status_class",
     "stream",
+    "style",
+    "system_blocks",
+    "system_hash",
+    "system_json_chars",
     "timeout_ms",
+    "tools",
+    "tools_hash",
     "view",
 }
 _TEXT_REDACTIONS = (
@@ -221,6 +239,22 @@ def _safe_field(key: str, value: Any) -> tuple[bool, Any]:
         return True, redact_text(value)
     if key == "outcome":
         return (True, value) if value in _OUTCOMES else (False, None)
+    if key == "history_index":
+        if value is None:
+            return True, None
+        return (
+            (True, value)
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            else (False, None)
+        )
+    if key == "cache_read_percent":
+        if value is None:
+            return True, None
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            percent = float(value)
+            if math.isfinite(percent) and 0.0 <= percent <= 100.0:
+                return True, round(percent, 1)
+        return False, None
     if key in {
         "pid",
         "backend_pid",
@@ -231,6 +265,15 @@ def _safe_field(key: str, value: Any) -> tuple[bool, Any]:
         "err_count",
         "count",
         "dropped_events",
+        "prompt",
+        "cache_read",
+        "cache_write",
+        "output",
+        "messages",
+        "previous_messages",
+        "system_blocks",
+        "system_json_chars",
+        "tools",
     }:
         return (
             (True, value)
