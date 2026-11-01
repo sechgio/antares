@@ -94,9 +94,9 @@ async function main() {
     assert.deepEqual(stored.plans[parent.id].steps.map((step) => step.status), ['done', 'in_progress']);
     assert.equal(stored.plans[parent.id].steps[0].evidence, 'contrato revisado', 'el doc conserva la evidencia canonical');
     assert.deepEqual(stored.plans[parent.id].steps.map((step) => step.id), ['revisar', 'contrastar'],
-      'el doc conserva los ids estables');
+      'el plan guardado conserva los ids estables');
     assert.deepEqual(stored.plans[parent.id].steps[1].dependencies, ['revisar'],
-      'el doc conserva las dependencias');
+      'el plan guardado conserva las dependencias');
     assert.equal(typeof stored.plans[parent.id].updated_at, 'number', 'el plan guardado se fecha');
 
     const warn = console.warn;
