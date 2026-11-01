@@ -85,7 +85,7 @@
 .agent-browser-resizer::after {
   content: '';
   position: absolute;
-  inset-block: 24px;
+  inset-block: 0;
   left: 5px;
   width: 1px;
   background: var(--border-medium);
@@ -96,13 +96,13 @@
   position: absolute;
   inset-inline: 0;
   bottom: 0;
-  height: 2px;
+  height: 1px;
   z-index: 1;
-  background: linear-gradient(90deg, transparent, var(--accent-primary), transparent) 0 0 / 40% 100% no-repeat;
-  animation: agentBrowserProgress 1.1s ease-in-out infinite;
+  background: var(--accent-primary);
+  animation: agentBrowserProgress 1.2s ease-in-out infinite;
 }
-@keyframes agentBrowserProgress { from { background-position: -40% 0; } to { background-position: 140% 0; } }
-@media (prefers-reduced-motion: reduce) { .agent-browser-progress { animation: none; background-size: 100% 100%; opacity: 0.6; } }
+@keyframes agentBrowserProgress { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .agent-browser-progress { animation: none; opacity: 0.6; } }
 .agent-avatar { overflow: visible; flex-shrink: 0; }
 
 .agent-avatar[data-working='true'] .agent-avatar-eyes {
@@ -117,6 +117,9 @@
   outline-offset: 3px;
 }
 .agent-model-menu input:focus-visible { outline: none; }
+/* La omnibox es una barra plana: el anillo global la convierte en una caja;
+   el foco se marca con fondo tenue y hairline inferior. */
+.agent-workspace .agent-browser-address:focus-visible { outline: none; }
 
 .agent-shimmer,
 .agent-plan-title.agent-shimmer {
@@ -141,6 +144,8 @@
 .agent-thinking-dots span:nth-child(3) { animation-delay: 320ms; }
 .agent-subagent-body[inert] { visibility: hidden; }
 .agent-workspace [aria-label="Mensajes"] > div:empty { display: none; }
+/* Los turnos fuera de pantalla no se pintan: un historial largo no agota la memoria de pintado. */
+.agent-workspace .agent-transcript-turn { content-visibility: auto; contain-intrinsic-size: auto 480px; overflow-clip-margin: 12px; }
 .agent-activity-icons > span + span { margin-left: -5px; box-shadow: 0 0 0 2px var(--agent-panel, var(--bg-surface)); }
 .agent-activity-body { animation: agentActivityIn 160ms var(--ease-out) both; }
 .agent-activity-note :is(p, ul, ol) { margin-block: 0; }
