@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const { withCacheTelemetry } = require('./agent-cache-telemetry');
 const { channelFor, channelLabel } = require('./agent-channels');
+const { control_tool_results: CONTROL_TOOL_RESULT_NAMES } = require('../shared/agent-tool-output.json');
 const { stableJson } = require('./stable-json');
 const { clampRetryAfterMs } = require('./agent-http');
 const script = require('./agent-script');
@@ -567,11 +568,14 @@ async function refreshTools() {
           if (budget && budget.exhausted) await pauseForBudget(api, context, 'token_budget');
           await noteTurnStart(api, messages || []);
           const compacted = await compactRequest(messages, api, context);
+          const prepared = compacted || messages;
+          const enveloped = envelopeToolResults(prepared);
           const rounds = shared.rounds.get(api.conversationId) || 0;
-          const planned = planReminder(compacted || messages, shared.turns.get(api.conversationId), rounds);
-          const warned = budgetWarning(planned || compacted || messages, rounds);
-          const next = warned || planned || compacted || messages;
-          return leadingSystem(next) || (compacted || planned || warned ? { messages: next } : undefined);
+          const planned = planReminder(enveloped, shared.turns.get(api.conversationId), rounds);
+          const warned = budgetWarning(planned || enveloped, rounds);
+          const next = warned || planned || enveloped;
+          return leadingSystem(next)
+            || (compacted || planned || warned || enveloped !== prepared ? { messages: next } : undefined);
         },
         afterTools: async (_output, results, api, context) => {
           await trackSilentToolRound(turnState(api.conversationId), results, api, context);
@@ -637,6 +641,47 @@ function leadingSystem(messages) {
   const index = messages.findIndex((message) => message.role === 'system');
   if (index <= 0) return undefined;
   return { messages: [messages[index], ...messages.slice(0, index), ...messages.slice(index + 1)] };
+}
+
+// Las salidas de herramientas externas llegan al modelo dentro de un bloque
+// delimitado; una etiqueta falsa en el contenido no puede cerrarlo ni abrir
+// otro. Los resultados de control (skills, memoria, pregunta al usuario) no se
+// envuelven porque su contenido sí son instrucciones de trabajo.
+const CONTROL_TOOL_RESULTS = new Set(CONTROL_TOOL_RESULT_NAMES);
+
+function escapeToolOutputTags(text) {
+  return String(text).replace(/<(\/?)\s*tool_output\b/gi, '&lt;$1tool_output');
+}
+
+function toolOutputBlock(toolName, text) {
+  const origin = (String(toolName || 'herramienta').replace(/[^A-Za-z0-9_.:-]+/g, '_').slice(0, 80)
+    || 'herramienta');
+  return `<tool_output origin="${origin}">\n${escapeToolOutputTags(text)}\n</tool_output>`;
+}
+
+function envelopeToolResults(messages) {
+  if (!Array.isArray(messages)) return messages;
+  let changed = false;
+  const next = messages.map((message) => {
+    if (!message || message.role !== 'toolResult' || CONTROL_TOOL_RESULTS.has(message.toolName)) return message;
+    const content = Array.isArray(message.content)
+      ? message.content
+      : [{ type: 'text', text: String(message.content || '') }];
+    const body = content
+      .filter((block) => block && block.type === 'text')
+      .map((block) => block.text || '')
+      .join('\n');
+    if (!body) return message;
+    changed = true;
+    return {
+      ...message,
+      content: [
+        { type: 'text', text: toolOutputBlock(message.toolName, body) },
+        ...content.filter((block) => !block || block.type !== 'text'),
+      ],
+    };
+  });
+  return changed ? next : messages;
 }
 
 function budgetWarning(messages, rounds) {
@@ -1588,6 +1633,8 @@ module.exports = {
   catalogFor,
   leadingSystem,
   budgetWarning,
+  envelopeToolResults,
+  toolOutputBlock,
   planReminder,
   callKey,
   providerInfo,
