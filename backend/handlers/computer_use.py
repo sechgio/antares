@@ -34,19 +34,8 @@ def computer_use_action(params: JsonObject) -> JsonObject:
     return driver.perform_action(window_id, action, element_id, action_params)
 
 
-def computer_use_launch_app(params: JsonObject) -> JsonObject:
-    app = params.get("app")
-    if not isinstance(app, str) or not app:
-        raise ValueError("Indica la aplicación a abrir")
-    args = params.get("args")
-    if args is not None and not isinstance(args, str):
-        raise ValueError("args debe ser texto")
-    return driver.launch_app(app, args)
-
-
 HANDLERS = {
     "computer_use_enumerate": computer_use_enumerate,
     "computer_use_window_state": computer_use_window_state,
     "computer_use_action": computer_use_action,
-    "computer_use_launch_app": computer_use_launch_app,
 }

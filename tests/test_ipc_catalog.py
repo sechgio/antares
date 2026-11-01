@@ -306,7 +306,7 @@ def test_computer_use_methods_are_internal_and_never_retryable():
     from backend.core.ipc_catalog import IDEMPOTENT_METHODS, ORCHESTRATABLE_METHODS, handler_module_for
 
     methods = _catalog()["methods"]
-    for name in ("computer_use_enumerate", "computer_use_window_state", "computer_use_action", "computer_use_launch_app"):
+    for name in ("computer_use_enumerate", "computer_use_window_state", "computer_use_action"):
         assert methods[name]["handler"] == "backend:computer_use"
         assert methods[name]["internal"] is True
         assert name not in ORCHESTRATABLE_METHODS

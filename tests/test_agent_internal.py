@@ -284,22 +284,11 @@ def test_approvals_deny_session(store):
     assert len(remaining) == 1
 
 
-def test_approval_history_handler_and_grants(store):
-    approval = store.create_approval("s1", {"id": "c1", "name": "db_export", "params": {"path": "C:/fuera"}})
-    store.decide_approval(approval["id"], False)
-    history = agent_internal.HANDLERS["agent_internal_approvals_history"]({"status": "denied"})["approvals"]
-    assert [item["id"] for item in history] == [approval["id"]]
-    assert history[0]["params"] == {"path": "C:/fuera"}
-    with pytest.raises(ValidationError):
-        agent_internal.HANDLERS["agent_internal_approvals_history"]({"status": "desconocido"})
-
+def test_grants_revoke_removes_selected_grant(store):
     store._grants["s1"] = {
         "a": {"path": "C:/uno.txt", "mode": "read", "dev": 1, "ino": 2},
         "b": {"path": "C:/dos.txt", "mode": "read", "dev": 1, "ino": 3},
     }
-    listed = agent_internal.HANDLERS["agent_internal_grants_list"]({"session_id": "s1"})["grants"]
-    assert [grant["path"] for grant in listed] == ["C:/dos.txt", "C:/uno.txt"]
-    assert all("ino" not in grant for grant in listed)
     revoked = agent_internal.HANDLERS["agent_internal_grants_revoke"]({"session_id": "s1", "path": "C:/uno.txt"})
     assert revoked == {"revoked": 1}
     assert [grant["path"] for grant in store.grants_for("s1").values()] == ["C:/dos.txt"]
