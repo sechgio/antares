@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { agentApi, type AgentApproval, type AgentPermissionMode, type AgentReasoningEffort, type AgentSession } from '../../api/agentApi';
+import { agentApi, type AgentApproval, type AgentPanel, type AgentPermissionMode, type AgentReasoningEffort, type AgentSession } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { mcpApi } from '../../api/mcpApi';
 import AgentView from './AgentView';
@@ -45,8 +45,11 @@ it('abre adjuntos y referencias en el visor sin enviar mensajes al agente', asyn
   fireEvent.click(await screen.findByRole('button', { name: 'Previsualizar Notas' }));
   expect(await screen.findByText('Vista local')).toBeInTheDocument();
   expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'resource', resource: 'notas.txt' }, 0, 0);
-  fireEvent.click(screen.getByRole('button', { name: 'Previsualizar datos.xlsx' }));
+  expect(screen.queryByRole('button', { name: 'Previsualizar datos.xlsx' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Archivos y accesos' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Archivos y accesos' })).getByRole('button', { name: 'Previsualizar datos.xlsx' }));
   await waitFor(() => expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'resource', resource: 'C:\\datos.xlsx' }, 0, 0));
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar archivos y accesos' }));
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
   fireEvent.click(screen.getByRole('button', { name: 'Previsualizar informe.pdf' }));
   await waitFor(() => expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'attachment', id: 'a1', name: 'informe.pdf' }, 0, 0));
@@ -373,9 +376,61 @@ it('conserva la búsqueda y el borrado desde las filas compactas', async () => {
   expect(within(sidebar).queryByRole('button', { name: 'Primera' })).not.toBeInTheDocument();
   expect(within(sidebar).getByRole('button', { name: 'Segunda' })).toBeInTheDocument();
   vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session] });
-  await act(async () => { fireEvent.click(within(sidebar).getByRole('button', { name: 'Eliminar conversación' })); });
+  fireEvent.click(within(sidebar).getByRole('button', { name: 'Opciones de Segunda' }));
+  await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'Eliminar' })); });
   expect(remove).toHaveBeenCalledExactlyOnceWith('s2');
   expect(within(sidebar).queryByRole('button', { name: 'Segunda' })).not.toBeInTheDocument();
+});
+
+it('fija, agrupa, oculta y renombra conversaciones desde el menú contextual', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, { ...session, id: 's2', title: 'Segunda' }] });
+  const rename = vi.spyOn(agentApi, 'agentSessionRename').mockResolvedValue({ session: { ...session, id: 's2', title: 'Marzo' } });
+  render(<AgentView />);
+  const sidebar = screen.getByRole('complementary', { name: 'Agentes y conversaciones' });
+  await within(sidebar).findByRole('button', { name: 'Segunda' });
+
+  fireEvent.contextMenu(within(sidebar).getByRole('button', { name: 'Segunda' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Fijar' }));
+  expect(within(within(sidebar).getByRole('region', { name: 'Fijados' })).getByRole('button', { name: 'Segunda' })).toBeInTheDocument();
+
+  fireEvent.click(within(sidebar).getByRole('button', { name: 'Opciones de Primera' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Mover a nueva sección' }));
+  fireEvent.change(screen.getByLabelText('Nombre de la sección'), { target: { value: 'Clientes' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(within(within(sidebar).getByRole('region', { name: 'Clientes' })).getByRole('button', { name: 'Primera' })).toBeInTheDocument();
+
+  fireEvent.click(within(sidebar).getByRole('button', { name: 'Opciones de Primera' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Ocultar de la barra lateral' }));
+  expect(within(sidebar).queryByRole('button', { name: 'Primera' })).not.toBeInTheDocument();
+  fireEvent.click(within(sidebar).getByRole('button', { name: 'Mostrar ocultos (1)' }));
+  expect(within(sidebar).getByRole('button', { name: 'Primera' })).toBeInTheDocument();
+  expect(JSON.parse(localStorage.getItem('antares-agent-sidebar') ?? '{}')).toMatchObject({ pinned: ['s2'], hidden: ['s1'], sections: { s1: 'Clientes' } });
+
+  fireEvent.click(within(sidebar).getByRole('button', { name: 'Opciones de Segunda' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Cambiar nombre' }));
+  fireEvent.change(screen.getByLabelText('Cambiar nombre'), { target: { value: '  Marzo ' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(rename).toHaveBeenCalledExactlyOnceWith('s2', 'Marzo');
+});
+
+it('marca como no leído y cambia el nombre del agente desde su menú', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const profile = { id: 'revisor', name: 'Revisor', color: '#0E7490', description: '', instructions: 'Revisa informes', starter: '', tools: null, created_at: 1, updated_at: 1 };
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [profile] });
+  const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: { ...profile, name: 'Auditor' } });
+  render(<AgentView />);
+  const sidebar = screen.getByRole('complementary', { name: 'Agentes y conversaciones' });
+  fireEvent.click(within(within(sidebar).getByRole('group', { name: 'Vistas del agente' })).getByRole('button', { name: 'Agentes' }));
+  fireEvent.click(await within(sidebar).findByRole('button', { name: 'Opciones de Revisor' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Marcar como no leído' }));
+  fireEvent.click(within(sidebar).getByRole('button', { name: 'Opciones de Revisor' }));
+  expect(screen.getByRole('menuitem', { name: 'Marcar como leído' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Cambiar nombre del agente' }));
+  fireEvent.change(screen.getByLabelText('Cambiar nombre del agente'), { target: { value: 'Auditor' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'revisor', name: 'Auditor', instructions: 'Revisa informes', tools: null }));
+  expect(within(sidebar).getByRole('button', { name: 'Opciones de Auditor' })).toBeInTheDocument();
 });
 
 it('amplía el buscador y restaura las acciones al cerrarlo', async () => {
@@ -838,8 +893,8 @@ it('activa la carpeta de trabajo antes de enviar y mantiene solo archivos en los
   expect(screen.getByText('clientes.xlsx')).toBeInTheDocument();
   expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('fotos');
   const tiles = within(screen.getByLabelText('Adjuntos'));
-  expect(tiles.getByText('xlsx')).toBeVisible();
-  expect(tiles.queryByText('carpeta')).not.toBeInTheDocument();
+  expect(tiles.getByRole('button', { name: 'Previsualizar clientes.xlsx' })).toHaveTextContent('clientes.xlsxHoja de cálculo');
+  expect(tiles.queryByText('Carpeta')).not.toBeInTheDocument();
   expect(tiles.getByRole('button', { name: 'Quitar clientes.xlsx' }).parentElement).toHaveClass('absolute');
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Genera el informe' } });
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
@@ -1194,12 +1249,14 @@ it('muestra el contexto de la conversación y permite retirar un archivo concedi
   render(<AgentView />);
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  expect(screen.queryByText('informe.pdf')).toBeNull();
   expect(screen.getByText('Sellador')).toBeInTheDocument();
-  expect(screen.getByText('informe.pdf')).toBeInTheDocument();
   expect(screen.getByText('ana@example.com')).toBeInTheDocument();
   const usage = screen.getByRole('button', { name: 'Contexto usado' });
   fireEvent.mouseEnter(usage);
   expect(screen.getByRole('tooltip')).toHaveTextContent('Entrada1,5 kSalida200');
+  fireEvent.click(screen.getByRole('button', { name: 'Archivos y accesos' }));
+  expect(screen.getByText('informe.pdf')).toBeInTheDocument();
   await act(async () => { fireEvent.click(screen.getByLabelText('Retirar acceso a informe.pdf')); });
   expect(remove).toHaveBeenCalledWith('s1', 'C:\\docs\\informe.pdf');
 });
@@ -1928,4 +1985,26 @@ it('invoca una skill con «/»: filtra el catálogo, elige con el teclado y env�
   await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Revisa el contrato', expect.any(String), [], false, 'a'.repeat(24));
   expect(screen.queryByLabelText('Skill activa')).not.toBeInTheDocument();
+});
+
+it('responde un panel del chat como mensaje de usuario con referencia al panel', async () => {
+  const panel: AgentPanel = { id: 'p1', session_id: 's1', call_id: 'show', type: 'choice', props: { prompt: '¿Qué formato?', options: ['PDF', 'Excel'] },
+    status: 'open', response: null, created_at: 1 };
+  let saved: AgentPanel = panel;
+  vi.spyOn(agentApi, 'agentMessagesList').mockImplementation(async () => ({ ...empty, panels: [saved], messages: [
+    { role: 'user', content: 'Exporta el informe', ts: 1 },
+    { role: 'assistant', content: '', ts: 2, tool_calls: [{ id: 'show', name: 'panel_show', params: {}, gated: false, status: 'done' }] },
+  ] }));
+  const respond = vi.spyOn(agentApi, 'agentPanelRespond').mockImplementation(async () => {
+    saved = { ...panel, status: 'answered', response: { choice: 'Excel' } };
+    return { panel: saved, message: '[panel:p1] Opción elegida: Excel' };
+  });
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  const card = await screen.findByRole('region', { name: '¿Qué formato?' });
+  await act(async () => { fireEvent.click(within(card).getByRole('button', { name: 'Excel' })); });
+  expect(respond).toHaveBeenCalledExactlyOnceWith('s1', 'p1', { choice: 'Excel' });
+  await waitFor(() => expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', '[panel:p1] Opción elegida: Excel', expect.any(String), []));
+  expect(screen.getByRole('region', { name: '¿Qué formato?' })).toHaveAttribute('data-panel-state', 'answered');
 });

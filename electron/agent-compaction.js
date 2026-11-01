@@ -9,7 +9,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { shared, bridge, sessionForConversation } = require('./agent-shared');
+const { shared, bridge, ctx, sessionForConversation } = require('./agent-shared');
 
 const DEFAULT_POLICY = Object.freeze({
   enabled: true,
@@ -199,6 +199,12 @@ function guardDataDirectives(summary, messages) {
   }).join('\n');
 }
 
+const EMERGENCY_HEADING = '## Resumen de emergencia';
+
+function isEmergencySummary(summary) {
+  return String(summary || '').startsWith(EMERGENCY_HEADING);
+}
+
 function emergencySummary(transcript, reason) {
   const parts = transcript.split('\n\n');
   const users = parts.filter((part) => part.startsWith('[Usuario]:') || part.startsWith('[Resumen anterior]:'))
@@ -207,7 +213,7 @@ function emergencySummary(transcript, reason) {
     .slice(-8).map((part) => clip(part, EMERGENCY_CLIP));
   const notes = parts.filter((part) => part.startsWith('[Agente]:')).slice(-5).map((part) => clip(part, EMERGENCY_CLIP));
   return [
-    '## Resumen de emergencia',
+    EMERGENCY_HEADING,
     `La compactación con modelo no estuvo disponible (${clip(reason, 200)}); este resumen mecánico conserva lo esencial.`,
     '',
     '## Encargo actual',
@@ -245,6 +251,64 @@ function sanitizeError(err) {
   return clip(String((err && err.message) || err), 200);
 }
 
+function addUsage(total, usage) {
+  for (const key of ['input', 'output', 'cacheRead', 'cacheWrite', 'totalTokens']) total[key] = (total[key] || 0) + (usage[key] || 0);
+  if (usage.reasoning !== undefined) total.reasoning = (total.reasoning || 0) + usage.reasoning;
+  total.cost = total.cost || {};
+  for (const key of ['input', 'output', 'cacheRead', 'cacheWrite', 'total']) {
+    total.cost[key] = (total.cost[key] || 0) + ((usage.cost && usage.cost[key]) || 0);
+  }
+}
+
+// La llamada de resumen sale de este hook y no de pi-durable: su gasto se
+// apunta en pi.usage igual que el del resumidor propio, para que el medidor lo cuente.
+// Un fallo al apuntar el gasto no debe convertir un resumen válido en uno de emergencia.
+async function recordSummaryUsage(runtime, message) {
+  if (!message.usage) return;
+  const { pi } = shared.deps;
+  try {
+    await shared.state.harness.commit(async (tx) => {
+      const models = (await tx.doc(pi.UsageDoc, runtime.conversationId)).models;
+      const key = `${message.provider}/${message.model}`;
+      if (!Object.hasOwn(models, key)) models[key] = {};
+      addUsage(models[key], message.usage);
+    }, ctx());
+  } catch (err) {
+    console.error(`[agent] no se pudo registrar el gasto del resumen: ${sanitizeError(err)}`);
+  }
+}
+
+function waitRetry(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => { clearTimeout(timer); reject(signal.reason); };
+    const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+// Sin razonamiento: resumir no lo necesita y en los modelos OpenAI-compatibles
+// sus tokens comparten max_tokens con el resumen, que acababa cortado por
+// «length». El techo de salida es el de pi-durable (80 % de la reserva).
+async function summarize(runtime, model, transcript) {
+  const { isRetryableAssistantError, retryDelayMs } = await import('@earendil-works/pi-ai/utils/retry');
+  const policy = runtime.settings.compaction;
+  const retry = runtime.settings.retry;
+  const maxTokens = Math.min(Math.floor(policy.reserveTokens * 0.8), model.maxTokens > 0 ? model.maxTokens : Infinity);
+  for (let attempt = 1; ; attempt += 1) {
+    const message = await runtime.models.completeSimple(model, {
+      messages: [
+        { role: 'system', content: SUMMARY_SYSTEM_PROMPT, timestamp: Date.now() },
+        { role: 'user', content: [{ type: 'text', text: SUMMARY_USER_PROMPT.replace('$TRANSCRIPT', transcript) }], timestamp: Date.now() },
+      ],
+    }, { cacheRetention: 'none', maxTokens, signal: runtime.signal });
+    runtime.signal.throwIfAborted();
+    await recordSummaryUsage(runtime, message);
+    if (message.stopReason !== 'error' || !isRetryableAssistantError(message)
+      || !retry || !retry.enabled || attempt > retry.maxRetries) return message;
+    await waitRetry(retryDelayMs(retry, attempt), runtime.signal);
+  }
+}
+
 // Hook beforeCompact de pi.CompactionTask. Punto seguro garantizado por
 // pi-durable: el tramo a resumir queda congelado antes de crearse la tarea y el
 // resumen se coloca en un boundary, nunca entre una llamada y su resultado.
@@ -280,19 +344,7 @@ async function beforeCompact(compaction, runtime, context) {
     const ref = agent.model;
     const model = ref && runtime.models.getModel(ref.provider, ref.modelId);
     if (!model) throw new Error('sin modelo');
-    const policy = runtime.settings.compaction;
-    const message = await runtime.models.completeSimple(model, {
-      messages: [
-        { role: 'system', content: SUMMARY_SYSTEM_PROMPT, timestamp: Date.now() },
-        { role: 'user', content: [{ type: 'text', text: SUMMARY_USER_PROMPT.replace('$TRANSCRIPT', transcript) }], timestamp: Date.now() },
-      ],
-    }, {
-      cacheRetention: 'none',
-      maxTokens: Math.max(1024, Math.min(2048, Math.floor(policy.reserveTokens * 0.8))),
-      signal: runtime.signal,
-      ...(agent.thinkingLevel === 'off' ? {} : { reasoning: agent.thinkingLevel }),
-    });
-    runtime.signal.throwIfAborted();
+    const message = await summarize(runtime, model, transcript);
     summary = summaryText(message);
     if (!summary) throw new Error(`el resumen no fue utilizable (${message.stopReason})`);
   } catch (err) {
@@ -316,5 +368,6 @@ module.exports = {
   serializeTranscript,
   unwrapCompactionSummary,
   emergencySummary,
+  isEmergencySummary,
   beforeCompact,
 };

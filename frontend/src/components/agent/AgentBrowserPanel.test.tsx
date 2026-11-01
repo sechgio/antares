@@ -52,6 +52,22 @@ it('mantiene la página acoplada al cambiar el estado o perder el foco de la ven
   expect(call).not.toHaveBeenCalledWith('bounds', { bounds: null });
 });
 
+it('retira el navegador fuera de pantalla y lo vuelve a acoplar al regresar', async () => {
+  const call = vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue(base);
+  const { unmount } = render(<AgentBrowserPanel onClose={vi.fn()} />);
+  const viewport = screen.getByTestId('agent-browser-viewport');
+  const rect = new DOMRect(window.innerWidth, 80, 400, 500);
+  const measure = vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue(rect);
+  await act(async () => { window.dispatchEvent(new Event('resize')); });
+  await waitFor(() => expect(call).toHaveBeenLastCalledWith('bounds', { bounds: null }));
+  measure.mockReturnValue(new DOMRect(100, 80, 400, 500));
+  await act(async () => { window.dispatchEvent(new Event('resize')); });
+  await waitFor(() => expect(call).toHaveBeenLastCalledWith('bounds', {
+    bounds: expect.objectContaining({ x: 100, y: 80, width: 400, height: 500 }),
+  }));
+  unmount();
+});
+
 it('abre direcciones desde la barra y permite tomar y devolver el control', async () => {
   const call = vi.spyOn(agentApi, 'agentBrowser').mockImplementation(async (action, extra) => (
     action === 'control' ? { ...base, open: true, user_control: !!extra?.user } : { ...base, open: true, url: extra?.url ?? '' }

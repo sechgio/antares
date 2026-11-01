@@ -717,7 +717,7 @@ async function messagesList(params) {
   const conv = await conversation(sessionId);
   await projection.ensureWatcher(session);
   const { messages, pending, usage } = await projection.projectMessages(conv, session);
-  const { artifacts, questions, context } = await bridge('agent_internal_artifacts', { session_id: sessionId });
+  const { artifacts, questions, panels, context } = await bridge('agent_internal_artifacts', { session_id: sessionId });
   const partial = projection.partialText(session.conversationId);
   const partialReasoning = projection.partialReasoning(session.conversationId);
   if (partial || partialReasoning) {
@@ -746,6 +746,7 @@ async function messagesList(params) {
     pending_approvals: pending,
     artifacts,
     questions,
+    panels: panels || [],
     context: { modules: session.modules || [], files: (context && context.files) || [], accounts: (context && context.accounts) || [],
       workspace: (context && context.workspace) || null },
     usage: usage || null,
@@ -945,7 +946,9 @@ async function messageSend(params) {
     : '';
   const context = [mentions.context, memory.context, attachedNote, skillsNote, skillIndex?.note, conversationNote,
     safetyNote, executionNote, botsNote,
-    invokedSkillNote]
+    invokedSkillNote, attached.length
+      ? `${shared.ATTACHMENTS_MARKER}\n${JSON.stringify(attached.map((item) => ({ path: item.path, folder: item.kind === 'folder' })))}`
+      : '']
     .filter(Boolean).join('\n\n');
   const images = await _inlineImages(conv, attached, (files.rejected || []).map((item) => item.path));
   const input = context || images.length

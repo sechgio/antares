@@ -23,29 +23,34 @@ async function main() {
   const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
   const { LiveDoc } = await import('@earendil-works/pi-durable');
   const { fauxProvider, fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai');
-  async function fixture() {
+  async function fixture(withSkill = false) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-agent-recovery-'));
     const faux = fauxProvider();
-    const state = { reads: 0, requests: 0, holdRead: false, waiting: false, fail: null };
+    const state = { reads: 0, requests: 0, holdRead: false, waiting: false, fail: null, changing: false };
     const bridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         if (state.fail === 'tools') { state.fail = null; throw new Error('Catálogo temporalmente no disponible'); }
         return { tools: [{ name: 'canvas_list', kind: 'backend', gated: false, replay_safe: true,
-          inputSchema: { type: 'object', properties: { page: { type: 'integer' } } } }] };
+          inputSchema: { type: 'object', properties: { page: { type: 'integer' } } } },
+        ...(withSkill ? [{ name: 'skills_read', kind: 'backend', gated: false, replay_safe: true,
+          inputSchema: { type: 'object', properties: { skill_id: { type: 'string' } } } }] : [])] };
       }
       if (method === 'agent_internal_provider') {
         if (state.fail === 'provider') { state.fail = null; throw new Error('Proveedor temporalmente no disponible'); }
         return { provider: 'faux', style: 'openai_chat', base_url: 'http://unused', api_key: 'test' };
       }
       if (method === 'agent_internal_dispatch') {
+        if (params.name === 'skills_read') { state.skillReads = (state.skillReads || 0) + 1; return { result: '{}' }; }
         state.reads += 1;
-        return { result: state.holdRead ? null : state.result ?? JSON.stringify({ page: params.params.page }) };
+        return { result: state.holdRead ? null : state.result
+          ?? (state.changing ? JSON.stringify({ tick: state.reads }) : JSON.stringify({ page: params.params.page })) };
       }
       if (method === 'agent_internal_dispatch_result') return { result: state.holdRead ? null : '{}' };
       if (method === 'agent_internal_dispatch_cancel') return { cancelled: true };
       if (method === 'agent_internal_approvals_pending') return { approvals: [] };
       if (method === 'agent_internal_mentions') return { modules: [], unknown: [], ambiguous: [] };
       if (method === 'agent_internal_memory_context') return { context: '' };
+      if (method === 'agent_internal_skill_resolve' && withSkill) return { skill: { id: 'skill-1', name: 'Auditar', notice: '' } };
       if (method === 'agent_internal_artifacts') return { artifacts: [], questions: [], context: {} };
       if (method === 'agent_internal_activity') return { attention: {} };
       throw new Error(`Puente inesperado: ${method}`);
@@ -80,6 +85,127 @@ async function main() {
     };
   }
   const cases = {
+    async empty_answer_keeps_skill() {
+      const f = await fixture(true);
+      try {
+        f.faux.setResponses([fauxAssistantMessage(''), f.read(1),
+          fauxAssistantMessage([fauxToolCall('skills_read', { skill_id: 'skill-1' })], { stopReason: 'toolUse' }),
+          f.read(2), fauxAssistantMessage('Auditoría terminada')]);
+        await runtime.handlers.agent_message_send({ session_id: f.session.id, content: 'Audita Canvas', skill_id: 'skill-1' });
+        await f.idle();
+        assert.equal(f.state.reads, 1, 'recuperar un cierre vacío conserva el bloqueo hasta leer la skill');
+        assert.equal(f.state.skillReads, 1);
+        const calls = (await f.messages()).messages.flatMap((message) => message.tool_calls || []);
+        assert.match(calls.find((call) => call.name === 'canvas_list').result, /Antes de cualquier otra herramienta/);
+        assert.equal(calls.filter((call) => call.name === 'canvas_list').at(-1).status, 'done');
+      } finally { await f.close(); }
+    },
+    async empty_answer() {
+      const f = await fixture();
+      try {
+        f.faux.setResponses([f.read(1), fauxAssistantMessage([{ type: 'thinking', thinking: 'Reviso los datos' }]),
+          fauxAssistantMessage('La consulta devolvió la página 1')]);
+        await f.send('Consulta Canvas y dime el resultado');
+        await f.idle();
+        const result = await f.messages();
+        assert.ok(result.messages.some((message) => message.content === 'La consulta devolvió la página 1'),
+          'el cierre sin texto pide una respuesta visible con el resultado');
+        assert.equal(result.messages.filter((message) => message.role === 'user').length, 1,
+          'la recuperación interna no aparece como otro prompt del usuario');
+        assert.equal(f.state.reads, 1, 'recuperar la respuesta no repite la herramienta');
+      } finally { await f.close(); }
+    },
+    async repeated_empty_answer() {
+      const f = await fixture();
+      try {
+        let requests = 0;
+        const empty = () => { requests += 1; return fauxAssistantMessage('  '); };
+        f.faux.setResponses([empty, empty, () => { throw new Error('No debe seguir reintentando'); }]);
+        await f.send('Dime el resultado');
+        await f.idle();
+        assert.equal(requests, 2, 'la recuperación tiene un único intento');
+        const sessions = (await runtime.handlers.agent_sessions_list()).sessions;
+        assert.match(sessions.find((session) => session.id === f.session.id).last_error, /sin una respuesta visible/,
+          'la conversación muestra por qué terminó sin resultado');
+        assert.match((await f.messages()).messages.at(-1).content, /sin una respuesta visible/,
+          'el error también queda visible en el transcript');
+        assert.equal((await runtime.activitySnapshot()).find((session) => session.id === f.session.id).status, 'failed');
+        f.faux.setResponses([fauxAssistantMessage(''), fauxAssistantMessage('Resultado después de reintentar')]);
+        await f.send('Intenta otra vez');
+        await f.idle();
+        assert.ok((await f.messages()).messages.some((message) => message.content === 'Resultado después de reintentar'));
+        assert.equal((await runtime.handlers.agent_sessions_list()).sessions.find((session) => session.id === f.session.id).last_error, null);
+      } finally { await f.close(); }
+    },
+    async hard_stop_polling() {
+      const f = await fixture();
+      try {
+        f.state.changing = true;
+        f.faux.setResponses([...Array.from({ length: 11 }, () => f.read(1)),
+          fauxAssistantMessage('Sondeo detenido')]);
+        await f.send('Sondea hasta encontrar un cambio');
+        await f.idle();
+        assert.equal(f.state.reads, 10, 'el tope duro detiene el sondeo aunque cambie el resultado');
+        const calls = (await f.messages()).messages.flatMap((message) => message.tool_calls || [])
+          .filter((call) => call.name === 'canvas_list');
+        assert.match(String(calls.at(-1).result), /10 veces en este turno, aun con resultados distintos/);
+      } finally { await f.close(); }
+    },
+    async silent_turn_cap() {
+      const f = await fixture();
+      try {
+        f.faux.setResponses([...Array.from({ length: 7 }, () => f.read(1)),
+          () => { throw new Error('No debe pedir otra respuesta'); }]);
+        await f.send('Sondea el mismo resultado');
+        await f.idle();
+        assert.equal(f.state.reads, 3, 'el tope de silencio detiene el sondeo repetido');
+        assert.equal(f.state.requests, 7, 'no se pide una respuesta adicional');
+        const session = (await runtime.handlers.agent_sessions_list()).sessions.find((s) => s.id === f.session.id);
+        assert.match(session.last_error, /turnos seguidos sin salida visible/,
+          'la conversación muestra por qué se detuvo el sondeo');
+        assert.equal((await runtime.activitySnapshot()).find((s) => s.id === f.session.id).status, 'failed');
+      } finally { await f.close(); }
+    },
+    async visible_answer() {
+      const f = await fixture();
+      try {
+        f.faux.setResponses([fauxAssistantMessage('Voy a revisar los datos'),
+          () => { throw new Error('Una respuesta con texto no debe reinterpretarse como vacía'); }]);
+        await f.send('Revisa los datos');
+        await f.idle();
+        assert.equal((await f.messages()).messages.at(-1).content, 'Voy a revisar los datos');
+        assert.equal((await runtime.handlers.agent_sessions_list()).sessions.find((session) => session.id === f.session.id).last_error, null);
+      } finally { await f.close(); }
+    },
+    async terminal_error() {
+      for (const stopReason of ['error', 'aborted']) {
+        const f = await fixture();
+        try {
+          let requests = 0;
+          f.faux.setResponses([() => { requests += 1; return fauxAssistantMessage('', { stopReason, errorMessage: 'Fallo explícito' }); },
+            () => { requests += 1; throw new Error('No debe reinterpretar el cierre explícito como vacío'); }]);
+          await f.send('Consulta los datos');
+          await f.idle();
+          assert.equal(requests, 1, `${stopReason}: la recuperación de vacíos respeta el cierre explícito`);
+        } finally { await f.close(); }
+      }
+    },
+    async steered_empty_answer() {
+      const f = await fixture();
+      try {
+        f.faux.setResponses([fauxAssistantMessage(''), f.hold, fauxAssistantMessage(''),
+          fauxAssistantMessage('Resultado con la corrección')]);
+        await f.send('Revisa la primera página');
+        await until(() => f.state.waiting);
+        await runtime.handlers.agent_message_send({ session_id: f.session.id,
+          content: 'Corrijo: revisa la segunda página', correction: true });
+        f.state.release(fauxAssistantMessage('Respuesta al primer encargo'));
+        await f.idle();
+        assert.ok((await f.messages()).messages.some((message) => message.content === 'Resultado con la corrección'),
+          'la corrección dispone de su propio intento de recuperación');
+        assert.equal((await runtime.handlers.agent_sessions_list()).sessions.find((session) => session.id === f.session.id).last_error, null);
+      } finally { await f.close(); }
+    },
     async cancelled_delivery() {
       for (const [action, boundary] of ['cancel', 'delete'].flatMap((action) => ['notice', 'result', 'delivered'].map((boundary) => [action, boundary]))) {
         const f = await fixture();

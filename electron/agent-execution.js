@@ -27,6 +27,7 @@ const { resolvePortableProfile } = require('./agent-profiles');
 const compaction = require('./agent-compaction');
 
 const { appendTurn } = require('./turn-log');
+const { MAX_CALLS_PER_SIGNATURE, trackSilentTurn, trackSilentToolRound } = require('./agent-turn-policy');
 
 const MAX_TOOL_STEPS = 40;
 const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno. Conservé un punto de continuación; '
@@ -73,6 +74,7 @@ const VISION_MODEL = /gpt-4o|gpt-4\.1|gpt-5|\bo[34]\b|\bo[34]-|claude|gemini|vis
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_CONTEXT_WINDOW = 128000;
 const DEFAULT_MAX_TOKENS = 8192;
+const REASONING_MAX_TOKENS = 32768;
 
 function supportsVision(modelId) {
   return VISION_MODEL.test(String(modelId || ''));
@@ -187,7 +189,8 @@ function modelDefinition(info, id, api, verified, catalogModel) {
     contextWindow,
     // El techo de salida del catálogo: el razonamiento comparte max_tokens con
     // la respuesta y con 8 k un nivel alto dejaba la respuesta truncada.
-    maxTokens: Math.min(Number(catalog.maxTokens) || DEFAULT_MAX_TOKENS, Math.floor(contextWindow / 4)),
+    maxTokens: Math.min(Number(catalog.maxTokens) || (reasoning ? REASONING_MAX_TOKENS : DEFAULT_MAX_TOKENS),
+      Math.floor(contextWindow / 4)),
     reasoning,
     ...(reasoning && thinkingLevelMap ? { thinkingLevelMap } : {}),
     ...(Object.keys(compat).length ? { compat } : {}),
@@ -557,11 +560,23 @@ async function refreshTools() {
           const next = warned || compacted || messages;
           return leadingSystem(next) || (compacted || warned ? { messages: next } : undefined);
         },
-        afterTools: (_output, _task, api, context) => countRound(api, context),
+        afterTools: async (_output, results, api, context) => {
+          await trackSilentToolRound(turnState(api.conversationId), results, api, context);
+          await countRound(api, context);
+        },
         onYield: (answer, api) => planCheck(answer, api),
         afterResponse: async (message, api, context) => {
           try {
             const sessionId = await sessionForConversation(api.conversationId, api, context);
+            const turn = turnState(api.conversationId);
+            trackSilentTurn(message, turn, !!messageText(message.content).trim());
+            // emptyAnswerRetried da una segunda petición tras una respuesta vacía;
+            // el contador de silencio es el tope duro si el proveedor la ignora.
+            if (emptyAnswer(message) && turn.emptyAnswerRetried) {
+              message.stopReason = 'error';
+              message.errorMessage = 'El proveedor terminó sin una respuesta visible después de volver a pedir el resultado. Intenta enviar el encargo de nuevo.';
+              message.content.push({ type: 'text', text: message.errorMessage });
+            }
             await recordProfileUsage((await sessions())[sessionId], message.usage);
             if (message.stopReason !== 'toolUse') {
               try { require('./agent-browser').release(sessionId); } catch { }
@@ -574,7 +589,7 @@ async function refreshTools() {
                 && (shared.rounds.get(api.conversationId) || 0) < MAX_TOOL_STEPS) delete sessions[sessionId].continuation;
             });
           } finally {
-            if (message.stopReason !== 'toolUse') requiredSkills.delete(api.conversationId);
+            if (message.stopReason !== 'toolUse' && !emptyAnswer(message)) requiredSkills.delete(api.conversationId);
             await closeTurnLog(message, api);
           }
         },
@@ -591,8 +606,12 @@ async function compactRequest(messages, api, context) {
   const model = session && shared.state.models.getModel(session.provider, session.model);
   const budget = requestBudget(model && model.contextWindow, model && model.maxTokens);
   if (!budget) return undefined;
-  tokenEstimator ||= (await import('@earendil-works/pi-ai/utils/estimate')).estimateContextTokens;
-  return compactMessages(messages, { budget, estimate: (list) => tokenEstimator(list).tokens });
+  tokenEstimator ||= await import('@earendil-works/pi-ai/utils/estimate');
+  return compactMessages(messages, {
+    budget,
+    estimate: (list) => tokenEstimator.estimateContextTokens(list).tokens,
+    messageTokens: tokenEstimator.estimateMessageTokens,
+  });
 }
 
 // pi-durable escribe el prompt base al preparar la primera generación, detrás
@@ -675,7 +694,10 @@ async function pauseForBudget(api, context, reason = 'tool_budget') {
 function turnState(conversationId) {
   let turn = shared.turns.get(conversationId);
   if (!turn) {
-    turn = { calls: new Map(), failures: new Map(), remaining: null, checked: false };
+    turn = {
+      calls: new Map(), failures: new Map(), remaining: null, checked: false,
+      silentTurns: 0, pendingSilent: false, roundProgress: false,
+    };
     shared.turns.set(conversationId, turn);
   }
   return turn;
@@ -700,6 +722,15 @@ function messageText(content, excludeContext = false) {
 function noteTurnStart(api, messages) {
   return (async () => {
     const turn = turnState(api.conversationId);
+    const input = [...messages].reverse().find((message) => message.role === 'user'
+      && !messageText(message.content).startsWith(shared.CHECK_MARKER));
+    if (turn.emptyAnswerInput !== input?.timestamp) {
+      turn.emptyAnswerInput = input?.timestamp;
+      delete turn.emptyAnswerRetried;
+      turn.silentTurns = 0;
+      turn.pendingSilent = false;
+      turn.roundProgress = false;
+    }
     if (turn.log) return;
     const sessionId = await sessionForConversation(api.conversationId, api, null) || '';
     let agent = '';
@@ -791,8 +822,20 @@ function errorSignature(message) {
     .replace(/\s+/g, ' ').trim().slice(0, 160);
 }
 
+function emptyAnswer(answer) {
+  return !answer.errorMessage && ['stop', 'length', 'toolUse'].includes(answer.stopReason)
+    && !messageText(answer.content).trim()
+    && !(answer.content || []).some((block) => block && block.type === 'toolCall');
+}
+
 function planCheck(answer, api) {
   const turn = shared.turns.get(api.conversationId);
+  if (turn && emptyAnswer(answer) && !turn.emptyAnswerRetried) {
+    turn.emptyAnswerRetried = true;
+    return { continue: `${shared.CHECK_MARKER} Tu respuesta terminó sin texto visible para el usuario. `
+      + 'Entrega el resultado usando la evidencia que ya obtuviste; si falta trabajo, continúa el encargo. '
+      + 'Si no puedes completarlo, explica el bloqueo concreto.' };
+  }
   if (!turn || turn.checked || !turn.remaining || !turn.remaining.length) return undefined;
   if (answer.errorMessage || answer.stopReason === 'aborted' || answer.stopReason === 'error') return undefined;
   if ((shared.rounds.get(api.conversationId) || 0) >= MAX_TOOL_STEPS) return undefined;
@@ -828,7 +871,7 @@ async function beforeTool(call, api, context) {
   const signature = callSignature(call.name, call.arguments);
   let repeated = calls.get(signature);
   if (!repeated) {
-    repeated = { count: 0, outcome: undefined, exempt: false };
+    repeated = { count: 0, executions: 0, outcome: undefined, exempt: false };
     calls.set(signature, repeated);
   }
   if (repeated.uncertain) {
@@ -845,6 +888,10 @@ async function beforeTool(call, api, context) {
       : !spec.gated || spec.name === 'desktop_observe' ? 'con el mismo resultado o error' : 'con los mismos argumentos';
     return { block: `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno ${detail}. No la repitas: `
       + 'cambia de enfoque o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
+  }
+  if (repeated.executions >= MAX_CALLS_PER_SIGNATURE) {
+    return { block: `Ya llamaste a ${call.name} ${MAX_CALLS_PER_SIGNATURE} veces en este turno, aun con resultados distintos. `
+      + 'No sigas sondeando: resume lo que comprobaste y pide al usuario cómo continuar.' };
   }
   if (failing && failing.count >= MAX_REPEATS) {
     return { block: `Las últimas ${MAX_REPEATS} llamadas a ${call.name} fallaron por la misma causa aunque cambiaste los argumentos `
@@ -1041,13 +1088,15 @@ async function executeTool(spec, args, api, context) {
     if (plan) await savePlan(sessionId, plan);
   }
   const image = isError || !await acceptsImages(api, context) ? null : await resultImage(parsed);
-  const calls = turnState(api.conversationId).calls;
+  const turn = turnState(api.conversationId);
+  const calls = turn.calls;
   const signature = callSignature(spec.name, args);
   let repeated = calls.get(signature);
   if (!repeated) {
-    repeated = { count: 0, outcome: undefined, exempt: false };
+    repeated = { count: 0, executions: 0, outcome: undefined, exempt: false };
     calls.set(signature, repeated);
   }
+  repeated.executions += 1;
   let outcome = stableJson(parsed ?? text);
   const capture = parsed && (parsed.image || (parsed.observation && parsed.observation.image));
   if (capture && typeof capture.path === 'string') {
@@ -1059,6 +1108,9 @@ async function executeTool(spec, args, api, context) {
     ? stableJson({ url: parsed && parsed.page && parsed.page.url ? String(parsed.page.url) : '' })
     : outcome;
   const hash = crypto.createHash('sha256').update(progress).digest('hex');
+  if (!isError && (!trackOutcome || repeated.outcome === undefined || repeated.outcome !== hash)) {
+    turn.roundProgress = true;
+  }
   repeated.uncertain = !!(parsed && parsed.uncertain === true && (spec.gated || spec.replay_safe !== true));
   const exempt = !!(!spec.gated && spec.replay_safe === true && isError && parsed && typeof parsed === 'object'
     && (parsed.retryable === true || parsed.recoverable === true) && parsed.uncertain !== true);

@@ -29,7 +29,8 @@ it('retira un navegador nativo que quedó acoplado al iniciar fuera de Agent y a
     fireEvent.click(await findSidebarTab('Agent'));
     fireEvent.click(screen.getAllByRole('button', { name: 'Agent' }).at(-1)!);
     await screen.findByText('Agent abierto');
-    expect(browser).not.toHaveBeenCalled();
+    expect(browser).toHaveBeenCalledTimes(1);
+    expect(browser).toHaveBeenCalledWith('bounds', { bounds: null });
     state.docked = true;
 
     fireEvent.click(await findSidebarTab('Editor'));

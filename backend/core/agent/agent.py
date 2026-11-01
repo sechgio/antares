@@ -137,6 +137,8 @@ class AgentStore:
             if question.get("status") == "pending":
                 question["status"] = "interrupted"
         atomic_write_json(self._questions_path, self._questions)
+        self._panels_path = base / "panels.json"
+        self._panels: dict[str, JsonObject] = self._read(self._panels_path)
         loaded = self._read(self._dispatches_path)
         self._dispatches: dict[str, JsonObject] = {
             (key if ":" in key or not isinstance(rec, dict) or not rec.get("session_id")
@@ -451,6 +453,32 @@ class AgentStore:
             atomic_write_json(self._questions_path, self._questions)
             return dict(item)
 
+    def add_panel(self, session_id: str, op_id: str, call_id: str, panel: JsonObject) -> JsonObject:
+        from backend.core.agent.panels import validate
+
+        item = {"id": op_id, "session_id": session_id, "call_id": call_id, **validate(panel),
+                "status": "open", "response": None, "created_at": _now_ms()}
+        with self._lock:
+            self._panels[op_id] = item
+            atomic_write_json(self._panels_path, self._panels)
+            return dict(item)
+
+    def panels_for(self, session_id: str) -> list[JsonObject]:
+        with self._lock:
+            return [dict(item) for item in self._panels.values() if item.get("session_id") == session_id]
+
+    def respond_panel(self, session_id: str, panel_id: str, response: object) -> tuple[JsonObject, str]:
+        from backend.core.agent.panels import response_message
+
+        with self._lock:
+            item = self._panels.get(panel_id)
+            if item is None or item.get("session_id") != session_id or item.get("status") != "open":
+                raise ValueError("El panel ya no está activo en esta conversación")
+            message = response_message(item, response)
+            item.update({"status": "answered", "response": response})
+            atomic_write_json(self._panels_path, self._panels)
+            return dict(item), message
+
     def attention(self) -> JsonObject:
         with self._lock:
             states = {str(record["session_id"]): "uncertain" for record in self._dispatches.values() if record["status"] == "uncertain"}
@@ -553,6 +581,20 @@ class AgentStore:
             approval["decided_at"] = _now_ms()
             self._write_approvals()
             return dict(approval)
+
+    def note_approval_risk(self, approval_id: str, risk: str, reason: str) -> None:
+        """Anota el veredicto del guard en una aprobación pendiente.
+
+        Deja rastro observable de por qué se auto-aprobó o se escaló, sin cambiar
+        el estado de la aprobación.
+        """
+        with self._lock:
+            approval = self._approvals.get(approval_id)
+            if not isinstance(approval, dict) or approval.get("status") != "pending":
+                return
+            approval["risk"] = risk
+            approval["risk_reason"] = reason
+            self._write_approvals()
 
     def approval_for_call(self, session_id: str, call_id: str) -> JsonObject | None:
         self._expire_stale_approvals()
@@ -900,6 +942,10 @@ class AgentRunner:
                 result = agent_tools.run(name, tool_args, self._store, str(session_id), token,
                                          profile_id=call.get("profile_id"), memory_scope=call.get("memory_scope"),
                                          profile_skills=call.get("profile_skills"))
+                if isinstance(result.get("panel"), dict):
+                    panel = self._store.add_panel(str(session_id), str(call.get("op_id") or uuid.uuid4().hex),
+                                                  str(call.get("id") or ""), result["panel"])
+                    result["panel"] = {"id": panel["id"], "type": panel["type"]}
                 return json.dumps(scrub_secrets(result), ensure_ascii=False, default=str).encode(
                     "utf-8", errors="backslashreplace").decode("utf-8")
             except RunCancelled:

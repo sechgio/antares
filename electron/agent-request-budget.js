@@ -210,9 +210,17 @@ function hardTrim(messages) {
   return changed ? next : null;
 }
 
-function compactMessages(messages, { budget, estimate }) {
+// estimate mide la petición entera, con el uso que informa el proveedor; cada
+// etapa se mide como esa cifra menos lo que recortó, porque el uso es fijo y,
+// medida de nuevo, ningún recorte la bajaría hasta llegar al pliegue total.
+// messageTokens estima un mensaje suelto; por defecto, estimate de ese mensaje.
+function compactMessages(messages, { budget, estimate, messageTokens = (message) => estimate([message]) }) {
   if (!Array.isArray(messages) || !budget || typeof estimate !== 'function') return undefined;
-  if (estimate(messages) <= budget) return undefined;
+  const measured = estimate(messages);
+  if (measured <= budget) return undefined;
+  const visible = (list) => list.reduce((sum, message) => sum + messageTokens(message), 0);
+  const original = visible(messages);
+  const size = (list) => measured - original + visible(list);
   let current = messages;
   const stages = [
     pruneOldToolResults,
@@ -222,7 +230,7 @@ function compactMessages(messages, { budget, estimate }) {
     hardTrim,
   ];
   for (const stage of stages) {
-    if (estimate(current) <= budget) break;
+    if (size(current) <= budget) break;
     const next = stage(current);
     if (next) current = next;
   }

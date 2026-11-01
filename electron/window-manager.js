@@ -52,13 +52,17 @@ function createWindow(isDev) {
   };
 
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    // Las páginas del agente embebidas en el chat traen su propia CSP aislada (sin red ni bridge).
+    if (details.url.startsWith('http://127.0.0.1:') && require('./agent-preview').isPage(details.url)) {
+      return callback({ responseHeaders: details.responseHeaders });
+    }
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           isDev
-            ? buildCsp("default-src 'self' http://localhost:5173; script-src 'self' http://localhost:5173 'unsafe-inline'; style-src 'self' 'unsafe-inline' http://localhost:5173 https://fonts.googleapis.com; img-src 'self' data: blob: http://localhost:5173 https://assets.petdex.dev; font-src 'self' http://localhost:5173 https://fonts.gstatic.com; media-src https:; connect-src 'self' http://localhost:5173 ws://localhost:5173 wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev https://*.api.radio-browser.info https://*.audius.co https://stream.nightride.fm https://media01.gamingnow.net:8010 https://itunes.apple.com https://musicbrainz.org https://api.jamendo.com https://archive.org https://ice6.somafm.com")
-            : buildCsp("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://assets.petdex.dev; font-src 'self' https://fonts.gstatic.com; media-src https:; connect-src 'self' wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev https://*.api.radio-browser.info https://*.audius.co https://stream.nightride.fm https://media01.gamingnow.net:8010 https://itunes.apple.com https://musicbrainz.org https://api.jamendo.com https://archive.org https://ice6.somafm.com")
+            ? buildCsp("default-src 'self' http://localhost:5173; frame-src 'self' http://localhost:5173 http://127.0.0.1:*; script-src 'self' http://localhost:5173 'unsafe-inline'; style-src 'self' 'unsafe-inline' http://localhost:5173 https://fonts.googleapis.com; img-src 'self' data: blob: http://localhost:5173 https://assets.petdex.dev; font-src 'self' http://localhost:5173 https://fonts.gstatic.com; media-src https:; connect-src 'self' http://localhost:5173 ws://localhost:5173 wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev https://*.api.radio-browser.info https://*.audius.co https://stream.nightride.fm https://media01.gamingnow.net:8010 https://itunes.apple.com https://musicbrainz.org https://api.jamendo.com https://archive.org https://ice6.somafm.com")
+            : buildCsp("default-src 'self'; frame-src 'self' http://127.0.0.1:*; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://assets.petdex.dev; font-src 'self' https://fonts.gstatic.com; media-src https:; connect-src 'self' wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev https://*.api.radio-browser.info https://*.audius.co https://stream.nightride.fm https://media01.gamingnow.net:8010 https://itunes.apple.com https://musicbrainz.org https://api.jamendo.com https://archive.org https://ice6.somafm.com")
         ]
       }
     });

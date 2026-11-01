@@ -129,6 +129,7 @@ function makeScript(faux) {
     const requestText = JSON.stringify(messages);
     if (system.includes(SUMMARIZER_MARKER)) {
       script.summaries.push(requestText);
+      if (script.summaryReply) return script.summaryReply();
       return fauxAssistantMessage(script.summary || '## Encargo actual\n(resumen de prueba)');
     }
     script.requests.push(requestText);
@@ -298,6 +299,24 @@ async function main() {
   }
 
   {
+    const { estimateContextTokens, estimateMessageTokens } = await import('@earendil-works/pi-ai/utils/estimate');
+    const messages = [system('sys')];
+    for (let index = 0; index < 10; index++) {
+      const reply = assistant('a'.repeat(4000), index * 2 + 2);
+      reply.usage = { ...reply.usage, input: 2000 + index * 2100, totalTokens: 2000 + index * 2100 };
+      messages.push(user('u'.repeat(4000), index * 2 + 1), reply);
+    }
+    messages.push(user('actual', 30));
+    const measured = (list) => estimateContextTokens(list).tokens;
+    const budget = measured(messages) - 2500;
+    const compacted = compactMessages(messages, { budget, estimate: measured, messageTokens: estimateMessageTokens });
+    assert(compacted && compacted.length === messages.length,
+      'con el uso del proveedor, un exceso pequeño se resuelve recortando sin plegar turnos');
+    assert(compacted.filter((message) => message.role === 'assistant').length === 10,
+      'las respuestas del agente siguen en la petición');
+  }
+
+  {
     const messages = [
       system('sys'),
       user('primer encargo ' + 'p'.repeat(4000), 1),
@@ -419,8 +438,9 @@ async function main() {
       && listing.compaction_thresholds.compact === WINDOW - POLICY.reserveTokens
       && listing.compaction_thresholds.warn === WINDOW - POLICY.reserveTokens - POLICY.backgroundTokens,
       'los umbrales informados derivan de la ventana y la política');
-    assert(listing.messages.some((message) => message.role === 'assistant' && message.content.includes('🗜 Contexto compactado')),
-      'la UI proyecta el resumen colocado');
+    assert(!listing.messages.some((message) => message.content.includes('(resumen de prueba)')),
+      'el resumen colocado no aparece en el chat');
+    assert(listing.usage && listing.usage.compactions === 1, 'el medidor cuenta la compactación aplicada');
     assert(listing.compacting === false, 'el estado «compactando» se apaga al terminar');
     assert(auditRecords(dir).some((record) => record.outcome === 'summary' && record.reason === 'threshold'),
       'la compactación queda en el registro auditable');
@@ -449,6 +469,23 @@ async function main() {
     const placed = JSON.stringify(entry && entry.model);
     assert(placed.includes('## Encargo actual') && placed.includes('informe-q4.pdf'), 'el resumen colocado conserva lo sagrado');
     assert(auditRecords(dir).some((record) => record.outcome === 'summary'), 'la compactación queda registrada');
+    await runtime.shutdown();
+  }
+
+  {
+    const { script, dir } = await openCompaction();
+    script.summaryReply = () => fauxAssistantMessage('## Encargo actual\n(cortado', { stopReason: 'length' });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Encargo: prepara el informe trimestral de ventas' });
+    assert(await waitIdle(session.id), 'el primer turno termina');
+    await fillUntilCompaction(session.id, script);
+    assert(await waitIdle(session.id), 'el turno continúa con el resumen de emergencia');
+    const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(messages.some((message) => message.notice && message.content.includes('resumen de emergencia')),
+      'el chat avisa de que el contexto se compactó con un resumen de emergencia');
+    assert(!messages.some((message) => message.content.includes('## Resumen de emergencia')),
+      'el aviso no vuelca el resumen mecánico en el chat');
+    assert(auditRecords(dir).some((record) => record.outcome === 'emergency'), 'el resumen de emergencia queda registrado');
     await runtime.shutdown();
   }
 
@@ -495,6 +532,67 @@ async function main() {
     assert(decision && decision.decline === true, 'no compacta con una herramienta en vuelo sin resultado');
     assert(auditRecords(dir).some((record) => record.detail === 'tool_in_flight' && record.outcome === 'declined'),
       'el rechazo por herramienta en vuelo queda en el registro');
+    shared.live.delete(convId);
+    await runtime.shutdown();
+  }
+
+  {
+    const { dir } = await openCompaction();
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const state = runtime._internal.state();
+    const map = await state.harness.snapshot(state.SessionsDoc, state.ctx);
+    const convId = map.sessions[session.id].conversationId;
+    shared.live.set(convId, { tools: [] });
+    const usage = { input: 100, output: 20, cacheRead: 0, cacheWrite: 0, totalTokens: 120, cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0, total: 0.3 } };
+    const calls = [];
+    const reply = (fields) => ({ role: 'assistant', provider: 'faux', model: 'faux-1', usage, content: [], ...fields });
+    const decision = await compactionModule.beforeCompact(fakeCompaction(), {
+      conversationId: convId,
+      signal: new AbortController().signal,
+      settings: {
+        compaction: { ...compactionModule.DEFAULT_POLICY },
+        retry: { enabled: true, maxRetries: 2, baseDelayMs: 1, maxAgentDelayMs: 5 },
+      },
+      agent: async () => ({ model: { provider: 'faux', modelId: 'faux-1' }, thinkingLevel: 'high' }),
+      models: {
+        getModel: () => ({ maxTokens: 32768 }),
+        completeSimple: async (_model, _request, options) => {
+          calls.push(options);
+          return calls.length === 1
+            ? reply({ stopReason: 'error', errorMessage: '503 service unavailable' })
+            : reply({ stopReason: 'stop', content: [{ type: 'text', text: '## Encargo actual\nPreparar el informe.' }] });
+        },
+      },
+    }, state.ctx);
+    assert(calls.length === 2, 'un fallo transitorio del resumidor se reintenta antes del resumen de emergencia');
+    assert(decision && decision.summary.includes('Preparar el informe.'), 'el reintento produce el resumen del modelo');
+    assert(calls.every((options) => options.reasoning === undefined), 'el resumen se pide sin razonamiento');
+    assert(calls.every((options) => options.maxTokens === Math.floor(compactionModule.DEFAULT_POLICY.reserveTokens * 0.8)),
+      'el techo de salida del resumen es el 80 % de la reserva');
+    const spent = await state.harness.snapshot(shared.deps.pi.UsageDoc, convId, state.ctx);
+    const total = spent.models['faux/faux-1'];
+    assert(total && total.input === 200 && total.output === 40 && Math.abs(total.cost.total - 0.6) < 1e-9,
+      'el gasto de cada llamada de resumen queda en pi.usage');
+    assert(auditRecords(dir).some((record) => record.outcome === 'summary'), 'el resumen reintentado queda registrado');
+    const commit = state.harness.commit;
+    state.harness.commit = async () => { throw new Error('libro de gasto no disponible'); };
+    let kept;
+    try {
+      kept = await compactionModule.beforeCompact(fakeCompaction(), {
+        conversationId: convId,
+        signal: new AbortController().signal,
+        settings: { compaction: { ...compactionModule.DEFAULT_POLICY }, retry: { enabled: false } },
+        agent: async () => ({ model: { provider: 'faux', modelId: 'faux-1' }, thinkingLevel: 'off' }),
+        models: {
+          getModel: () => ({ maxTokens: 32768 }),
+          completeSimple: async () => reply({ stopReason: 'stop', content: [{ type: 'text', text: '## Encargo actual\nSeguir.' }] }),
+        },
+      }, state.ctx);
+    } finally {
+      state.harness.commit = commit;
+    }
+    assert(kept && kept.summary.includes('Seguir.') && !compactionModule.isEmergencySummary(kept.summary),
+      'un fallo al apuntar el gasto conserva el resumen del modelo');
     shared.live.delete(convId);
     await runtime.shutdown();
   }
@@ -576,8 +674,9 @@ async function main() {
     const entry = (await allEntriesOf(session.id)).find((item) => item.kind === 'pi.compaction');
     assert(entry && entry.data && entry.data.reason === 'overflow', 'el desborde del proveedor dispara la compactación de rescate');
     const listing = await runtime.handlers.agent_messages_list({ session_id: session.id });
-    assert(listing.messages.some((message) => message.content.includes('el proveedor rechazó el contexto por tamaño')),
-      'el usuario ve que el rescate ocurrió y por qué');
+    assert(!listing.messages.some((message) => message.content.includes('el proveedor rechazó el contexto por tamaño')),
+      'el rescate con un resumen del modelo no interrumpe el chat');
+    assert(listing.usage && listing.usage.compactions === 1, 'el medidor cuenta el rescate por desborde');
     await runtime.shutdown();
   }
 

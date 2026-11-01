@@ -9,10 +9,12 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Added
 - Agent crea páginas interactivas con HTML, JavaScript y datos completos de Excel/CSV autorizados, las conserva por conversación y permite abrirlas desde una tarjeta. Las actualizaciones verifican la revisión anterior; la ejecución queda aislada, sin red ni acceso a Node o al bridge de la aplicación.
+- Agent muestra paneles interactivos dentro del chat con la herramienta `panel_show`: preguntas con botones, formularios y tablas filtrables. Las páginas de `page_create` se ejecutan inline en un iframe aislado, sin red ni bridge, con altura automática; las páginas largas y las tablas se recortan en el chat sin scroll anidado y se abren en un visor a pantalla completa dentro de Antares (Esc para cerrar). Responder un panel lo envía al agente como mensaje con `[panel:<id>]` y lo deja respondido; los paneles se conservan con la conversación.
 - Las páginas de Agent incluyen una miniatura sin scripts en el chat y una presentación uniforme para títulos, filtros, métricas y tablas, siguiendo el modo claro u oscuro de Antares.
 - Vista previa local de archivos del chat en un panel lateral: PDF e imágenes con zoom, Excel/CSV/TSV con hojas y páginas, Word (.docx) con texto y tablas, y archivos de texto o código. Se abre desde adjuntos, archivos autorizados y referencias locales de las respuestas.
 
 ### Changed
+- Los archivos enviados a Agent permanecen junto a su mensaje con vista previa; los accesos concedidos se consultan desde el encabezado, sin ocupar espacio encima del campo de texto.
 - Agents entrega imágenes y gráficos PNG, JPEG o WebP como una galería persistente en el chat, con ampliación, navegación y descarga mediante la herramienta `images_show`.
 - Un turno de sala cuyo miembro sigue ocupado con su propio turno recibe hasta dos prórrogas de un minuto antes de darse por vencido, y el vencimiento queda registrado con su motivo.
 - `agent_check` y el roster de delegaciones muestran si una delegación espera al usuario, con la pregunta pendiente, y la insignia de sala indica a quién le toca el turno.
@@ -47,6 +49,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Se retira la migración one-shot de sesiones de agente (`flows_retirement`) y su hilo de arranque: la flota instalada ya la ejecutó y no dejaba estado consumible por otros componentes.
 
 ### Security
+- `pypdf` sube a 6.21.4 para corregir siete vulnerabilidades conocidas de 6.21.2 que bloqueaban la auditoría de dependencias Python.
 - Las aprobaciones de terminal quedan ligadas a la carpeta efectiva y su identidad; cambiar el espacio de trabajo invalida la aprobación anterior y el comando usa el `cwd` absoluto aprobado.
 - Guardar un borrador en una carpeta del equipo (`drafts_save`) ya no se auto-aprueba con el canal Archivos: su carpeta de destino no está confinada a un espacio de trabajo, así que pasa al canal «Otros» y pide aprobación siempre, igual que declara su propio contrato de herramienta.
 - Abrir un artefacto de Agent ya no ejecuta archivos ejecutables: las descargas web y los borradores admiten cualquier extensión, así que «Abrir» consulta la misma lista de veto (`.exe`, `.bat`, `.url`, `.lnk`…) que la política de escritura IPC y rechaza el archivo con un aviso.
@@ -58,6 +61,13 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - El navegador de Agent resuelve el DNS de cada destino antes de salir: un dominio público que resuelva a una dirección privada o local (DNS del atacante o rebinding) se bloquea en `web_open`, `web_download` y en cada petición de la sesión del navegador (redirecciones y subrecursos incluidos); sin resolución verificable no navega.
 
 ### Fixed
+- La compactación del contexto de Agent pide el resumen sin razonamiento y con el techo de salida de pi-durable: con modelos como DeepSeek V4 el razonamiento agotaba los 2048 tokens y siempre caía en el resumen de emergencia. Reintenta los fallos transitorios del proveedor y suma el gasto del resumen al medidor; el resumen ya no se muestra en el chat, salvo un aviso breve si fue de emergencia.
+- Las delegaciones de Agent razonan con el esfuerzo de la conversación principal; antes arrancaban sin razonamiento, o en bajo si su ficha fijaba un modelo.
+- El guardián que ajusta cada petición de Agent a la ventana del modelo mide cuánto ahorra cada recorte: antes partía del uso fijo que informa el proveedor, ningún recorte bajaba la cifra y un exceso pequeño acababa plegando toda la conversación en un resumen mecánico.
+- Agent vuelve a pedir el resultado una vez si el proveedor termina sin texto visible y muestra un error si el segundo intento también llega vacío.
+- Agent reintenta un streaming que deja de enviar eventos durante el umbral configurable `ANTARES_STREAM_SILENCE_S` (30 s por defecto) y descarta la respuesta parcial; además corta el sondeo que supera 10 llamadas por firma y detiene el turno cuando acumula 5 turnos seguidos sin salida visible, con una última respuesta de gracia.
+- Los modelos con razonamiento sin techo de salida en el catálogo (p. ej. DeepSeek V4 en un proveedor propio) reciben hasta 32 k tokens de salida en lugar de 8 k: con esfuerzo alto el razonamiento agotaba el presupuesto y el turno terminaba truncado, sin respuesta ni herramienta.
+- El navegador de Agent se retira cuando su panel queda fuera de pantalla y registra los errores al ocultarse durante la navegación entre vistas.
 - El paso en curso del plan de Agent vuelve a verse mientras el agente trabaja (el texto quedaba transparente).
 - El editor de agentes se abre a pantalla completa y desplaza su contenido dentro del panel: las opciones avanzadas ya no se salen por debajo de los botones ni el formulario queda aplastado en ventanas estrechas.
 - El navegador de Agent muestra las páginas al 100 % con el ancho real del panel, como el de Claude Code: ya no las reduce para encajar un escritorio de 1280 px, que dejaba el texto diminuto. Las búsquedas usan Bing en lugar de la versión HTML de DuckDuckGo, y abrir una página espera al DOM listo y un margen de 1,5 s en vez de a que terminen todas las imágenes y anuncios (una búsqueda pasa de 2–6 s a ~1 s). Una barra fina bajo la dirección indica que la página carga.
@@ -79,6 +89,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - El selector de razonamiento aparece también para un modelo personalizado DeepSeek V4 sin capacidades declaradas, con Bajo, Alto y Máximo, y el nivel elegido viaja al proveedor.
 
 ### Added
+- Agent registra el riesgo de los comandos pendientes sin conceder aprobaciones adicionales y descubre las skills locales de Codex y Claude Code.
 - Vista previa de HTML en Agent, como en Claude Code: `web_open` acepta la ruta de un `.html` del espacio de trabajo o de una carpeta adjunta (o una dirección `file://`) y lo abre renderizado en el panel del navegador de Antares, servido por un servidor local solo en `127.0.0.1` (puerto libre y prefijo aleatorio en la ruta) desde la carpeta del archivo. Guardar cualquier archivo de esa carpeta recarga la vista previa al momento. Si el servidor no puede arrancar, se abre como `file://`, limitado a la misma carpeta. El resto de localhost y de la red privada sigue bloqueado para el navegador del agente.
 - Los servidores MCP HTTP de Complementos aceptan OAuth de aplicación (client_credentials): se declara `token_url` (HTTPS), `client_id`, hasta 16 scopes y opcionalmente un `client_secret`, que se guarda solo en la bóveda y nunca en el JSON de configuración. El backend pide y guarda en caché el token, lo renueva al expirar y, ante un 401, reintenta la llamada una vez con un token recién renovado. Los secretos de OAuth quedan redactados en los mensajes de error y el formulario distingue estos servidores con una insignia «OAuth».
 

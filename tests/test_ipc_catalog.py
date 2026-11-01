@@ -12,6 +12,18 @@ def _catalog() -> dict:
     return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
 
 
+def test_agent_transcript_attachments_are_optional_and_describe_files():
+    import jsonschema
+
+    spec = _catalog()["methods"]["agent_messages_list"]
+    assert spec["handler"] == "native:agent" and spec["idempotent"] is True
+    schema = spec["outputSchema"]
+    jsonschema.validate({"messages": [{"role": "user", "content": "Anterior"}]}, schema)
+    jsonschema.validate({"messages": [{"attachments": [{"path": "C:/datos.xlsx", "folder": False}]}]}, schema)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"messages": [{"attachments": [{"path": "C:/datos.xlsx", "folder": "false"}]}]}, schema)
+
+
 def test_image_previews_share_the_existing_artifact_contract():
     import jsonschema
 

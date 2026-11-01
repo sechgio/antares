@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppWindow, ArrowLeft, ArrowRight, Ban, BookOpen, Camera, ChevronDown, ChevronRight, CircleArrowRight, CircleCheck, CircleDashed, CircleX, Download, FilePen, FileText, FolderOpen, Globe, Hand, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Network, Package, Plug, RotateCw, Search, ShieldCheck, Terminal, TriangleAlert, Upload, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { agentApi, AgentApproval, AgentArtifact, AgentChannel, AgentMessage, AgentPlan, AgentToolCall } from '../../api/agentApi';
+import type { agentApi, AgentApproval, AgentArtifact, AgentChannel, AgentMessage, AgentPanel, AgentPlan, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
 import Toggle from '../ui/Toggle';
 import AgentAvatar from './AgentAvatar';
@@ -10,7 +10,10 @@ import { DiffStats, FileChangeStep, FileDiff } from './FileDiff';
 import { fileChange } from './diffLines';
 import type { FileChange } from './diffLines';
 import CopyButton from './CopyButton';
+import { FileCard } from './ContextChips';
+import { FilePreviewContext } from './filePreviewContext';
 import MessageMarkdown from './MessageMarkdown';
+import PanelRenderer, { type PanelRespond } from './PanelRenderer';
 import Reasoning from './Reasoning';
 import SubagentTrace from './SubagentTrace';
 import { channelLabel } from './channels';
@@ -391,12 +394,23 @@ function ToolCallStep({ call, verbose }: { call: AgentToolCall; verbose?: boolea
 }
 
 function UserBubble({ msg }: { msg: AgentMessage }) {
+  const onPreview = useContext(FilePreviewContext);
   return (
-    <div className="agent-trace-in group flex items-end justify-end gap-1">
-      <CopyButton text={msg.content} label="Copiar mensaje" />
-      <div className="agent-message-user min-w-0 max-w-[min(600px,88%)] rounded-2xl px-4 py-3 text-[14px] leading-[22px] text-[var(--text-primary)]">
-        <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
-      </div>
+    <div className="agent-trace-in group flex min-w-0 flex-col items-end gap-1.5">
+      {!!msg.attachments?.length && <div aria-label="Archivos del mensaje" className="flex w-[320px] max-w-[88%] flex-col gap-1.5">
+        {msg.attachments.map((file, index) => <Button key={`${index}:${file.path}`} variant="none" size="none"
+          disabled={file.folder || !onPreview} aria-label={`Previsualizar ${file.path.split(/[\\/]/).pop() || file.path}`}
+          onClick={() => onPreview?.(file.path)}
+          className="flex min-w-0 items-center gap-3 rounded-2xl bg-[var(--bg-elevated)] p-3 text-left">
+          <FileCard path={file.path} folder={file.folder} />
+        </Button>)}
+      </div>}
+      {msg.content && <div className="flex w-full min-w-0 items-end justify-end gap-1">
+        <CopyButton text={msg.content} label="Copiar mensaje" />
+        <div className="agent-message-user min-w-0 max-w-[min(600px,88%)] rounded-2xl px-4 py-3 text-[14px] leading-[22px] text-[var(--text-primary)]">
+          <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
+        </div>
+      </div>}
     </div>
   );
 }
@@ -404,7 +418,9 @@ function UserBubble({ msg }: { msg: AgentMessage }) {
 type ActivityEntry =
   | { kind: 'reasoning'; key: string; text: string; ms?: number; streaming: boolean }
   | { kind: 'note'; key: string; text: string }
-  | { kind: 'call'; key: string; call: AgentToolCall };
+  | { kind: 'call'; key: string; call: AgentToolCall }
+  | { kind: 'panel'; key: string; panel: AgentPanel };
+type StepEntry = Exclude<ActivityEntry, { kind: 'panel' }>;
 
 const NEEDS_REVIEW = ['failed', 'interrupted', 'pending'];
 const LIVE_TAIL = 3;
@@ -476,7 +492,7 @@ function liveActivity(entries: ActivityEntry[]): string {
   return 'Trabajando…';
 }
 
-function ActivityItem({ entry, onUndo, view }: { entry: ActivityEntry; onUndo?: (callId: string) => Promise<void>; view: TranscriptView }) {
+function ActivityItem({ entry, onUndo, view }: { entry: StepEntry; onUndo?: (callId: string) => Promise<void>; view: TranscriptView }) {
   if (entry.kind === 'reasoning') return <Reasoning text={entry.text} streaming={entry.streaming} ms={entry.ms} defaultOpen={view !== 'normal'} />;
   if (entry.kind === 'note') {
     return (
@@ -494,7 +510,7 @@ function ActivityItem({ entry, onUndo, view }: { entry: ActivityEntry; onUndo?: 
 }
 
 function Activity({ entries, working, answering, duration, onUndo, view }: {
-  entries: ActivityEntry[];
+  entries: StepEntry[];
   working: boolean;
   answering: boolean;
   duration?: number;
@@ -620,6 +636,21 @@ export function placeArtifacts(turns: TimelineTurn[], artifacts: AgentArtifact[]
   return placed;
 }
 
+export function placePanels(turns: TimelineTurn[], panels: AgentPanel[]): Map<number, AgentPanel[]> {
+  const owner = new Map<string, number>();
+  for (const turn of turns) {
+    if (turn.role !== 'assistant') continue;
+    for (const call of turn.messages.flatMap((message) => message.tool_calls ?? [])) owner.set(call.id, turn.key);
+  }
+  const fallback = [...turns].reverse().find((turn) => turn.role === 'assistant')?.key ?? -1;
+  const placed = new Map<number, AgentPanel[]>();
+  for (const panel of panels) {
+    const key = owner.get(panel.call_id) ?? fallback;
+    placed.set(key, [...(placed.get(key) ?? []), panel]);
+  }
+  return placed;
+}
+
 function TurnChanges({ calls }: { calls: AgentToolCall[] }) {
   const files = new Map<string, FileChange>();
   for (const call of calls) {
@@ -652,8 +683,11 @@ function TurnChanges({ calls }: { calls: AgentToolCall[] }) {
   );
 }
 
-export function AssistantTurn({ messages, agent, onUndo, startedAt, results, view = 'normal' }: {
+export function AssistantTurn({ messages, agent, onUndo, startedAt, results, view = 'normal', panels = [], sessionId, onPanelRespond }: {
   messages: AgentMessage[];
+  panels?: AgentPanel[];
+  sessionId?: string;
+  onPanelRespond?: PanelRespond;
   view?: TranscriptView;
   agent?: AgentIdentity;
   onUndo?: (callId: string) => Promise<void>;
@@ -669,12 +703,20 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
         streaming: !!message.partial && !message.content && !message.tool_calls?.length });
     }
     if (message.content && message !== answer) entries.push({ kind: 'note', key: `note-${index}`, text: message.content });
-    for (const call of message.tool_calls ?? []) entries.push({ kind: 'call', key: call.id, call });
+    for (const call of message.tool_calls ?? []) {
+      entries.push({ kind: 'call', key: call.id, call });
+      for (const panel of panels.filter((item) => item.call_id === call.id)) entries.push({ kind: 'panel', key: `panel-${panel.id}`, panel });
+    }
   });
+  for (const panel of panels.filter((item) => !entries.some((entry) => entry.kind === 'panel' && entry.panel.id === item.id))) {
+    entries.push({ kind: 'panel', key: `panel-${panel.id}`, panel });
+  }
+  const steps = entries.filter((entry): entry is StepEntry => entry.kind !== 'panel');
+  const panelEntries = entries.flatMap((entry) => (entry.kind === 'panel' ? [entry.panel] : []));
   const working = messages.some((message) => message.partial)
-    || entries.some((entry) => entry.kind === 'call' && ['running', 'queued'].includes(entry.call.status));
+    || steps.some((entry) => entry.kind === 'call' && ['running', 'queued'].includes(entry.call.status));
   const duration = !working && startedAt && last && last.ts > startedAt ? last.ts - startedAt : undefined;
-  const thought = entries.length === 1 && entries[0].kind === 'reasoning' ? entries[0] : null;
+  const thought = steps.length === 1 && steps[0].kind === 'reasoning' ? steps[0] : null;
   return (
     <div className="agent-trace-in agent-turn group space-y-1.5">
       <div className="flex items-center gap-1.5">
@@ -684,13 +726,14 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
       </div>
       {thought
         ? <Reasoning text={thought.text} streaming={thought.streaming} ms={thought.ms} defaultOpen={view !== 'normal'} />
-        : entries.length > 0 && <Activity entries={entries} working={working} answering={!!answer} duration={duration} onUndo={onUndo} view={view} />}
+        : steps.length > 0 && <Activity entries={steps} working={working} answering={!!answer} duration={duration} onUndo={onUndo} view={view} />}
+      {sessionId && onPanelRespond && panelEntries.map((panel) => <PanelRenderer key={panel.id} panel={panel} sessionId={sessionId} onRespond={onPanelRespond} />)}
       {answer && (
         <div className="agent-message-answer min-w-0 max-w-full py-1 text-[15px] leading-[26px] text-[var(--text-primary)]">
           <MessageMarkdown text={answer.content} streaming={!!answer.partial} />
         </div>
       )}
-      {!working && entries.length > 2 && <TurnChanges calls={entries.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []))} />}
+      {!working && steps.length > 2 && <TurnChanges calls={steps.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []))} />}
       {results}
     </div>
   );

@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const runtime = require('../electron/agent-runtime');
+const { shared } = require('../electron/agent-shared');
 
 async function until(check, timeout = 20000) {
   const deadline = Date.now() + timeout;
@@ -61,6 +62,7 @@ async function main() {
   const respond = (context, _streamOptions, _state, requestModel) => {
     const input = lastUser(context);
     const source = JSON.stringify(context.messages);
+    if (input.startsWith(shared.CHECK_MARKER)) return fauxAssistantMessage('');
     if (input.includes('SOLO_CONTINUO')) {
       continuoSources.push(source);
       if (input.includes('SEGUNDA PARTE')) return fauxAssistantMessage('Segunda parte terminada');
@@ -203,6 +205,23 @@ async function main() {
     assert.ok(forkMessages.some((message) => message.content === 'Contexto heredado de la conversación principal'),
       'fork copia el historial del padre a la conversación hija');
     assert.ok(forkMessages.some((message) => message.content === 'Contexto asimilado'));
+
+    const thinker = fauxProvider({ provider: 'thinker', models: [{ id: 'think-1', reasoning: true }] });
+    runtime._internal._providerOverrides.set('thinker', thinker.provider);
+    const { profile: pensador } = await runtime.handlers.agent_profile_save({ name: 'Pensador', instructions: 'Revisa', tools: null, role: 'reviewer' });
+    const { session: thinkingParent } = await runtime.handlers.agent_session_create({ provider: 'thinker', model: 'think-1' });
+    await runtime.handlers.agent_session_reasoning_set({ id: thinkingParent.id, reasoning_effort: 'high' });
+    const stopped = new AbortController();
+    stopped.abort();
+    await assert.rejects(tasks.delegate(pensador, { agent: pensador.id, task: 'Revisa con calma' }, thinkingParent.id,
+      { taskId: 'p2-effort', agent: async () => ({ tools: [{ name: 'canvas_list' }] }) }, { abortSignal: stopped.signal }), /cancelado/);
+    const state = runtime._internal.state();
+    const thinkingChild = Object.values((await state.harness.snapshot(state.SessionsDoc, state.ctx)).sessions)
+      .find((session) => session.delegation?.parent_session_id === thinkingParent.id);
+    const { AgentDoc } = await import('@earendil-works/pi-durable');
+    assert.equal((await state.harness.snapshot(AgentDoc, thinkingChild.conversationId, state.ctx)).thinkingLevel, 'high',
+      'la delegación razona con el esfuerzo de la conversación principal');
+    assert.equal(thinkingChild.reasoning_effort, 'high', 'la delegación guarda el esfuerzo heredado');
 
     await runtime.handlers.agent_message_send({ session_id: parent.id, content: 'Delega directo', request_id: 'p2-direct' });
     await until(async () => (await messages(parent.id)).messages.some((message) => message.content === 'Directo recibido'));

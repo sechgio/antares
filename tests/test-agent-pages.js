@@ -38,6 +38,14 @@ const page = { version: 1, title: 'Trabajos', html: '<h1>Trabajos</h1><input id=
     assert.match(csp, /connect-src 'none'/);
     assert.match(csp, /sandbox allow-scripts/);
     assert.doesNotMatch(csp, /allow-same-origin|unsafe-eval/);
+    const embed = await preview.embedPage(page, 'dark');
+    assert.ok(preview.isPage(embed) && embed.endsWith('/content.html'));
+    const embedded = await fetch(embed);
+    assert.match(embedded.headers.get('content-security-policy'), /connect-src 'none'/);
+    const embeddedHtml = await embedded.text();
+    assert.match(embeddedHtml, /antares-page-height[\s\S]*<\/script><\/body><\/html>$/);
+    assert.match(embeddedHtml, /event\.source !== parent[\s\S]*antares-page-theme/);
+    assert.match(embeddedHtml, /display: flow-root/);
     const html = await frame.text();
     assert.match(html, /color-scheme:dark/);
     assert.doesNotMatch(html, /window\.unwanted|oninput=/);

@@ -184,7 +184,21 @@ function AppContent() {
   }, [handleTabChange]);
 
   useEffect(() => {
-    if (activeTab !== 'agent') void agentApi.agentBrowser('bounds', { bounds: null }).catch(() => {});
+    // La vista nativa del navegador se pinta ENCIMA del DOM por coordenadas de
+    // pantalla: no la oculta display:none. Solo desaparece mandando bounds:null.
+    const hideBrowser = () => {
+      void agentApi.agentBrowser('bounds', { bounds: null }).catch((err) => {
+        // No silenciar: si falla, la vista nativa se queda flotando sobre otras pestañas.
+        reportFrontendError({
+          kind: 'api_error',
+          view: 'app:agentBrowser.hide',
+          name: err instanceof Error ? err.name : 'AgentBrowserHideError',
+          message: errorMessage(err, 'No se pudo retirar la vista del navegador del agente'),
+        });
+      });
+    };
+    if (activeTab !== 'agent') hideBrowser();
+    return () => { if (activeTab !== 'agent') hideBrowser(); };
   }, [activeTab]);
 
   useEffect(() => {

@@ -102,4 +102,5 @@ def create(params: JsonObject, store: AgentStore, session_id: str) -> JsonObject
     except Exception:
         target.unlink(missing_ok=True)
         raise
-    return {"artifact": saved, "row_count": len(rows), "columns": columns}
+    return {"artifact": saved, "row_count": len(rows), "columns": columns,
+            "panel": {"type": "page", "props": {"artifact_id": saved["id"], "sha256": digest, "title": payload["title"]}}}

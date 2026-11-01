@@ -209,6 +209,20 @@ function userTextOf(message) {
     .join('');
 }
 
+function userAttachmentsOf(message) {
+  if (!message || !Array.isArray(message.content)) return [];
+  const context = message.content.findLast((block) => block && block.type === 'text'
+    && String(block.text || '').startsWith(shared.CONTEXT_MARKER));
+  const marker = `\n${shared.ATTACHMENTS_MARKER}\n`;
+  const start = context?.text.lastIndexOf(marker) ?? -1;
+  if (start < 0) return [];
+  try {
+    const items = JSON.parse(context.text.slice(start + marker.length));
+    return Array.isArray(items) ? items.filter((item) => item && typeof item.path === 'string'
+      && typeof item.folder === 'boolean').map((item) => ({ path: item.path, folder: item.folder })) : [];
+  } catch { return []; }
+}
+
 function entryTs(entry, message) {
   if (message && typeof message.timestamp === 'number') return message.timestamp;
   if (entry.data && typeof entry.data.ts === 'number') return entry.data.ts;
@@ -303,21 +317,26 @@ async function projectMessages(conv, session) {
     if (entry.kind === 'pi.user') {
       if (textOf(msg).startsWith(shared.CHECK_MARKER)) continue;
       const content = userTextOf(msg);
-      if (content) messages.push({ role: 'user', content, ts: entryTs(entry, msg) });
+      const attachments = userAttachmentsOf(msg);
+      if (content || attachments.length) messages.push({ role: 'user', content,
+        ...(attachments.length ? { attachments } : {}), ts: entryTs(entry, msg) });
       continue;
     }
     if (entry.kind === NOTICE_KIND) {
       messages.push({ role: 'assistant', content: String((entry.data && entry.data.text) || ''), notice: true, ts: entryTs(entry, msg) });
       continue;
     }
+    // El resumen es contexto del modelo, no conversación: el chat sigue fluido y
+    // el medidor cuenta la compactación. Solo se avisa del resumen de emergencia.
     if (entry.kind === 'pi.compaction') {
+      const { unwrapCompactionSummary, isEmergencySummary } = require('./agent-compaction');
       const raw = textOf(msg);
-      const summary = require('./agent-compaction').unwrapCompactionSummary(raw) || raw.trim();
-      if (summary) {
+      if (isEmergencySummary(unwrapCompactionSummary(raw) || raw.trim())) {
         const reason = COMPACTION_REASONS[(entry.data && entry.data.reason)] || 'contexto comprimido';
         messages.push({
           role: 'assistant',
-          content: `🗜 Contexto compactado — ${reason}\n\n${summary}`,
+          content: `⚠ Contexto compactado con un resumen de emergencia — ${reason}. `
+            + 'El modelo no pudo resumir y se conservó un extracto mecánico; puede faltar detalle de lo anterior.',
           notice: true,
           ts: entryTs(entry, msg),
         });
