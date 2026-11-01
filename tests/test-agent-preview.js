@@ -26,6 +26,8 @@ const site = path.join(root, 'site');
 fs.mkdirSync(path.join(site, 'css'), { recursive: true });
 fs.writeFileSync(path.join(site, 'index.html'), '<h1>Hola</h1>');
 fs.writeFileSync(path.join(site, 'css', 'app.css'), 'h1{color:red}');
+fs.writeFileSync(path.join(site, 'informe.pdf'), '%PDF-1.7 hola');
+fs.writeFileSync(path.join(site, 'foto.png'), '\x89PNG');
 fs.writeFileSync(path.join(root, 'secreto.txt'), 'fuera');
 
 const preview = require('../electron/agent-preview');
@@ -117,6 +119,8 @@ async function browserTest() {
   });
   const statuses = {
     [path.join(site, 'index.html')]: { path: path.join(site, 'index.html'), exists: true, type: 'file' },
+    [path.join(site, 'informe.pdf')]: { path: path.join(site, 'informe.pdf'), exists: true, type: 'file' },
+    [path.join(site, 'foto.png')]: { path: path.join(site, 'foto.png'), exists: true, type: 'file' },
     [site]: { path: site, exists: true, type: 'folder' },
   };
   const asked = [];
@@ -179,6 +183,16 @@ async function browserTest() {
     assert(own?.cancel === false, 'el marco de contenido autorizado sí carga');
     browser.closeTab(openedPage.active_tab);
     assert(!preview.isPage(openedPage.url), 'cerrar la pestaña libera su documento y su token');
+
+    await browser.run('web_open', { url: path.join(site, 'informe.pdf') }, { sessionId: 's1', resolvePath });
+    assert(/^http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{32}\/informe\.pdf$/.test(loaded[loaded.length - 1]),
+      'web_open con un .pdf local abre la vista previa');
+    await browser.run('web_open', { url: 'foto.png' }, { sessionId: 's1', resolvePath });
+    assert(/\/foto\.png$/.test(loaded[loaded.length - 1]), 'una ruta relativa a una imagen también se previsualiza');
+    let pdfWeb = null;
+    try { await browser.run('web_open', { url: 'example.com/informe.pdf' }, { sessionId: 's1', resolvePath }); } catch (err) { pdfWeb = err; }
+    assert(loaded[loaded.length - 1] === 'https://example.com/informe.pdf' || pdfWeb,
+      'un dominio con .pdf no se trata como archivo local');
   } finally { timers.restore(); }
 
   await browser.run('web_open', { url: 'index.html' }, { sessionId: 's1', resolvePath });

@@ -8,14 +8,19 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent ejecuta `script_run`: JavaScript en un sandbox sin red ni archivos, con `print`, `tools.list` y `tools.call` limitado a las lecturas habilitadas. Las llamadas independientes corren en paralelo, la salida visible se acota y el volcado (hasta el límite del archivo) queda en un archivo de la conversación.
 - Agent guarda skills reutilizables con `skill_create`, con aprobación y sin sobrescribir las existentes; tras un encargo repetible terminado con comprobante, propone guardar sus instrucciones como skill.
 - Agent crea páginas interactivas con HTML, JavaScript y datos completos de Excel/CSV autorizados, las conserva por conversación y permite abrirlas desde una tarjeta. Las actualizaciones verifican la revisión anterior; la ejecución queda aislada, sin red ni acceso a Node o al bridge de la aplicación.
 - Agent muestra paneles interactivos dentro del chat con la herramienta `panel_show`: preguntas con botones, formularios y tablas filtrables. Las páginas de `page_create` se ejecutan inline en un iframe aislado, sin red ni bridge, con altura automática; las páginas largas y las tablas se recortan en el chat sin scroll anidado y se abren en un visor a pantalla completa dentro de Antares (Esc para cerrar). Responder un panel lo envía al agente como mensaje con `[panel:<id>]` y lo deja respondido; los paneles se conservan con la conversación.
 - Las páginas de Agent incluyen una miniatura sin scripts en el chat y una presentación uniforme para títulos, filtros, métricas y tablas, siguiendo el modo claro u oscuro de Antares.
 - Vista previa local de archivos del chat en un panel lateral: PDF e imágenes con zoom, Excel/CSV/TSV con hojas y páginas, Word (.docx) con texto y tablas, y archivos de texto o código. Se abre desde adjuntos, archivos autorizados y referencias locales de las respuestas.
+- En Complementos → Habilidades, «Nueva habilidad» crea una skill local con nombre normalizado, descripción e instrucciones opcionales; escribe el `SKILL.md` de forma atómica, rechaza duplicados y la deja disponible en el catálogo (`agent_skill_create`).
+- La vista previa local del navegador de Agent abre también PDF e imágenes, además de HTML, tanto con una ruta del espacio de trabajo como con `file://`.
 - La memoria del agente admite entradas de diario con fecha (hoy por defecto) y autoría por versión. No se inyectan en cada turno: solo se consultan con `memory_search`, que ordena las coincidencias por relevancia y después por la fecha del diario; las preferencias y los hechos conservan su comportamiento y las correcciones del usuario siguen prevaleciendo.
 
 ### Changed
+- El navegador de Agent congela la página cuando un menú o diálogo la tapa y la reacopla al cerrarse, en lugar de dejar un hueco negro; la barra de pestañas, la omnibox y el separador adoptan un estilo plano y compacto.
+- El chat de Agent sigue el final cuando un turno crece sin mensajes nuevos (paneles, imágenes o pasos) mientras el usuario está abajo, y deja de pintar los turnos fuera de pantalla.
 - El prompt de Agent y el de sus subagentes empiezan por la conclusión, evitan el relleno, usan listas cortas y piden solo lo necesario.
 - Los archivos enviados a Agent permanecen junto a su mensaje con vista previa; los accesos concedidos se consultan desde el encabezado, sin ocupar espacio encima del campo de texto.
 - Agents entrega imágenes y gráficos PNG, JPEG o WebP como una galería persistente en el chat, con ampliación, navegación y descarga mediante la herramienta `images_show`.
@@ -71,6 +76,9 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - El navegador de Agent resuelve el DNS de cada destino antes de salir: un dominio público que resuelva a una dirección privada o local (DNS del atacante o rebinding) se bloquea en `web_open`, `web_download` y en cada petición de la sesión del navegador (redirecciones y subrecursos incluidos); sin resolución verificable no navega.
 
 ### Fixed
+- `npm run dev` comprueba y repara las dependencias de la raíz y del frontend, restaura el binario de Electron si falta y avisa de archivos bloqueados antes de reinstalar con Antares abierto.
+- Anotar el navegador de Agent recaptura la página con CDP y vuelve a acoplar la vista antes de leer el raster, con `capturePage` como respaldo si CDP no está disponible.
+- Cambiar el modelo de una conversación de Agent con perfil ya cruza el IPC: la sesión se materializa como JSON antes de responder, sin proxies no clonables.
 - La compactación del contexto de Agent pide el resumen sin razonamiento y con el techo de salida de pi-durable: con modelos como DeepSeek V4 el razonamiento agotaba los 2048 tokens y siempre caía en el resumen de emergencia. Reintenta los fallos transitorios del proveedor y suma el gasto del resumen al medidor; el resumen ya no se muestra en el chat, salvo un aviso breve si fue de emergencia.
 - Las delegaciones de Agent razonan con el esfuerzo de la conversación principal; antes arrancaban sin razonamiento, o en bajo si su ficha fijaba un modelo.
 - El guardián que ajusta cada petición de Agent a la ventana del modelo mide cuánto ahorra cada recorte: antes partía del uso fijo que informa el proveedor, ningún recorte bajaba la cifra y un exceso pequeño acababa plegando toda la conversación en un resumen mecánico.

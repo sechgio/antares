@@ -42,6 +42,7 @@ async function main() {
   let canGoForward = false;
   let forwards = 0;
   let reloads = 0;
+  let failCapture = false;
   const parent = { isDestroyed: () => false, on: () => {}, showInactive: () => {}, setIgnoreMouseEvents: () => {}, destroy: () => {},
     contentView: { addChildView: () => {}, removeChildView: () => {} } };
   const contents = Object.assign(new Emitter(), {
@@ -64,13 +65,16 @@ async function main() {
       return { url: 'https://files.example.com', title: 'Archivos', text: pageText, elements: [], time_origin: documentOrigin };
     },
     executeJavaScriptInIsolatedWorld: async () => ({ url: 'https://files.example.com', time_origin: 3 }),
-    capturePage: async () => ({ getSize: () => ({ width: 1280, height: 800 }), toJPEG: () => Buffer.from('jpeg-viewport') }),
+    capturePage: async () => ({ getSize: () => ({ width: 1280, height: 800 }), toJPEG: () => Buffer.from('jpeg-viewport'), toPNG: () => Buffer.from('png-fallback') }),
     debugger: Object.assign(new Emitter(), {
       isAttached: () => false, attach: () => {},
       sendCommand: async (method, params) => {
         commands.push([method, params]);
         if (method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed') onPress();
-        if (method === 'Page.captureScreenshot') return { data: Buffer.from('jpeg-completa').toString('base64') };
+        if (method === 'Page.captureScreenshot') {
+          if (failCapture) throw new Error('CDP no disponible');
+          return { data: Buffer.from('jpeg-completa').toString('base64') };
+        }
         if (method === 'DOM.getDocument') return { root: { nodeId: 7 } };
         if (method === 'DOM.querySelector') return { nodeId: params.selector.includes('"9"') ? 21 : 0 };
         return {};
@@ -88,7 +92,7 @@ async function main() {
     WebContentsView: function () { return { webContents: contents, setBounds: () => {}, getBounds: () => ({ width: 1280 }) }; },
     nativeImage: { createFromBuffer: () => ({ getSize: () => ({ width: 2000, height: 4000 }),
       resize: () => ({ getSize: () => ({ width: 1280, height: 2560 }), toJPEG: () => Buffer.from('jpeg-1280') }),
-      toJPEG: () => Buffer.from('jpeg-full') }) },
+      toJPEG: () => Buffer.from('jpeg-full'), toPNG: () => Buffer.from('png-cdp') }) },
     session: { fromPartition: () => ({
       setPermissionRequestHandler: () => {}, setPermissionCheckHandler: () => {},
       webRequest: { onBeforeRequest: () => {} },
@@ -126,6 +130,17 @@ async function main() {
       assert(commands.some(([method, params]) => method === 'Page.captureScreenshot' && params.captureBeyondViewport === true),
         'la captura completa usa captureBeyondViewport');
     } finally { rmSync(shotDir, { recursive: true, force: true }); }
+    const annotated = await browser.capture();
+    assert(annotated.png_base64 === Buffer.from('png-cdp').toString('base64'),
+      'la anotación captura un PNG por CDP');
+    assert(annotated.width === 2000 && annotated.height === 4000, 'la anotación conserva el tamaño de la página');
+    assert(commands.some(([method, params]) => method === 'Page.captureScreenshot' && params.format === 'png'),
+      'la anotación pide el raster PNG de la vista');
+    failCapture = true;
+    const fallback = await browser.capture();
+    assert(fallback.png_base64 === Buffer.from('png-fallback').toString('base64'),
+      'la anotación cae a capturePage si CDP no está disponible');
+    failCapture = false;
     const downloadRoot = mkdtempSync(join(tmpdir(), 'antares-agent-download-'));
     try {
       let policyError = null;

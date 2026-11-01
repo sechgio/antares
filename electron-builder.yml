@@ -107,6 +107,8 @@ asar: true
 asarUnpack:
   - "**/*.node"
   - "node_modules/**/build/Release/*.node"
+  # worker_threads no carga entradas desde app.asar; el sandbox de script_run se descomprime.
+  - "electron/agent-script-worker.js"
 electronLanguages:
   - es
   - en-US
