@@ -2,7 +2,12 @@
 
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { check, validate } = require('../electron/agent-http');
+const {
+  check,
+  validate,
+  MAX_RETRY_AFTER_MS,
+  clampRetryAfterMs,
+} = require('../electron/agent-http');
 
 async function rejects(promise, pattern) {
   try {
@@ -15,6 +20,11 @@ async function rejects(promise, pattern) {
 }
 
 async function main() {
+  assert.equal(MAX_RETRY_AFTER_MS, 30_000);
+  assert.equal(clampRetryAfterMs(60_000), MAX_RETRY_AFTER_MS);
+  assert.equal(clampRetryAfterMs(-1), 0);
+  assert.equal(clampRetryAfterMs(undefined), 0);
+
   const server = http.createServer((req, res) => {
     if (req.url === '/ok') { res.writeHead(200); res.end('ok'); return; }
     if (req.url === '/created') { res.writeHead(204); res.end(); return; }

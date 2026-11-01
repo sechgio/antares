@@ -20,6 +20,7 @@ from backend.core.agent import (
 from backend.core.agent.cancel import RunCancelled, _CancelEvent
 from backend.core.exceptions import ValidationError
 from backend.handlers import agent_internal
+from backend.utils.paths import resource_path
 
 
 @pytest.fixture()
@@ -37,9 +38,11 @@ def _run(store, name, **args):
 
 def test_computer_tools_are_registered_with_their_permission_level():
     specs = {s["name"]: s for s in agent_chat.tool_specs()}
-    for name in ("fs_list", "fs_read", "fs_search", "task_plan"):
+    for name in ("fs_list", "fs_read", "fs_search"):
         assert specs[name]["gated"] is False
         assert specs[name]["module"] == "computer"
+    assert specs["task_plan"]["gated"] is False
+    assert specs["task_plan"]["module"] == "plan"
     for name in ("fs_write", "fs_edit", "shell_run", "desktop_observe", "desktop_click", "desktop_type",
                  "desktop_key", "desktop_scroll", "desktop_launch", "desktop_focus", "shell_job_start", "shell_job_cancel"):
         assert specs[name]["gated"] is True
@@ -522,11 +525,51 @@ def test_task_plan_requires_evidence_to_close_a_step():
         {"title": "Abrir web", "status": "in_progress"},
     ]})
     assert out == {
-        "recorded": True, "done": 1, "total": 2, "remaining": ["Abrir web"], "ready": ["Abrir web"],
+        "recorded": True,
+        "plan": {"goal": "g", "steps": [
+            {"id": "crear-archivo", "title": "Crear archivo", "status": "done", "dependencies": [],
+             "evidence": "fs_read muestra 3 líneas"},
+            {"id": "abrir-web", "title": "Abrir web", "status": "in_progress", "dependencies": []},
+        ]},
+        "done": 1, "total": 2, "remaining": ["Abrir web"], "ready": ["Abrir web"],
         "needs_in_progress": False, "next_step": "Abrir web", "next": "Sigue con: Abrir web",
     }
     closed = task_plan.update({"goal": "g", "steps": [{"title": "a", "status": "done", "evidence": "visto"}]})
     assert closed["remaining"] == [] and "comprueba el objetivo" in closed["next"]
+
+
+def test_task_plan_preserves_ids_and_dependencies():
+    out = task_plan.update({"goal": "g", "steps": [
+        {"id": "revisar", "title": "Revisar", "status": "done", "evidence": "visto"},
+        {"id": "x" * (task_plan._MAX_ID_CHARS + 5), "title": "Contrastar", "status": "in_progress",
+         "dependencies": ["revisar", "Revisar"]},
+    ]})
+    steps = out["plan"]["steps"]
+    assert steps[0] == {"id": "revisar", "title": "Revisar", "status": "done", "dependencies": [],
+                        "evidence": "visto"}
+    assert len(steps[1]["id"]) == task_plan._MAX_ID_CHARS
+    assert steps[1]["dependencies"] == ["revisar", "Revisar"]
+    with pytest.raises(ValueError, match="hasta"):
+        task_plan.update({"goal": "g", "steps": [{
+            "title": "a", "status": "pending",
+            "dependencies": [f"d{index}" for index in range(task_plan._MAX_STEP_DEPENDENCIES + 1)],
+        }]})
+
+
+def test_task_plan_contract_matches_shared_definition():
+    contract = json.loads(resource_path("shared/agent-plan.json").read_text(encoding="utf-8"))
+    assert list(task_plan._STATUSES) == contract["statuses"]
+    assert contract["max_steps"] == task_plan._MAX_STEPS
+    assert contract["max_title_chars"] == task_plan._MAX_TITLE_CHARS
+    assert contract["max_evidence_chars"] == task_plan._MAX_EVIDENCE_CHARS
+    assert contract["max_id_chars"] == task_plan._MAX_ID_CHARS
+    assert contract["max_step_dependencies"] == task_plan._MAX_STEP_DEPENDENCIES
+    normalized = task_plan.update({"goal": "  g  ", "steps": [
+        {"title": " x" * 200, "status": "pending", "evidence": " e" * 200},
+    ]})
+    assert normalized["plan"]["goal"] == "g"
+    assert len(normalized["plan"]["steps"][0]["title"]) == task_plan._MAX_TITLE_CHARS
+    assert len(normalized["plan"]["steps"][0]["evidence"]) == task_plan._MAX_EVIDENCE_CHARS
 
 
 def test_task_plan_resolves_dependencies_and_ready_steps():
