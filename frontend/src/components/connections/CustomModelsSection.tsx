@@ -4,12 +4,12 @@ import {
   aiProvidersApi,
   type AiProviderApiFormat,
   type AiProviderSpec,
-  type AiProviderStatus,
 } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import { useDialog } from '../../hooks/useDialog';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { useProviderProbe } from './useProviderProbe';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import ThemedSelect from '../ui/ThemedSelect';
@@ -589,8 +589,7 @@ export default function CustomModelsSection({
 }) {
   const { addToast } = useToast();
   const { confirm } = useDialog();
-  const [statuses, setStatuses] = useState<Record<string, AiProviderStatus | undefined>>({});
-  const [probing, setProbing] = useState<string | null>(null);
+  const { statuses, setStatuses, probing, probe } = useProviderProbe();
   const [editor, setEditor] = useState<EditorState | null>(null);
 
   const editing = editor?.id ? providers.find((p) => p.id === editor.id) : undefined;
@@ -623,26 +622,6 @@ export default function CustomModelsSection({
       saving: false,
       error: null,
     });
-  };
-
-  const probe = async (p: AiProviderSpec) => {
-    setProbing(p.id);
-    try {
-      const res = await aiProvidersApi.aiProviderStatus(p.id);
-      setStatuses((s) => ({ ...s, [p.id]: res.provider }));
-      if (res.provider.reachable) {
-        addToast({
-          message: `${p.label} responde${res.provider.models_count != null ? ` · modelos: ${res.provider.models_count}` : ''}`,
-          type: 'success',
-        });
-      } else {
-        addToast({ message: `${p.label}: ${res.provider.error ?? 'sin respuesta'}`, type: 'error' });
-      }
-    } catch (err) {
-      addToast({ message: errorMessage(err, `No se pudo comprobar ${p.label}`), type: 'error' });
-    } finally {
-      setProbing(null);
-    }
   };
 
   const remove = async (p: AiProviderSpec) => {
