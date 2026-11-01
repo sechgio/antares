@@ -5,14 +5,6 @@ name: Corrector de comentarios de revisión
   issue_comment:
     types:
       - created
-  pull_request:
-    types:
-      - opened
-      - synchronize
-      - ready_for_review
-  push:
-    branches:
-      - "**"
 permissions:
   contents: read
   id-token: write
