@@ -14,6 +14,7 @@ from ctypes import wintypes
 from typing import Any, cast
 
 from backend.core.computer_use import input_guard, policy, targets
+from backend.core.computer_use import win32_input as _wxi
 from backend.core.computer_use.policy import DriverRefused
 from backend.core.computer_use.targets import DriverError
 from backend.core.integrations.types import JsonObject
@@ -48,29 +49,18 @@ _KNOWN_ALIASES: dict[str, str] = {
     "taskmgr": "taskmgr.exe",
 }
 
-_ULONG_PTR = ctypes.c_size_t
-
-
-class _MouseInput(ctypes.Structure):
-    _fields_ = [("dx", wintypes.LONG), ("dy", wintypes.LONG), ("mouseData", wintypes.DWORD),
-                ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD), ("dwExtraInfo", _ULONG_PTR)]
-
-
-class _KeybdInput(ctypes.Structure):
-    _fields_ = [("wVk", wintypes.WORD), ("wScan", wintypes.WORD), ("dwFlags", wintypes.DWORD),
-                ("time", wintypes.DWORD), ("dwExtraInfo", _ULONG_PTR)]
-
-
-class _HardwareInput(ctypes.Structure):
-    _fields_ = [("uMsg", wintypes.DWORD), ("wParamL", wintypes.WORD), ("wParamH", wintypes.WORD)]
-
-
-class _InputUnion(ctypes.Union):
-    _fields_ = [("mi", _MouseInput), ("ki", _KeybdInput), ("hi", _HardwareInput)]
-
-
-class _Input(ctypes.Structure):
-    _fields_ = [("type", wintypes.DWORD), ("u", _InputUnion)]
+_Input = _wxi.Input
+_InputUnion = _wxi.InputUnion
+_INPUT_MOUSE, _INPUT_KEYBOARD = _wxi.INPUT_MOUSE, _wxi.INPUT_KEYBOARD
+_KEYUP, _UNICODE = _wxi.KEYUP, _wxi.UNICODE
+_MOUSE_DOWN, _MOUSE_UP = _wxi.MOUSE_DOWN, _wxi.MOUSE_UP
+_MOUSE_FLAGS = _wxi.MOUSE_FLAGS
+_WHEEL = _wxi.WHEEL
+_VK = _wxi.VK
+_EXTENDED = _wxi.EXTENDED
+_mouse = _wxi.mouse
+_key = _wxi.key
+_unicode = _wxi.unicode_input
 
 
 class BITMAPINFOHEADER(ctypes.Structure):
@@ -85,21 +75,6 @@ class BITMAPINFOHEADER(ctypes.Structure):
 class BITMAPINFO(ctypes.Structure):
     _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", wintypes.DWORD * 3)]
 
-
-_INPUT_MOUSE, _INPUT_KEYBOARD = 0, 1
-_KEYUP, _UNICODE = 0x0002, 0x0004
-_MOUSE_DOWN, _MOUSE_UP = 0x0002, 0x0004
-_MOUSE_FLAGS = {"left": (_MOUSE_DOWN, _MOUSE_UP), "right": (0x0008, 0x0010), "middle": (0x0020, 0x0040)}
-_WHEEL = 0x0800
-_VK = {
-    "ctrl": 0x11, "control": 0x11, "shift": 0x10, "alt": 0x12, "win": 0x5B, "windows": 0x5B,
-    "enter": 0x0D, "return": 0x0D, "tab": 0x09, "esc": 0x1B, "escape": 0x1B, "space": 0x20,
-    "backspace": 0x08, "delete": 0x2E, "del": 0x2E, "insert": 0x2D, "home": 0x24, "end": 0x23,
-    "pageup": 0x21, "pagedown": 0x22, "up": 0x26, "down": 0x28, "left": 0x25, "right": 0x27,
-    "printscreen": 0x2C, "capslock": 0x14, "menu": 0x5D,
-    **{f"f{n}": 0x6F + n for n in range(1, 13)},
-}
-_EXTENDED = {0x2E, 0x2D, 0x24, 0x23, 0x21, 0x22, 0x26, 0x28, 0x25, 0x27, 0x5B, 0x5D}
 
 _dpi_lock = threading.Lock()
 _dpi_ready = False
@@ -149,19 +124,6 @@ def _send(*inputs: _Input, _release: bool = False) -> None:
     array = (_Input * len(inputs))(*inputs)
     if _user32().SendInput(len(inputs), array, ctypes.sizeof(_Input)) != len(inputs):
         raise DriverError("Windows bloqueó la entrada simulada (¿hay una ventana de administrador en primer plano?)")
-
-
-def _mouse(flags: int, data: int = 0) -> _Input:
-    return _Input(type=_INPUT_MOUSE, u=_InputUnion(mi=_MouseInput(0, 0, data, flags, 0, 0)))
-
-
-def _key(vk: int, up: bool = False) -> _Input:
-    flags = (_KEYUP if up else 0) | (0x0001 if vk in _EXTENDED else 0)
-    return _Input(type=_INPUT_KEYBOARD, u=_InputUnion(ki=_KeybdInput(vk, 0, flags, 0, 0)))
-
-
-def _unicode(unit: int, up: bool = False) -> _Input:
-    return _Input(type=_INPUT_KEYBOARD, u=_InputUnion(ki=_KeybdInput(0, unit, _UNICODE | (_KEYUP if up else 0), 0, 0)))
 
 
 def _vk_for(name: str) -> int:
