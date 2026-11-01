@@ -72,7 +72,7 @@ assert(packageJson.scripts['dist'] === 'npm run build:win', 'dist should delegat
 assert(packageJson.scripts['dist:dir'].includes('npm run clean:dist-electron && electron-builder'), 'dist:dir should clean stale Electron artifacts before packaging');
 assert(packageJson.scripts['dist:dir'].includes('electron-builder --win --dir'), 'dist:dir should produce an unpacked Windows build');
 assert(!packageJson.scripts['dist:dir'].includes('npm run clean:after-package'), 'dist:dir should keep unpacked output for inspection');
-assert(packageJson.scripts['dev'].includes('electron electron/main.js'), 'dev should run Vite + Electron without packaging an installer');
+assert(packageJson.scripts['dev:app'].includes('electron electron/main.js'), 'dev:app should run Vite + Electron without packaging an installer');
 assert(packageJson.scripts['preview:unpacked'] === 'npm run dist:dir && node scripts/run-unpacked.js', 'preview:unpacked should package dir and launch without installer');
 const runUnpacked = readProjectFile('scripts', 'run-unpacked.js');
 assert(runUnpacked.includes('AntaresBackend.exe'), 'run-unpacked should refuse to launch without packaged backend exe');

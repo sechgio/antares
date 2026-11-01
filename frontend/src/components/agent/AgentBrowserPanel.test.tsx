@@ -14,6 +14,7 @@ beforeEach(() => {
   vi.restoreAllMocks();
   globalThis.ResizeObserver = class { observe() {} disconnect() {} unobserve() {} } as unknown as typeof ResizeObserver;
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { cb(0); return 1; });
+  vi.spyOn(agentApi, 'agentBrowserCapture').mockResolvedValue({ png_base64: 'iVBOR', width: 800, height: 600, url: '', title: '' });
 });
 
 it('coloca la página sobre su hueco, la retira al cerrarse y refleja lo que hace el agente', async () => {
@@ -24,7 +25,8 @@ it('coloca la página sobre su hueco, la retira al cerrarse y refleja lo que hac
   await waitFor(() => expect(call).toHaveBeenCalledWith('bounds', expect.objectContaining({ bounds: expect.objectContaining({ width: expect.any(Number) }) })));
   expect(screen.getByText('Aquí verás las páginas que abra el agente.')).toBeInTheDocument();
   const panel = screen.getByRole('complementary', { name: 'Navegador del agente' });
-  expect(panel).toHaveClass('rounded-l-lg', 'border', 'border-r-0');
+  expect(panel).toHaveClass('bg-[var(--bg-surface)]');
+  expect(panel).not.toHaveClass('rounded-l-lg', 'border', 'border-r-0');
   for (const inset of ['mx-2.5', 'mb-2.5', 'rounded-xl', 'border']) {
     expect(screen.getByTestId('agent-browser-viewport')).not.toHaveClass(inset);
   }
@@ -145,6 +147,66 @@ it('abre y cierra pestañas del usuario con un tope', async () => {
   expect(screen.getByRole('button', { name: 'Nueva pestaña' })).toBeDisabled();
 });
 
+it('reacopla la página antes de capturarla para anotar', async () => {
+  const state: AgentBrowserState = {
+    ...base,
+    open: true,
+    url: 'https://example.com',
+    title: 'Example',
+    tabs: [tab('agent', { open: true, url: 'https://example.com', title: 'Example', active: true })],
+  };
+  const calls: { action: string; extra?: { bounds?: unknown } }[] = [];
+  let annotating = false;
+  const call = vi.spyOn(agentApi, 'agentBrowser').mockImplementation(async (action, extra) => {
+    calls.push({ action, extra });
+    return state;
+  });
+  const capture = vi.spyOn(agentApi, 'agentBrowserCapture').mockImplementation(async () => {
+    if (annotating) calls.push({ action: 'capture' });
+    return { png_base64: 'iVBOR', width: 800, height: 600, url: 'https://example.com', title: 'Example' };
+  });
+  render(<AgentBrowserPanel onClose={vi.fn()} onAnnotate={vi.fn()} />);
+  await waitFor(() => expect(call).toHaveBeenCalledWith('state'));
+  vi.spyOn(screen.getByTestId('agent-browser-viewport'), 'getBoundingClientRect')
+    .mockReturnValue(new DOMRect(600, 80, 400, 500));
+  fireEvent.click(screen.getByRole('button', { name: 'Más opciones del navegador' }));
+  const annotateItem = await screen.findByRole('menuitem', { name: 'Anotar la página' });
+  expect(annotateItem).toBeEnabled();
+  annotating = true;
+  const marker = calls.length;
+  await act(async () => { fireEvent.click(annotateItem); });
+  await waitFor(() => expect(calls.some(({ action }) => action === 'capture')).toBe(true));
+  const afterClick = calls.slice(marker);
+  const captureAt = afterClick.findIndex(({ action }) => action === 'capture');
+  expect(captureAt).toBeGreaterThan(0);
+  expect(afterClick.slice(0, captureAt).some(({ action, extra }) => action === 'bounds' && extra?.bounds)).toBe(true);
+});
+
+it('congela la página mientras el menú la tapa en vez de dejarla negra', async () => {
+  const state: AgentBrowserState = { ...base, open: true, url: 'https://example.com', title: 'Example' };
+  const call = vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue(state);
+  vi.spyOn(agentApi, 'agentBrowserCapture').mockResolvedValue({
+    png_base64: 'iVBOR', width: 800, height: 600, url: state.url, title: state.title,
+  });
+  const box = (left: number, top: number, width: number, height: number) => ({
+    left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}),
+  }) as DOMRect;
+  render(<AgentBrowserPanel onClose={vi.fn()} />);
+  await waitFor(() => expect(screen.getByLabelText('Dirección del navegador del agente')).toHaveValue('https://example.com'));
+  vi.spyOn(screen.getByTestId('agent-browser-viewport'), 'getBoundingClientRect').mockReturnValue(box(600, 80, 400, 500));
+  const menu = document.createElement('div');
+  menu.setAttribute('role', 'menu');
+  vi.spyOn(menu, 'getBoundingClientRect').mockReturnValue(box(520, 60, 200, 160));
+
+  await act(async () => { document.body.appendChild(menu); });
+  const frozen = await screen.findByTestId('agent-browser-frozen');
+  expect(frozen).toHaveAttribute('src', 'data:image/png;base64,iVBOR');
+  expect(call).toHaveBeenLastCalledWith('bounds', { bounds: null });
+  await act(async () => { menu.remove(); });
+  await waitFor(() => expect(screen.queryByTestId('agent-browser-frozen')).not.toBeInTheDocument());
+  expect(call).toHaveBeenLastCalledWith('bounds', { bounds: expect.objectContaining({ x: 600, y: 80 }) });
+});
+
 it('desacopla la página mientras un menú la tapa y la vuelve a colocar al cerrarse', async () => {
   const call = vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue(base);
   const box = (left: number, top: number, width: number, height: number) => ({
@@ -159,5 +221,22 @@ it('desacopla la página mientras un menú la tapa y la vuelve a colocar al cerr
   await act(async () => { document.body.appendChild(menu); });
   await waitFor(() => expect(call).toHaveBeenLastCalledWith('bounds', { bounds: null }));
   await act(async () => { menu.remove(); });
+  await waitFor(() => expect(call).toHaveBeenLastCalledWith('bounds', { bounds: expect.objectContaining({ x: 600, y: 80 }) }));
+});
+
+it('desacopla la página con un diálogo montado dentro de la app, no solo en <body>', async () => {
+  const call = vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue(base);
+  const box = (left: number, top: number, width: number, height: number) => ({
+    left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}),
+  }) as DOMRect;
+  const { container } = render(<AgentBrowserPanel onClose={vi.fn()} />);
+  vi.spyOn(screen.getByTestId('agent-browser-viewport'), 'getBoundingClientRect').mockReturnValue(box(600, 80, 400, 500));
+  const dialog = document.createElement('div');
+  dialog.setAttribute('role', 'dialog');
+  vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue(box(0, 0, 1200, 800));
+
+  await act(async () => { container.appendChild(dialog); });
+  await waitFor(() => expect(call).toHaveBeenLastCalledWith('bounds', { bounds: null }));
+  await act(async () => { dialog.remove(); });
   await waitFor(() => expect(call).toHaveBeenLastCalledWith('bounds', { bounds: expect.objectContaining({ x: 600, y: 80 }) }));
 });

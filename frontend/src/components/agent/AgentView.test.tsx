@@ -1691,6 +1691,32 @@ it('respeta movimiento reducido al ir al final del historial', async () => {
   expect(transcript.scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: 'instant' });
 });
 
+it.each([false, true])('sigue el final cuando un turno crece sin mensajes nuevos salvo si se lee arriba: %s', async (readingAbove) => {
+  const resized: ResizeObserverCallback[] = [];
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: ResizeObserverCallback) { resized.push(callback); }
+    observe() {}
+    disconnect() {}
+  });
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { callback(0); return 1; });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true,
+    messages: [{ role: 'assistant', content: 'Respuesta parcial', partial: true, ts: 1 }] });
+  localStorage.setItem('antares-agent-session', 's1');
+  render(<AgentView />);
+  await act(async () => {});
+  const transcript = screen.getByRole('region', { name: 'Mensajes' });
+  expect(transcript.querySelector('.agent-transcript-turn')).toHaveTextContent('Respuesta parcial');
+  Object.defineProperties(transcript, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 200 } });
+  transcript.scrollTop = readingAbove ? 0 : 800;
+  fireEvent.scroll(transcript);
+  vi.mocked(transcript.scrollTo).mockClear();
+  Object.defineProperty(transcript, 'scrollHeight', { configurable: true, value: 1400 });
+  act(() => { for (const callback of resized) callback([], {} as ResizeObserver); });
+  if (readingAbove) expect(transcript.scrollTo).not.toHaveBeenCalled();
+  else expect(transcript.scrollTo).toHaveBeenCalledWith({ top: 1400 });
+  vi.unstubAllGlobals();
+});
+
 it('mantiene el razonamiento que el usuario abrió al terminar la respuesta progresiva', async () => {
   const update = agentUpdates();
   const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true,

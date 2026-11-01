@@ -1,6 +1,9 @@
 import { _invoke } from './core';
 import type { AgentDelegation, AgentRole, AgentRoom } from './agentDelegation';
+import type { AgentPlanStatus } from './agentPlan';
 import type { CanvasDocument } from '../components/canvas/types';
+
+export type { AgentPlanStatus } from './agentPlan';
 
 export type { AgentDelegation, AgentRole, AgentRoom, AgentRoomMember } from './agentDelegation';
 
@@ -313,7 +316,7 @@ export interface AgentBrowserBounds {
 
 export interface AgentPlan {
   goal: string;
-  steps: { title: string; status: 'pending' | 'in_progress' | 'done' | 'failed'; evidence?: string }[];
+  steps: { id?: string; title: string; status: AgentPlanStatus; evidence?: string; dependencies?: string[] }[];
 }
 
 export interface AgentContext {
@@ -325,13 +328,14 @@ export interface AgentContext {
 
 export interface AgentMemoryItem {
   id: string;
-  kind: 'preference' | 'fact' | 'procedure';
+  kind: 'preference' | 'fact' | 'journal' | 'procedure';
   title: string;
   status: 'active' | 'disabled' | 'suspended';
   reason: string | null;
   version: number;
   updated_at: number;
   content?: string;
+  date?: string;
   when?: string;
   steps?: { tool: string; purpose: string }[];
   source: { kind: 'user' | 'agent'; session_id?: string; op_ids?: string[]; artifact_ids?: string[]; reverted_to?: number };
@@ -342,6 +346,12 @@ export interface AgentSkill {
   id: string;
   name: string;
   description: string;
+}
+
+export interface AgentSkillCreateParams {
+  name: string;
+  description: string;
+  body?: string;
 }
 
 export const agentApi = {
@@ -513,7 +523,10 @@ export const agentApi = {
   agentSkillsList: () =>
     _invoke<{ skills: AgentSkill[]; library: string; warnings: string[]; truncated: boolean }>('agent_skills_list'),
 
-  agentMemoryUpdate: (params: { id: string; action: 'edit' | 'disable' | 'enable' | 'revert'; content?: string; when?: string; version?: number }) =>
+  agentSkillCreate: (p: AgentSkillCreateParams) =>
+    _invoke<{ skill: AgentSkill }>('agent_skill_create', p),
+
+  agentMemoryUpdate: (params: { id: string; action: 'edit' | 'disable' | 'enable' | 'revert'; content?: string; date?: string; when?: string; version?: number }) =>
     _invoke<{ item: AgentMemoryItem }>('agent_memory_update', params),
 
   agentMemoryDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_memory_delete', { id }),

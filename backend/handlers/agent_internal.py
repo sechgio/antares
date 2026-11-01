@@ -190,6 +190,9 @@ def _intent(session_id: str, method: str, params: JsonObject, context: JsonObjec
         store = _store()
         resources = _agent.read_resources(method, params, store.grants_for(session_id), store.drafts_dir(session_id))
         resources = [{**record, **resource_grants.revision(str(record["path"]))} for record in resources]
+        if method == "skill_create":
+            target = skills.create_target(params.get("name"), store.base_dir / "skills")
+            resources.append({"path": str(target), "exists": False})
         if method == "drafts_save":
             root = store.drafts_dir(session_id)
             source = drafts.inside(root, str(root / str(params.get("name") or "")))
@@ -840,6 +843,16 @@ def _skills_list(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+@validate_params("name", "description")
+def _skill_create(params: JsonObject) -> JsonObject:
+    library = _store().base_dir / "skills"
+    try:
+        return {"skill": skills.create(library, params["name"], params["description"], params.get("body") or "")}
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
 @validate_params("session_id", "skill_id")
 def _skill_resolve(params: JsonObject) -> JsonObject:
     session_id = str(params["session_id"])
@@ -970,6 +983,7 @@ HANDLERS = {
     "agent_internal_workspace_set": _workspace_set,
     "agent_memory_list": _memory_list,
     "agent_skills_list": _skills_list,
+    "agent_skill_create": _skill_create,
     "agent_internal_skill_resolve": _skill_resolve,
     "agent_memory_update": _memory_update,
     "agent_memory_delete": _memory_delete,

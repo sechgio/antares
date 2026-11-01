@@ -1,6 +1,6 @@
 import { useState, type KeyboardEvent } from 'react';
 
-export type ComposerTrigger<T> = Readonly<{
+type ComposerTrigger<T> = Readonly<{
   id: string;
   pattern: RegExp;
   options: (match: RegExpMatchArray) => readonly T[];

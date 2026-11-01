@@ -40,8 +40,8 @@ const VIRTUAL_KEYS = { Enter: 13, Tab: 9, Escape: 27, Space: 32, Backspace: 8, D
 const REF = { type: 'string', description: 'Referencia «ref» de un elemento devuelto por web_read' };
 const TOOLS = {
   web_open: ['Abrir una página web en el navegador del agente', {
-    type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s), búsqueda o ruta de un .html del espacio de trabajo '
-      + '(o file://) para verlo en vista previa con recarga en vivo; para leer otro archivo local usa fs_read' } }, required: ['url'],
+    type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s), búsqueda o ruta de un archivo local previsualizable '
+      + '(.html, .pdf o imagen) del espacio de trabajo (o file://) para verlo en vista previa con recarga en vivo; para leer otro archivo local usa fs_read' } }, required: ['url'],
   }, false],
   web_read: ['Leer el texto y los elementos interactivos de la página actual: primero los visibles, con su estado; '
     + 'incluye marcos del mismo sitio y componentes con shadow DOM', {
@@ -277,13 +277,16 @@ async function isPublicResolution(url) {
   return addresses.length > 0 && !addresses.some((entry) => isPrivateHostname(entry.address));
 }
 
-// Una ruta a un .html (o file://) es vista previa local; «dominio.com/x.html» sigue siendo web.
+// Una ruta local previsualizable (.html, .pdf o imagen) o un file:// es vista
+// previa; «dominio.com/x.html» sigue siendo web. El servidor de agent-preview
+// ya sirve estos tipos con su MIME correcto.
+const PREVIEWABLE_LOCAL = /\.(?:html?|pdf|png|jpe?g|gif|webp|avif|ico|bmp|svg|mp4|webm|mp3|wav|ogg)$/i;
 function localTarget(raw) {
   const value = String(raw || '').trim();
   if (/^file:/i.test(value)) {
     try { return fileURLToPath(value); } catch { throw new Error('La dirección file:// no es válida'); }
   }
-  if (isWeb(value) || !/^[^?#]+\.html?$/i.test(value)) return null;
+  if (isWeb(value) || !PREVIEWABLE_LOCAL.test(value)) return null;
   const first = value.split(/[\\/]/)[0];
   return /^[a-z]:[\\/]/i.test(value) || value.includes('\\') || value.startsWith('.') || !value.includes('/') || !first.includes('.')
     ? value : null;
@@ -1142,8 +1145,20 @@ async function screenshot(contents, dir, fullPage = false) {
 async function capture(id = activeTab) {
   const contents = tabContents(tabs.get(id));
   if (!contents) throw browserError('No hay ninguna página abierta para anotar', 'NO_PAGE');
-  const image = await contents.capturePage();
+  let image;
+  try {
+    // CDP captura la superficie compuesta de la página, incluido el contenido
+    // acelerado por GPU; capturePage puede devolver negro si la vista se movió.
+    await ensureDebugger(contents);
+    const shot = await contents.debugger.sendCommand('Page.captureScreenshot', { format: 'png', fromSurface: true });
+    image = require('electron').nativeImage.createFromBuffer(Buffer.from(String(shot.data || ''), 'base64'));
+    const size = image.getSize();
+    if (!size.width || !size.height) throw new Error('CDP devolvió una imagen vacía');
+  } catch {
+    image = await contents.capturePage();
+  }
   const { width, height } = image.getSize();
+  if (!width || !height) throw browserError('No se pudo capturar la página para anotar', 'CAPTURE_FAILED');
   return { png_base64: image.toPNG().toString('base64'), width, height, url: contents.getURL(), title: contents.getTitle() };
 }
 

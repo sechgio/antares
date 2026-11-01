@@ -63,7 +63,9 @@ async function markFolderErrorsInSheet(folderSummary) {
       }
     }
     if (fValues.length) await sheets.writeRange('FOLDERS!A:E', fValues);
-  } catch {}
+  } catch {
+    // Los errores ya viajan en el resumen del escaneo; fallar el marcado no debe abortarlo.
+  }
 }
 
 function applyFolderSummaryToSheetRows(fValues, summary, timestamp) {

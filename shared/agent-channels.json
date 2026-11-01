@@ -25,6 +25,7 @@
     "preview_ubicacion": "documents",
     "memory_remember": "memory",
     "procedure_learn": "memory",
+    "skill_create": "other",
     "task_schedule": "agenda"
   },
   "prefixes": [
@@ -58,6 +59,7 @@
     ["design_", "documents"]
   ],
   "modules": {
+    "plan": "other",
     "computer": "desktop",
     "documents": "documents",
     "drafts": "documents",

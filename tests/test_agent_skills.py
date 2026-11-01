@@ -21,8 +21,8 @@ def install(folder: Path, name: str = "pdf-review", description: str = "Revisa d
     return target
 
 
-def run(store, name, session_id="skills-session", **params):
-    return agent_tools.run(name, params, store, session_id)
+def run(store, tool, session_id="skills-session", **params):
+    return agent_tools.run(tool, params, store, session_id)
 
 
 def test_catalog_discovers_metadata_without_loading_instructions(store):
@@ -220,6 +220,62 @@ def test_skills_list_handler_lists_library_metadata_for_the_ui(store, monkeypatc
     assert result["skills"][1]["description"] == "Revisa documentos PDF"
     assert result["library"] == str(store.base_dir / "skills") and result["warnings"]
     assert "INSTRUCCION_PRIVADA" not in json.dumps(result)
+
+
+def test_create_writes_skill_visible_in_catalog_and_readable(store):
+    entry = skills.create(store.base_dir / "skills", "pdf-review", "Revisa documentos PDF", "Revisa cada página.")
+    assert entry["name"] == "pdf-review" and entry["description"] == "Revisa documentos PDF"
+    catalog = skills.library_catalog(store.base_dir / "skills")
+    assert entry in catalog["skills"] and catalog["warnings"] == []
+    text = (store.base_dir / "skills" / "pdf-review" / "SKILL.md").read_text(encoding="utf-8")
+    assert text.startswith("---\nname: pdf-review\ndescription: Revisa documentos PDF\n---\n")
+    assert "Revisa cada página." in text
+
+
+def test_create_rejects_duplicates_invalid_names_empty_description_and_oversized_body(store):
+    library = store.base_dir / "skills"
+    skills.create(library, "pdf-review", "Revisa PDFs")
+    with pytest.raises(ValueError, match="ya existe"):
+        skills.create(library, "pdf-review", "Otra descripción")
+    for name in ("My Skill", "-leading", "trailing-", "a--b", "ñandu", "", "a" * 65):
+        with pytest.raises(ValueError, match="nombre"):
+            skills.create(library, name, "Descripción")
+    with pytest.raises(ValueError, match="descripción"):
+        skills.create(library, "vacia", "   ")
+    with pytest.raises(ValueError, match="64 KiB"):
+        skills.create(library, "gigante", "Descripción", "x" * 70_000)
+
+
+def test_create_does_not_overwrite_a_skill_that_appears_during_the_write(store, monkeypatch):
+    library = store.base_dir / "skills"
+    real_target = skills.create_target
+
+    def racing_target(name, path):
+        target = real_target(name, path)
+        target.parent.mkdir(parents=True)
+        target.write_text("---\nname: pdf-review\ndescription: Original\n---\nORIGINAL\n", encoding="utf-8")
+        return target
+
+    monkeypatch.setattr(skills, "create_target", racing_target)
+    with pytest.raises(ValueError, match="ya existe"):
+        skills.create(library, "pdf-review", "Revisa PDFs", "Nueva")
+    assert "ORIGINAL" in (library / "pdf-review" / "SKILL.md").read_text(encoding="utf-8")
+
+
+def test_skill_create_handler_writes_catalog_entry_and_wraps_errors(store, monkeypatch):
+    from backend.core.exceptions import ValidationError
+    from backend.handlers import agent_internal
+
+    monkeypatch.setattr(agent_internal, "_store", lambda: store)
+    handler = agent_internal.HANDLERS["agent_skill_create"]
+    result = handler({"name": "pdf-review", "description": "Revisa documentos PDF", "body": "Revisa cada página."})
+    assert result["skill"]["name"] == "pdf-review"
+    listed = agent_internal.HANDLERS["agent_skills_list"]({})["skills"]
+    assert [entry["id"] for entry in listed] == [result["skill"]["id"]]
+    with pytest.raises(ValidationError, match="ya existe"):
+        handler({"name": "pdf-review", "description": "Duplicada"})
+    with pytest.raises(ValidationError, match="nombre"):
+        handler({"name": "NO VALIDO", "description": "Descripción"})
 
 
 def test_layered_skills_do_not_grant_general_file_access(store, tmp_path, monkeypatch):
