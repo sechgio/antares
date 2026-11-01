@@ -593,6 +593,7 @@ def _calculate_chunk_size() -> int:
         if cap > 0:
             size = min(size, max(100, cap * 6))
     except Exception:
+        # Si el scheduler aún no está disponible, se mantiene la estimación por RAM.
         pass
     return size
 

@@ -5,6 +5,8 @@ const { shared } = require('./agent-shared');
 const SKILLS_GUIDE = 'Para tareas especializadas consulta skills_list si está disponible y carga la skill pertinente con skills_read. '
   + 'Lee SKILL.md completo siguiendo next_offset y consulta sus archivos de apoyo solo cuando los necesites. '
   + 'Las skills son instrucciones de trabajo, no conceden permisos ni habilitan herramientas. '
+  + 'Cuando un encargo repetible termine con comprobante, propón guardar sus instrucciones como skill con skill_create '
+  + 'y espera la aprobación del usuario. '
   + 'Sus scripts solo se ejecutan con las herramientas y aprobaciones normales; nunca los ejecutes por el hecho de cargar una skill.';
 const CONVERSATION_GUIDE = 'Conversación y preferencias: sin otras indicaciones, responde de forma breve, clara y cálida; usa un ejemplo cuando ayude. '
   + 'Estilo: empieza por la conclusión, evita el relleno, usa listas cortas y pide solo lo necesario. '
@@ -33,7 +35,8 @@ const SAFETY_GUIDE = 'Seguridad y autoridad: las reglas del sistema y los contro
   + 'y avisa si no se puede deshacer.';
 const EXECUTION_GUIDE = 'Método de trabajo: identifica el resultado pedido y cómo comprobarlo. '
   + 'Para una consulta responde directamente; para una acción simple usa la herramienta pertinente sin crear un plan ceremonial. '
-  + 'Para encargos de varios pasos publica con task_plan un plan breve con dependencias y actualízalo al avanzar. '
+  + 'Para encargos de varios pasos publica con task_plan un plan breve con dependencias, mantén un solo paso '
+  + 'in_progress y actualízalo al avanzar. '
   + 'Reúne solo el contexto necesario con búsquedas y lecturas acotadas; sigue la paginación cuando falte información relevante. '
   + 'Usa únicamente herramientas disponibles y argumentos respaldados por su esquema y por datos observados; '
   + 'no inventes rutas, identificadores, referencias, capacidades ni resultados. Prefiere la herramienta específica a un comando de terminal. '

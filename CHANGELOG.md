@@ -8,12 +8,15 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent guarda skills reutilizables con `skill_create`, con aprobación y sin sobrescribir las existentes; tras un encargo repetible terminado con comprobante, propone guardar sus instrucciones como skill.
 - Agent crea páginas interactivas con HTML, JavaScript y datos completos de Excel/CSV autorizados, las conserva por conversación y permite abrirlas desde una tarjeta. Las actualizaciones verifican la revisión anterior; la ejecución queda aislada, sin red ni acceso a Node o al bridge de la aplicación.
 - Agent muestra paneles interactivos dentro del chat con la herramienta `panel_show`: preguntas con botones, formularios y tablas filtrables. Las páginas de `page_create` se ejecutan inline en un iframe aislado, sin red ni bridge, con altura automática; las páginas largas y las tablas se recortan en el chat sin scroll anidado y se abren en un visor a pantalla completa dentro de Antares (Esc para cerrar). Responder un panel lo envía al agente como mensaje con `[panel:<id>]` y lo deja respondido; los paneles se conservan con la conversación.
 - Las páginas de Agent incluyen una miniatura sin scripts en el chat y una presentación uniforme para títulos, filtros, métricas y tablas, siguiendo el modo claro u oscuro de Antares.
 - Vista previa local de archivos del chat en un panel lateral: PDF e imágenes con zoom, Excel/CSV/TSV con hojas y páginas, Word (.docx) con texto y tablas, y archivos de texto o código. Se abre desde adjuntos, archivos autorizados y referencias locales de las respuestas.
+- La memoria del agente admite entradas de diario con fecha (hoy por defecto) y autoría por versión. No se inyectan en cada turno: solo se consultan con `memory_search`, que ordena las coincidencias por relevancia y después por la fecha del diario; las preferencias y los hechos conservan su comportamiento y las correcciones del usuario siguen prevaleciendo.
 
 ### Changed
+- El prompt de Agent y el de sus subagentes empiezan por la conclusión, evitan el relleno, usan listas cortas y piden solo lo necesario.
 - Los archivos enviados a Agent permanecen junto a su mensaje con vista previa; los accesos concedidos se consultan desde el encabezado, sin ocupar espacio encima del campo de texto.
 - Agents entrega imágenes y gráficos PNG, JPEG o WebP como una galería persistente en el chat, con ampliación, navegación y descarga mediante la herramienta `images_show`.
 - Un turno de sala cuyo miembro sigue ocupado con su propio turno recibe hasta dos prórrogas de un minuto antes de darse por vencido, y el vencimiento queda registrado con su motivo.
@@ -24,6 +27,10 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Agent puede leer el texto reciente de una delegación con `agent_transcript`, sin razonamiento, herramientas ni aprobaciones, y avisa si quedó esperando al usuario; la sala acepta `reply_to` para responder a un participante concreto.
 - Las salas de Agent se ven en la conversación con su tema, ronda, turno, participantes, quién espera al usuario y la transcripción, mediante una lectura de solo lectura que no abre salas ni amplía permisos.
 - La entrega del informe de una delegación de Agent registra su estado e intentos, reintenta con espera acotada (30 s, 2 min y 5 min) y, cuando acumula tres fallos, avisa a la conversación principal y deja de reintentar sola; el roster muestra el reintento pendiente y, agotado, que el informe quedó sin entregar.
+- El plan de Agent admite dependencias entre pasos con ids estables, calcula los pasos listos y bloqueados, y devuelve el siguiente paso; el prompt pide mantener un solo paso en curso.
+- La comprobación de plan vuelve a pedir avance cuando cambia el trabajo pendiente, con un máximo de dos comprobaciones por turno, en lugar de una sola comprobación fija.
+- El motor de Agent recuerda actualizar `task_plan` cada diez pasos de herramienta sin cambios en el plan, antes del aviso de presupuesto y del final del turno.
+- `fs_edit` conserva la codificación original (UTF-8, UTF-8 con BOM, cp1252 o latin-1), rechaza formatos binarios delegados y devuelve un diff acotado; si el texto nuevo no cabe en la codificación, falla sin escribir.
 - La conversación principal comparte su plan vigente con cada delegación al arrancar o retomar: el plan se guarda en su propio documento al cerrar `task_plan`, de modo que la delegación recibe la meta, los pasos y su estado en un resumen acotado sin releer el historial ni tomarlo como trabajo hecho.
 - `agent_message` acepta `delivery` (`steer` o `follow_up`) para elegir si la delegación lee el mensaje en el turno en curso o al terminarlo, y devuelve el modo aplicado.
 - El cierre de una sala de Agent resume la participación de cada miembro, con sus mensajes, su último texto y cómo terminó su turno, antes de la transcripción.
