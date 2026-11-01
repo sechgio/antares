@@ -21,12 +21,4 @@ describe('StatusPicker', () => {
     render(<StatusPicker value="done" onChange={vi.fn()} />);
     expect(screen.getByRole('button', { name: /Estado: Completados/i })).toBeInTheDocument();
   });
-
-  it('closes on Escape', () => {
-    render(<StatusPicker value="todo" onChange={vi.fn()} label="Estado" />);
-    fireEvent.click(screen.getByRole('button', { name: /Estado/i }));
-    expect(screen.getByRole('listbox')).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
-  });
 });

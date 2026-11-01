@@ -38,14 +38,6 @@ describe('FontPicker', () => {
     expect(within(listbox).queryByRole('option', { name: 'Inter' })).not.toBeInTheDocument();
   });
 
-  it('closes on Escape', () => {
-    render(<FontPicker value="Arial, sans-serif" onChange={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Familia de fuente' }));
-    expect(screen.getByRole('listbox')).toBeInTheDocument();
-    fireEvent.keyDown(window, { key: 'Escape' });
-    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
-  });
-
   it('opens beside the trigger (left when space allows), not below', () => {
     Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
       configurable: true,

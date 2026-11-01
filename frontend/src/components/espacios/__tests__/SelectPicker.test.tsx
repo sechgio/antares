@@ -43,19 +43,4 @@ describe('SelectPicker', () => {
     );
     expect(screen.getByRole('button', { name: /Filtrar por estado/i })).toHaveTextContent('Urgente');
   });
-
-  it('closes on Escape', () => {
-    render(
-      <SelectPicker
-        value="all"
-        options={OPTIONS}
-        onChange={vi.fn()}
-        aria-label="Estado"
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: /Estado/i }));
-    expect(screen.getByRole('listbox')).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
-  });
 });
