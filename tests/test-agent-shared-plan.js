@@ -61,8 +61,8 @@ async function main() {
   runtime._internal._providerOverrides.set('faux', faux.provider);
   faux.setResponses([
     fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Cerrar el trimestre', steps: [
-      { title: 'Revisar el contrato', status: 'done' },
-      { title: 'Contrastar el anexo', status: 'in_progress' },
+      { id: 'revisar', title: 'Revisar el contrato', status: 'done' },
+      { id: 'contrastar', title: 'Contrastar el anexo', status: 'in_progress', dependencies: ['revisar'] },
     ] })], { stopReason: 'toolUse' }),
     fauxAssistantMessage('Plan anotado'),
     fauxAssistantMessage('Informe del hijo'),
@@ -85,6 +85,10 @@ async function main() {
     const stored = await state.harness.snapshot(state.PlanDoc, state.ctx);
     assert.equal(stored.plans[parent.id]?.goal, 'Cerrar el trimestre', 'el plan vigente queda en su documento');
     assert.deepEqual(stored.plans[parent.id].steps.map((step) => step.status), ['done', 'in_progress']);
+    assert.deepEqual(stored.plans[parent.id].steps.map((step) => step.id), ['revisar', 'contrastar'],
+      'el plan guardado conserva los ids estables');
+    assert.deepEqual(stored.plans[parent.id].steps[1].dependencies, ['revisar'],
+      'el plan guardado conserva las dependencias');
     assert.equal(typeof stored.plans[parent.id].updated_at, 'number', 'el plan guardado se fecha');
 
     const delegated = await tasks.delegate(profile, { agent: profile.id, task: 'Revisa el contrato' },
