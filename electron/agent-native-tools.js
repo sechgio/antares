@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { SCRIPT_TOOL, SCRIPT_MAX_CHARS, MAX_OUTPUT_CHARS } = require('./agent-script');
 
 const OBJECT = { type: 'object', properties: {} };
 const FOLDER = {
@@ -159,6 +160,27 @@ for (const service of [require('./google-workspace-service'), require('./microso
 
 const WEB = require('./agent-browser').TOOLS;
 const CUA = require('./agent-cua').TOOLS;
+const SCRIPT_SPEC = {
+  name: SCRIPT_TOOL,
+  description: 'Agente · script_run (solo lectura): ejecuta JavaScript en un sandbox sin require, process ni red '
+    + 'directa, y sin acceso directo a archivos. Solo puede llamar herramientas de lectura ya habilitadas con await tools.call(nombre, '
+    + 'argumentos); usa Promise.all para llamadas independientes y tools.list() para ver el catálogo. print(...) acumula '
+    + 'la salida; la respuesta trae un tope y el volcado (hasta el límite del archivo) queda en saved_path. Devuelve el valor con return.',
+  gated: false,
+  kind: 'native',
+  module: 'agent',
+  label: 'Ejecutar un script de solo lectura',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      script: { type: 'string', minLength: 1, maxLength: SCRIPT_MAX_CHARS,
+        description: 'Cuerpo de una función async; usa return para devolver el resultado' },
+      max_output_chars: { type: 'integer', minimum: 100, maximum: MAX_OUTPUT_CHARS,
+        description: 'Tope de salida impresa devuelta; el resto queda en el archivo' },
+    },
+    required: ['script'],
+  },
+};
 
 function spec(name, [label, schema], gated) {
   return {
@@ -201,6 +223,7 @@ const SPECS = [
     return { name, module: 'connections', label, gated, kind: 'native', inputSchema: schema,
       description: `Conexiones · ${label} (${gated ? 'efecto: requiere aprobación del usuario' : 'lectura o borrador interno'})` };
   }),
+  SCRIPT_SPEC,
 ];
 
 function nativeToolSpecs() {
@@ -329,6 +352,7 @@ async function generateDocument(params, sessionId) {
 
 async function runNativeTool(name, params, { sessionId, approvedContext } = {}) {
   if (!SPECS.some((s) => s.name === name)) throw new Error(`Herramienta nativa no disponible: ${name}`);
+  if (name === SCRIPT_TOOL) throw new Error('script_run se ejecuta en el motor del agente, no en el backend');
   if (REPORT_EXPORTS[name]) return exportReportPdf(REPORT_EXPORTS[name], params || {}, sessionId);
   if (SPECS.find((s) => s.name === name).gated) {
     const current = await nativeToolContext(name, sessionId, params || {});
@@ -365,4 +389,4 @@ async function runNativeTool(name, params, { sessionId, approvedContext } = {}) 
   return out.result;
 }
 
-module.exports = { nativeToolSpecs, nativeToolContext, runNativeTool, draftName };
+module.exports = { nativeToolSpecs, nativeToolContext, runNativeTool, draftName, draftsDir };
