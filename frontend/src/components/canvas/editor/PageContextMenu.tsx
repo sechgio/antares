@@ -1,6 +1,6 @@
 import { Copy, Pencil, Trash2 } from 'lucide-react';
 import { useContextMenuSurface } from '../hooks/useContextMenuSurface';
-import Button from '@/components/ui/Button';
+import ContextMenuList, { type ContextMenuItem } from './ContextMenuList';
 
 type PageContextAction = 'rename' | 'duplicate' | 'delete';
 
@@ -17,14 +17,7 @@ interface PageContextMenuProps {
   onClose: () => void;
 }
 
-interface MenuItem {
-  id: PageContextAction;
-  label: string;
-  icon: typeof Copy;
-  danger?: boolean;
-  disabled?: boolean;
-  sepBefore?: boolean;
-}
+type MenuItem = ContextMenuItem<PageContextAction, string | number>;
 
 export default function PageContextMenu({
   menu,
@@ -48,25 +41,7 @@ export default function PageContextMenu({
       role="menu"
       data-testid="canvas-page-context-menu"
     >
-      {items.map((item) => (
-        <div key={item.id}>
-          {item.sepBefore && <div className="canvas-context-sep" role="separator" />}
-          <Button variant="none" size="none"
-            role="menuitem"
-            className="canvas-context-item"
-            data-danger={item.danger || undefined}
-            disabled={item.disabled}
-            onClick={() => {
-              if (item.disabled) return;
-              onAction(item.id);
-              onClose();
-            }}
-          >
-            <item.icon className="h-3.5 w-3.5 shrink-0" />
-            <span className="min-w-0 flex-1 text-left">{item.label}</span>
-          </Button>
-        </div>
-      ))}
+      <ContextMenuList items={items} onAction={onAction} onClose={onClose} />
     </div>
   );
 }

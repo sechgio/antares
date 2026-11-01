@@ -1,4 +1,3 @@
-import { Fragment, type ComponentType } from 'react';
 import {
   ArrowDownToLine,
   ArrowUpToLine,
@@ -24,7 +23,7 @@ import {
 } from 'lucide-react';
 import { Eye, EyeSlash } from './VisibilityIcon';
 import { useContextMenuSurface } from '../hooks/useContextMenuSurface';
-import Button from '@/components/ui/Button';
+import ContextMenuList, { type ContextMenuItem } from './ContextMenuList';
 
 export type CanvasContextAction =
   | 'edit'
@@ -78,22 +77,7 @@ interface ContextMenuProps {
   onClose: () => void;
 }
 
-interface MenuChild {
-  label: string;
-  arg: number | string;
-  disabled?: boolean;
-}
-
-interface MenuItem {
-  id: CanvasContextAction;
-  label: string;
-  tip?: string;
-  icon: ComponentType<{ className?: string; size?: string | number }>;
-  danger?: boolean;
-  disabled?: boolean;
-  sepBefore?: boolean;
-  children?: MenuChild[];
-}
+type MenuItem = ContextMenuItem<CanvasContextAction, string | number>;
 
 export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProps) {
   const ref = useContextMenuSurface(menu.x, menu.y, onClose);
@@ -290,59 +274,7 @@ export default function ContextMenu({ menu, onAction, onClose }: ContextMenuProp
       {!hasLayer && (
         <div className="canvas-context-hint">Clic derecho sobre una capa para editarla</div>
       )}
-      {items.map((item) => (
-        <Fragment key={item.id}>
-          {item.sepBefore ? <div className="canvas-context-sep" role="separator" /> : null}
-          {item.children?.length ? (
-            <div className="canvas-context-subwrap" data-testid={`canvas-context-sub-${item.id}`}>
-              <Button variant="none" size="none"
-                role="menuitem"
-                aria-haspopup="menu"
-                className="canvas-context-item"
-                disabled={item.disabled}
-                onClick={(e) => e.preventDefault()}
-              >
-                <item.icon className="h-3.5 w-3.5 shrink-0" />
-                <span className="min-w-0 flex-1 text-left">{item.label}</span>
-                <ChevronDown className="h-3 w-3 -rotate-90 opacity-70" aria-hidden />
-              </Button>
-              <div className="canvas-context-sub" role="menu">
-                {item.children.map((child) => (
-                  <Button variant="none" size="none"
-                    key={`${item.id}:${String(child.arg)}`}
-                    role="menuitem"
-                    className="canvas-context-item"
-                    disabled={child.disabled}
-                    onClick={() => {
-                      if (child.disabled) return;
-                      onAction(item.id, child.arg);
-                      onClose();
-                    }}
-                  >
-                    <span className="min-w-0 flex-1 truncate text-left">{child.label}</span>
-                  </Button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <Button variant="none" size="none"
-              role="menuitem"
-              className="canvas-context-item"
-              data-danger={item.danger || undefined}
-              disabled={item.disabled}
-              onClick={() => {
-                if (item.disabled) return;
-                onAction(item.id);
-                onClose();
-              }}
-            >
-              <item.icon className="h-3.5 w-3.5 shrink-0" />
-              <span className="min-w-0 flex-1 text-left">{item.label}</span>
-              {item.tip && <kbd className="canvas-kbd">{item.tip}</kbd>}
-            </Button>
-          )}
-        </Fragment>
-      ))}
+      <ContextMenuList items={items} onAction={onAction} onClose={onClose} />
     </div>
   );
 }
