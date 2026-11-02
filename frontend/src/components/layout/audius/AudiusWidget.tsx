@@ -1,20 +1,9 @@
-import {
-  AlertCircle,
-  ExternalLink,
-  Pause,
-  Play,
-  SkipBack,
-  SkipForward,
-  Volume2,
-  VolumeX,
-} from 'lucide-react';
+import { AlertCircle, Pause, Play } from 'lucide-react';
 import Button from '@/components/ui/Button';
-import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
 import {
   T,
   fetchTrending,
-  openExternal,
   searchTracks,
   useValue,
   type AudiusTrack,
@@ -22,7 +11,9 @@ import {
 import { createAudiusPlayer, type AudiusPlayer } from './player';
 import {
   formatTrackDuration,
-  StreamAction,
+  NowPlayingRow,
+  StreamBarActions,
+  StreamControlsRow,
   StreamItemList,
   streamPanelStyle,
   useDisposablePlayer,
@@ -86,75 +77,30 @@ function Transport({ player }: { player: AudiusPlayer }) {
   const track = useValue(player.track);
   const status = useValue(player.status);
   const volume = useValue(player.volume);
-  const active = status === 'live' || status === 'connecting';
 
   return (
     <div>
-      <div className="antares-audius-now" role="status">
-        {track ? (
-          <>
-            <span className="antares-audius-eq" aria-hidden={true}>
-              <i />
-              <i />
-              <i />
-            </span>
-            <span className="antares-audius-now-text">
-              {track.artist ? `${track.artist} — ` : ''}
-              {track.title}
-            </span>
-            <WithHoverTooltip label={T.open} placement="top">
-              <a
-                href={track.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={T.open}
-                className="antares-audius-open"
-                onClick={(event) => {
-                  event.preventDefault();
-                  openExternal(track.url);
-                }}
-              >
-                <ExternalLink style={{ width: 10, height: 10 }} aria-hidden={true} />
-              </a>
-            </WithHoverTooltip>
-          </>
-        ) : (
-          <span className="antares-audius-now-text">{T.empty}</span>
-        )}
-        {status === 'error' && (
-          <span className="antares-audius-error" role="status">
-            {T.error}
+      <NowPlayingRow
+        p="antares-audius"
+        track={track}
+        status={status}
+        t={T}
+        liveMarker={
+          <span className="antares-audius-eq" aria-hidden={true}>
+            <i />
+            <i />
+            <i />
           </span>
-        )}
-      </div>
-      <div className="antares-audius-transport">
-        <StreamAction p="antares-audius" label={T.previous} icon={SkipBack} onClick={player.previous} />
-        <StreamAction
-          p="antares-audius"
-          label={active ? T.pause : T.play}
-          icon={active ? Pause : Play}
-          busy={status === 'connecting'}
-          className="antares-audius-play"
-          onClick={player.toggle}
-        />
-        <StreamAction p="antares-audius" label={T.next} icon={SkipForward} onClick={player.next} />
-        <span className="antares-audius-transport-space" />
-        <StreamAction
-          p="antares-audius"
-          label={volume ? T.mute : T.unmute}
-          icon={volume ? Volume2 : VolumeX}
-          onClick={player.mute}
-        />
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={1}
-          value={volume}
-          aria-label={T.volume}
-          onChange={(event) => player.setVolume(Number(event.target.value))}
-        />
-      </div>
+        }
+      />
+      <StreamControlsRow
+        p="antares-audius"
+        player={player}
+        t={T}
+        volume={volume}
+        active={status === 'live' || status === 'connecting'}
+        connecting={status === 'connecting'}
+      />
     </div>
   );
 }
@@ -169,7 +115,6 @@ function AudiusBar({ player }: { player: AudiusPlayer }) {
     estimatedHeight: 300,
     gap: 6,
   });
-  const active = status === 'live' || status === 'connecting';
 
   return (
     <div className="antares-audius-bar" data-audius-status={status}>
@@ -210,15 +155,7 @@ function AudiusBar({ player }: { player: AudiusPlayer }) {
           <Transport player={player} />
         </div>
       )}
-      <StreamAction
-        p="antares-audius"
-        label={active ? T.pause : T.play}
-        icon={active ? Pause : Play}
-        busy={status === 'connecting'}
-        className="antares-audius-play"
-        onClick={player.toggle}
-      />
-      <StreamAction p="antares-audius" label={T.next} icon={SkipForward} onClick={player.next} />
+      <StreamBarActions p="antares-audius" status={status} player={player} t={T} playClassName="antares-audius-play" />
     </div>
   );
 }
