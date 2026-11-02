@@ -1,13 +1,15 @@
 import { Plus, Table2 } from 'lucide-react';
-import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { List } from 'react-window';
 import EmptyState from '../EmptyState';
 import type { BoardColumn, Tarea, TareaStatus, TeamMember } from '../../types';
 import { isOverdue } from '../../utils/filters';
 import { memberName } from '../../utils/members';
 import { columnIsDone } from '../../utils/statusConfig';
+import SelectAllCheckbox from './SelectAllCheckbox';
 import TableTaskRowContent from './TableTaskRowContent';
 import { priorityRank } from './taskPriority';
+import { useViewportHeight } from './useViewportHeight';
 import { ESPACIOS_VIRTUALIZE_THRESHOLD, TABLE_ROW_HEIGHT } from './virtualizeConfig';
 import Button from '@/components/ui/Button';
 
@@ -46,8 +48,6 @@ export default function TableView({
   const selectable = Boolean(onToggleSelect);
   const allSelected = selectable && tareas.length > 0 && tareas.every((t) => selectedIds?.has(t.id));
   const someSelected = selectable && tareas.some((t) => selectedIds?.has(t.id));
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [listHeight, setListHeight] = useState(0);
 
   const sorted = useMemo(() => {
     const list = [...tareas];
@@ -82,17 +82,7 @@ export default function TableView({
   }, [tareas, members, columns, sortKey, sortDir]);
 
   const useVirtual = sorted.length >= ESPACIOS_VIRTUALIZE_THRESHOLD;
-
-  useLayoutEffect(() => {
-    if (!useVirtual) return;
-    const el = containerRef.current;
-    if (!el) return;
-    const update = () => setListHeight(Math.floor(el.getBoundingClientRect().height));
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [useVirtual]);
+  const { containerRef, height: listHeight } = useViewportHeight(useVirtual);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -207,15 +197,10 @@ export default function TableView({
             <tr className="border-b border-[var(--border-subtle)] text-[11px] uppercase tracking-wide">
               {selectable && (
                 <th className="w-10 px-2 py-2.5 text-center">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    ref={(el) => {
-                      if (el) el.indeterminate = someSelected && !allSelected;
-                    }}
-                    onChange={() => onToggleSelectAll?.()}
-                    aria-label="Seleccionar todas las tareas"
-                    className="h-3.5 w-3.5 rounded border-[var(--border-subtle)] accent-[var(--accent-primary)]"
+                  <SelectAllCheckbox
+                    allSelected={allSelected}
+                    someSelected={someSelected}
+                    onToggleSelectAll={onToggleSelectAll}
                   />
                 </th>
               )}
@@ -303,15 +288,10 @@ export default function TableView({
             <div className="grid min-w-[920px] shrink-0 grid-cols-[40px_40px_40px_minmax(220px,2fr)_minmax(160px,1fr)_minmax(140px,1fr)_minmax(120px,0.8fr)_minmax(110px,0.7fr)_96px] items-center gap-1 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 py-2.5 text-[11px] uppercase tracking-wide">
               {selectable ? (
                 <div className="flex justify-center">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    ref={(el) => {
-                      if (el) el.indeterminate = someSelected && !allSelected;
-                    }}
-                    onChange={() => onToggleSelectAll?.()}
-                    aria-label="Seleccionar todas las tareas"
-                    className="h-3.5 w-3.5 rounded border-[var(--border-subtle)] accent-[var(--accent-primary)]"
+                  <SelectAllCheckbox
+                    allSelected={allSelected}
+                    someSelected={someSelected}
+                    onToggleSelectAll={onToggleSelectAll}
                   />
                 </div>
               ) : (

@@ -1,10 +1,12 @@
 import { ListTodo } from 'lucide-react';
-import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo } from 'react';
 import { List } from 'react-window';
 import EmptyState from '../EmptyState';
 import type { BoardColumn, Tarea, TeamMember } from '../../types';
 import { isOverdue } from '../../utils/filters';
 import ListTaskRowContent from './ListTaskRowContent';
+import SelectAllCheckbox from './SelectAllCheckbox';
+import { useViewportHeight } from './useViewportHeight';
 import { ESPACIOS_VIRTUALIZE_THRESHOLD, LIST_ROW_HEIGHT } from './virtualizeConfig';
 
 interface ListViewProps {
@@ -119,15 +121,10 @@ function ListRowTable({
           <tr className="border-b border-[var(--border-subtle)] text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
             {selectable && (
               <th className="w-10 px-3 py-3">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  ref={(el) => {
-                    if (el) el.indeterminate = someSelected && !allSelected;
-                  }}
-                  onChange={() => onToggleSelectAll?.()}
-                  aria-label="Seleccionar todas las tareas"
-                  className="h-3.5 w-3.5 rounded border-[var(--border-subtle)] accent-[var(--accent-primary)]"
+                <SelectAllCheckbox
+                  allSelected={allSelected}
+                  someSelected={someSelected}
+                  onToggleSelectAll={onToggleSelectAll}
                 />
               </th>
             )}
@@ -182,21 +179,8 @@ export default function ListView({
   onDelete,
   onAddTask,
 }: ListViewProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [listHeight, setListHeight] = useState(0);
-
   const useVirtual = tareas.length >= ESPACIOS_VIRTUALIZE_THRESHOLD;
-
-  useLayoutEffect(() => {
-    if (!useVirtual) return;
-    const el = containerRef.current;
-    if (!el) return;
-    const update = () => setListHeight(Math.floor(el.getBoundingClientRect().height));
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [useVirtual]);
+  const { containerRef, height: listHeight } = useViewportHeight(useVirtual);
 
   const selectable = Boolean(onToggleSelect);
   const allSelected = selectable && tareas.length > 0 && tareas.every((t) => selectedIds?.has(t.id));
@@ -253,15 +237,10 @@ export default function ListView({
       <div className={`${ROW_GRID} shrink-0 border-b border-[var(--border-subtle)] px-3 py-3 text-[11px] uppercase tracking-wide text-[var(--text-muted)]`}>
         {selectable ? (
           <div className="px-1">
-            <input
-              type="checkbox"
-              checked={allSelected}
-              ref={(el) => {
-                if (el) el.indeterminate = someSelected && !allSelected;
-              }}
-              onChange={() => onToggleSelectAll?.()}
-              aria-label="Seleccionar todas las tareas"
-              className="h-3.5 w-3.5 rounded border-[var(--border-subtle)] accent-[var(--accent-primary)]"
+            <SelectAllCheckbox
+              allSelected={allSelected}
+              someSelected={someSelected}
+              onToggleSelectAll={onToggleSelectAll}
             />
           </div>
         ) : (
