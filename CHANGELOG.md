@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent diseña en un lienzo con `design_canvas_write` y `design_canvas_read`: artboards de HTML/CSS aislados (pósteres, pantallas, páginas, piezas para redes) dispuestos en un lienzo con zoom y desplazamiento, con ajustes declarados (color, texto, número) que el usuario prueba en vivo, títulos de sección, post-its y enlaces de prototipo (`data-goto`) entre artboards. El lienzo permite ir a un artboard, enfocarlo con doble clic y abrir sus ajustes. Las revisiones solo envían lo que cambia (mover o renombrar no requiere el HTML), verifican la revisión anterior y reutilizan la página aislada de `page_create`, sin red ni bridge.
 - Agent muestra el progreso en vivo de subagentes y jobs de PowerShell, con inicio, pasos, fin o error y un botón para cancelar cada uno desde la conversación.
 - Agent ejecuta `script_run`: JavaScript en un sandbox sin red ni archivos, con `print`, `tools.list` y `tools.call` limitado a las lecturas habilitadas. Las llamadas independientes corren en paralelo, la salida visible se acota y el volcado (hasta el límite del archivo) queda en un archivo de la conversación.
 - Agent guarda skills reutilizables con `skill_create`, con aprobación y sin sobrescribir las existentes; tras un encargo repetible terminado con comprobante, propone guardar sus instrucciones como skill.
@@ -23,6 +24,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Changed
 - El recorte mecánico de contexto de Agent repite su corte anterior mientras la petición quepa, y los avisos de pasos y de plan ya enviados se reponen en las peticiones siguientes: el prefijo enviado deja de cambiar en cada paso y el proveedor reutiliza la caché.
 - Agent trabaja con un tope de 500 000 tokens de contexto aunque el modelo admita más, y compacta al 80 % de esa ventana en lugar de apurar hasta el margen de respuesta.
+- La barra lateral de Agent muestra agentes y conversaciones en una sola lista, sin pestañas ni barra superior: hasta seis agentes con «Ver todos», un buscador común y los botones de buscar y nueva conversación en el encabezado de Conversaciones. Los avatares de la barra flotan, parpadean y miran con un desfase por agente, y respetan «reducir movimiento».
 - El navegador de Agent congela la página cuando un menú o diálogo la tapa y la reacopla al cerrarse, en lugar de dejar un hueco negro; la barra de pestañas, la omnibox y el separador adoptan un estilo plano y compacto.
 - El chat de Agent sigue el final cuando un turno crece sin mensajes nuevos (paneles, imágenes o pasos) mientras el usuario está abajo, y deja de pintar los turnos fuera de pantalla.
 - El prompt de Agent y el de sus subagentes empiezan por la conclusión, evitan el relleno, usan listas cortas y piden solo lo necesario.
