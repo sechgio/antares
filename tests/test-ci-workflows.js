@@ -123,7 +123,7 @@ function run() {
       job('verify').includes("if ($result -ne 'success') { throw"),
     'The required check rejects failed, cancelled and skipped workers',
   );
-  assert(job('backend').includes('pytest tests/test_stress_conversion.py -m slow'), 'Windows CI runs slow stress tests');
+  assert(job('backend').includes('pytest tests/test_stress_conversion.py tests/test_scalability_baseline.py -m slow'), 'Windows CI runs slow stress tests and scalability baselines');
   if (process.platform === 'win32') {
     const gate = job('verify').split('        run: |')[1].trim();
     const result = spawnSync('pwsh', ['-NoProfile', '-Command', `

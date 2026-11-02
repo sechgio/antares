@@ -89,8 +89,8 @@ jobs:
       - name: Run backend tests
         run: node scripts/run-test-suites.js backend
 
-      - name: Run slow stress tests (excluded from the default gate)
-        run: uv run --project . --locked --extra dev pytest tests/test_stress_conversion.py -m slow -q
+      - name: Run slow stress and scalability tests (excluded from the default gate)
+        run: uv run --project . --locked --extra dev pytest tests/test_stress_conversion.py tests/test_scalability_baseline.py -m slow -q
 
   quality:
     name: Quality and build (Windows)
