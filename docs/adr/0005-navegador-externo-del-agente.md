@@ -180,7 +180,7 @@ entregarla:
   su pestaña: por eso exige la doble aprobación y la aprobación por dominio.
 - Fases: (1) seam `PageContents` sin cambio de comportamiento; (2) perfil
   dedicado para Chromium; (3) «Mi sesión de Chrome»; (4) Firefox por BiDi,
-  se entregan en PRs encadenados, una fase por PR.
+  las cuatro están hechas.
 - Verificación: `tests/test-agent-browser-cdp.js` (adaptador),
   `tests/test-agent-browser-engines.js` (lanzamiento, tubería, sesión,
   Firefox, protecciones), `tests/test-agent-browser-bidi.js` (adaptador BiDi), `tests/test-agent-browser-engine-switch.js` (pestaña del

@@ -292,7 +292,13 @@ export interface AgentBrowserState {
   busy_reason?: 'user_input' | 'control' | '';
   active_tab?: string;
   tabs?: AgentBrowserTab[];
+  engine?: AgentBrowserEngine | null;
   reason?: 'page' | 'agent-open' | 'control' | 'closed' | 'busy';
+}
+
+export interface AgentBrowserEngine {
+  id: string;
+  label: string;
 }
 
 export interface AgentBrowserElement {
@@ -448,6 +454,10 @@ export const agentApi = {
     _invoke<{ png_base64: string; width: number; height: number; url: string; title: string }>('agent_browser', { action: 'capture' }),
   agentBrowserInspect: (x: number, y: number) =>
     _invoke<AgentBrowserElement | null>('agent_browser', { action: 'inspect', x, y }),
+  agentBrowserEngines: () =>
+    _invoke<{ engine: string | null; available: AgentBrowserEngine[] }>('agent_browser', { action: 'engines' }),
+  agentBrowserSetEngine: (engine: string) =>
+    _invoke<AgentBrowserState>('agent_browser', { action: 'engine', engine }),
   agentTurnCancel: (session_id: string) =>
     _invoke<{ cancelled: boolean }>('agent_turn_cancel', { session_id }),
 

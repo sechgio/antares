@@ -243,6 +243,10 @@ async function nativeToolContext(name, sessionId, params = {}) {
     const domain = policy.hostOf(browserContext.page_url);
     Object.assign(context, browserContext, { domain, policy_blocked: policy.isBlocked(domain) });
   }
+  if (name === 'web_open') {
+    const opening = require('./agent-browser').sessionOpenContext(params);
+    if (opening) Object.assign(context, opening);
+  }
   if (name === 'web_upload') {
     await require('./ipc-router')._callBackend('agent_internal_grants_check',
       { session_id: sessionId, path: String(params.path || '') });

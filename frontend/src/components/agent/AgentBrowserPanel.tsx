@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, ArrowRight, Bot, FileUp, Globe, Hand, Loader2, Maximize2, Minimize2, MoreVertical, PenLine, Plus, RotateCw, X } from 'lucide-react';
-import { agentApi, type AgentBrowserState } from '../../api/agentApi';
+import { ArrowLeft, ArrowRight, Bot, Check, FileUp, Globe, Hand, Loader2, Maximize2, Minimize2, MoreVertical, PenLine, Plus, RotateCw, X } from 'lucide-react';
+import { agentApi, type AgentBrowserEngine, type AgentBrowserState } from '../../api/agentApi';
 import { onNotify } from '../../api/core';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
+import { useDialog } from '../../hooks/useDialog';
 import BrowserAnnotator from './BrowserAnnotator';
 import useAgentBrowserViewport from './useAgentBrowserViewport';
 import { ANNOTATABLE_FILES, fileSource, type AnnotationSource } from './annotationSource';
@@ -23,6 +24,7 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
   onAnnotate?: (files: File[], source: string, notes: string[]) => void;
 }) {
   const { addToast } = useToast();
+  const { confirm } = useDialog();
   const [state, setState] = useState<AgentBrowserState>(EMPTY);
   const [address, setAddress] = useState('');
   const [editing, setEditing] = useState(false);
@@ -35,11 +37,13 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
   const addressRef = useRef<HTMLInputElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [shot, setShot] = useState<{ source: AnnotationSource; web: boolean } | null>(null);
+  const [engines, setEngines] = useState<AgentBrowserEngine[]>([]);
+  const externalAgent = (state.active_tab ?? 'agent') === 'agent' && !!state.engine;
   const menu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
     align: 'end', estimatedWidth: 240, estimatedHeight: 100, stopEscapePropagation: true,
   });
   const { frozenPage, pagePaused, annotatingRef, capturingRef, reportRef, dockViewport, releaseFrozen } =
-    useAgentBrowserViewport({ viewportRef, panelRef, open: state.open, setLayout });
+    useAgentBrowserViewport({ viewportRef, panelRef, open: state.open && !externalAgent, setLayout });
   const minWidth = layout.available ? Math.min(340, layout.available / 2) : 340;
   const maxWidth = layout.available ? Math.max(minWidth, layout.available - 320) : 760;
   const clampWidth = (value: number) => Math.min(maxWidth, Math.max(minWidth, value));
@@ -69,6 +73,28 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
   useEffect(() => {
     if (!editing) setAddress(state.url);
   }, [state.url, editing]);
+
+  useEffect(() => {
+    if (!menu.isOpen) return undefined;
+    let alive = true;
+    void agentApi.agentBrowserEngines().then((next) => { if (alive) setEngines(next.available); }).catch(() => {});
+    return () => { alive = false; };
+  }, [menu.isOpen]);
+
+  const chooseEngine = async (engine: string) => {
+    menu.close();
+    if (engine === 'chrome-session' && !(await confirm({
+      title: '¿Usar tu sesión de Chrome?',
+      description: 'El agente abrirá su propia pestaña en tu Chrome, con tus sesiones iniciadas. No verá tus otras pestañas y '
+        + 'te pedirá permiso antes de abrir cada sitio nuevo. Chrome también te pedirá confirmación.',
+      confirmLabel: 'Conectar',
+    }))) return;
+    try {
+      setState(await agentApi.agentBrowserSetEngine(engine));
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo cambiar el navegador del agente'), type: 'error' });
+    }
+  };
 
   const run = async (action: 'open' | 'back' | 'forward' | 'reload' | 'tab' | 'new' | 'close' | 'control' | 'allow',
     extra: { url?: string; user?: boolean; tab?: string } = {}) => {
@@ -301,6 +327,27 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
           >
             <Plus size={14} className="text-[var(--text-secondary)]" /> Nueva pestaña
           </button>
+          {engines.length > 0 && (
+            <div role="group" aria-label="Navegador del agente" className="mt-1 border-t border-[var(--border-subtle)] pt-1">
+              <p className="px-2.5 pb-0.5 pt-1 text-[11px] text-[var(--text-muted)]">Navegador del agente</p>
+              {[{ id: 'integrado', label: 'Integrado' }, ...engines].map((engine) => {
+                const checked = (state.engine?.id ?? 'integrado') === engine.id;
+                return (
+                  <button
+                    key={engine.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={checked}
+                    className={MENU_ITEM}
+                    onClick={() => { if (checked) menu.close(); else void chooseEngine(engine.id); }}
+                  >
+                    <Check size={14} className={checked ? 'text-[var(--text-secondary)]' : 'invisible'} />
+                    {engine.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>,
         document.body,
       )}
@@ -381,7 +428,18 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
             <p className="text-[12px] text-[var(--text-muted)]">Vista en pausa</p>
           </div>
         )}
-        {!state.open && (
+        {externalAgent && (
+          <div role="status" className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+            <Globe size={22} strokeWidth={1.5} className="mb-1.5 text-[var(--text-muted)]" />
+            <p className="text-[13px] font-medium text-[var(--text-primary)]">El agente navega en {state.engine?.label}</p>
+            <p className="max-w-xs text-[12px] text-[var(--text-muted)]">
+              {state.engine?.id === 'chrome-session'
+                ? 'Usa su propia pestaña en tu Chrome, con tus sesiones; no ve tus otras pestañas.'
+                : 'Abre las páginas en una ventana aparte, con un perfil propio separado de tus perfiles.'}
+            </p>
+          </div>
+        )}
+        {!state.open && !externalAgent && (
           <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
             <Globe size={22} strokeWidth={1.5} className="mb-1.5 text-[var(--text-muted)]" />
             <p className="text-[13px] font-medium text-[var(--text-primary)]">
