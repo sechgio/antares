@@ -1038,7 +1038,8 @@ async function beforeTool(call, api, context) {
   const rule = rules[channel];
   const web = call.name.startsWith('web_');
   const reading = spec.name === 'task_schedule' && (call.arguments || {}).action === 'list';
-  if (reading || (!spec.gated && !(web && (mode === 'ask' || rule !== undefined)))) return undefined;
+  const sessionOpen = call.name === 'web_open' && !!require('./agent-browser').sessionOpenContext(call.arguments || {});
+  if (reading || (!spec.gated && !sessionOpen && !(web && (mode === 'ask' || rule !== undefined)))) return undefined;
   if (rule === 'deny') {
     return { block: `El usuario bloqueó el canal «${channelLabel(channel)}» en esta conversación. `
       + 'No repitas esta acción: pide permiso, cambia la regla en Permisos o propone otra vía.' };

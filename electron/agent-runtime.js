@@ -691,6 +691,8 @@ async function browserAction(params) {
   if (action === 'allow') return browser.allowAgent(params.tab);
   if (action === 'capture') return browser.capture(params.tab);
   if (action === 'inspect') return browser.inspect(params.x, params.y, params.tab);
+  if (action === 'engines') return browser.engines();
+  if (action === 'engine') return browser.setEngine(params.engine);
   if (['open', 'back', 'forward', 'reload'].includes(action)) return browser.navigate(action, params.url, params.tab);
   throw validation(`Acción del navegador no válida: ${action}`);
 }
