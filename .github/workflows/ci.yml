@@ -54,7 +54,7 @@ jobs:
   backend:
     name: Backend tests (Windows)
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -85,6 +85,18 @@ jobs:
       - name: Install and validate Pango
         shell: pwsh
         run: ./scripts/install-ci-pango.ps1
+
+      - name: Cache editor media toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            media/ffmpeg.exe
+            media/ffprobe.exe
+          key: editor-media-${{ runner.os }}-${{ runner.arch }}-${{ steps.runner-image.outputs.version }}-${{ hashFiles('media/manifest.json') }}
+
+      - name: Install and validate editor media
+        shell: pwsh
+        run: ./scripts/install-ci-editor-media.ps1
 
       - name: Run backend tests
         run: node scripts/run-test-suites.js backend
