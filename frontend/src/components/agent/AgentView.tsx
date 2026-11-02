@@ -47,6 +47,7 @@ const SESSION_KEY = 'antares-agent-session';
 const QUEUE_KEY = 'antares-agent-queue';
 const VIEW_KEY = 'antares-agent-transcript-view';
 const SIDEBAR_KEY = 'antares-agent-sidebar';
+const AGENT_LIMIT = 6;
 const parseView = (raw: string): TranscriptView => (raw === 'thinking' || raw === 'verbose' ? raw : 'normal');
 const RESUME_TEXT = 'Reanuda el encargo donde lo dejaste: revisa el plan y los últimos resultados antes de repetir cualquier acción.';
 
@@ -215,9 +216,8 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [activeSkill, setActiveSkill] = useState<AgentSkill | null>(null);
   const [search, setSearch] = useState('');
-  const [profileSearch, setProfileSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
-  const [sidebarView, setSidebarView] = useState<'conversations' | 'agents'>('conversations');
+  const [agentsExpanded, setAgentsExpanded] = useState(false);
   const sessionSearchRef = useRef<HTMLInputElement | null>(null);
   const [toolsQuery, setToolsQuery] = useState('');
   const [toolsFilter, setToolsFilter] = useState<'all' | 'skills' | 'mcp'>('all');
@@ -649,9 +649,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     return sessions.filter((s) => (s.title || 'Conversación').toLowerCase().includes(query));
   }, [sessions, search]);
   const visibleProfiles = useMemo(() => {
-    const query = profileSearch.trim().toLocaleLowerCase('es');
+    const query = search.trim().toLocaleLowerCase('es');
     return profiles.filter((profile) => `${profile.name} ${profile.description}`.toLocaleLowerCase('es').includes(query));
-  }, [profiles, profileSearch]);
+  }, [profiles, search]);
   const normalizeBotName = (value: string) => value.normalize('NFKD').replace(/\p{M}/gu, '').toLocaleLowerCase('es').trim().replace(/[\s_]+/g, '-');
   const composer = useComposerAutocomplete<ComposerOption>(draft, [
     {
@@ -1149,7 +1149,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
           e.preventDefault();
-          setSidebarView('conversations');
           setSidebarOpen(true);
           setSearchOpen(true);
           sessionSearchRef.current?.focus();
@@ -1166,10 +1165,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
           onSaved={(saved) => {
             setProfiles((prev) => [...prev.filter((p) => p.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, 'es')));
             setEditing(null);
-            if (editing === 'new') {
-              if (provider) void newSession(saved);
-              else setSidebarView('agents');
-            }
+            if (editing === 'new' && provider) void newSession(saved);
           }}
           onDeleted={(id) => {
             setProfiles((prev) => prev.filter((p) => p.id !== id));
@@ -1178,78 +1174,47 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
         />
       )}
       <aside aria-label="Agentes y conversaciones" hidden={!sidebarOpen} className={`agent-sidebar hidden h-full w-[248px] shrink-0 flex-col bg-[var(--bg-base)] p-2 ${sidebarOpen ? 'md:flex' : ''}`}>
-        <div className="flex shrink-0 items-center gap-2 p-1">
-          {!searchOpen && <Button
-            variant="none"
-            size="none"
-            className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 text-[13px] text-[var(--text-primary)] hover:bg-[var(--bg-input)]"
-            onClick={() => void newSession()}
-            aria-label="Nueva conversación"
-            title="Nueva conversación"
-          >
-            <Pencil size={15} className="shrink-0 text-[var(--text-secondary)]" />
-            <span className="truncate">Nuevo chat</span>
-          </Button>}
-          {searchOpen && sidebarOpen ? (
-            <label className="agent-search flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg bg-[var(--bg-input)] px-3">
+        {searchOpen && (
+          <div className="shrink-0 p-1">
+            <label className="agent-search flex h-9 min-w-0 items-center gap-2 rounded-lg bg-[var(--bg-input)] px-3">
               <Search size={14} className="shrink-0 text-[var(--text-secondary)]" />
               <input
                 ref={sessionSearchRef}
                 autoFocus
-                value={sidebarView === 'agents' ? profileSearch : search}
-                onChange={(e) => sidebarView === 'agents' ? setProfileSearch(e.target.value) : setSearch(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Escape') { if (sidebarView === 'agents') setProfileSearch(''); else setSearch(''); setSearchOpen(false); } }}
-                placeholder={sidebarView === 'agents' ? 'Buscar agentes…' : 'Buscar conversaciones…'}
-                aria-label={sidebarView === 'agents' ? 'Buscar agentes' : 'Buscar conversaciones'}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') { setSearch(''); setSearchOpen(false); } }}
+                placeholder="Buscar…"
+                aria-label="Buscar agentes y conversaciones"
                 className="min-w-0 flex-1 bg-transparent text-[14px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
               />
               <button
                 type="button"
                 className="flex size-5 shrink-0 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
                 aria-label="Cerrar búsqueda"
-                onClick={() => { if (sidebarView === 'agents') setProfileSearch(''); else setSearch(''); setSearchOpen(false); }}
+                onClick={() => { setSearch(''); setSearchOpen(false); }}
               >
                 <X size={12} />
               </button>
             </label>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
-                aria-label={sidebarView === 'agents' ? 'Buscar agentes' : 'Buscar conversaciones'}
-                title={sidebarView === 'agents' ? 'Buscar agentes' : 'Buscar conversaciones (Ctrl+K)'}
-                onClick={() => setSearchOpen(true)}
-              >
-                <Search size={16} />
-              </button>
-              {onConfigureProvider && (
-                <button
-                  type="button"
-                  className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
-                  aria-label="Proveedores"
-                  title="Proveedores"
-                  onClick={onConfigureProvider}
-                >
-                  <Plug size={16} />
-                </button>
-              )}
-            </>
-          )}
-        </div>
+          </div>
+        )}
 
-        <SegmentedControl
-          value={sidebarView}
-          onChange={(value) => { setSidebarView(value); setSearchOpen(Boolean(value === 'agents' ? profileSearch : search)); }}
-          options={[{ value: 'conversations', label: 'Conversaciones' }, { value: 'agents', label: 'Agentes' }]}
-          aria-label="Vistas del agente"
-          className="mx-1 mt-2 flex shrink-0 gap-1 [&>button]:h-7 [&>button]:flex-none [&>button]:rounded-lg [&>button]:px-3 [&>button]:py-0 [&>button]:text-[12.5px] [&>button[aria-pressed=false]]:text-[var(--text-muted)] [&>button[aria-pressed=false]:hover]:text-[var(--text-primary)] [&>button[aria-pressed=true]]:bg-[var(--bg-input)] [&>button[aria-pressed=true]]:font-semibold [&>button[aria-pressed=true]]:shadow-none [&>button[aria-pressed=true]]:ring-[var(--border-medium)]"
-        />
         <div className="custom-scrollbar mt-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1">
-          {sidebarView === 'agents' ? <>
           {(() => {
-            const arranged = arrangeSidebar(visibleProfiles, sidebarPrefs, showHidden || Boolean(profileSearch.trim()));
-            const row = (profile: AgentProfile) => {
+            const query = search.trim();
+            const arrangedProfiles = arrangeSidebar(visibleProfiles, sidebarPrefs, showHidden || Boolean(query));
+            const arrangedSessions = arrangeSidebar(visibleSessions, sidebarPrefs, showHidden || Boolean(query));
+            const hiddenCount = arrangedProfiles.hiddenCount + arrangedSessions.hiddenCount;
+            const agentGroups = [{ label: '', items: arrangedProfiles.pinned }, ...arrangedProfiles.sections, { label: '', items: arrangedProfiles.rest }];
+            const agentTotal = agentGroups.reduce((total, group) => total + group.items.length, 0);
+            let agentBudget = agentsExpanded || query ? agentTotal : AGENT_LIMIT;
+            const shownAgentGroups = agentGroups.map((group) => {
+              const items = group.items.slice(0, agentBudget);
+              agentBudget -= items.length;
+              return { ...group, items };
+            }).filter((group) => group.items.length > 0);
+            const profileRow = (profile: AgentProfile) => {
               const menu = sidebarMenu(profile.id, profile.name, 'agente');
               return (
                 <SidebarItemMenu
@@ -1257,9 +1222,9 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                   {...menu}
                   onRename={(name) => renameProfile(profile, name)}
                   onDelete={() => void removeProfile(profile)}
-                  className={`group relative flex h-[50px] shrink-0 items-center gap-2 rounded-xl p-1.5 pr-2 transition-colors hover:pr-8 focus-within:pr-8 data-[open]:pr-8 ${activeProfile?.id === profile.id ? 'bg-[var(--bg-input)]' : 'hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]'} ${menu.hidden ? 'opacity-60' : ''}`}
+                  className={`group relative flex h-[50px] shrink-0 items-center gap-2.5 rounded-xl p-1.5 pr-2 transition-colors hover:pr-8 focus-within:pr-8 data-[open]:pr-8 ${activeProfile?.id === profile.id ? 'bg-[var(--bg-input)]' : 'hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]'} ${menu.hidden ? 'opacity-60' : ''}`}
                 >
-                  <AgentAvatar seed={profile.id} color={profile.color} name={profile.name} size={32} className="shrink-0" />
+                  <AgentAvatar seed={profile.id} color={profile.color} name={profile.name} size={32} className={`shrink-0 ${activeProfile?.id === profile.id ? 'agent-avatar-active' : ''}`} />
                   <button
                     type="button"
                     className="flex min-w-0 flex-1 flex-col text-left"
@@ -1282,48 +1247,7 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
                 </SidebarItemMenu>
               );
             };
-            return <>
-              {arranged.pinned.length > 0 && <section aria-label="Fijados" className="flex flex-col gap-0.5"><SidebarGroupLabel>Fijados</SidebarGroupLabel>{arranged.pinned.map(row)}</section>}
-              {arranged.sections.map((group) => (
-                <section key={group.label} aria-label={group.label} className="flex flex-col gap-0.5"><SidebarGroupLabel>{group.label}</SidebarGroupLabel>{group.items.map(row)}</section>
-              ))}
-              <div className="flex items-center justify-between px-1.5 pb-1 pt-3">
-                <span className="text-[12px] font-medium text-[var(--text-muted)]">Agentes guardados</span>
-                <button
-                  type="button"
-                  className="flex size-6 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
-                  aria-label="Crear agente"
-                  title="Crear un agente para una tarea repetitiva"
-                  onClick={() => setEditing('new')}
-                >
-                  <Plus size={14} />
-                </button>
-              </div>
-              {profiles.length === 0 && (
-                <button
-                  type="button"
-                  className="mb-1 rounded-xl px-2.5 py-2 text-left text-[12px] leading-relaxed text-[var(--text-muted)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)] hover:text-[var(--text-secondary)]"
-                  onClick={() => setEditing('new')}
-                >
-                  Crea un agente con tus indicaciones y herramientas para una tarea que repites.
-                </button>
-              )}
-              {profiles.length > 0 && visibleProfiles.length === 0 && <p className="px-2.5 py-3 text-[12px] text-[var(--text-secondary)]">
-                Sin agentes para «{profileSearch.trim()}».
-              </p>}
-              {arranged.rest.map(row)}
-              {arranged.hiddenCount > 0 && !profileSearch.trim() && (
-                <button type="button" onClick={() => setShowHidden((v) => !v)}
-                  className="mt-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-secondary)]">
-                  {showHidden ? 'Ocultar elementos ocultos' : `Mostrar ocultos (${arranged.hiddenCount})`}
-                </button>
-              )}
-            </>;
-          })()}
-          </> : <>
-          {(() => {
-            const arranged = arrangeSidebar(visibleSessions, sidebarPrefs, showHidden || Boolean(search.trim()));
-            const row = (s: AgentSession) => (
+            const sessionRow = (s: AgentSession) => (
               <SessionRow
                 key={s.id}
                 session={s}
@@ -1337,35 +1261,100 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
               />
             );
             return <>
-              {sessions.length === 0 && (
-                <p className="px-2.5 py-3 text-[12px] text-[var(--text-muted)]">
-                  Tus chats aparecerán aquí.
-                </p>
-              )}
-              {sessions.length > 0 && visibleSessions.length === 0 && (
-                <p className="px-2.5 py-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
-                  Sin resultados para «{search.trim()}».
-                </p>
-              )}
-              {[
-                ...(arranged.pinned.length ? [{ label: 'Fijados', items: arranged.pinned }] : []),
-                ...arranged.sections,
-                ...groupSessions(arranged.rest),
-              ].map((group) => (
-                <section key={group.label} aria-label={group.label} className="flex flex-col gap-0.5">
-                  <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-                  {group.items.map(row)}
-                </section>
-              ))}
-              {arranged.hiddenCount > 0 && !search.trim() && (
+              <section aria-label="Agentes" className="flex flex-col gap-0.5">
+                <div className="flex items-center justify-between px-1.5 pb-1 pt-2">
+                  <span className="text-[12px] font-medium text-[var(--text-muted)]">Agentes</span>
+                  <button
+                    type="button"
+                    className="flex size-6 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+                    aria-label="Crear agente"
+                    title="Crear un agente para una tarea repetitiva"
+                    onClick={() => setEditing('new')}
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
+                {profiles.length === 0 && (
+                  <button
+                    type="button"
+                    className="mb-1 rounded-xl px-2.5 py-2 text-left text-[12px] leading-relaxed text-[var(--text-muted)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)] hover:text-[var(--text-secondary)]"
+                    onClick={() => setEditing('new')}
+                  >
+                    Crea un agente con tus indicaciones y herramientas para una tarea que repites.
+                  </button>
+                )}
+                {profiles.length > 0 && visibleProfiles.length === 0 && <p className="px-2.5 py-2 text-[12px] text-[var(--text-muted)]">
+                  Sin agentes para «{query}».
+                </p>}
+                {shownAgentGroups.map((group, index) => group.label
+                  ? <section key={group.label} aria-label={group.label} className="flex flex-col gap-0.5"><SidebarGroupLabel>{group.label}</SidebarGroupLabel>{group.items.map(profileRow)}</section>
+                  : <div key={`agents-${index}`} className="flex flex-col gap-0.5">{group.items.map(profileRow)}</div>)}
+                {agentTotal > AGENT_LIMIT && !query && (
+                  <button
+                    type="button"
+                    aria-expanded={agentsExpanded}
+                    onClick={() => setAgentsExpanded((v) => !v)}
+                    className="flex h-8 items-center gap-2 rounded-lg px-2.5 text-left text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)] hover:text-[var(--text-primary)]"
+                  >
+                    <ChevronDown size={14} className={agentsExpanded ? 'rotate-180' : ''} />
+                    {agentsExpanded ? 'Ver menos' : `Ver todos (${agentTotal})`}
+                  </button>
+                )}
+              </section>
+              <div aria-hidden="true" className="mx-1.5 mt-3 border-t border-[var(--border-subtle)]" />
+              <section aria-label="Conversaciones" className="flex flex-col gap-0.5">
+                <div className="flex items-center justify-between px-1.5 pb-1 pt-2">
+                  <span className="text-[12px] font-medium text-[var(--text-muted)]">Conversaciones</span>
+                  <span className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      className="flex size-6 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+                      aria-label="Buscar agentes y conversaciones"
+                      title="Buscar agentes y conversaciones (Ctrl+K)"
+                      onClick={() => setSearchOpen(true)}
+                    >
+                      <Search size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className="flex size-6 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+                      aria-label="Nueva conversación"
+                      title="Nueva conversación"
+                      onClick={() => void newSession()}
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </span>
+                </div>
+                {sessions.length === 0 && (
+                  <p className="px-2.5 py-2 text-[12px] text-[var(--text-muted)]">
+                    Tus chats aparecerán aquí.
+                  </p>
+                )}
+                {sessions.length > 0 && visibleSessions.length === 0 && (
+                  <p className="px-2.5 py-2 text-[11px] leading-relaxed text-[var(--text-muted)]">
+                    Sin resultados para «{query}».
+                  </p>
+                )}
+                {[
+                  ...(arrangedSessions.pinned.length ? [{ label: 'Fijados', items: arrangedSessions.pinned }] : []),
+                  ...arrangedSessions.sections,
+                  ...groupSessions(arrangedSessions.rest),
+                ].map((group) => (
+                  <section key={group.label} aria-label={group.label} className="flex flex-col gap-0.5">
+                    <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+                    {group.items.map(sessionRow)}
+                  </section>
+                ))}
+              </section>
+              {hiddenCount > 0 && !query && (
                 <button type="button" onClick={() => setShowHidden((v) => !v)}
                   className="mt-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-secondary)]">
-                  {showHidden ? 'Ocultar elementos ocultos' : `Mostrar ocultos (${arranged.hiddenCount})`}
+                  {showHidden ? 'Ocultar elementos ocultos' : `Mostrar ocultos (${hiddenCount})`}
                 </button>
               )}
             </>;
           })()}
-          </>}
         </div>
 
       </aside>

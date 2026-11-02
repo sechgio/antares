@@ -109,7 +109,6 @@ it('crea el agente y abre su conversación sin enviar mensajes ni duplicarla al 
   expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba', profile_id: profile.id });
   expect(screen.queryByRole('dialog', { name: 'Crear agente' })).not.toBeInTheDocument();
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Agentes' }));
   fireEvent.click(screen.getByRole('button', { name: 'Editar agente Revisor' }));
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
   expect(create).toHaveBeenCalledTimes(1);
@@ -129,7 +128,6 @@ it('guarda el agente sin proveedor y muestra el perfil sin intentar abrir un cha
   fireEvent.change(editor.getByLabelText('Indicaciones del agente'), { target: { value: profile.instructions } });
   await act(async () => { fireEvent.click(editor.getByRole('button', { name: 'Crear agente' })); });
   expect(create).not.toHaveBeenCalled();
-  expect(screen.getByRole('button', { name: 'Agentes' })).toHaveAttribute('aria-pressed', 'true');
   expect(screen.getByRole('button', { name: 'Editar agente Revisor' })).toBeInTheDocument();
   expect(addToast).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
 });
@@ -243,7 +241,7 @@ it('conserva el bot seleccionado en la cola restaurada aunque cambie su nombre',
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Consulta @bot:bot-original', expect.any(String), []);
 });
 
-it('separa agentes y conversaciones sin perder el borrador ni enviar mensajes', async () => {
+it('muestra agentes y conversaciones en una sola lista con un buscador común', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [{
@@ -252,26 +250,21 @@ it('separa agentes y conversaciones sin perder el borrador ni enviar mensajes', 
   }] });
   render(<AgentView />);
   await act(async () => {});
-  const navigation = within(screen.getByRole('group', { name: 'Vistas del agente' }));
-  expect(navigation.getByRole('button', { name: 'Conversaciones' })).toHaveAttribute('aria-pressed', 'true');
-  expect(screen.queryByTitle('Nueva conversación con Revisor de PDFs')).not.toBeInTheDocument();
+  const sidebar = within(screen.getByRole('complementary', { name: 'Agentes y conversaciones' }));
+  expect(sidebar.queryByRole('group', { name: 'Vistas del agente' })).not.toBeInTheDocument();
+  expect(within(sidebar.getByRole('region', { name: 'Agentes' })).getByTitle('Nueva conversación con Revisor de PDFs')).toBeInTheDocument();
+  expect(within(sidebar.getByRole('region', { name: 'Conversaciones' })).getByRole('button', { name: 'Primera' })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador pendiente' } });
-  fireEvent.click(navigation.getByRole('button', { name: 'Agentes' }));
-  expect(screen.getByTitle('Nueva conversación con Revisor de PDFs')).toBeInTheDocument();
-  expect(within(screen.getByRole('complementary', { name: 'Agentes y conversaciones' })).queryByText('Primera')).not.toBeInTheDocument();
+  fireEvent.click(sidebar.getByRole('button', { name: 'Buscar agentes y conversaciones' }));
+  fireEvent.change(sidebar.getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), { target: { value: 'firmas' } });
+  expect(sidebar.getByTitle('Nueva conversación con Revisor de PDFs')).toBeInTheDocument();
+  expect(sidebar.queryByRole('button', { name: 'Primera' })).not.toBeInTheDocument();
+  fireEvent.change(sidebar.getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), { target: { value: 'Primera' } });
+  expect(sidebar.getByText(/Sin agentes para/)).toBeInTheDocument();
+  expect(sidebar.getByRole('button', { name: 'Primera' })).toBeInTheDocument();
+  fireEvent.click(sidebar.getByRole('button', { name: 'Cerrar búsqueda' }));
+  expect(sidebar.getByTitle('Nueva conversación con Revisor de PDFs')).toBeInTheDocument();
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador pendiente');
-  fireEvent.click(screen.getByRole('button', { name: 'Buscar agentes' }));
-  fireEvent.change(screen.getByRole('textbox', { name: 'Buscar agentes' }), { target: { value: 'firmas' } });
-  expect(screen.getByTitle('Nueva conversación con Revisor de PDFs')).toBeInTheDocument();
-  fireEvent.change(screen.getByRole('textbox', { name: 'Buscar agentes' }), { target: { value: 'sin-coincidencias' } });
-  expect(screen.getByText(/Sin agentes para/)).toBeInTheDocument();
-  fireEvent.keyDown(screen.getByLabelText('Mensaje para el agente'), { key: 'k', ctrlKey: true });
-  expect(navigation.getByRole('button', { name: 'Conversaciones' })).toHaveAttribute('aria-pressed', 'true');
-  expect(screen.getByRole('textbox', { name: 'Buscar conversaciones' })).toHaveFocus();
-  fireEvent.click(navigation.getByRole('button', { name: 'Agentes' }));
-  expect(screen.getByRole('textbox', { name: 'Buscar agentes' })).toHaveValue('sin-coincidencias');
-  fireEvent.click(screen.getByRole('button', { name: 'Cerrar búsqueda' }));
-  expect(screen.getByTitle('Nueva conversación con Revisor de PDFs')).toBeInTheDocument();
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
 });
 
@@ -351,7 +344,7 @@ it('muestra conversaciones de una sola línea y reserva los avatares de la barra
   const first = await within(sidebar).findByRole('button', { name: 'Primera' });
   expect(first).toHaveAttribute('title', 'Primera');
   expect(first).toHaveAttribute('aria-current', 'page');
-  expect(within(sidebar).queryAllByRole('img')).toHaveLength(0);
+  expect(within(within(sidebar).getByRole('region', { name: 'Conversaciones' })).queryAllByRole('img')).toHaveLength(0);
   expect(within(sidebar).queryByText(/prueba|local|hace|ahora/)).not.toBeInTheDocument();
   expect(within(sidebar).getByTitle('Proveedor sin conexión')).toBeInTheDocument();
   expect(screen.getByRole('main', { name: 'Conversación del agente' }).querySelector('header svg[role="img"]')).toBeNull();
@@ -360,7 +353,6 @@ it('muestra conversaciones de una sola línea y reserva los avatares de la barra
   expect(second).toHaveAttribute('aria-current', 'page');
   expect(first).not.toHaveAttribute('aria-current');
   expect(agentApi.agentMessagesList).toHaveBeenLastCalledWith('s2');
-  fireEvent.click(within(sidebar).getByRole('button', { name: 'Agentes' }));
   expect(within(sidebar).getAllByRole('img')).toHaveLength(1);
   expect(within(sidebar).getByRole('img', { name: 'Reportes' })).toBeInTheDocument();
 });
@@ -373,8 +365,8 @@ it('conserva la búsqueda y el borrado desde las filas compactas', async () => {
   render(<AgentView />);
   const sidebar = screen.getByRole('complementary', { name: 'Agentes y conversaciones' });
   await within(sidebar).findByRole('button', { name: 'Primera' });
-  fireEvent.click(within(sidebar).getByRole('button', { name: 'Buscar conversaciones' }));
-  fireEvent.change(within(sidebar).getByRole('textbox', { name: 'Buscar conversaciones' }), { target: { value: 'Segunda' } });
+  fireEvent.click(within(sidebar).getByRole('button', { name: 'Buscar agentes y conversaciones' }));
+  fireEvent.change(within(sidebar).getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), { target: { value: 'Segunda' } });
   expect(within(sidebar).queryByRole('button', { name: 'Primera' })).not.toBeInTheDocument();
   expect(within(sidebar).getByRole('button', { name: 'Segunda' })).toBeInTheDocument();
   vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session] });
@@ -423,7 +415,6 @@ it('marca como no leído y cambia el nombre del agente desde su menú', async ()
   const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: { ...profile, name: 'Auditor' } });
   render(<AgentView />);
   const sidebar = screen.getByRole('complementary', { name: 'Agentes y conversaciones' });
-  fireEvent.click(within(within(sidebar).getByRole('group', { name: 'Vistas del agente' })).getByRole('button', { name: 'Agentes' }));
   fireEvent.click(await within(sidebar).findByRole('button', { name: 'Opciones de Revisor' }));
   fireEvent.click(screen.getByRole('menuitem', { name: 'Marcar como no leído' }));
   fireEvent.click(within(sidebar).getByRole('button', { name: 'Opciones de Revisor' }));
@@ -435,24 +426,45 @@ it('marca como no leído y cambia el nombre del agente desde su menú', async ()
   expect(within(sidebar).getByRole('button', { name: 'Opciones de Auditor' })).toBeInTheDocument();
 });
 
-it('amplía el buscador y restaura las acciones al cerrarlo', async () => {
-  const configure = vi.fn();
-  render(<AgentView onConfigureProvider={configure} />);
+it('abre el buscador desde el encabezado de conversaciones sin barra superior', async () => {
+  render(<AgentView onConfigureProvider={vi.fn()} />);
   const sidebar = screen.getByRole('complementary', { name: 'Agentes y conversaciones' });
   await within(sidebar).findByRole('button', { name: 'Primera' });
-  fireEvent.click(within(sidebar).getByRole('button', { name: 'Buscar conversaciones' }));
-  const search = within(sidebar).getByRole('textbox', { name: 'Buscar conversaciones' });
-  expect(search).toHaveFocus();
-  expect(within(sidebar).queryByRole('button', { name: 'Nueva conversación' })).not.toBeInTheDocument();
   expect(within(sidebar).queryByRole('button', { name: 'Proveedores' })).not.toBeInTheDocument();
+  expect(within(sidebar).queryByText('Nuevo chat')).not.toBeInTheDocument();
+  expect(within(sidebar).queryByRole('textbox')).not.toBeInTheDocument();
+  const conversations = within(within(sidebar).getByRole('region', { name: 'Conversaciones' }));
+  expect(conversations.getByRole('button', { name: 'Nueva conversación' })).toBeInTheDocument();
+  fireEvent.click(conversations.getByRole('button', { name: 'Buscar agentes y conversaciones' }));
+  const search = within(sidebar).getByRole('textbox', { name: 'Buscar agentes y conversaciones' });
+  expect(search).toHaveFocus();
   fireEvent.change(search, { target: { value: 'Sin resultados' } });
   expect(within(sidebar).getByText('Sin resultados para «Sin resultados».')).toBeInTheDocument();
   fireEvent.keyDown(search, { key: 'Escape' });
   expect(within(sidebar).queryByRole('textbox')).not.toBeInTheDocument();
-  expect(within(sidebar).getByRole('button', { name: 'Nueva conversación' })).toBeInTheDocument();
-  fireEvent.click(within(sidebar).getByRole('button', { name: 'Proveedores' }));
-  expect(configure).toHaveBeenCalledOnce();
   expect(within(sidebar).getByRole('button', { name: 'Primera' })).toBeInTheDocument();
+});
+
+it('muestra seis agentes y despliega el resto con Ver todos', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: Array.from({ length: 8 }, (_, index) => ({
+    id: `a${index}`, name: `Agente ${index}`, description: '', instructions: 'x', starter: '', tools: null, created_at: 1, updated_at: 1,
+  })) });
+  render(<AgentView />);
+  const agents = within(await screen.findByRole('region', { name: 'Agentes' }));
+  await agents.findByRole('img', { name: 'Agente 0' });
+  expect(agents.getAllByRole('img')).toHaveLength(6);
+  expect(agents.queryByRole('img', { name: 'Agente 6' })).not.toBeInTheDocument();
+  const more = agents.getByRole('button', { name: 'Ver todos (8)' });
+  expect(more).toHaveAttribute('aria-expanded', 'false');
+  fireEvent.click(more);
+  expect(agents.getAllByRole('img')).toHaveLength(8);
+  fireEvent.click(agents.getByRole('button', { name: 'Ver menos' }));
+  expect(agents.getAllByRole('img')).toHaveLength(6);
+  fireEvent.click(screen.getByRole('button', { name: 'Buscar agentes y conversaciones' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), { target: { value: 'Agente 7' } });
+  expect(agents.getByRole('img', { name: 'Agente 7' })).toBeInTheDocument();
+  expect(agents.queryByRole('button', { name: /Ver todos/ })).not.toBeInTheDocument();
 });
 
 it('oculta y muestra la barra lateral sin perder la conversación ni el borrador', async () => {
@@ -483,12 +495,12 @@ it('permite ocultar la barra sin conversación activa y Ctrl+K la recupera para 
   expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
   fireEvent.keyDown(screen.getByRole('main'), { key: 'k', ctrlKey: true });
   const sidebar = screen.getByRole('complementary', { name: 'Agentes y conversaciones' });
-  expect(within(sidebar).getByRole('textbox', { name: 'Buscar conversaciones' })).toHaveFocus();
+  expect(within(sidebar).getByRole('textbox', { name: 'Buscar agentes y conversaciones' })).toHaveFocus();
   const hide = screen.getByRole('button', { name: 'Ocultar barra lateral' });
   hide.focus();
   fireEvent.click(hide);
   fireEvent.keyDown(screen.getByRole('main'), { key: 'k', ctrlKey: true });
-  expect(within(sidebar).getByRole('textbox', { name: 'Buscar conversaciones' })).toHaveFocus();
+  expect(within(sidebar).getByRole('textbox', { name: 'Buscar agentes y conversaciones' })).toHaveFocus();
 });
 
 it('regula el razonamiento con los niveles del modelo y lo guarda al soltar', async () => {
@@ -1378,7 +1390,6 @@ it('abre una conversación desde un agente guardado con su mensaje inicial', asy
   const create = vi.spyOn(agentApi, 'agentSessionCreate').mockResolvedValue({ session: { ...session, id: 's9', profile: { id: 'p1', name: 'Informe mensual' } } });
   render(<AgentView />);
   await act(async () => {});
-  fireEvent.click(within(screen.getByRole('group', { name: 'Vistas del agente' })).getByRole('button', { name: 'Agentes' }));
   await act(async () => { fireEvent.click(screen.getByTitle('Nueva conversación con Informe mensual')); });
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ profile_id: 'p1' }));
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Prepara el informe de este mes');
@@ -1529,8 +1540,7 @@ it('crea la conversación con el modelo real elegido en el selector', async () =
   const dialog = await screen.findByRole('dialog', { name: 'Modelos disponibles' });
   await waitFor(() => expect(within(dialog).getByText('otro-modelo')).toBeInTheDocument());
   fireEvent.click(within(dialog).getByText('otro-modelo'));
-  const newChat = screen.getByRole('button', { name: 'Nueva conversación' });
-  expect(newChat).toHaveTextContent('Nuevo chat');
+  const newChat = within(screen.getByRole('region', { name: 'Conversaciones' })).getByRole('button', { name: 'Nueva conversación' });
   await act(async () => { fireEvent.click(newChat); });
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ provider: 'local', model: 'otro-modelo' }));
 });

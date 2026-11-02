@@ -105,6 +105,29 @@
 @media (prefers-reduced-motion: reduce) { .agent-browser-progress { animation: none; opacity: 0.6; } }
 .agent-avatar { overflow: visible; flex-shrink: 0; }
 
+/* Avatares vivos de la barra lateral: flotan, parpadean y miran; el desfase
+   por agente (--agent-avatar-delay) evita que se muevan al unísono. */
+.agent-sidebar .agent-avatar {
+  transform-origin: 50% 90%;
+  animation: agentAvatarBob 3.2s ease-in-out var(--agent-avatar-delay, 0s) infinite;
+}
+.agent-sidebar .agent-avatar-look,
+.agent-sidebar .agent-avatar-blink { transform-box: fill-box; transform-origin: center; }
+.agent-sidebar .agent-avatar-look { animation: agentAvatarLook 7s ease-in-out var(--agent-avatar-delay, 0s) infinite; }
+.agent-sidebar .agent-avatar-blink { animation: agentAvatarBlink 4.6s var(--agent-avatar-delay, 0s) infinite; }
+.agent-sidebar .group:hover .agent-avatar { animation: agentAvatarSquish 0.55s ease-out; }
+.agent-sidebar .agent-avatar.agent-avatar-active { animation: agentAvatarHop 1.1s ease-in-out infinite; }
+@keyframes agentAvatarBob { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-1.5px) rotate(3deg); } }
+@keyframes agentAvatarLook { 0%, 35% { transform: translateX(0); } 42%, 62% { transform: translateX(1.6px); } 70%, 85% { transform: translateX(-1.2px); } 92%, 100% { transform: translateX(0); } }
+@keyframes agentAvatarBlink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.12); } }
+@keyframes agentAvatarSquish { 0% { transform: scale(1, 1); } 30% { transform: scale(1.14, 0.86); } 55% { transform: scale(0.92, 1.1); } 80% { transform: scale(1.03, 0.98); } 100% { transform: scale(1, 1); } }
+@keyframes agentAvatarHop { 0%, 100% { transform: translateY(0) scale(1, 1); } 30% { transform: translateY(-3px) scale(0.96, 1.05); } 55% { transform: translateY(0) scale(1.06, 0.93); } 75% { transform: translateY(0) scale(1, 1); } }
+@media (prefers-reduced-motion: reduce) {
+  .agent-sidebar .agent-avatar,
+  .agent-sidebar .agent-avatar-look,
+  .agent-sidebar .agent-avatar-blink { animation: none; }
+}
+
 .agent-avatar[data-working='true'] .agent-avatar-eyes {
   transform-box: fill-box;
   transform-origin: center;

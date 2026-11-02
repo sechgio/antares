@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, type CSSProperties } from 'react';
 import './agent.css';
 
 interface AgentAvatarPalette {
@@ -55,6 +55,7 @@ export default function AgentAvatar({
   color?: string;
 }) {
   const variant = agentAvatarVariant(seed);
+  const hash = hashSeed(seed.trim() || 'antares-agent');
   const { mirrored } = variant;
   const palette = color ? AGENT_AVATAR_COLORS.find((item) => item.from === color) ?? { from: color, to: color } : variant.palette;
   const gradientId = `agent-avatar-${useId().replace(/[^a-zA-Z0-9-]/g, '')}`;
@@ -67,7 +68,7 @@ export default function AgentAvatar({
       viewBox="0 0 48 48"
       className={`agent-avatar ${className ?? ''}`}
       data-working={working}
-      style={{ maxWidth: '100%', objectFit: 'contain' }}
+      style={{ maxWidth: '100%', objectFit: 'contain', '--agent-avatar-delay': `-${(hash % 40) / 10}s` } as CSSProperties}
     >
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
@@ -76,10 +77,14 @@ export default function AgentAvatar({
         </linearGradient>
       </defs>
       <g transform={mirrored ? 'translate(48 0) scale(-1 1)' : undefined}>
-        <path d={SHAPES[hashSeed(seed.trim() || 'antares-agent') % SHAPES.length]} fill={`url(#${gradientId})`} stroke={palette.from} strokeOpacity="0.2" />
+        <path d={SHAPES[hash % SHAPES.length]} fill={`url(#${gradientId})`} stroke={palette.from} strokeOpacity="0.2" />
         <g className="agent-avatar-eyes" fill="#17252b" transform="rotate(-7 24 25)">
-          <rect x="16" y="18" width="5" height="13" rx="2.5" />
-          <rect x="27" y="18" width="5" height="13" rx="2.5" />
+          <g className="agent-avatar-look">
+            <g className="agent-avatar-blink">
+              <rect x="16" y="18" width="5" height="13" rx="2.5" />
+              <rect x="27" y="18" width="5" height="13" rx="2.5" />
+            </g>
+          </g>
         </g>
       </g>
     </svg>

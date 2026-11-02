@@ -27,3 +27,12 @@ it('aplica el color elegido sin cambiar la forma del avatar', () => {
   rerender(<AgentAvatar seed="s1" name="Revisor" color="" />);
   expect(container.querySelector('path')).toHaveAttribute('stroke', originalStroke);
 });
+
+it('separa mirada y parpadeo con un desfase estable por semilla', () => {
+  const { container, rerender } = render(<AgentAvatar seed="s1" />);
+  const delay = container.querySelector('svg')?.style.getPropertyValue('--agent-avatar-delay');
+  expect(delay).toMatch(/^-\d+(\.\d)?s$/);
+  expect(container.querySelector('.agent-avatar-eyes .agent-avatar-look .agent-avatar-blink')?.querySelectorAll('rect')).toHaveLength(2);
+  rerender(<AgentAvatar seed="s1" />);
+  expect(container.querySelector('svg')?.style.getPropertyValue('--agent-avatar-delay')).toBe(delay);
+});
