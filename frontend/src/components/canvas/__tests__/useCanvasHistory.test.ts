@@ -545,3 +545,112 @@ describe('useCanvasHistory gesture coalesce', () => {
     expect(result.current.past.length).toBeLessThanOrEqual(MAX_HISTORY);
   });
 });
+
+describe('useCanvasHistory revision', () => {
+  it('increments for document and history mutations but not markSaved', () => {
+    const initial = createEmptyDocument('Revision');
+    const { result } = renderHook(() => useCanvasHistory(initial));
+
+    const initialRevision = result.current.revision;
+    act(() => {
+      result.current.setDocument({ ...result.current.document, name: 'Edited' });
+    });
+    expect(result.current.revision).toBeGreaterThan(initialRevision);
+
+    const afterEdit = result.current.revision;
+    act(() => {
+      result.current.undo();
+    });
+    expect(result.current.revision).toBeGreaterThan(afterEdit);
+
+    const afterUndo = result.current.revision;
+    act(() => {
+      result.current.redo();
+    });
+    expect(result.current.revision).toBeGreaterThan(afterUndo);
+
+    const afterRedo = result.current.revision;
+    act(() => {
+      result.current.restoreHistory([], result.current.past);
+    });
+    expect(result.current.revision).toBeGreaterThan(afterRedo);
+
+    const afterRestore = result.current.revision;
+    act(() => {
+      result.current.replaceDocument({ ...result.current.document, name: 'Replaced' });
+    });
+    expect(result.current.revision).toBeGreaterThan(afterRestore);
+
+    const beforeMarkSaved = result.current.revision;
+    act(() => {
+      result.current.markSaved();
+    });
+    expect(result.current.revision).toBe(beforeMarkSaved);
+  });
+
+  it('strictly advances revision for batched mutations', () => {
+    const initial = createEmptyDocument('Batched revision');
+    const { result } = renderHook(() => useCanvasHistory(initial));
+    const before = result.current.revision;
+
+    act(() => {
+      const first = { ...result.current.document, name: 'First edit' };
+      result.current.setDocument(first);
+      result.current.setDocument({ ...first, name: 'Second edit' });
+    });
+
+    expect(result.current.revision).toBe(before + 2);
+  });
+
+  it('retains revision for no-op document and history operations', () => {
+    const initial = createEmptyDocument('No-op revision');
+    const { result } = renderHook(() => useCanvasHistory(initial));
+    const before = result.current.revision;
+
+    act(() => {
+      result.current.setDocument(result.current.document);
+      result.current.updateSilent(result.current.document);
+      result.current.undo();
+      result.current.redo();
+    });
+
+    expect(result.current.revision).toBe(before);
+  });
+
+  it('advances revision for updateSilent and commitFromBaseline', () => {
+    const initial = createEmptyDocument('Gesture revision');
+    const { result } = renderHook(() => useCanvasHistory(initial));
+    const baseline = result.current.document;
+    const beforeUpdate = result.current.revision;
+
+    act(() => {
+      result.current.updateSilent({ ...result.current.document, name: 'Preview' });
+    });
+    expect(result.current.revision).toBeGreaterThan(beforeUpdate);
+
+    const beforeCommit = result.current.revision;
+    act(() => {
+      result.current.commitFromBaseline(baseline);
+    });
+    expect(result.current.revision).toBeGreaterThan(beforeCommit);
+  });
+
+  it('history actions stable across document changes', () => {
+    const initialDoc = createEmptyDocument('Initial');
+    const newDoc = { ...initialDoc, name: 'New' };
+    const { result } = renderHook(() => useCanvasHistory(initialDoc));
+    const firstSet = result.current.setDocument;
+    const firstSilent = result.current.updateSilent;
+    const firstCommit = result.current.commitFromBaseline;
+    const firstUndo = result.current.undo;
+    const firstRedo = result.current.redo;
+    const firstReplace = result.current.replaceDocument;
+    act(() => result.current.setDocument(newDoc));
+    expect(result.current.setDocument).toBe(firstSet);
+    expect(result.current.updateSilent).toBe(firstSilent);
+    expect(result.current.commitFromBaseline).toBe(firstCommit);
+    expect(result.current.undo).toBe(firstUndo);
+    expect(result.current.redo).toBe(firstRedo);
+    expect(result.current.replaceDocument).toBe(firstReplace);
+  });
+});
