@@ -137,12 +137,31 @@ const LEGACY_GUIDES = GUIDE_SECTIONS.map(({ guide }) => guide);
 // Prefijo de la guía retirada que se plegó en EXECUTION_GUIDE: se descarta al migrar.
 const RETIRED_GUIDE_KEYS = ['Modo 100 %: dentro de un encargo autorizado'];
 
+// El snapshot de memoria congelada vive al final de las instrucciones, tras
+// las guías; se separa antes de migrar para que un recuerdo que contenga un
+// encabezado de guía no se reescriba y el bloque sobreviva intacto.
+function splitMemorySnapshot(instructions) {
+  const text = String(instructions || '');
+  const at = text.indexOf(shared.MEMORY_SNAPSHOT_MARKER);
+  if (at < 0) return { stable: text, snapshot: '' };
+  const cut = text.slice(at);
+  return { stable: text.slice(0, at).replace(/\s+$/, ''), snapshot: cut.trimEnd() };
+}
+
+// Reconstruye las instrucciones con el snapshot colocado al final; con
+// contexto vacío deja solo la parte estable (retira cualquier bloque previo).
+function withMemorySnapshot(stored, context) {
+  const { stable } = splitMemorySnapshot(stored);
+  return context ? `${stable ? `${stable}\n\n` : ''}${shared.MEMORY_SNAPSHOT_MARKER}\n${context}` : stable;
+}
+
 // Sustituye cada guía por su versión actual (o la retira) usando su encabezado estable,
 // así una conversación anterior conserva una sola copia y adopta la política vigente.
 function migrateInstructions(instructions) {
   const text = String(instructions || '');
   if (!text) return text;
-  return text.split('\n\n').flatMap((paragraph) => {
+  const { stable, snapshot } = splitMemorySnapshot(text);
+  const migrated = stable.split('\n\n').flatMap((paragraph) => {
     const trimmed = paragraph.trim();
     if (RETIRED_GUIDE_KEYS.some((key) => trimmed.startsWith(key))) return [];
     const section = GUIDE_SECTIONS
@@ -151,6 +170,7 @@ function migrateInstructions(instructions) {
       .sort((a, b) => a.at - b.at)[0];
     return [section ? paragraph.slice(0, section.at) + section.guide : paragraph];
   }).join('\n\n');
+  return snapshot ? `${migrated}\n\n${snapshot}` : migrated;
 }
 
 function legacyNotes(instructions) {
@@ -169,4 +189,6 @@ module.exports = {
   SYSTEM_PROMPT,
   legacyNotes,
   migrateInstructions,
+  splitMemorySnapshot,
+  withMemorySnapshot,
 };

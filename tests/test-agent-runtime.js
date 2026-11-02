@@ -1617,17 +1617,41 @@ async function main() {
 
   {
     const { bridge, state } = makeBridge();
-    let seen = '';
-    await openFaux([(context) => { seen = JSON.stringify(context.messages); return fauxAssistantMessage('uso la B'); }], bridge);
+    const requests = [];
+    const faux = await openFaux([], bridge);
+    const step = (context) => {
+      requests.push(context.messages);
+      faux.appendResponses([step]);
+      return fauxAssistantMessage('uso la B');
+    };
+    faux.setResponses([step]);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'genera con mi plantilla' });
     assert(await waitIdle(session.id), 'el turno con memoria termina');
-    assert(seen.includes('usa la B'), 'el modelo recibe la memoria pertinente');
+    assert(JSON.stringify(requests[0]).includes('usa la B'), 'el modelo recibe la memoria pertinente');
     const call = state.memoryCalls[0];
     assert(call.session_id === session.id && call.tools.length > 0 && call.tools.every((t) => t.name && /^[0-9a-f]{16}$/.test(t.version)),
       'Electron envía la versión de cada herramienta');
     const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(!messages.some((m) => m.role === 'user' && String(m.content).includes('usa la B')), 'la memoria no aparece como texto del usuario');
+    // Snapshot congelado por sesión: el bloque vive al final de las
+    // instrucciones, tras las guías fijas, y los turnos siguientes no
+    // reconsultan memoria ni reinyectan el bloque.
+    const marker = runtime._internal.shared.MEMORY_SNAPSHOT_MARKER;
+    const runtimeState = runtime._internal.state();
+    const sessionDoc = await runtimeState.harness.snapshot(runtimeState.SessionsDoc, runtimeState.ctx);
+    const conv = await runtimeState.harness.conversation(sessionDoc.sessions[session.id].conversationId, runtimeState.ctx);
+    const instructions = String((await conv.agent(runtimeState.ctx)).instructions || '');
+    const markerAt = instructions.indexOf(marker);
+    assert(markerAt > 0 && instructions.slice(markerAt).includes('usa la B'), 'el snapshot queda escrito en las instrucciones al final');
+    assert(instructions.indexOf('Método de trabajo:') < markerAt, 'el snapshot va después de las instrucciones fijas');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'otra vez con mi plantilla' });
+    assert(await waitIdle(session.id), 'el segundo turno termina');
+    assert(state.memoryCalls.length === 1, 'la memoria se consulta una sola vez por sesión');
+    const userTurns = requests[1].filter((message) => message.role === 'user');
+    assert(userTurns.length && userTurns.every((message) => !String(JSON.stringify(message)).includes('usa la B')),
+      'los turnos siguientes no reinyectan la memoria');
+    assert(JSON.stringify(requests[1]).includes('usa la B'), 'el snapshot sigue disponible para el modelo en turnos siguientes');
     await runtime.shutdown();
   }
 
