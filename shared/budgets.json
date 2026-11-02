@@ -21,5 +21,8 @@
   },
   "vite": {
     "chunkSizeWarningKb": 500
+  },
+  "agentPrompt": {
+    "maxTokens": 18000
   }
 }
