@@ -6,6 +6,7 @@ import { annotationNotes, drawMark, type Mark } from './annotationMarks';
 import { fileSource, textPages } from './annotationSource';
 
 vi.mock('../../hooks/useToast', () => ({ useToast: () => ({ addToast: vi.fn() }) }));
+vi.mock('../../hooks/useDialog', () => ({ useDialog: () => ({ confirm: vi.fn() }) }));
 
 const page: AgentBrowserState = {
   open: true, url: 'https://example.com', title: 'Example', loading: false, can_go_back: false, can_go_forward: false, docked: true, user_control: false,

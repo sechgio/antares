@@ -182,6 +182,8 @@ let consoleSeq = 0;
 let netSeq = 0;
 let sessionReady = false;
 let downloadSlot = null;
+let engineChoice = null;
+let engineLink = null;
 
 function browserError(message, code, extra = {}) {
   const error = new Error(message);
@@ -331,6 +333,16 @@ function siteUserAgent(agent) {
   return String(agent).replace(/\s(?!(?:Mozilla|AppleWebKit|Chrome|Safari)\/)[^\s/()]+\/[^\s()]+/g, '');
 }
 
+// Política de red común al navegador integrado y a los externos: la vista previa
+// local por su origen exacto y, para lo demás, solo destinos con IP pública.
+// Devuelve un booleano cuando puede decidir sin resolver el DNS.
+function requestAllowed(url, pageUrl, mainFrame) {
+  if (preview.isPage(pageUrl) && !mainFrame) return preview.isPage(url);
+  if (preview.owns(url)) return true;
+  if (url.startsWith('file:')) return false;
+  return isPublicResolution(url).catch(() => false);
+}
+
 function prepareSession(electron) {
   const ses = electron.session.fromPartition(PARTITION);
   if (sessionReady) return ses;
@@ -342,14 +354,9 @@ function prepareSession(electron) {
   // La única excepción es la vista previa local, por su origen y prefijo exactos.
   ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*', 'file:///*'] }, (details, callback) => {
     const pageTab = [...tabs.values()].find((tab) => tab.view?.webContents.id === details.webContentsId);
-    if (pageTab && preview.isPage(pageTab.view.webContents.getURL()) && details.resourceType !== 'mainFrame') {
-      return callback({ cancel: !preview.isPage(details.url) });
-    }
-    if (preview.owns(details.url)) return callback({ cancel: false });
-    if (details.url.startsWith('file:')) return callback({ cancel: true });
-    isPublicResolution(details.url)
-      .then((allowed) => callback({ cancel: !allowed }))
-      .catch(() => callback({ cancel: true }));
+    const decision = requestAllowed(details.url, pageTab ? pageTab.view.webContents.getURL() : '', details.resourceType === 'mainFrame');
+    if (typeof decision === 'boolean') return callback({ cancel: !decision });
+    decision.then((allowed) => callback({ cancel: !allowed }));
   });
   // Toda descarga se cancela salvo que web_download la haya pedido: el
   // navegador del agente nunca escribe en el disco por decisión de una página.
@@ -440,7 +447,9 @@ function hostWindow(electron) {
   return created;
 }
 
+// La pestaña del agente puede vivir en un navegador externo (ADR 0005): entonces manda esa.
 function tabContents(tab) {
+  if (tab && alive(tab.external)) return tab.external;
   return tab && tab.view && alive(tab.view.webContents) ? tab.view.webContents : null;
 }
 
@@ -479,6 +488,7 @@ function state() {
     busy_reason: current.busy_reason,
     active_tab: activeTab,
     tabs: order.map((id) => tabState(id)),
+    engine: engineChoice ? { id: engineChoice, label: require('./agent-browser-engines').label(engineChoice) } : null,
   };
 }
 
@@ -497,12 +507,38 @@ function noteUserInput(tab) {
   notify('busy');
 }
 
-function ensureTab(id) {
+function tabEntry(id) {
   let tab = tabs.get(id);
   if (!tab) {
     tab = { id, view: null, parent: null, userControl: false, lastUserInputAt: 0, lastBusyNotifyAt: 0 };
     tabs.set(id, tab);
   }
+  return tab;
+}
+
+// Escucha común a la vista de Electron y a la pestaña externa: consola y red del agente, carga y avisos al panel.
+function observe(id, contents) {
+  if (id === AGENT_TAB) {
+    consoleLog = [];
+    netLog.clear();
+    contents.on('console-message', ({ level, message }) => {
+      consoleLog.push({ level: String(level || 'info'), text: String(message || ''), seq: ++consoleSeq });
+      if (consoleLog.length > CONSOLE_KEEP) consoleLog.shift();
+    });
+    // El debugger se adjunta al crear la página para que Network capture las
+    // peticiones desde la primera carga, no solo desde la primera interacción.
+    contents.debugger.on('message', (_event, method, params) => noteNetwork(method, params));
+    ensureDebugger(contents).catch(() => { });
+  }
+  contents.on('did-start-loading', () => domReadyAt.delete(contents));
+  contents.on('dom-ready', () => domReadyAt.set(contents, Date.now()));
+  for (const event of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) {
+    contents.on(event, () => notify('page'));
+  }
+}
+
+function ensureTab(id) {
+  const tab = tabEntry(id);
   if (tab.view && alive(tab.view.webContents)) return tab;
   const electron = require('electron');
   const ses = prepareSession(electron);
@@ -520,10 +556,6 @@ function ensureTab(id) {
   const ownedView = tab.view;
   tab.parent = null;
   const contents = tab.view.webContents;
-  if (id === AGENT_TAB) {
-    consoleLog = [];
-    netLog.clear();
-  }
   contents.setWindowOpenHandler(({ url }) => {
     if (permitted(url)) setImmediate(() => contents.loadURL(url).catch(() => {}));
     return { action: 'deny' };
@@ -546,21 +578,7 @@ function ensureTab(id) {
   contents.on('before-input-event', userInput);
   contents.on('before-mouse-event', userInput);
   contents.on('input-event', (event, input) => { if (input.type === 'mouseWheel') userInput(event, input); });
-  if (id === AGENT_TAB) {
-    contents.on('console-message', ({ level, message }) => {
-      consoleLog.push({ level: String(level || 'info'), text: String(message || ''), seq: ++consoleSeq });
-      if (consoleLog.length > CONSOLE_KEEP) consoleLog.shift();
-    });
-    // El debugger se adjunta al crear la página para que Network capture las
-    // peticiones desde la primera carga, no solo desde la primera interacción.
-    contents.debugger.on('message', (_event, method, params) => noteNetwork(method, params));
-    ensureDebugger(contents).catch(() => { });
-  }
-  contents.on('did-start-loading', () => domReadyAt.delete(contents));
-  contents.on('dom-ready', () => domReadyAt.set(contents, Date.now()));
-  for (const event of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) {
-    contents.on(event, () => notify('page'));
-  }
+  observe(id, contents);
   contents.once('destroyed', () => {
     for (const pending of [...pendingMouseInputs]) {
       if (pending.contents === contents) pendingMouseInputs.delete(pending);
@@ -613,7 +631,7 @@ function clampBounds(bounds, zoom, size) {
 function mount(electron) {
   const main = require('./window-manager').getMainWindow();
   for (const tab of tabs.values()) {
-    if (!tabContents(tab)) continue;
+    if (!tab.view || !alive(tab.view.webContents)) continue;
     if (tab.parent && !alive(tab.parent)) tab.parent = null;
     const target = docked && alive(main) && tab.id === activeTab ? main : hostWindow(electron);
     if (tab.parent && tab.parent !== target && alive(tab.parent)) tab.parent.contentView.removeChildView(tab.view);
@@ -687,6 +705,82 @@ function activateTab(id) {
   return state();
 }
 
+function engines() {
+  const available = require('./agent-browser-engines').detect().map(({ id, label }) => ({ id, label }));
+  return { engine: engineChoice, available };
+}
+
+// Cambia dónde navega la pestaña del agente; las pestañas del usuario siguen en el integrado.
+function setEngine(id) {
+  const next = !id || id === 'integrado' ? null : String(id);
+  if (next && !require('./agent-browser-engines').detect().some((engine) => engine.id === next)) {
+    throw browserError('Ese navegador no está instalado en este equipo', 'ENGINE_MISSING');
+  }
+  if (next === engineChoice) return state();
+  const tab = tabs.get(AGENT_TAB);
+  if (tab && alive(tab.external)) tab.external.close();
+  if (tab) tab.external = null;
+  if (engineLink) engineLink.then((link) => link.close(), () => { });
+  engineLink = null;
+  engineChoice = next;
+  if (next && tab && tab.view && alive(tab.view.webContents)) tab.view.webContents.close();
+  notify('page');
+  return state();
+}
+
+// En «Mi sesión de Chrome» la pestaña comparte las cookies del usuario: abrir un dominio
+// que no esté en «Permitir siempre» requiere aprobación. Devuelve el contexto que la pide, o null.
+function sessionOpenContext(params = {}) {
+  if (!require('./agent-browser-engines').isSession(engineChoice)) return null;
+  let url;
+  try {
+    if (localTarget(params.url) !== null) return null;
+    url = normalizeUrl(params.url);
+  } catch { return null; }
+  const policy = require('./agent-browser-policy');
+  const domain = policy.hostOf(url);
+  if (domain && policy.isAlwaysAllowed(domain)) return null;
+  return { page_url: url, domain, policy_blocked: policy.isBlocked(domain) };
+}
+
+// Lanza el navegador elegido si hace falta y le abre su pestaña, con la misma política de red que el integrado.
+async function agentTab() {
+  if (!engineChoice) return ensureTab(AGENT_TAB);
+  const tab = tabEntry(AGENT_TAB);
+  if (alive(tab.external)) return tab;
+  // El agente y la barra de dirección pueden pedirla a la vez: una sola apertura para los dos.
+  if (!tab.opening) tab.opening = openExternal(tab).finally(() => { tab.opening = null; });
+  return tab.opening;
+}
+
+async function openExternal(tab) {
+  const choice = engineChoice;
+  if (!engineLink) {
+    engineLink = require('./agent-browser-engines').launch(choice);
+    engineLink.then((link) => link.onExit(() => {
+      if (engineChoice === choice && engineLink) engineLink = null;
+    }), () => { if (engineChoice === choice) engineLink = null; });
+  }
+  const link = await engineLink;
+  let contents = null;
+  const opened = await link.openTab({
+    allow: requestAllowed,
+    onPopup: (url) => { if (contents && permitted(url)) contents.loadURL(url).catch(() => { }); },
+  });
+  if (engineChoice !== choice) {
+    opened.close();
+    throw browserError('El navegador del agente cambió mientras se abría; vuelve a intentarlo', 'ENGINE_CHANGED', { recoverable: true });
+  }
+  contents = opened;
+  tab.external = contents;
+  observe(AGENT_TAB, contents);
+  contents.once('destroyed', () => {
+    if (tab.external === contents) tab.external = null;
+    notify(order.some((tabId) => tabContents(tabs.get(tabId))) ? 'page' : 'closed');
+  });
+  return tab;
+}
+
 function newTab() {
   if (order.length - 1 >= MAX_USER_TABS) {
     throw new Error(`Puedes tener hasta ${MAX_USER_TABS} pestañas abiertas; cierra una antes de abrir otra`);
@@ -715,8 +809,8 @@ function closeTab(id) {
 
 async function navigate(action, url, id = activeTab) {
   if (action === 'open') {
-    const tab = ensureTab(id);
-    await load(tab.view.webContents, normalizeUrl(url));
+    const tab = id === AGENT_TAB ? await agentTab() : ensureTab(id);
+    await load(tabContents(tab), normalizeUrl(url));
     return state();
   }
   const contents = current(id);
@@ -1369,9 +1463,9 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
   if (name === 'web_open') {
     if (!docked) activeTab = AGENT_TAB;
     const target = file !== null ? await previewUrl(file, resolvePath) : normalizeUrl(params.url);
-    tab = ensureTab(AGENT_TAB);
+    tab = await agentTab();
     notify('agent-open');
-    const contents = tab.view.webContents;
+    const contents = tabContents(tab);
     if (file === null && !(await isPublicResolution(target))) {
       throw new Error('El navegador de Agent no accede a direcciones locales ni de la red privada');
     }
@@ -1655,6 +1749,9 @@ function close() {
   for (const tab of tabs.values()) {
     if (tab.view && alive(tab.view.webContents)) tab.view.webContents.close();
   }
+  if (engineLink) engineLink.then((link) => link.close(), () => { });
+  engineLink = null;
+  engineChoice = null;
   if (alive(host)) host.destroy();
   tabs.clear();
   host = null;
@@ -1667,4 +1764,4 @@ function close() {
   preview.close();
 }
 
-module.exports = { TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, isPrivateHostname, isAllowedWebUrl, isPublicResolution, state, dock, capture, inspect, navigate, openPage, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };
+module.exports = { engines, setEngine, sessionOpenContext, TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, isPrivateHostname, isAllowedWebUrl, isPublicResolution, state, dock, capture, inspect, navigate, openPage, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };

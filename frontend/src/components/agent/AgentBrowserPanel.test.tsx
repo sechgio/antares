@@ -3,8 +3,9 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { agentApi, type AgentBrowserState } from '../../api/agentApi';
 import AgentBrowserPanel from './AgentBrowserPanel';
 
-const { addToast } = vi.hoisted(() => ({ addToast: vi.fn() }));
+const { addToast, confirm } = vi.hoisted(() => ({ addToast: vi.fn(), confirm: vi.fn() }));
 vi.mock('../../hooks/useToast', () => ({ useToast: () => ({ addToast }) }));
+vi.mock('../../hooks/useDialog', () => ({ useDialog: () => ({ confirm }) }));
 
 const base: AgentBrowserState = {
   open: false, url: '', title: '', loading: false, can_go_back: false, can_go_forward: false, docked: true, user_control: false,
@@ -239,4 +240,64 @@ it('desacopla la página con un diálogo montado dentro de la app, no solo en <b
   await waitFor(() => expect(call).toHaveBeenLastCalledWith('bounds', { bounds: null }));
   await act(async () => { dialog.remove(); });
   await waitFor(() => expect(call).toHaveBeenLastCalledWith('bounds', { bounds: expect.objectContaining({ x: 600, y: 80 }) }));
+});
+
+it('elige el navegador del agente desde el menú y avisa cuando navega en una ventana aparte', async () => {
+  vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue({ ...base, tabs: [] });
+  const engines = vi.spyOn(agentApi, 'agentBrowserEngines').mockResolvedValue({
+    engine: null, available: [{ id: 'chrome', label: 'Google Chrome' }, { id: 'edge', label: 'Microsoft Edge' }],
+  });
+  const choose = vi.spyOn(agentApi, 'agentBrowserSetEngine').mockResolvedValue({
+    ...base, open: true, url: 'https://ejemplo.com', engine: { id: 'chrome', label: 'Google Chrome' }, tabs: [],
+  });
+  render(<AgentBrowserPanel onClose={vi.fn()} />);
+  expect(engines).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByLabelText('Más opciones del navegador'));
+  const group = await screen.findByRole('group', { name: 'Navegador del agente' });
+  const options = Array.from(group.querySelectorAll('[role="menuitemradio"]'));
+  expect(options.map((option) => option.textContent)).toEqual(['Integrado', 'Google Chrome', 'Microsoft Edge']);
+  expect(screen.getByRole('menuitemradio', { name: 'Integrado' })).toHaveAttribute('aria-checked', 'true');
+
+  fireEvent.click(screen.getByRole('menuitemradio', { name: 'Google Chrome' }));
+  await waitFor(() => expect(choose).toHaveBeenCalledWith('chrome'));
+  expect(await screen.findByText('El agente navega en Google Chrome')).toBeInTheDocument();
+  expect(screen.getByText('Abre las páginas en una ventana aparte, con un perfil propio separado de tus perfiles.')).toBeInTheDocument();
+  expect(screen.queryByText('Aquí verás las páginas que abra el agente.')).not.toBeInTheDocument();
+  expect(screen.queryByRole('menu', { name: 'Opciones del navegador' })).not.toBeInTheDocument();
+});
+
+it('informa si no puede cambiar el navegador del agente', async () => {
+  vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue(base);
+  vi.spyOn(agentApi, 'agentBrowserEngines').mockResolvedValue({ engine: null, available: [{ id: 'chrome', label: 'Google Chrome' }] });
+  vi.spyOn(agentApi, 'agentBrowserSetEngine').mockRejectedValue(new Error('Ese navegador no está instalado en este equipo'));
+  render(<AgentBrowserPanel onClose={vi.fn()} />);
+  fireEvent.click(screen.getByLabelText('Más opciones del navegador'));
+  fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Google Chrome' }));
+  await waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'error',
+    message: 'Ese navegador no está instalado en este equipo' })));
+});
+
+it('pide confirmación antes de usar la sesión de Chrome del usuario', async () => {
+  vi.spyOn(agentApi, 'agentBrowser').mockResolvedValue(base);
+  vi.spyOn(agentApi, 'agentBrowserEngines').mockResolvedValue({
+    engine: null, available: [{ id: 'chrome', label: 'Google Chrome' }, { id: 'chrome-session', label: 'Mi sesión de Chrome' }],
+  });
+  const choose = vi.spyOn(agentApi, 'agentBrowserSetEngine').mockResolvedValue({
+    ...base, engine: { id: 'chrome-session', label: 'Mi sesión de Chrome' },
+  });
+  confirm.mockResolvedValueOnce(false);
+  render(<AgentBrowserPanel onClose={vi.fn()} />);
+  fireEvent.click(screen.getByLabelText('Más opciones del navegador'));
+  fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Mi sesión de Chrome' }));
+  await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
+    title: '¿Usar tu sesión de Chrome?', confirmLabel: 'Conectar' })));
+  expect(choose).not.toHaveBeenCalled();
+
+  confirm.mockResolvedValueOnce(true);
+  fireEvent.click(screen.getByLabelText('Más opciones del navegador'));
+  fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Mi sesión de Chrome' }));
+  await waitFor(() => expect(choose).toHaveBeenCalledWith('chrome-session'));
+  expect(await screen.findByText('El agente navega en Mi sesión de Chrome')).toBeInTheDocument();
+  expect(screen.getByText('Usa su propia pestaña en tu Chrome, con tus sesiones; no ve tus otras pestañas.')).toBeInTheDocument();
 });

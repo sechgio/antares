@@ -1070,6 +1070,39 @@ async function main() {
       runtime._internal.shared.nativeTools = null;
       await runtime.shutdown();
 
+      const browserModule = require('../electron/agent-browser');
+      const realSessionOpen = browserModule.sessionOpenContext;
+      const sesionChrome = makeBridge();
+      const abiertas = [];
+      browserModule.sessionOpenContext = (params) => (String(params.url).includes('nuevo')
+        ? { page_url: 'https://nuevo.example/', domain: 'nuevo.example', policy_blocked: false } : null);
+      runtime._internal.shared.nativeTools = {
+        nativeToolContext: async () => ({ tool_version: 'fake-v1', page_url: 'https://nuevo.example/', domain: 'nuevo.example' }),
+        nativeToolSpecs: () => [{ name: 'web_open', description: 'Abrir web', gated: false, kind: 'native',
+          inputSchema: { type: 'object', properties: { url: { type: 'string' } } } }],
+        runNativeTool: async (_name, params) => { abiertas.push(params.url); return { ok: true }; },
+      };
+      try {
+        await openFaux([
+          fauxAssistantMessage([fauxToolCall('web_open', { url: 'conocido.example' })], { stopReason: 'toolUse' }),
+          fauxAssistantMessage([fauxToolCall('web_open', { url: 'nuevo.example' })], { stopReason: 'toolUse' }),
+          fauxAssistantMessage('listo'),
+        ], sesionChrome.bridge);
+        const abrir = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+        await runtime.handlers.agent_message_send({ session_id: abrir.session.id, content: 'abre las páginas' });
+        assert(await waitFor(() => sesionChrome.state.approvals.size > 0), 'en la sesión de Chrome abrir un dominio nuevo pide aprobación');
+        assert(abiertas.join() === 'conocido.example', 'abrir un dominio permitido siempre no pide aprobación');
+        const pedida = [...sesionChrome.state.approvals.values()].find((a) => a.status === 'pending');
+        assert(pedida.method === 'web_open' && pedida.params.url === 'nuevo.example', 'la aprobación muestra la dirección que se abrirá');
+        await runtime.handlers.agent_approve({ approval_id: pedida.id });
+        assert(await waitIdle(abrir.session.id), 'el turno sigue tras aprobar el dominio');
+        assert(abiertas.join() === 'conocido.example,nuevo.example', 'el dominio aprobado se abre');
+      } finally {
+        browserModule.sessionOpenContext = realSessionOpen;
+        runtime._internal.shared.nativeTools = null;
+        await runtime.shutdown();
+      }
+
       const recordar = makeBridge();
       await openFaux([], recordar.bridge);
       recordar.state.approvals.set('ap-rec', { id: 'ap-rec', session_id: 'ses-recordar', call_id: 'call-rec', method: 'web_type', status: 'pending',
@@ -1102,6 +1135,8 @@ async function main() {
       activateTab: (tab) => { calls.push(['tab', tab]); return { active_tab: tab }; },
       capture: async (tab) => ({ png_base64: 'iVBOR', width: 800, height: 600, url: 'https://example.com', tab }),
       navigate: async (action, url) => { calls.push([action, url]); return { open: true, url: url || '' }; },
+      engines: () => ({ engine: null, available: [{ id: 'chrome', label: 'Google Chrome' }] }),
+      setEngine: (engine) => { calls.push(['engine', engine]); return { engine: { id: engine, label: 'Google Chrome' } }; },
     };
     const handle = runtime.handlers.agent_browser;
     assert((await handle({ action: 'state' })).open === false, 'agent_browser devuelve el estado del navegador');
@@ -1112,9 +1147,11 @@ async function main() {
     assert((await handle({ action: 'allow' })).user_control === false, 'la UI puede liberar la espera del navegador');
     assert((await handle({ action: 'tab', tab: 'user' })).active_tab === 'user', 'la UI cambia de pestaña');
     assert((await handle({ action: 'capture' })).png_base64 === 'iVBOR', 'la UI captura la página para anotarla');
+    assert((await handle({ action: 'engines' })).available[0].id === 'chrome', 'la UI lista los navegadores externos instalados');
+    assert((await handle({ action: 'engine', engine: 'chrome' })).engine.id === 'chrome', 'la UI elige el navegador del agente');
     let rejected = false;
     try { await handle({ action: 'borrar' }); } catch { rejected = true; }
-    assert(rejected && calls.length === 6, 'una acción desconocida se rechaza sin tocar el navegador');
+    assert(rejected && calls.length === 7, 'una acción desconocida se rechaza sin tocar el navegador');
     const open = runtime.open;
     runtime.open = async () => { throw new Error('Motor del agente no disponible'); };
     try {
