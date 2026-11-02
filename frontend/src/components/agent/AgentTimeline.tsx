@@ -1,5 +1,5 @@
 import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { AppWindow, ArrowLeft, ArrowRight, Ban, BookOpen, Camera, ChevronDown, ChevronRight, CircleCheck, Download, FilePen, FileText, FolderOpen, Globe, Hand, Keyboard, ListChecks, Loader2, Monitor, Mouse, MousePointerClick, Network, Package, Plug, RotateCw, Search, ShieldCheck, Terminal, TriangleAlert, Upload, Wrench } from 'lucide-react';
+import { AppWindow, ArrowLeft, ArrowRight, Ban, BookOpen, Camera, ChevronDown, ChevronRight, CircleCheck, Download, FilePen, FileText, FolderOpen, Globe, Hand, Keyboard, ListChecks, Loader2, Monitor, Mouse, Move, MousePointerClick, Network, Package, Plug, RotateCw, Search, ShieldCheck, Terminal, TriangleAlert, Upload, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { agentApi, AgentApproval, AgentArtifact, AgentChannel, AgentMessage, AgentPanel, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
@@ -87,6 +87,8 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   web_select: ListChecks,
   web_check: CircleCheck,
   web_fill: FilePen,
+  web_find: Search,
+  web_drag: Move,
   desktop_observe: Monitor,
   desktop_click: MousePointerClick,
   desktop_type: Keyboard,

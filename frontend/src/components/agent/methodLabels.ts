@@ -42,6 +42,8 @@ export const METHOD_LABELS: Record<string, string> = {
   web_select: 'Elegir una opción en la página web',
   web_check: 'Marcar una casilla en la página web',
   web_fill: 'Rellenar campos en la página web',
+  web_find: 'Buscar elementos en la página web',
+  web_drag: 'Arrastrar en la página web',
   desktop_observe: 'Capturar la pantalla',
   desktop_click: 'Hacer clic en el escritorio',
   desktop_type: 'Escribir en el escritorio',
