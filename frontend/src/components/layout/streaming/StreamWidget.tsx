@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ComponentType } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ComponentType, type ReactNode } from 'react';
 import {
   ExternalLink,
   LoaderCircle,
@@ -327,8 +327,141 @@ export function StreamItemList<I extends StreamItem, T extends StreamItem = Stre
   );
 }
 
-export function StreamTransport({ player, source, t }: { player: StreamPlayer; source: StreamSource; t: StreamTransportStrings }) {
-  const p = `antares-${source.id}`;
+/**
+ * "Now playing" row shared by the stream widgets: current track with the live
+ * marker (Audius swaps it for its equalizer), open-in-service link and error.
+ */
+export function NowPlayingRow({
+  p,
+  track,
+  status,
+  t,
+  liveMarker,
+}: {
+  p: string;
+  track: (StreamItem & { url: string }) | null;
+  status: string;
+  t: Pick<StreamTransportStrings, 'open' | 'empty' | 'error'>;
+  liveMarker?: ReactNode;
+}) {
+  return (
+    <div className={`${p}-now`} role="status">
+      {track ? (
+        <>
+          {liveMarker ?? <span className={`${p}-live`} aria-hidden={true} />}
+          <span className={`${p}-now-text`}>
+            {track.artist ? `${track.artist} — ` : ''}
+            {track.title}
+          </span>
+          <WithHoverTooltip label={t.open} placement="top">
+            <a
+              href={track.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={t.open}
+              className={`${p}-open`}
+              onClick={(event) => {
+                event.preventDefault();
+                openExternal(track.url);
+              }}
+            >
+              <ExternalLink style={{ width: 10, height: 10 }} aria-hidden={true} />
+            </a>
+          </WithHoverTooltip>
+        </>
+      ) : (
+        <span className={`${p}-now-text`}>{t.empty}</span>
+      )}
+      {status === 'error' && (
+        <span className={`${p}-error`} role="status">
+          {t.error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Transport controls row (previous / play / next / mute / volume) of the panel footer. */
+export function StreamControlsRow({
+  player,
+  p,
+  t,
+  volume,
+  active,
+  connecting,
+}: {
+  player: Pick<StreamPlayer, 'previous' | 'toggle' | 'next' | 'mute' | 'setVolume'>;
+  p: string;
+  t: Pick<StreamTransportStrings, 'previous' | 'pause' | 'play' | 'next' | 'mute' | 'unmute' | 'volume'>;
+  volume: number;
+  active: boolean;
+  connecting: boolean;
+}) {
+  return (
+    <div className={`${p}-transport`}>
+      <StreamAction p={p} label={t.previous} icon={SkipBack} onClick={player.previous} />
+      <StreamAction
+        p={p}
+        label={active ? t.pause : t.play}
+        icon={active ? Pause : Play}
+        busy={connecting}
+        className={`${p}-play`}
+        onClick={player.toggle}
+      />
+      <StreamAction p={p} label={t.next} icon={SkipForward} onClick={player.next} />
+      <span className={`${p}-transport-space`} />
+      <StreamAction
+        p={p}
+        label={volume ? t.mute : t.unmute}
+        icon={volume ? Volume2 : VolumeX}
+        onClick={player.mute}
+      />
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={1}
+        value={volume}
+        aria-label={t.volume}
+        onChange={(event) => player.setVolume(Number(event.target.value))}
+      />
+    </div>
+  );
+}
+
+/** Play/next pair shown on the widget bar, outside the popover panel. */
+export function StreamBarActions({
+  p,
+  status,
+  player,
+  t,
+  playClassName,
+  nextIcon = SkipForward,
+}: {
+  p: string;
+  status: string;
+  player: Pick<StreamPlayer, 'toggle' | 'next'>;
+  t: Pick<StreamTransportStrings, 'play' | 'pause' | 'next'>;
+  playClassName?: string;
+  nextIcon?: ComponentType<{ size?: number; style?: CSSProperties; fill?: string }>;
+}) {
+  const active = status === 'live' || status === 'connecting';
+  return (
+    <>
+      <StreamAction
+        p={p}
+        label={active ? t.pause : t.play}
+        icon={active ? Pause : Play}
+        busy={status === 'connecting'}
+        className={playClassName}
+        onClick={player.toggle}
+      />
+      <StreamAction p={p} label={t.next} icon={nextIcon} onClick={player.next} />
+    </>
+  );
+}
+
+export function StreamTransport({ player, p, t }: { player: StreamPlayer; p: string; t: StreamTransportStrings }) {
   const track = useValue(player.track);
   const status = useValue(player.status);
   const volume = useValue(player.volume);
@@ -336,67 +469,15 @@ export function StreamTransport({ player, source, t }: { player: StreamPlayer; s
 
   return (
     <div className={`${p}-foot`}>
-      <div className={`${p}-now`} role="status">
-        {track ? (
-          <>
-            <span className={`${p}-live`} aria-hidden={true} />
-            <span className={`${p}-now-text`}>
-              {track.artist ? `${track.artist} — ` : ''}
-              {track.title}
-            </span>
-            <WithHoverTooltip label={t.open} placement="top">
-              <a
-                href={track.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={t.open}
-                className={`${p}-open`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  openExternal(track.url);
-                }}
-              >
-                <ExternalLink style={{ width: 10, height: 10 }} aria-hidden={true} />
-              </a>
-            </WithHoverTooltip>
-          </>
-        ) : (
-          <span className={`${p}-now-text`}>{t.empty}</span>
-        )}
-        {status === 'error' && (
-          <span className={`${p}-error`} role="status">
-            {t.error}
-          </span>
-        )}
-      </div>
-      <div className={`${p}-transport`}>
-        <StreamAction p={p} label={t.previous} icon={SkipBack} onClick={player.previous} />
-        <StreamAction
-          p={p}
-          label={active ? t.pause : t.play}
-          icon={active ? Pause : Play}
-          busy={status === 'connecting'}
-          className={`${p}-play`}
-          onClick={player.toggle}
-        />
-        <StreamAction p={p} label={t.next} icon={SkipForward} onClick={player.next} />
-        <span className={`${p}-transport-space`} />
-        <StreamAction
-          p={p}
-          label={volume ? t.mute : t.unmute}
-          icon={volume ? Volume2 : VolumeX}
-          onClick={player.mute}
-        />
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={1}
-          value={volume}
-          aria-label={t.volume}
-          onChange={(event) => player.setVolume(Number(event.target.value))}
-        />
-      </div>
+      <NowPlayingRow p={p} track={track} status={status} t={t} />
+      <StreamControlsRow
+        p={p}
+        player={player}
+        t={t}
+        volume={volume}
+        active={active}
+        connecting={status === 'connecting'}
+      />
     </div>
   );
 }

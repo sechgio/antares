@@ -3,7 +3,6 @@ import {
   LoaderCircle,
   Pause,
   Play,
-  SkipForward,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
@@ -13,7 +12,7 @@ import type { StreamPlayer } from './player';
 import {
   formatTrackDuration,
   STREAM_STRINGS,
-  StreamAction,
+  StreamBarActions,
   StreamItemList,
   StreamTransport,
   streamPanelStyle,
@@ -72,7 +71,6 @@ function JamendoBar({ player }: { player: StreamPlayer }) {
     estimatedHeight: 300,
     gap: 6,
   });
-  const active = status === 'live' || status === 'connecting';
 
   return (
     <div className="antares-jamendo-bar" data-jamendo-status={status}>
@@ -96,17 +94,10 @@ function JamendoBar({ player }: { player: StreamPlayer }) {
           style={streamPanelStyle(popover.position, 292)}
         >
           <StreamItemList player={player} source={jamendoSource} t={T} Row={ItemRow} listLabel fieldWrap />
-          <StreamTransport player={player} source={jamendoSource} t={T} />
+          <StreamTransport player={player} p="antares-jamendo" t={T} />
         </div>
       )}
-      <StreamAction
-        p="antares-jamendo"
-        label={active ? T.pause : T.play}
-        icon={active ? Pause : Play}
-        busy={status === 'connecting'}
-        onClick={player.toggle}
-      />
-      <StreamAction p="antares-jamendo" label={T.next} icon={SkipForward} onClick={player.next} />
+      <StreamBarActions p="antares-jamendo" status={status} player={player} t={T} playClassName="antares-jamendo-play" />
     </div>
   );
 }

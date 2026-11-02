@@ -1,5 +1,12 @@
 import { atom } from '../radio/core';
 import type { Atom } from '../radio/core';
+import { createNamespacedStorage } from '../radio/core';
+import {
+  appendStreamAudio,
+  releaseAudioElement,
+  storedVolumeState,
+  toggleMute,
+} from '../widgets/widgetAudio';
 import type { StreamTrack } from './core';
 
 type StreamStatus = 'paused' | 'connecting' | 'live' | 'error';
@@ -25,39 +32,18 @@ export function createStreamPlayer<T extends { id: string }>(
 export function createStreamPlayer<T extends { id: string; stream?: string } = StreamTrack>(
   sourceId: string, resolveStream: (track: T) => string = (item) => item.stream!,
 ): StreamPlayer<T> {
-  const store = {
-    get<T>(key: string, fallback: T): T {
-      try {
-        const raw = window.localStorage.getItem(`antares.${sourceId}.${key}`);
-        return raw === null ? fallback : (JSON.parse(raw) as T);
-      } catch {
-        return fallback;
-      }
-    },
-    set(key: string, value: unknown) {
-      try {
-        window.localStorage.setItem(`antares.${sourceId}.${key}`, JSON.stringify(value));
-      } catch {}
-    },
-  };
+  const store = createNamespacedStorage(`antares.${sourceId}`);
 
-  const storedVolume = store.get<number>('volume', 25);
-  const volume = atom<number>(
-    Number.isFinite(storedVolume) ? Math.max(0, Math.min(100, storedVolume)) : 25,
-  );
+  const { volume, lastVolumeRef } = storedVolumeState(store);
   const queue = atom<T[]>([]);
   const track = atom<T | null>(null);
   const status = atom<StreamStatus>('paused');
   let audio: HTMLAudioElement | null = null;
   let disposed = false;
-  let lastVolume = volume.get() || 25;
 
   function ensureAudio(): HTMLAudioElement {
     if (audio) return audio;
-    const element = new Audio();
-    element.hidden = true;
-    element.preload = 'none';
-    element.volume = volume.get() / 100;
+    const element = appendStreamAudio(volume.get() / 100);
     element.addEventListener('playing', () => {
       if (!disposed) status.set('live');
     });
@@ -70,7 +56,6 @@ export function createStreamPlayer<T extends { id: string; stream?: string } = S
     element.addEventListener('error', () => {
       if (!disposed) status.set('error');
     });
-    document.body.append(element);
     audio = element;
     return element;
   }
@@ -136,23 +121,12 @@ export function createStreamPlayer<T extends { id: string; stream?: string } = S
   }
 
   function mute() {
-    if (volume.get()) {
-      lastVolume = volume.get();
-      setVolume(0);
-    } else {
-      setVolume(lastVolume);
-    }
+    toggleMute(volume, setVolume, lastVolumeRef);
   }
 
   function dispose() {
     disposed = true;
-    if (audio) {
-      audio.pause();
-      audio.removeAttribute('src');
-      audio.load();
-      audio.remove();
-      audio = null;
-    }
+    audio = releaseAudioElement(audio);
   }
 
   return {

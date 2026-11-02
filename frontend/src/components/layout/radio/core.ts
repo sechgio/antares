@@ -105,21 +105,31 @@ export function createBudgetedLoop(
   return { wake, dispose: stop };
 }
 
-export const storage = {
-  get<T>(key: string, fallback: T): T {
-    try {
-      const raw = window.localStorage.getItem(`antares.radio.${key}`);
-      return raw === null ? fallback : (JSON.parse(raw) as T);
-    } catch {
-      return fallback;
-    }
-  },
-  set(key: string, value: unknown) {
-    try {
-      window.localStorage.setItem(`antares.radio.${key}`, JSON.stringify(value));
-    } catch {}
-  },
-};
+export interface NamespacedStorage {
+  get<T>(key: string, fallback: T): T;
+  set(key: string, value: unknown): void;
+}
+
+/** localStorage namespaced per player, tolerant of quota/permission failures. */
+export function createNamespacedStorage(prefix: string): NamespacedStorage {
+  return {
+    get<T>(key: string, fallback: T): T {
+      try {
+        const raw = window.localStorage.getItem(`${prefix}.${key}`);
+        return raw === null ? fallback : (JSON.parse(raw) as T);
+      } catch {
+        return fallback;
+      }
+    },
+    set(key: string, value: unknown) {
+      try {
+        window.localStorage.setItem(`${prefix}.${key}`, JSON.stringify(value));
+      } catch {}
+    },
+  };
+}
+
+export const storage: NamespacedStorage = createNamespacedStorage('antares.radio');
 
 export function openExternal(url: string) {
   window.open(url, '_blank', 'noopener,noreferrer');

@@ -4,7 +4,6 @@ import {
   LoaderCircle,
   Pause,
   Play,
-  SkipForward,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
@@ -13,7 +12,7 @@ import { archiveSource } from './archive';
 import type { StreamPlayer } from './player';
 import {
   STREAM_STRINGS,
-  StreamAction,
+  StreamBarActions,
   StreamItemList,
   StreamTransport,
   streamPanelStyle,
@@ -74,7 +73,6 @@ function ArchiveBar({ player }: { player: StreamPlayer }) {
     estimatedHeight: 300,
     gap: 6,
   });
-  const active = status === 'live' || status === 'connecting';
 
   return (
     <div className="antares-archive-bar" data-archive-status={status}>
@@ -95,14 +93,7 @@ function ArchiveBar({ player }: { player: StreamPlayer }) {
             <span className="antares-archive-live" aria-hidden={true} />
           </span>
         </Button>
-        <StreamAction
-          p="antares-archive"
-          label={active ? T.pause : T.play}
-          icon={active ? Pause : Play}
-          busy={status === 'connecting'}
-          onClick={player.toggle}
-        />
-        <StreamAction p="antares-archive" label={T.next} icon={SkipForward} onClick={player.next} />
+        <StreamBarActions p="antares-archive" status={status} player={player} t={T} />
       </div>
       {popover.isOpen && (
         <div
@@ -118,7 +109,7 @@ function ArchiveBar({ player }: { player: StreamPlayer }) {
             <span className="antares-archive-sub">Audio libre</span>
           </div>
           <StreamItemList player={player} source={archiveSource} t={T} Row={ItemRow} />
-          <StreamTransport player={player} source={archiveSource} t={T} />
+          <StreamTransport player={player} p="antares-archive" t={T} />
         </div>
       )}
     </div>

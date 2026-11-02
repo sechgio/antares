@@ -14,6 +14,7 @@ import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
 import {
   StreamAction,
+  StreamBarActions,
   StreamSearchBox,
   streamPanelStyle,
   useDisposablePlayer,
@@ -272,7 +273,6 @@ function RadioBar({ player }: { player: RadioPlayer }) {
     gap: 6,
   });
   const [browseWidth, setBrowseWidth] = useState<number | null>(null);
-  const active = status === 'live' || status === 'connecting';
 
   const onTriggerClick = () => {
     if (!popover.isOpen && popover.triggerRef.current) {
@@ -308,14 +308,7 @@ function RadioBar({ player }: { player: RadioPlayer }) {
           <Transport player={player} />
         </div>
       )}
-      <StreamAction
-        p="antares-radio"
-        label={active ? T.pause : T.play}
-        icon={active ? Pause : Play}
-        busy={status === 'connecting'}
-        onClick={player.toggle}
-      />
-      <StreamAction p="antares-radio" label={T.next} icon={NextArrow} onClick={player.next} />
+      <StreamBarActions p="antares-radio" status={status} player={player} t={T} nextIcon={NextArrow} />
     </div>
   );
 }

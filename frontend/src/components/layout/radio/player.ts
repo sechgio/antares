@@ -10,6 +10,7 @@ import {
   type PlayerStatus,
   type Station,
 } from './core';
+import { appendStreamAudio, releaseAudioElement, storedVolumeState, toggleMute } from '../widgets/widgetAudio';
 
 const STALL_TIMEOUT_MS = 30_000;
 const RETRY_DELAY_MS = 3_000;
@@ -39,10 +40,7 @@ export function createPlayer(): RadioPlayer {
   );
   const previous = storage.get<Station | null>('station', null);
   const station = atom<Station>(validStation(previous) ? previous : PRESETS[0]);
-  const storedVolume = storage.get<number>('volume', 25);
-  const volume = atom<number>(
-    Number.isFinite(storedVolume) ? Math.max(0, Math.min(100, storedVolume)) : 25,
-  );
+  const { volume, lastVolumeRef } = storedVolumeState(storage);
   const status = atom<PlayerStatus>('paused');
   const meterMode = atom<MeterMode>('levels');
   const plainStreams = new Set<string>();
@@ -56,7 +54,6 @@ export function createPlayer(): RadioPlayer {
   let retries = 0;
   let timeout: number | undefined;
   let disposed = false;
-  let lastVolume = volume.get() || 25;
   const bus = new BroadcastChannel('antares:radio:playback');
   const windowId = crypto.randomUUID();
 
@@ -70,13 +67,7 @@ export function createPlayer(): RadioPlayer {
     source = null;
     analyser = null;
     if (audioContext?.state === 'running') void audioContext.suspend();
-    if (audio) {
-      audio.pause();
-      audio.removeAttribute('src');
-      audio.load();
-      audio.remove();
-      audio = null;
-    }
+    audio = releaseAudioElement(audio);
     status.set(nextStatus);
   }
 
@@ -89,16 +80,12 @@ export function createPlayer(): RadioPlayer {
     storage.set('station', next);
     status.set('connecting');
     bus.postMessage({ type: 'play', sender: windowId });
-    const element = new Audio();
-    audio = element;
-    element.dataset.antaresRadioAudio = 'true';
-    element.hidden = true;
-    element.preload = 'none';
     const metered = analyse && !plainStreams.has(next.url);
     meterMode.set(metered ? 'levels' : 'activity');
+    const element = appendStreamAudio(metered ? 1 : volume.get() / 100);
+    audio = element;
+    element.dataset.antaresRadioAudio = 'true';
     if (metered) element.crossOrigin = 'anonymous';
-    element.volume = metered ? 1 : volume.get() / 100;
-    document.body.append(element);
     const current = () => !disposed && token === generation;
     const fail = () => {
       if (!current()) return;
@@ -175,12 +162,7 @@ export function createPlayer(): RadioPlayer {
   }
 
   function mute() {
-    if (volume.get()) {
-      lastVolume = volume.get();
-      setVolume(0);
-    } else {
-      setVolume(lastVolume);
-    }
+    toggleMute(volume, setVolume, lastVolumeRef);
   }
 
   function favorite(item: Station) {
