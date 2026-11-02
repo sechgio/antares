@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
-import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
 import {
   StreamAction,
   StreamBarActions,
@@ -19,6 +18,7 @@ import {
   streamPanelStyle,
   useDisposablePlayer,
 } from '../streaming/StreamWidget';
+import { useBrowseWidthPopover } from '../widgets/widgetPopover';
 import {
   NIGHTRIDE,
   PRESETS,
@@ -265,21 +265,7 @@ function Transport({ player }: { player: RadioPlayer }) {
 function RadioBar({ player }: { player: RadioPlayer }) {
   const station = useValue(player.station);
   const status = useValue(player.status);
-  const popover = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
-    direction: 'down',
-    align: 'end',
-    estimatedWidth: 292,
-    estimatedHeight: 300,
-    gap: 6,
-  });
-  const [browseWidth, setBrowseWidth] = useState<number | null>(null);
-
-  const onTriggerClick = () => {
-    if (!popover.isOpen && popover.triggerRef.current) {
-      setBrowseWidth(popover.triggerRef.current.getBoundingClientRect().width);
-    }
-    popover.toggle();
-  };
+  const { popover, browseWidth, onTriggerClick } = useBrowseWidthPopover({ width: 292, height: 300 });
 
   return (
     <div className="antares-radio-bar" data-radio-status={status}>
