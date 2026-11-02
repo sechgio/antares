@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Agent diseña en un lienzo con `design_canvas_write` y `design_canvas_read`: artboards de HTML/CSS aislados (pósteres, pantallas, páginas, piezas para redes) dispuestos en un lienzo con zoom y desplazamiento, con ajustes declarados (color, texto, número) que el usuario prueba en vivo, títulos de sección, post-its y enlaces de prototipo (`data-goto`) entre artboards. El lienzo permite ir a un artboard, enfocarlo con doble clic y abrir sus ajustes. Las revisiones solo envían lo que cambia (mover o renombrar no requiere el HTML), verifican la revisión anterior y reutilizan la página aislada de `page_create`, sin red ni bridge.
 - Agent muestra el progreso en vivo de subagentes y jobs de PowerShell, con inicio, pasos, fin o error y un botón para cancelar cada uno desde la conversación.
 - Agent ejecuta `script_run`: JavaScript en un sandbox sin red ni archivos, con `print`, `tools.list` y `tools.call` limitado a las lecturas habilitadas. Las llamadas independientes corren en paralelo, la salida visible se acota y el volcado (hasta el límite del archivo) queda en un archivo de la conversación.
 - Agent guarda skills reutilizables con `skill_create`, con aprobación y sin sobrescribir las existentes; tras un encargo repetible terminado con comprobante, propone guardar sus instrucciones como skill.
