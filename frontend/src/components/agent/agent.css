@@ -124,6 +124,8 @@
 @keyframes agentAvatarHop { 0%, 100% { transform: translateY(0) scale(1, 1); } 30% { transform: translateY(-3px) scale(0.96, 1.05); } 55% { transform: translateY(0) scale(1.06, 0.93); } 75% { transform: translateY(0) scale(1, 1); } }
 @media (prefers-reduced-motion: reduce) {
   .agent-sidebar .agent-avatar,
+  .agent-sidebar .agent-avatar.agent-avatar-active,
+  .agent-sidebar .group:hover .agent-avatar,
   .agent-sidebar .agent-avatar-look,
   .agent-sidebar .agent-avatar-blink { animation: none; }
 }

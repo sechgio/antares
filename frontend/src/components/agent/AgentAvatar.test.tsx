@@ -1,4 +1,6 @@
 import { render, screen } from '@testing-library/react';
+import fs from 'node:fs';
+import path from 'node:path';
 import { expect, it } from 'vitest';
 import AgentAvatar, { agentAvatarVariant } from './AgentAvatar';
 
@@ -35,4 +37,15 @@ it('separa mirada y parpadeo con un desfase estable por semilla', () => {
   expect(container.querySelector('.agent-avatar-eyes .agent-avatar-look .agent-avatar-blink')?.querySelectorAll('rect')).toHaveLength(2);
   rerender(<AgentAvatar seed="s1" />);
   expect(container.querySelector('svg')?.style.getPropertyValue('--agent-avatar-delay')).toBe(delay);
+});
+
+it('desactiva con reducir movimiento las animaciones de los avatares de la barra', () => {
+  const css = fs.readFileSync(path.join(__dirname, 'agent.css'), 'utf-8');
+  const bodies = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([^}]*)\}/g)].map((block) => block[1]);
+  const sidebar = bodies.find((body) => body.includes('.agent-sidebar .agent-avatar-look'));
+  expect(sidebar).toContain('.agent-sidebar .agent-avatar,');
+  expect(sidebar).toContain('.agent-sidebar .agent-avatar.agent-avatar-active,');
+  expect(sidebar).toContain('.agent-sidebar .group:hover .agent-avatar,');
+  expect(sidebar).toContain('.agent-sidebar .agent-avatar-look,');
+  expect(sidebar).toContain('.agent-sidebar .agent-avatar-blink { animation: none;');
 });
