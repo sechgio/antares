@@ -8,6 +8,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- El navegador de Agent busca elementos con `web_find`, sin aprobación: por texto, etiqueta, placeholder o rol (ARIA o implícito), en toda la página, marcos y shadow DOM, y devuelve refs utilizables aunque `web_read` no las liste. Arrastra con `web_drag`, con aprobación, en pasos con el botón apretado y sin soltar si algo tapa el origen o el destino no se ve; `web_click` admite `double` para el doble clic.
 - Agent muestra el progreso en vivo de subagentes y jobs de PowerShell, con inicio, pasos, fin o error y un botón para cancelar cada uno desde la conversación.
 - Agent ejecuta `script_run`: JavaScript en un sandbox sin red ni archivos, con `print`, `tools.list` y `tools.call` limitado a las lecturas habilitadas. Las llamadas independientes corren en paralelo, la salida visible se acota y el volcado (hasta el límite del archivo) queda en un archivo de la conversación.
 - Agent guarda skills reutilizables con `skill_create`, con aprobación y sin sobrescribir las existentes; tras un encargo repetible terminado con comprobante, propone guardar sus instrucciones como skill.

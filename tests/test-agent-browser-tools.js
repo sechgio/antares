@@ -18,13 +18,13 @@ const browser = require('../electron/agent-browser');
 
 const specs = nativeToolSpecs();
 const web = specs.filter((s) => s.name.startsWith('web_'));
-assert(web.length === 21 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
+assert(web.length === 23 && web.every((s) => s.module === 'computer'), 'las herramientas del navegador pertenecen al módulo Equipo');
 assert(web.filter((s) => s.gated).map((s) => s.name).sort().join()
-  === 'web_check,web_click,web_download,web_fill,web_key,web_select,web_type,web_upload',
-  'leer y navegar es automático; clic, escribir, elegir, marcar, rellenar, teclas, descargar y subir requieren aprobación');
+  === 'web_check,web_click,web_download,web_drag,web_fill,web_key,web_select,web_type,web_upload',
+  'leer y navegar es automático; clic, arrastrar, escribir, elegir, marcar, rellenar, teclas, descargar y subir requieren aprobación');
 assert(web.filter((s) => !s.gated).map((s) => s.name).sort().join()
-  === 'web_back,web_console,web_forward,web_handover,web_hover,web_network,web_open,web_read,web_reload,web_screenshot,web_scroll,web_text,web_wait',
-  'texto, consola, red, captura, desplazar, esperar, pasar el puntero, cesión del control y navegación se usan sin aprobación');
+  === 'web_back,web_console,web_find,web_forward,web_handover,web_hover,web_network,web_open,web_read,web_reload,web_screenshot,web_scroll,web_text,web_wait',
+  'buscar, texto, consola, red, captura, desplazar, esperar, pasar el puntero, cesión del control y navegación se usan sin aprobación');
 
 async function main() {
   const { mkdtempSync, rmSync, readFileSync } = require('node:fs');
@@ -43,6 +43,8 @@ async function main() {
   let forwards = 0;
   let reloads = 0;
   let failCapture = false;
+  const findScripts = [];
+  let findResult = { url: 'https://files.example.com', matches: [], total: 0 };
   const parent = { isDestroyed: () => false, on: () => {}, showInactive: () => {}, setIgnoreMouseEvents: () => {}, destroy: () => {},
     contentView: { addChildView: () => {}, removeChildView: () => {} } };
   const contents = Object.assign(new Emitter(), {
@@ -55,6 +57,7 @@ async function main() {
     executeJavaScript: async (script) => {
       const guard = script.match(/performance\.timeOrigin !== (\S+)\)/);
       if (guard && JSON.parse(guard[1]) !== documentOrigin) return { stale: true };
+      if (script.includes('INPUT_ROLES')) { findScripts.push(script); return { ...findResult, time_origin: documentOrigin }; }
       if (script.includes('tagName') && script.includes('scrollIntoView')) return uploadField;
       if (script.includes('scrollIntoView')) return target;
       if (script.includes('document.activeElement')) return focusedSecret;
@@ -298,6 +301,49 @@ async function main() {
     const picked = await browser.run('web_select', { ref: '9', values: ['Perú'] });
     assert(JSON.stringify(picked.selected) === '["Perú"]' && picked.page, 'web_select elige la opción y devuelve la página');
 
+    const findMissing = await failure('web_find', {});
+    assert(findMissing && findMissing.message === 'Indica text, role o ambos', 'web_find exige un texto o un rol');
+    const noMatch = await browser.run('web_find', { text: 'Pagar' });
+    assert(noMatch.matches.length === 0 && noMatch.note.includes('Ningún elemento'), 'web_find avisa cuando nada coincide');
+    findResult = { url: 'https://files.example.com', total: 23,
+      matches: [{ ref: '31', tag: 'button', label: 'Enviar pedido', off: true }, { ref: '32', tag: 'a', label: 'Enviar', frame: true }] };
+    before = sentInput();
+    const found = await browser.run('web_find', { text: ' Enviar ', role: ' Button ', exact: true });
+    const findQuery = findScripts[findScripts.length - 1];
+    assert(findQuery.includes('"text":"Enviar","role":"button","exact":true') && sentInput() === before,
+      'web_find normaliza la consulta y no envía eventos a la página');
+    assert(found.matches[0] === '31 button «Enviar pedido» [fuera de vista]' && found.matches[1] === '32 a «Enviar» [marco]'
+      && found.matches_more === 21 && found.note.includes('afina'), 'web_find describe las coincidencias como web_read y avisa de las demás');
+    documentOrigin = 5;
+    const staleFind = await failure('web_click', { ref: '31' });
+    assert(staleFind && staleFind.code === 'PAGE_CHANGED', 'las refs de web_find caducan con el documento igual que las de web_read');
+    await browser.run('web_find', { role: 'button' });
+    const freshFind = await browser.run('web_click', { ref: '31' });
+    assert(freshFind.clicked === '31' && !freshFind.double, 'las refs de web_find sirven para actuar sobre el elemento');
+
+    const presses = () => commands.filter(([method, params]) => method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed');
+    before = presses().length;
+    const doubled = await browser.run('web_click', { ref: '9', double: true });
+    assert(doubled.double === true && presses().slice(before).map(([, params]) => params.clickCount).join() === '1,2',
+      'web_click double pulsa dos veces con clickCount creciente');
+
+    target = { x: 10, y: 20, secret: false, outside: true };
+    before = sentInput();
+    const outOfView = await failure('web_drag', { ref: '9', to: '10' });
+    assert(outOfView && outOfView.code === 'OUT_OF_VIEW' && sentInput() === before,
+      'web_drag no arrastra si el destino no se ve junto al origen');
+    target = { x: 10, y: 20, secret: false, covered: 'div «Aviso»' };
+    const dragCovered = await failure('web_drag', { ref: '9', to: '10' });
+    assert(dragCovered && dragCovered.code === 'COVERED' && sentInput() === before, 'web_drag comprueba que nada tape el elemento');
+    target = { x: 10, y: 20, secret: false };
+    const dragged = await browser.run('web_drag', { ref: '9', to: '10' });
+    const dragEvents = commands.filter(([method]) => method === 'Input.dispatchMouseEvent').slice(-15).map(([, params]) => params);
+    assert(dragged.dragged === '9' && dragged.to === '10' && dragged.page
+      && dragEvents[1].type === 'mousePressed' && dragEvents[1].buttons === 1
+      && dragEvents.filter((params) => params.type === 'mouseMoved' && params.buttons === 1).length === 12
+      && dragEvents[dragEvents.length - 1].type === 'mouseReleased',
+      'web_drag pulsa, mueve en pasos con el botón apretado y suelta sobre el destino');
+
     target = { x: 10, y: 20, secret: false, checked: false };
     onPress = () => { target = { ...target, checked: !target.checked }; };
     const checked = await browser.run('web_check', { ref: '9', checked: true });
@@ -381,6 +427,28 @@ async function main() {
       const shadowCovered = await failure('web_click', { ref: '10' });
       assert(shadowCovered?.code === 'COVERED' && sentInput() === before,
         'un aviso superior también bloquea un control de shadow DOM dentro de un marco');
+
+      doc.body.insertAdjacentHTML('beforeend', '<main><h2>Enviar pedido</h2><p>Texto con enviar dentro</p>'
+        + '<input placeholder="Correo electrónico"><a href="/x"><span>Enviar</span></a><span hidden-test>Enviar</span></main>');
+      for (const el of doc.querySelectorAll('main, main *')) {
+        el.getBoundingClientRect = () => ({ left: 0, top: 0, width: el.hasAttribute('hidden-test') ? 0 : 50, height: 20 });
+      }
+      const byText = await browser.run('web_find', { text: 'enviar' });
+      assert(byText.matches.some((line) => line.endsWith('h2 «Enviar pedido»'))
+        && byText.matches.some((line) => / a «Enviar» → https:\/\/files\.example\.com\/x$/.test(line))
+        && byText.matches.some((line) => line.endsWith('p «Texto con enviar dentro»'))
+        && !byText.matches.some((line) => / span /.test(line))
+        && byText.matches.some((line) => line.endsWith('button «Enviar» [marco]')),
+      'web_find busca por texto en la página y en marcos, prefiere el enlace a su span y omite lo invisible');
+      const exactLink = await browser.run('web_find', { text: 'Enviar', role: 'link', exact: true });
+      assert(exactLink.matches.length === 1 && / a «Enviar»/.test(exactLink.matches[0]), 'web_find filtra por rol implícito y texto exacto');
+      const byPlaceholder = await browser.run('web_find', { text: 'correo', role: 'textbox' });
+      assert(byPlaceholder.matches.length === 1 && byPlaceholder.matches[0].includes('input[text] «Correo electrónico»'),
+        'web_find encuentra campos por su placeholder');
+      const headings = await browser.run('web_find', { role: 'heading' });
+      assert(headings.matches.length === 1 && headings.matches[0].endsWith('h2 «Enviar pedido»'), 'web_find lista por rol sin texto');
+      const linkRef = exactLink.matches[0].split(' ')[0];
+      assert(doc.querySelector(`a[data-antares-ref="${linkRef}"]`), 'web_find marca la ref en el elemento encontrado');
     } finally { dom.window.close(); }
   } finally { timers.restore(); browser.close(); }
 }

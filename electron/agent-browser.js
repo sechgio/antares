@@ -10,6 +10,8 @@ const PARTITION = 'persist:antares-agent-browser';
 const MAX_TEXT = 3_500;
 const MAX_ELEMENTS = 80;
 const MAX_CANDIDATES = 400;
+const MAX_FIND = 20;
+const DRAG_STEPS = 12;
 const POINTER_SCAN = 3_000;
 const MAX_FILL_FIELDS = 16;
 const MAX_FILL_TEXT = 16_000;
@@ -80,7 +82,25 @@ const TOOLS = {
       timeout_ms: { type: 'integer', minimum: WAIT_STEP_MS, maximum: WAIT_MAX_MS, description: 'Espera máxima (por defecto 8000)' },
     },
   }, false],
-  web_click: ['Hacer clic en un elemento de la página', { type: 'object', properties: { ref: REF }, required: ['ref'] }, true],
+  web_find: ['Buscar en toda la página, incluidos marcos y shadow DOM, los elementos visibles por su texto, etiqueta, '
+    + 'placeholder o rol, y obtener sus refs aunque web_read no los liste', {
+    type: 'object',
+    properties: {
+      text: { type: 'string', description: 'Texto visible, etiqueta accesible, placeholder o título (sin distinguir mayúsculas)' },
+      role: { type: 'string', description: 'Rol ARIA o implícito: button, link, textbox, checkbox, combobox, heading, img…' },
+      exact: { type: 'boolean', description: 'Exigir el texto exacto, distinguiendo mayúsculas' },
+    },
+  }, false],
+  web_click: ['Hacer clic en un elemento de la página', {
+    type: 'object',
+    properties: { ref: REF, double: { type: 'boolean', description: 'Doble clic: abrir, editar en línea o seleccionar una palabra' } },
+    required: ['ref'],
+  }, true],
+  web_drag: ['Arrastrar un elemento y soltarlo sobre otro (tarjetas, listas ordenables, deslizadores); ambos deben verse a la vez', {
+    type: 'object',
+    properties: { ref: { ...REF, description: 'Elemento que se arrastra' }, to: { ...REF, description: 'Elemento sobre el que se suelta' } },
+    required: ['ref', 'to'],
+  }, true],
   web_select: ['Elegir opciones de un desplegable nativo (select) por su valor o su texto', {
     type: 'object',
     properties: {
@@ -139,7 +159,7 @@ const SECRET_FIELD_JS = `(el) => el.type === 'password' || String(el.getAttribut
   .some((token) => ['one-time-code', 'current-password', 'new-password'].includes(token) || token.startsWith('cc-'))`;
 const USER_INPUT_GRACE_MS = 5_000;
 const USER_WAIT_MAX_MS = 10_000;
-const READ_TOOLS = new Set(['web_read', 'web_screenshot', 'web_text', 'web_console', 'web_network', 'web_wait']);
+const READ_TOOLS = new Set(['web_read', 'web_find', 'web_screenshot', 'web_text', 'web_console', 'web_network', 'web_wait']);
 const NAVIGATION_TOOLS = new Set(['web_open', 'web_back', 'web_forward', 'web_reload']);
 const AGENT_TAB = 'agent';
 const USER_TAB = 'user';
@@ -805,8 +825,7 @@ const DEEP_JS = `
   };
 `;
 
-const SNAPSHOT = `(() => {
-  ${DEEP_JS}
+const ELEMENT_JS = `
   const secret = ${SECRET_FIELD_JS};
   const visible = (el) => {
     const r = el.getBoundingClientRect();
@@ -843,34 +862,13 @@ const SNAPSHOT = `(() => {
     if (el.readOnly) out.push('solo lectura');
     return out;
   };
-  const all = roots(document);
-  const candidates = [];
-  const seen = new Set();
-  let pointerScan = ${POINTER_SCAN};
-  for (const item of all) {
-    const nodes = [...item.root.querySelectorAll(selector)];
-    // Controles sin rol que solo delata el cursor, como las tarjetas con onClick de React.
-    for (const node of item.root.querySelectorAll('div,span,li,img,svg,td,p')) {
-      if (pointerScan-- <= 0) break;
-      if (node.closest(selector)) continue;
-      const parent = node.parentElement;
-      if (getComputedStyle(node).cursor === 'pointer' && !(parent && getComputedStyle(parent).cursor === 'pointer')) nodes.push(node);
-    }
-    for (const el of nodes) {
-      if (candidates.length >= ${MAX_CANDIDATES}) break;
-      if (seen.has(el)) continue;
-      seen.add(el);
-      if (!visible(el) || el.closest('[aria-hidden=true]')) continue;
-      const r = el.getBoundingClientRect();
-      const top = item.dy + r.top;
-      const left = item.dx + r.left;
-      candidates.push({ el, root: item.root, frame: item.root !== document && item.root.nodeType === 9,
-        inView: top < innerHeight && top + r.height > 0 && left < innerWidth && left + r.width > 0 });
-    }
-  }
-  candidates.sort((a, b) => Number(b.inView) - Number(a.inView));
-  const elements = [];
-  for (const { el, root, frame, inView } of candidates.slice(0, ${MAX_ELEMENTS})) {
+  const inViewport = (el, item) => {
+    const r = el.getBoundingClientRect();
+    const top = item.dy + r.top;
+    const left = item.dx + r.left;
+    return top < innerHeight && top + r.height > 0 && left < innerWidth && left + r.width > 0;
+  };
+  const itemOf = ({ el, root, frame, inView }) => {
     let ref = el.getAttribute('data-antares-ref');
     if (!ref) {
       window.__antaresRef = (window.__antaresRef || 0) + 1;
@@ -890,8 +888,36 @@ const SNAPSHOT = `(() => {
     if (current.length) item.states = current;
     if (!inView) item.off = true;
     if (frame) item.frame = true;
-    elements.push(item);
+    return item;
+  };
+`;
+
+const SNAPSHOT = `(() => {
+  ${DEEP_JS}
+  ${ELEMENT_JS}
+  const all = roots(document);
+  const candidates = [];
+  const seen = new Set();
+  let pointerScan = ${POINTER_SCAN};
+  for (const item of all) {
+    const nodes = [...item.root.querySelectorAll(selector)];
+    // Controles sin rol que solo delata el cursor, como las tarjetas con onClick de React.
+    for (const node of item.root.querySelectorAll('div,span,li,img,svg,td,p')) {
+      if (pointerScan-- <= 0) break;
+      if (node.closest(selector)) continue;
+      const parent = node.parentElement;
+      if (getComputedStyle(node).cursor === 'pointer' && !(parent && getComputedStyle(parent).cursor === 'pointer')) nodes.push(node);
+    }
+    for (const el of nodes) {
+      if (candidates.length >= ${MAX_CANDIDATES}) break;
+      if (seen.has(el)) continue;
+      seen.add(el);
+      if (!visible(el) || el.closest('[aria-hidden=true]')) continue;
+      candidates.push({ el, root: item.root, frame: item.root !== document && item.root.nodeType === 9, inView: inViewport(el, item) });
+    }
   }
+  candidates.sort((a, b) => Number(b.inView) - Number(a.inView));
+  const elements = candidates.slice(0, ${MAX_ELEMENTS}).map(itemOf);
   let text = document.body ? document.body.innerText : '';
   for (const item of all) {
     if (item.root !== document && item.root.nodeType === 9 && item.root.body) text += '\\n\\n[marco]\\n' + item.root.body.innerText;
@@ -936,6 +962,64 @@ async function snapshot(contents, offset = 0, budget = RESULT_BUDGET) {
   const more = Number(page.elements_total || 0) - result.elements.length;
   return { ...result, text_offset: start, text_total: text.length, ...(end < text.length ? { next_offset: end } : {}),
     ...(more > 0 ? { elements_more: more, elements_note: 'Hay más elementos interactivos: desplázate con web_scroll y vuelve a leer' } : {}) };
+}
+
+const FIND = (query) => `(() => {
+  ${DEEP_JS}
+  ${ELEMENT_JS}
+  const query = ${JSON.stringify(query)};
+  const INPUT_ROLES = { checkbox: 'checkbox', radio: 'radio', range: 'slider', number: 'spinbutton', search: 'searchbox',
+    submit: 'button', button: 'button', reset: 'button', image: 'button', hidden: '' };
+  const roleOf = (el) => {
+    const explicit = clean(el.getAttribute('role')).toLowerCase().split(' ')[0];
+    if (explicit) return explicit;
+    const tag = el.localName;
+    if (tag === 'a' || tag === 'area') return el.hasAttribute('href') ? 'link' : '';
+    if (tag === 'button' || tag === 'summary') return 'button';
+    if (/^h[1-6]$/.test(tag)) return 'heading';
+    if (tag === 'input') return INPUT_ROLES[el.type] ?? 'textbox';
+    if (tag === 'textarea') return 'textbox';
+    if (tag === 'select') return el.multiple || el.size > 1 ? 'listbox' : 'combobox';
+    if (el.isContentEditable && el.hasAttribute('contenteditable')) return 'textbox';
+    return { img: 'img', option: 'option', li: 'listitem', nav: 'navigation', dialog: 'dialog', table: 'table', form: 'form' }[tag] || '';
+  };
+  const named = selector + ',img,h1,h2,h3,h4,h5,h6,label,option,[role],[aria-label],[title]';
+  const wanted = query.exact ? clean(query.text) : clean(query.text).toLowerCase();
+  const matches = (value) => (query.exact ? clean(value) === wanted : clean(value).toLowerCase().includes(wanted));
+  const ownText = (el) => [...el.childNodes].filter((node) => node.nodeType === 3).map((node) => node.textContent).join(' ');
+  const found = [];
+  let scanned = 0;
+  for (const item of roots(document)) {
+    for (const el of item.root.querySelectorAll('*')) {
+      if (++scanned > 20000 || found.length >= ${MAX_CANDIDATES}) break;
+      if (query.role && roleOf(el) !== query.role) continue;
+      // Un nodo sin nombre propio solo coincide por su texto directo: así el contenedor no gana al botón.
+      if (query.text && !(el.matches(named)
+        ? [labelOf(el, item.root), el.placeholder, el.title, el.alt].some((value) => value && matches(value))
+        : matches(ownText(el)))) continue;
+      if (!visible(el) || el.closest('[aria-hidden=true]')) continue;
+      if (found.some((match) => match.el.contains(el))) continue;
+      found.push({ el, root: item.root, frame: item.root !== document && item.root.nodeType === 9, inView: inViewport(el, item) });
+    }
+  }
+  found.sort((a, b) => Number(b.inView) - Number(a.inView));
+  return { url: location.href, matches: found.slice(0, ${MAX_FIND}).map(itemOf), total: found.length,
+    time_origin: performance.timeOrigin };
+})()`;
+
+async function findElements(contents, params) {
+  const text = String(params.text || '').trim();
+  const role = String(params.role || '').trim().toLowerCase();
+  if (!text && !role) throw new Error('Indica text, role o ambos');
+  const page = await contents.executeJavaScript(FIND({ text, role, exact: params.exact === true }), true);
+  refDocuments.set(contents, page.time_origin);
+  const more = page.total - page.matches.length;
+  return fit({
+    url: page.url,
+    matches: page.matches.map(describe),
+    ...(page.total === 0 ? { note: 'Ningún elemento visible coincide; prueba con otro texto, sin role o desplázate con web_scroll' } : {}),
+    ...(more > 0 ? { matches_more: more, note: 'Hay más coincidencias: afina el texto o añade role' } : {}),
+  });
 }
 
 function pageReported(mark) {
@@ -994,15 +1078,27 @@ function assertSameDocument(result) {
   }
 }
 
-async function locate(contents, ref) {
-  const id = String(ref || '').replace(/[^0-9]/g, '');
-  if (!id) throw new Error('Indica la referencia del elemento (web_read)');
-  const rect = await contents.executeJavaScript(`(() => {
+// Ejecuta `body` en la página con `found` resuelto desde la ref, en marcos y shadow DOM incluidos.
+// Una ref de otro documento falla con PAGE_CHANGED y una que ya no existe, con «ya no está».
+async function inRef(contents, ref, body) {
+  const id = refId(ref);
+  const result = await contents.executeJavaScript(`(() => {
     ${refGuard(contents)}
     ${DEEP_JS}
     let found = byRef('${id}');
     if (!found) return null;
-    found.el.scrollIntoView({ block: 'center', inline: 'center' });
+    ${body(id)}
+  })()`, true);
+  assertSameDocument(result);
+  if (!result) throw new Error('El elemento ya no está en la página; vuelve a leerla con web_read');
+  return result;
+}
+
+async function locate(contents, ref, { scroll = true } = {}) {
+  const id = String(ref || '').replace(/[^0-9]/g, '');
+  if (!id) throw new Error('Indica la referencia del elemento (web_read)');
+  const rect = await inRef(contents, id, () => `
+    if (${scroll}) found.el.scrollIntoView({ block: 'center', inline: 'center' });
     found = byRef('${id}') || found;
     const el = found.el;
     const r = el.getBoundingClientRect();
@@ -1031,12 +1127,12 @@ async function locate(contents, ref) {
     const role = el.getAttribute('role');
     const checked = toggle ? el.checked
       : ['checkbox', 'radio', 'switch', 'menuitemcheckbox', 'menuitemradio'].includes(role) ? el.getAttribute('aria-checked') === 'true' : null;
+    const outside = found.dx + lx < 0 || found.dy + ly < 0 || found.dx + lx > innerWidth || found.dy + ly > innerHeight;
     return { x: Math.round(found.dx + lx), y: Math.round(found.dy + ly), secret: (${SECRET_FIELD_JS})(el), checked,
+      ...(outside ? { outside } : {}),
       ...(!covered ? {} : { covered: covered.localName + ' «' + String(covered.innerText || covered.getAttribute('aria-label') || '')
         .trim().replace(/\\s+/g, ' ').slice(0, 60) + '»' }) };
-  })()`, true);
-  assertSameDocument(rect);
-  if (!rect) throw new Error('El elemento ya no está en la página; vuelve a leerla con web_read');
+  `);
   if (rect.covered) {
     throw browserError(`Otro elemento tapa la referencia ${id}: ${rect.covered}. Ciérralo (un aviso de cookies, un diálogo o `
       + 'un menú) o desplaza la página con web_scroll y vuelve a leerla', 'COVERED');
@@ -1095,13 +1191,40 @@ async function send(input, method, event) {
   }
 }
 
-async function clickAt(input, point) {
+async function clickAt(input, point, clicks = 1) {
   const x = Math.round(point.x);
   const y = Math.round(point.y);
-  for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) {
-    await send(input, 'Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
-    await delay(30);
+  await send(input, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'left', clickCount: 1 });
+  await delay(30);
+  // Chromium reconoce el doble clic por el clickCount creciente de cada pulsación.
+  for (let clickCount = 1; clickCount <= clicks; clickCount += 1) {
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      await send(input, 'Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount });
+      await delay(30);
+    }
   }
+}
+
+async function dragTo(input, params) {
+  const from = await locate(input.contents, params.ref);
+  const to = await locate(input.contents, params.to, { scroll: false });
+  if (to.outside) {
+    throw browserError('El destino no se ve junto al elemento que arrastras; desplaza la página con web_scroll hasta que '
+      + 'ambos se vean y vuelve a leerla', 'OUT_OF_VIEW');
+  }
+  const mouse = (type, x, y, extra = {}) => send(input, 'Input.dispatchMouseEvent',
+    { type, x: Math.round(x), y: Math.round(y), button: 'left', ...extra });
+  await mouse('mouseMoved', from.x, from.y);
+  await mouse('mousePressed', from.x, from.y, { buttons: 1, clickCount: 1 });
+  // Pasos intermedios: las librerías de arrastre esperan superar un umbral de movimiento antes de empezar.
+  for (let step = 1; step <= DRAG_STEPS; step += 1) {
+    await delay(16);
+    await mouse('mouseMoved', from.x + ((to.x - from.x) * step) / DRAG_STEPS, from.y + ((to.y - from.y) * step) / DRAG_STEPS,
+      { buttons: 1 });
+  }
+  await delay(50);
+  await mouse('mouseReleased', to.x, to.y, { buttons: 0, clickCount: 1 });
+  return { dragged: String(params.ref), to: String(params.to) };
 }
 
 async function pressCombo(input, combo) {
@@ -1285,6 +1408,7 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
   }
   if (name === 'web_wait') return waitFor(contents, params);
   if (name === 'web_scroll') return scrollPage(contents, params);
+  if (name === 'web_find') return findElements(contents, params);
   const input = { contents, expected: approvedContext || await approvalContext(contents), sent: false };
   if (name === 'web_hover') {
     const point = await locate(contents, params.ref);
@@ -1292,9 +1416,11 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
     return { hovered: String(params.ref), page: await observeAfter(contents) };
   }
   if (name === 'web_click') {
-    await clickAt(input, await locate(contents, params.ref));
-    return { clicked: String(params.ref), page: await observeAfter(contents), ...pageReported(mark) };
+    await clickAt(input, await locate(contents, params.ref), params.double === true ? 2 : 1);
+    return { clicked: String(params.ref), ...(params.double === true ? { double: true } : {}), page: await observeAfter(contents),
+      ...pageReported(mark) };
   }
+  if (name === 'web_drag') return { ...await dragTo(input, params), page: await observeAfter(contents), ...pageReported(mark) };
   if (name === 'web_select') return { ...await selectOptions(input, params), ...pageReported(mark) };
   if (name === 'web_check') return { ...await setChecked(input, params), ...pageReported(mark) };
   if (name === 'web_fill') return { ...await fillFields(input, params), ...pageReported(mark) };
@@ -1374,19 +1500,14 @@ async function waitFor(contents, params) {
 async function scrollPage(contents, params) {
   const id = refId(params.ref);
   const pages = Math.min(10, Math.max(0.25, Number(params.pages) || 1)) * (params.direction === 'up' ? -1 : 1);
-  const moved = await contents.executeJavaScript(`(() => {
-    ${id ? refGuard(contents) : ''}
-    ${DEEP_JS}
-    const found = ${id ? `byRef('${id}')` : 'null'};
-    if (${JSON.stringify(!!id)} && !found) return null;
+  const scroll = `
     const box = found ? found.el : (document.scrollingElement || document.documentElement);
     const before = box.scrollTop;
     box.scrollBy({ top: Math.round((found ? box.clientHeight : innerHeight) * ${pages}), behavior: 'instant' });
     return { moved: Math.round(box.scrollTop - before), at_end: Math.ceil(box.scrollTop + box.clientHeight) >= box.scrollHeight,
-      at_start: box.scrollTop <= 0 };
-  })()`, true);
-  assertSameDocument(moved);
-  if (!moved) throw new Error('El elemento ya no está en la página; vuelve a leerla con web_read');
+      at_start: box.scrollTop <= 0 };`;
+  const moved = id ? await inRef(contents, id, () => scroll)
+    : await contents.executeJavaScript(`(() => { const found = null; ${scroll} })()`, true);
   return { scrolled: moved.moved, at_end: moved.at_end, at_start: moved.at_start,
     ...(moved.moved === 0 ? { note: 'No se desplazó: ya estás en el borde o el contenedor no tiene desplazamiento propio' } : {}),
     page: await observeAfter(contents) };
@@ -1399,11 +1520,7 @@ async function selectOptions(input, params) {
   await locate(input.contents, params.ref);
   await assertInteraction(input);
   input.sent = true;
-  const picked = await input.contents.executeJavaScript(`(() => {
-    ${refGuard(input.contents)}
-    ${DEEP_JS}
-    const found = byRef('${id}');
-    if (!found) return null;
+  const picked = await inRef(input.contents, id, () => `
     const el = found.el;
     if (el.localName !== 'select') return { error: 'not_select' };
     const wanted = ${JSON.stringify(values)}.map((value) => value.trim().toLowerCase());
@@ -1418,9 +1535,7 @@ async function selectOptions(input, params) {
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
     return { selected: options.filter((option) => option.selected).map((option) => option.text.trim()) };
-  })()`, true);
-  assertSameDocument(picked);
-  if (!picked) throw new Error('El elemento ya no está en la página; vuelve a leerla con web_read');
+  `);
   if (picked.error === 'not_select') throw new Error('El elemento no es un desplegable nativo; ábrelo con web_click y elige la opción');
   if (picked.error === 'disabled') throw new Error('El desplegable está deshabilitado');
   if (picked.error) {
