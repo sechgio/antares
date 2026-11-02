@@ -31,17 +31,9 @@ def test_action_rejects_bad_element_id_and_params():
         handlers.computer_use_action({"window_id": "w1", "action": "click", "params": "x"})
 
 
-def test_launch_app_requires_app_and_string_args():
-    with pytest.raises(ValueError, match="aplicación"):
-        handlers.computer_use_launch_app({})
-    with pytest.raises(ValueError, match="args"):
-        handlers.computer_use_launch_app({"app": "notepad", "args": 5})
-
-
 def test_handlers_registry_exposes_catalog_names():
     assert set(handlers.HANDLERS) == {
         "computer_use_enumerate",
         "computer_use_window_state",
         "computer_use_action",
-        "computer_use_launch_app",
     }
