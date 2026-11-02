@@ -10,6 +10,7 @@ const OLD_TEXT_CHARS = 1200;
 const HARD_TEXT_CHARS = 400;
 const RESERVE_CAP = 16384;
 const RESERVE_FLOOR = 2048;
+const CUT_SLACK = 4;
 
 function requestBudget(contextWindow, maxTokens) {
   const window = Number(contextWindow) || 0;
@@ -93,13 +94,17 @@ function trimToolResult(message, max) {
   return { ...message, content: [{ type: 'text', text: truncate(text, max) }] };
 }
 
-function pruneOldToolResults(messages) {
+function toolResultCount(messages) {
+  return messages.filter((message) => message.role === 'toolResult').length;
+}
+
+function pruneOldToolResults(messages, cut) {
   const indexes = [];
   for (let index = 0; index < messages.length; index++) if (messages[index].role === 'toolResult') indexes.push(index);
-  const kept = new Set(indexes.slice(-KEEP_RECENT_TOOL_RESULTS));
+  const pruned = new Set(indexes.slice(0, cut));
   let changed = false;
   const next = messages.map((message, index) => {
-    if (message.role !== 'toolResult' || kept.has(index)) return message;
+    if (message.role !== 'toolResult' || !pruned.has(index)) return message;
     const chars = contentChars(message.content);
     if (chars <= 160) return message;
     changed = true;
@@ -111,8 +116,7 @@ function pruneOldToolResults(messages) {
   return changed ? next : null;
 }
 
-function trimOldMessages(messages) {
-  const cutoff = messages.length - KEEP_RECENT_MESSAGES;
+function trimOldMessages(messages, cutoff) {
   if (cutoff <= 0) return null;
   let changed = false;
   const next = messages.map((message, index) => {
@@ -214,17 +218,33 @@ function hardTrim(messages) {
 // etapa se mide como esa cifra menos lo que recortó, porque el uso es fijo y,
 // medida de nuevo, ningún recorte la bajaría hasta llegar al pliegue total.
 // messageTokens estima un mensaje suelto; por defecto, estimate de ese mensaje.
-function compactMessages(messages, { budget, estimate, messageTokens = (message) => estimate([message]) }) {
+// cuts guarda entre peticiones de la misma conversación dónde cortaron la poda
+// y el recorte. Cortar siempre a una distancia fija del final cambiaría un
+// mensaje antiguo en cada paso y el proveedor volvería a escribir en caché todo
+// lo posterior; por eso se reutiliza el corte anterior mientras deje como mucho
+// CUT_SLACK elementos recientes de más y la petición quepa con él. Si no, se
+// corta como siempre.
+function compactMessages(messages, { budget, estimate, messageTokens = (message) => estimate([message]), cuts }) {
   if (!Array.isArray(messages) || !budget || typeof estimate !== 'function') return undefined;
   const measured = estimate(messages);
   if (measured <= budget) return undefined;
   const visible = (list) => list.reduce((sum, message) => sum + messageTokens(message), 0);
   const original = visible(messages);
   const size = (list) => measured - original + visible(list);
+  const stable = (stage, key, count, keep) => (list) => {
+    const fresh = Math.max(0, count(list) - keep);
+    const previous = cuts && cuts[key];
+    if (Number.isInteger(previous) && previous < fresh && previous >= fresh - CUT_SLACK) {
+      const reused = stage(list, previous);
+      if (size(reused || list) <= budget) return reused;
+    }
+    if (cuts) cuts[key] = fresh;
+    return stage(list, fresh);
+  };
   let current = messages;
   const stages = [
-    pruneOldToolResults,
-    trimOldMessages,
+    stable(pruneOldToolResults, 'toolResults', toolResultCount, KEEP_RECENT_TOOL_RESULTS),
+    stable(trimOldMessages, 'messages', (list) => list.length, KEEP_RECENT_MESSAGES),
     (list) => foldOldTurns(list, KEEP_RECENT_USER_TURNS),
     (list) => foldOldTurns(list, 1),
     hardTrim,

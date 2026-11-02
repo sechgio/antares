@@ -23,6 +23,8 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - La memoria del agente admite entradas de diario con fecha (hoy por defecto) y autoría por versión. No se inyectan en cada turno: solo se consultan con `memory_search`, que ordena las coincidencias por relevancia y después por la fecha del diario; las preferencias y los hechos conservan su comportamiento y las correcciones del usuario siguen prevaleciendo.
 
 ### Changed
+- El recorte mecánico de contexto de Agent repite su corte anterior mientras la petición quepa, y los avisos de pasos y de plan ya enviados se reponen en las peticiones siguientes: el prefijo enviado deja de cambiar en cada paso y el proveedor reutiliza la caché.
+- Agent trabaja con un tope de 500 000 tokens de contexto aunque el modelo admita más, y compacta al 80 % de esa ventana en lugar de apurar hasta el margen de respuesta.
 - La barra lateral de Agent muestra agentes y conversaciones en una sola lista, sin pestañas ni barra superior: hasta seis agentes con «Ver todos», un buscador común y los botones de buscar y nueva conversación en el encabezado de Conversaciones. Los avatares de la barra flotan, parpadean y miran con un desfase por agente, y respetan «reducir movimiento».
 - El navegador de Agent congela la página cuando un menú o diálogo la tapa y la reacopla al cerrarse, en lugar de dejar un hueco negro; la barra de pestañas, la omnibox y el separador adoptan un estilo plano y compacto.
 - El chat de Agent sigue el final cuando un turno crece sin mensajes nuevos (paneles, imágenes o pasos) mientras el usuario está abajo, y deja de pintar los turnos fuera de pantalla.

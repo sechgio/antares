@@ -297,6 +297,27 @@ async function main() {
   }
 
   {
+    const grow = (count) => [system('sys'), user('consulta'), assistant('llamo', 2, [toolCall('c0', 'canvas_list')]),
+      ...Array.from({ length: count }, (_, index) => toolResult(`c${index}`, 'canvas_list', 'x'.repeat(2000), index))];
+    const cuts = {};
+    const first = compactMessages(grow(7), { budget: 3000, estimate, cuts });
+    assert(cuts.toolResults === 4 && first[6].content[0].text.startsWith('[Resultado de canvas_list omitido')
+      && first[7].content[0].text.length === 2000,
+      'la primera poda conserva completos los tres últimos resultados');
+    const second = compactMessages(grow(8), { budget: 3000, estimate, cuts });
+    const third = compactMessages(grow(9), { budget: 3000, estimate, cuts });
+    assert(JSON.stringify(second.slice(0, first.length)) === JSON.stringify(first)
+      && JSON.stringify(third.slice(0, second.length)) === JSON.stringify(second),
+    'mientras cabe, la siguiente petición repite la poda anterior y conserva el prefijo cacheado');
+    const fourth = compactMessages(grow(10), { budget: 3000, estimate, cuts });
+    assert(cuts.toolResults === 7 && estimate(fourth) <= 3000 && fourth[10].content[0].text.length === 2000,
+      'cuando la poda anterior ya no cabe, se corta como siempre');
+    const stale = { toolResults: 9 };
+    compactMessages(grow(7), { budget: 3000, estimate, cuts: stale });
+    assert(stale.toolResults === 4, 'un corte que ya no corresponde a la conversación se descarta');
+  }
+
+  {
     const messages = [system('sys')];
     for (let index = 0; index < 5; index++) {
       messages.push(user('u'.repeat(4000), index * 2 + 1), assistant('a'.repeat(4000), index * 2 + 2));
@@ -668,6 +689,15 @@ async function main() {
   }
 
   {
+    const policy = compactionModule.DEFAULT_POLICY;
+    assert(compactionModule.workingWindow(1000000) === 500000 && compactionModule.workingWindow(200000) === 200000,
+      'la ventana de trabajo nunca pasa de 500 k');
+    assert(compactionModule.thresholdsFor(policy, compactionModule.compactionWindow(500000, policy)).compact === 400000
+      && compactionModule.thresholdsFor(policy, compactionModule.compactionWindow(200000, policy)).compact === 160000,
+    'la compactación empieza al 80 % de la ventana de trabajo');
+    assert(compactionModule.compactionWindow(8192, policy) === 8192
+      && compactionModule.compactionWindow(500000, { ...policy, enabled: false }) === 500000,
+    'una ventana pequeña o la compactación desactivada no inventan sitio');
     for (const window of [32768, 128000, 200000]) {
       const thresholds = compactionModule.thresholdsFor(compactionModule.DEFAULT_POLICY, window);
       assert(thresholds.warn < thresholds.compact && thresholds.compact < window, `los umbrales avisan antes del límite duro (${window})`);

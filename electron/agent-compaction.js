@@ -121,6 +121,26 @@ function loadPolicy(dir) {
   }
 }
 
+// Ventana de trabajo: el agente no llena más de WORKING_CONTEXT_CAP aunque el
+// modelo admita más, y compacta al COMPACT_PERCENT de esa ventana en lugar de
+// apurar hasta el margen de respuesta: cada compactación reescribe la caché, y
+// con margen ocurren menos.
+const WORKING_CONTEXT_CAP = 500000;
+const COMPACT_PERCENT = 80;
+
+function workingWindow(contextWindow) {
+  return Math.min(contextWindow, WORKING_CONTEXT_CAP);
+}
+
+// pi-durable compacta en «ventana − reserveTokens» con una reserva global. Para
+// que compacte al porcentaje de cada modelo recibe esta ventana en
+// model.contextWindow; la de trabajo viaja aparte (model.workingWindow) y es la
+// que usan la UI, el guardián mecánico y el proveedor.
+function compactionWindow(working, policy) {
+  if (!policy || !policy.enabled) return working;
+  return Math.min(working, Math.floor((working * COMPACT_PERCENT) / 100) + policy.reserveTokens);
+}
+
 function thresholdsFor(policy, contextWindow) {
   const compact = Math.max(0, contextWindow - policy.reserveTokens);
   return { warn: Math.max(0, compact - policy.backgroundTokens), compact };
@@ -367,6 +387,9 @@ async function beforeCompact(compaction, runtime, context) {
 
 module.exports = {
   DEFAULT_POLICY,
+  WORKING_CONTEXT_CAP,
+  workingWindow,
+  compactionWindow,
   thresholdsFor,
   loadPolicy,
   serializeTranscript,

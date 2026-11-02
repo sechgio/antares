@@ -257,6 +257,21 @@ async function main() {
     assert(planReminder([user, result], { ...planTurn, remaining: [] }, 20) === undefined,
       'sin trabajo pendiente no hay recordatorio de plan');
     assert(planReminder([user, result], planTurn, 32) === undefined, 'el aviso de presupuesto cubre el final del turno');
+    const { withSentNotices } = require('../electron/agent-execution');
+    const firstResult = { role: 'toolResult', toolCallId: 'n1', toolName: 'fs_read', content: [{ type: 'text', text: 'uno' }] };
+    const secondResult = { role: 'toolResult', toolCallId: 'n2', toolName: 'fs_read', content: [{ type: 'text', text: 'dos' }] };
+    const noticed = withSentNotices('conv-notices', [user, firstResult], (list) => budgetWarning(list, 33));
+    assert(/llevas 33 de 40/.test(noticed[1].content[1].text) && firstResult.content.length === 1,
+      'el aviso viaja en la copia del último resultado');
+    const following = withSentNotices('conv-notices', [user, firstResult, secondResult], (list) => budgetWarning(list, 34));
+    assert(JSON.stringify(following[1]) === JSON.stringify(noticed[1]) && /llevas 34 de 40/.test(following[2].content[1].text),
+      'la petición siguiente repone el aviso ya enviado y añade el nuevo al último resultado');
+    const retried = withSentNotices('conv-notices', [user, firstResult, secondResult], (list) => budgetWarning(list, 35));
+    assert(JSON.stringify(retried) === JSON.stringify(following), 'reintentar la petición no duplica ni cambia los avisos');
+    const bare = [user];
+    assert(withSentNotices('conv-notices', bare, () => undefined) === bare
+      && withSentNotices('conv-notices', [user, firstResult], () => undefined)[1] === firstResult,
+    'sin avisos la petición no se toca y un resultado que salió del historial olvida su aviso');
     assert(define({ custom: true, base_url: 'https://openrouter.ai/api/v1' }, 'anthropic/claude-opus-5-5').compat
       .cacheControlFormat === 'anthropic', 'Claude vía OpenRouter lleva cache_control aunque el proveedor sea propio');
     assert(define({ custom: true, base_url: 'http://x.local/v1', capabilities: { vision: true } }, 'mi-modelo').input.includes('image'),
@@ -267,9 +282,18 @@ async function main() {
     const priced = modelDefinition(openai, 'gpt-4o', 'openai-completions', undefined, OPENAI_MODELS['gpt-4o']);
     assert(priced.cost.input === 2.5 && priced.cost.output === 10 && priced.cost.cacheRead === 1.25,
       'un modelo del catálogo lleva sus precios reales por millón de tokens');
-    assert(priced.contextWindow === 128000
-      && modelDefinition(openai, 'gpt-4.1', 'openai-completions', undefined, OPENAI_MODELS['gpt-4.1']).contextWindow === 1047576,
-      'la ventana del catálogo sustituye al valor por defecto');
+    const huge = modelDefinition(openai, 'gpt-4.1', 'openai-completions', undefined, OPENAI_MODELS['gpt-4.1']);
+    assert(priced.workingWindow === 128000 && huge.workingWindow === 500000,
+      'la ventana del catálogo sustituye al valor por defecto, con un tope de trabajo de 500 k');
+    assert(priced.contextWindow === 102400 + 16384 && huge.contextWindow === 400000 + 16384,
+      'pi-durable compacta al 80 % de la ventana de trabajo');
+    const { withWorkingWindow } = require('../electron/agent-execution');
+    const seen = [];
+    const wrappedApi = withWorkingWindow({ stream: (model) => seen.push(model.contextWindow), streamSimple: (model) => seen.push(model.contextWindow) });
+    wrappedApi.streamSimple(huge, {}, {});
+    wrappedApi.stream({ contextWindow: 9000 }, {}, {});
+    assert(seen.join() === '500000,9000' && huge.contextWindow === 416384,
+      'el proveedor recorta la salida con la ventana de trabajo, no con la de compactación');
     assert(modelDefinition(anthropicCatalog, 'claude-sonnet-5-5', 'anthropic-messages', ANTHROPIC_MODELS['claude-sonnet-5-5'],
       ANTHROPIC_MODELS['claude-sonnet-5-5']).maxTokens === 128000
       && modelDefinition(openai, 'gpt-5.5', 'openai-completions', undefined, OPENAI_MODELS['gpt-5.5']).maxTokens === 68000,

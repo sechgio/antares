@@ -647,7 +647,7 @@ async function messagesList(params) {
       workspace: (context && context.workspace) || null },
     usage: usage || null,
     context_window: contextWindow,
-    compaction_thresholds: compactionPolicy.thresholdsFor(shared.state.compaction, contextWindow),
+    compaction_thresholds: compactionPolicy.thresholdsFor(shared.state.compaction, execution.compactionWindowFor(session)),
     compacting: (projection.liveFor(session.conversationId).compactions || []).length > 0,
     ...(budget ? { token_budget: { limit: budget.limit, used: budget.used } } : {}),
   };

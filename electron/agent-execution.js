@@ -156,6 +156,7 @@ function modelDefinition(info, id, api, verified, catalogModel) {
   const capabilities = info.capabilities || {};
   const catalog = catalogModel || verified || {};
   const contextWindow = Number(capabilities.context_window) || Number(catalog.contextWindow) || DEFAULT_CONTEXT_WINDOW;
+  const working = compaction.workingWindow(contextWindow);
   const rates = catalog.cost || {};
   let host = '';
   try { host = new URL(info.base_url).hostname; } catch { }
@@ -194,7 +195,8 @@ function modelDefinition(info, id, api, verified, catalogModel) {
       cacheWrite: Number(rates.cacheWrite) || 0,
       ...(Array.isArray(rates.tiers) ? { tiers: rates.tiers } : {}),
     },
-    contextWindow,
+    contextWindow: compaction.compactionWindow(working, (shared.state && shared.state.compaction) || compaction.DEFAULT_POLICY),
+    workingWindow: working,
     // El techo de salida del catálogo: el razonamiento comparte max_tokens con
     // la respuesta y con 8 k un nivel alto dejaba la respuesta truncada.
     maxTokens: Math.min(Number(catalog.maxTokens) || (reasoning ? REASONING_MAX_TOKENS : DEFAULT_MAX_TOKENS),
@@ -265,10 +267,18 @@ async function buildProvider(record) {
     models: [...modelIds].map((id) => modelDefinition(info, id, api, anthropic ? catalog[id] : undefined, catalog[id])),
     // La telemetría va dentro del tope de OpenAI para observar la lista final,
     // no la anterior al recorte; en Anthropic no hay transformación previa.
-    api: anthropic
+    api: withWorkingWindow(anthropic
       ? withCacheTelemetry(shared.deps.aiAnthropic.anthropicMessagesApi())
-      : cappedOpenAIApi(withCacheTelemetry(shared.deps.aiOpenai.openAICompletionsApi())),
+      : cappedOpenAIApi(withCacheTelemetry(shared.deps.aiOpenai.openAICompletionsApi()))),
   });
+}
+
+// model.contextWindow es la ventana de compactación de pi-durable; pi-ai recorta
+// max_tokens con la ventana del modelo, así que el proveedor recibe la de trabajo.
+function withWorkingWindow(api) {
+  const wrap = (stream) => (model, context, options) => stream(
+    model && model.workingWindow ? { ...model, contextWindow: model.workingWindow } : model, context, options);
+  return { ...api, stream: wrap(api.stream), streamSimple: wrap(api.streamSimple) };
 }
 
 function capOpenAITools(payload) {
@@ -530,10 +540,18 @@ function nativeTools() {
 function contextWindowFor(session) {
   const model = shared.state && shared.state.models
     && shared.state.models.getModel(session && session.provider, session && session.model);
-  if (model && Number(model.contextWindow) > 0) return Number(model.contextWindow);
+  if (model && Number(model.contextWindow) > 0) return Number(model.workingWindow || model.contextWindow);
   const record = shared.providers.get(session && session.provider);
   const window = Number(record && record.info && record.info.capabilities && record.info.capabilities.context_window);
-  return window > 0 ? window : DEFAULT_CONTEXT_WINDOW;
+  return compaction.workingWindow(window > 0 ? window : DEFAULT_CONTEXT_WINDOW);
+}
+
+// La ventana con la que pi-durable decide compactar (ver compactionWindow).
+function compactionWindowFor(session) {
+  const model = shared.state && shared.state.models
+    && shared.state.models.getModel(session && session.provider, session && session.model);
+  if (model && Number(model.contextWindow) > 0) return Number(model.contextWindow);
+  return compaction.compactionWindow(contextWindowFor(session), shared.state && shared.state.compaction);
 }
 
 async function refreshTools() {
@@ -571,11 +589,12 @@ async function refreshTools() {
           const prepared = compacted || messages;
           const enveloped = envelopeToolResults(prepared);
           const rounds = shared.rounds.get(api.conversationId) || 0;
-          const planned = planReminder(enveloped, shared.turns.get(api.conversationId), rounds);
-          const warned = budgetWarning(planned || enveloped, rounds);
-          const next = warned || planned || enveloped;
-          return leadingSystem(next)
-            || (compacted || planned || warned || enveloped !== prepared ? { messages: next } : undefined);
+          const turn = shared.turns.get(api.conversationId);
+          const next = withSentNotices(api.conversationId, enveloped, (list) => {
+            const planned = planReminder(list, turn, rounds);
+            return budgetWarning(planned || list, rounds) || planned;
+          });
+          return leadingSystem(next) || (next !== messages ? { messages: next } : undefined);
         },
         afterTools: async (_output, results, api, context) => {
           await trackSilentToolRound(turnState(api.conversationId), results, api, context);
@@ -616,15 +635,20 @@ async function refreshTools() {
 }
 
 let tokenEstimator;
+// Cortes del recorte mecánico por conversación, para que la siguiente petición
+// pueda repetirlos y conservar el prefijo cacheado (ver compactMessages).
+const requestCuts = new Map();
 
 async function compactRequest(messages, api, context) {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   const session = sessionId ? (await sessions())[sessionId] : null;
   const model = session && shared.state.models.getModel(session.provider, session.model);
-  const budget = requestBudget(model && model.contextWindow, model && model.maxTokens);
+  const budget = requestBudget(model && (model.workingWindow || model.contextWindow), model && model.maxTokens);
   if (!budget) return undefined;
   tokenEstimator ||= await import('@earendil-works/pi-ai/utils/estimate');
+  if (!requestCuts.has(api.conversationId)) requestCuts.set(api.conversationId, {});
   return compactMessages(messages, {
+    cuts: requestCuts.get(api.conversationId),
     budget,
     estimate: (list) => tokenEstimator.estimateContextTokens(list).tokens,
     messageTokens: tokenEstimator.estimateMessageTokens,
@@ -706,6 +730,35 @@ function planReminder(messages, turn, rounds) {
   const content = Array.isArray(last.content) ? last.content : [{ type: 'text', text: String(last.content || '') }];
   turn.planReminderAt = since;
   return [...messages.slice(0, -1), { ...last, content: [...content, { type: 'text', text: notice }] }];
+}
+
+// Los avisos se añaden al último resultado solo en la copia enviada. Se guardan
+// por toolCallId y se reponen en las peticiones siguientes: sin ellos ese
+// resultado viajaría distinto de como se cacheó y el proveedor reescribiría la
+// caché desde ahí. notify recibe la petición y devuelve la versión con aviso.
+const sentNotices = new Map();
+
+function withSentNotices(conversationId, messages, notify) {
+  const sent = sentNotices.get(conversationId) || new Map();
+  const blocksOf = (content) => (Array.isArray(content) ? content : [{ type: 'text', text: String(content || '') }]);
+  const present = new Set();
+  let next = messages.map((message) => {
+    const blocks = message && message.role === 'toolResult' ? sent.get(message.toolCallId) : undefined;
+    if (!blocks) return message;
+    present.add(message.toolCallId);
+    return { ...message, content: [...blocksOf(message.content), ...blocks] };
+  });
+  for (const id of sent.keys()) if (!present.has(id)) sent.delete(id);
+  const last = messages[messages.length - 1];
+  const notified = last && last.role === 'toolResult' && last.toolCallId && !present.has(last.toolCallId)
+    ? notify(next) : undefined;
+  if (notified) {
+    sent.set(last.toolCallId, notified[notified.length - 1].content.slice(blocksOf(last.content).length));
+    next = notified;
+  }
+  if (sent.size) sentNotices.set(conversationId, sent);
+  else sentNotices.delete(conversationId);
+  return present.size || notified ? next : messages;
 }
 
 async function countRound(api, context) {
@@ -1636,6 +1689,7 @@ module.exports = {
   envelopeToolResults,
   toolOutputBlock,
   planReminder,
+  withSentNotices,
   callKey,
   providerInfo,
   thinkingLevelFor,
@@ -1649,5 +1703,7 @@ module.exports = {
   dispatchApproved,
   sanitizeProviderError,
   contextWindowFor,
+  compactionWindowFor,
+  withWorkingWindow,
   requireSkill,
 };
