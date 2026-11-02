@@ -95,21 +95,18 @@ body { padding: 0; max-width: none; }
 .dc-bar select { width: auto; max-width: 180px; min-height: 32px; padding: 4px 8px; }
 .dc-zoom { min-width: 44px; color: var(--page-muted); font-size: 12px; text-align: center; font-variant-numeric: tabular-nums; }
 .dc-body { position: relative; display: flex; min-height: 0; }
-.dc-viewport { position: relative; flex: 1; overflow: hidden; cursor: grab; touch-action: none; background: var(--page-field);
-  background-image: radial-gradient(color-mix(in srgb, CanvasText 14%, transparent) 1px, transparent 1px); background-size: 24px 24px; }
+.dc-viewport { position: relative; flex: 1; overflow: hidden; cursor: grab; touch-action: none; background: var(--page-field); background-image: radial-gradient(color-mix(in srgb, CanvasText 14%, transparent) 1px, transparent 1px); background-size: 24px 24px; }
 .dc-viewport.is-panning { cursor: grabbing; }
 .dc-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 .dc-frame { position: absolute; }
-.dc-label { position: absolute; left: 0; bottom: 100%; min-height: 0; margin-bottom: calc(6px / var(--dc-scale, 1)); padding: 0; border: 0;
-  background: none; color: var(--page-muted); font-size: calc(13px / var(--dc-scale, 1)); white-space: nowrap; }
+.dc-label { position: absolute; left: 0; bottom: 100%; min-height: 0; margin-bottom: calc(6px / var(--dc-scale, 1)); padding: 0; border: 0; background: none; color: var(--page-muted); font-size: calc(13px / var(--dc-scale, 1)); white-space: nowrap; }
 .dc-label span { margin-left: .5em; opacity: .7; font-variant-numeric: tabular-nums; }
 .dc-frame.is-selected .dc-label { color: var(--page-accent); }
 .dc-host { display: block; box-shadow: 0 1px 3px rgb(0 0 0 / .18); }
 .dc-frame.is-selected .dc-host { outline: calc(2px / var(--dc-scale, 1)) solid var(--page-accent); outline-offset: calc(2px / var(--dc-scale, 1)); }
 .dc-note { position: absolute; white-space: pre-wrap; overflow-wrap: anywhere; }
 .dc-note--title { color: var(--page-text); font-size: 48px; font-weight: 650; letter-spacing: -.02em; line-height: 1.1; }
-.dc-note--note { width: 240px; padding: 14px 16px; border-radius: 6px; color: #2b2b2b; font-size: 15px; line-height: 1.45;
-  box-shadow: 0 1px 2px rgb(0 0 0 / .12), 0 4px 12px rgb(0 0 0 / .08); }
+.dc-note--note { width: 240px; padding: 14px 16px; border-radius: 6px; color: #2b2b2b; font-size: 15px; line-height: 1.45; box-shadow: 0 1px 2px rgb(0 0 0 / .12), 0 4px 12px rgb(0 0 0 / .08); }
 .dc-note[data-color="yellow"] { background: #fdf0b2; } .dc-note[data-color="blue"] { background: #d4e6fb; }
 .dc-note[data-color="green"] { background: #d6f0d8; } .dc-note[data-color="pink"] { background: #f9d9e6; }
 .dc-note[data-color="purple"] { background: #e5dcf7; } .dc-note[data-color="gray"] { background: #e8e6e1; }
@@ -118,36 +115,20 @@ body { padding: 0; max-width: none; }
 .dc-props h2 { margin: 0; font-size: 14px; }
 .dc-props input[type="color"] { width: 100%; height: 36px; padding: 2px; }
 .dc-props-actions { display: flex; gap: 8px; }
-@media (max-width: 640px) {
-  .dc-props { position: absolute; inset: 0 0 0 auto; width: min(280px, 85%); background: Canvas; box-shadow: -8px 0 24px rgb(0 0 0 / .18); }
-  .dc-bar select { max-width: 120px; }
-}
+@media (max-width: 640px) { .dc-props { position: absolute; inset: 0 0 0 auto; width: min(280px, 85%); background: Canvas; box-shadow: -8px 0 24px rgb(0 0 0 / .18); } .dc-bar select { max-width: 120px; } }
 `;
 document.head.append(style);
 
-const make = (tag, className, text) => {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-};
-const button = (text, label) => {
-  const node = make('button', '', text);
-  node.type = 'button';
-  if (label) node.setAttribute('aria-label', label);
-  return node;
-};
+const make = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; };
+const button = (text, label) => { const node = make('button', '', text); node.type = 'button'; if (label) node.setAttribute('aria-label', label); return node; };
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const escapeCss = (value) => String(value).replace(/[<>{};\\]/g, '');
 const defaults = (board) => Object.fromEntries(Object.entries(board.props || {}).map(([name, prop]) => [name, prop.default]));
 const values = new Map(canvas.boards.map((board) => [board.id, defaults(board)]));
 const byId = new Map(canvas.boards.map((board) => [board.id, board]));
-const fill = (source, board, escape) => source.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g,
-  (hole, name) => (name in values.get(board.id) ? escape(values.get(board.id)[name]) : hole));
+const fill = (source, board, escape) => source.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, (hole, name) => (name in values.get(board.id) ? escape(values.get(board.id)[name]) : hole));
 const paint = (board) => {
-  frames.get(board.id).host.shadowRoot.innerHTML = `<style>:host { all: initial; display: block; width: ${board.w}px; height: ${board.h}px; overflow: hidden;
-    background: #fff; color: #141413; font: 16px/1.5 system-ui, sans-serif; } [data-goto] { cursor: pointer; } ${fill(board.css || '', board, escapeCss)}</style>`
-    + fill(board.html, board, escapeHtml);
+  frames.get(board.id).host.shadowRoot.innerHTML = `<style>:host { all: initial; display: block; width: ${board.w}px; height: ${board.h}px; overflow: hidden; background: #fff; color: #141413; font: 16px/1.5 system-ui, sans-serif; } [data-goto] { cursor: pointer; } ${fill(board.css || '', board, escapeCss)}</style>` + fill(board.html, board, escapeHtml);
 };
 
 const shell = make('section', 'dc');
@@ -171,13 +152,9 @@ const world = make('div', 'dc-world');
 const panel = make('aside', 'dc-props');
 panel.hidden = true;
 panel.setAttribute('aria-label', 'Ajustes del artboard');
-viewport.append(world);
-body.append(viewport, panel);
-shell.append(bar, body);
-root.append(shell);
+viewport.append(world); body.append(viewport, panel); shell.append(bar, body); root.append(shell);
 
-const frames = new Map();
-let selected = null;
+const frames = new Map(); let selected = null;
 const renderPanel = () => {
   const board = selected && byId.get(selected);
   tweaks.setAttribute('aria-pressed', String(!panel.hidden));
@@ -255,9 +232,7 @@ for (const board of canvas.boards) {
   paint(board);
 }
 
-let scale = 1;
-let tx = 0;
-let ty = 0;
+let scale = 1; let tx = 0; let ty = 0;
 const apply = () => {
   world.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
   world.style.setProperty('--dc-scale', String(scale));
@@ -288,13 +263,10 @@ const show = (boxes) => {
   return true;
 };
 const boxOf = (board) => ({ x: board.x, y: board.y - 32, w: board.w, h: board.h + 32 });
-const fit = () => show([...canvas.boards.map(boxOf), ...[...world.querySelectorAll('.dc-note')].map((node) =>
-  ({ x: node.offsetLeft, y: node.offsetTop, w: node.offsetWidth, h: node.offsetHeight }))]);
+const fit = () => show([...canvas.boards.map(boxOf), ...[...world.querySelectorAll('.dc-note')].map((node) => ({ x: node.offsetLeft, y: node.offsetTop, w: node.offsetWidth, h: node.offsetHeight }))]);
 const focusBoard = (id) => { select(id); show([boxOf(byId.get(id))]); };
 jump.addEventListener('change', () => { if (jump.value) focusBoard(jump.value); else { select(null); fit(); } });
-zoomOut.addEventListener('click', () => center(1 / 1.25));
-zoomIn.addEventListener('click', () => center(1.25));
-fitButton.addEventListener('click', fit);
+zoomOut.addEventListener('click', () => center(1 / 1.25)); zoomIn.addEventListener('click', () => center(1.25)); fitButton.addEventListener('click', fit);
 viewport.addEventListener('wheel', (event) => {
   if (!event.ctrlKey && !event.metaKey) return;
   event.preventDefault();
@@ -333,14 +305,12 @@ const release = () => {
   drag = null;
   viewport.classList.remove('is-panning');
 };
-viewport.addEventListener('pointerup', release);
-viewport.addEventListener('pointercancel', release);
+viewport.addEventListener('pointerup', release); viewport.addEventListener('pointercancel', release);
 viewport.addEventListener('dblclick', (event) => { const id = boardAt(event.target); if (id) focusBoard(id); });
 // Reajusta mientras el iframe cambia de alto, hasta que el usuario mueva la vista.
 let touched = false;
 for (const type of ['pointerdown', 'keydown']) viewport.addEventListener(type, () => { touched = true; });
-bar.addEventListener('click', () => { touched = true; });
-jump.addEventListener('focus', () => { touched = true; });
+bar.addEventListener('click', () => { touched = true; }); jump.addEventListener('focus', () => { touched = true; });
 new ResizeObserver(() => { if (!touched) fit(); }).observe(viewport);
 requestAnimationFrame(() => { if (!touched) fit(); });
 apply();
