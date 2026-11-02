@@ -336,7 +336,7 @@ async function main() {
     const noCondition = await failure('web_wait', {});
     assert(noCondition && noCondition.message === 'Indica text, gone o url', 'web_wait exige una condición');
 
-    const { JSDOM } = require('../frontend/node_modules/jsdom');
+    const { JSDOM } = require('jsdom');
     const dom = new JSDOM('<iframe></iframe><div id="overlay">Aceptar cookies</div>',
       { url: 'https://files.example.com', runScripts: 'outside-only' });
     try {
