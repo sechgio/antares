@@ -689,6 +689,15 @@ async function main() {
   }
 
   {
+    const policy = compactionModule.DEFAULT_POLICY;
+    assert(compactionModule.workingWindow(1000000) === 500000 && compactionModule.workingWindow(200000) === 200000,
+      'la ventana de trabajo nunca pasa de 500 k');
+    assert(compactionModule.thresholdsFor(policy, compactionModule.compactionWindow(500000, policy)).compact === 400000
+      && compactionModule.thresholdsFor(policy, compactionModule.compactionWindow(200000, policy)).compact === 160000,
+    'la compactación empieza al 80 % de la ventana de trabajo');
+    assert(compactionModule.compactionWindow(8192, policy) === 8192
+      && compactionModule.compactionWindow(500000, { ...policy, enabled: false }) === 500000,
+    'una ventana pequeña o la compactación desactivada no inventan sitio');
     for (const window of [32768, 128000, 200000]) {
       const thresholds = compactionModule.thresholdsFor(compactionModule.DEFAULT_POLICY, window);
       assert(thresholds.warn < thresholds.compact && thresholds.compact < window, `los umbrales avisan antes del límite duro (${window})`);

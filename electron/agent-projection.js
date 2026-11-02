@@ -382,7 +382,7 @@ async function projectMessages(conv, session) {
   }
   const ref = lastUsageMessage || session;
   const model = ref.provider && ref.model ? shared.state.models.getModel(ref.provider, ref.model) : null;
-  if (model && Number(model.contextWindow) > 0) usage.window = Number(model.contextWindow);
+  if (model && Number(model.contextWindow) > 0) usage.window = Number(model.workingWindow || model.contextWindow);
   return { messages, pending, usage: usage.input + usage.output > 0 ? usage : null };
 }
 

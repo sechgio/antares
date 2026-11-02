@@ -282,9 +282,18 @@ async function main() {
     const priced = modelDefinition(openai, 'gpt-4o', 'openai-completions', undefined, OPENAI_MODELS['gpt-4o']);
     assert(priced.cost.input === 2.5 && priced.cost.output === 10 && priced.cost.cacheRead === 1.25,
       'un modelo del catálogo lleva sus precios reales por millón de tokens');
-    assert(priced.contextWindow === 128000
-      && modelDefinition(openai, 'gpt-4.1', 'openai-completions', undefined, OPENAI_MODELS['gpt-4.1']).contextWindow === 1047576,
-      'la ventana del catálogo sustituye al valor por defecto');
+    const huge = modelDefinition(openai, 'gpt-4.1', 'openai-completions', undefined, OPENAI_MODELS['gpt-4.1']);
+    assert(priced.workingWindow === 128000 && huge.workingWindow === 500000,
+      'la ventana del catálogo sustituye al valor por defecto, con un tope de trabajo de 500 k');
+    assert(priced.contextWindow === 102400 + 16384 && huge.contextWindow === 400000 + 16384,
+      'pi-durable compacta al 80 % de la ventana de trabajo');
+    const { withWorkingWindow } = require('../electron/agent-execution');
+    const seen = [];
+    const wrappedApi = withWorkingWindow({ stream: (model) => seen.push(model.contextWindow), streamSimple: (model) => seen.push(model.contextWindow) });
+    wrappedApi.streamSimple(huge, {}, {});
+    wrappedApi.stream({ contextWindow: 9000 }, {}, {});
+    assert(seen.join() === '500000,9000' && huge.contextWindow === 416384,
+      'el proveedor recorta la salida con la ventana de trabajo, no con la de compactación');
     assert(modelDefinition(anthropicCatalog, 'claude-sonnet-5-5', 'anthropic-messages', ANTHROPIC_MODELS['claude-sonnet-5-5'],
       ANTHROPIC_MODELS['claude-sonnet-5-5']).maxTokens === 128000
       && modelDefinition(openai, 'gpt-5.5', 'openai-completions', undefined, OPENAI_MODELS['gpt-5.5']).maxTokens === 68000,

@@ -156,6 +156,7 @@ function modelDefinition(info, id, api, verified, catalogModel) {
   const capabilities = info.capabilities || {};
   const catalog = catalogModel || verified || {};
   const contextWindow = Number(capabilities.context_window) || Number(catalog.contextWindow) || DEFAULT_CONTEXT_WINDOW;
+  const working = compaction.workingWindow(contextWindow);
   const rates = catalog.cost || {};
   let host = '';
   try { host = new URL(info.base_url).hostname; } catch { }
@@ -194,7 +195,8 @@ function modelDefinition(info, id, api, verified, catalogModel) {
       cacheWrite: Number(rates.cacheWrite) || 0,
       ...(Array.isArray(rates.tiers) ? { tiers: rates.tiers } : {}),
     },
-    contextWindow,
+    contextWindow: compaction.compactionWindow(working, (shared.state && shared.state.compaction) || compaction.DEFAULT_POLICY),
+    workingWindow: working,
     // El techo de salida del catálogo: el razonamiento comparte max_tokens con
     // la respuesta y con 8 k un nivel alto dejaba la respuesta truncada.
     maxTokens: Math.min(Number(catalog.maxTokens) || (reasoning ? REASONING_MAX_TOKENS : DEFAULT_MAX_TOKENS),
@@ -265,10 +267,18 @@ async function buildProvider(record) {
     models: [...modelIds].map((id) => modelDefinition(info, id, api, anthropic ? catalog[id] : undefined, catalog[id])),
     // La telemetría va dentro del tope de OpenAI para observar la lista final,
     // no la anterior al recorte; en Anthropic no hay transformación previa.
-    api: anthropic
+    api: withWorkingWindow(anthropic
       ? withCacheTelemetry(shared.deps.aiAnthropic.anthropicMessagesApi())
-      : cappedOpenAIApi(withCacheTelemetry(shared.deps.aiOpenai.openAICompletionsApi())),
+      : cappedOpenAIApi(withCacheTelemetry(shared.deps.aiOpenai.openAICompletionsApi()))),
   });
+}
+
+// model.contextWindow es la ventana de compactación de pi-durable; pi-ai recorta
+// max_tokens con la ventana del modelo, así que el proveedor recibe la de trabajo.
+function withWorkingWindow(api) {
+  const wrap = (stream) => (model, context, options) => stream(
+    model && model.workingWindow ? { ...model, contextWindow: model.workingWindow } : model, context, options);
+  return { ...api, stream: wrap(api.stream), streamSimple: wrap(api.streamSimple) };
 }
 
 function capOpenAITools(payload) {
@@ -530,10 +540,18 @@ function nativeTools() {
 function contextWindowFor(session) {
   const model = shared.state && shared.state.models
     && shared.state.models.getModel(session && session.provider, session && session.model);
-  if (model && Number(model.contextWindow) > 0) return Number(model.contextWindow);
+  if (model && Number(model.contextWindow) > 0) return Number(model.workingWindow || model.contextWindow);
   const record = shared.providers.get(session && session.provider);
   const window = Number(record && record.info && record.info.capabilities && record.info.capabilities.context_window);
-  return window > 0 ? window : DEFAULT_CONTEXT_WINDOW;
+  return compaction.workingWindow(window > 0 ? window : DEFAULT_CONTEXT_WINDOW);
+}
+
+// La ventana con la que pi-durable decide compactar (ver compactionWindow).
+function compactionWindowFor(session) {
+  const model = shared.state && shared.state.models
+    && shared.state.models.getModel(session && session.provider, session && session.model);
+  if (model && Number(model.contextWindow) > 0) return Number(model.contextWindow);
+  return compaction.compactionWindow(contextWindowFor(session), shared.state && shared.state.compaction);
 }
 
 async function refreshTools() {
@@ -625,7 +643,7 @@ async function compactRequest(messages, api, context) {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   const session = sessionId ? (await sessions())[sessionId] : null;
   const model = session && shared.state.models.getModel(session.provider, session.model);
-  const budget = requestBudget(model && model.contextWindow, model && model.maxTokens);
+  const budget = requestBudget(model && (model.workingWindow || model.contextWindow), model && model.maxTokens);
   if (!budget) return undefined;
   tokenEstimator ||= await import('@earendil-works/pi-ai/utils/estimate');
   if (!requestCuts.has(api.conversationId)) requestCuts.set(api.conversationId, {});
@@ -1685,5 +1703,7 @@ module.exports = {
   dispatchApproved,
   sanitizeProviderError,
   contextWindowFor,
+  compactionWindowFor,
+  withWorkingWindow,
   requireSkill,
 };

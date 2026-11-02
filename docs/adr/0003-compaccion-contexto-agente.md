@@ -34,19 +34,24 @@ tokens. El uso real se lee del contador del proveedor cuando lo reporta
 medición es del contexto total: no se desglosan por separado sistema, memoria,
 historial y resultados de herramientas en la UI.
 
-**Umbrales** (sobre la ventana del modelo, configurables en
+**Umbrales** (sobre la ventana de trabajo `min(ventana del modelo, 500 000)`;
+`reserveTokens` y `backgroundTokens` son configurables en
 `<datos de usuario>/ai-agent/compaction.json`):
 
 | Umbral | Fórmula | Efecto |
 | --- | --- | --- |
-| Aviso (UI) | `ventana − reserveTokens − backgroundTokens` | el anillo de contexto cambia a amarillo |
-| Compactación | `ventana − reserveTokens` | pi-durable compacta (bloqueante) y el turno continúa |
-| Límite duro | `ventana` | el proveedor rechaza; rescate por desbordamiento: compactar y reintentar una vez |
+| Aviso (UI) | `compactación − backgroundTokens` | el anillo de contexto cambia a amarillo |
+| Compactación | `80 % de la ventana de trabajo`, sin pasar de `trabajo − reserveTokens` | pi-durable compacta (bloqueante) y el turno continúa |
+| Límite duro | `ventana de trabajo` | el guardián mecánico recorta; si el proveedor rechaza, rescate por desbordamiento: compactar y reintentar una vez |
 
 Por defecto `reserveTokens = 16384` (margen de respuesta) y
-`backgroundTokens = 32768` (antelación del aviso). El aviso aparece antes que la
-compactación y esta antes del límite duro: la estimación es deliberadamente
-conservadora.
+`backgroundTokens = 32768` (antelación del aviso). Compactar al 80 % y no al
+borde deja margen para el resumen y hace que las compactaciones —que reescriben
+la caché del prefijo— sean menos frecuentes. pi-durable solo admite una reserva
+absoluta global, así que recibe en `model.contextWindow` la ventana de
+compactación (`80 % del trabajo + reserveTokens`); la ventana de trabajo viaja en
+`model.workingWindow` y es la que ven la UI, el guardián mecánico y el proveedor
+(pi-ai recorta `max_tokens` con ella).
 
 **Lista sagrada y política de resumen.** El resumidor de Antares
 (`SUMMARY_SYSTEM_PROMPT`, en español) exige secciones fijas: encargo actual,
