@@ -571,11 +571,12 @@ async function refreshTools() {
           const prepared = compacted || messages;
           const enveloped = envelopeToolResults(prepared);
           const rounds = shared.rounds.get(api.conversationId) || 0;
-          const planned = planReminder(enveloped, shared.turns.get(api.conversationId), rounds);
-          const warned = budgetWarning(planned || enveloped, rounds);
-          const next = warned || planned || enveloped;
-          return leadingSystem(next)
-            || (compacted || planned || warned || enveloped !== prepared ? { messages: next } : undefined);
+          const turn = shared.turns.get(api.conversationId);
+          const next = withSentNotices(api.conversationId, enveloped, (list) => {
+            const planned = planReminder(list, turn, rounds);
+            return budgetWarning(planned || list, rounds) || planned;
+          });
+          return leadingSystem(next) || (next !== messages ? { messages: next } : undefined);
         },
         afterTools: async (_output, results, api, context) => {
           await trackSilentToolRound(turnState(api.conversationId), results, api, context);
@@ -616,6 +617,9 @@ async function refreshTools() {
 }
 
 let tokenEstimator;
+// Cortes del recorte mecánico por conversación, para que la siguiente petición
+// pueda repetirlos y conservar el prefijo cacheado (ver compactMessages).
+const requestCuts = new Map();
 
 async function compactRequest(messages, api, context) {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
@@ -624,7 +628,9 @@ async function compactRequest(messages, api, context) {
   const budget = requestBudget(model && model.contextWindow, model && model.maxTokens);
   if (!budget) return undefined;
   tokenEstimator ||= await import('@earendil-works/pi-ai/utils/estimate');
+  if (!requestCuts.has(api.conversationId)) requestCuts.set(api.conversationId, {});
   return compactMessages(messages, {
+    cuts: requestCuts.get(api.conversationId),
     budget,
     estimate: (list) => tokenEstimator.estimateContextTokens(list).tokens,
     messageTokens: tokenEstimator.estimateMessageTokens,
@@ -706,6 +712,35 @@ function planReminder(messages, turn, rounds) {
   const content = Array.isArray(last.content) ? last.content : [{ type: 'text', text: String(last.content || '') }];
   turn.planReminderAt = since;
   return [...messages.slice(0, -1), { ...last, content: [...content, { type: 'text', text: notice }] }];
+}
+
+// Los avisos se añaden al último resultado solo en la copia enviada. Se guardan
+// por toolCallId y se reponen en las peticiones siguientes: sin ellos ese
+// resultado viajaría distinto de como se cacheó y el proveedor reescribiría la
+// caché desde ahí. notify recibe la petición y devuelve la versión con aviso.
+const sentNotices = new Map();
+
+function withSentNotices(conversationId, messages, notify) {
+  const sent = sentNotices.get(conversationId) || new Map();
+  const blocksOf = (content) => (Array.isArray(content) ? content : [{ type: 'text', text: String(content || '') }]);
+  const present = new Set();
+  let next = messages.map((message) => {
+    const blocks = message && message.role === 'toolResult' ? sent.get(message.toolCallId) : undefined;
+    if (!blocks) return message;
+    present.add(message.toolCallId);
+    return { ...message, content: [...blocksOf(message.content), ...blocks] };
+  });
+  for (const id of sent.keys()) if (!present.has(id)) sent.delete(id);
+  const last = messages[messages.length - 1];
+  const notified = last && last.role === 'toolResult' && last.toolCallId && !present.has(last.toolCallId)
+    ? notify(next) : undefined;
+  if (notified) {
+    sent.set(last.toolCallId, notified[notified.length - 1].content.slice(blocksOf(last.content).length));
+    next = notified;
+  }
+  if (sent.size) sentNotices.set(conversationId, sent);
+  else sentNotices.delete(conversationId);
+  return present.size || notified ? next : messages;
 }
 
 async function countRound(api, context) {
@@ -1636,6 +1671,7 @@ module.exports = {
   envelopeToolResults,
   toolOutputBlock,
   planReminder,
+  withSentNotices,
   callKey,
   providerInfo,
   thinkingLevelFor,

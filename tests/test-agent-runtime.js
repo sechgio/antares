@@ -257,6 +257,21 @@ async function main() {
     assert(planReminder([user, result], { ...planTurn, remaining: [] }, 20) === undefined,
       'sin trabajo pendiente no hay recordatorio de plan');
     assert(planReminder([user, result], planTurn, 32) === undefined, 'el aviso de presupuesto cubre el final del turno');
+    const { withSentNotices } = require('../electron/agent-execution');
+    const firstResult = { role: 'toolResult', toolCallId: 'n1', toolName: 'fs_read', content: [{ type: 'text', text: 'uno' }] };
+    const secondResult = { role: 'toolResult', toolCallId: 'n2', toolName: 'fs_read', content: [{ type: 'text', text: 'dos' }] };
+    const noticed = withSentNotices('conv-notices', [user, firstResult], (list) => budgetWarning(list, 33));
+    assert(/llevas 33 de 40/.test(noticed[1].content[1].text) && firstResult.content.length === 1,
+      'el aviso viaja en la copia del último resultado');
+    const following = withSentNotices('conv-notices', [user, firstResult, secondResult], (list) => budgetWarning(list, 34));
+    assert(JSON.stringify(following[1]) === JSON.stringify(noticed[1]) && /llevas 34 de 40/.test(following[2].content[1].text),
+      'la petición siguiente repone el aviso ya enviado y añade el nuevo al último resultado');
+    const retried = withSentNotices('conv-notices', [user, firstResult, secondResult], (list) => budgetWarning(list, 35));
+    assert(JSON.stringify(retried) === JSON.stringify(following), 'reintentar la petición no duplica ni cambia los avisos');
+    const bare = [user];
+    assert(withSentNotices('conv-notices', bare, () => undefined) === bare
+      && withSentNotices('conv-notices', [user, firstResult], () => undefined)[1] === firstResult,
+    'sin avisos la petición no se toca y un resultado que salió del historial olvida su aviso');
     assert(define({ custom: true, base_url: 'https://openrouter.ai/api/v1' }, 'anthropic/claude-opus-5-5').compat
       .cacheControlFormat === 'anthropic', 'Claude vía OpenRouter lleva cache_control aunque el proveedor sea propio');
     assert(define({ custom: true, base_url: 'http://x.local/v1', capabilities: { vision: true } }, 'mi-modelo').input.includes('image'),
