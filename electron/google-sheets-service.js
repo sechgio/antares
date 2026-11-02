@@ -18,15 +18,14 @@ const {
 const { googleApiFetch } = require('./google-api-fetch');
 const {
   findAvailablePort,
-  startCallbackServer,
   generateCodeVerifier: _generateCodeVerifier,
   generateCodeChallenge: _generateCodeChallenge,
 } = require('./autoimg-oauth-flow');
+const { exchangeBrowserOAuthCode } = require('./cloud-connector-common');
 const {
-  exchangeBrowserOAuthCode,
-  browserOAuthCallbackHandlers,
-  wireOAuthCallbackServer,
-} = require('./cloud-connector-common');
+  beginBrowserOAuthFlow: startBrowserOAuthFlow,
+  createPendingFlow,
+} = require('./oauth-session');
 const {
   setActiveUser,
   clearActiveUser,
@@ -43,10 +42,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
 ].join(' ');
 
-let _pendingRedirectUri = null;
-let _pendingCodeVerifier = null;
-let _pendingOAuthState = null;
-let _callbackFlow = null;
+const _oauthFlow = createPendingFlow();
 
 let _sheetId = null;
 let _sheetMeta = null;
@@ -73,67 +69,41 @@ function _buildAuthUrl(redirectUri, codeChallenge, state) {
 }
 
 function getAuthUrl() {
-  const redirectUri = _pendingRedirectUri || 'http://127.0.0.1:42813';
-  const verifier = _pendingCodeVerifier || _generateCodeVerifier();
-  _pendingCodeVerifier = verifier;
+  const slots = _oauthFlow.slots;
+  const redirectUri = slots.redirectUri || 'http://127.0.0.1:42813';
+  const verifier = slots.codeVerifier || _generateCodeVerifier();
+  slots.codeVerifier = verifier;
   const challenge = _generateCodeChallenge(verifier);
-  const state = _pendingOAuthState || crypto.randomBytes(24).toString('base64url');
-  _pendingOAuthState = state;
+  const state = slots.state || crypto.randomBytes(24).toString('base64url');
+  slots.state = state;
   return _buildAuthUrl(redirectUri, challenge, state);
 }
 
 function cancelBrowserOAuthFlow() {
-  _callbackFlow?.stop?.();
-  _callbackFlow = null;
-  _pendingRedirectUri = null;
-  _pendingCodeVerifier = null;
-  _pendingOAuthState = null;
+  _oauthFlow.cancel();
 }
 
 async function beginBrowserOAuthFlow(onComplete, onError) {
-  cancelBrowserOAuthFlow();
-
-  const port = await findAvailablePort();
-  const redirectUri = `http://127.0.0.1:${port}`;
-  const codeVerifier = _generateCodeVerifier();
-  const codeChallenge = _generateCodeChallenge(codeVerifier);
-  const oauthState = crypto.randomBytes(24).toString('base64url');
-  _pendingRedirectUri = redirectUri;
-  _pendingCodeVerifier = codeVerifier;
-  _pendingOAuthState = oauthState;
-  const url = _buildAuthUrl(redirectUri, codeChallenge, oauthState);
-
-  const flow = { stop: null };
-  _callbackFlow = flow;
-  wireOAuthCallbackServer(
-    startCallbackServer(port, {
-      expectedState: oauthState,
-      ...browserOAuthCallbackHandlers({
-        label: 'Google',
-        connect: async (code) => {
-          await exchangeCode(code, redirectUri);
-          return getAuthStatus();
-        },
-        onComplete,
-        onError,
-        cancel: cancelBrowserOAuthFlow,
-      }),
-    }),
-    {
-      isCurrent: () => _callbackFlow === flow,
-      setStop: (stop) => { flow.stop = stop; },
-      onError,
-      cancel: cancelBrowserOAuthFlow,
+  return startBrowserOAuthFlow(_oauthFlow, {
+    label: 'Google',
+    resolveTarget: async () => {
+      const port = await findAvailablePort();
+      return { port, redirectUri: `http://127.0.0.1:${port}` };
     },
-  );
-
-  return { url, redirect_uri: redirectUri };
+    buildAuthUrl: _buildAuthUrl,
+    connect: async (code, { redirectUri }) => {
+      await exchangeCode(code, redirectUri);
+      return getAuthStatus();
+    },
+    onComplete,
+    onError,
+  });
 }
 
 async function exchangeCode(code, redirectUri) {
   const cfg = _requireConfig();
-  const uri = redirectUri || _pendingRedirectUri;
-  const codeVerifier = _pendingCodeVerifier;
+  const uri = redirectUri || _oauthFlow.slots.redirectUri;
+  const codeVerifier = _oauthFlow.slots.codeVerifier;
   if (!uri || !codeVerifier) throw new Error('Flujo OAuth no iniciado');
   const data = await exchangeBrowserOAuthCode({
     fetch: fetchWithRetry,
