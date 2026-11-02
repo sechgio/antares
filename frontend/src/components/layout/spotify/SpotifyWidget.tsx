@@ -18,13 +18,13 @@ import {
   Volume2,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
-import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
 import {
   StreamAction,
   StreamSearchBox,
   streamPanelStyle,
   useDisposablePlayer,
 } from '../streaming/StreamWidget';
+import { useBrowseWidthPopover } from '../widgets/widgetPopover';
 import { api } from '../../../api';
 import { errorMessage } from '@/utils/errors';
 import {
@@ -761,23 +761,9 @@ function SpotifyBar({ controller }: { controller: SpotifyController }) {
   const playback = useValue(controller.playback);
   const busy = useValue(controller.busy);
   const session = useValue(controller.session);
-  const popover = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
-    direction: 'down',
-    align: 'end',
-    estimatedWidth: 300,
-    estimatedHeight: 320,
-    gap: 6,
-  });
-  const [browseWidth, setBrowseWidth] = useState<number | null>(null);
+  const { popover, browseWidth, onTriggerClick } = useBrowseWidthPopover({ width: 300, height: 320 });
   const playing = playback.is_playing && !playback.empty;
   const chipLabel = playback.track ? playback.track.name : T.spotify;
-
-  const onTriggerClick = () => {
-    if (!popover.isOpen && popover.triggerRef.current) {
-      setBrowseWidth(popover.triggerRef.current.getBoundingClientRect().width);
-    }
-    popover.toggle();
-  };
 
   const ready = session === 'ready';
   const onAction = (action: () => Promise<void>) => {

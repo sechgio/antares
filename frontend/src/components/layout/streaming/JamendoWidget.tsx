@@ -97,7 +97,7 @@ function JamendoBar({ player }: { player: StreamPlayer }) {
           <StreamTransport player={player} p="antares-jamendo" t={T} />
         </div>
       )}
-      <StreamBarActions p="antares-jamendo" status={status} player={player} t={T} playClassName="antares-jamendo-play" />
+      <StreamBarActions p="antares-jamendo" status={status} player={player} t={T} />
     </div>
   );
 }
