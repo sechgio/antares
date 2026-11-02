@@ -6,7 +6,7 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
 const { assert, finish } = require('./helpers/harness');
-const { detect, launch, launchArgs, pipeTransport, label, isSession, attachment } = require('../electron/agent-browser-engines');
+const { detect, launch, launchArgs, firefoxArgs, FIREFOX_PREFS, pipeTransport, label, isSession, attachment } = require('../electron/agent-browser-engines');
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -304,11 +304,137 @@ async function sessionTest() {
   assert(contents.isDestroyed() && exited === 1, 'al cortarse la conexión la pestaña se da por cerrada y se avisa al agente');
 }
 
+// Un Firefox falso: anuncia WebDriver BiDi por stderr y responde por WebSocket.
+function fakeFirefox({ announce = true } = {}) {
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.killed = false;
+  child.kill = () => { child.killed = true; child.emit('exit', 1); };
+  const commands = [];
+  const sockets = [];
+  const results = { 'session.new': () => ({ sessionId: 'sesion' }), 'browsingContext.create': () => ({ context: 'C1' }) };
+  class FakeSocket extends EventEmitter {
+    constructor(url) {
+      super();
+      this.url = url;
+      sockets.push(this);
+      setImmediate(() => this.emit('open', {}));
+    }
+    addEventListener(name, listener) { this.on(name, listener); }
+    send(text) {
+      const message = JSON.parse(text);
+      commands.push(message);
+      setImmediate(() => this.emit('message', { data: JSON.stringify({ type: 'success', id: message.id,
+        result: results[message.method] ? results[message.method](message.params) : {} }) }));
+    }
+    close() { this.emit('close', {}); }
+    event(method, params) { this.emit('message', { data: JSON.stringify({ type: 'event', method, params }) }); }
+  }
+  if (announce) setImmediate(() => child.stderr.write('1730 INFO WebDriver BiDi listening on ws://127.0.0.1:53111\n'));
+  return { child, commands, sockets, FakeSocket };
+}
+
+async function firefoxTest() {
+  const env = { PROGRAMFILES: 'C:\\PF', LOCALAPPDATA: 'C:\\L' };
+  const found = detect({ env, exists: (file) => file === 'C:\\PF\\Mozilla Firefox\\firefox.exe', readdir: () => [] });
+  assert(found.length === 1 && found[0].id === 'firefox' && found[0].protocol === 'bidi' && label('firefox') === 'Mozilla Firefox',
+    'detecta Firefox y lo marca para WebDriver BiDi');
+  assert(firefoxArgs('C:\\p').join(' ') === '--remote-debugging-port=0 --profile C:\\p --no-remote --new-instance about:blank',
+    'Firefox arranca con perfil propio y un puerto aleatorio solo para Antares');
+
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-firefox-'));
+  try {
+    const engines = [{ id: 'firefox', label: 'Mozilla Firefox', path: 'C:\\FF\\firefox.exe', protocol: 'bidi' }];
+    const firefox = fakeFirefox();
+    const spawned = [];
+    const link = await launch('firefox', { profileRoot, engines, WebSocketImpl: firefox.FakeSocket,
+      spawn: (exe, args, options) => { spawned.push({ exe, args, options }); return firefox.child; } });
+    const userJs = fs.readFileSync(path.join(profileRoot, 'firefox', 'user.js'), 'utf8');
+    assert(spawned[0].exe === 'C:\\FF\\firefox.exe' && spawned[0].args.includes(path.join(profileRoot, 'firefox')),
+      'lanza Firefox con su perfil dedicado');
+    assert(Object.entries(FIREFOX_PREFS).every(([name, value]) => userJs.includes(`user_pref(${JSON.stringify(name)}, ${JSON.stringify(value)});`))
+      && FIREFOX_PREFS['permissions.default.camera'] === 2 && FIREFOX_PREFS['browser.download.always_ask_before_handling_new_types'] === true,
+    'el perfil deniega permisos, pregunta antes de descargar y desactiva la precarga');
+    assert(firefox.sockets[0].url === 'ws://127.0.0.1:53111/session', 'se conecta a la dirección que anuncia Firefox');
+    const setup = firefox.commands.map((command) => command.method);
+    assert(setup.join() === 'session.new,session.subscribe,network.addIntercept'
+      && firefox.commands[2].params.phases.join() === 'beforeRequestSent,responseStarted',
+    'abre la única sesión BiDi, se suscribe y intercepta toda la red');
+
+    const decisions = [];
+    const popups = [];
+    const allow = (url, pageUrl, mainFrame) => { decisions.push({ url, pageUrl, mainFrame }); return !url.includes('privada'); };
+    const contents = await link.openTab({ allow, onPopup: (url) => popups.push(url) });
+    assert(firefox.commands.some((command) => command.method === 'browsingContext.create' && command.params.type === 'tab')
+      && contents.getURL() === 'about:blank', 'abre una pestaña propia con la forma de WebContents');
+
+    const socket = firefox.sockets[0];
+    const answers = () => firefox.commands.filter((command) => command.method.startsWith('network.') && command.params.request);
+    socket.event('network.beforeRequestSent', { context: 'C1', navigation: 'n1', isBlocked: true, request: { request: 'q1', url: 'https://publica.example/' } });
+    socket.event('browsingContext.contextCreated', { context: 'F1', parent: 'C1', url: 'about:blank' });
+    socket.event('network.beforeRequestSent', { context: 'F1', navigation: 'n2', isBlocked: true, request: { request: 'q2', url: 'http://privada.local/' } });
+    socket.event('network.beforeRequestSent', { context: 'C1', navigation: null, isBlocked: true, request: { request: 'q3', url: 'https://cdn.example/a.js' } });
+    socket.event('network.beforeRequestSent', { context: 'C1', isBlocked: false, request: { request: 'q4', url: 'https://ya.example/' } });
+    await tick(); await tick();
+    const byRequest = Object.fromEntries(answers().map((command) => [command.params.request, command.method]));
+    assert(byRequest.q1 === 'network.continueRequest' && byRequest.q2 === 'network.failRequest' && byRequest.q3 === 'network.continueRequest'
+      && !byRequest.q4, 'cada petición interceptada pasa por la política y solo se responden las bloqueadas');
+    assert(decisions[0].mainFrame === true && decisions[1].mainFrame === false && decisions[2].mainFrame === false,
+      'solo la navegación de la pestaña cuenta como marco principal; un iframe no');
+
+    socket.event('network.responseStarted', { context: 'C1', isBlocked: true, request: { request: 'q5' },
+      response: { headers: [{ name: 'Content-Disposition', value: { type: 'string', value: 'attachment; filename=a.exe' } }] } });
+    socket.event('network.responseStarted', { context: 'C1', isBlocked: true, request: { request: 'q6' },
+      response: { headers: [{ name: 'content-type', value: { type: 'string', value: 'text/html' } }] } });
+    await tick(); await tick();
+    const responses = Object.fromEntries(answers().map((command) => [command.params.request, command.method]));
+    assert(responses.q5 === 'network.failRequest' && responses.q6 === 'network.continueResponse',
+      'corta las respuestas que serían descargas y deja pasar las páginas');
+
+    socket.event('browsingContext.contextCreated', { context: 'P1', parent: null, originalOpener: 'C1', url: 'about:blank' });
+    socket.event('network.beforeRequestSent', { context: 'P1', navigation: 'n3', isBlocked: true, request: { request: 'q7', url: 'https://emergente.example/' } });
+    socket.event('browsingContext.contextCreated', { context: 'U1', parent: null, url: 'about:blank' });
+    socket.event('network.beforeRequestSent', { context: 'U1', navigation: 'n4', isBlocked: true, request: { request: 'q8', url: 'http://privada.local/' } });
+    await tick(); await tick();
+    const later = Object.fromEntries(answers().map((command) => [command.params.request, command.method]));
+    assert(later.q7 === 'network.failRequest' && popups.join() === 'https://emergente.example/'
+      && firefox.commands.some((command) => command.method === 'browsingContext.close' && command.params.context === 'P1'),
+    'una ventana emergente no carga: se cierra y su dirección vuelve a la pestaña del agente');
+    assert(later.q8 === 'network.failRequest' && decisions.at(-1).pageUrl === '' && decisions.at(-1).mainFrame === false,
+      'una pestaña que abra el usuario en ese Firefox también pasa por la política');
+
+    let exited = 0;
+    link.onExit(() => { exited += 1; });
+    link.close();
+    assert(firefox.commands.at(-1).method === 'browser.close', 'al desconectar cierra el Firefox del perfil del agente');
+    firefox.child.emit('exit', 0);
+    assert(contents.isDestroyed() && exited === 1, 'si Firefox se cierra la pestaña se da por cerrada y se avisa al agente');
+
+    const silent = fakeFirefox({ announce: false });
+    let timeout = null;
+    try { await launch('firefox', { profileRoot, engines, WebSocketImpl: silent.FakeSocket, spawn: () => silent.child, startMs: 30 }); }
+    catch (error) { timeout = error; }
+    assert(timeout && timeout.code === 'ENGINE_START' && silent.child.killed && silent.sockets.length === 0,
+      'si Firefox no abre WebDriver BiDi a tiempo explica qué hacer y termina el proceso');
+    const crashing = fakeFirefox({ announce: false });
+    setImmediate(() => crashing.child.emit('exit', 0));
+    let crashed = null;
+    try { await launch('firefox', { profileRoot, engines, WebSocketImpl: crashing.FakeSocket, spawn: () => crashing.child }); }
+    catch (error) { crashed = error; }
+    assert(crashed && crashed.code === 'ENGINE_START' && /se cerró al arrancar/.test(crashed.message),
+      'si Firefox se cierra al arrancar (perfil ya abierto) lo explica');
+  } finally {
+    fs.rmSync(profileRoot, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   detectTest();
   await transportTest();
   await launchTest();
   await sessionTest();
+  await firefoxTest();
 }
 
 main().then(() => finish(), (err) => { console.error('[FAIL]', err); process.exit(1); });
