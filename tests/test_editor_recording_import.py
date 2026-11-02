@@ -4,10 +4,15 @@ from pathlib import Path
 import pytest
 
 from backend.core.editor.assets import AssetImportError, import_file
-from backend.core.editor.toolchain import resolve_toolchain
+from backend.core.editor.toolchain import ToolchainError, resolve_toolchain
 
-FFMPEG = Path("C:/Users/Enzon/AppData/Local/hermes/tools/ffmpeg-9.0.1-win32-x64/bin/ffmpeg.exe")
-pytestmark = pytest.mark.skipif(not FFMPEG.is_file(), reason="build FFmpeg no disponible")
+_TOOLCHAIN_REASON = ""
+try:
+    resolve_toolchain()
+except ToolchainError as error:
+    _TOOLCHAIN_REASON = str(error)
+
+pytestmark = pytest.mark.skipif(bool(_TOOLCHAIN_REASON), reason=_TOOLCHAIN_REASON)
 
 
 def _make_recording(tmp_path: Path, name: str = "rec-1.webm") -> Path:

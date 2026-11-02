@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import tempfile
 
 import pytest
 
@@ -16,13 +17,15 @@ from backend.core.editor.toolchain import (
     synthesize_test_clip,
 )
 
-BUILD_DIR = os.environ.get("ANTARES_FFMPEG_DIR", "")
-pytestmark = pytest.mark.skipif(
-    not BUILD_DIR or not pathlib.Path(BUILD_DIR, "ffmpeg.exe").is_file(),
-    reason="sin build FFmpeg preparado (ANTARES_FFMPEG_DIR)",
-)
+_TOOLCHAIN_REASON = ""
+try:
+    resolve_toolchain()
+except ToolchainError as error:
+    _TOOLCHAIN_REASON = str(error)
 
-SCRATCH = pathlib.Path(os.environ.get("TMPDIR", ".")) / "editor-toolchain-tests"
+pytestmark = pytest.mark.skipif(bool(_TOOLCHAIN_REASON), reason=_TOOLCHAIN_REASON)
+
+SCRATCH = pathlib.Path(tempfile.gettempdir()) / f"editor-toolchain-tests-{os.environ.get('PYTEST_XDIST_WORKER', 'main')}"
 
 
 def test_resolve_toolchain_finds_prepared_binaries() -> None:

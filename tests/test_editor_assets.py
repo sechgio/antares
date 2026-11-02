@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -11,6 +10,7 @@ from backend.core.editor.assets import (
     AssetImportError,
     import_file,
 )
+from backend.core.editor.toolchain import ToolchainError, resolve_toolchain
 
 
 @pytest.fixture()
@@ -52,11 +52,13 @@ def test_allowed_suffixes_cover_media_formats() -> None:
         assert expected in ALLOWED_SUFFIXES
 
 
-BUILD_DIR = os.environ.get("ANTARES_FFMPEG_DIR", "")
-pytestmark_real = pytest.mark.skipif(
-    not BUILD_DIR or not Path(BUILD_DIR, "ffmpeg.exe").is_file(),
-    reason="sin build FFmpeg preparado (ANTARES_FFMPEG_DIR)",
-)
+_TOOLCHAIN_REASON = ""
+try:
+    resolve_toolchain()
+except ToolchainError as error:
+    _TOOLCHAIN_REASON = str(error)
+
+pytestmark_real = pytest.mark.skipif(bool(_TOOLCHAIN_REASON), reason=_TOOLCHAIN_REASON)
 
 
 @pytestmark_real

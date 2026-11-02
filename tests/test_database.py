@@ -460,7 +460,7 @@ class TestLowerExpressionIndexes:
         try:
             conn.executemany(
                 "INSERT INTO imagenes (codigo, nombre) VALUES (?, ?)",
-                [(f"CODE-{i:04d}", f"Name {i}") for i in range(200)],
+                [(f"CODE-{i:04d}", f"Name {i}") for i in range(10_000)],
             )
             conn.commit()
             conn.execute("ANALYZE")
@@ -473,9 +473,7 @@ class TestLowerExpressionIndexes:
             conn.close()
 
         plan_text = " ".join(str(cell) for row in plan_rows for cell in row).upper()
-        if "SCAN" in plan_text and "INDEX" not in plan_text:
-            pytest.skip(f"planner chose scan (flaky on small DBs): {plan_rows}")
-        assert "INDEX" in plan_text
+        assert "INDEX" in plan_text, f"el planner no usa el índice LOWER: {plan_rows}"
         assert "LOWER" in plan_text or "IDX_IMAGENES_LOWER_CODIGO" in plan_text
 
 
