@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useRef } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { useAnchoredPopover } from '@/hooks/useAnchoredPopover';
 import Button from '@/components/ui/Button';
+import { ThemedSelectPanel, usePortalHost } from '@/components/ui/ThemedSelect';
 
 interface CanvasSelectOption {
   value: string;
@@ -45,20 +45,10 @@ export default function CanvasSelect({
     matchTriggerWidth: true,
     maxHeightCap: MENU_MAX_H,
   });
-  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
+  const portalRoot = usePortalHost(isOpen, containerRef);
   const selectRef = useRef<HTMLSelectElement>(null);
 
   const selectedOption = options.find((opt) => opt.value === value) || options[0];
-
-  useLayoutEffect(() => {
-    if (!isOpen) {
-      setPortalRoot(null);
-      return;
-    }
-    const host =
-      (containerRef.current?.closest('.canvas-app') as HTMLElement | null) ?? document.body;
-    setPortalRoot(host);
-  }, [isOpen, containerRef]);
 
   useEffect(() => {
     if (isOpen) updatePosition();
@@ -123,25 +113,33 @@ export default function CanvasSelect({
       </Button>
 
       {isOpen &&
-        portalRoot &&
-        createPortal(
-          <div
-            ref={menuRef}
-            role="listbox"
-            aria-label={ariaLabel}
-            className="fixed z-[300] overflow-y-auto rounded-lg border p-1 shadow-lg"
-            style={{
-              top: menuBox?.top ?? -9999,
-              left: menuBox?.left ?? -9999,
-              width: menuBox?.width,
-              maxHeight: menuBox?.maxHeight ?? MENU_MAX_H,
-              visibility: menuBox ? 'visible' : 'hidden',
-              background: 'var(--cv-panel-elevated, #ffffff)',
-              borderColor: 'var(--cv-border-strong, #c9d0d8)',
-              boxShadow: 'var(--cv-shadow-float, 0 12px 28px rgba(26, 35, 50, 0.1))',
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
+        portalRoot && (
+        <ThemedSelectPanel
+          host={portalRoot}
+          panelRef={menuRef}
+          ariaLabel={ariaLabel}
+          position={menuBox}
+          className="fixed z-[300] overflow-y-auto rounded-lg border p-1 shadow-lg"
+          positionStyle={(position) => ({
+            top: position.top,
+            left: position.left,
+            width: position.width,
+            maxHeight: position.maxHeight ?? MENU_MAX_H,
+            visibility: 'visible',
+            background: 'var(--cv-panel-elevated, #ffffff)',
+            borderColor: 'var(--cv-border-strong, #c9d0d8)',
+            boxShadow: 'var(--cv-shadow-float, 0 12px 28px rgba(26, 35, 50, 0.1))',
+          })}
+          hiddenStyle={{
+            top: -9999,
+            left: -9999,
+            maxHeight: MENU_MAX_H,
+            visibility: 'hidden',
+            background: 'var(--cv-panel-elevated, #ffffff)',
+            borderColor: 'var(--cv-border-strong, #c9d0d8)',
+            boxShadow: 'var(--cv-shadow-float, 0 12px 28px rgba(26, 35, 50, 0.1))',
+          }}
+        >
             {options.map((opt) => {
               const isSelected = opt.value === value;
               return (
@@ -164,8 +162,7 @@ export default function CanvasSelect({
                 </Button>
               );
             })}
-          </div>,
-          portalRoot,
+        </ThemedSelectPanel>
         )}
     </div>
   );

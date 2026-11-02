@@ -1,7 +1,14 @@
-import { useEffect, useId, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
+import type { CSSProperties, ReactNode, RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
-import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
+import { useAnchoredPopover, type PopoverPosition } from '../../hooks/useAnchoredPopover';
 
 interface ThemedSelectOption {
   value: string;
@@ -21,6 +28,85 @@ interface ThemedSelectProps {
 
 const MENU_GAP = 4;
 const MENU_MAX_H = 224;
+
+/** Shared measuring frame: off-screen and invisible until the popover is anchored. */
+const PANEL_HIDDEN_STYLE: CSSProperties = { top: -9999, left: -9999, visibility: 'hidden' };
+
+interface ThemedSelectPanelProps {
+  id?: string;
+  panelRef: RefObject<HTMLDivElement | null>;
+  role?: 'listbox' | 'dialog';
+  ariaLabel?: string;
+  /** Resolved popover box; `null` keeps the panel hidden while measuring. */
+  position: PopoverPosition | null;
+  /** Exact style keys applied once the position is resolved. */
+  positionStyle?: (position: PopoverPosition) => CSSProperties;
+  /** Overrides the hidden frame; defaults to the shared off-screen fallback. */
+  hiddenStyle?: CSSProperties;
+  /** Portal target. Defaults to `document.body`. */
+  host?: HTMLElement | null;
+  className?: string;
+  dataPlacement?: string;
+  children: ReactNode;
+}
+
+/**
+ * Anchored portal surface of the ThemedSelect family (ThemedSelect itself,
+ * StatusPicker, SelectPicker, CanvasSelect, FontPicker): it owns the portal,
+ * the off-screen measuring frame and the mousedown guard, while callers keep
+ * their exact container classes, option rows and style maps.
+ */
+export function ThemedSelectPanel({
+  id,
+  panelRef,
+  role = 'listbox',
+  ariaLabel,
+  position,
+  positionStyle,
+  hiddenStyle,
+  host,
+  className,
+  dataPlacement,
+  children,
+}: ThemedSelectPanelProps) {
+  return createPortal(
+    <div
+      ref={panelRef}
+      id={id}
+      role={role}
+      aria-label={ariaLabel}
+      data-placement={dataPlacement}
+      className={className}
+      style={position ? positionStyle?.(position) : hiddenStyle ?? PANEL_HIDDEN_STYLE}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {children}
+    </div>,
+    host ?? document.body,
+  );
+}
+
+/**
+ * Resolves the portal host of canvas-anchored pickers: the `.canvas-app` root
+ * when the picker lives inside the canvas, falling back to `document.body`.
+ */
+export function usePortalHost(
+  isOpen: boolean,
+  containerRef: RefObject<HTMLElement | null>,
+  selector = '.canvas-app',
+): HTMLElement | null {
+  const [host, setHost] = useState<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      setHost(null);
+      return;
+    }
+    setHost((containerRef.current?.closest(selector) as HTMLElement | null) ?? document.body);
+  }, [isOpen, containerRef, selector]);
+
+  return host;
+}
 
 export default function ThemedSelect({
   value,
@@ -136,26 +222,33 @@ export default function ThemedSelect({
         />
       </button>
 
-      {isOpen &&
-        createPortal(
-          <div
-            ref={menuRef}
-            id={menuId}
-            role="listbox"
-            aria-label={ariaLabel}
-            className="fixed z-[300] overflow-y-auto rounded-lg border p-1 shadow-xl custom-scrollbar"
-            style={{
-              top: menuBox?.top ?? -9999,
-              left: menuBox?.left ?? -9999,
-              width: menuBox?.width,
-              maxHeight: menuBox?.maxHeight ?? MENU_MAX_H,
-              visibility: menuBox ? 'visible' : 'hidden',
-              background: 'var(--bg-elevated)',
-              borderColor: 'var(--border-medium)',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.12)',
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
+      {isOpen && (
+        <ThemedSelectPanel
+          id={menuId}
+          panelRef={menuRef}
+          ariaLabel={ariaLabel}
+          position={menuBox}
+          className="fixed z-[300] overflow-y-auto rounded-lg border p-1 shadow-xl custom-scrollbar"
+          positionStyle={(position) => ({
+            top: position.top,
+            left: position.left,
+            width: position.width,
+            maxHeight: position.maxHeight ?? MENU_MAX_H,
+            visibility: 'visible',
+            background: 'var(--bg-elevated)',
+            borderColor: 'var(--border-medium)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.12)',
+          })}
+          hiddenStyle={{
+            top: -9999,
+            left: -9999,
+            maxHeight: MENU_MAX_H,
+            visibility: 'hidden',
+            background: 'var(--bg-elevated)',
+            borderColor: 'var(--border-medium)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.12)',
+          }}
+        >
             {options.map((opt, index) => {
               const isSelected = opt.value === value;
               return (
@@ -180,8 +273,7 @@ export default function ThemedSelect({
                 </button>
               );
             })}
-          </div>,
-          document.body,
+          </ThemedSelectPanel>
         )}
     </div>
   );

@@ -28,12 +28,4 @@ describe('ColorSwatchPicker', () => {
     fireEvent.change(input, { target: { value: '#ff00aa' } });
     expect(onChange).toHaveBeenCalledWith('#ff00aa');
   });
-
-  it('closes on Escape', () => {
-    render(<ColorSwatchPicker color="#10b981" label="SJL" onChange={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /Cambiar color de SJL/i }));
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
 });

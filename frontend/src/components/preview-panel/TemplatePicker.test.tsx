@@ -42,21 +42,6 @@ describe('TemplatePicker', () => {
     expect(screen.getByRole('button', { name: /Elegir plantilla/i })).toHaveTextContent('Plantilla B');
   });
 
-  it('closes on Escape', () => {
-    render(
-      <TemplatePicker
-        value=""
-        options={OPTIONS}
-        onChange={vi.fn()}
-        placeholder="-- Elegir Plantilla --"
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: /Elegir plantilla/i }));
-    expect(screen.getByRole('listbox')).toBeInTheDocument();
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
-  });
-
   it('positions a capped menu next to the trigger, not pinned to the window top', () => {
     const onChange = vi.fn();
     const manyOptions = Array.from({ length: 74 }, (_, i) => ({

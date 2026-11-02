@@ -1,6 +1,5 @@
 import { Check, ChevronDown } from 'lucide-react';
 import { useId, useLayoutEffect, useMemo, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { useAnchoredPopover } from '../../../hooks/useAnchoredPopover';
 import type { BoardColumn, TareaStatus } from '../types';
 import {
@@ -11,6 +10,7 @@ import {
   pickerColumns,
 } from '../utils/statusConfig';
 import Button from '@/components/ui/Button';
+import { ThemedSelectPanel } from '@/components/ui/ThemedSelect';
 
 interface StatusPickerProps {
   value: TareaStatus;
@@ -98,21 +98,19 @@ export default function StatusPicker({
         />
       </Button>
 
-      {open &&
-        createPortal(
-          <div
-            ref={menuRef}
-            id={menuId}
-            role="listbox"
-            aria-label="Seleccionar estado"
-            className="fixed z-[200] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1 shadow-[0_12px_40px_color-mix(in_srgb,var(--bg-base)_55%,transparent),0_0_0_1px_color-mix(in_srgb,var(--border-medium)_40%,transparent)]"
-            style={
-              position
-                ? { top: position.top, left: position.left, minWidth: position.width }
-                : { top: -9999, left: -9999, visibility: 'hidden' }
-            }
-            onMouseDown={(e) => e.stopPropagation()}
-          >
+      {open && (
+        <ThemedSelectPanel
+          id={menuId}
+          panelRef={menuRef}
+          ariaLabel="Seleccionar estado"
+          position={position}
+          className="fixed z-[200] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1 shadow-[0_12px_40px_color-mix(in_srgb,var(--bg-base)_55%,transparent),0_0_0_1px_color-mix(in_srgb,var(--border-medium)_40%,transparent)]"
+          positionStyle={(position) => ({
+            top: position.top,
+            left: position.left,
+            minWidth: position.width,
+          })}
+        >
             {options.map((col) => {
               const selected = col.key === value;
               return (
@@ -144,9 +142,8 @@ export default function StatusPicker({
                 </Button>
               );
             })}
-          </div>,
-          document.body,
-        )}
+        </ThemedSelectPanel>
+      )}
     </div>
   );
 }
