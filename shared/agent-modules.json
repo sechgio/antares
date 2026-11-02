@@ -70,7 +70,8 @@
     "design": {
       "label": "Design",
       "aliases": ["design", "diseño", "presentaciones", "diapositivas"],
-      "handlers": ["design"]
+      "handlers": ["design"],
+      "methods": ["design_canvas_write", "design_canvas_read"]
     },
     "imageOptimizer": {
       "label": "Optimizador",

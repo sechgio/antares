@@ -9,6 +9,7 @@ from backend.core.agent import (
     computer_files,
     computer_jobs,
     computer_shell,
+    design_canvas,
     documents,
     drafts,
     memory,
@@ -30,7 +31,8 @@ SPECS: dict[str, JsonObject] = {
                  *canvas_edit.TOOL_SPECS, *artifacts.TOOL_SPECS, *questions.TOOL_SPECS, *memory.TOOL_SPECS,
                  *computer_files.TOOL_SPECS, *computer_shell.TOOL_SPECS, *computer_jobs.TOOL_SPECS,
                  *computer_desktop.TOOL_SPECS,
-                 *task_plan.TOOL_SPECS, *skills.TOOL_SPECS, *pages.TOOL_SPECS, *panels.TOOL_SPECS)
+                 *task_plan.TOOL_SPECS, *skills.TOOL_SPECS, *pages.TOOL_SPECS, *panels.TOOL_SPECS,
+                 *design_canvas.TOOL_SPECS)
 }
 SPECS["mcp_status"] = {
     "name": "mcp_status", "module": "connections", "gated": False,
@@ -118,6 +120,10 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
         return artifacts.show_images(store, session_id, args)
     if name == "page_create":
         return pages.create(args, store, session_id)
+    if name == "design_canvas_write":
+        return design_canvas.write(args, store, session_id)
+    if name == "design_canvas_read":
+        return design_canvas.read(args, store, session_id)
     if name == "panel_show":
         if args.get("type") not in {"choice", "form", "table"}:
             raise ValueError("panel_show admite choice, form o table; para páginas usa page_create")
