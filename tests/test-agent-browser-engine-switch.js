@@ -108,6 +108,11 @@ async function main() {
       'elegir Chrome lo indica en el estado sin lanzarlo todavía');
     assert(builtIn.webContents.isDestroyed() && !browser.state().tabs[0].open, 'al cambiar de navegador se cierra la página integrada del agente');
 
+    let previewError = null;
+    try { await browser.run('web_open', { url: 'C:\\proyecto\\index.html' }); } catch (error) { previewError = error; }
+    assert(previewError && previewError.code === 'PREVIEW_EXTERNAL' && launches.length === 0 && tabs.length === 0,
+      'con un navegador externo la vista previa de archivos se rechaza con aviso claro, sin lanzarlo ni abrir pestañas');
+
     const opened = await browser.run('web_open', { url: 'https://ejemplo.com' });
     const external = tabs[0].contents;
     assert(launches.join() === 'chrome' && views.length === 1 && external.loads.join() === 'https://ejemplo.com'

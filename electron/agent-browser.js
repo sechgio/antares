@@ -1450,6 +1450,9 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
       throw new Error('Dominio bloqueado por la política del navegador del agente');
     }
   }
+  if (name === 'web_open' && file !== null && engineChoice) {
+    throw browserError('La vista previa de archivos locales se muestra en el navegador integrado: elige «Integrado» en el menú del navegador del agente y vuelve a pedirla', 'PREVIEW_EXTERNAL', { recoverable: true });
+  }
   acquireAgent(sessionId);
   const mark = { console: consoleSeq, net: netSeq };
   let tab = tabs.get(AGENT_TAB);
