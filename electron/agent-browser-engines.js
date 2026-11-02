@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { createCdpContents } = require('./agent-browser-cdp');
+const { createBidiContents, bidiTransport } = require('./agent-browser-bidi');
 
 // Navegadores Chromium externos (ADR 0005). Con perfil dedicado se lanzan con
 // --remote-debugging-pipe, así que solo Antares puede controlarlos; «Mi sesión
@@ -13,6 +14,7 @@ const ENGINES = [
   { id: 'edge', label: 'Microsoft Edge', roots: ['PROGRAMFILES(X86)', 'PROGRAMFILES', 'LOCALAPPDATA'], file: 'Microsoft\\Edge\\Application\\msedge.exe' },
   { id: 'brave', label: 'Brave', roots: ['PROGRAMFILES', 'PROGRAMFILES(X86)', 'LOCALAPPDATA'], file: 'BraveSoftware\\Brave-Browser\\Application\\brave.exe' },
   { id: 'opera', label: 'Opera', roots: ['LOCALAPPDATA'], file: 'Programs\\Opera\\opera.exe', versioned: true },
+  { id: 'firefox', label: 'Mozilla Firefox', roots: ['PROGRAMFILES', 'PROGRAMFILES(X86)', 'LOCALAPPDATA'], file: 'Mozilla Firefox\\firefox.exe', protocol: 'bidi' },
 ];
 const SESSION_ENGINE = { id: 'chrome-session', label: 'Mi sesión de Chrome', session: true };
 const DENIED_PERMISSIONS = ['geolocation', 'notifications', 'camera', 'microphone', 'midi', 'clipboard-read'];
@@ -48,7 +50,7 @@ function detect({ env = process.env, exists = fs.existsSync, readdir = fs.readdi
       if (!env[root]) continue;
       const file = path.win32.join(env[root], engine.file);
       const exe = engine.versioned ? versionedOpera(file, { exists, readdir }) : (exists(file) ? file : null);
-      if (exe) { out.push({ id: engine.id, label: engine.label, path: exe }); break; }
+      if (exe) { out.push({ id: engine.id, label: engine.label, path: exe, ...(engine.protocol ? { protocol: engine.protocol } : {}) }); break; }
     }
   }
   if (out.some((engine) => engine.id === 'chrome') && env.LOCALAPPDATA) {
@@ -295,14 +297,167 @@ async function connectSession(engine, { readFile, WebSocketImpl, acceptMs }) {
   return link;
 }
 
+// Firefox no admite CDP desde la versión 141: se controla por WebDriver BiDi. Solo escucha en
+// 127.0.0.1 con un puerto aleatorio y acepta una sola sesión, la que abre Antares al arrancar.
+const FIREFOX_START_MS = 30_000;
+const FIREFOX_PREFS = {
+  'browser.shell.checkDefaultBrowser': false,
+  'browser.startup.page': 0,
+  'browser.startup.homepage_override.mstone': 'ignore',
+  'browser.aboutwelcome.enabled': false,
+  'datareporting.policy.dataSubmissionEnabled': false,
+  'toolkit.telemetry.reportingpolicy.firstRun': false,
+  'permissions.default.geo': 2,
+  'permissions.default.desktop-notification': 2,
+  'permissions.default.camera': 2,
+  'permissions.default.microphone': 2,
+  'browser.download.always_ask_before_handling_new_types': true,
+  'network.dns.disablePrefetch': true,
+  'network.prefetch-next': false,
+  'network.http.speculative-parallel-limit': 0,
+  'network.predictor.enabled': false,
+};
+
+function firefoxArgs(profileDir) {
+  return ['--remote-debugging-port=0', '--profile', profileDir, '--no-remote', '--new-instance', 'about:blank'];
+}
+
+function writeFirefoxPrefs(profileDir) {
+  const lines = Object.entries(FIREFOX_PREFS).map(([name, value]) => `user_pref(${JSON.stringify(name)}, ${JSON.stringify(value)});`);
+  fs.writeFileSync(path.join(profileDir, 'user.js'), `${lines.join('\n')}\n`);
+}
+
+function bidiEndpoint(child, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let output = '';
+    let settled = false;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(Object.assign(new Error(error), { code: 'ENGINE_START' }));
+      else resolve(value);
+    };
+    const timer = setTimeout(() => finish('Firefox no abrió WebDriver BiDi a tiempo; ciérralo si ya estaba abierto con el perfil del agente'), timeoutMs);
+    const read = (chunk) => {
+      output = `${output}${chunk}`.slice(-4_000);
+      const found = output.match(/WebDriver BiDi listening on (ws:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):\d+)/);
+      if (found) finish(null, found[1]);
+    };
+    for (const stream of [child.stdout, child.stderr]) {
+      if (!stream) continue;
+      stream.setEncoding('utf8');
+      stream.on('data', read);
+    }
+    child.once('exit', () => finish('Firefox se cerró al arrancar; si ya está abierto con el perfil del agente, ciérralo y vuelve a intentarlo'));
+  });
+}
+
+async function launchFirefox(engine, { profileRoot, spawn, WebSocketImpl, startMs }) {
+  const profileDir = path.join(profileRoot || defaultProfileRoot(), engine.id);
+  fs.mkdirSync(profileDir, { recursive: true });
+  writeFirefoxPrefs(profileDir);
+  const child = spawn(engine.path, firefoxArgs(profileDir), { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: false });
+  let transport = null;
+  let socket = null;
+  try {
+    const endpoint = await bidiEndpoint(child, startMs);
+    socket = await openSocket(`${endpoint}/session`, WebSocketImpl, startMs);
+    transport = bidiTransport(socket);
+    await transport.send('session.new', { capabilities: {} });
+    await transport.send('session.subscribe', { events: ['browsingContext', 'log.entryAdded', 'network'] });
+    await transport.send('network.addIntercept', { phases: ['beforeRequestSent', 'responseStarted'] });
+  } catch (error) {
+    try { if (socket) socket.close(); } catch { }
+    child.kill();
+    throw error.code === 'ENGINE_START' ? error
+      : Object.assign(new Error('No se pudo controlar Firefox; ciérralo si ya está abierto con el perfil del agente y vuelve a intentarlo'),
+        { code: 'ENGINE_START', cause: error });
+  }
+
+  const exitHandlers = new Set();
+  const owners = new Map();
+  const popups = new Map();
+  const opened = new Set();
+  let policy = null;
+  let ended = false;
+  const end = () => {
+    if (ended) return;
+    ended = true;
+    transport.close(Object.assign(new Error(`${engine.label} se cerró`), { code: 'ENGINE_CLOSED' }));
+    for (const context of opened) transport.emit({ method: 'browsingContext.contextDestroyed', params: { context } });
+    for (const handler of exitHandlers) handler();
+  };
+  child.on('exit', end);
+  child.on('error', end);
+  socket.addEventListener('close', end);
+  const answer = (method, request) => transport.send(method, { request }).catch(() => { });
+  // La intercepción es de todo el navegador: es un perfil dedicado, así que todo lo que carga pasa por la política.
+  transport.on(({ method, params = {} }) => {
+    if (method === 'browsingContext.contextCreated') {
+      const owner = owners.get(params.parent || params.originalOpener);
+      if (owner && params.parent) owners.set(params.context, owner);
+      else if (owner) popups.set(params.context, owner);
+    } else if (method === 'browsingContext.contextDestroyed') {
+      if (!opened.has(params.context)) owners.delete(params.context);
+      popups.delete(params.context);
+    } else if (method === 'network.beforeRequestSent' && params.isBlocked) {
+      const request = params.request || {};
+      const popup = popups.get(params.context);
+      if (popup && params.navigation) {
+        // Una ventana emergente no carga: se cierra y su dirección se abre en la pestaña del agente.
+        popups.delete(params.context);
+        answer('network.failRequest', request.request);
+        transport.send('browsingContext.close', { context: params.context }).catch(() => { });
+        popup.onPopup(String(request.url || ''));
+        return;
+      }
+      const tab = owners.get(params.context);
+      const allow = tab ? tab.allow : policy;
+      const mainFrame = !!tab && !!params.navigation && params.context === tab.context;
+      Promise.resolve(allow ? allow(String(request.url || ''), tab ? tab.pageUrl() : '', mainFrame) : true).catch(() => false)
+        .then((ok) => answer(ok ? 'network.continueRequest' : 'network.failRequest', request.request));
+    } else if (method === 'network.responseStarted' && params.isBlocked) {
+      const headers = ((params.response || {}).headers || [])
+        .map((item) => ({ name: item.name, value: item.value && typeof item.value === 'object' ? item.value.value : item.value }));
+      answer(attachment(headers) ? 'network.failRequest' : 'network.continueResponse', (params.request || {}).request);
+    }
+  });
+
+  return {
+    id: engine.id,
+    label: engine.label,
+    session: false,
+    onExit(handler) { exitHandlers.add(handler); },
+    async openTab({ allow, onPopup }) {
+      policy = policy || allow;
+      const { context } = await transport.send('browsingContext.create', { type: 'tab' });
+      opened.add(context);
+      let contents = null;
+      const tab = { context, allow, onPopup, pageUrl: () => (contents ? contents.getURL() : '') };
+      owners.set(context, tab);
+      contents = await createBidiContents(transport, { context });
+      contents.once('destroyed', () => { opened.delete(context); owners.delete(context); });
+      return contents;
+    },
+    close() {
+      if (ended) return;
+      transport.send('browser.close').catch(() => { });
+      const timer = setTimeout(() => { if (!ended) child.kill(); }, CLOSE_GRACE_MS);
+      if (timer.unref) timer.unref();
+    },
+  };
+}
+
 async function launch(id, {
   profileRoot, spawn = require('node:child_process').spawn, engines = detect(),
-  readFile = fs.readFileSync, WebSocketImpl = globalThis.WebSocket, acceptMs = SESSION_ACCEPT_MS,
+  readFile = fs.readFileSync, WebSocketImpl = globalThis.WebSocket, acceptMs = SESSION_ACCEPT_MS, startMs = FIREFOX_START_MS,
 } = {}) {
   const engine = engines.find((item) => item.id === id);
   if (!engine) throw Object.assign(new Error('Ese navegador no está instalado'), { code: 'ENGINE_MISSING' });
   if (engine.session) return connectSession(engine, { readFile, WebSocketImpl, acceptMs });
+  if (engine.protocol === 'bidi') return launchFirefox(engine, { profileRoot, spawn, WebSocketImpl, startMs });
   return launchDedicated(engine, { profileRoot, spawn });
 }
 
-module.exports = { ENGINES, label, isSession, detect, launch, launchArgs, pipeTransport, socketTransport, attachment };
+module.exports = { ENGINES, FIREFOX_PREFS, label, isSession, detect, launch, launchArgs, firefoxArgs, pipeTransport, socketTransport, attachment };
