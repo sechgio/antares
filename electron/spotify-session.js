@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const {
   readSecureJson,
   writeSecureJson,
@@ -6,17 +5,12 @@ const {
 } = require('./autoimg-secure-storage');
 const { fetchWithRetry } = require('./autoimg-google-fetch');
 const { maskClientId } = require('./autoimg-security');
+const { findAvailablePort } = require('./autoimg-oauth-flow');
+const { exchangeBrowserOAuthCode } = require('./cloud-connector-common');
 const {
-  findAvailablePort,
-  startCallbackServer,
-  generateCodeVerifier: _generateCodeVerifier,
-  generateCodeChallenge: _generateCodeChallenge,
-} = require('./autoimg-oauth-flow');
-const {
-  exchangeBrowserOAuthCode,
-  browserOAuthCallbackHandlers,
-  wireOAuthCallbackServer,
-} = require('./cloud-connector-common');
+  beginBrowserOAuthFlow: startBrowserOAuthFlow,
+  createPendingFlow,
+} = require('./oauth-session');
 
 const OAUTH_CONFIG_FILE = 'spotify-oauth-config.json';
 const OAUTH_CONFIG_NS = 'spotify:oauth';
@@ -50,9 +44,7 @@ const SCOPES = [
 const REAUTH_REQUIRED_MESSAGE =
   'La sesión de Spotify expiró o fue revocada. Vuelve a conectar tu cuenta desde el widget de Spotify.';
 
-let _pendingRedirectUri = null;
-let _pendingCodeVerifier = null;
-let _callbackFlow = null;
+const _oauthFlow = createPendingFlow();
 let _refreshPromise = null;
 let _cachedTokens;
 
@@ -223,70 +215,43 @@ function _buildAuthUrl(redirectUri, codeChallenge, state) {
 }
 
 function cancelBrowserOAuthFlow() {
-  _callbackFlow?.stop?.();
-  _callbackFlow = null;
-  _pendingRedirectUri = null;
-  _pendingCodeVerifier = null;
+  _oauthFlow.cancel();
 }
 
 async function beginBrowserOAuthFlow(onComplete, onError) {
-  cancelBrowserOAuthFlow();
-  const cfg = requireOAuthConfig();
-
-  let port;
-  let redirectUri;
-  if (cfg.redirectUri) {
-    const parsed = new URL(cfg.redirectUri);
-    port = Number(parsed.port) || 0;
-    if (!port) {
-      throw new Error('La redirect URI de Spotify debe incluir puerto, p. ej. http://127.0.0.1:43830/callback.');
-    }
-    redirectUri = cfg.redirectUri;
-  } else {
-    port = await findAvailablePort(DEFAULT_CALLBACK_PORT);
-    redirectUri = `http://127.0.0.1:${port}${CALLBACK_PATH}`;
-  }
-
-  const codeVerifier = _generateCodeVerifier();
-  const codeChallenge = _generateCodeChallenge(codeVerifier);
-  const oauthState = crypto.randomBytes(24).toString('base64url');
-  _pendingRedirectUri = redirectUri;
-  _pendingCodeVerifier = codeVerifier;
-  const url = _buildAuthUrl(redirectUri, codeChallenge, oauthState);
-  const callbackPath = new URL(redirectUri).pathname;
-
-  const flow = { stop: null };
-  _callbackFlow = flow;
-  wireOAuthCallbackServer(
-    startCallbackServer(port, {
-      expectedState: oauthState,
-      callbackPath,
-      ...browserOAuthCallbackHandlers({
-        label: 'Spotify',
-        connect: async (code) => {
-          await exchangeCode(code, redirectUri);
-          return getAuthStatus();
-        },
-        onComplete,
-        onError,
-        cancel: cancelBrowserOAuthFlow,
-      }),
-    }),
-    {
-      isCurrent: () => _callbackFlow === flow,
-      setStop: (stop) => { flow.stop = stop; },
-      onError,
-      cancel: cancelBrowserOAuthFlow,
+  return startBrowserOAuthFlow(_oauthFlow, {
+    label: 'Spotify',
+    resolveTarget: async () => {
+      const cfg = requireOAuthConfig();
+      let port;
+      let redirectUri;
+      if (cfg.redirectUri) {
+        const parsed = new URL(cfg.redirectUri);
+        port = Number(parsed.port) || 0;
+        if (!port) {
+          throw new Error('La redirect URI de Spotify debe incluir puerto, p. ej. http://127.0.0.1:43830/callback.');
+        }
+        redirectUri = cfg.redirectUri;
+      } else {
+        port = await findAvailablePort(DEFAULT_CALLBACK_PORT);
+        redirectUri = `http://127.0.0.1:${port}${CALLBACK_PATH}`;
+      }
+      return { port, redirectUri, callbackPath: new URL(redirectUri).pathname };
     },
-  );
-
-  return { url, redirect_uri: redirectUri };
+    buildAuthUrl: _buildAuthUrl,
+    connect: async (code, { redirectUri }) => {
+      await exchangeCode(code, redirectUri);
+      return getAuthStatus();
+    },
+    onComplete,
+    onError,
+  });
 }
 
 async function exchangeCode(code, redirectUri) {
   const cfg = requireOAuthConfig();
-  const uri = redirectUri || _pendingRedirectUri;
-  const codeVerifier = _pendingCodeVerifier;
+  const uri = redirectUri || _oauthFlow.slots.redirectUri;
+  const codeVerifier = _oauthFlow.slots.codeVerifier;
   if (!uri || !codeVerifier) throw new Error('Flujo OAuth no iniciado');
   const data = await exchangeBrowserOAuthCode({
     fetch: fetchWithRetry,

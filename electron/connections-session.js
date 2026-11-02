@@ -12,7 +12,6 @@ const { fetchWithRetry } = require('./autoimg-google-fetch');
 const { maskClientId } = require('./autoimg-security');
 const {
   findAvailablePort,
-  startCallbackServer,
   generateCodeVerifier: _generateCodeVerifier,
   generateCodeChallenge: _generateCodeChallenge,
 } = require('./autoimg-oauth-flow');
@@ -289,30 +288,23 @@ async function beginConnect(provider, onComplete, onError) {
 
   // Se resuelve en diferido: este módulo se carga en VM por
   // tests/test-connections-refresh.js con un mapa de dependencias explícito.
-  const common = require('./cloud-connector-common');
-  common.wireOAuthCallbackServer(
-    startCallbackServer(port, {
-      expectedState: oauthState,
-      callbackPath: spec.auth.callback_path,
-      ...common.browserOAuthCallbackHandlers({
-        label: spec.label,
-        connect: async (code) => {
-          await _exchangeCode(provider, code);
-          await probeAccount(provider);
-          return getStatus(provider);
-        },
-        onComplete,
-        onError,
-        cancel: () => cancelConnect(provider),
-      }),
-    }),
-    {
-      isCurrent: () => _pending.get(provider) === entry,
-      setStop: (stop) => { entry.stop = stop; },
-      onError,
-      cancel: () => cancelConnect(provider),
+  const { wireBrowserCallbackServer } = require('./oauth-session');
+  wireBrowserCallbackServer({
+    port,
+    expectedState: oauthState,
+    callbackPath: spec.auth.callback_path,
+    label: spec.label,
+    connect: async (code) => {
+      await _exchangeCode(provider, code);
+      await probeAccount(provider);
+      return getStatus(provider);
     },
-  );
+    onComplete,
+    onError,
+    cancel: () => cancelConnect(provider),
+    isCurrent: () => _pending.get(provider) === entry,
+    setStop: (stop) => { entry.stop = stop; },
+  });
 
   return { url, redirect_uri: redirectUri };
 }
