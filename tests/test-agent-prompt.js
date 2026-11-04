@@ -3,8 +3,9 @@
 const assert = require('node:assert/strict');
 const {
   CONVERSATION_GUIDE, SAFETY_GUIDE, EXECUTION_GUIDE, LEGACY_GUIDES, SYSTEM_PROMPT, legacyNotes,
-  migrateInstructions,
+  migrateInstructions, splitMemorySnapshot,
 } = require('../electron/agent-prompts');
+const { MEMORY_SNAPSHOT_MARKER } = require('../electron/agent-shared').shared;
 
 const OLD_PROMPT = [
   'Eres el agente de Antares. Conversación y preferencias: versión anterior sin la regla de estilo.',
@@ -66,6 +67,26 @@ const cases = {
       assert.equal(SYSTEM_PROMPT.split(guide).length, 2, 'el prompt base no duplica las guías');
     }
     assert(!SYSTEM_PROMPT.includes('El último tramo es obligatorio'), 'el prompt base no conserva la guía eliminada');
+  },
+  'el snapshot de memoria se separa y sobrevive a la migración': () => {
+    const snapshot = `${MEMORY_SNAPSHOT_MARKER}\n- Preferencia: Informes — usa la B`;
+    const withSnapshot = `${OLD_PROMPT}\n\n${snapshot}`;
+    const { stable, snapshot: cut } = splitMemorySnapshot(withSnapshot);
+    assert.equal(stable, OLD_PROMPT, 'separar conserva las instrucciones intactas');
+    assert.equal(cut, snapshot, 'separar conserva el bloque completo');
+    assert.deepEqual(splitMemorySnapshot(OLD_PROMPT), { stable: OLD_PROMPT, snapshot: '' }, 'sin marcador no se corta nada');
+    const migrated = migrateInstructions(withSnapshot);
+    assert(migrated.endsWith(snapshot), 'la migración recoloca el snapshot al final');
+    assert(migrated.split('usa la B').length === 2, 'el bloque de memoria no se duplica');
+    assert(!migrated.includes('versión anterior'), 'la parte estable sí se migra');
+    assert.equal(migrateInstructions(migrated), migrated, 'la migración con snapshot es idempotente');
+  },
+  'un recuerdo con encabezado de guía no altera la migración': () => {
+    const snapshot = `${MEMORY_SNAPSHOT_MARKER}\n- Nota: Seguridad y autoridad: versión anterior`;
+    const migrated = migrateInstructions(`${OLD_PROMPT}\n\n${snapshot}`);
+    assert(migrated.endsWith(snapshot), 'el bloque marcado se conserva íntegro aunque imite un encabezado de guía');
+    assert.equal((migrated.match(/Seguridad y autoridad:/g) || []).length, 2,
+      'la guía migra a su versión vigente y el recuerdo queda aparte');
   },
 };
 

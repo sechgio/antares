@@ -47,7 +47,10 @@ function makeBridge() {
   const bridge = async (method, params) => {
     switch (method) {
       case 'agent_internal_activity': return { attention: {} };
-      case 'agent_internal_memory_context': return { context: '', items: [] };
+      case 'agent_internal_memory_context': {
+        state.memoryCalls = [...(state.memoryCalls || []), params];
+        return { context: state.memory || '', items: [] };
+      }
       case 'agent_internal_artifacts':
         return { artifacts: [], questions: [], context: { files: [], accounts: [] } };
       case 'agent_internal_grant_remove': return { removed: 1 };
@@ -476,6 +479,41 @@ async function main() {
     assert(listing.compacting === false, 'el estado «compactando» se apaga al terminar');
     assert(auditRecords(dir).some((record) => record.outcome === 'summary' && record.reason === 'threshold'),
       'la compactación queda en el registro auditable');
+    await runtime.shutdown();
+  }
+
+  {
+    // El snapshot de memoria está congelado por sesión: los turnos no vuelven
+    // a consultarla; la compactación es el único evento que lo regenera.
+    const { script, state: bridgeState } = await openCompaction();
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const runtimeState = runtime._internal.state();
+    const marker = runtime._internal.shared.MEMORY_SNAPSHOT_MARKER;
+    const instructionsOf = async () => {
+      const conv = await convOf(session.id);
+      return String((await conv.agent(runtimeState.ctx)).instructions || '');
+    };
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Encargo: prepara el informe trimestral de ventas' });
+    assert(await waitIdle(session.id), 'el primer turno termina');
+    assert(bridgeState.memoryCalls?.length === 1, 'la memoria se consulta una sola vez al iniciar la sesión');
+    assert(!String(await instructionsOf()).includes(marker), 'sin recuerdos activos no se escribe ningún bloque');
+    const turnCalls = () => bridgeState.memoryCalls.filter((call) => !String(call.text).includes('Encargo actual'));
+    // Las llamadas de regeneración se reconocen por la cabecera del resumen
+    // ('Encargo actual'), formato estable del resumidor de este suite.
+    bridgeState.memory = 'Memoria local disponible para esta conversación:\n- Preferencia: Informes — usa la B';
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Sigue con el informe' });
+    assert(await waitIdle(session.id), 'el segundo turno termina');
+    assert(turnCalls().length === 1, 'los turnos siguientes no reconsultan memoria');
+    await fillUntilCompaction(session.id, script);
+    assert(await waitIdle(session.id), 'el turno continúa después de compactar');
+    const regenerations = bridgeState.memoryCalls.filter((call) => String(call.text).includes('Encargo actual'));
+    assert(regenerations.length === 1, 'la compactación regenera el snapshot una sola vez');
+    assert(regenerations[0].text.includes('Encargo actual'),
+      'la regeneración usa el resumen de la compactación como texto de recuperación');
+    const instructions = String(await instructionsOf());
+    const markerAt = instructions.indexOf(marker);
+    assert(markerAt > 0 && instructions.slice(markerAt).includes('usa la B'),
+      'tras compactar el bloque de memoria se recoloca al final de las instrucciones');
     await runtime.shutdown();
   }
 
