@@ -86,6 +86,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - El navegador de Agent resuelve el DNS de cada destino antes de salir: un dominio público que resuelva a una dirección privada o local (DNS del atacante o rebinding) se bloquea en `web_open`, `web_download` y en cada petición de la sesión del navegador (redirecciones y subrecursos incluidos); sin resolución verificable no navega.
 
 ### Fixed
+- El Generador Reportes descarta la selección y los datos anteriores al importar otro archivo o cambiar de hoja; una carga pendiente, vacía o fallida ya no permite exportar un reporte con registros de la selección anterior.
 - `npm run dev` comprueba y repara las dependencias de la raíz y del frontend, restaura el binario de Electron si falta y avisa de archivos bloqueados antes de reinstalar con Antares abierto.
 - Anotar el navegador de Agent recaptura la página con CDP y vuelve a acoplar la vista antes de leer el raster, con `capturePage` como respaldo si CDP no está disponible.
 - Cambiar el modelo de una conversación de Agent con perfil ya cruza el IPC: la sesión se materializa como JSON antes de responder, sin proxies no clonables.
