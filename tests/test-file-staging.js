@@ -130,7 +130,7 @@ async function main() {
   }
 
   {
-    const { createFileCapability, resolveCapability, revokeCapability } = require('../electron/file-capabilities.js');
+    const { createFileCapability, createFileCapabilityAsync, resolveCapability, revokeCapability } = require('../electron/file-capabilities.js');
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-b5-'));
     try {
       const existing = path.join(tmpDir, 'salida.json');
@@ -153,6 +153,40 @@ async function main() {
       assert.strictEqual(resolved.path, existing, 'resolveCapability devuelve la ruta real');
       assert.strictEqual(resolved.mode, 'read');
       revokeCapability(rCap.token);
+
+      for (const create of [createFileCapability, createFileCapabilityAsync]) {
+        const bound = await create({ filePath: existing, mode: 'read', webContentsId: 1 });
+        try {
+          assert.throws(() => resolveCapability(bound.token, 'write', 1), /capability mode mismatch/);
+          assert.throws(() => resolveCapability(bound.token, 'read', 2), /not bound to this window/);
+          assert.strictEqual(resolveCapability(bound.token, 'read', 1).path, existing);
+
+          const originalNow = Date.now;
+          try {
+            Date.now = () => bound.expiresAt;
+            assert.throws(() => resolveCapability(bound.token, 'read', 1), /capability expired/);
+          } finally {
+            Date.now = originalNow;
+          }
+          assert.throws(() => resolveCapability(bound.token, 'read', 1), /capability not found/);
+        } finally {
+          revokeCapability(bound.token);
+        }
+      }
+
+      if (process.platform !== 'win32') {
+        const replaceable = path.join(tmpDir, 'replaceable.json');
+        fs.writeFileSync(replaceable, 'approved');
+        const bound = await createFileCapabilityAsync({ filePath: replaceable, mode: 'read', webContentsId: 1 });
+        try {
+          fs.unlinkSync(replaceable);
+          fs.symlinkSync(existing, replaceable);
+          assert.throws(() => resolveCapability(bound.token, 'read', 1), /path symlink escape detected/);
+          assert.strictEqual(fs.readFileSync(existing, 'utf8'), '{}');
+        } finally {
+          revokeCapability(bound.token);
+        }
+      }
 
       if (process.platform !== 'win32') {
         const link = path.join(tmpDir, 'link.json');

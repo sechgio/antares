@@ -84,6 +84,27 @@ class TestMigrationManager:
         with pytest.raises(sqlite3.OperationalError):
             manager.apply(Migration(id="bad", sql=("THIS IS NOT SQL",)))
 
+    def test_failed_migration_rolls_back_schema_and_data_and_can_retry(self, conn: sqlite3.Connection) -> None:
+        manager = MigrationManager(conn)
+        manager.apply(Migration(id="baseline", sql=("CREATE TABLE existing (value TEXT)",)))
+        conn.execute("INSERT INTO existing VALUES ('original')")
+        conn.commit()
+
+        with pytest.raises(sqlite3.OperationalError):
+            manager.apply(Migration(id="retryable", sql=(
+                "UPDATE existing SET value = 'changed'",
+                "CREATE TABLE partial (id INTEGER)",
+                "THIS IS NOT SQL",
+            )))
+
+        assert not conn.in_transaction
+        assert conn.execute("SELECT value FROM existing").fetchone()[0] == "original"
+        assert conn.execute("SELECT name FROM sqlite_master WHERE name = 'partial'").fetchone() is None
+        assert manager.applied() == {"baseline"}
+
+        assert manager.apply(Migration(id="retryable", sql=("CREATE TABLE partial (id INTEGER)",))) is True
+        assert manager.applied() == {"baseline", "retryable"}
+
 
 class TestHistorialMigrations:
 
