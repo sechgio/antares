@@ -272,6 +272,15 @@ export default function PreviewPanelView() {
     });
   }, []);
 
+  const clearSheetData = useCallback(() => {
+    setHeaders([]);
+    setData([]);
+    setMappings({});
+    setIdColumn("");
+    setSelectedIndex("");
+    setShowDataPreview(false);
+  }, []);
+
   const loadSheetData = useCallback(
     (sheet: { name: string; rows: unknown[][] }) => {
       const result = rowsToRecords(sheet.rows);
@@ -312,6 +321,7 @@ export default function PreviewPanelView() {
 
   const handleSheetChange = useCallback(
     async (nextName: string) => {
+      clearSheetData();
       setSelectedSheetName(nextName);
       const gen = ++sheetLoadGenRef.current;
       let sh = sheets.find((s) => s.name === nextName);
@@ -342,7 +352,7 @@ export default function PreviewPanelView() {
       }
       if (sh) loadSheetData(sh);
     },
-    [sheets, spillToken, fetchSheetRows, loadSheetData, addToast],
+    [sheets, spillToken, fetchSheetRows, loadSheetData, clearSheetData, addToast],
   );
 
   const applyParsedSheets = useCallback(
@@ -401,6 +411,11 @@ export default function PreviewPanelView() {
       });
       return;
     }
+
+    ++sheetLoadGenRef.current;
+    clearSheetData();
+    setSheets([]);
+    setSelectedSheetName("");
 
     let resultSpillToken: string | null = null;
     try {
