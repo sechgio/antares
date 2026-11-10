@@ -190,6 +190,12 @@ function run() {
   assert(setupCi.includes('frontend/package-lock.json'), 'setup-ci cache key includes the frontend lockfile');
   assert(setupCi.includes('npm ci'), 'setup-ci installs root dependencies with npm ci');
   assert(setupCi.includes('npm ci --prefix frontend'), 'setup-ci installs frontend dependencies with npm ci');
+  assert(
+    setupCi.includes('~/AppData/Local/electron/Cache') &&
+      setupCi.includes('~/AppData/Local/electron-builder/Cache') &&
+      setupCi.includes("hashFiles('package-lock.json')"),
+    'setup-ci restores the Electron and electron-builder caches keyed by the root lockfile',
+  );
   assert(fs.existsSync(UV_LOCK_PATH), 'Python toolchain has a committed uv lockfile');
   assert(setupCi.includes('uv sync --locked --extra dev'), 'setup-ci installs Python dependencies from uv.lock');
   assert(setupCi.includes('python -m pip install uv==0.11.19'), 'setup-ci bootstraps the pinned uv version');
