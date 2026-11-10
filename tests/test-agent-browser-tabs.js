@@ -6,8 +6,6 @@ const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 
-// el navegador del agente resuelve el DNS de cada destino: en los tests
-// toda resolución es pública
 const originalLoad = Module._load;
 Module._load = function patchedLoad(request, parent, isMain) {
   if (request === 'node:dns') {

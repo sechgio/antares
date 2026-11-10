@@ -132,10 +132,6 @@ function _isInvalidGrant(body) {
 }
 
 async function _refreshTokens(tokens) {
-  // pendiente deduplicar: este refresh diverge de google-session._refreshAccessToken
-  // (body con client_id sin client_secret, store plano sin scopes por usuario,
-  // single-flight global en vez de por sesión) y de connections-session
-  // (refresh delegado en el backend vía connections_token_refresh).
   const config = requireOAuthConfig();
   if (!tokens?.refresh_token) {
     clearTokens();

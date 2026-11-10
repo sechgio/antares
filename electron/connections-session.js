@@ -184,9 +184,6 @@ function _isInvalidGrant(body) {
 }
 
 async function _postToken(provider, fields, basic) {
-  // pendiente deduplicar: este exchange diverge de exchangeBrowserOAuthCode en
-  // cloud-connector-common (auth Basic opcional, respuesta no JSON con texto,
-  // no exige refresh_token, expiry_date puede ser null).
   const spec = getProvider(provider);
   const headers = { Accept: 'application/json' };
   if (basic) {
@@ -239,9 +236,6 @@ function refreshTokens(provider, tokens) {
 }
 
 async function getValidTokens(provider) {
-  // pendiente deduplicar: a diferencia de google-session y spotify-session, el
-  // refresh no es local: se delega en el backend (rotación de tokens) y no
-  // comprueba expiry_date aquí; getStatus aplica su propia lógica de expiración.
   const tokens = loadTokens(provider);
   if (!tokens || (!tokens.access_token && !tokens.refresh_token)) return null;
   try {

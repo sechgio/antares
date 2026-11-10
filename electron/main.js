@@ -142,7 +142,6 @@ app.whenReady().then(async () => {
     console.warn('[main] log/temp init failed:', err && err.message);
   }
   Menu.setApplicationMenu(null);
-  // El backend es la ruta crítica del arranque: se lanza antes de crear la ventana.
   startPythonBackend(isDev).then(() => require('./agent-runtime').open()).catch((err) => {
     console.error('[main] startPythonBackend threw:', err);
   });
