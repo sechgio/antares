@@ -215,6 +215,18 @@ function run() {
     pyproject.includes('"pytest-xdist>=3.6.0"') && /^addopts\s*=\s*"[^"]*-n 4"/m.test(pyproject),
     'Backend pytest distributes the suite across four workers instead of running serially',
   );
+  assert(
+    runner.includes('async function runNodeTestsParallel') &&
+      runner.includes('const PARALLEL_NODE_CONCURRENCY = readParallelConcurrency()') &&
+      runner.includes('ANTARES_NODE_TEST_CONCURRENCY') &&
+      runner.includes('await runNodeTestsParallel(ELECTRON_TESTS)'),
+    'The electron suite runs as a bounded, overridable pool of parallel Node workers',
+  );
+  assert(runner.includes('runNodeTests(CONTRACT_TESTS)'), 'The contract suite stays serial');
+  assert(
+    runner.includes('node tests failed:'),
+    'The Node test pool fails closed naming every failed test file',
+  );
   assert(runner.includes("'test-quality-ratchet.js'"), 'test runner treats quality-ratchet as a contract test');
   assert(runner.includes("'test-review-policy.js'"), 'test runner treats review-policy as a contract test');
   assert(

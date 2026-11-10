@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const TESTS_DIR = path.join(ROOT, 'tests');
@@ -55,6 +55,70 @@ function runNodeTests(testNames) {
   }
 }
 
+const PARALLEL_NODE_CONCURRENCY = readParallelConcurrency();
+
+function readParallelConcurrency() {
+  const parsed = Number.parseInt(process.env.ANTARES_NODE_TEST_CONCURRENCY ?? '', 10);
+  return Number.isInteger(parsed) && parsed >= 1 ? parsed : 4;
+}
+
+// Runs plain-Node test files in a bounded worker pool: every file keeps running
+// even after another one fails, and the aggregate always fails closed.
+async function runNodeTestsParallel(testNames) {
+  if (testNames.length === 0) return;
+  const total = testNames.length;
+  const concurrency = Math.min(PARALLEL_NODE_CONCURRENCY, total);
+  const pending = [...testNames];
+  const failures = [];
+  let queued = 0;
+  let completed = 0;
+  console.log(
+    `\n$ node tests/<file> x${total} (bounded pool of ${concurrency} workers; ` +
+      'ANTARES_NODE_TEST_CONCURRENCY overrides it)',
+  );
+  await Promise.all(
+    Array.from({ length: concurrency }, async () => {
+      let name;
+      while ((name = pending.shift()) !== undefined) {
+        queued += 1;
+        console.log(`$ node tests/${name} (${queued}/${total})`);
+        const prefix = `[${name}] `;
+        const child = spawn(process.execPath, [path.join(TESTS_DIR, name)], {
+          env: process.env,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
+        });
+        for (const stream of [child.stdout, child.stderr]) {
+          stream.setEncoding('utf8');
+          let carry = '';
+          stream.on('data', (chunk) => {
+            carry += chunk;
+            let newlineAt = carry.indexOf('\n');
+            while (newlineAt !== -1) {
+              console.log(prefix + carry.slice(0, newlineAt));
+              carry = carry.slice(newlineAt + 1);
+              newlineAt = carry.indexOf('\n');
+            }
+          });
+          stream.on('end', () => {
+            if (carry.length > 0) console.log(prefix + carry);
+          });
+        }
+        const code = await new Promise((resolve) => {
+          child.on('close', resolve);
+        });
+        completed += 1;
+        if (code !== 0) failures.push({ name, code });
+        console.log(`\n${prefix}finished with exit code ${code ?? 'signal'} (${completed}/${total} done)`);
+      }
+    }),
+  );
+  if (failures.length > 0) {
+    const summary = failures.map((failure) => `${failure.name} (exit ${failure.code ?? 'signal'})`).join(', ');
+    throw new Error(`node tests failed: ${summary}`);
+  }
+}
+
 function runFrontendSuite(shard) {
   const frontend = path.join(ROOT, 'frontend');
   if (shard) {
@@ -65,7 +129,7 @@ function runFrontendSuite(shard) {
   run(npmCommand, ['run', 'test:all'], frontend);
 }
 
-function runSuite(name, shard = null) {
+async function runSuite(name, shard = null) {
   switch (name) {
     case 'contracts':
       runNodeTests(CONTRACT_TESTS);
@@ -74,7 +138,7 @@ function runSuite(name, shard = null) {
       run('uv', ['run', '--project', ROOT, '--locked', '--extra', 'dev', 'pytest', '../tests', '-v'], path.join(ROOT, 'backend'));
       return;
     case 'electron':
-      runNodeTests(ELECTRON_TESTS);
+      await runNodeTestsParallel(ELECTRON_TESTS);
       return;
     case 'turns':
       run(npmCommand, ['run', 'test:turns'], ROOT);
@@ -94,10 +158,14 @@ if (requestedShard && !/^\d+\/\d+$/.test(requestedShard)) {
 }
 const suites = requestedSuite ? [requestedSuite] : ['contracts', 'backend', 'electron', 'turns', 'frontend'];
 
-try {
-  for (const suite of suites) runSuite(suite, requestedShard);
-  console.log('\nAll requested test suites passed.');
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
+async function main() {
+  try {
+    for (const suite of suites) await runSuite(suite, requestedShard);
+    console.log('\nAll requested test suites passed.');
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }
+
+main();
