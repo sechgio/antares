@@ -56,13 +56,17 @@ function createWindow(isDev) {
     if (details.url.startsWith('http://127.0.0.1:') && require('./agent-preview').isPage(details.url)) {
       return callback({ responseHeaders: details.responseHeaders });
     }
+    // frame-src queda acotado al puerto real del preview (wshell-002); el
+    // comodín solo vale mientras el servidor aún no escuchó.
+    const previewOrigin = require('./agent-preview').originUrl();
+    const previewFrameSrc = previewOrigin || 'http://127.0.0.1:*';
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           isDev
-            ? buildCsp("default-src 'self' http://localhost:5173; frame-src 'self' http://localhost:5173 http://127.0.0.1:*; script-src 'self' http://localhost:5173 'unsafe-inline'; style-src 'self' 'unsafe-inline' http://localhost:5173 https://fonts.googleapis.com; img-src 'self' data: blob: http://localhost:5173 https://assets.petdex.dev; font-src 'self' http://localhost:5173 https://fonts.gstatic.com; media-src https:; connect-src 'self' http://localhost:5173 ws://localhost:5173 wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev https://*.api.radio-browser.info https://*.audius.co https://stream.nightride.fm https://media01.gamingnow.net:8010 https://itunes.apple.com https://musicbrainz.org https://api.jamendo.com https://archive.org https://ice6.somafm.com")
-            : buildCsp("default-src 'self'; frame-src 'self' http://127.0.0.1:*; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://assets.petdex.dev; font-src 'self' https://fonts.gstatic.com; media-src https:; connect-src 'self' wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev https://*.api.radio-browser.info https://*.audius.co https://stream.nightride.fm https://media01.gamingnow.net:8010 https://itunes.apple.com https://musicbrainz.org https://api.jamendo.com https://archive.org https://ice6.somafm.com")
+            ? buildCsp(`default-src 'self' http://localhost:5173; frame-src 'self' http://localhost:5173 ${previewFrameSrc}; script-src 'self' http://localhost:5173 'unsafe-inline'; style-src 'self' 'unsafe-inline' http://localhost:5173 https://fonts.googleapis.com; img-src 'self' data: blob: http://localhost:5173 https://assets.petdex.dev; font-src 'self' http://localhost:5173 https://fonts.gstatic.com; media-src https:; connect-src 'self' http://localhost:5173 ws://localhost:5173 wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev https://*.api.radio-browser.info https://*.audius.co https://stream.nightride.fm https://media01.gamingnow.net:8010 https://itunes.apple.com https://musicbrainz.org https://api.jamendo.com https://archive.org https://ice6.somafm.com`)
+            : buildCsp(`default-src 'self'; frame-src 'self' ${previewFrameSrc}; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://assets.petdex.dev; font-src 'self' https://fonts.gstatic.com; media-src https:; connect-src 'self' wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev https://*.api.radio-browser.info https://*.audius.co https://stream.nightride.fm https://media01.gamingnow.net:8010 https://itunes.apple.com https://musicbrainz.org https://api.jamendo.com https://archive.org https://ice6.somafm.com`)
         ]
       }
     });
@@ -71,18 +75,27 @@ function createWindow(isDev) {
   // Deny-by-default en la sesión principal: sin handler, Electron aprueba
   // todo (micrófono incluido) ante cualquier renderer comprometido. Solo se
   // concede lo que la UI usa: micrófono y captura de pantalla del editor, y
-  // portapapeles del lienzo.
+  // portapapeles del lienzo. El permiso va atado al webContents que pide
+  // (ipc-bridge-014): solo la ventana principal y solo con su URL de
+  // confianza — un frame de localhost que logre colarse no hereda nada.
   const allowedPermissions = new Set([
     'media',
     'display-capture',
     'clipboard-read',
     'clipboard-sanitized-write',
   ]);
-  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(allowedPermissions.has(permission));
+  const { isTrustedRendererUrl } = require('./renderer-trust');
+  const isTrustedMainFrame = (webContents) => {
+    if (!webContents || webContents.isDestroyed?.()) return false;
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    if (webContents.id !== mainWindow.webContents.id) return false;
+    return isTrustedRendererUrl(String(webContents.getURL() || ''), isDev);
+  };
+  mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(isTrustedMainFrame(webContents) && allowedPermissions.has(permission));
   });
   mainWindow.webContents.session.setPermissionCheckHandler(
-    (_webContents, permission) => allowedPermissions.has(permission),
+    (webContents, permission) => isTrustedMainFrame(webContents) && allowedPermissions.has(permission),
   );
 
   // Icecast/SomaFM rechaza el stream con 403 si llega un Referer externo
@@ -175,8 +188,23 @@ function createWindow(isDev) {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http:') || url.startsWith('https:')) {
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return { action: 'deny' };
+    }
+    if (parsed.protocol === 'https:') {
       require('electron').shell.openExternal(url).catch(() => {});
+    } else {
+      // wshell-011: http en claro es un primitivo de phishing/deanonimización;
+      // solo https sale al navegador del sistema.
+      appendLogEvent('WARN', 'security.rejected', {
+        component: 'window',
+        outcome: 'rejected',
+        reason: parsed.protocol === 'http:' ? 'external_cleartext' : 'external_scheme',
+        method: 'window_open',
+      });
     }
     return { action: 'deny' };
   });
@@ -184,11 +212,26 @@ function createWindow(isDev) {
   const { pathToFileURL } = require('url');
   const distFileUrlPrefix = pathToFileURL(path.dirname(htmlPath) + path.sep).toString();
 
+  const isAllowedMainFrameUrl = (url) => (isDev
+    ? (url.startsWith('http://localhost:5173') || url.startsWith('http://127.0.0.1:5173'))
+    : url.startsWith(distFileUrlPrefix));
+
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    const allowed = isDev
-      ? (url.startsWith('http://localhost:5173') || url.startsWith('http://127.0.0.1:5173'))
-      : url.startsWith(distFileUrlPrefix);
-    if (!allowed) event.preventDefault();
+    if (!isAllowedMainFrameUrl(url)) event.preventDefault();
+  });
+
+  // wshell-010: la navegación inicial puede quedar bien y un redirect del
+  // servidor llevar después el main frame fuera de origen; se valida también
+  // el URL final de cada redirect (defensa en profundidad).
+  mainWindow.webContents.on('will-redirect', (event, url) => {
+    if (isAllowedMainFrameUrl(url)) return;
+    event.preventDefault();
+    appendLogEvent('WARN', 'security.rejected', {
+      component: 'window',
+      outcome: 'rejected',
+      reason: 'main_frame_redirect_off_origin',
+      method: 'will-redirect',
+    });
   });
 
   mainWindow.webContents.on('did-finish-load', () => {

@@ -233,4 +233,11 @@ function close() {
   pages.clear();
 }
 
-module.exports = { open, owns, openPage, embedPage, isPage, releasePage, close };
+// Origen efectivo del servidor una vez escuchando ('' si todavía no);
+// window-manager lo usa para acotar frame-src al puerto real (wshell-002)
+// en vez de un comodín 127.0.0.1:*.
+function originUrl() {
+  return origin || '';
+}
+
+module.exports = { open, owns, openPage, embedPage, isPage, releasePage, close, originUrl };

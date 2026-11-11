@@ -11,11 +11,11 @@ function run() {
     'utf8',
   );
 
-  const cspMatches = [...source.matchAll(/buildCsp\("([^"]+)"\)/g)];
+  const cspMatches = [...source.matchAll(/buildCsp\((["'`])((?:\\.|(?!\1)[\s\S])*)\1\)/g)];
   assert(cspMatches.length >= 2, 'dev and prod CSP strings are present');
 
-  const devCsp = cspMatches[0]?.[1] ?? '';
-  const prodCsp = cspMatches[1]?.[1] ?? '';
+  const devCsp = cspMatches[0]?.[2] ?? '';
+  const prodCsp = cspMatches[1]?.[2] ?? '';
 
   const hardeningMatch = source.match(/cspHardening\s*=\s*"([^"]+)"/);
   const hardening = hardeningMatch?.[1] ?? '';
@@ -36,8 +36,20 @@ function run() {
   }
   const prodScriptSources = prodCsp.match(/(?:^|;)\s*script-src\s+([^;]+)/)?.[1] ?? '';
   assert(prodScriptSources.trim() === "'self'", 'production scripts are restricted to self');
+  // wshell-002: frame-src queda acotado al puerto real del preview; el
+  // comodín solo aparece como respaldo mientras el servidor no ha escuchado.
   const prodFrameSources = prodCsp.match(/(?:^|;)\s*frame-src\s+([^;]+)/)?.[1] ?? '';
-  assert(prodFrameSources.trim() === "'self' http://127.0.0.1:*", 'production frames only self and the loopback page server');
+  assert(prodFrameSources.includes("'self'"), 'production frames include self');
+  assert(
+    /(\$\{previewFrameSrc\}|127\.0\.0\.1:\*)/.test(prodFrameSources),
+    'production frames only self and the pinned loopback page server',
+  );
+  assert(
+    /\.originUrl\(\)/.test(source)
+      && /previewOrigin \|\| 'http:\/\/127\.0\.0\.1:\*'/.test(source)
+      && /frame-src 'self' http:\/\/localhost:5173 \$\{previewFrameSrc\}/.test(source),
+    'dev and prod CSP pin the loopback preview in frame-src',
+  );
   assert(/startsWith\('http:\/\/127\.0\.0\.1:'\) && require\('\.\/agent-preview'\)\.isPage\(details\.url\)/.test(source),
     'only registered agent pages keep their own CSP');
 
