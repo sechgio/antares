@@ -671,6 +671,10 @@ function leadingSystem(messages) {
 // El cuerpo de una skill (skills_read) es contenido de archivos del equipo: viaja como
 // dato, igual que fs_read, y el envoltorio lo marca como dato externo.
 const CONTROL_TOOL_RESULTS = new Set(CONTROL_TOOL_RESULT_NAMES);
+// Las imágenes del resultado no salen al proveedor cuando vienen de la vía
+// CUA: sus capturas incluyen otras ventanas del usuario; el modelo sigue con
+// el árbol de accesibilidad y la captura queda en el borrador del equipo (llm-005).
+const NO_ATTACH_IMAGE = /^cua_/;
 
 function escapeToolOutputTags(text) {
   return String(text).replace(/<(\/?)\s*tool_output\b/gi, '&lt;$1tool_output');
@@ -1224,7 +1228,11 @@ async function executeTool(spec, args, api, context) {
         + 'la próxima lectura lo reconstruirá desde el historial.';
     }
   }
-  const image = isError || !await acceptsImages(api, context) ? null : await resultImage(parsed);
+  // Las capturas de la vía CUA no salen al proveedor; el resto de imágenes de
+  // resultado (p. ej. la vista del navegador del agente o los borradores
+  // propios) sí, pues son contenido del ámbito del agente (llm-005).
+  const image = isError || NO_ATTACH_IMAGE.test(spec.name) || !await acceptsImages(api, context)
+    ? null : await resultImage(parsed);
   const turn = turnState(api.conversationId);
   const calls = turn.calls;
   const signature = callSignature(spec.name, args);
