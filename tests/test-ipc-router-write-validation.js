@@ -640,6 +640,11 @@ async function run() {
     assert(_sanitizeFilename('') === 'reporte.pdf', 'nombre vacío cae al fallback');
     assert(_sanitizeFilename(' / ') === 'reporte.pdf', 'basename que sanitiza a vacío cae al fallback');
     assert(_sanitizeFilename('informe') === 'informe.pdf', 'añade extensión si falta');
+    assert(_sanitizeFilename('CON') === '_CON.pdf', 'nombre reservado Windows se prefija');
+    assert(_sanitizeFilename('CON.pdf') === '_CON.pdf', 'nombre reservado con extensión se prefija');
+    assert(_sanitizeFilename('lpt1') === '_lpt1.pdf', 'nombre de puerto reservado se prefija (case-insensitive)');
+    assert(_sanitizeFilename('informe....') === 'informe.pdf', 'puntos finales se retiran antes de componer');
+    assert(_sanitizeFilename('informe  ') === 'informe.pdf', 'espacios finales se retiran antes de componer');
   } finally {
     _clearAllowedWriteRoots();
     clearAllowedReadPaths();

@@ -2,7 +2,7 @@ const Module = require('module');
 
 const { assert, finish, evictModule } = require('./helpers/harness');
 
-function loadPreload({ packaged = false, allowedMethods, filePath = '', fileInputNonce = '' } = {}) {
+function loadPreload({ packaged = false, nodeEnv, allowedMethods, filePath = '', fileInputNonce = '' } = {}) {
   const originalLoad = Module._load;
   let exposedApi = null;
   const invokeCalls = [];
@@ -34,7 +34,7 @@ function loadPreload({ packaged = false, allowedMethods, filePath = '', fileInpu
   };
 
   global.window = { addEventListener() {} };
-  process.env.NODE_ENV = packaged ? 'production' : 'development';
+  process.env.NODE_ENV = nodeEnv ?? (packaged ? 'production' : 'development');
   const allowedArg = `--allowed-ipc-methods=${JSON.stringify(allowedMethods || ['dialog_files', 'db_columns'])}`;
   const packagedArg = `--app-is-packaged=${packaged ? '1' : '0'}`;
   const nonceArg = `--file-input-nonce=${fileInputNonce}`;
@@ -77,6 +77,24 @@ async function run() {
     await exposedApi.invoke('totally_unknown_method');
     assert(invokeCalls[0][0] === 'ipc-call', 'unknown methods should still be forwarded in dev');
     assert(invokeCalls[0][1] === 'totally_unknown_method', 'unknown method name should be preserved in dev');
+  }
+
+  {
+    // ipc-bridge-022: cuando main pasa --app-is-packaged, el flag es la única
+    // fuente; el NODE_ENV ambiente no puede desalinear el gate del preload con
+    // el check de confianza del renderer.
+    {
+      const { exposedApi, invokeCalls } = loadPreload({ packaged: false, nodeEnv: 'production' });
+      invokeCalls.length = 0;
+      await exposedApi.invoke('totally_unknown_method');
+      assert(invokeCalls[0][0] === 'ipc-call', 'flag dev manda aunque NODE_ENV diga production');
+    }
+    {
+      const { exposedApi, invokeCalls } = loadPreload({ packaged: true, nodeEnv: 'development' });
+      invokeCalls.length = 0;
+      await exposedApi.invoke('totally_unknown_method').catch(() => {});
+      assert(invokeCalls.length === 0, 'flag packaged manda aunque NODE_ENV diga development');
+    }
   }
 
   {

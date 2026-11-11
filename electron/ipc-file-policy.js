@@ -286,10 +286,12 @@ function _assertAllowedRawOutputPath(outRaw) {
     if (!isUnderAllowedWriteRoot(dir) && !isAllowedReadPath(resolved) && !isAllowedReadPath(dir)) {
       throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
     }
-    // El veto de ejecutables aplica siempre que no haya write root por
-    // diálogo: que la ruta estuviera registrada antes para lectura no
-    // habilita sobrescribir un binario (p. ej. el .exe abierto ayer).
-    if (!isUnderAllowedWriteRoot(dir) && FORBIDDEN_FALLBACK_EXTENSIONS.has(_outputExtension(resolved))) {
+    // El veto de ejecutables aplica SIEMPRE en el canal silencioso: registrar
+    // una raíz por diálogo habilita el artefacto de ese diálogo, no binarios
+    // que el renderer suelte después sin que el usuario lo vea (ipc-bridge-025
+    // / storage-path-handling-009). El diálogo nativo (token antares-write_)
+    // no pasa por aquí y conserva su confirmación explícita.
+    if (FORBIDDEN_FALLBACK_EXTENSIONS.has(_outputExtension(resolved))) {
       throw new Error('tipo de archivo no permitido en la ruta de salida');
     }
     const { hasSymlinkAncestor } = require('./path-allowlist');

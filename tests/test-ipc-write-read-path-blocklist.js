@@ -92,13 +92,26 @@ async function run() {
       },
     };
     await handleDialogCall('dialog_folder', { pickOnly: true }, dialog, { id: 1 });
-    const writeRoot = router._validateAndResolveWriteParams(
-      { outputPath: path.join(customDir, 'script.js') },
+    let scriptBlocked = '';
+    try {
+      router._validateAndResolveWriteParams(
+        { outputPath: path.join(customDir, 'script.js') },
+        null,
+      );
+    } catch (e) {
+      scriptBlocked = e.message;
+    }
+    assert(
+      /tipo de archivo no permitido/.test(scriptBlocked),
+      'write root por diálogo no habilita binarios/scripts por el canal silencioso (ipc-bridge-025)',
+    );
+    const benign = router._validateAndResolveWriteParams(
+      { outputPath: path.join(customDir, 'informe.pdf') },
       null,
     );
     assert(
-      writeRoot.outputPath === path.join(customDir, 'script.js'),
-      'write root concedido por diálogo sigue sin veto de extensiones',
+      benign.outputPath === path.join(customDir, 'informe.pdf'),
+      'el artefacto legitimo del diálogo sigue escribiéndose en la raíz concedida',
     );
   } finally {
     _clearAllowedWriteRoots();

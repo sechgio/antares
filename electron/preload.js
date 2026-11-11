@@ -59,15 +59,20 @@ function resolveIsPackaged() {
   const prefix = '--app-is-packaged=';
   const argv = Array.isArray(process.argv) ? process.argv : [];
   const arg = argv.find((a) => typeof a === 'string' && a.startsWith(prefix));
+  // ipc-bridge-022: cuando main pasa el flag (siempre en la ventana
+  // principal), MANDA el flag — misma fuente que el isDev del proceso
+  // principal. NODE_ENV/asar quedan como respaldo para ventanas que no lo
+  // reciban, nunca como segunda opinión que pueda desalinear el gate del
+  // preload con el check de confianza del renderer.
   if (arg) return arg.slice(prefix.length) === '1';
   try {
-    return typeof __dirname !== 'undefined' && /[\\/]app\.asar[\\/]/.test(__dirname);
+    if (typeof __dirname !== 'undefined' && /[\\/]app\.asar[\\/]/.test(__dirname)) return true;
   } catch {
-    return false;
   }
+  return process.env?.NODE_ENV === 'production';
 }
 
-const isDev = process.env?.NODE_ENV !== 'production' && !resolveIsPackaged();
+const isDev = !resolveIsPackaged();
 
 try {
   contextBridge.exposeInMainWorld('electronAPI', {

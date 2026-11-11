@@ -68,18 +68,30 @@ async function writePendingAssets(entries) {
     return;
   }
   await fsp.mkdir(path.dirname(p), { recursive: true });
-  const tmp = `${p}.${process.pid}.tmp`;
-  await fsp.writeFile(tmp, JSON.stringify(entries), 'utf8');
+  // storage-path-handling-006: nombre impredecible + flag 'wx' para que un
+  // enlace pre-creado en esa ruta no pueda desviar la escritura.
+  const tmp = `${p}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  await fsp.writeFile(tmp, JSON.stringify(entries), { encoding: 'utf8', flag: 'wx' });
   await fsp.rename(tmp, p);
 }
 
-async function markAssetPending(assetId) {
+// Los marcadores pendientes se leen-modifican-escriben desde el alta de
+// activos y desde el GC: sin la misma cadena de escritura, una marca puede
+// perderse y el GC borraría un activo todavía vivo dentro de su TTL
+// (storage-path-handling-006). El GC ya corre dentro de withAssetWriteLock
+// (export al final del módulo), así que marcar hereda la misma cola. La
+// variante interna existe porque putCanvasAsset marca con el lock tomado.
+async function _markAssetPendingUnlocked(assetId) {
   try {
     const entries = (await readPendingAssets()).filter((e) => e.id !== assetId);
     entries.push({ id: assetId, at: Date.now() });
     await writePendingAssets(entries.slice(-MAX_PENDING_ASSET_MARKERS));
   } catch {
   }
+}
+
+function markAssetPending(assetId) {
+  return withAssetWriteLock(() => _markAssetPendingUnlocked(assetId), 0);
 }
 
 let assetWriteChain = Promise.resolve();
@@ -181,7 +193,7 @@ async function putCanvasAsset(bytes) {
         const existing = await fsp.readFile(dest);
         const existingHash = crypto.createHash('sha256').update(existing).digest('hex');
         if (existingHash === assetId) {
-          await markAssetPending(assetId);
+          await _markAssetPendingUnlocked(assetId);
           return { asset_id: assetId, ref: toAssetRef(assetId), bytes: buf.length };
         }
       }
@@ -231,7 +243,7 @@ async function putCanvasAsset(bytes) {
       await fsp.rm(temp, { force: true }).catch(() => {});
       throw e;
     }
-    await markAssetPending(assetId);
+    await _markAssetPendingUnlocked(assetId);
     return { asset_id: assetId, ref: toAssetRef(assetId), bytes: buf.length };
   }, buf.length);
 }
@@ -270,7 +282,9 @@ async function getCanvasAssetInfo(assetIdOrRef) {
   if (verifiedAssetStatKeys.get(id.toLowerCase()) !== assetStatKey(stat)) {
     await getCanvasAsset(id);
   }
-  await markAssetPending(id.toLowerCase());
+  // getCanvasAssetInfo se exporta bajo withAssetWriteLock: marcar aquí con el
+  // lock tomado sería esperarse a sí mismo.
+  await _markAssetPendingUnlocked(id.toLowerCase());
   return { asset_id: id, ref: toAssetRef(id), bytes: stat.size };
 }
 
@@ -363,6 +377,7 @@ module.exports = {
   toAssetRef,
   putCanvasAsset,
   getCanvasAsset,
+  markAssetPending,
   getCanvasAssetInfo: (ref) => withAssetWriteLock(() => getCanvasAssetInfo(ref), 0),
   canvasAssetUsageBytes,
   cachedCanvasAssetUsageBytes,
