@@ -107,6 +107,10 @@ async function main() {
   assert(!('app' in unknown) && unknown.window.includes('99'), 'un pid sin leer no se presenta como app concedible');
   assert(cua.approvalContext('cua_launch_app', { path: 'C:\\Windows\\notepad.exe' }).app === 'notepad.exe',
     'abrir una app nombra el ejecutable');
+  const launchContext = cua.approvalContext('cua_launch_app', { path: 'C:\\Windows\\notepad.exe' });
+  assert(launchContext.path === 'C:\\Windows\\notepad.exe'
+    && cua.approvalContext('cua_launch_app', { path: 'C:\\temp\\notepad.exe' }).path === 'C:\\temp\\notepad.exe',
+    'la aprobación de lanzar fija el ejecutable exacto, no solo su nombre');
 
   answers.click = { content: [{ type: 'text', text: 'Clicked' }], structuredContent: { effect: 'suspected_noop', delivery: { mode: 'background' } } };
   const noop = await cua.run('cua_click', { pid: 42, window_id: 7, element_token: 's00000001:0' }, { sessionId: 's1' });

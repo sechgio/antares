@@ -33,6 +33,16 @@ let reloadTimer = null;
 let onChange = null;
 const pages = new Map();
 
+// Política para los archivos locales servidos (las páginas sintetizadas usan
+// la de agent-pages). El HTML del usuario no está saneado, así que la política
+// bloquea todo recurso remoto y la lectura por fetch/connect, conservando los
+// recursos hermanos de la misma carpeta (img/media/font-src 'self') y el
+// JavaScript inline que el archivo ya traía.
+const LOCAL_PREVIEW_CSP = "default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; "
+  + "img-src 'self' data: blob:; media-src 'self'; font-src 'self' data:; connect-src 'none'; frame-src 'none'; "
+  + "object-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'";
+const PREVIEW_PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=(), clipboard-read=(), clipboard-write=()';
+
 function key(value) {
   const resolved = path.resolve(value);
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
@@ -87,6 +97,9 @@ async function handle(req, res) {
       'Content-Length': stat.size,
       'Cache-Control': 'no-store',
       'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': LOCAL_PREVIEW_CSP,
+      'Referrer-Policy': 'no-referrer',
+      'Permissions-Policy': PREVIEW_PERMISSIONS_POLICY,
     });
     if (req.method === 'HEAD') return res.end();
     fs.createReadStream(real).on('error', () => res.destroy()).pipe(res);

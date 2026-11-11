@@ -6,7 +6,10 @@ const path = require('node:path');
 const { fileURLToPath } = require('node:url');
 const preview = require('./agent-preview');
 
+// Las pestañas con control del usuario viven en otra partición: sus cookies y
+// localStorage nunca se mezclan con las del agente (cua-013).
 const PARTITION = 'persist:antares-agent-browser';
+const USER_PARTITION = 'persist:antares-agent-user';
 const MAX_TEXT = 3_500;
 const MAX_ELEMENTS = 80;
 const MAX_CANDIDATES = 400;
@@ -180,7 +183,9 @@ let consoleLog = [];
 const netLog = new Map();
 let consoleSeq = 0;
 let netSeq = 0;
-let sessionReady = false;
+// Registro de barreras por partición: permisos, red y descargas se instalan
+// una vez por sesión (agente y usuario van en particiones distintas).
+const barrierSessions = new Set();
 let downloadSlot = null;
 let engineChoice = null;
 let engineLink = null;
@@ -343,9 +348,12 @@ function requestAllowed(url, pageUrl, mainFrame) {
   return isPublicResolution(url).catch(() => false);
 }
 
-function prepareSession(electron) {
-  const ses = electron.session.fromPartition(PARTITION);
-  if (sessionReady) return ses;
+const sessionCache = new Map();
+
+function prepareSession(electron, partition = PARTITION) {
+  let ses = sessionCache.get(partition);
+  if (!ses) ses = electron.session.fromPartition(partition);
+  if (barrierSessions.has(partition)) return ses;
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
   ses.setUserAgent(siteUserAgent(ses.getUserAgent()));
@@ -377,7 +385,8 @@ function prepareSession(electron) {
       completed ? { saved_path: target, filename: name, bytes: item.getReceivedBytes() } : null);
     });
   });
-  sessionReady = true;
+  sessionCache.set(partition, ses);
+  barrierSessions.add(partition);
   return ses;
 }
 
@@ -412,7 +421,7 @@ async function startDownload(url, drafts) {
     if (downloadSlot === slot) slot.settle(new Error('La descarga no comenzó; comprueba la dirección'), null);
   }, LOAD_TIMEOUT_MS);
   try {
-    require('electron').session.fromPartition(PARTITION).downloadURL(slot.url);
+    prepareSession(require('electron'), PARTITION).downloadURL(slot.url);
   } catch (error) {
     slot.settle(error, null);
   }
@@ -541,7 +550,10 @@ function ensureTab(id) {
   const tab = tabEntry(id);
   if (tab.view && alive(tab.view.webContents)) return tab;
   const electron = require('electron');
-  const ses = prepareSession(electron);
+  // La pestaña del agente navega en su propia burbuja de cookies; cualquier
+  // otra pestaña es del usuario y vive en su partición separada (cua-013),
+  // con las mismas barreras instaladas por sesión.
+  const ses = prepareSession(electron, id === AGENT_TAB ? PARTITION : USER_PARTITION);
   tab.view = new electron.WebContentsView({
     webPreferences: {
       session: ses,
@@ -711,11 +723,40 @@ function engines() {
 }
 
 // Cambia dónde navega la pestaña del agente; las pestañas del usuario siguen en el integrado.
+// Adjuntar la sesión real de Chrome migra las cookies del usuario al alcance del agente:
+// siempre requiere una confirmación explícita en el proceso principal (cua-005).
+function confirmSessionAttach() {
+  const { dialog } = require('electron');
+  if (!dialog || typeof dialog.showMessageBox !== 'function') return Promise.resolve(true);
+  const win = require('./window-manager').getMainWindow();
+  return dialog.showMessageBox(win && !win.isDestroyed() ? win : undefined, {
+    type: 'question',
+    buttons: ['Adjuntar mi sesión', 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Mi sesión de Chrome',
+    message: '¿Quieres que el agente navegue con tu sesión de Chrome?',
+    detail: 'El agente usará tus cookies y sesión activa de Chrome. Abrir un dominio que no esté en '
+      + '«Permitir siempre» pedirá tu aprobación en cada caso. Puedes volver al navegador integrado cuando quieras.',
+  }).then((response) => response && response.response === 0);
+}
+
 function setEngine(id) {
   const next = !id || id === 'integrado' ? null : String(id);
   if (next && !require('./agent-browser-engines').detect().some((engine) => engine.id === next)) {
     throw browserError('Ese navegador no está instalado en este equipo', 'ENGINE_MISSING');
   }
+  if (next === engineChoice) return state();
+  if (next && require('./agent-browser-engines').isSession(next)) {
+    return confirmSessionAttach().then((confirmed) => {
+      if (!confirmed) throw browserError('No se adjuntó la sesión de Chrome: el agente sigue en su navegador', 'SESSION_CONFIRM_DENIED');
+      return applyEngine(next);
+    });
+  }
+  return applyEngine(next);
+}
+
+function applyEngine(next) {
   if (next === engineChoice) return state();
   const tab = tabs.get(AGENT_TAB);
   if (tab && alive(tab.external)) tab.external.close();

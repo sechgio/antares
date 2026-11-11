@@ -163,7 +163,9 @@ function targetWindow(params) {
 function approvalContext(name, params = {}) {
   if (name === 'cua_launch_app') {
     const app = String(params.name || path.basename(String(params.path || ''))).trim();
-    return app ? { app } : {};
+    // La aprobación fija el ejecutable exacto: la misma app con otra ruta
+    // no puede reutilizar una aprobación por nombre (cua-010).
+    return app ? { app, ...(params.path ? { path: String(params.path) } : {}) } : {};
   }
   const win = targetWindow(params);
   const info = {};

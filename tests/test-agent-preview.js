@@ -41,7 +41,7 @@ function get(url, { method = 'GET', host, rawPath } = {}) {
       let body = '';
       res.setEncoding('utf8');
       res.on('data', (chunk) => { body += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, type: res.headers['content-type'] || '', body }));
+      res.on('end', () => resolve({ status: res.statusCode, type: res.headers['content-type'] || '', headers: res.headers, body }));
     });
     req.on('error', reject);
     req.end();
@@ -57,8 +57,15 @@ async function serverTest() {
   const page = await get(opened.url);
   assert(page.status === 200 && page.body === '<h1>Hola</h1>' && page.type.startsWith('text/html'),
     'sirve el HTML con su tipo');
+  assert(String(page.headers['content-security-policy']).startsWith("default-src 'none'")
+    && page.headers['referrer-policy'] === 'no-referrer' && /camera=\(\)/.test(String(page.headers['permissions-policy'])),
+    'los archivos locales se sirven con CSP y políticas de privacidad');
+  assert(/img-src 'self'/.test(String(page.headers['content-security-policy']))
+    && /connect-src 'none'/.test(String(page.headers['content-security-policy'])),
+    'la CSP de archivos conserva los recursos hermanos y bloquea la lectura por fetch');
   const css = await get(new URL('css/app.css', opened.url).href);
   assert(css.status === 200 && css.type.startsWith('text/css'), 'sirve los recursos relativos de la carpeta');
+  assert(String(css.headers['content-security-policy']).startsWith("default-src 'none'"), 'los recursos servidos también llevan la CSP');
   const folder = await get(new URL('./', opened.url).href);
   assert(folder.status === 200 && folder.body === '<h1>Hola</h1>', 'una carpeta sirve su index.html');
   const prefix = url.pathname.split('/')[1];
@@ -169,6 +176,10 @@ async function browserTest() {
     pageTab.id = 99;
     assert(openedPage.active_tab !== 'agent' && preview.isPage(pageTab.getURL()),
       'la tarjeta abre la página en una pestaña propia y conserva la pestaña del agente');
+    const pageRes = await get(new URL('content.html', pageTab.getURL()).href);
+    assert(/script-src 'unsafe-inline' blob:/.test(String(pageRes.headers['content-security-policy']))
+      && pageRes.headers['referrer-policy'] === 'no-referrer',
+      'las páginas sintetizadas mantienen su CSP con scripts inline y sin referrer');
     let external = null;
     beforeRequest({ url: 'https://example.com/leak', webContentsId: 99, resourceType: 'subFrame' },
       (result) => { external = result; });

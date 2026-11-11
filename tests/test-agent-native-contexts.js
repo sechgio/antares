@@ -152,7 +152,7 @@ async function contextTests() {
     spaceEffects += 1;
     return { ok: true };
   } });
-  const spaceContext = await nativeToolContext('espacios_tarea_delete');
+  const spaceContext = await nativeToolContext('espacios_tarea_delete', null, { id: 'task-1' });
   await runNativeTool('espacios_tarea_delete', { id: 'task-1' }, { approvedContext: spaceContext });
   for (const changedAccount of ['space-user-2', null]) {
     spaceAccount = changedAccount;
