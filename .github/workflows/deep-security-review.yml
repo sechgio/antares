@@ -14,10 +14,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Factory Droid
+      # actions/checkout v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install Factory Droid (versión fijada)
+        env:
+          DROID_VERSION: 1.8.0
+          # sha256 de factory-cli/releases/1.8.0/linux/x64/droid (verificado
+          # contra droid.sha256 publicado). Renovar ambos valores deliberadamente.
+          DROID_BINARY_SHA256: 95591cc8f0e93c4fd95155a096d4f3e79f7a34f3c75a8a01751779a618346335
         run: |
-          curl -fsSL https://app.factory.ai/cli | sh
+          set -euo pipefail
+          # No se ejecuta ningún script remoto: se descarga el binario versionado
+          # y se verifica contra el digest incrustado (fallo cerrado).
+          curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
+            -o "$RUNNER_TEMP/droid" \
+            "https://downloads.factory.ai/factory-cli/releases/${DROID_VERSION}/linux/x64/droid"
+          echo "${DROID_BINARY_SHA256}  ${RUNNER_TEMP}/droid" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin"
+          install -m 755 "$RUNNER_TEMP/droid" "$HOME/.local/bin/droid"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Run deep security review
         run: droid exec --mission --auto high -m glm-5.3-flash -r max "/security-review across the entire repository"
@@ -25,7 +39,8 @@ jobs:
           FACTORY_API_KEY: ${{ secrets.FACTORY_API_KEY }}
       - name: Upload security review output
         if: always()
-        uses: actions/upload-artifact@v4
+        # actions/upload-artifact v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: deep-security-review-${{ github.run_id }}
           path: ~/security-audits/
