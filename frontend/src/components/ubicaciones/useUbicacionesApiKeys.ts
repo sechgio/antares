@@ -1,10 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { api } from '../../api';
-import { clearPlaintextApiKeys, readPlaintextApiKeys } from './ubicacionesTypes';
+import { clearPlaintextApiKeys, LS_API_KEYS, LS_GOOGLE_MAPS_KEY } from './ubicacionesTypes';
+
+// frontend-app-010: la migración de una sola pasada es el único lector de las
+// claves en claro; el backend pasa a ser la fuente y el storage local se
+// purga en finally, con o sin éxito de la subida.
+function readLegacyPlaintextApiKeys(): Record<string, string> {
+  try {
+    const saved = localStorage.getItem(LS_API_KEYS);
+    if (saved) {
+      const parsed: unknown = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(parsed)) {
+          if (typeof v === 'string' && v.trim()) out[k] = v;
+        }
+        return out;
+      }
+    }
+    const oldGoogleKey = localStorage.getItem(LS_GOOGLE_MAPS_KEY);
+    if (oldGoogleKey) return { google: oldGoogleKey };
+  } catch {
+  }
+  return {};
+}
 
 export async function migratePlaintextApiKeys(): Promise<void> {
-  const migrated = readPlaintextApiKeys();
+  const migrated = readLegacyPlaintextApiKeys();
   if (Object.keys(migrated).length === 0) return;
   try {
     await api.ubicacionesKeysSet(migrated);

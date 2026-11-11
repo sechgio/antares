@@ -5,6 +5,7 @@ import Toggle from '../ui/Toggle';
 import { reportFrontendError } from '../../utils/observability';
 import Button from '@/components/ui/Button';
 import { errorMessage } from '@/utils/errors';
+import { httpsUrl } from '../layout/radio/core';
 
 interface Pet {
   slug: string;
@@ -37,14 +38,22 @@ function parseManifestPets(data: unknown): Pet[] {
 
   return (data as { pets: Array<Record<string, unknown>> }).pets
     .filter((p) => typeof p.slug === 'string' && typeof p.spritesheetUrl === 'string')
-    .map((p) => ({
-      slug: p.slug as string,
-      displayName: (typeof p.displayName === 'string' ? p.displayName : p.slug) as string,
-      kind: (typeof p.kind === 'string' ? p.kind : 'unknown') as string,
-      submittedBy: (typeof p.submittedBy === 'string' ? p.submittedBy : 'Anonymous') as string,
-      spritesheetUrl: p.spritesheetUrl as string,
-      petJsonUrl: (typeof p.petJsonUrl === 'string' ? p.petJsonUrl : '') as string,
-    }));
+    .map((p) => {
+      // frontend-app-011: un manifest intoxicado (CDN comprometida o cache de
+      // localStorage) puede pedir file:// o sondeo LAN; solo https válido.
+      const spritesheetUrl = httpsUrl(p.spritesheetUrl as string);
+      if (!spritesheetUrl) return null;
+      const petJsonUrl = typeof p.petJsonUrl === 'string' ? httpsUrl(p.petJsonUrl) : null;
+      return {
+        slug: p.slug as string,
+        displayName: (typeof p.displayName === 'string' ? p.displayName : p.slug) as string,
+        kind: (typeof p.kind === 'string' ? p.kind : 'unknown') as string,
+        submittedBy: (typeof p.submittedBy === 'string' ? p.submittedBy : 'Anonymous') as string,
+        spritesheetUrl,
+        petJsonUrl: (petJsonUrl ?? '') as string,
+      };
+    })
+    .filter((p): p is Pet & { petJsonUrl: string } => p !== null);
 }
 
 function readManifestCache(): ManifestCache | null {

@@ -137,6 +137,18 @@ export function toggleHiddenColumn(
   return next;
 }
 
+// frontend-app-012: mismas reglas que electron/sheets-formula-guard — un
+// valor que arranca con «=», «+», «-» no numérico, «@» o control se guarda
+// con apóstrofe para que Excel/LibreOffice no lo ejecute como fórmula.
+const NUMERIC_CELL_RE = /^[+-]?\d+(?:[.,]\d+)?(?:e[+-]?\d+)?%?$/i;
+const UNSAFE_CSV_FIRST_RE = /^[=+@\-\t\r\n\u000b\u000c]/;
+
+function csvFormulaSafe(value: string): string {
+  if (value === '' || !UNSAFE_CSV_FIRST_RE.test(value)) return value;
+  if (NUMERIC_CELL_RE.test(value)) return value;
+  return `'${value}`;
+}
+
 export function buildCsvContent(
   visibleHeaders: string[],
   items: RowItem[],
@@ -145,9 +157,10 @@ export function buildCsvContent(
   const csvRows = items.map(({ row, originalIndex, photoInfo }) => {
     const values = [
       String(originalIndex + 1),
-      ...visibleHeaders.map(
-        (h) => `"${String(row[h] ?? "").replace(/"/g, '""')}"`,
-      ),
+      ...visibleHeaders.map((h) => {
+        const cell = String(row[h] ?? "").replace(/"/g, '""');
+        return `"${csvFormulaSafe(cell)}"`;
+      }),
       String(photoInfo.count),
     ];
     return values.join(",");
