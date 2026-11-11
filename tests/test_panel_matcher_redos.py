@@ -17,10 +17,21 @@ def test_compile_accepts_regex_con_grupo_clave() -> None:
     assert compiled is not None
 
 
-def test_compile_rejects_nested_quantifiers_redos() -> None:
-    for pattern in (r"^(?P<clave>.+)+$", r"(?P<clave>[\w-]*)*$", r"(?P<clave>(a|b)*)*x"):
-        with pytest.raises(InvalidMatchRuleError, match="cuantificadores anidados"):
+def test_compile_rejects_ambiguous_repetition_redos() -> None:
+    for pattern in (
+        r"^(?P<clave>.+)+$",
+        r"(?P<clave>\w+)*$",
+        r"(?P<clave>(a|b)*)*x",
+        r"(?P<clave>(\d+)*)\w",
+    ):
+        with pytest.raises(InvalidMatchRuleError, match="repetición ambigua"):
             compile_match_rule(MatchRule(key_column="k", strategy="regex", regex_pattern=pattern))
+
+
+def test_compile_permite_grupos_acotados_benignos() -> None:
+    compiled = compile_match_rule(MatchRule(key_column="k", strategy="regex", regex_pattern=r"foto-(?P<clave>\d+)?"))
+    assert compiled is not None
+    assert compile_match_rule(MatchRule(key_column="k", strategy="regex", regex_pattern=r"(?P<clave>[A-Z]{1,4})-\d+"))
 
 
 def test_compile_rejects_pattern_demasiado_largo() -> None:

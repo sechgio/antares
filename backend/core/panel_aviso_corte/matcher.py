@@ -91,10 +91,26 @@ def match_regex(normalized_value: str, normalized_stem: str, compiled: re.Patter
     return _normalize(captured) == normalized_value
 
 
-# python-backend-007: una regex con cuantificador anidado ((.+)+, (\w*)+)
-# sufre backtracking catastrófico y congela el worker heavy; se rechazan en
-# compilación y se acota el largo del input antes de intentar el match.
-_NESTED_QUANTIFIER_RE = re.compile(r"[*+?}]\s*[)\]]\s*[*+?]")
+# python-backend-007: una regex con repetición ambigua ((.+)+, (\w+)*, (a|b)*)
+# sufre backtracking catastráfico y congela el worker heavy; se rechaza en
+# compilación y se acota el largo del input antes de intentar el match. Los
+# grupos duros acotados tipo (\d+)? o (\w+{1,4}) quedan permitidos.
+_UNBOUNDED_OUTER_RE = re.compile(r"\(([^()]*)\)\s*(?:[*+]|[^{}]*\{[^}]*,\s*[^}]*\})")
+
+
+def _has_ambiguous_repetition(pattern: str) -> bool:
+    for match in _UNBOUNDED_OUTER_RE.finditer(pattern):
+        inner = match.group(1)
+        if re.search(r"[.][*+]", inner):
+            return True
+        if "|" in inner:
+            return True
+        inner_seq = inner.rstrip("?")
+        if inner_seq.endswith(("*", "+")) or re.search(r"\{(?:\d+)?,\s*\}?$", inner_seq):
+            return True
+    return False
+
+
 _MAX_REGEX_PATTERN_LEN = 256
 _MAX_MATCH_INPUT_LEN = 512
 
@@ -108,8 +124,8 @@ def compile_match_rule(rule: MatchRule) -> re.Pattern[str] | None:
         raise InvalidMatchRuleError(
             msg,
         )
-    if _NESTED_QUANTIFIER_RE.search(rule.regex_pattern):
-        msg = "La expresión regular incluye cuantificadores anidados (riesgo de bloqueo)"
+    if _has_ambiguous_repetition(rule.regex_pattern):
+        msg = "La expresión regular incluye repetición ambigua (riesgo de bloqueo)"
         raise InvalidMatchRuleError(
             msg,
         )
