@@ -74,6 +74,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Security
 - Los comandos de terminal de Agent (`shell_run`, `shell_job_start`) vuelven a pedir aprobación humana incluso en «Acceso completo»: la auto-aprobación anterior se fiaba de una lista de verbos destructivos que un prefijo envolvente (`cmd /c del …`) burlaba, quedando el borrado con ejecución directa.
+- Un dominio en «Permitir siempre» del navegador de Agent ya no auto-aprueba acciones transaccionales sobre la página (`web_click`, `web_fill`, `web_type`, `web_upload`…): solo exime de aprobación la navegación y las lecturas, igual que promete el interruptor; y un dominio bloqueado gana a cualquier entrada antigua de siempre-permitidos.
 - `pypdf` sube a 6.21.4 para corregir siete vulnerabilidades conocidas de 6.21.2 que bloqueaban la auditoría de dependencias Python.
 - Las aprobaciones de terminal quedan ligadas a la carpeta efectiva y su identidad; cambiar el espacio de trabajo invalida la aprobación anterior y el comando usa el `cwd` absoluto aprobado.
 - Guardar un borrador en una carpeta del equipo (`drafts_save`) ya no se auto-aprueba con el canal Archivos: su carpeta de destino no está confinada a un espacio de trabajo, así que pasa al canal «Otros» y pide aprobación siempre, igual que declara su propio contrato de herramienta.

@@ -965,8 +965,18 @@ function planCheck(answer, api) {
   return { continue: `${shared.CHECK_MARKER} ${notice}` };
 }
 
+// Dominios en «Permitir siempre» solo eximen de aprobación las herramientas web que no
+// alteran el estado de la página. Las transaccionales (clic, relleno, teclas, subida,
+// descarga) piden al humano aunque el dominio esté permitido. El test de equivalencia del
+// runtime compara este conjunto con las entradas no transaccionales del catálogo
+// (agent-browser TOOLS con flag false): añadir una herramienta pasiva nueva exige
+// incorporarla aquí a propósito.
+const WEB_AUTO_APPROVE = new Set(['web_open', 'web_back', 'web_forward', 'web_reload', 'web_read', 'web_find',
+  'web_scroll', 'web_hover', 'web_screenshot', 'web_text', 'web_console', 'web_network', 'web_wait', 'web_handover']);
+
 function webAlwaysAllowed(name, context) {
   if (!String(name || '').startsWith('web_') || !context || context.policy_blocked) return false;
+  if (!WEB_AUTO_APPROVE.has(String(name))) return false;
   const domain = String(context.domain || '');
   return !!domain && require('./agent-browser-policy').isAlwaysAllowed(domain);
 }
@@ -1670,6 +1680,7 @@ module.exports = {
   defaultToolNames,
   moduleToolNames,
   rankTools,
+  WEB_AUTO_APPROVE,
   localDay,
   profileBudget,
   profileFilter,

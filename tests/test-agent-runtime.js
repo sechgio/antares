@@ -8,8 +8,9 @@ const path = require('path');
 const { assert, finish, stubModule } = require('./helpers/harness');
 const { getEventListeners } = require('node:events');
 
+const realBrowserCatalog = require('../electron/agent-browser');
 stubModule('electron/agent-cua.js', { TOOLS: new Map(), run: async () => ({}), approvalContext: () => ({}), close: () => {} });
-stubModule('electron/agent-browser.js', { ...require('../electron/agent-browser'), TOOLS: {} });
+stubModule('electron/agent-browser.js', { ...realBrowserCatalog, TOOLS: {} });
 const runtime = require('../electron/agent-runtime');
 const importer = require('../electron/agent-import');
 const { METHODS, INTERNAL_METHODS: INTERNAL_SET, nativeDispatchFor } = require('../shared/ipc-method-catalog');
@@ -1075,27 +1076,41 @@ async function main() {
     const policyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-agent-policy-'));
     fs.mkdirSync(path.join(policyRoot, 'Antares', 'ai-agent'), { recursive: true });
     const policyFile = path.join(policyRoot, 'Antares', 'ai-agent', 'browser-policy.json');
-    fs.writeFileSync(policyFile, JSON.stringify({ always_allowed: ['www.bcp.pe'] }));
+    fs.writeFileSync(policyFile, JSON.stringify({ always_allowed: ['panel.miejemplo.pe'] }));
+    // El conjunto de auto-aprobación web del executor coincide con el catálogo pasivo
+    // del navegador (TOOLS con flag false); desincronizarlos dejaría fuera o colaría herramientas.
+    const { WEB_AUTO_APPROVE } = require('../electron/agent-execution');
+    const passiveCatalog = Object.entries(realBrowserCatalog.TOOLS).filter(([, definition]) => definition[2] === false).map(([name]) => name);
+    assert(JSON.stringify([...WEB_AUTO_APPROVE].sort()) === JSON.stringify(passiveCatalog.sort()),
+      'WEB_AUTO_APPROVE espeja el catálogo pasivo del navegador');
     const realLocalAppData = process.env.LOCALAPPDATA;
     process.env.LOCALAPPDATA = policyRoot;
     try {
       const { bridge, state } = makeBridge();
       let executed = 0;
       runtime._internal.shared.nativeTools = {
-        nativeToolContext: async () => ({ tool_version: 'fake-v1', page_url: 'https://www.bcp.pe/panel', domain: 'www.bcp.pe', policy_blocked: false }),
-        nativeToolSpecs: () => [{ name: 'web_click', description: 'Clic web', gated: true, kind: 'native', inputSchema: { type: 'object', properties: {} } }],
+        nativeToolContext: async () => ({ tool_version: 'fake-v1', page_url: 'https://panel.miejemplo.pe/panel', domain: 'panel.miejemplo.pe', policy_blocked: false }),
+        nativeToolSpecs: () => [
+          { name: 'web_read', description: 'Leer web', gated: true, kind: 'native', inputSchema: { type: 'object', properties: {} } },
+          { name: 'web_click', description: 'Clic web', gated: true, kind: 'native', inputSchema: { type: 'object', properties: {} } },
+        ],
         runNativeTool: async () => { executed += 1; return { ok: true }; },
       };
       await openFaux([
+        fauxAssistantMessage([fauxToolCall('web_read', {})], { stopReason: 'toolUse' }),
         fauxAssistantMessage([fauxToolCall('web_click', {})], { stopReason: 'toolUse' }),
         fauxAssistantMessage('hecho'),
       ], bridge);
       const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
-      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'haz clic' });
-      assert(await waitIdle(session.id), 'el turno termina cuando el dominio está permitido siempre');
-      assert(executed === 1, 'la acción web sobre un dominio permitido siempre se ejecuta sin preguntar');
-      const decided = [...state.approvals.values()];
-      assert(decided.length === 1 && decided[0].status === 'approved', 'la aprobación del dominio autorizado se resuelve sola');
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'lee y haz clic' });
+      assert(await waitFor(() => executed === 1), 'la lectura web sobre un dominio permitido siempre se ejecuta sin preguntar');
+      assert(await waitFor(() => [...state.approvals.values()].some((a) => a.status === 'pending')),
+        'una acción transaccional sobre un dominio permitido siempre pide aprobación humana');
+      const pendiente = [...state.approvals.values()].find((a) => a.status === 'pending');
+      assert(pendiente.method === 'web_click', 'la aprobación pendiente es la acción transaccional');
+      await runtime.handlers.agent_deny({ approval_id: pendiente.id });
+      assert(await waitIdle(session.id), 'el turno continúa tras rechazar la acción sobre el dominio permitido');
+      assert(executed === 1, 'la acción transaccional denegada no se ejecuta aunque el dominio esté permitido siempre');
       runtime._internal.shared.nativeTools = null;
       await runtime.shutdown();
 

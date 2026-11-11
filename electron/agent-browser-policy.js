@@ -48,7 +48,9 @@ function isBlocked(host) {
 }
 
 function isAlwaysAllowed(host) {
-  return entries('always_allowed').some((entry) => matches(host, entry));
+  // El bloqueo manda: un dominio bloqueado (semilla o del usuario) nunca se auto-aprueba,
+  // aunque una entrada antigua de siempre-permitidos lo cubra.
+  return !isBlocked(host) && entries('always_allowed').some((entry) => matches(host, entry));
 }
 
 function addAlwaysAllowed(host) {
