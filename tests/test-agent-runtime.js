@@ -398,14 +398,40 @@ async function main() {
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Lista y limpia' });
-    assert(await waitFor(() => state.dispatches.length === 1), 'Acceso completo ejecuta el shell sin preguntar');
+    assert(await waitFor(() => state.approvals.size === 1), 'Acceso completo sigue pidiendo aprobación para el shell');
+    assert(state.dispatches.length === 0, 'no ejecuta el listado antes de la aprobación humana');
+    await runtime.handlers.agent_approve({ approval_id: [...state.approvals.values()][0].id });
     assert(await waitFor(() => [...state.approvals.values()].filter((a) => a.status === 'pending').length === 1),
-      'un comando que borra archivos sigue pidiendo aprobación en Acceso completo');
+      'un segundo comando, aunque sea de lectura, pide otra aprobación en Acceso completo');
     assert(state.dispatches.length === 1, 'no borra antes de la aprobación humana');
     const pending = [...state.approvals.values()].find((a) => a.status === 'pending');
     await runtime.handlers.agent_approve({ approval_id: pending.id });
     assert(await waitIdle(session.id), 'el shell continúa después de la aprobación humana');
     assert(state.dispatches.length === 2, 'la aprobación ejecuta el comando destructivo una vez');
+    await runtime.shutdown();
+  }
+
+  {
+    // cua-002: un verbo destructivo con prefijo envolvente no puede evadir el diálogo humano.
+    const { bridge, state } = makeBridge();
+    const shellBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools') result.tools.push({
+        name: 'shell_run', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} },
+      });
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('shell_run', { command: 'cmd /c del .\\tmp.txt' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Listo'),
+    ], shellBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Limpia el archivo' });
+    assert(await waitFor(() => state.approvals.size === 1), 'un verbo destructivo envuelto pide aprobación humana en Acceso completo');
+    assert(state.dispatches.length === 0, 'no borra nada antes de la aprobación humana');
+    await runtime.handlers.agent_approve({ approval_id: [...state.approvals.values()][0].id });
+    assert(await waitIdle(session.id), 'el flujo termina tras la aprobación');
     await runtime.shutdown();
   }
 
