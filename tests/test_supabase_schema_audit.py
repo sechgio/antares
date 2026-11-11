@@ -149,6 +149,9 @@ class SchemaState:
             if sch == schema and role in roles
         }
 
+    def policies_by_table(self, table: str) -> dict[str, Policy]:
+        return {name: pol for (tbl, name), pol in self.policies.items() if tbl == table}
+
 
 def _apply_statement(state: SchemaState, stmt: str) -> None:
     s = stmt.strip()
@@ -479,6 +482,66 @@ def test_user_profiles_privilege_guard_trigger_exists() -> None:
 
 def test_board_columns_system_delete_guard_exists() -> None:
     assert ("public.board_columns", "board_columns_prevent_system_delete") in STATE.triggers
+
+
+def test_board_columns_system_columns_cannot_be_updated() -> None:
+    assert ("public.board_columns", "board_columns_protect_system_columns") in STATE.triggers
+    definition = STATE.functions[("public", "board_columns_protect_system_columns", ())].lower()
+    assert "old.is_system" in definition, "el guard de UPDATE debe reaccionar a filas de sistema"
+
+
+def test_destructive_writes_are_authority_scoped() -> None:
+    for table in ("public.espacios", "public.proyectos", "public.tareas"):
+        policies = STATE.policies_by_table(table)
+        assert not [name for name, pol in policies.items() if re.search(r"for\s+all\b", pol.base)], (
+            f"{table} ya no debe tener política FOR ALL de equipo"
+        )
+        deletes = [pol for name, pol in policies.items() if re.search(r"for\s+delete\b", pol.base)]
+        assert deletes, f"{table} exige política de DELETE acotada"
+        for pol in deletes:
+            assert "private.is_admin()" in pol.expr and "auth.uid()" in pol.expr, (
+                f"{table}: el DELETE exige creador o administrador"
+            )
+        writes = [pol for name, pol in policies.items() if re.search(r"for\s+(update|insert)\b", pol.base)]
+        assert writes, f"{table} conserva escritura de equipo"
+        for pol in writes:
+            assert "private.is_active_user()" in pol.expr
+
+
+def test_canvas_documents_update_policy_is_owner_scoped() -> None:
+    policies = STATE.policies_by_table("public.canvas_documents")
+    updates = [pol for name, pol in policies.items() if re.search(r"for\s+update\b", pol.base)]
+    assert updates, "canvas_documents exige política de UPDATE"
+    for pol in updates:
+        assert "created_by = (select auth.uid())" in pol.expr, (
+            "el UPDATE de canvas_documents exige creador o administrador"
+        )
+        assert "private.is_active_user()" in pol.expr
+
+
+def test_canvas_version_append_rpc_is_owner_scoped() -> None:
+    definition = STATE.functions[("private", "canvas_append_document_version", ("uuid", "jsonb"))].lower()
+    assert "from public.canvas_documents" in definition, "busca el documento antes de anexar"
+    assert "is distinct from auth.uid()" in definition and "private.is_admin()" in definition, (
+        "anexar versiones exige creador o administrador"
+    )
+
+
+def test_canvas_lww_rejects_client_clocks_in_the_future() -> None:
+    push = STATE.functions[("private", "canvas_push_document_lww_v2", ("jsonb", "timestamptz", "boolean"))].lower()
+    assert "interval '5 minutes'" in push and "clock_timestamp()" in push, (
+        "el push LWW rechaza timestamps futuros del cliente"
+    )
+    assert "v_existing_created_by is distinct from v_uid" in push, (
+        "el push LWW no escribe documentos ajenos"
+    )
+    dele = STATE.functions[("private", "canvas_delete_document_lww_v2", ("uuid", "timestamptz"))].lower()
+    assert "interval '5 minutes'" in dele and "clock_timestamp()" in dele, (
+        "el borrado LWW rechaza timestamps futuros del cliente"
+    )
+    assert "v_existing_created_by is distinct from v_uid" in dele, (
+        "el borrado LWW no elimina documentos ajenos"
+    )
 
 
 def test_private_schema_usage_is_not_public() -> None:
