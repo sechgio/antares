@@ -10,6 +10,31 @@ def test_provider_specs_loaded():
     assert specs["ollama"]["auth"]["type"] == "none"
 
 
+def test_validate_base_url_blocks_metadata_and_requires_tls_public():
+    # python-backend-016: metadatos de nube y enlace local jamás; http solo
+    # propio/red local; https obligatorio fuera de la red del usuario.
+    for url in (
+        "http://169.254.169.254/latest/meta-data",
+        "https://metadata.google.internal/computeMetadata/v1",
+        "http://0.0.0.0:8080",
+        "https://224.0.0.1/v1",
+        "https://[fe80::1]/v1",
+        "http://api.ejemplo.com/v1",
+    ):
+        with pytest.raises(ValueError):
+            ai_providers._validate_base_url(url)
+    for url in (
+        "https://api.openai.com/v1",
+        "http://127.0.0.1:11434/v1",
+        "https://[::1]:11434/v1",
+        "http://192.168.1.50:1234/v1",
+        "https://10.0.0.8:1234/v1",
+        "http://micasa.local:1234/v1",
+        "https://lm.studio.lan:1234/v1",
+    ):
+        assert ai_providers._validate_base_url(url), url
+
+
 def test_config_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
     ai_providers.put_config("openai", {"api_key": "sk-test-1234", "base_url": "https://api.openai.com/v1"})

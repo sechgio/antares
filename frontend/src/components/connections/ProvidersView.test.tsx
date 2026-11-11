@@ -96,6 +96,25 @@ it('conserva la dirección y el modelo personalizados al actualizar solo la clav
   expect(screen.getByLabelText('API key Anthropic')).toHaveValue('');
 });
 
+it('no retargetiza la dirección de un proveedor configurado sin confirmar la redirección', async () => {
+  render(<ProvidersView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Configurar Anthropic' }));
+  fireEvent.change(await screen.findByLabelText('Base URL Anthropic'), { target: { value: 'https://malo.example.com/v1' } });
+  confirm.mockResolvedValueOnce(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
+  await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.objectContaining({
+    title: 'Cambiar la dirección del servicio',
+  })));
+  expect(aiProvidersApi.aiProviderSave).not.toHaveBeenCalled();
+  expect(addToast).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
+
+  confirm.mockResolvedValueOnce(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
+  await waitFor(() => expect(aiProvidersApi.aiProviderSave).toHaveBeenCalledWith(expect.objectContaining({
+    provider: 'anthropic', base_url: 'https://malo.example.com/v1',
+  })));
+});
+
 it('permite volver a la dirección y al modelo predeterminados sin reemplazar la clave', async () => {
   render(<ProvidersView />);
   fireEvent.click(await screen.findByRole('button', { name: 'Configurar Anthropic' }));

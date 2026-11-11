@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import http.client
+import ipaddress
 import json
 import logging
 import re
@@ -142,6 +143,17 @@ def _vault_path(provider: str) -> Path:
     return user_data_path(f"ai-providers/{safe}.json")
 
 
+_DENIED_METADATA_HOSTS = {"metadata.google.internal", "metadata.goog"}
+
+
+def _ip_literal(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    text = host[1:-1] if host.startswith("[") and host.endswith("]") else host
+    try:
+        return ipaddress.ip_address(text)
+    except ValueError:
+        return None
+
+
 def _validate_base_url(url: str) -> str:
     url = url.strip().rstrip("/")
     try:
@@ -158,6 +170,22 @@ def _validate_base_url(url: str) -> str:
         valid = False
     if not valid:
         raise ValueError("base_url debe ser una URL http(s) válida, sin credenciales, parámetros ni fragmentos")
+    host = (parsed.hostname or "").lower().rstrip(".")
+    # python-backend-016: nunca el servicio de metadatos del entorno de nube ni
+    # rangos de enlace local o reservados (https incluido); tu red local puede
+    # hablar http (LM Studio/Ollama en la LAN), pero un host público exige TLS.
+    # Residual documentado: DNS rebinding se verifica en la hora de la conexión,
+    # no aquí (la resolución vive fuera de este proceso para el chat).
+    if host in _DENIED_METADATA_HOSTS:
+        raise ValueError("base_url no puede apuntar al servicio de metadatos del entorno de nube")
+    ip = _ip_literal(host)
+    if ip is not None and not ip.is_loopback and (
+        ip.is_link_local or ip.is_unspecified or ip.is_multicast or ip.is_reserved
+    ):
+        raise ValueError("base_url no puede apuntar a rangos de enlace local, metadatos o reservados")
+    local = (ip is not None and ip.is_private) or host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".local")
+    if parsed.scheme == "http" and not local:
+        raise ValueError("http solo se permite en tu equipo o red local; para servicios públicos usa https")
     return url
 
 
