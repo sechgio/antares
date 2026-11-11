@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const store = require('./autoimg-user-store');
 const { fetchWithRetry } = require('./autoimg-google-fetch');
+const { neutralizeCells } = require('./sheets-formula-guard');
 const { AUTOIMG_SHEET_TABS, listMissingAutoImgTabs } = require('./autoimg-sheet-rows');
 const {
   getOAuthConfig,
@@ -384,7 +385,7 @@ async function writeRange(range, values) {
   const encoded = encodeURIComponent(range);
   const res = await _apiFetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}/values/${encoded}?valueInputOption=USER_ENTERED`,
-    { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values }) },
+    { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: neutralizeCells(values) }) },
   );
   const data = await res.json();
   return { updated: data.updatedCells || 0 };
@@ -395,7 +396,7 @@ async function appendRow(range, values) {
   const encoded = encodeURIComponent(range);
   const res = await _apiFetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}/values/${encoded}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: [values] }) },
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: neutralizeCells([values]) }) },
   );
   const data = await res.json();
   const updatedRange = data.updates?.updatedRange || '';
@@ -407,7 +408,7 @@ async function batchWriteRanges(updates) {
   if (!_sheetId || !updates.length) return { updated: 0 };
   const data = updates.map((u) => ({
     range: u.range,
-    values: u.values,
+    values: neutralizeCells(u.values),
   }));
   const res = await _apiFetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}/values:batchUpdate`,
