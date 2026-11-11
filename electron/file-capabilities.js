@@ -8,6 +8,14 @@ const { assertAllowedReadPath, assertPathNotSymlink, assertPathNotSymlinkAsync }
 const TOKEN_TTL_MS = 30 * 60 * 1000;
 const MAX_CHUNK_BYTES = 8 * 1024 * 1024;
 const MAX_STAGED_FILE_BYTES = 1024 * 1024 * 1024;
+// ipc-bridge-008 / storage-path-handling-001: file_staged_create es llamable
+// en bucle desde el renderer. Techo de sesiones (por ventana y global),
+// presupuesto de bytes en curso y edad máxima absoluta (el TTL refrescaba
+// con cada chunk, así que una sesión alimentada no expiraba nunca).
+const MAX_STAGED_SESSIONS_PER_WINDOW = 4;
+const MAX_STAGED_SESSIONS_TOTAL = 12;
+const MAX_STAGED_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_STAGED_AGE_MS = 6 * 60 * 60 * 1000;
 const STAGED_DIR_PREFIX = 'antares-staged-';
 const PATH_CONTAINER_KEYS = new Set(['files', 'image_paths', 'localimagepaths']);
 const SUSPICIOUS_PATH_KEYS = new Set([
@@ -176,7 +184,7 @@ function sweepExpired() {
     if (v.expiresAt <= now) _capabilities.delete(k);
   }
   for (const [k, v] of _stagedSessions) {
-    if (v.expiresAt <= now) {
+    if (v.expiresAt <= now || now - v.createdAt >= MAX_STAGED_AGE_MS) {
       if (v.readToken) _capabilities.delete(v.readToken);
       if (v.tmpPath) fsp.rm(v.tmpPath, { force: true }).catch(() => {});
       _stagedSessions.delete(k);
@@ -199,6 +207,12 @@ function createStagedSession({ name, size, webContentsId }) {
   if (typeof name !== 'string' || !name.trim()) throw new Error('name required');
   const safeName = path.basename(name).replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').slice(0, 120) || 'upload';
   if (typeof size === 'number' && size > MAX_STAGED_FILE_BYTES) throw new Error('staged file too large');
+  const perWindow = webContentsId == null ? 0
+    : [..._stagedSessions.values()].filter((s) => s.webContentsId === webContentsId).length;
+  if (perWindow >= MAX_STAGED_SESSIONS_PER_WINDOW) throw new Error('staged session limit reached for this window');
+  if (_stagedSessions.size >= MAX_STAGED_SESSIONS_TOTAL) throw new Error('staged session limit reached');
+  const stagedBytes = [..._stagedSessions.values()].reduce((sum, s) => sum + s.bytesWritten, 0);
+  if (stagedBytes >= MAX_STAGED_TOTAL_BYTES) throw new Error('staged upload budget exhausted; wait for pending uploads');
   const token = _newToken('antares-staged');
   const root = _getStagedRoot();
   const tmpPath = path.join(root, `${token}_${safeName}`);
@@ -238,9 +252,15 @@ async function appendStagedChunk(token, chunk, webContentsId) {
   if (_isExpired(session)) { _stagedSessions.delete(token); throw new Error('staged session expired'); }
   if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId) throw new Error('staged session window mismatch');
   if (session.completed || session.completing) throw new Error('staged session already completed');
+  if (_now() - session.createdAt >= MAX_STAGED_AGE_MS) {
+    _stagedSessions.delete(token);
+    throw new Error('staged session lifetime exceeded');
+  }
   const buf = _chunkToBuffer(chunk);
   if (buf.length === 0) throw new Error('empty chunk');
   if (buf.length > MAX_CHUNK_BYTES) throw new Error('chunk too large');
+  const stagedBytes = [..._stagedSessions.values()].reduce((sum, s) => sum + s.bytesWritten, 0);
+  if (stagedBytes + buf.length > MAX_STAGED_TOTAL_BYTES) throw new Error('staged uploads exceed global budget');
   const write = session.pendingWrite.catch(() => {}).then(async () => {
     if (session.bytesWritten + buf.length > MAX_STAGED_FILE_BYTES) throw new Error('staged file exceeds 1 GiB');
     await _ensureStagedRoot();
@@ -359,6 +379,11 @@ function _assertNoRawAbsolutePaths(params, options = {}) {
         if (!isExplicitlyAllowed && !isRegisteredReadPath) {
           throw new Error(`raw absolute paths not allowed for ${keyPath.join('.')}; use file token`);
         }
+      }
+      if (/^[a-zA-Z]:/.test(value) && !/^[a-zA-Z]:[\\/]/.test(value)) {
+        // ipc-bridge-011: «C:foo» (relativa a la unidad actual) no es absoluta
+        // para path.isAbsolute y esquivaba el gate hacia el backend.
+        throw new Error(`drive-relative paths not allowed for ${keyPath.join('.')}; use a file token`);
       }
       if (value.includes('..') && (value.includes('/') || value.includes('\\'))) {
         const norm = path.normalize(value);

@@ -254,9 +254,10 @@ async function cleanupStagedTokens(tokens, webContentsId = null) {
 }
 
 const FORBIDDEN_FALLBACK_EXTENSIONS = new Set([
-  '.bat', '.cmd', '.com', '.cpl', '.dll', '.exe', '.hta', '.jar', '.js', '.jse',
-  '.lnk', '.msc', '.msi', '.msp', '.ocx', '.ps1', '.psm1', '.reg', '.scr',
-  '.sys', '.url', '.vbe', '.vbs', '.wsf', '.wsh',
+  '.bat', '.cmd', '.chm', '.com', '.cpl', '.dll', '.exe', '.gadget', '.hta',
+  '.jar', '.js', '.jse', '.lnk', '.msc', '.msi', '.msp', '.ocx', '.pif',
+  '.ps1', '.psm1', '.py', '.pyw', '.pyz', '.pyzw', '.reg', '.scr', '.sys',
+  '.url', '.vbe', '.vbs', '.wsf', '.wsh', '.xlsm', '.docm',
 ]);
 
 function _outputExtension(resolvedPath) {

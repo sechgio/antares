@@ -98,6 +98,13 @@ async function main() {
   try {
     assert(typeof ipcCall === 'function', 'ipc-call handler registrado');
 
+    // ipc-002: process_start ya no acepta destinos crudos fuera de raíces
+    // registradas por diálogo; el test registra docsDir como raíz.
+    await handleDialogCall('dialog_folder', { pickOnly: true }, {
+      async showOpenDialog() { return { canceled: false, filePaths: [docsDir] }; },
+      async showSaveDialog() { return { canceled: true }; },
+    }, fakeWin, {});
+
     const staged = createStagedSession({ name: 'sellado.pdf', size: 4, webContentsId: 1 });
     await appendStagedChunk(staged.token, Buffer.from('%PDF'), 1);
     const cap = await completeStagedSession(staged.token, 1);

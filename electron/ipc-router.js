@@ -710,7 +710,34 @@ function _isTransientBackendError(err) {
     || msg.includes('stdin write failed');
 }
 
+// ipc-bridge-003: db_clear borra TODA la base local en una sola invoke y era
+// alcanzable por el renderer (o el agente, si su herramienta estaba habilitada)
+// sin confirmación. La decisión vive en el main: diálogo + tope de ritmo.
+const DB_CLEAR_MIN_INTERVAL_MS = 5000;
+let _lastDbClearAttemptAt = 0;
+
+async function _maybeConfirmDbClear(method) {
+  if (method !== 'db_clear' || typeof dialog?.showMessageBox !== 'function') return;
+  const now = Date.now();
+  if (now - _lastDbClearAttemptAt < DB_CLEAR_MIN_INTERVAL_MS) {
+    throw new Error('db_clear no puede repetirse con tanta rapidez; espera unos segundos');
+  }
+  _lastDbClearAttemptAt = now;
+  const { getMainWindow } = require('./window-manager');
+  const { response } = await dialog.showMessageBox(getMainWindow(), {
+    type: 'warning',
+    buttons: ['Borrar todo', 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Borrar la base de datos local',
+    message: '¿Borrar TODOS los datos locales de Antares?',
+    detail: 'Se eliminarán los datos guardados en la base local. Esta acción no se puede deshacer.',
+  });
+  if (response !== 0) throw new Error('db_clear cancelado');
+}
+
 async function _callBackend(method, params) {
+    await _maybeConfirmDbClear(method);
     if (!isReady()) {
       if (getState() === STATE.FATAL) throw _buildUnavailableError();
       const ready = await waitForReady(STARTUP_WAIT_MS);

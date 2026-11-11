@@ -3,6 +3,7 @@ const path = require('path');
 
 const MAX_IN_FLIGHT_BYTES = 8 * 1024 * 1024;
 const DEFAULT_QUOTA_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_RECORDING_SESSIONS = 8;
 
 class RecordingQuotaExceededError extends Error {
   constructor(quotaBytes) {
@@ -88,6 +89,11 @@ class RecordingSessionManager {
   create(sessionId) {
     if (this.sessions.has(sessionId)) {
       throw new Error(`la sesión ${sessionId} ya existe`);
+    }
+    // ipc-bridge-017: cada create abre un handle y reserva su cuota en disco.
+    // Sin techo, un renderer dañado abre grabaciones en bucle.
+    if (this.sessions.size >= MAX_RECORDING_SESSIONS) {
+      throw new Error('demasiadas sesiones de grabación en curso');
     }
     const session = new RecordingSession({
       sessionId,
