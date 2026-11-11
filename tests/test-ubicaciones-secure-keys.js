@@ -59,12 +59,15 @@ function main() {
     failed = true;
   }
 
-  const { encryptPayload, decryptPayload } = require(path.join(ROOT, 'electron', 'autoimg-secure-storage'));
+  const secure = require(path.join(ROOT, 'electron', 'autoimg-secure-storage'));
   const { FILE, NS, getUbicacionesApiKeys, setUbicacionesApiKeys } = require(path.join(ROOT, 'electron', 'ubicaciones-secure-keys'));
 
   const payload = { google: 'test-google-key', mapbox: 'pk.test' };
-  const encoded = encryptPayload(NS, payload);
-  const roundtrip = decryptPayload(NS, encoded);
+  // El cifrador débil ya no se exporta: el roundtrip pasa por la API pública.
+  const probeFile = `ubicaciones-roundtrip-${process.pid}.json`;
+  secure.writeSecureJson(probeFile, NS, payload);
+  const roundtrip = secure.readSecureJson(probeFile, NS);
+  secure.clearSecureJson(probeFile);
   if (roundtrip.google !== payload.google || roundtrip.mapbox !== payload.mapbox) {
     console.error('[FAIL] encrypt/decrypt roundtrip mismatch');
     failed = true;

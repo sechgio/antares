@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
+import secrets
+import sys
 import threading
 
 import pytest
@@ -12,6 +17,39 @@ def test_vault_roundtrip(tmp_path):
     path = tmp_path / "conn.json"
     vault.seal("github", path, {"access_token": "abc", "refresh_token": "r"})
     assert vault.open_sealed("github", path) == {"access_token": "abc", "refresh_token": "r"}
+    if sys.platform == "win32":
+        # authn-006: el sobre debe ser DPAPI, nunca el sello HMAC de clave en claro.
+        assert json.loads(path.read_text(encoding="utf-8"))["kind"] == "dpapi"
+
+
+def test_vault_seal_requires_dpapi(monkeypatch, tmp_path):
+    monkeypatch.setattr(vault, "_dpapi_available", lambda: False)
+    path = tmp_path / "conn.json"
+    with pytest.raises(ValueError, match="DPAPI"):
+        vault.seal("github", path, {"access_token": "abc"})
+    assert not path.exists(), "el fallo de cifrado no deja ningún sobre en disco"
+
+
+def test_vault_reads_legacy_hmac_envelope(tmp_path, monkeypatch):
+    monkeypatch.setattr(vault, "user_data_path", lambda rel: tmp_path / rel)
+    # Sobre legado v3 (hmac-sha256-stream) escrito por versiones anteriores
+    # al bloqueo del sello sin DPAPI: debe seguir leyéndose para migrarlo.
+    enc_key = vault._machine_key("legacy")
+    mac_key = hashlib.sha256(enc_key + b":mac").digest()
+    iv = secrets.token_bytes(16)
+    plain = json.dumps({"access_token": "abc"}, ensure_ascii=False).encode("utf-8")
+    stream = vault._xor_stream(enc_key, iv, len(plain))
+    ciphertext = bytes(a ^ b for a, b in zip(plain, stream, strict=True))
+    tag = hmac.new(mac_key, iv + ciphertext, hashlib.sha256).digest()
+    envelope = {
+        "v": 3,
+        "kind": "hmac-sha256-stream",
+        "data": base64.b64encode(iv + tag + ciphertext).decode("ascii"),
+        "savedAt": "2026-01-01T00:00:00+00:00",
+    }
+    path = tmp_path / "legacy.json"
+    path.write_text(json.dumps(envelope), encoding="utf-8")
+    assert vault.open_sealed("legacy", path) == {"access_token": "abc"}
 
 
 def test_vault_rejects_tampered_payload(tmp_path):
