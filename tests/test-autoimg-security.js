@@ -108,6 +108,7 @@ function main() {
     'README.md',
     'tests/test-autoimg-security.js',
     'tests/test-autoimg-google-token.js',
+    'tests/test-sheets-session-pinning.js',
     'tests/test-autoimg-google-fetch.js',
     '.githooks/pre-commit',
     '.cursor/rules/supabase-project.mdc',
