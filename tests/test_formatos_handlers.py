@@ -79,6 +79,46 @@ def test_formatos_generate_large_persists_to_disk(monkeypatch) -> None:
     assert out_file.read_bytes() == b"%PDF-huge-bytes"
 
 
+def test_formatos_generate_large_sanitizes_hostile_filenames(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("backend.utils.paths.user_data_path", lambda rel: tmp_path / rel)
+    hostile = iter(
+        [
+            "..\\..\\Windows\\Temp\\travesia.pdf",
+            "C:\\Windows\\System32\\absoluta.pdf",
+        ]
+    )
+
+    def fake_generate_pdf(format_id: str, desde: int, hasta: int) -> tuple[bytes, str]:
+        return b"%PDF-huge-bytes", next(hostile)
+
+    monkeypatch.setattr("backend.core.formatos.generate_pdf", fake_generate_pdf)
+    monkeypatch.setattr("backend.handlers.formatos._MAX_INLINE_PDF_BYTES", 10)
+
+    from pathlib import Path
+
+    from backend.utils.paths import user_data_path
+
+    out_dir = user_data_path("formatos/out")
+    written: list[Path] = []
+    try:
+        for _ in range(2):
+            result = formatos_generate({"format_id": "template-d", "desde": 1, "hasta": 10})
+            saved = Path(result["saved_path"])
+            written.append(saved)
+            # parsers-004 / python-backend-002: jamás sale de formatos/out y
+            # el nombre nunca arrastra recorrido absoluto ni relativo.
+            assert saved.resolve().is_relative_to(out_dir.resolve()), saved
+            assert ".." not in saved.name and "\\" not in saved.name and "/" not in saved.name
+            assert saved.name.lower().endswith(".pdf")
+            assert saved.read_bytes() == b"%PDF-huge-bytes"
+    finally:
+        import contextlib
+
+        for p in written:
+            with contextlib.suppress(OSError):
+                p.unlink()
+
+
 def test_formatos_get_template_returns_pdf_base64(monkeypatch) -> None:
     def fake_get_template_pdf(fmt_id: str) -> tuple[bytes, str]:
         assert fmt_id == "template-d"

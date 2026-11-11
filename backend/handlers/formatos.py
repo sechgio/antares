@@ -6,6 +6,7 @@ from typing import Any
 
 from backend.handlers.common import parse_positive_int, with_locale
 from backend.utils.atomic_write import atomic_output_file
+from backend.utils.validators import sanitizar_nombre
 
 _PDF_MAGIC = b"%PDF"
 _MAX_PREVIEW_WIDTH = 2400
@@ -41,7 +42,14 @@ def formatos_generate(params: dict[str, Any]) -> dict[str, str]:
     if len(pdf_bytes) > _MAX_INLINE_PDF_BYTES:
         out_dir = user_data_path("formatos/out")
         out_dir.mkdir(parents=True, exist_ok=True)
-        tmp_out = out_dir / f"{uuid.uuid4().hex[:12]}_{filename}"
+        # parsers-004 / python-backend-002: el nombre llega de filename_pattern
+        # del catálogo (format() con nombre del usuario): basename + sanitizado,
+        # y siempre .pdf; el prefijo uuid hace imposible truncar un archivo
+        # ajeno dentro del propio out_dir.
+        safe_name = sanitizar_nombre(filename) or "formato.pdf"
+        if not safe_name.lower().endswith(".pdf"):
+            safe_name += ".pdf"
+        tmp_out = out_dir / f"{uuid.uuid4().hex[:12]}_{safe_name}"
         tmp_out.write_bytes(pdf_bytes)
         return {"saved_path": str(tmp_out), "filename": filename}
 
