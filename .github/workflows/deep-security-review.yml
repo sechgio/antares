@@ -45,4 +45,7 @@ jobs:
           name: deep-security-review-${{ github.run_id }}
           path: ~/security-audits/
           if-no-files-found: warn
-          retention-days: 90
+          # secrets-009: los mapas de vulnerabilidades en claro amplían el
+          # daño de un token robado; retención mínima, el informe persiste en
+          # el repo de auditoría, no en artefactos.
+          retention-days: 7

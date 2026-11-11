@@ -151,6 +151,11 @@ jobs:
           VITE_JAMENDO_CLIENT_ID: ${{ secrets.VITE_JAMENDO_CLIENT_ID }}
         run: npx concurrently "npm run build:backend" "npm run build:frontend"
 
+      # secrets-012: antes de empaquetar, el bundle congelado se re-verifica
+      # contra su manifiesto de SHA-256 (paridad con cua-driver/media).
+      - name: Verify backend hash manifest
+        run: node scripts/verify-backend-manifest.js dist/backend
+
       - name: Build Electron App
         run: npx --no-install electron-builder --win --publish never
 
