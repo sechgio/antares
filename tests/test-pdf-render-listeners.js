@@ -10,8 +10,9 @@ class EventEmitterBrowserWindow {
   constructor(options) {
     this.options = options;
     this.destroyed = false;
+    this.interceptors = [];
     this.webContents = Object.assign(new EventEmitter(), {
-      session: { webRequest: { onBeforeRequest: () => {} } },
+      session: { webRequest: { onBeforeRequest: (filter, handler) => { this.interceptors.push({ filter, handler }); } } },
       executeJavaScript: async () => true,
       printToPDF: async () => Buffer.from('%PDF-test'),
     });
@@ -52,6 +53,18 @@ async function run() {
     const window = EventEmitterBrowserWindow.instances[0];
     assert.equal(window.webContents.listenerCount('did-fail-load'), 0);
     assert.equal(window.webContents.listenerCount('did-finish-load'), 0);
+
+    const registered = window.interceptors.find((item) => typeof item.handler === 'function');
+    assert.ok(registered, 'el render registra el filtro de webRequest');
+    assert.deepEqual(registered.filter.urls, ['<all_urls>'], 'el filtro cubre todos los esquemas, file: incluido');
+    const allowData = await new Promise((resolve) => registered.handler({ url: 'data:image/png;base64,AAAA' }, resolve));
+    assert.deepEqual(allowData, { cancel: false }, 'las imágenes incrustadas data: pasan el filtro');
+    const allowFonts = await new Promise((resolve) => registered.handler({ url: 'https://fonts.googleapis.com/css2?family=Inter' }, resolve));
+    assert.deepEqual(allowFonts, { cancel: false }, 'las fuentes de Google siguen pasando el filtro');
+    const blockFile = await new Promise((resolve) => registered.handler({ url: 'file:///C:/Users/secreto.png' }, resolve));
+    assert.deepEqual(blockFile, { cancel: true }, 'un file: no autorizado se cancela aunque evada el sanitizador');
+    const blockRemote = await new Promise((resolve) => registered.handler({ url: 'https://example.com/exfil' }, resolve));
+    assert.deepEqual(blockRemote, { cancel: true }, 'una petición remota que no sea fuente se cancela');
     await fs.rm(first.saved_path, { force: true });
 
     const second = await renderHtmlToPdf(

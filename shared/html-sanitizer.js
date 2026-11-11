@@ -1,7 +1,7 @@
 const GOOGLE_FONT_HOST_RE = /^https:\/\/fonts\.(googleapis|gstatic)\.com\//i;
 
 const CSP_META =
-  "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; img-src data: file:; font-src data: https://fonts.gstatic.com;\">";
+  "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; img-src data:; font-src data: https://fonts.gstatic.com;\">";
 
 const PREVIEW_CSP_META =
   "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data: blob:; media-src data: blob:; connect-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'\">";
@@ -50,9 +50,35 @@ function _decodeUrlEntities(value) {
 
 const URL_ATTR_RE = /(href|src|xlink:href|srcset|poster|action|formaction|background|cite|ping|longdesc)\s*=\s*(['"]?)\s*([^"'>]+)\2/gi;
 
+// Delimita solo espacios de la especificación: JS \s deja fuera los controles C0
+// (y DEL), que los parsers de URL eliminan antes de extraer el esquema
+// («\u0001javascript:» es javascript: para el navegador).
+const _URL_NOISE_RE = /[\s\x00-\x1f\x7f]+/g;
+
+// (Evasión por nombre de atributo) Los parsers decodifican character references
+// también en el NOMBRE del atributo: «sr&#99;="file://…"» es src= para el
+// navegador e invisible para las regex que buscan el atributo literal. Un
+// atributo legítimo nunca trae «&#» en su nombre; si al decodificarlo se
+// convierte en manejador on* o en atributo de URL, se elimina el atributo
+// entero. Puede alterar texto mostrado hospedado en raw-text (textarea…),
+// que ya no es markup confiable: gana la seguridad del atributo plantado.
+const DANGEROUS_DECODED_ATTR_NAMES = /^(?:on[a-z]+|href|src|xlink:href|srcset|poster|action|formaction|background|cite|ping|longdesc)$/i;
+const _ATTR_NAME_TOKEN_RE = /([\s/])([^\s"'>=]+)(\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*))?/g;
+const _TAG_OPEN_RE = /<[a-zA-Z](?:"[^"]*"|'[^']*'|[^"'>])*>/g;
+
+function stripEntityEncodedAttributes(html) {
+  return html.replace(_TAG_OPEN_RE, (tag) => {
+    if (!tag.includes('&')) return tag;
+    return tag.replace(_ATTR_NAME_TOKEN_RE, (attribute, lead, name, value) => {
+      const decoded = _decodeUrlEntities(name);
+      return decoded !== name && DANGEROUS_DECODED_ATTR_NAMES.test(decoded) ? lead : attribute;
+    });
+  });
+}
+
 function neutralizeUrlAttr(match, attr, quote, urlValue) {
   const decoded = _decodeUrlEntities(urlValue);
-  const cleaned = decoded.replace(/\s+/g, '').toLowerCase();
+  const cleaned = decoded.replace(_URL_NOISE_RE, '').toLowerCase();
   const schemeMatch = cleaned.match(/^([a-z][a-z0-9+.-]*):/);
   const scheme = schemeMatch ? schemeMatch[1] : '';
   if (cleaned.startsWith('data:')) {
@@ -78,8 +104,8 @@ function neutralizeUrlAttr(match, attr, quote, urlValue) {
 function neutralizeSrcsetAttr(match, attr, quote, urlValue) {
   const decoded = _decodeUrlEntities(urlValue);
   for (const candidate of decoded.split(',')) {
-    const url = candidate.trim().split(/\s+/)[0] || '';
-    const cleaned = url.replace(/\s+/g, '').toLowerCase();
+    const url = candidate.replace(_URL_NOISE_RE, '');
+    const cleaned = url.toLowerCase();
     if (cleaned.startsWith('data:')) {
       if (!isSafeDataUrl(url) || cleaned.startsWith('data:text/html')) {
         return `${attr}=${quote}${quote}`;
@@ -121,14 +147,17 @@ function stripOrKeepLink(fullTag) {
 }
 
 function injectContentSecurityPolicy(stripped, cspMeta) {
+  // La primera política manda (intersección): se antepone SIEMPRE una copia en el
+  // índice 0 para que un raw-text hospedado antes del head real (textarea,
+  // noscript, xmp…) no pueda desplazar la CSP efectiva con un head falso.
   if (/(^|[\s>])<head\b([^>]*)>/i.test(stripped)) {
-    return stripped.replace(/(^|[\s>])<head\b([^>]*)>/i, `$1<head$2>${cspMeta}`);
+    return cspMeta + stripped.replace(/(^|[\s>])<head\b([^>]*)>/i, `$1<head$2>${cspMeta}`);
   }
   return `${cspMeta}${stripped}`;
 }
 
 function sanitizeGoogleFontHtml(html, cspMeta, allowBlobUrl) {
-  const stripped = String(html)
+  const stripped = stripEntityEncodedAttributes(String(html))
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<meta[^>]+http-equiv=["']?Content-Security-Policy["']?[^>]*>/gi, '')
     .replace(/<meta[^>]*http-equiv[^>]*>/gi, '')
@@ -168,8 +197,7 @@ function sanitizeHtmlForPdf(html) {
 }
 
 function sanitizeHtmlForPreview(html) {
-  const raw = String(html);
-  let stripped = raw
+  let stripped = stripEntityEncodedAttributes(String(html))
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<meta[^>]+http-equiv=["']?Content-Security-Policy["']?[^>]*>/gi, '')
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
