@@ -453,17 +453,30 @@ def test_realtime_policies_stay_scoped_to_canvas_topics() -> None:
         if table == "realtime.messages"
     ]
     assert rt, "faltan políticas de autorización en realtime.messages"
+    # sb-004: el topic va fijado por uuid del documento y toda política exige
+    # usuario activo vía helper privado (nunca helpers públicos).
     for name, pol in rt:
-        assert "canvas-document:%" in pol.expr, f"{name} no limita el topic canvas-document:*"
-        assert "'broadcast'" in pol.expr and "'presence'" in pol.expr, (
-            f"{name} no limita extension"
-        )
+        assert "canvas-document:" in pol.expr, f"{name} no limita el topic canvas-document:*"
+        assert "canvas_documents" in pol.expr, f"{name} no ancla el documento en canvas_documents"
         assert "private.is_active_user()" in pol.expr, (
             f"{name} no exige usuario activo vía helper privado"
         )
     bases = {name: pol.base for name, pol in rt}
     assert "for select" in bases["canvas_realtime_receive"]
     assert "for insert" in bases["canvas_realtime_send"]
+    pols = dict(rt)
+
+    saved = pols.get("canvas_realtime_document_saved_send")
+    assert saved is not None, "falta la política document_saved de autoridad de escritura"
+    assert "broadcast" in saved.expr and "event" in saved.expr, (
+        "document_saved debe filtrar extension broadcast y su evento"
+    )
+    assert "created_by" in saved.expr and "is_admin" in saved.expr, (
+        "document_saved exige creador del documento o admin (autoridad de escritura)"
+    )
+    presence = pols.get("canvas_realtime_send")
+    assert presence is not None
+    assert "'presence'" in presence.expr, "el canal de presencia no puede publicar broadcast"
 
 
 def test_realtime_publication_membership_is_exact() -> None:
