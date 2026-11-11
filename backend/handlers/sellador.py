@@ -63,6 +63,11 @@ def _parse_stamp_placements(value: Any) -> list[dict[str, float | int]] | None:
         else:
             msg = "Índice de página requerido en cada ubicación"
             raise ValueError(msg)
+        # python-backend-019: un índice negativo envuelve en el sort de
+        # páginas; se valida al parsear, con mensaje de usuario.
+        if page_index < 0:
+            msg = "Índice de página fuera de rango"
+            raise ValueError(msg)
         placements.append({
             "page_index": page_index,
             "x": _parse_float(item.get("x", 0), "Posición X", allow_zero=True),

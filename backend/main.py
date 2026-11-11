@@ -136,14 +136,18 @@ _validate_encoding()
 
 
 def _user_error_message(exc: Exception) -> AntaresBaseException:
+    from backend.utils.validators import redact_internal_error
+
     if isinstance(exc, AntaresBaseException):
         return exc
     if isinstance(exc, FileNotFoundError):
         return NotFoundError("Archivo no encontrado")
     if isinstance(exc, ValueError):
-        return ValidationError(str(exc))
+        # python-backend-014: el texto bruto de valores internos arrastra
+        # rutas absolutas y fragmentos SQL; se redacta antes de exponerlo.
+        return ValidationError(redact_internal_error(str(exc)))
     if isinstance(exc, ImportError):
-        return AntaresBaseException(str(exc))
+        return AntaresBaseException(redact_internal_error(str(exc)))
     return AntaresBaseException("Error interno del servidor")
 
 

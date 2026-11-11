@@ -5,6 +5,17 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+# python-backend-014 / 013: los ValueError internos y las colas de trabajo
+# filtran rutas absolutas (LOCALAPPDATA, usuario) en los mensajes que llegan
+# al renderer. Se redactan antes de salir del backend.
+_WIN_PATH_RE = re.compile(r"[A-Za-z]:\\(?:[^\\/:*?\"<>|\r\n]+\\)*[^\\/:*?\"<>|\r\n]*")
+_POSIX_PATH_RE = re.compile(r"(?<![\w])/(?:[\w.\-]+/)+[\w.\-]*")
+
+
+def redact_internal_error(message: object) -> str:
+    text = str(message or "")
+    return _POSIX_PATH_RE.sub("[ruta]", _WIN_PATH_RE.sub("[ruta]", text))
+
 
 def is_safe_user_path(value: object) -> bool:
     if not isinstance(value, str) or not value:

@@ -227,6 +227,18 @@ def test_generate_pdf_happy_path_and_filename(catalog_env, monkeypatch) -> None:
     assert name2 == "a_0000003-0000005.pdf"
 
 
+def test_safe_filename_format_bloquea_atributos() -> None:
+    # python-backend-001: el patrón vive en disco; str.format no debe dar
+    # acceso a atributos ({x.__class__.__mro__...}).
+    fields = {"id": "a", "nombre": "Fmt", "desde": "0000001", "hasta": "0000001"}
+    assert formatos._safe_filename_format("{id}_{desde}.pdf", fields) == "a_0000001.pdf"
+    assert formatos._safe_filename_format("{id}_{desde}.pdf", fields, sufijo="-0000005") == "a_0000001-0000005.pdf"
+    hostil = formatos._safe_filename_format("{id}-{x.__class__.__module__}", fields)
+    assert hostil == "a-{x.__class__.__module__}"
+    conspec = formatos._safe_filename_format("{desde:0>9}.pdf", fields)
+    assert conspec == "000000001.pdf"
+
+
 def test_delete_format_logs_oserror_but_returns_true(catalog_env, monkeypatch) -> None:
     fmt = _entry("u1", storage_path="gone.pdf")
     (formatos._UPLOADS_DIR / "gone.pdf").write_bytes(b"x")

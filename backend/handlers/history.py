@@ -139,25 +139,36 @@ def history_export(params: dict[str, Any]) -> dict[str, Any]:
             files_count = len(files) if isinstance(files, list) else 0
         except (TypeError, ValueError):
             files_count = 0
-        writer.writerow(
-            {
-                "id": run.get("id"),
-                "run_type": run.get("run_type"),
-                "timestamp": run.get("timestamp"),
-                "formato": run.get("formato"),
-                "calidad": run.get("calidad"),
-                "ok_count": run.get("ok_count"),
-                "err_count": run.get("err_count"),
-                "duration_ms": run.get("duration_ms"),
-                "app_version": run.get("app_version"),
-                "schema_version": run.get("schema_version"),
-                "patron": run.get("patron"),
-                "files_count": files_count,
-                "options_json": run.get("options_json"),
-            }
-        )
+        row = {
+            "id": run.get("id"),
+            "run_type": run.get("run_type"),
+            "timestamp": run.get("timestamp"),
+            "formato": run.get("formato"),
+            "calidad": run.get("calidad"),
+            "ok_count": run.get("ok_count"),
+            "err_count": run.get("err_count"),
+            "duration_ms": run.get("duration_ms"),
+            "app_version": run.get("app_version"),
+            "schema_version": run.get("schema_version"),
+            "patron": run.get("patron"),
+            "files_count": files_count,
+            "options_json": run.get("options_json"),
+        }
+        # python-backend-010: el patron persistido puede abrir fórmulas
+        # (=HYPERLINK, =cmd|...) al abrir el CSV en Excel; mismo prefijo que
+        # sheets-formula-guard.
+        writer.writerow({k: _csv_formula_safe(v) if isinstance(v, str) else v for k, v in row.items()})
     encoded = base64.b64encode(buffer.getvalue().encode("utf-8")).decode("ascii")
     return {"csv": encoded, "count": len(runs)}
+
+
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_formula_safe(value: str) -> str:
+    if value.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
 
 
 HANDLERS = {

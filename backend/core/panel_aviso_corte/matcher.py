@@ -91,10 +91,28 @@ def match_regex(normalized_value: str, normalized_stem: str, compiled: re.Patter
     return _normalize(captured) == normalized_value
 
 
+# python-backend-007: una regex con cuantificador anidado ((.+)+, (\w*)+)
+# sufre backtracking catastrófico y congela el worker heavy; se rechazan en
+# compilación y se acota el largo del input antes de intentar el match.
+_NESTED_QUANTIFIER_RE = re.compile(r"[*+?}]\s*[)\]]\s*[*+?]")
+_MAX_REGEX_PATTERN_LEN = 256
+_MAX_MATCH_INPUT_LEN = 512
+
+
 def compile_match_rule(rule: MatchRule) -> re.Pattern[str] | None:
     if rule.strategy != "regex":
         return None
     assert rule.regex_pattern is not None
+    if len(rule.regex_pattern) > _MAX_REGEX_PATTERN_LEN:
+        msg = "La expresión regular excede el largo permitido"
+        raise InvalidMatchRuleError(
+            msg,
+        )
+    if _NESTED_QUANTIFIER_RE.search(rule.regex_pattern):
+        msg = "La expresión regular incluye cuantificadores anidados (riesgo de bloqueo)"
+        raise InvalidMatchRuleError(
+            msg,
+        )
     try:
         compiled = re.compile(rule.regex_pattern, re.IGNORECASE)
     except re.error as exc:
@@ -112,7 +130,12 @@ def compile_match_rule(rule: MatchRule) -> re.Pattern[str] | None:
 
 def match_image_to_row(rule: MatchRule, cell_value: str, filename: str, compiled: re.Pattern[str] | None = None) -> bool:
     stem, _ = os.path.splitext(filename)
-    return _match_normalized(rule, _normalize(cell_value), _normalize(stem), compiled)
+    return _match_normalized(
+        rule,
+        _normalize(cell_value)[:_MAX_MATCH_INPUT_LEN],
+        _normalize(stem)[:_MAX_MATCH_INPUT_LEN],
+        compiled,
+    )
 
 
 def _match_normalized(
