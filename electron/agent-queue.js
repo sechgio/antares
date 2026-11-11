@@ -299,6 +299,10 @@ async function tickQueue(state, claimToken) {
       if (!idle) continue;
       const pending = (await bridge('agent_internal_approvals_pending', { session_id: sessionId })).approvals;
       if (pending.length) continue;
+      // Un turno arrancado por la cola también paga del presupuesto diario
+      // (propio del perfil o el techo global por defecto); mientras esté
+      // agotado, el encargo sigue pendiente para el día siguiente.
+      if ((await require('./agent-execution').unattendedBudget(await require('./agent-execution').sessionProfile(session))).exhausted) continue;
       await startQueueTask(state, session, pendingQueue[0], claimToken);
     } catch (err) {
       console.warn('[agent] queue tick failed:', require('./agent-execution').sanitizeProviderError(String(err?.message || err)));

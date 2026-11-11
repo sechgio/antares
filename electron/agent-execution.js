@@ -1578,15 +1578,35 @@ function localDay(now = Date.now()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-async function profileBudget(profile) {
-  const limit = Number(profile && profile.daily_tokens) || 0;
-  if (!limit) return null;
+// Techo por defecto del gasto diario agregado de los turnos que el agente
+// arranca solo (encargos programados y colas) sin un presupuesto propio del
+// perfil; los perfiles con daily_tokens usan el suyo (aee-005).
+const DEFAULT_UNATTENDED_DAILY_TOKENS = 2_000_000;
+
+async function budgetFor(profile, limit) {
   const doc = await shared.state.harness.snapshot(shared.state.ProfilesDoc, ctx());
   const entry = doc && doc.usage && doc.usage[profile.id];
   const day = localDay();
   const delegated = await bridge('agent_internal_profile_usage', { profile_id: profile.id, day });
   const used = (entry && entry.day === day ? Number(entry.tokens) || 0 : 0) + (Number(delegated.tokens) || 0);
-  return { limit, used, exhausted: used >= limit };
+  return { limit, used, exhausted: used >= limit, day };
+}
+
+async function profileBudget(profile) {
+  const limit = Number(profile && profile.daily_tokens) || 0;
+  if (!limit) return null;
+  return budgetFor(profile, limit);
+}
+
+async function unattendedBudget(profile) {
+  const limit = Number(profile && profile.daily_tokens) || 0;
+  if (limit) return budgetFor(profile, limit);
+  const day = localDay();
+  const doc = await shared.state.harness.snapshot(shared.state.ProfilesDoc, ctx());
+  const used = Object.values((doc && doc.usage) || {})
+    .filter((entry) => entry && entry.day === day)
+    .reduce((sum, entry) => sum + (Number(entry.tokens) || 0), 0);
+  return { limit: DEFAULT_UNATTENDED_DAILY_TOKENS, used, exhausted: used >= DEFAULT_UNATTENDED_DAILY_TOKENS, day };
 }
 
 async function recordProfileUsage(session, usage) {
@@ -1685,6 +1705,8 @@ module.exports = {
   WEB_AUTO_APPROVE,
   localDay,
   profileBudget,
+  unattendedBudget,
+  DEFAULT_UNATTENDED_DAILY_TOKENS,
   profileFilter,
   profileInitialTools,
   profileToolFilter,

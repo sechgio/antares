@@ -484,6 +484,29 @@ async function main() {
     assert.equal(fanChildren.length, 2);
     assert.ok(fanChildren.every((item) => item.delegation.status === 'delivered' && item.delegation.batch
       && item.delegation.result_request === fanChildren[0].delegation.result_request), 'el lote comparte una sola entrega');
+
+    // aee-005: sin presupuesto propio, el gasto de los encargos respeta un techo global diario
+    const { session: defaultSession } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const globalState = runtime._internal.state();
+    const globalDay = require('../electron/agent-execution').localDay();
+    await globalState.harness.commit(async (tx) => {
+      const doc = await tx.doc(globalState.ProfilesDoc);
+      const usage = { ...(doc.usage || {}), [limited.id]: { day: globalDay, tokens: 2_000_000 } };
+      doc.usage = usage;
+    }, globalState.ctx);
+    const { scheduled: globalDeferred } = await runtime.handlers.agent_tasks_save({
+      session_id: defaultSession.id, content: 'Sin techo propio', due_at: new Date(Date.now() + 1500).toISOString(),
+    });
+    const globalTask = async () => (await runtime.handlers.agent_tasks_list({ session_id: defaultSession.id })).tasks
+      .find((item) => item.id === globalDeferred.id);
+    await until(async () => Number((await globalTask()).retry_at || 0) > Date.now());
+    const globalMidnight = new Date();
+    globalMidnight.setHours(24, 0, 0, 0);
+    const waitingGlobal = await globalTask();
+    assert.equal(waitingGlobal.status, 'pending', 'un bot sin presupuesto propio respeta el techo global');
+    assert.equal(waitingGlobal.retry_at, globalMidnight.getTime(), 'el techo global aplaza a la medianoche local');
+    await runtime.handlers.agent_tasks_cancel({ id: globalDeferred.id });
+
     console.log('[PASS] Encargos SQLite: reinicio, entrega única, cancelación y permisos de rutas.');
     console.log('[PASS] Delegación SQLite: persistencia, devolución tras reinicio, cancelación y solo lectura.');
     console.log('[PASS] Un proveedor caído no bloquea otras delegaciones.');

@@ -1183,7 +1183,7 @@ async function tick() {
         continue;
       }
       const execution = require('./agent-execution');
-      const budget = await execution.profileBudget(await execution.sessionProfile(session));
+      const budget = await execution.unattendedBudget(await execution.sessionProfile(session));
       if (budget && budget.exhausted) {
         const midnight = new Date();
         midnight.setHours(24, 0, 0, 0);

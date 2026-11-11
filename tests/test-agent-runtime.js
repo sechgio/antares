@@ -1401,23 +1401,22 @@ async function main() {
   }
 
   {
-    const extract = runtime._internal.extractPaths;
-    const text = String.raw`Usa @sellador con C:\trabajos\informe.pdf, "C:\Mis docs\plan v2.pdf" y (D:\datos).`;
-    const paths = extract(text);
-    assert(JSON.stringify(paths) === JSON.stringify(['C:\\Mis docs\\plan v2.pdf', 'C:\\trabajos\\informe.pdf', 'D:\\datos']),
-      'extrae rutas absolutas con y sin comillas, sin puntuación final');
-    assert(extract(String.raw`relativa\x.pdf C:relativo \\srv\share\x.pdf http://x`).length === 0, 'ignora rutas relativas y de red');
-
     const { bridge, state } = makeBridge();
     await openFaux([fauxAssistantMessage('listo')], bridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
-    const sent = await runtime.handlers.agent_message_send({ session_id: session.id, content: text, request_id: 'r-files' });
-    assert(state.grants.length === 1 && state.grants[0].session_id === session.id && state.grants[0].request_id === 'r-files',
-      'la concesión queda atribuida a la conversación y al envío del humano');
-    assert(sent.files.granted.length === 2 && sent.files.rejected[0].path === 'D:\\datos', 'el envío informa archivos concedidos y rechazados');
+    runtime._internal.shared.attachments.set('att-1', { path: String.raw`C:\adjunto\informe.pdf`, kind: 'files', created: Date.now() });
+    const sent = await runtime.handlers.agent_message_send({ session_id: session.id,
+      content: String.raw`Usa @sellador con C:\trabajos\informe.pdf, "C:\Mis docs\plan v2.pdf" y (D:\datos).`,
+      request_id: 'r-files', attachments: ['att-1'] });
+    assert(state.grants.length === 1 && state.grants[0].session_id === session.id && state.grants[0].request_id === 'r-files'
+      && JSON.stringify(state.grants[0].paths) === JSON.stringify([String.raw`C:\adjunto\informe.pdf`]),
+      'la concesión queda atribuida al envío del humano y solo cubre los adjuntos explícitos, no las rutas del texto');
+    assert(sent.files.granted.length === 1 && sent.files.rejected.length === 0, 'el envío informa el adjunto concedido');
     assert(await waitIdle(session.id), 'el turno termina');
-    const plain = await runtime.handlers.agent_message_send({ session_id: session.id, content: 'sin rutas' });
-    assert(state.grants.length === 1 && plain.files.granted.length === 0, 'un mensaje sin rutas no concede nada');
+    const plain = await runtime.handlers.agent_message_send({ session_id: session.id,
+      content: String.raw`abre C:\trabajos\otro.pdf sin adjuntarlo` });
+    assert(state.grants.length === 1 && plain.files.granted.length === 0,
+      'una ruego de ruta escrita en el texto no concede nada sin adjunto');
     assert(await waitIdle(session.id), 'el segundo turno termina');
     await runtime.handlers.agent_session_delete({ id: session.id });
     assert(state.revoked.includes(session.id), 'borrar la conversación revoca sus archivos');
@@ -1972,7 +1971,8 @@ async function main() {
     const { bridge, state } = makeBridge();
     await openFaux([fauxAssistantMessage('listo')], bridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
-    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Usa @sellador con C:\\docs\\a.pdf' });
+    runtime._internal.shared.attachments.set('att-ctx', { path: String.raw`C:\docs\a.pdf`, kind: 'files', created: Date.now() });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Usa @sellador con C:\\docs\\a.pdf', attachments: ['att-ctx'] });
     assert(await waitIdle(session.id), 'el turno con contexto termina');
     const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(JSON.stringify(listed.context.modules) === JSON.stringify([{ id: 'sellador', label: 'Sellador' }]), 'el módulo mencionado queda en el contexto de la conversación');
