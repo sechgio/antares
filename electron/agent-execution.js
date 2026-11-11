@@ -60,7 +60,7 @@ const UI_ACTION_TOOLS = new Set(['cua_click', 'cua_drag', 'cua_scroll', 'cua_typ
   'cua_set_value', 'cua_invoke_menu', 'cua_bring_to_front']);
 const DESKTOP_ACTION_TOOLS = new Set(['desktop_click', 'desktop_type', 'desktop_key', 'desktop_scroll',
   'desktop_launch', 'desktop_focus']);
-const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'cua_launch_app', ...UI_ACTION_TOOLS, ...DESKTOP_ACTION_TOOLS]);
+const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'cua_launch_app', 'skill_create', ...UI_ACTION_TOOLS, ...DESKTOP_ACTION_TOOLS]);
 const UNATTENDED_ACTION_TOOLS = new Set(['cua_launch_app', ...UI_ACTION_TOOLS]);
 const MAX_UNATTENDED_ACTIONS = 25;
 const MAX_LOADED_TOOLS = 25;
@@ -666,8 +666,10 @@ function leadingSystem(messages) {
 
 // Las salidas de herramientas externas llegan al modelo dentro de un bloque
 // delimitado; una etiqueta falsa en el contenido no puede cerrarlo ni abrir
-// otro. Los resultados de control (skills, memoria, pregunta al usuario) no se
-// envuelven porque su contenido sí son instrucciones de trabajo.
+// otro. Los resultados de control (memoria, pregunta al usuario, catálogo de skills,
+// herramientas y plan) no se envuelven porque su contenido son instrucciones de trabajo.
+// El cuerpo de una skill (skills_read) es contenido de archivos del equipo: viaja como
+// dato, igual que fs_read, y el envoltorio lo marca como dato externo.
 const CONTROL_TOOL_RESULTS = new Set(CONTROL_TOOL_RESULT_NAMES);
 
 function escapeToolOutputTags(text) {

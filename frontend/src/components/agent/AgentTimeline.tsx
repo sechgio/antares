@@ -794,6 +794,7 @@ export function ApprovalCard({
     typeof params.item_id === 'string' && `Elemento remoto: ${params.item_id}`,
     typeof params.worksheet === 'string' && `Pestaña: ${params.worksheet}`,
     typeof params.range === 'string' && `Rango: ${params.range}`,
+    typeof params.description === 'string' && `Descripción: ${params.description.slice(0, 300)}`,
     typeof params.url === 'string' && `Página: ${params.url}`,
     typeof params.cwd === 'string' && `Carpeta: ${params.cwd}`,
     typeof params.path === 'string' && `Ruta: ${params.path}`,
@@ -836,7 +837,7 @@ export function ApprovalCard({
             <TriangleAlert size={13} strokeWidth={1.75} aria-hidden="true" className="mt-[3px] shrink-0 text-[var(--accent-yellow)]" />
             <span>
               Este comando puede acceder al equipo completo con tus permisos, fuera de las carpetas adjuntas.
-              En Acceso completo solo se piden los comandos que borran o descartan archivos.
+              Antares pide aprobación humana para cada comando, también en Acceso completo.
             </span>
           </p>}
           {typeof params.command === 'string' && DESTRUCTIVE_COMMAND.test(params.command) && <p className="flex gap-2 text-[12px] leading-[18px] text-[var(--accent-red)]">
@@ -850,6 +851,12 @@ export function ApprovalCard({
               )}
               {facts.map((fact) => <li key={fact} className="break-all">{fact}</li>)}
             </ul>
+          )}
+          {approval.method === 'skill_create' && typeof params.content === 'string' && (
+            <div className="space-y-1">
+              <p className="text-[11.5px] leading-4 text-[var(--text-muted)]">Instrucciones que se guardarán (visibles completas antes de aprobar)</p>
+              <ToolCode label="Instrucciones de la skill">{params.content}</ToolCode>
+            </div>
           )}
           {change && (
             <div className="space-y-1">

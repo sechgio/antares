@@ -243,8 +243,13 @@ async function main() {
     }]);
     assert(enveloped !== plain && enveloped[1].content[0].text.startsWith('<tool_output origin="fs_read">')
       && result.content[0].text === 'ok', 'el envoltorio solo afecta a la copia enviada al modelo');
-    assert(enveloped[2].content[0].text === 'INSTRUCCION',
-      'las instrucciones de una skill no se marcan como dato externo');
+    assert(enveloped[2].content[0].text.startsWith('<tool_output origin="skills_read">')
+      && enveloped[2].content[0].text.includes('INSTRUCCION'),
+    'el cuerpo de una skill cruza la barrera de datos como cualquier resultado de archivos');
+    const catalogStill = envelopeToolResults([{
+      role: 'toolResult', toolCallId: 'sl', toolName: 'skills_list', content: [{ type: 'text', text: 'CATALOGO' }],
+    }]);
+    assert(catalogStill[0].content[0].text === 'CATALOGO', 'el catálogo de skills sigue en el carril de control');
     const planTurn = { remaining: ['Publicar'], planNext: 'Publicar', sincePlan: 9, planReminderAt: 0 };
     assert(planReminder([user, result], planTurn, 9) === undefined, 'el recordatorio de plan espera diez pasos');
     planTurn.sincePlan = 10;
@@ -433,6 +438,37 @@ async function main() {
     assert(state.dispatches.length === 0, 'no borra nada antes de la aprobación humana');
     await runtime.handlers.agent_approve({ approval_id: [...state.approvals.values()][0].id });
     assert(await waitIdle(session.id), 'el flujo termina tras la aprobación');
+    await runtime.shutdown();
+  }
+
+  {
+    // llm-001: guardar una skill pide decisión humana aunque el modo sea Acceso
+    // completo: el cuerpo cruza conversaciones. El canal «Otros» ni siquiera
+    // acepta una regla allow en bloque.
+    const { bridge, state } = makeBridge();
+    const skillsBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools') result.tools.push({
+        name: 'skill_create', kind: 'backend', module: 'agent', gated: true, inputSchema: { type: 'object', properties: {} },
+      });
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('skill_create', { name: 'prueba' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('hecho'),
+    ], skillsBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    let ruleError = null;
+    try { await runtime.handlers.agent_session_rules_set({ id: session.id, rules: { other: 'allow' } }); } catch (err) { ruleError = err; }
+    assert(ruleError, 'el canal «Otros» no acepta una regla allow en bloque');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'guarda la skill' });
+    assert(await waitFor(() => state.approvals.size === 1), 'skill_create pide aprobación pese a la regla allow y el modo full');
+    assert(state.dispatches.length === 0, 'no guarda la skill antes de la aprobación humana');
+    const approval = [...state.approvals.values()][0];
+    await runtime.handlers.agent_deny({ approval_id: approval.id });
+    assert(await waitIdle(session.id), 'el turno continúa tras rechazar la creación');
+    assert(state.dispatches.length === 0, 'la skill rechazada no se guarda');
     await runtime.shutdown();
   }
 

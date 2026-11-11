@@ -3,7 +3,6 @@
   "control_tool_results": [
     "ask_user",
     "skills_list",
-    "skills_read",
     "memory_search",
     "memory_remember",
     "procedure_learn",
