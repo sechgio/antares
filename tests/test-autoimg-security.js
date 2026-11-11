@@ -39,6 +39,26 @@ function main() {
   assert(rateLimited.includes('Límite de consultas'), 'sanitizeErrorMessage debe traducir error 429');
   assert(!rateLimited.includes('472350177078'), 'sanitizeErrorMessage no debe exponer IDs de proyecto Google');
 
+  // cua-012: claves credenciales por regex y firmas de tokens de terceros.
+  const throwsSecret = (fn, label) => {
+    let threw = null;
+    try { fn(); } catch (error) { threw = error; }
+    assert(threw !== null, label);
+  };
+  throwsSecret(() => assertNoSecretInObject({ Authorization: 'Bearer abc' }), 'clave Authorization bloqueada');
+  throwsSecret(() => assertNoSecretInObject({ apiKey: 'valor' }), 'clave apiKey bloqueada');
+  throwsSecret(() => assertNoSecretInObject({ sessionToken: 'x'.repeat(24) }), 'clave session_token bloqueada');
+  // Muestras construidas por partes: ningún literal con forma de credencial
+  // dentro del propio test.
+  const fakeAnthropicKey = 'sk-' + 'ant-api03-' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456';
+  const fakeGithubToken = 'ghp_' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
+  const fakeSlackToken = 'xox' + 'b-123456789-' + 'abcdefghijklmnopqrstuvwxyz';
+  throwsSecret(() => assertNoSecretInObject({ nota: fakeAnthropicKey }), 'clave de Anthropic en valor bloqueada');
+  throwsSecret(() => assertNoSecretInObject({ nota: fakeGithubToken }), 'token de GitHub en valor bloqueado');
+  throwsSecret(() => assertNoSecretInObject({ nota: fakeSlackToken }), 'token de Slack en valor bloqueado');
+  throwsSecret(() => assertNoSecretInObject({ deep: { refresh_token: 'abc' } }), 'refresh_token anidado bloqueado');
+  assertNoSecretInObject({ next_page_token: 'CURSOR_abc', page_state: 'xyz' }, 'cursores de paginación no se bloquean');
+
   const gitignore = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
   for (const entry of ['autoimg-oauth-config.json', 'autoimg-tokens.json', 'autoimg-sheet.json', '.env.local']) {
     assert(gitignore.includes(entry) || gitignore.includes('.env.*'), `.gitignore debe cubrir ${entry}`);

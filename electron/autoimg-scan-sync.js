@@ -252,6 +252,13 @@ async function listArrastre({ force = false } = {}) {
 }
 
 async function _syncToSheetCore() {
+  // co-010: toda la sincronización (lecturas + escrituras + fila de LOGS)
+  // se acredita a la cuenta activa al iniciar; un cambio de cuenta a media
+  // operación falla cerrado en lugar de mezclar filas de dos cuentas.
+  return sheets.withPinnedGoogleSession(async () => _syncToSheetCoreImpl());
+}
+
+async function _syncToSheetCoreImpl() {
   await ensureSheetId();
   const start = Date.now();
 

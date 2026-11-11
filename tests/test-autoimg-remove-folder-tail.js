@@ -53,6 +53,7 @@ async function main() {
       for (const update of updates) sheet.writeRange(update.range, update.values);
       return { success: true };
     },
+    withPinnedGoogleSession: async (fn) => fn(),
     batchReadRanges: async () => ({}),
   });
 

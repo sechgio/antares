@@ -48,23 +48,30 @@ function sanitizeError(err) {
   return safe;
 }
 
+// co-012: claves credenciales más allá de la lista fija original, y firmas de
+// tokens de terceros en valores (Anthropic/OpenAI, GitHub, Slack, Google,
+// AWS). «next_page_token» y cursores de paginación quedan fuera a propósito.
+const CREDENTIAL_KEY_RE = /(secret|password|passwd|credential|authorization|api[-_]?key|bearer|cookie|jwt)/i;
+const TOKEN_KEY_RE = /(?:(?:access|refresh|id|auth|session|credential)[_-]?token$|^token$)/i;
+const SECRET_VALUE_RE = /(?:sk-(?:ant-)?[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{16,}|gho_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{10,}|xox[baprs]-[A-Za-z0-9-]{10,}|glpat-[A-Za-z0-9_-]{16,}|AIza[0-9A-Za-z_-]{30,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})/i;
+
 function assertNoSecretInObject(obj, path = 'root') {
   if (!obj || typeof obj !== 'object') return;
   for (const [key, value] of Object.entries(obj)) {
     const keyLower = key.toLowerCase();
     if (
-      keyLower.includes('secret')
-      || keyLower === 'refresh_token'
-      || keyLower === 'access_token'
-      || keyLower === 'client_secret'
-      || keyLower === 'id_token'
+      CREDENTIAL_KEY_RE.test(keyLower)
+      || TOKEN_KEY_RE.test(keyLower)
       || keyLower === 'private_key'
     ) {
       throw new Error(`Respuesta IPC expone dato sensible en ${path}.${key}`);
     }
-    if (typeof value === 'string' && value.length > 40) {
-      if (/ya29\.|1\/\/|GOCSPX-/i.test(value)) {
+    if (typeof value === 'string' && value.length > 16) {
+      if (value.length > 40 && /ya29\.|1\/\/|GOCSPX-/i.test(value)) {
         throw new Error(`Respuesta IPC parece incluir token en ${path}.${key}`);
+      }
+      if (SECRET_VALUE_RE.test(value)) {
+        throw new Error(`Respuesta IPC parece incluir credencial en ${path}.${key}`);
       }
     }
     if (value && typeof value === 'object') {

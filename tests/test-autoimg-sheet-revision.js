@@ -45,6 +45,7 @@ async function main() {
     writeRange: async () => ({ success: true }),
     appendRow: async () => ({ success: true }),
     batchWriteRanges: async () => ({ success: true }),
+    withPinnedGoogleSession: async (fn) => fn(),
   });
 
   stubModule(drivePath, {

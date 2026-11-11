@@ -53,6 +53,26 @@ onActiveUserChange(() => {
   _sheetMeta = null;
 });
 
+// co-010: las escrituras del Sheet llevan la atribución de la cuenta que
+// inició la operación. Una sesión fijada sobrevive a los awaits de esa
+// operación: si cambia la cuenta activa a mitad de camino, el siguiente
+// request falla cerrado en lugar de mezclar filas de dos cuentas.
+let _pinnedSession = null;
+
+function _currentAuthSession() {
+  return _pinnedSession || _captureAuthSession();
+}
+
+async function _withPinnedSession(fn) {
+  const outer = _pinnedSession;
+  if (!outer) _pinnedSession = _captureAuthSession();
+  try {
+    return await fn();
+  } finally {
+    _pinnedSession = outer || null;
+  }
+}
+
 function _buildAuthUrl(redirectUri, codeChallenge, state) {
   const cfg = _requireConfig();
   const params = new URLSearchParams({
@@ -229,7 +249,7 @@ async function revokeAuth() {
 }
 
 async function _apiFetch(url, options = {}) {
-  const session = _captureAuthSession();
+  const session = _currentAuthSession();
   const res = await googleApiFetch(url, options, {
     session,
     authErrorMessage: 'No autenticado con Google. Conecta tu cuenta en AutoIMG.',
@@ -293,6 +313,10 @@ async function ensureAutoImgTabs() {
 }
 
 async function openSpreadsheet(rawId) {
+  return _withPinnedSession(async () => _openSpreadsheetPinned(rawId));
+}
+
+async function _openSpreadsheetPinned(rawId) {
   const sheetId = parseSheetId(rawId);
   if (!sheetId) throw new Error('ID de Sheet inválido');
   const res = await _apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?fields=properties.title,sheets.properties`);
@@ -381,6 +405,10 @@ async function readRanges(ranges) {
 }
 
 async function writeRange(range, values) {
+  return _withPinnedSession(async () => _writeRangePinned(range, values));
+}
+
+async function _writeRangePinned(range, values) {
   if (!_sheetId) throw new Error('No hay Sheet abierto.');
   const encoded = encodeURIComponent(range);
   const res = await _apiFetch(
@@ -392,6 +420,10 @@ async function writeRange(range, values) {
 }
 
 async function appendRow(range, values) {
+  return _withPinnedSession(async () => _appendRowPinned(range, values));
+}
+
+async function _appendRowPinned(range, values) {
   if (!_sheetId) throw new Error('No hay Sheet abierto.');
   const encoded = encodeURIComponent(range);
   const res = await _apiFetch(
@@ -405,7 +437,12 @@ async function appendRow(range, values) {
 }
 
 async function batchWriteRanges(updates) {
-  if (!_sheetId || !updates.length) return { updated: 0 };
+  return _withPinnedSession(async () => _batchWriteRangesPinned(updates));
+}
+
+async function _batchWriteRangesPinned(updates) {
+  if (!updates.length) return { updated: 0 };
+  if (!_sheetId) throw new Error('No hay Sheet abierto.');
   const data = updates.map((u) => ({
     range: u.range,
     values: neutralizeCells(u.values),
@@ -441,6 +478,7 @@ module.exports = {
   writeRange,
   appendRow,
   batchWriteRanges,
+  withPinnedGoogleSession: _withPinnedSession,
   getValidTokens,
   refreshAccessToken,
   isInvalidGrantResponse,
