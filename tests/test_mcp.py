@@ -125,13 +125,17 @@ def test_remove_server_deletes_secrets(mcp_root):
 
 def test_stdio_tools_list_and_call(mcp_root):
     command, args = _fake_stdio(mcp_root)
-    server = mcp_servers.add_server("Fake", "stdio", command=command, args=args, secrets={"env": {"TOKEN": "x"}})
+    server = mcp_servers.add_server("Fake", "stdio", command=command, args=args, secrets={"env": {"TOKEN": "tok-123456"}})
     tools = mcp_servers.list_tools(server["id"])
     assert [t["name"] for t in tools] == ["echo", "boom"]
-    result = mcp_servers.call_tool(server["id"], "echo", {"hola": 1})
+    ad_echo = mcp_servers.agent_tool_name(server["id"], "echo")
+    ad_boom = mcp_servers.agent_tool_name(server["id"], "boom")
+    result = mcp_servers.call_tool(server["id"], ad_echo, {"hola": 1}, advertised=True,
+                                   approved_context=mcp_servers.approval_context(server["id"], ad_echo))
     assert result["isError"] is False
     assert json.loads(result["text"]) == {"hola": 1}
-    err = mcp_servers.call_tool(server["id"], "boom", {})
+    err = mcp_servers.call_tool(server["id"], ad_boom, {}, advertised=True,
+                                approved_context=mcp_servers.approval_context(server["id"], ad_boom))
     assert err["isError"] is True
 
 
@@ -318,7 +322,9 @@ def test_call_tool_resolves_advertised_name(mcp_root, monkeypatch):
         "call_tool_stdio",
         lambda command, args, env, tool, tool_args: seen.update(tool=tool) or {"content": []},
     )
-    mcp_servers.call_tool("gh", "repos-get", {})
+    ad = mcp_servers.agent_tool_name("gh", "repos.get")
+    mcp_servers.call_tool("gh", ad, {}, advertised=True,
+                          approved_context=mcp_servers.approval_context("gh", ad))
     assert seen["tool"] == "repos.get"
 
 
@@ -357,7 +363,9 @@ def test_mcp_retains_argument_schema_and_structured_results(mcp_root, monkeypatc
     monkeypatch.setattr(mcp_client, "list_tools_stdio", lambda *args: [{"name": "find", "inputSchema": schema}])
     assert mcp_servers.list_tools(server["id"])[0]["inputSchema"] == schema
     monkeypatch.setattr(mcp_client, "call_tool_stdio", lambda *args: {"structuredContent": {"rows": [{"id": 1}]}})
-    result = mcp_servers.call_tool(server["id"], "find", {})
+    ad = mcp_servers.agent_tool_name(server["id"], "find")
+    result = mcp_servers.call_tool(server["id"], ad, {}, advertised=True,
+                                   approved_context=mcp_servers.approval_context(server["id"], ad))
     assert result["structuredContent"] == {"rows": [{"id": 1}]}
 
 
@@ -408,12 +416,13 @@ def test_agent_mcp_results_and_errors_do_not_echo_secrets(mcp_root, monkeypatch,
 
     monkeypatch.setattr(mcp_client, "call_tool_stdio", invoke)
     name = mcp_servers.agent_tool_name(server["id"], "echo")
+    context = mcp_servers.approval_context(server["id"], name)
     if fails:
         with pytest.raises(ValueError, match="<REDACTED>") as error:
-            mcp_servers.call_tool(server["id"], name, {}, advertised=True)
+            mcp_servers.call_tool(server["id"], name, {}, advertised=True, approved_context=context)
         assert secret not in str(error.value)
     else:
-        result = mcp_servers.call_tool(server["id"], name, {}, advertised=True)
+        result = mcp_servers.call_tool(server["id"], name, {}, advertised=True, approved_context=context)
         assert secret not in result["text"]
         assert result["structuredContent"]["nested"][0]["value"] == "<REDACTED>"
 
