@@ -279,11 +279,11 @@ function _assertAllowedRawOutputPath(outRaw) {
       ? (fs.lstatSync(resolved).isDirectory() ? resolved : path.dirname(resolved))
       : path.dirname(resolved);
     const { isUnderAllowedWriteRoot } = require('./dialog-handlers');
-    const { _isUnderStandardUserDir } = require('./write-roots');
+    // La ruta cruda necesita confirmación: o una raíz registrada por diálogo o una
+    // ruta que el usuario escogió expresamente para lectura. Documentos/Descargas
+    // por defecto ya no habilita escritura (canal silencioso sin confirmación).
     if (!isUnderAllowedWriteRoot(dir) && !isAllowedReadPath(resolved) && !isAllowedReadPath(dir)) {
-      if (!_isUnderStandardUserDir(dir)) {
-        throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
-      }
+      throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
     }
     // El veto de ejecutables aplica siempre que no haya write root por
     // diálogo: que la ruta estuviera registrada antes para lectura no

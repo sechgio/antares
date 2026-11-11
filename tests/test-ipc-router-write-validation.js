@@ -45,11 +45,23 @@ async function run() {
   const { clearAllowedReadPaths, registerAllowedReadPath, isAllowedReadPath } = require('../electron/path-allowlist');
 
   try {
-    const p1 = router._validateAndResolveWriteParams({ outputDir: path.join(docsDir, 'salidas') }, null);
-    assert(p1.outputDir === path.join(docsDir, 'salidas'), 'outputDir bajo Documentos se acepta');
+    let docsRawError = null;
+    try {
+      router._validateAndResolveWriteParams({ outputDir: path.join(docsDir, 'salidas') }, null);
+    } catch (e) {
+      docsRawError = e.message;
+    }
+    assert(docsRawError !== null && /no está permitida/.test(docsRawError),
+      'outputDir crudo bajo Documentos ya no se acepta sin diálogo');
 
-    const p2 = router._validateAndResolveWriteParams({ outputDir: path.join(dlDir, 'x') }, null);
-    assert(p2.outputDir === path.join(dlDir, 'x'), 'outputDir bajo Descargas se acepta');
+    let dlRawError = null;
+    try {
+      router._validateAndResolveWriteParams({ outputDir: path.join(dlDir, 'x') }, null);
+    } catch (e) {
+      dlRawError = e.message;
+    }
+    assert(dlRawError !== null && /no está permitida/.test(dlRawError),
+      'outputDir crudo bajo Descargas ya no se acepta sin diálogo');
 
     let docFormatError = null;
     try {
@@ -57,7 +69,8 @@ async function run() {
     } catch (e) {
       docFormatError = e.message;
     }
-    assert(docFormatError === null, 'Documentos sigue aceptando los formatos que produce Antares');
+    assert(docFormatError !== null && /no está permitida/.test(docFormatError),
+      'ningún formato viaja ya a Documentos sin diálogo de guardado');
 
     for (const [name, leaf] of [
       ['ejecutable', 'setup.exe'],
@@ -74,7 +87,7 @@ async function run() {
       } catch (e) {
         message = e.message;
       }
-      assert(message !== null && /no permitido/.test(message), `Documentos/Descargas rechaza ${name}`);
+      assert(message !== null && /no está permitida/.test(message), `Descargas cruda rechaza ${name}`);
     }
 
     let threw = false;
@@ -115,7 +128,7 @@ async function run() {
     assert(p7.zoom === 18 && p7._resolved_output_path === undefined, 'payload sin salida no se procesa');
 
     const forged = router._validateAndResolveWriteParams(
-      { outputPath: path.join(docsDir, 'ok.pdf'), _resolved_output_path: path.join(arbitraryDir, 'evil.pdf') },
+      { outputPath: path.join(customDir, 'ok.pdf'), _resolved_output_path: path.join(arbitraryDir, 'evil.pdf') },
       null,
     );
     assert(
@@ -375,19 +388,20 @@ async function run() {
     assert(destinoRejected, 'process_start rechaza destino fuera de roots autorizados');
 
     const destinoDocs = path.join(docsDir, 'salida');
-    const allowedParams = router2._maybeResolveFileTokens(
-      { files: [registeredInput], destino: destinoDocs },
-      winHandle,
-      'process_start',
-    );
-    const allowedResolved = router2._validateAndResolveWriteParams(
-      allowedParams,
-      winHandle,
-      'process_start',
-    );
+    let destinoDocsRejected = false;
+    try {
+      const docsParams = router2._maybeResolveFileTokens(
+        { files: [registeredInput], destino: destinoDocs },
+        winHandle,
+        'process_start',
+      );
+      router2._validateAndResolveWriteParams(docsParams, winHandle, 'process_start');
+    } catch (e) {
+      destinoDocsRejected = /no está permitida|ruta de salida/i.test(e.message);
+    }
     assert(
-      allowedResolved.destino === destinoDocs,
-      'process_start acepta destino bajo Documentos',
+      destinoDocsRejected,
+      'process_start rechaza destino crudo bajo Documentos sin diálogo',
     );
 
     const destinoCustom = path.join(tmpRoot, 'nueva-raiz', 'salida');
@@ -479,8 +493,8 @@ async function run() {
       router2._maybeResolveFileTokens(
         {
           files: [registeredInput],
-          output_path: path.join(docsDir, 'out-a'),
-          destino: path.join(docsDir, 'out-b'),
+          output_path: path.join(tmpRoot, 'nueva-raiz', 'out-a'),
+          destino: path.join(tmpRoot, 'nueva-raiz', 'out-b'),
         },
         winHandle,
         'process_start',
@@ -489,8 +503,8 @@ async function run() {
       'process_start',
     );
     assert(
-      bothAllowed.destino === path.join(docsDir, 'out-b'),
-      'destino autorizado coexiste con otra clave de salida autorizada',
+      bothAllowed.destino === path.join(tmpRoot, 'nueva-raiz', 'out-b'),
+      'destino bajo raíz de diálogo coexiste con otra clave de salida autorizada',
     );
 
     const cmykParams = router2._maybeResolveFileTokens(
