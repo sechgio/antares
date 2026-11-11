@@ -44,7 +44,7 @@ const PLAN_REMINDER_STEPS = 10;
 const MAX_RECOVERABLE_FAILURES = 6;
 const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, retómalo: '
   + 'mantén un solo paso in_progress y atiende {next}; comprueba el resultado y, si el paso no puede completarse, '
-  + 'replantea el plan o márcalo como failed con la causa y di qué necesitas.';
+  + 'replantea el plan o márcalo como failed con la causa y di qué necesitas. ' + shared.PLAN_TITLE_TRUST;
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
 const SUBAGENT_TOOL = 'subagent_run';
 const SCRIPT_TOOL = script.SCRIPT_TOOL;
@@ -716,7 +716,7 @@ function budgetWarning(messages, rounds) {
   if (rounds < BUDGET_WARNING_STEPS || rounds >= MAX_TOOL_STEPS || !last || last.role !== 'toolResult') return undefined;
   const notice = `Aviso de Antares: llevas ${rounds} de ${MAX_TOOL_STEPS} pasos de herramienta en este turno. `
     + 'Actualiza task_plan con lo verificado y prioriza lo pendiente; al llegar al límite el turno se pausa y el usuario '
-    + 'puede Reanudar. No te detengas solo por este aviso.';
+    + `puede Reanudar. No te detengas solo por este aviso. ${shared.PLAN_TITLE_TRUST}`;
   const content = Array.isArray(last.content) ? last.content : [{ type: 'text', text: String(last.content || '') }];
   return [...messages.slice(0, -1), { ...last, content: [...content, { type: 'text', text: notice }] }];
 }
@@ -806,7 +806,7 @@ async function pauseForBudget(api, context, reason = 'tool_budget') {
         ? 'El agente agotó su presupuesto diario de tokens. Conservé un punto de continuación; '
           + 'podrás reanudar mañana o al ampliar su presupuesto.'
         : 'Este turno alcanzó su límite de pasos. Conservé un punto de continuación. Usa Reanudar para seguir.')
-        + (remaining.length ? '\nPendiente: ' + remaining.join('; ') : '') },
+        + (remaining.length ? `\nPendiente: ${remaining.map((title) => `«${shared.neutralizePlanText(title)}»`).join('; ')}\n${shared.PLAN_TITLE_TRUST}` : '') },
     } }, ctx());
   });
   // El aborto debe interrumpir esta espera: abortTask espera a que termine este mismo hook.

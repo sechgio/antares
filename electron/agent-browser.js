@@ -42,6 +42,18 @@ const VIRTUAL_KEYS = { Enter: 13, Tab: 9, Escape: 27, Space: 32, Backspace: 8, D
   Up: 38, Down: 40, Left: 37, Right: 39, Home: 36, End: 35, PageUp: 33, PageDown: 34,
   ';': 186, '=': 187, ',': 188, '-': 189, '.': 190, '/': 191, '`': 192, '[': 219, '\\': 220, ']': 221, "'": 222 };
 
+// (cua-015) Lo que la página deja en la consola, en URLs de peticiones fallidas
+// o en su propia dirección viaja al contexto del modelo: ninguna credencial de
+// la página (token de OAuth en el redirect, clé en la query, fugas en errores)
+// puede llegar al proveedor sin redactar. La clave de la query se conserva; el
+// valor no.
+const URL_SECRET_KEY_RE = /([?&])(token|access_token|refresh_token|code|key|secret|password|passwd|sig|signature|session|sessionid|sid|auth|authorization|credential|api_key|apikey|jwt|nonce)=[^&#]*/gi;
+const { redactText } = require('./app-log');
+
+function redactUrlSecrets(url) {
+  return String(url || '').replace(URL_SECRET_KEY_RE, (match, sep, key) => `${sep}${key}=`);
+}
+
 const REF = { type: 'string', description: 'Referencia «ref» de un elemento devuelto por web_read' };
 const TOOLS = {
   web_open: ['Abrir una página web en el navegador del agente', {
@@ -1088,7 +1100,7 @@ async function snapshot(contents, offset = 0, budget = RESULT_BUDGET) {
   const start = Math.max(0, Number(offset) || 0);
   const text = String(page.text || '');
   const result = fit({
-    url: page.url,
+    url: redactUrlSecrets(page.url),
     title: page.title,
     text: text.slice(start, start + MAX_TEXT),
     elements: page.elements.map(describe),
@@ -1150,7 +1162,7 @@ async function findElements(contents, params) {
   refDocuments.set(contents, page.time_origin);
   const more = page.total - page.matches.length;
   return fit({
-    url: page.url,
+    url: redactUrlSecrets(page.url),
     matches: page.matches.map(describe),
     ...(page.total === 0 ? { note: 'Ningún elemento visible coincide; prueba con otro texto, sin role o desplázate con web_scroll' } : {}),
     ...(more > 0 ? { matches_more: more, note: 'Hay más coincidencias: afina el texto o añade role' } : {}),
@@ -1159,11 +1171,11 @@ async function findElements(contents, params) {
 
 function pageReported(mark) {
   const errors = consoleLog.filter((entry) => entry.seq > mark.console && entry.level === 'error')
-    .slice(-HEALTH_KEEP).map((entry) => entry.text.slice(0, 200));
+    .slice(-HEALTH_KEEP).map((entry) => redactText(entry.text.slice(0, 200)));
   const failed = [...netLog.values()]
     .filter((entry) => entry.seq > mark.net && ((entry.status ?? 0) >= 400 || (entry.error && !/ERR_ABORTED/.test(entry.error))))
     .slice(-HEALTH_KEEP)
-    .map((entry) => `${entry.error ? 'falló' : entry.status} ${entry.method || '·'} ${entry.url.slice(0, 160)}${entry.error ? ` (${entry.error})` : ''}`);
+    .map((entry) => `${entry.error ? 'falló' : entry.status} ${entry.method || '·'} ${redactUrlSecrets(entry.url).slice(0, 160)}${entry.error ? ` (${entry.error})` : ''}`);
   if (!errors.length && !failed.length) return {};
   return { page_reported: { ...(errors.length ? { console_errors: errors } : {}), ...(failed.length ? { failed_requests: failed } : {}) } };
 }
@@ -1190,7 +1202,7 @@ async function pageText(contents, offset = 0) {
   const page = await contents.executeJavaScript(PAGE_TEXT, true);
   const start = Math.max(0, Number(offset) || 0);
   const text = String(page.text || '');
-  const result = fit({ url: page.url, title: page.title, text: text.slice(start, start + MAX_PAGE_TEXT) });
+  const result = fit({ url: redactUrlSecrets(page.url), title: page.title, text: text.slice(start, start + MAX_PAGE_TEXT) });
   const end = start + result.text.length;
   return { ...result, text_offset: start, text_total: text.length, ...(end < text.length ? { next_offset: end } : {}) };
 }
@@ -1396,7 +1408,7 @@ async function screenshot(contents, dir, fullPage = false) {
   const old = (await fs.promises.readdir(dir)).filter((name) => name.startsWith('web-')).sort().slice(0, -KEEP_SCREENS);
   await Promise.all(old.map((name) => fs.promises.rm(path.join(dir, name), { force: true })));
   const size = image.getSize();
-  return { url: contents.getURL(), title: contents.getTitle(), width: size.width, height: size.height,
+  return { url: redactUrlSecrets(contents.getURL()), title: contents.getTitle(), width: size.width, height: size.height,
     image: { path: target, mime: 'image/jpeg' } };
 }
 
@@ -1417,7 +1429,7 @@ async function capture(id = activeTab) {
   }
   const { width, height } = image.getSize();
   if (!width || !height) throw browserError('No se pudo capturar la página para anotar', 'CAPTURE_FAILED');
-  return { png_base64: image.toPNG().toString('base64'), width, height, url: contents.getURL(), title: contents.getTitle() };
+  return { png_base64: image.toPNG().toString('base64'), width, height, url: redactUrlSecrets(contents.getURL()), title: contents.getTitle() };
 }
 
 const INSPECT = (x, y) => `(() => {
@@ -1535,13 +1547,13 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
   }
   if (name === 'web_text') return pageText(contents, params.offset);
   if (name === 'web_console') {
-    return fit({ url: contents.getURL(), messages: consoleLog.map((item) => `[${item.level}] ${item.text}`) });
+    return fit({ url: redactUrlSecrets(contents.getURL()), messages: consoleLog.map((item) => `[${item.level}] ${redactText(item.text)}`) });
   }
   if (name === 'web_network') {
     await ensureDebugger(contents);
     return fit({
-      url: contents.getURL(),
-      requests: [...netLog.values()].map((item) => `${item.status ?? '·'} ${item.method || '·'}${item.type ? ` ${item.type}` : ''} ${item.url}${item.error ? ` (falló: ${item.error})` : ''}`),
+      url: redactUrlSecrets(contents.getURL()),
+      requests: [...netLog.values()].map((item) => `${item.status ?? '·'} ${item.method || '·'}${item.type ? ` ${item.type}` : ''} ${redactUrlSecrets(item.url)}${item.error ? ` (falló: ${item.error})` : ''}`),
     });
   }
   if (name === 'web_wait') return waitFor(contents, params);
@@ -1808,4 +1820,4 @@ function close() {
   preview.close();
 }
 
-module.exports = { engines, setEngine, sessionOpenContext, TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, isPrivateHostname, isAllowedWebUrl, isPublicResolution, state, dock, capture, inspect, navigate, openPage, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };
+module.exports = { engines, setEngine, sessionOpenContext, TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, redactUrlSecrets, isWeb, isPrivateHostname, isAllowedWebUrl, isPublicResolution, state, dock, capture, inspect, navigate, openPage, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };

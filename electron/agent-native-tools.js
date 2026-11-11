@@ -258,7 +258,7 @@ async function nativeToolContext(name, sessionId, params = {}) {
   }
   if (CLOUD[name]) return Object.assign(context, await CLOUD[name].context(name));
   if (CUA.has(name)) {
-    if (selected.gated) context.computer = require('./agent-cua').approvalContext(name, params);
+    if (selected.gated) context.computer = require('./agent-cua').approvalContext(name, params, sessionId);
     return context;
   }
   if (selected.module === 'espacios') {

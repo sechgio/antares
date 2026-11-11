@@ -112,6 +112,15 @@ async function main() {
     && cua.approvalContext('cua_launch_app', { path: 'C:\\temp\\notepad.exe' }).path === 'C:\\temp\\notepad.exe',
     'la aprobación de lanzar fija el ejecutable exacto, no solo su nombre');
 
+  answers.list_windows = { content: [], structuredContent: { windows: [
+    { window_id: 55, pid: 77, app_name: 'Calc.exe', title: 'Calculadora', bounds: { x: 0, y: 0, width: 10, height: 10 } },
+  ] } };
+  await cua.run('cua_list_windows', {}, { sessionId: 'conv-A' });
+  assert(cua.approvalContext('cua_click', { window_id: 55 }, 'conv-A').app === 'Calc.exe',
+    'la conversación A ve las ventanas que ella misma descubrió');
+  assert(!('app' in cua.approvalContext('cua_click', { window_id: 55 }, 'conv-B')),
+    'la conversación B no hereda las ventanas descubiertas por A');
+
   answers.click = { content: [{ type: 'text', text: 'Clicked' }], structuredContent: { effect: 'suspected_noop', delivery: { mode: 'background' } } };
   const noop = await cua.run('cua_click', { pid: 42, window_id: 7, element_token: 's00000001:0' }, { sessionId: 's1' });
   assert(noop.effect === 'suspected_noop' && noop.note.includes('no la des por hecha'), 'un clic sin efecto avisa de que no está hecho');
