@@ -165,7 +165,8 @@ def test_approval_history_filters_and_joins_dispatch(tmp_path):
     assert {a["id"] for a in store.approval_history()} == {first["id"], second["id"], third["id"]}
     assert {a["id"] for a in store.approval_history(session_id=s1)} == {first["id"], second["id"]}
     assert {a["id"] for a in store.approval_history(method="db_export")} == {second["id"]}
-    assert {a["id"] for a in store.approval_history(status="approved")} == {first["id"]}
+    assert {a["id"] for a in store.approval_history(status="done")} == {first["id"]}
+    assert {a["id"] for a in store.approval_history(status="approved")} == set()
     assert {a["id"] for a in store.approval_history(status="denied")} == {second["id"]}
     assert {a["id"] for a in store.approval_history(status="uncertain")} == {first["id"]}
     assert len(store.approval_history(limit=1)) == 1

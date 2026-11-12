@@ -94,6 +94,14 @@ def _now_ms() -> float:
     return time.time() * 1000
 
 
+# ipc-bridge-023: el grant "computer_app" de "Recordar esta decisión"
+# auto-aprueba lanzamientos de una app sin preguntar de nuevo. Sin techo de
+# usos, una sola decisión del usuario habilita ese canal para siempre en la
+# conversación viva. Tras agotarse, la siguiente llamada vuelve a pedir
+# permiso y un "Recordar" nuevo crea un contador fresco.
+COMPUTER_APP_GRANT_MAX_USES = 25
+
+
 def fingerprint(method: str, params: object) -> str:
     canonical = json.dumps({"method": method, "params": params}, sort_keys=True, ensure_ascii=False,
                            separators=(",", ":"), default=str)
@@ -299,8 +307,26 @@ class AgentStore:
             session_grants = self._grants.setdefault(session_id, {})
             for record in records:
                 key = str(record["key"]) if record.get("key") else resource_grants.grant_key(record)
+                if record.get("kind") == "computer_app" and not isinstance(record.get("max_uses"), int):
+                    record = {**record, "uses": 0, "max_uses": COMPUTER_APP_GRANT_MAX_USES}
                 session_grants[key] = record
             self._write_grants()
+
+    def consume_computer_app_grant(self, session_id: str, key: str) -> bool:
+        """Consume un uso del grant computer_app; False si no existe o agotó.
+
+        Los grants de recursos (carpetas y archivos adjuntos por el usuario)
+        no pasan por aquí: solo el auto-aprobado de lanzar una app del agente.
+        """
+        with self._lock:
+            grant = (self._grants.get(session_id) or {}).get(key)
+            if not isinstance(grant, dict) or grant.get("kind") != "computer_app":
+                return False
+            grant["uses"] = int(grant.get("uses") or 0) + 1
+            max_uses = grant.get("max_uses")
+            exhausted = isinstance(max_uses, int) and grant["uses"] > max_uses
+            self._write_grants()
+            return not exhausted
 
     def drafts_dir(self, session_id: str) -> Path:
         safe = "".join(ch for ch in session_id if ch.isalnum() or ch in "-_")[:64]
@@ -546,7 +572,7 @@ class AgentStore:
         limit: int = 500,
     ) -> list[JsonObject]:
         self._expire_stale_approvals()
-        wanted = status if status in {"pending", "approved", "denied", "expired", "uncertain"} else None
+        wanted = status if status in {"pending", "approved", "denied", "expired", "uncertain", "done"} else None
         with self._lock:
             records: list[JsonObject] = []
             for approval in self._approvals.values():
@@ -707,6 +733,16 @@ class AgentStore:
                 record["result"] = result
             record["summary"] = summarize_result(result)
             record["finished_at"] = _now_ms()
+            # ipc-bridge-023: el consumo one-shot (consumed_by) ya impide
+            # reutilizar la aprobación; cerrarla a "done" deja el ciclo
+            # terminal y visible en el historial, sin aprobaciones
+            # consumidas que parezcan aprobadas.
+            approval_id = record.get("approval_id")
+            approval = self._approvals.get(approval_id) if isinstance(approval_id, str) else None
+            if (isinstance(approval, dict) and approval.get("status") == "approved"
+                    and approval.get("consumed_by") == op_id):
+                approval["status"] = "done"
+                self._write_approvals()
             self._write_dispatches()
 
     def undo_prepare(self, session_id: str, call_id: str, op_id: str, method: str, resources: list[JsonObject]) -> None:
