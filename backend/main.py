@@ -95,6 +95,30 @@ logger = logging.getLogger(__name__)
 
 _WARM_WAIT_METHODS = frozenset(HEAVY_METHODS | {"preview"})
 _WARM_WAIT_TIMEOUT = 15.0
+
+# ipc-bridge-015: la cola heavy es global. Sin cuota de admisión por tipo,
+# un método desbocado (p. ej. un export en bucle o un llamador que repite
+# un render) puede ocupar workers y cola enteros y dejar sin servicio el
+# resto de operaciones durante minutos. El tope por método limita cuántas
+# de ESA operación pueden estar en vuelo o encoladas; el excedente se
+# rechaza con el sobre retryable ya existente (CAPACITY_EXCEEDED).
+_METHOD_HEAVY_MIN_LIMIT = 2
+_method_heavy_lock = threading.Lock()
+_method_heavy_inflight: dict[str, int] = {}
+
+
+def _method_heavy_limit(scheduler: Any) -> int:
+    return max(_METHOD_HEAVY_MIN_LIMIT, int(getattr(scheduler, "heavy_workers", 1) or 1))
+
+
+def _release_method_heavy(method_name: str) -> None:
+    with _method_heavy_lock:
+        remaining = _method_heavy_inflight.get(method_name, 0) - 1
+        if remaining > 0:
+            _method_heavy_inflight[method_name] = remaining
+        else:
+            _method_heavy_inflight.pop(method_name, None)
+
 _PANDAS_METHODS = frozenset({
     "db_export",
     "db_parse_mapping",
@@ -338,12 +362,33 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
                 rejected="memory_pressure_check",
             )
             return None
+    method_limit: int | None = None
     try:
         if method_name in HEAVY_METHODS:
+            method_limit = _method_heavy_limit(scheduler)
+            with _method_heavy_lock:
+                in_flight = _method_heavy_inflight.get(method_name, 0)
+                if in_flight >= method_limit:
+                    busy_error = CapacityExceededError(
+                        "Backend ocupado: demasiadas operaciones del mismo tipo en curso",
+                        details={"retryable": True, "reason": "method_busy", "limit": method_limit},
+                    )
+                    logger.warning(
+                        "Rejecting %s by method concurrency cap: inflight=%d limit=%d metrics=%s",
+                        method_name,
+                        in_flight,
+                        method_limit,
+                        scheduler.metrics(),
+                    )
+                    _reject_submit(msg_id, method_name, lane, busy_error, rejected="method_busy")
+                    return None
+                _method_heavy_inflight[method_name] = in_flight + 1
             future = scheduler.submit_heavy(_dispatch, handler, params, msg_id, method_name)
         else:
             future = scheduler.submit_light(_dispatch, handler, params, msg_id, method_name)
     except SchedulerBusy as exc:
+        if method_limit is not None:
+            _release_method_heavy(method_name)
         reason = getattr(exc, "reason", "heavy_queue_full")
         if reason == "memory_pressure":
             memory_error = MemoryPressureError(
@@ -376,11 +421,19 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
         )
         return None
     except Exception:
+        if method_limit is not None:
+            _release_method_heavy(method_name)
         logger.exception("Failed to submit %s to scheduler", method_name)
         _reject_submit(msg_id, method_name, lane, "Backend no disponible: no se pudo programar la tarea")
         return None
     if future is not None:
         future.add_done_callback(_log_future_exception)
+        if method_limit is not None:
+            def _release_on_done(_fut: Future) -> None:
+                _release_method_heavy(method_name)
+            future.add_done_callback(_release_on_done)
+    elif method_limit is not None:
+        _release_method_heavy(method_name)
     return future
 
 def main() -> None:
