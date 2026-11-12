@@ -50,7 +50,7 @@ function _assistantMessage(msg, session, ts) {
   };
 }
 
-function _entryFor(msg, session, pendingCalls) {
+function _entryFor(msg, session, deniedCalls) {
   const ts = typeof msg.ts === 'number' ? msg.ts : 0;
   if (msg.role === 'user') {
     return {
@@ -79,11 +79,14 @@ function _entryFor(msg, session, pendingCalls) {
   if (msg.role === 'assistant') {
     const tool_calls = (msg.tool_calls || []).map((call) => {
       const next = { ...call };
-      if (!TERMINAL_CALL_STATUSES.has(next.status) && !pendingCalls.has(next.id)) {
+      if (deniedCalls && deniedCalls.has(next.id)) {
+        // cua-018: el estado pendiente de la exportación no sobrevive a la
+        // importación; el turno nuevo pide su aprobación de nuevo.
+        next.status = 'denied';
+        next.result = next.result || null;
+      } else if (!TERMINAL_CALL_STATUSES.has(next.status)) {
         next.status = 'interrupted';
         next.result = next.result || null;
-      } else if (pendingCalls.has(next.id)) {
-        next.status = 'pending';
       }
       return next;
     });
@@ -101,7 +104,11 @@ async function importLegacySessions(runtime, sourceDir) {
   const source = sourceDir || dir;
   const sessionsJson = _readJson(path.join(source, 'sessions.json'), {});
   const approvals = _readJson(path.join(source, 'approvals.json'), {});
-  const pendingCalls = new Set(
+  // agent-tools-browser-cua-018: una exportación manipulada no resucita
+  // aprobaciones pendientes ni estados "ya ejecutado": al importar, todo lo
+  // que quedaba pendiente pasa a denegado y el turno nuevo vuelve a pedir
+  // su aprobación.
+  const deniedCalls = new Set(
     Object.values(approvals)
       .filter((a) => a && a.status === 'pending')
       .map((a) => a.call_id),
@@ -113,13 +120,13 @@ async function importLegacySessions(runtime, sourceDir) {
   let imported = 0;
   let skipped = 0;
   for (const legacySession of legacy) {
-    const done = await _importSession(runtime, source, legacySession, pendingCalls, ctx);
+    const done = await _importSession(runtime, source, legacySession, deniedCalls, ctx);
     if (done) imported += 1; else skipped += 1;
   }
   return { imported, skipped };
 }
 
-async function _importSession(runtime, sourceDir, legacySession, pendingCalls, ctx) {
+async function _importSession(runtime, sourceDir, legacySession, deniedCalls, ctx) {
   const { harness, SessionsDoc, convIndex } = runtime;
   const sessions = (await harness.snapshot(SessionsDoc, ctx))?.sessions || {};
   let record = Object.values(sessions).find((s) => s.legacy_id === legacySession.id);
@@ -158,7 +165,7 @@ async function _importSession(runtime, sourceDir, legacySession, pendingCalls, c
   const conv = await harness.conversation(record.conversationId, ctx);
   if (!conv) return false;
   for (let i = record.import.done; i < messages.length; i++) {
-    const entry = _entryFor(messages[i], record, pendingCalls);
+    const entry = _entryFor(messages[i], record, deniedCalls);
     if (entry) {
       await conv.submit({ type: 'write', entry }, ctx);
     }

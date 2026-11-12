@@ -10,16 +10,30 @@ const DEFAULT_MAX_MB = 10;
 const REDACTED = '[redacted]';
 const STATUSES = new Set(['ok', 'error', 'failed']);
 
+// llm-prompt-output-handling-007: el turno-log vive en disco mucho tiempo;
+// su redacción se alinea con la de app-log/compaction (SENSITIVE_TEXT_RE):
+// cabeceras de autorización, cookies, credenciales en URL y los prefijos de
+// proveedor que quedaban fuera del blocaje original.
 const SECRET_KEY_RE =
-  /pass(?:word|phrase)?|passwd|pwd|secret|token|api[-_]?key|authorization|bearer|credential|cookie|private[-_]?key/i;
+  /pass(?:word|phrase)?|passwd|pwd|secret|token|api[-_]?key|authorization|bearer|credential|cookie|private[-_]?key|client[-_]?secret|access[-_]?token|refresh[-_]?token/i;
 
 const SECRET_VALUE_PATTERNS = [
   { re: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}/g, repl: REDACTED },
   { re: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g, repl: REDACTED },
+  { re: /\bgithub_pat_[A-Za-z0-9_]{40,}\b/g, repl: REDACTED },
   { re: /\bAKIA[0-9A-Z]{16}\b/g, repl: REDACTED },
   { re: /\bsk-[A-Za-z0-9_-]{16,}\b/g, repl: REDACTED },
   { re: /\bxox[baprs]-[A-Za-z0-9-]{10,}/g, repl: REDACTED },
+  { re: /\bxapp-[A-Za-z0-9_-]{10,}/g, repl: REDACTED },
+  { re: /\bAIza[0-9A-Za-z_-]{35}\b/g, repl: REDACTED },
+  { re: /\bGOCSPX-[A-Za-z0-9_-]{20,}\b/g, repl: REDACTED },
+  { re: /\bya29\.[0-9A-Za-z_-]{20,}\b/g, repl: REDACTED },
+  { re: /\b1\/\/[0-9A-Za-z_-]{30,}\b/g, repl: REDACTED },
   { re: /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/gi, repl: `Bearer ${REDACTED}` },
+  { re: /\b(?:authorization|proxy-authorization)(\s*[:=]\s*)(?:bearer|basic)\s+[^\s,;]+/gi, repl: '$1[redacted]' },
+  { re: /\bcookie(\s*[:=]\s*)[^\r\n]+/gi, repl: 'cookie$1[redacted]' },
+  { re: /([a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:)[^\s/@]+@/gi, repl: '$1[redacted]@' },
+  { re: /([?&](?:key|sig|signature|passwd|pwd)=)[^\s&#]+/gi, repl: '$1[redacted]' },
   {
     re: /\b(password|passwd|pwd|secret|token|api[-_]?key)(\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,;]+)/gi,
     repl: `$1$2${REDACTED}`,
