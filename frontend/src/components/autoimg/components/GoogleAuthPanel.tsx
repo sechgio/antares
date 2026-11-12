@@ -22,7 +22,6 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
   const [savedClientIdMasked, setSavedClientIdMasked] = useState('');
   const [editingOAuth, setEditingOAuth] = useState(false);
   const [clientId, setClientId] = useState('');
-  const [clientSecret, setClientSecret] = useState('');
   const [connected, setConnected] = useState(false);
   const [email, setEmail] = useState('');
   const [authUrl, setAuthUrl] = useState('');
@@ -101,12 +100,11 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
   }, [onAuthChange, refreshSheetConfig]);
 
   const handleSaveOAuth = async () => {
-    if (!clientId.trim() || !clientSecret.trim()) return;
+    if (!clientId.trim()) return;
     setLoading(true);
     setError('');
     try {
-      await api.autoimgOAuthConfigSave(clientId.trim(), clientSecret.trim());
-      setClientSecret('');
+      await api.autoimgOAuthConfigSave(clientId.trim());
       await refreshOAuthConfig();
     } catch (e) {
       setError(errorMessage(e, 'Error al guardar credenciales'));
@@ -204,7 +202,7 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
             <Button variant="none" size="none"
               onClick={() => {
                 setEditingOAuth(true);
-                setClientSecret('');
+                setClientId('');
               }}
               className="inline-flex shrink-0 items-center gap-1 text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
             >
@@ -218,20 +216,16 @@ export default function GoogleAuthPanel({ onAuthChange, onSheetLinked }: GoogleA
               type="text"
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
-              placeholder="Client ID"
+              placeholder="Client ID (app de escritorio)"
               className={`${INPUT_SM_CLASS} font-mono`}
             />
-            <input
-              type="password"
-              value={clientSecret}
-              onChange={(e) => setClientSecret(e.target.value)}
-              placeholder="Client Secret"
-              className={`${INPUT_SM_CLASS} font-mono`}
-            />
+            <InlineMessage tone="info">
+              El flujo autoriza con PKCE: no se pide ni se guarda ningún Client Secret.
+            </InlineMessage>
             <div className="flex gap-2">
               <Button variant="none" size="none"
                 onClick={handleSaveOAuth}
-                disabled={loading || !clientId.trim() || !clientSecret.trim()}
+                disabled={loading || !clientId.trim()}
                 className="flex-1 rounded-md bg-[var(--accent-primary)] py-1.5 text-[11px] font-medium text-[var(--text-on-accent)] transition-colors hover:bg-[var(--accent-primary-hover)] disabled:opacity-40"
               >
                 {loading ? 'Guardando…' : 'Guardar'}

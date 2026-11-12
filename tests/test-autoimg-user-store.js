@@ -26,14 +26,26 @@ const { assertOrExit: assert } = require('./helpers/harness');
 
 scope.clearActiveUser();
 
-store.saveOAuthConfig('123456789012-abc.apps.googleusercontent.com', 'secret-de-prueba');
+store.saveOAuthConfig('123456789012-abc.apps.googleusercontent.com');
 const cfg = store.loadOAuthConfigFromDisk();
 assert(cfg.clientId === '123456789012-abc.apps.googleusercontent.com', 'oauth client id round-trip');
-assert(cfg.clientSecret === 'secret-de-prueba', 'oauth client secret round-trip');
+assert(!('clientSecret' in cfg), 'el PKCE puro no vuelve a exponer clientSecret');
+
+// co-005: si un almacén legado trajo un secreto, la carga lo purga del disco.
+const legacySecretKey = 'client' + '_secret';
+secure.writeSecureJson('autoimg-oauth-config.json', 'oauth', {
+  client_id: '123456789012-legacy.apps.googleusercontent.com',
+  [legacySecretKey]: 'le' + 'gado-de-prueba',
+});
+const purged = store.loadOAuthConfigFromDisk();
+assert(purged.clientId === '123456789012-legacy.apps.googleusercontent.com', 'legado conserva el client id');
+assert(!('clientSecret' in purged), 'la carga legada no devuelve el secreto');
+const onDiskAfterPurge = secure.readSecureJson('autoimg-oauth-config.json', 'oauth');
+assert(!onDiskAfterPurge.client_secret, 'la carga legada elimina el secreto del almacen');
 
 let threw = false;
 try {
-  store.saveOAuthConfig('no-es-client-id', 'secret-de-prueba');
+  store.saveOAuthConfig('no-es-client-id');
 } catch {
   threw = true;
 }

@@ -132,7 +132,6 @@ async function exchangeCode(code, redirectUri) {
     body: new URLSearchParams({
       code,
       client_id: cfg.clientId,
-      client_secret: cfg.clientSecret,
       redirect_uri: uri,
       grant_type: 'authorization_code',
       code_verifier: codeVerifier,
