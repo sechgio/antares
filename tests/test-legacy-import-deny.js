@@ -8,9 +8,6 @@ const { assert, finish, counters } = require('./helpers/harness');
 const { importLegacySessions } = require('../electron/agent-import');
 
 async function run() {
-  // agent-tools-browser-cua-018: la importación de exportaciones legacy no
-  // resucita estados pendientes; todo lo que quedó "pending" entra como
-  // denegado y el turno nuevo vuelve a pedir su aprobación.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'legacy-import-'));
   const messagesDir = path.join(dir, 'messages');
   fs.mkdirSync(messagesDir, { recursive: true });

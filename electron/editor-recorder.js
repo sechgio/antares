@@ -90,13 +90,9 @@ class RecordingSessionManager {
     if (this.sessions.has(sessionId)) {
       throw new Error(`la sesión ${sessionId} ya existe`);
     }
-    // ipc-bridge-017: cada create abre un handle y reserva su cuota en disco.
-    // Sin techo, un renderer dañado abre grabaciones en bucle.
     if (this.sessions.size >= MAX_RECORDING_SESSIONS) {
       throw new Error('demasiadas sesiones de grabación en curso');
     }
-    // ipc-bridge-016: la cuota declarada por la UI solo recorta el techo de la
-    // sesión (nunca lo sube) o el catálogo prometería un cupo que no se aplica.
     let quotaBytes = this.quotaBytes;
     const declared = Number(declaredQuotaBytes);
     if (Number.isSafeInteger(declared) && declared > 0) {

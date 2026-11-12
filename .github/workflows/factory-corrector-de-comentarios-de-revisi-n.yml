@@ -13,19 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      # actions/checkout v4.2.2
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Install Factory Droid (versión fijada)
         env:
           DROID_VERSION: 1.8.0
-          # sha256 de factory-cli/releases/1.8.0/linux/x64/droid (verificado
-          # contra droid.sha256 publicado). Renovar ambos valores deliberadamente.
           DROID_BINARY_SHA256: 95591cc8f0e93c4fd95155a096d4f3e79f7a34f3c75a8a01751779a618346335
         run: |
           set -euo pipefail
-          # No se ejecuta ningún script remoto: se descarga el binario versionado
-          # y se verifica contra el digest incrustado (fallo cerrado).
           curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
             -o "$RUNNER_TEMP/droid" \
             "https://downloads.factory.ai/factory-cli/releases/${DROID_VERSION}/linux/x64/droid"
@@ -106,9 +101,7 @@ jobs:
         run: droid exec --auto high -m 'glm-5.3-flash' -r 'max' -f "$RUNNER_TEMP/factory-automation-prompt.txt"
         env:
           FACTORY_API_KEY: ${{ secrets.FACTORY_API_KEY }}
-    # El agente solo actúa si tanto el comentarista como el AUTOR del pull
-    # request son confiables: en PRs de externos nunca se hace checkout de la
-    # rama con este job (que lleva FACTORY_API_KEY y token de escritura).
+    # Sin checkout de PRs externos: este job lleva FACTORY_API_KEY y token de escritura.
     if: >-
       github.event_name != 'issue_comment' ||
       (

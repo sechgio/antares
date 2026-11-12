@@ -42,10 +42,6 @@ def formatos_generate(params: dict[str, Any]) -> dict[str, str]:
     if len(pdf_bytes) > _MAX_INLINE_PDF_BYTES:
         out_dir = user_data_path("formatos/out")
         out_dir.mkdir(parents=True, exist_ok=True)
-        # parsers-004 / python-backend-002: el nombre llega de filename_pattern
-        # del catálogo (format() con nombre del usuario): basename + sanitizado,
-        # y siempre .pdf; el prefijo uuid hace imposible truncar un archivo
-        # ajeno dentro del propio out_dir.
         safe_name = sanitizar_nombre(filename) or "formato.pdf"
         if not safe_name.lower().endswith(".pdf"):
             safe_name += ".pdf"

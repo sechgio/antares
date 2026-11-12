@@ -3,8 +3,6 @@
 const { assert, finish, counters } = require('./helpers/harness');
 const { loadIpcRouter } = require('./helpers/ipc-router');
 
-// ipc-bridge-024: los mensajes de error que cruzan al renderer pierden las
-// rutas absolutas locales; el resto del contrato (prefijo + JSON) se mantiene.
 const router = loadIpcRouter();
 
 const err = router._toRendererIpcError(

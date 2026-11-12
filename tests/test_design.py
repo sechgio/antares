@@ -78,8 +78,6 @@ def test_render_html_escapes_model_text_and_rejects_css_injection() -> None:
 
 
 def test_render_html_theme_sink_rejects_css_even_without_normalize() -> None:
-    # python-backend-005 / parsers-008: el sumidero aplica el filtro aunque el
-    # llamador se salte normalize_document.
     html = render_html(
         {
             "page": {},

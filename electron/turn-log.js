@@ -10,10 +10,6 @@ const DEFAULT_MAX_MB = 10;
 const REDACTED = '[redacted]';
 const STATUSES = new Set(['ok', 'error', 'failed']);
 
-// llm-prompt-output-handling-007: el turno-log vive en disco mucho tiempo;
-// su redacción se alinea con la de app-log/compaction (SENSITIVE_TEXT_RE):
-// cabeceras de autorización, cookies, credenciales en URL y los prefijos de
-// proveedor que quedaban fuera del blocaje original.
 const SECRET_KEY_RE =
   /pass(?:word|phrase)?|passwd|pwd|secret|token|api[-_]?key|authorization|bearer|credential|cookie|private[-_]?key|client[-_]?secret|access[-_]?token|refresh[-_]?token/i;
 

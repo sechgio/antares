@@ -18,7 +18,6 @@ def test_vault_roundtrip(tmp_path):
     vault.seal("github", path, {"access_token": "abc", "refresh_token": "r"})
     assert vault.open_sealed("github", path) == {"access_token": "abc", "refresh_token": "r"}
     if sys.platform == "win32":
-        # authn-006: el sobre debe ser DPAPI, nunca el sello HMAC de clave en claro.
         assert json.loads(path.read_text(encoding="utf-8"))["kind"] == "dpapi"
 
 
@@ -32,8 +31,7 @@ def test_vault_seal_requires_dpapi(monkeypatch, tmp_path):
 
 def test_vault_reads_legacy_hmac_envelope(tmp_path, monkeypatch):
     monkeypatch.setattr(vault, "user_data_path", lambda rel: tmp_path / rel)
-    # Sobre legado v3 (hmac-sha256-stream) escrito por versiones anteriores
-    # al bloqueo del sello sin DPAPI: debe seguir leyéndose para migrarlo.
+    # Sobre legado v3 escrito por versiones anteriores: debe seguir leyéndose.
     enc_key = vault._machine_key("legacy")
     mac_key = hashlib.sha256(enc_key + b":mac").digest()
     iv = secrets.token_bytes(16)

@@ -68,8 +68,6 @@ function memberName(map, id) {
   return map[id]?.profile?.name || 'delegado';
 }
 
-// Temas, nombres y mensajes de otros agentes no pueden fabricar la cabecera
-// de contexto: se neutraliza cualquier marcador genuino que traigan (aee-008).
 function unmarked(text) {
   return String(text || '').replaceAll(shared.CONTEXT_MARKER, '(Contexto de Antares)')
     .replaceAll(shared.CHECK_MARKER, '(Comprobación de Antares)');

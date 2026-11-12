@@ -776,9 +776,7 @@ async function messageSend(params) {
     }));
   }
   const attached = _takeAttachments(params.attachments);
-  // Solo los adjuntos explícitos del usuario conceden lectura automática;
-  // las rutas escritas en el texto no conceden nada: el agente debe pedir el
-  // archivo o pasar por las herramientas con su aprobación normal (aee-009).
+  // Solo los adjuntos explícitos conceden lectura; las rutas en el texto no conceden nada.
   const paths = attached.filter((a) => a.kind === 'files').map((a) => a.path);
   const folders = attached.filter((a) => a.kind === 'folder').map((a) => a.path);
   const files = paths.length || folders.length

@@ -63,9 +63,6 @@ def image_optimizer_save_files(params: dict[str, Any]) -> dict[str, Any]:
 
     resolved_folder = str(params.get("_resolved_output_path") or output_folder).strip() or output_folder
     unresolved = Path(str(resolved_folder)).expanduser()
-    # storage-path-handling-019: is_symlink() tras resolve() es casi siempre
-    # False (resolve sigue los enlaces) y el veto quedaba muerto; el examen va
-    # componente a componente sobre la ruta sin resolver, como el veto Electron.
     _assert_no_symlink_component(unresolved)
     destination = unresolved.resolve()
     destination.mkdir(parents=True, exist_ok=True)

@@ -211,8 +211,6 @@ def _stdio_env(secrets: JsonObject) -> dict[str, str]:
                     "HOME", "APPDATA", "LOCALAPPDATA", "LANG", "LC_ALL", "LC_CTYPE", "NODE_EXTRA_CA_CERTS"}
     env = {key: value for key, value in os.environ.items() if key.upper() in runtime_keys}
     for k, v in (secrets.get("env") or {}).items():
-        # Los secretos nunca sustituyen claves de runtime: un «PATH» guardado como
-        # secreto decidiría qué ejecutable nativo arranca el servidor stdio.
         if str(k).upper() not in runtime_keys:
             env[str(k)] = str(v)
     return env
@@ -301,7 +299,6 @@ def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
         with _lock:
             _tools_status[server_id] = {"status": "unavailable", "checked_at": int(time.time() * 1000),
                                         "error": str(_redact(str(err), secrets))[:400]}
-        # El mismo error viaja al llamador: redactado, nunca con el secreto crudo.
         raise ValueError(str(_redact(str(err), secrets))[:400]) from None
     clean = []
     for tool in tools:
@@ -368,10 +365,6 @@ def call_tool(
         if approved_context is not None and approval_context(server_id, tool, force=False) != approved_context:
             raise ValueError("La configuración MCP cambió después de aprobar; solicita una nueva aprobación")
         server = get_server(server_id)
-        # stdio ejecuta un proceso nativo del equipo: la llamada debe traer el
-        # contexto de aprobación anclado a la configuración y credenciales
-        # vigentes; sin él, cualquier edición de la config entre aprobación y
-        # ejecución desactivaría el freno.
         if server["transport"] != "http" and approved_context is None:
             raise ValueError("Herramienta MCP stdio sin contexto de aprobación; vuelve a aprobarla")
         secrets = _secrets(server_id)

@@ -36,9 +36,6 @@ _spill_replace_lock = threading.Lock()
 def _spill_file_path(doc_id: str, suffix: str = ".json", *, legacy: bool = False) -> Path:
     store = _canvas_core.get_canvas_store()
     spill_dir = store.spill_dir
-    # storage-path-handling-007: un id con ':' (u otros caracteres de ruta)
-    # escribiría un ADS invisible para los globs de recuperación y limpieza;
-    # el id se sanea como nombre de archivo antes de componer la ruta.
     safe_id = sanitizar_nombre(Path(str(doc_id)).name) or "unknown"
     if legacy:
         return spill_dir / f"{safe_id}{suffix}"

@@ -453,8 +453,6 @@ def test_realtime_policies_stay_scoped_to_canvas_topics() -> None:
         if table == "realtime.messages"
     ]
     assert rt, "faltan políticas de autorización en realtime.messages"
-    # sb-004: el topic va fijado por uuid del documento y toda política exige
-    # usuario activo vía helper privado (nunca helpers públicos).
     for name, pol in rt:
         assert "canvas-document:" in pol.expr, f"{name} no limita el topic canvas-document:*"
         assert "canvas_documents" in pol.expr, f"{name} no ancla el documento en canvas_documents"

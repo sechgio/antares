@@ -53,10 +53,6 @@ onActiveUserChange(() => {
   _sheetMeta = null;
 });
 
-// co-010: las escrituras del Sheet llevan la atribución de la cuenta que
-// inició la operación. Una sesión fijada sobrevive a los awaits de esa
-// operación: si cambia la cuenta activa a mitad de camino, el siguiente
-// request falla cerrado en lugar de mezclar filas de dos cuentas.
 let _pinnedSession = null;
 
 function _currentAuthSession() {

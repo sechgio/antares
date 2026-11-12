@@ -18,8 +18,6 @@ function isInvalidGrantResponse(body) {
 }
 
 function _normalizeOAuthConfig(config) {
-  // co-005: los clientes OAuth «Desktop» de Google autorizan con PKCE y no
-  // llevan client_secret; el secreto deja de ser parte de la configuración.
   return {
     clientId: String(config.clientId || '').trim(),
   };
@@ -82,10 +80,7 @@ function assertAuthSessionCurrent(session) {
 }
 
 async function _refreshAccessToken(tokens, session = captureAuthSession()) {
-  // pendiente deduplicar: este refresh diverge de spotify-session._refreshTokens
-  // (PKCE sin secreto, store por usuario con scopes, single-flight por
-  // generación de sesión) y de connections-session (refresh delegado en el
-  // backend vía connections_token_refresh).
+  // Pendiente de deduplicar con spotify-session._refreshTokens y connections-session.
   assertAuthSessionCurrent(session);
   const config = requireOAuthConfig();
   if (!tokens?.refresh_token) {

@@ -39,8 +39,6 @@ function parseManifestPets(data: unknown): Pet[] {
   return (data as { pets: Array<Record<string, unknown>> }).pets
     .filter((p) => typeof p.slug === 'string' && typeof p.spritesheetUrl === 'string')
     .map((p) => {
-      // frontend-app-011: un manifest intoxicado (CDN comprometida o cache de
-      // localStorage) puede pedir file:// o sondeo LAN; solo https válido.
       const spritesheetUrl = httpsUrl(p.spritesheetUrl as string);
       if (!spritesheetUrl) return null;
       const petJsonUrl = typeof p.petJsonUrl === 'string' ? httpsUrl(p.petJsonUrl) : null;

@@ -1,12 +1,7 @@
 'use strict';
 
-// cloud-oauth-connectors-004/009: Sheets recibe todo con valueInputOption USER_ENTERED,
-// así que una celda que empieza con «=», «+», «-» no numérico, «@» o un carácter de
-// control se interpreta como fórmula: el nombre sincronizado de una carpeta Drive o
-// un valor del renderer pueden ejecutar fórmulas (IMPORTXML, HYPERLINK, referencias
-// @tabla) en la hoja del usuario. Antes de salir por el API, las celdas de texto
-// riesgosas se anteponen con apóstrofe — la vía estándar de Sheets para guardarlas
-// como texto; los números con signo (-123.45, +7, 1e9, 50%) pasan intactos.
+// USER_ENTERED: una celda que empieza con «=», «+», «-» no numérico, «@» o control se interpreta como fórmula;
+// el apóstrofe la guarda como texto y los números con signo (-123.45, +7, 1e9, 50%) pasan intactos.
 
 const NUMERIC_CELL_RE = /^[+-]?\d+(?:[.,]\d+)?(?:e[+-]?\d+)?%?$/i;
 const UNSAFE_FIRST_RE = /^[=+@\-\t\r\n\u000b\u000c]/;

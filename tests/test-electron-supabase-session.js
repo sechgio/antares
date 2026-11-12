@@ -45,18 +45,15 @@ function throwsWith(fn, match, label) {
   assert(threw, `${label}: lanza error`);
 }
 
-// Bucket completo (test-electron-native-parity compara con el catálogo).
 assert(
   JSON.stringify([...SESSION_METHODS].sort())
     === JSON.stringify(['supabase_session_clear', 'supabase_session_get', 'supabase_session_put']),
   'SESSION_METHODS cubre los tres métodos del catálogo',
 );
 
-// Método desconocido cae al bucket siguiente.
 const unknown = handleSupabaseSessionCall('supabase_session_unknown', {});
 assert(unknown && unknown.handled === false, 'método desconocido no se atiende aquí');
 
-// get sin sesión persistida devuelve blob null.
 expectResult(handleSupabaseSessionCall('supabase_session_get', {}), { blob: null }, 'get inicial devuelve blob null');
 
 const initialBlob = {
@@ -65,12 +62,10 @@ const initialBlob = {
 expectSuccess(handleSupabaseSessionCall('supabase_session_put', { blob: initialBlob }), 'put inicial');
 expectResult(handleSupabaseSessionCall('supabase_session_get', {}), { blob: initialBlob }, 'get round-trip');
 
-// put reemplaza el blob completo (la rotación del refresh token persiste).
 const rotated = { ...initialBlob, 'sb-test-auth-token': JSON.stringify({ access_token: 'AT2', refresh_token: 'RT2' }) };
 expectSuccess(handleSupabaseSessionCall('supabase_session_put', { blob: rotated }), 'put con token rotado');
 expectResult(handleSupabaseSessionCall('supabase_session_get', {}), { blob: rotated }, 'get tras rotación');
 
-// Rechazos de validación.
 throwsWith(() => handleSupabaseSessionCall('supabase_session_put', { blob: [] }), 'objeto', 'blob array rechazado');
 throwsWith(() => handleSupabaseSessionCall('supabase_session_put', { blob: null }), 'objeto', 'blob null rechazado');
 throwsWith(() => handleSupabaseSessionCall('supabase_session_put', { blob: { key: 41 } }), 'texto', 'valor no texto rechazado');
@@ -81,7 +76,6 @@ throwsWith(
   'blob sobredimensionado rechazado',
 );
 
-// clear elimina el fichero cifrado completo.
 expectSuccess(handleSupabaseSessionCall('supabase_session_clear', {}), 'clear');
 expectResult(handleSupabaseSessionCall('supabase_session_get', {}), { blob: null }, 'get tras clear');
 

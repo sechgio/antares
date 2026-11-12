@@ -105,8 +105,6 @@ def test_formatos_generate_large_sanitizes_hostile_filenames(monkeypatch, tmp_pa
             result = formatos_generate({"format_id": "template-d", "desde": 1, "hasta": 10})
             saved = Path(result["saved_path"])
             written.append(saved)
-            # parsers-004 / python-backend-002: jamás sale de formatos/out y
-            # el nombre nunca arrastra recorrido absoluto ni relativo.
             assert saved.resolve().is_relative_to(out_dir.resolve()), saved
             assert ".." not in saved.name and "\\" not in saved.name and "/" not in saved.name
             assert saved.name.lower().endswith(".pdf")

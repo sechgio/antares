@@ -1,10 +1,5 @@
 'use strict';
 
-// secrets-013: `npm install` no debe tragarse en silencio un rebuild nativo
-// roto (receta muda en CI). En CI el fallo aborta la instalación; en local se
-// avisa y se prosigue para no bloquear a quien no tiene toolchain nativo. La
-// instalación de los ganchos git deja de ser un efecto lateral invisible.
-
 const { execSync } = require('child_process');
 
 function isStrict() {

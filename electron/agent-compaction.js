@@ -183,8 +183,6 @@ function unwrapCompactionSummary(text) {
   return match ? match[1].trim() : null;
 }
 
-// Los marcadores que un dato traiga incrustados no pueden fingir cabeceras
-// genuinas dentro del transcript que ve el resumidor (llm-004).
 function unmarked(text) {
   return String(text || '').replaceAll(CONTEXT_MARKER, '(Contexto de Antares)')
     .replaceAll(CHECK_MARKER, '(Comprobación de Antares)');
@@ -216,9 +214,6 @@ function serializeTranscript(messages) {
       if (!text) continue;
       const name = message.toolName || 'herramienta';
       const safe = redactSecrets(unmarked(clip(text, TOOL_RESULT_CLIP)));
-      // Regla idéntica a la barrera dato/directriz del turno: el contenido de
-      // un resultado de control son instrucciones de trabajo; el de un
-      // resultado dato, cita delimitada que el resumen no eleva a directriz.
       if (CONTROL_TOOL_RESULTS.has(name)) {
         parts.push(`[Resultado de ${name} (control, no es dato)]: ${safe}`);
       } else {

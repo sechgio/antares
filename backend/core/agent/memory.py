@@ -102,9 +102,7 @@ def _clean(value: object, label: str, limit: int) -> str:
     return text
 
 
-# Las cabeceras genuinas de contexto las pone el runtime de Electron
-# (electron/agent-shared.js, '[Contexto de Antares]'); un texto guardado no
-# puede fingirlas cuando la memoria se reinyecta (llm-003).
+# Deben coincidir con las cabeceras que escribe electron/agent-shared.js.
 _GENUINE_MARKERS = ("[Contexto de Antares]", "[Comprobación de Antares]")
 
 

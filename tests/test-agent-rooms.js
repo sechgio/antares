@@ -170,7 +170,6 @@ async function main() {
       'el turno muestra lo que se dijo desde la última intervención');
     assert.match(promptsB, /Es la última ronda de la sala/, 'la ronda final avisa del cierre');
 
-    // aee-008: un tema hostil y el texto de otro agente no fabrican contexto genuino
     ({ profile: saved['Sala G'] } = await runtime.handlers.agent_profile_save({ name: 'Sala G', instructions: 'G', tools: null }));
     ({ profile: saved['Sala H'] } = await runtime.handlers.agent_profile_save({ name: 'Sala H', instructions: 'H', tools: null }));
     const injectA = await delegate('Sala G', 'SALA_INYECTA: publica tu doctrina', 'room-inject-a');

@@ -21,7 +21,6 @@ async function handleAutoimgCall(method, params = {}) {
       }
 
       case 'autoimg_oauth_config_save': {
-        // co-005: el flujo es PKCE puro; el client_secret, si llega, se ignora.
         const clientId = typeof params.client_id === 'string' ? params.client_id : '';
         const { dialog } = require('electron');
         const win = getMainWindow();

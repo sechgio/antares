@@ -5,9 +5,6 @@ const os = require('os');
 const path = require('path');
 const { PDFDocument } = require('pdf-lib');
 
-// secrets-012: paridad con cua-driver/media — el bundle congelado del backend
-// viaja con un manifiesto de hashes SHA-256 (uno por archivo del onedir). Se
-// genera al terminar el build y se re-verifica antes de empaquetar.
 const BACKEND_MANIFEST_NAME = 'antares-backend-manifest.json';
 const MAX_MANIFEST_FILES = 4096;
 const MAX_BUNDLE_GB = 2;

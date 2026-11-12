@@ -2,8 +2,6 @@
 
 const { EventEmitter } = require('node:events');
 
-// el navegador del agente resuelve el DNS de cada destino: en los tests
-// toda resolución es pública
 const Module = require('node:module');
 const originalLoad = Module._load;
 Module._load = function patchedLoad(request, parent, isMain) {
@@ -91,7 +89,6 @@ async function main() {
   try {
     browser.dock({ x: 0, y: 0, width: 400, height: 500 });
 
-    // 1) la pestaña del agente usa su partición con todas las barreras instaladas
     await browser.navigate('open', 'https://agente.example', 'agent');
     const agentPartition = instances.get('persist:antares-agent-browser');
     assert(agentPartition, 'la pestaña del agente vive en su partición persistente');
@@ -100,7 +97,6 @@ async function main() {
       && agentPartition.events.includes('will-download'),
       'la partición del agente instala permisos, red y descargas una sola vez');
 
-    // 2) una pestaña con control del usuario cae en su propia partición
     browser.newTab();
     browser.setUserControl(true, 'tab-1');
     await browser.navigate('open', 'https://usuario.example', 'tab-1');
@@ -112,9 +108,6 @@ async function main() {
       'la partición del usuario también recibe sus propias barreras');
     assert(views.length === 2, 'cada pestaña construye su propia vista');
 
-    // 3) si el usuario toma el control de la pestaña del agente (handover con
-    // su consentimiento), la vista no se recrea: sigue en la partición del
-    // agente, que es la sesión que está viendo
     const agentView = views[0];
     browser.setUserControl(true, 'agent');
     assert(!agentView.webContents.isDestroyed() && views.length === 2
@@ -128,7 +121,6 @@ async function main() {
     assert(views.length === 2 && !views.some((view) => view !== agentView && view !== views[1]),
       'alternar el control no crea vistas nuevas');
 
-    // 4) una descarga en la partición del usuario que no pidió la herramienta se cancela
     const userSession = instances.get('persist:antares-agent-user');
     let cancelled = false;
     let savedPath = null;

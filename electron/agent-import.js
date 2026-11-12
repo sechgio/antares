@@ -80,8 +80,6 @@ function _entryFor(msg, session, deniedCalls) {
     const tool_calls = (msg.tool_calls || []).map((call) => {
       const next = { ...call };
       if (deniedCalls && deniedCalls.has(next.id)) {
-        // cua-018: el estado pendiente de la exportación no sobrevive a la
-        // importación; el turno nuevo pide su aprobación de nuevo.
         next.status = 'denied';
         next.result = next.result || null;
       } else if (!TERMINAL_CALL_STATUSES.has(next.status)) {
@@ -104,10 +102,6 @@ async function importLegacySessions(runtime, sourceDir) {
   const source = sourceDir || dir;
   const sessionsJson = _readJson(path.join(source, 'sessions.json'), {});
   const approvals = _readJson(path.join(source, 'approvals.json'), {});
-  // agent-tools-browser-cua-018: una exportación manipulada no resucita
-  // aprobaciones pendientes ni estados "ya ejecutado": al importar, todo lo
-  // que quedaba pendiente pasa a denegado y el turno nuevo vuelve a pedir
-  // su aprobación.
   const deniedCalls = new Set(
     Object.values(approvals)
       .filter((a) => a && a.status === 'pending')

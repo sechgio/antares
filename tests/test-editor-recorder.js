@@ -90,7 +90,6 @@ function run() {
 
   assert(DEFAULT_QUOTA_BYTES === 2 * 1024 * 1024 * 1024, 'cuota por defecto de 2 GB');
 
-  // ipc-bridge-016: la cuota declarada por la UI solo recorta el techo.
   const capped = manager.create('rec-q', 64 * 1024);
   assert(capped.quotaBytes === 64 * 1024, 'la cuota declarada inferior acota la sesión');
   let cappedQuotaError = null;

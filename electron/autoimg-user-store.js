@@ -6,9 +6,6 @@ const OAUTH_CONFIG_FILE = 'autoimg-oauth-config.json';
 const OAUTH_CONFIG_NS = 'oauth';
 
 function loadOAuthConfigFromDisk() {
-  // co-005: el flujo de escritorio autoriza con PKCE y el secreto ya no es
-  // parte de la configuración. Si un almacén legado guarda uno, se reescribe
-  // limpio al cargarlo (minimización: el secreto no vuelve a disco).
   migratePlaintextJson(OAUTH_CONFIG_FILE, OAUTH_CONFIG_NS, (raw) => (
     typeof raw.client_secret === 'string' || typeof raw.clientSecret === 'string'
   ));
@@ -25,7 +22,6 @@ function saveOAuthConfig(clientId) {
   const id = String(clientId || '').trim();
   if (!id || id.length < 12) throw new Error('Client ID inválido');
   validateClientId(id);
-  // co-005: únicamente el client_id; nunca se persiste un secreto.
   writeSecureJson(OAUTH_CONFIG_FILE, OAUTH_CONFIG_NS, { client_id: id });
   return { success: true };
 }

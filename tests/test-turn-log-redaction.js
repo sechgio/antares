@@ -7,9 +7,7 @@ const path = require('path');
 const { assert, finish, counters } = require('./helpers/harness');
 const { appendTurn } = require('../electron/turn-log');
 
-// llm-prompt-output-handling-007: el turno-log vive en disco mucho tiempo;
-// sus familias de redacción cubren lo mismo que app-log/compaction. Las
-// muestras se componen por partes para no parecer credenciales literales.
+// Las muestras se componen por partes para no parecer credenciales literales.
 const GH_PAT = ['github_pat_', 'B'.repeat(40)].join('');
 const GOOGLE_KEY = ['AIza', 'C'.repeat(35)].join('');
 const GOOGLE_TOKEN = ['ya29.', 'D'.repeat(24)].join('');

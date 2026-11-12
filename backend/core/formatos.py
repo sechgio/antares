@@ -454,9 +454,6 @@ def generate_pdf(fmt_id: str, desde: int, hasta: int) -> tuple[bytes, str]:
     desde_s = str(desde).zfill(pad)
     hasta_s = str(hasta).zfill(pad)
     fieldd = {"id": entry["id"], "nombre": entry["nombre"], "desde": desde_s, "hasta": hasta_s}
-    # python-backend-001: el patrón vive en disco (catálogo persistido) y
-    # str.format daría acceso a atributos ({x.__class__...}); se escapan
-    # TODAS las llaves y solo se reabren los cuatro campos en allowlist.
     filename = _safe_filename_format(entry["filename_pattern"], fieldd, sufijo=("" if desde == hasta else f"-{hasta_s}"))
     return pdf_bytes, filename
 

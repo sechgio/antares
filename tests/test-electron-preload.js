@@ -26,7 +26,6 @@ function loadPreload({ packaged = false, nodeEnv, allowedMethods, filePath = '',
             sendCalls.push([method, ...args]);
           },
           sendSync(channel) {
-            // sb-011: sin backend cifrado en el stub, no hay sesión que sembrar.
             syncCalls.push(channel);
             return seedBlob;
           },
@@ -88,8 +87,6 @@ async function run() {
   }
 
   {
-    // sb-011: con el backend devolviendo el blob, el preload lo siembra por
-    // sendSync y lo expone para el storage síncrono de supabase-js.
     const blob = { 'sb-antares-auth-token': JSON.stringify({ access_token: 'AT', refresh_token: 'RT' }) };
     const { supabaseSessionSeed, syncCalls } = loadPreload({ packaged: true, seedBlob: blob });
     assert(
@@ -100,9 +97,6 @@ async function run() {
   }
 
   {
-    // ipc-bridge-022: cuando main pasa --app-is-packaged, el flag es la única
-    // fuente; el NODE_ENV ambiente no puede desalinear el gate del preload con
-    // el check de confianza del renderer.
     {
       const { exposedApi, invokeCalls } = loadPreload({ packaged: false, nodeEnv: 'production' });
       invokeCalls.length = 0;

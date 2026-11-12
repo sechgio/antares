@@ -39,7 +39,6 @@ function main() {
   assert(rateLimited.includes('Límite de consultas'), 'sanitizeErrorMessage debe traducir error 429');
   assert(!rateLimited.includes('472350177078'), 'sanitizeErrorMessage no debe exponer IDs de proyecto Google');
 
-  // cua-012: claves credenciales por regex y firmas de tokens de terceros.
   const throwsSecret = (fn, label) => {
     let threw = null;
     try { fn(); } catch (error) { threw = error; }

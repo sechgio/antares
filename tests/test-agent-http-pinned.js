@@ -2,8 +2,6 @@
 
 const Module = require('node:module');
 
-// dns y https de prueba: el módulo resuelve node:https por llamada, así que
-// el espía entra por Module._load igual que el stub de DNS.
 const lookups = [];
 let lookupResult = '93.184.216.34';
 const httpsCalls = [];

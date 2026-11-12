@@ -90,9 +90,6 @@ function publicOAuthConfig(provider) {
 }
 
 function loadOAuthConfig(provider) {
-  // co-007: los flujos PKCE (oauth_pkce) no usan client_secret; si un
-  // almacén legado guarda uno, se reescribe limpio al cargarlo para que
-  // el secreto no sobreviva en disco (minimización de datos).
   const spec = getProvider(provider);
   const isPkce = spec && spec.auth && spec.auth.type === 'oauth_pkce';
   let cfg = readSecureJson(_oauthConfigFile(provider), _oauthConfigNs(provider));
@@ -141,7 +138,6 @@ function saveOAuthConfig(provider, clientId, clientSecret) {
     _clearTokens(provider);
     _mirrorDelete(provider);
   }
-  // co-007: un flujo PKCE nunca persiste un secreto, aunque el llamador lo mande.
   writeSecureJson(_oauthConfigFile(provider), _oauthConfigNs(provider), {
     client_id: id,
     ...(!isPkce && secret ? { client_secret: secret } : {}),

@@ -50,18 +50,12 @@ function _decodeUrlEntities(value) {
 
 const URL_ATTR_RE = /(href|src|xlink:href|srcset|poster|action|formaction|background|cite|ping|longdesc)\s*=\s*(['"]?)\s*([^"'>]+)\2/gi;
 
-// Delimita solo espacios de la especificación: JS \s deja fuera los controles C0
-// (y DEL), que los parsers de URL eliminan antes de extraer el esquema
-// («\u0001javascript:» es javascript: para el navegador).
+// Solo espacios de la especificación: \s de JS deja fuera C0/DEL que el parser de URL quita («\u0001javascript:»).
 const _URL_NOISE_RE = /[\s\x00-\x1f\x7f]+/g;
 
 // (Evasión por nombre de atributo) Los parsers decodifican character references
-// también en el NOMBRE del atributo: «sr&#99;="file://…"» es src= para el
-// navegador e invisible para las regex que buscan el atributo literal. Un
-// atributo legítimo nunca trae «&#» en su nombre; si al decodificarlo se
-// convierte en manejador on* o en atributo de URL, se elimina el atributo
-// entero. Puede alterar texto mostrado hospedado en raw-text (textarea…),
-// que ya no es markup confiable: gana la seguridad del atributo plantado.
+// Los parsers decodifican character references también en el NOMBRE del atributo (sr&#99; = src);
+// un nombre legítimo nunca trae «&#», así que cualquier atributo que tras decodificar sea on*/URL se elimina.
 const DANGEROUS_DECODED_ATTR_NAMES = /^(?:on[a-z]+|href|src|xlink:href|srcset|poster|action|formaction|background|cite|ping|longdesc)$/i;
 const _ATTR_NAME_TOKEN_RE = /([\s/])([^\s"'>=]+)(\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*))?/g;
 const _TAG_OPEN_RE = /<[a-zA-Z](?:"[^"]*"|'[^']*'|[^"'>])*>/g;
@@ -147,9 +141,7 @@ function stripOrKeepLink(fullTag) {
 }
 
 function injectContentSecurityPolicy(stripped, cspMeta) {
-  // La primera política manda (intersección): se antepone SIEMPRE una copia en el
-  // índice 0 para que un raw-text hospedado antes del head real (textarea,
-  // noscript, xmp…) no pueda desplazar la CSP efectiva con un head falso.
+  // La primera política manda: copia en el índice 0 para que un head falso en raw-text no desplace la CSP efectiva.
   if (/(^|[\s>])<head\b([^>]*)>/i.test(stripped)) {
     return cspMeta + stripped.replace(/(^|[\s>])<head\b([^>]*)>/i, `$1<head$2>${cspMeta}`);
   }

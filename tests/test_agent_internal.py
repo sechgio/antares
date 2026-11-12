@@ -903,13 +903,10 @@ def test_cua_grant_se_agota_y_recordar_lo_renueva(store):
     grant = store.grants_for("s1")["app:notepad.exe"]
     assert grant["max_uses"] == agent.COMPUTER_APP_GRANT_MAX_USES
     assert grant["uses"] == 0
-    # c-cua-cap2 gasta el primer uso vía el grant; el bucle agota el resto.
     assert _cua_ensure("c-cua-cap2", "cua_type_text")["status"] == "approved"
     outcomes = [store.consume_computer_app_grant("s1", "app:notepad.exe") for _ in range(grant["max_uses"])]
     assert outcomes.count(False) == 1 and outcomes[-1] is False
-    # Agotado el cupo, la siguiente llamada vuelve a quedar pendiente (pregunta).
     assert _cua_ensure("c-cua-cap3", "cua_type_text")["status"] == "pending"
-    # «Recordar» de nuevo crea un contador fresco y vuelve a auto-aprobar.
     refreshed = _cua_ensure("c-cua-cap4", "cua_type_text")
     agent_internal.HANDLERS["agent_internal_approval_decide"](
         {"approval_id": refreshed["id"], "approve": True, "grant_app": True})

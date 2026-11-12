@@ -171,11 +171,6 @@ def _validate_base_url(url: str) -> str:
     if not valid:
         raise ValueError("base_url debe ser una URL http(s) válida, sin credenciales, parámetros ni fragmentos")
     host = (parsed.hostname or "").lower().rstrip(".")
-    # python-backend-016: nunca el servicio de metadatos del entorno de nube ni
-    # rangos de enlace local o reservados (https incluido); tu red local puede
-    # hablar http (LM Studio/Ollama en la LAN), pero un host público exige TLS.
-    # Residual documentado: DNS rebinding se verifica en la hora de la conexión,
-    # no aquí (la resolución vive fuera de este proceso para el chat).
     if host in _DENIED_METADATA_HOSTS:
         raise ValueError("base_url no puede apuntar al servicio de metadatos del entorno de nube")
     ip = _ip_literal(host)

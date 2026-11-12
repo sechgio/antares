@@ -1,6 +1,5 @@
 'use strict';
 
-// M2 / cloud-oauth-connectors-004+009: nada Hostil pasa a USER_ENTERED como fórmula.
 const assert = require('assert');
 const crypto = require('crypto');
 const fs = require('fs');

@@ -94,11 +94,6 @@ def _now_ms() -> float:
     return time.time() * 1000
 
 
-# ipc-bridge-023: el grant "computer_app" de "Recordar esta decisión"
-# auto-aprueba lanzamientos de una app sin preguntar de nuevo. Sin techo de
-# usos, una sola decisión del usuario habilita ese canal para siempre en la
-# conversación viva. Tras agotarse, la siguiente llamada vuelve a pedir
-# permiso y un "Recordar" nuevo crea un contador fresco.
 COMPUTER_APP_GRANT_MAX_USES = 25
 
 
@@ -733,10 +728,6 @@ class AgentStore:
                 record["result"] = result
             record["summary"] = summarize_result(result)
             record["finished_at"] = _now_ms()
-            # ipc-bridge-023: el consumo one-shot (consumed_by) ya impide
-            # reutilizar la aprobación; cerrarla a "done" deja el ciclo
-            # terminal y visible en el historial, sin aprobaciones
-            # consumidas que parezcan aprobadas.
             approval_id = record.get("approval_id")
             approval = self._approvals.get(approval_id) if isinstance(approval_id, str) else None
             if (isinstance(approval, dict) and approval.get("status") == "approved"

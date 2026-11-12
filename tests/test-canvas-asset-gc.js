@@ -221,8 +221,6 @@ async function main() {
       assert.ok(pendingIds.has(id), 'cada marca concurrente quedó en pending-assets.json');
     }
 
-    // storage-006: las marcas corren en la misma cadena que el GC; marcas
-    // concurrentes no se pierden entre sí.
     const serializedMarkIds = [];
     for (let i = 0; i < 6; i++) {
       const a = await putCanvasAsset(Buffer.from(`concurrent-mark-${i}-xxxxxxxxxxxx`));

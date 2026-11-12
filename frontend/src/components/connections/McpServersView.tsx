@@ -236,8 +236,6 @@ export default function McpServersView() {
         args: args.trim().startsWith('[') ? JSON.parse(args) : args.trim() ? args.trim().split(/\s+/) : [] });
       const oauth = oauthConfig ?? config.oauth;
       if (config.transport !== 'http') {
-        // Un servidor stdio ejecuta un comando nativo con permisos del usuario:
-        // el registro exige reconocerlo expresamente (py-008).
         const ok = await confirm({
           title: 'Ejecución nativa en tu equipo',
           description: 'Un servidor MCP stdio ejecuta el comando que declare como proceso nativo con tus permisos de usuario, '

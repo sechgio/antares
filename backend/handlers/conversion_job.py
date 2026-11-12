@@ -19,6 +19,7 @@ from backend.core.scheduler import get_scheduler
 from backend.core.state import ProcessState, log_message
 from backend.ipc_protocol import send_notification
 from backend.utils.i18n import set_locale, t
+from backend.utils.validators import redact_internal_error
 
 try:
     import psutil
@@ -303,10 +304,6 @@ def _run_conversion_job(job: Job) -> None:
     except Exception as exc:
         if not notified:
             files = params.get("files", []) or []
-            # python-backend-013: mismo escape que main._user_error_message —
-            # el texto de error sale hacia el renderer sin rutas absolutas.
-            from backend.utils.validators import redact_internal_error
-
             error_msg = f"{type(exc).__name__}: {redact_internal_error(exc)}"
             logger.exception("Conversion job %s failed: %s", job_id, error_msg)
             log_message(error_msg, "error", state=state)

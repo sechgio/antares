@@ -56,8 +56,7 @@ function createWindow(isDev) {
     if (details.url.startsWith('http://127.0.0.1:') && require('./agent-preview').isPage(details.url)) {
       return callback({ responseHeaders: details.responseHeaders });
     }
-    // frame-src queda acotado al puerto real del preview (wshell-002); el
-    // comodín solo vale mientras el servidor aún no escuchó.
+    // frame-src queda acotado al puerto real del preview.
     const previewOrigin = require('./agent-preview').originUrl();
     const previewFrameSrc = previewOrigin || 'http://127.0.0.1:*';
     callback({
@@ -75,9 +74,7 @@ function createWindow(isDev) {
   // Deny-by-default en la sesión principal: sin handler, Electron aprueba
   // todo (micrófono incluido) ante cualquier renderer comprometido. Solo se
   // concede lo que la UI usa: micrófono y captura de pantalla del editor, y
-  // portapapeles del lienzo. El permiso va atado al webContents que pide
-  // (ipc-bridge-014): solo la ventana principal y solo con su URL de
-  // confianza — un frame de localhost que logre colarse no hereda nada.
+  // portapapeles del lienzo. El permiso va atado al webContents que pide.
   const allowedPermissions = new Set([
     'media',
     'display-capture',
@@ -197,8 +194,6 @@ function createWindow(isDev) {
     if (parsed.protocol === 'https:') {
       require('electron').shell.openExternal(url).catch(() => {});
     } else {
-      // wshell-011: http en claro es un primitivo de phishing/deanonimización;
-      // solo https sale al navegador del sistema.
       appendLogEvent('WARN', 'security.rejected', {
         component: 'window',
         outcome: 'rejected',
@@ -220,9 +215,6 @@ function createWindow(isDev) {
     if (!isAllowedMainFrameUrl(url)) event.preventDefault();
   });
 
-  // wshell-010: la navegación inicial puede quedar bien y un redirect del
-  // servidor llevar después el main frame fuera de origen; se valida también
-  // el URL final de cada redirect (defensa en profundidad).
   mainWindow.webContents.on('will-redirect', (event, url) => {
     if (isAllowedMainFrameUrl(url)) return;
     event.preventDefault();

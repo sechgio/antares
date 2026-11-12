@@ -82,10 +82,6 @@ def input_schema_for(method: str) -> dict[str, object]:
 
 @functools.cache
 def _schema_validator_for(method: str) -> Any:
-    # ipc-bridge-006: el catálogo declara inputSchema por método pero nada lo
-    # imponía en el ingress; ahora cada schema declarado se compila una vez y
-    # su validador se aplica en el dispatcher de main.py. Los métodos sin
-    # inputSchema (o con un schema inválido) se despachan como hasta hoy.
     entry = _entry(method)
     schema = entry.get("inputSchema") if entry else None
     if not isinstance(schema, dict) or not schema:

@@ -485,7 +485,6 @@ async function main() {
     assert.ok(fanChildren.every((item) => item.delegation.status === 'delivered' && item.delegation.batch
       && item.delegation.result_request === fanChildren[0].delegation.result_request), 'el lote comparte una sola entrega');
 
-    // aee-005: sin presupuesto propio, el gasto de los encargos respeta un techo global diario
     const { session: defaultSession } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const globalState = runtime._internal.state();
     const globalDay = require('../electron/agent-execution').localDay();

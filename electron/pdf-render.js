@@ -44,10 +44,6 @@ function _localImageEntries(rawPaths, webContentsId = null) {
   });
 }
 
-// El canal file: del PDF se elimina: cada imagen local autorizada se incrusta como
-// data: URL en el HTML renderizado (la CSP deja fuera file: y el filtro de
-// webRequest solo autoriza el documento temporal), de modo que una evasión del
-// sanitizador no puede cargar archivos locales en la ventana de render.
 const IMAGE_MIME_BY_EXT = new Map([
   ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.png', 'image/png'], ['.webp', 'image/webp'],
   ['.bmp', 'image/bmp'], ['.gif', 'image/gif'], ['.tif', 'image/tiff'], ['.tiff', 'image/tiff'],
@@ -261,10 +257,7 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
           callback({ cancel: true });
         }
       };
-      // webRequest keeps a single listener per event: a second registration
-      // would replace this one. <all_urls> covers every scheme including
-      // file:, which *://*/* never matched, so illicit local loads that
-      // evade the sanitizer are cancelled here as well.
+      // Un listener por evento: <all_urls> cubre también file:, que *://*/* nunca igualó.
       pdfWindow.webContents.session.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, filter);
     }
 

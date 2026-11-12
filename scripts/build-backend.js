@@ -122,8 +122,6 @@ async function main() {
 
     await verifyFrozenBackendTemplates(targetExe);
 
-    // secrets-012: huella del bundle congelado y auto-verificación inmediata;
-    // release.yml vuelve a verificarla antes de electron-builder.
     const { writeBackendManifest, assertBackendManifest } = require('./verify-frozen-backend');
     writeBackendManifest(distBackendDir);
     const manifested = assertBackendManifest(distBackendDir);

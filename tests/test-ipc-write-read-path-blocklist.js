@@ -137,9 +137,6 @@ async function run() {
     clearAllowedReadPaths();
   }
 
-  // ipc-bridge-020: sobrescribir un fichero existente bajo una carpeta
-  // registrada solo para lectura pide confirmación; cancelar bloquea; crear
-  // un fichero nuevo pide nada.
   try {
     _clearAllowedWriteRoots();
     clearAllowedReadPaths();

@@ -71,10 +71,6 @@ _crypt32_checked = False
 
 
 def _crypt32_dll() -> ctypes.WinDLL | None:
-    # authn-006: el import antiguo (win32ctypes...win32crypt) apuntaba a un
-    # módulo que no existe en pywin32-ctypes, de modo que DPAPI nunca estaba
-    # disponible y TODOS los secretos caían al sello HMAC de clave en claro.
-    # crypt32.dll se llama directamente vía ctypes: la API vive en Windows.
     global _crypt32_cache, _crypt32_checked
     if sys.platform != "win32":
         return None
@@ -158,11 +154,6 @@ def _hmac_open(namespace: str, encoded: str) -> JsonObject:
 
 def seal(namespace: str, path: Path, payload: JsonObject) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    # authn-006: sin DPAPI la escritura caía a un sello HMAC con la clave en
-    # claro junto a los sobres (o a una clave pública heredada recalcable):
-    # equivalente a texto plano en disco. Fallar en voz alta, igual que el
-    # almacenamiento seguro del lado Electron; los sobres legados siguen
-    # leyéndose con _hmac_open para migrarlos a DPAPI en el próximo guardado.
     if not _dpapi_available():
         raise ValueError(
             "El cifrado DPAPI no está disponible: Antares no guardará el secreto sin cifrado confidencial. "

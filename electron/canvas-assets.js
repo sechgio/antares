@@ -68,19 +68,11 @@ async function writePendingAssets(entries) {
     return;
   }
   await fsp.mkdir(path.dirname(p), { recursive: true });
-  // storage-path-handling-006: nombre impredecible + flag 'wx' para que un
-  // enlace pre-creado en esa ruta no pueda desviar la escritura.
   const tmp = `${p}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
   await fsp.writeFile(tmp, JSON.stringify(entries), { encoding: 'utf8', flag: 'wx' });
   await fsp.rename(tmp, p);
 }
 
-// Los marcadores pendientes se leen-modifican-escriben desde el alta de
-// activos y desde el GC: sin la misma cadena de escritura, una marca puede
-// perderse y el GC borraría un activo todavía vivo dentro de su TTL
-// (storage-path-handling-006). El GC ya corre dentro de withAssetWriteLock
-// (export al final del módulo), así que marcar hereda la misma cola. La
-// variante interna existe porque putCanvasAsset marca con el lock tomado.
 async function _markAssetPendingUnlocked(assetId) {
   try {
     const entries = (await readPendingAssets()).filter((e) => e.id !== assetId);

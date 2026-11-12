@@ -93,8 +93,6 @@ const MAX_PENDING_PER_METHOD = _positiveIntegerEnv(
 let _ipcBackpressureWaits = 0;
 const ANTARES_IPC_ERROR_PREFIX = 'ANTARES_IPC_ERROR:';
 
-// ipc-bridge-024: las rutas locales no cruzan al dominio de confianza del
-// renderer; el contrato de tokens espera que no se filtren ni por mensajes.
 const _WIN_ABS_PATH_RE = /[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]*/g;
 const _POSIX_ABS_PATH_RE = /(?<![\w])\/(?:[\w.\-]+\/)+[\w.\-]*/g;
 
@@ -719,9 +717,6 @@ function _isTransientBackendError(err) {
     || msg.includes('stdin write failed');
 }
 
-// ipc-bridge-003: db_clear borra TODA la base local en una sola invoke y era
-// alcanzable por el renderer (o el agente, si su herramienta estaba habilitada)
-// sin confirmación. La decisión vive en el main: diálogo + tope de ritmo.
 const DB_CLEAR_MIN_INTERVAL_MS = 5000;
 let _lastDbClearAttemptAt = 0;
 
@@ -829,8 +824,6 @@ const _NATIVE_CALLS = {
     const { handleEditorCall } = require('./editor-handlers');
     return handleEditorCall(method, params, dialog, win);
   },
-  // sb-011: la sesión de Supabase del renderer no vive en localStorage;
-  // main la guarda cifrada con safeStorage y solo el blob completo cruza.
   session: (method, params) => {
     const { handleSupabaseSessionCall } = require('./supabase-session-handlers');
     return handleSupabaseSessionCall(method, params);
@@ -964,9 +957,7 @@ function registerIpcHandlers() {
     }
   });
 
-  // sb-011: el preload llama aquí por sendSync ANTES de que la página cargue,
-  // para sembrar la sesión cifrada en memoria del renderer (nunca en
-  // localStorage). Sin confianza de remitente no se sirve nada.
+  // sendSync ANTES de que la página cargue; sin sender confiable no se sirve nada.
   ipcMain.on('supabase-session-get', (event) => {
     try {
       _requireTrustedSender(event, 'supabase-session-get');

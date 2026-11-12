@@ -260,8 +260,6 @@ const FORBIDDEN_FALLBACK_EXTENSIONS = new Set([
   '.url', '.vbe', '.vbs', '.wsf', '.wsh', '.xlsm', '.docm',
 ]);
 
-// ipc-bridge-020: confirmaciones de sobrescritura bajo raíces de solo lectura,
-// con memoria por ruta para no castigar los re-export seguidos en la sesión.
 const READ_ONLY_OVERWRITE_TTL_MS = 10 * 60 * 1000;
 const READ_ONLY_OVERWRITE_MAX_CONFIRMATIONS = 64;
 const _confirmedReadOnlyOverwrites = new Map();
@@ -321,17 +319,9 @@ function _assertAllowedRawOutputPath(outRaw) {
       ? (fs.lstatSync(resolved).isDirectory() ? resolved : path.dirname(resolved))
       : path.dirname(resolved);
     const { isUnderAllowedWriteRoot } = require('./dialog-handlers');
-    // La ruta cruda necesita confirmación: o una raíz registrada por diálogo o una
-    // ruta que el usuario escogió expresamente para lectura. Documentos/Descargas
-    // por defecto ya no habilita escritura (canal silencioso sin confirmación).
     if (!isUnderAllowedWriteRoot(dir) && !isAllowedReadPath(resolved) && !isAllowedReadPath(dir)) {
       throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
     }
-    // El veto de ejecutables aplica SIEMPRE en el canal silencioso: registrar
-    // una raíz por diálogo habilita el artefacto de ese diálogo, no binarios
-    // que el renderer suelte después sin que el usuario lo vea (ipc-bridge-025
-    // / storage-path-handling-009). El diálogo nativo (token antares-write_)
-    // no pasa por aquí y conserva su confirmación explícita.
     if (FORBIDDEN_FALLBACK_EXTENSIONS.has(_outputExtension(resolved))) {
       throw new Error('tipo de archivo no permitido en la ruta de salida');
     }
@@ -339,9 +329,6 @@ function _assertAllowedRawOutputPath(outRaw) {
     if (hasSymlinkAncestor(resolved)) {
       throw new Error('symlink no permitido en ruta de salida');
     }
-    // ipc-bridge-020: la capacidad de lectura no daña la integridad de los
-    // ficheros ya existentes: escribir sobre uno en una carpeta registrada
-    // solo para lectura pide confirmación expresa del usuario.
     if (fs.existsSync(resolved) && !isUnderAllowedWriteRoot(dir)) {
       _confirmReadOnlyOverwrite(resolved);
     }

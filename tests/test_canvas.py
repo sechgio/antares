@@ -1886,8 +1886,6 @@ def test_canvas_save_history_reports_unencodable_payloads_as_validation_errors(
 
 
 def test_spill_paths_sanitize_ids_with_path_characters(tmp_path: Path, monkeypatch) -> None:
-    # storage-path-handling-007: un id con ':' escribiría un ADS que los globs
-    # de recuperación y de limpieza nunca ven.
     store = CanvasStore(tmp_path)
     monkeypatch.setattr("backend.core.canvas.get_canvas_store", lambda: store)
 

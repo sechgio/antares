@@ -238,8 +238,6 @@ async function nativeToolContext(name, sessionId, params = {}) {
   const hash = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
   const context = { tool_version: hash({ policy: 1, spec: selected }) };
   if (selected.gated && RENDERER_TOOLS[name] && params && Object.keys(params).length) {
-    // Cuando la aprobación se pide con los argumentos propuestos, el contexto
-    // los fija: cambiar un campo o un id después de aprobar invalida el efecto.
     context.params_digest = hash(params);
   }
   if (WEB[name] && selected.gated) {

@@ -154,9 +154,6 @@ def history_export(params: dict[str, Any]) -> dict[str, Any]:
             "files_count": files_count,
             "options_json": run.get("options_json"),
         }
-        # python-backend-010: el patron persistido puede abrir fórmulas
-        # (=HYPERLINK, =cmd|...) al abrir el CSV en Excel; mismo prefijo que
-        # sheets-formula-guard.
         writer.writerow({k: _csv_formula_safe(v) if isinstance(v, str) else v for k, v in row.items()})
     encoded = base64.b64encode(buffer.getvalue().encode("utf-8")).decode("ascii")
     return {"csv": encoded, "count": len(runs)}

@@ -664,16 +664,7 @@ function leadingSystem(messages) {
   return { messages: [messages[index], ...messages.slice(0, index), ...messages.slice(index + 1)] };
 }
 
-// Las salidas de herramientas externas llegan al modelo dentro de un bloque
-// delimitado; una etiqueta falsa en el contenido no puede cerrarlo ni abrir
-// otro. Los resultados de control (memoria, pregunta al usuario, catálogo de skills,
-// herramientas y plan) no se envuelven porque su contenido son instrucciones de trabajo.
-// El cuerpo de una skill (skills_read) es contenido de archivos del equipo: viaja como
-// dato, igual que fs_read, y el envoltorio lo marca como dato externo.
 const CONTROL_TOOL_RESULTS = new Set(CONTROL_TOOL_RESULT_NAMES);
-// Las imágenes del resultado no salen al proveedor cuando vienen de la vía
-// CUA: sus capturas incluyen otras ventanas del usuario; el modelo sigue con
-// el árbol de accesibilidad y la captura queda en el borrador del equipo (llm-005).
 const NO_ATTACH_IMAGE = /^cua_/;
 
 function escapeToolOutputTags(text) {
@@ -971,12 +962,8 @@ function planCheck(answer, api) {
   return { continue: `${shared.CHECK_MARKER} ${notice}` };
 }
 
-// Dominios en «Permitir siempre» solo eximen de aprobación las herramientas web que no
-// alteran el estado de la página. Las transaccionales (clic, relleno, teclas, subida,
-// descarga) piden al humano aunque el dominio esté permitido. El test de equivalencia del
-// runtime compara este conjunto con las entradas no transaccionales del catálogo
-// (agent-browser TOOLS con flag false): añadir una herramienta pasiva nueva exige
-// incorporarla aquí a propósito.
+// «Permitir siempre» solo exime las herramientas web no transaccionales: debe
+// coincidir con el catálogo (TOOLS con flag false); una pasiva nueva exige añadirla aquí.
 const WEB_AUTO_APPROVE = new Set(['web_open', 'web_back', 'web_forward', 'web_reload', 'web_read', 'web_find',
   'web_scroll', 'web_hover', 'web_screenshot', 'web_text', 'web_console', 'web_network', 'web_wait', 'web_handover']);
 
@@ -1228,9 +1215,6 @@ async function executeTool(spec, args, api, context) {
         + 'la próxima lectura lo reconstruirá desde el historial.';
     }
   }
-  // Las capturas de la vía CUA no salen al proveedor; el resto de imágenes de
-  // resultado (p. ej. la vista del navegador del agente o los borradores
-  // propios) sí, pues son contenido del ámbito del agente (llm-005).
   const image = isError || NO_ATTACH_IMAGE.test(spec.name) || !await acceptsImages(api, context)
     ? null : await resultImage(parsed);
   const turn = turnState(api.conversationId);
@@ -1586,9 +1570,6 @@ function localDay(now = Date.now()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-// Techo por defecto del gasto diario agregado de los turnos que el agente
-// arranca solo (encargos programados y colas) sin un presupuesto propio del
-// perfil; los perfiles con daily_tokens usan el suyo (aee-005).
 const DEFAULT_UNATTENDED_DAILY_TOKENS = 2_000_000;
 
 async function budgetFor(profile, limit) {

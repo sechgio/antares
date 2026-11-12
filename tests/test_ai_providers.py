@@ -11,8 +11,6 @@ def test_provider_specs_loaded():
 
 
 def test_validate_base_url_blocks_metadata_and_requires_tls_public():
-    # python-backend-016: metadatos de nube y enlace local jamás; http solo
-    # propio/red local; https obligatorio fuera de la red del usuario.
     for url in (
         "http://169.254.169.254/latest/meta-data",
         "https://metadata.google.internal/computeMetadata/v1",

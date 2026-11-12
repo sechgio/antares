@@ -242,12 +242,7 @@ function run() {
   assert(release.includes('Antares-Portable-*.exe'), 'Release allowlists the portable executable');
   assert(release.includes('latest.yml'), 'Release includes updater metadata');
   assert(release.includes('SHA256SUMS.txt'), 'Release includes generated checksums');
-  // secrets-007: el empaquetado fija el reloj al commit para acotar la
-  // deriva de timestamps de los artefactos.
   assert(release.includes('SOURCE_DATE_EPOCH'), 'Release pins SOURCE_DATE_EPOCH from the last commit');
-  // secrets-010: firma Authenticode (electron-builder via CSC_LINK) activada
-  // por secretos y firma GPG de los checksums, ambas opcionales para no
-  // romper releases sin secretos.
   assert(release.includes('WINDOWS_CODESIGN_PFX'), 'Release wires Authenticode signing from WINDOWS_CODESIGN_PFX');
   assert(release.includes('CSC_LINK'), 'Release feeds electron-builder through CSC_LINK');
   assert(release.includes('Sign release checksums (GPG, optional)'), 'Release includes the optional GPG checksum signature step');

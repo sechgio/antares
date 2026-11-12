@@ -55,8 +55,6 @@ async function main() {
     },
   });
   const native = nativeModule.exports;
-  // La producción pide el contexto con los argumentos propuestos
-  // (agent-execution); cada intención se aprueba con los suyos.
   const argsSaving = { id: 'doc', expected_updated_at: 'revision-vigente', layers: [] };
   const approvedContext = await native.nativeToolContext('canvas_apply_layers', 'abc123', argsSaving);
   wc.isCrashed = () => true;
@@ -78,8 +76,6 @@ async function main() {
   api.acceptRendererResult({ id: sent.at(-1)[2].id, error: 'Canvas tiene cambios sin guardar' });
   await guardedRejected;
   assert.equal(calls.length, 2, 'un rechazo del editor no se reintenta en el backend');
-  // La aprobación pedida con argumentos los fija en el contexto: alterarlos
-  // después invalida el efecto; con los mismos argumentos se ejecuta (cua-009).
   const withArgs = await native.nativeToolContext('canvas_apply_layers', 'abc123',
     { id: 'doc', expected_updated_at: 'revision-vigente' });
   assert.equal(withArgs.params_digest, (await native.nativeToolContext('canvas_apply_layers', 'abc123',

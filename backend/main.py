@@ -70,6 +70,7 @@ from backend.core.scheduler import (
 from backend.handlers import HANDLERS, WARM_CRITICAL_DONE
 from backend.ipc_protocol import _Skip, read_message, send_notification, send_response
 from backend.utils.i18n import t
+from backend.utils.validators import redact_internal_error
 
 _shutdown_requested = False
 
@@ -96,12 +97,6 @@ logger = logging.getLogger(__name__)
 _WARM_WAIT_METHODS = frozenset(HEAVY_METHODS | {"preview"})
 _WARM_WAIT_TIMEOUT = 15.0
 
-# ipc-bridge-015: la cola heavy es global. Sin cuota de admisión por tipo,
-# un método desbocado (p. ej. un export en bucle o un llamador que repite
-# un render) puede ocupar workers y cola enteros y dejar sin servicio el
-# resto de operaciones durante minutos. El tope por método limita cuántas
-# de ESA operación pueden estar en vuelo o encoladas; el excedente se
-# rechaza con el sobre retryable ya existente (CAPACITY_EXCEEDED).
 _METHOD_HEAVY_MIN_LIMIT = 2
 _method_heavy_lock = threading.Lock()
 _method_heavy_inflight: dict[str, int] = {}
@@ -165,15 +160,11 @@ _validate_encoding()
 
 
 def _user_error_message(exc: Exception) -> AntaresBaseException:
-    from backend.utils.validators import redact_internal_error
-
     if isinstance(exc, AntaresBaseException):
         return exc
     if isinstance(exc, FileNotFoundError):
         return NotFoundError("Archivo no encontrado")
     if isinstance(exc, ValueError):
-        # python-backend-014: el texto bruto de valores internos arrastra
-        # rutas absolutas y fragmentos SQL; se redacta antes de exponerlo.
         return ValidationError(redact_internal_error(str(exc)))
     if isinstance(exc, ImportError):
         return AntaresBaseException(redact_internal_error(str(exc)))
@@ -506,10 +497,6 @@ def main() -> None:
                     _consecutive_errors = max(0, _consecutive_errors - 1)
                     continue
 
-                # ipc-bridge-006: los params entran por el único ingress del
-                # backend (la tubería con Electron); lo que el catálogo declara
-                # en inputSchema se impone aquí, antes del despacho por lane,
-                # cubriendo también el salto LLM de native:agent.
                 schema_violation = validate_params_schema(msg.method, msg.params)
                 if schema_violation is not None:
                     ipc_phase_telemetry.set_fields(

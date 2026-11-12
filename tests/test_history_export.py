@@ -115,7 +115,6 @@ def test_history_export_csv_drops_missing_gracefully(seeded_db) -> None:
 
 
 def test_history_export_csv_neutraliza_formulas(seeded_db) -> None:
-    # python-backend-010: un patrón persistido no puede abrir fórmulas en Excel
     save_run(
         files=["a.jpg"],
         options={"formato": "JPEG", "calidad": 90},

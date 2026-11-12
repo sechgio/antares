@@ -70,9 +70,7 @@ async function validate(raw) {
   return url.toString();
 }
 
-// Conexión sobre la dirección ya validada: no vuelve a resolver el nombre
-// entre la comprobación y la petición (caja el TOCTOU del rebinding DNS),
-// mientras el SNI (TLS) y la cabecera Host siguen siendo el nombre original.
+// Conexión sobre la dirección ya validada: re-resolver el nombre rompería el pinning DNS (TOCTOU).
 function pinnedRequest({ url, host, addresses }, method, timeoutMs) {
   return new Promise((resolve) => {
     const isHttps = url.protocol === 'https:';

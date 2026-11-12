@@ -717,12 +717,10 @@ def test_heavy_method_concurrency_cap_rejects_same_method(monkeypatch) -> None:
         assert payload["details"]["reason"] == "method_busy"
         assert payload["details"]["retryable"] is True
 
-        # Otros métodos siguen admitiéndose mientras el tope solo golpea al suyo.
         f4 = backend_main._submit_handler(handler, {}, 14, "spreadsheet_parse")
         assert f4 is not None
         assert submitted == ["db_export", "db_export", "spreadsheet_parse"]
 
-        # Al completar una operación en vuelo el cupo se libera.
         holders[0].set_result(None)
         f5 = backend_main._submit_handler(handler, {}, 15, "db_export")
         assert f5 is not None

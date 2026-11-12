@@ -20,12 +20,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
   });
 }
 
-// sb-011: auth.storage síncrono de supabase-js. El preload siembra el blob
-// de sesión (leído descifrado del proceso principal mediante sendSync) en
-// window.supabaseSessionSeed ANTES de que este módulo se evalúe; escrituras
-// van a memoria y persisten cifradas vía supabase_session_put. Así el
-// refresh token no reposa en texto claro en localStorage. En navegador
-// (dev web) no hay semilla ni bridge y se conserva el localStorage clásico.
+// sb-011: el preload siembra window.supabaseSessionSeed por sendSync ANTES de
+// evaluar este módulo; en navegador (dev web) no hay semilla y se conserva el localStorage clásico.
 type SessionBlob = Record<string, string>;
 
 interface ElectronBridge {
@@ -56,8 +52,7 @@ export function createSecureSupabaseStorage(): {
   const blob: SessionBlob = { ...seeded };
   const persist = () => {
     void bridge.invoke('supabase_session_put', { blob: { ...blob } }).catch(() => {
-      // Si main no puede cifrar, la sesión queda en memoria: no se degrada a
-      // texto claro en disco; el usuario vuelve a iniciar sesión al reiniciar.
+      // Sin cifrado en main la sesión queda solo en memoria: nunca texto claro en disco.
     });
   };
   return {

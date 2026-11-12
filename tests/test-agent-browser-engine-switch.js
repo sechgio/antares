@@ -175,7 +175,6 @@ async function main() {
     assert(context.page_url === 'https://nuevo.example' && context.domain === 'nuevo.example',
       'la aprobación de web_open guarda la página para «Permitir siempre»');
 
-    // Adjuntar «Mi sesión de Chrome» exige confirmación en el proceso principal (cua-005).
     const electronStub = require('electron');
     browser.setEngine('edge');
     electronStub.dialog = { showMessageBox: async () => ({ response: 1 }) };

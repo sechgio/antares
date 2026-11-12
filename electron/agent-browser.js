@@ -6,8 +6,6 @@ const path = require('node:path');
 const { fileURLToPath } = require('node:url');
 const preview = require('./agent-preview');
 
-// Las pestañas con control del usuario viven en otra partición: sus cookies y
-// localStorage nunca se mezclan con las del agente (cua-013).
 const PARTITION = 'persist:antares-agent-browser';
 const USER_PARTITION = 'persist:antares-agent-user';
 const MAX_TEXT = 3_500;
@@ -42,11 +40,6 @@ const VIRTUAL_KEYS = { Enter: 13, Tab: 9, Escape: 27, Space: 32, Backspace: 8, D
   Up: 38, Down: 40, Left: 37, Right: 39, Home: 36, End: 35, PageUp: 33, PageDown: 34,
   ';': 186, '=': 187, ',': 188, '-': 189, '.': 190, '/': 191, '`': 192, '[': 219, '\\': 220, ']': 221, "'": 222 };
 
-// (cua-015) Lo que la página deja en la consola, en URLs de peticiones fallidas
-// o en su propia dirección viaja al contexto del modelo: ninguna credencial de
-// la página (token de OAuth en el redirect, clé en la query, fugas en errores)
-// puede llegar al proveedor sin redactar. La clave de la query se conserva; el
-// valor no.
 const URL_SECRET_KEY_RE = /([?&])(token|access_token|refresh_token|code|key|secret|password|passwd|sig|signature|session|sessionid|sid|auth|authorization|credential|api_key|apikey|jwt|nonce)=[^&#]*/gi;
 const { redactText } = require('./app-log');
 
@@ -195,8 +188,6 @@ let consoleLog = [];
 const netLog = new Map();
 let consoleSeq = 0;
 let netSeq = 0;
-// Registro de barreras por partición: permisos, red y descargas se instalan
-// una vez por sesión (agente y usuario van en particiones distintas).
 const barrierSessions = new Set();
 let downloadSlot = null;
 let engineChoice = null;
@@ -562,9 +553,6 @@ function ensureTab(id) {
   const tab = tabEntry(id);
   if (tab.view && alive(tab.view.webContents)) return tab;
   const electron = require('electron');
-  // La pestaña del agente navega en su propia burbuja de cookies; cualquier
-  // otra pestaña es del usuario y vive en su partición separada (cua-013),
-  // con las mismas barreras instaladas por sesión.
   const ses = prepareSession(electron, id === AGENT_TAB ? PARTITION : USER_PARTITION);
   tab.view = new electron.WebContentsView({
     webPreferences: {
@@ -735,8 +723,6 @@ function engines() {
 }
 
 // Cambia dónde navega la pestaña del agente; las pestañas del usuario siguen en el integrado.
-// Adjuntar la sesión real de Chrome migra las cookies del usuario al alcance del agente:
-// siempre requiere una confirmación explícita en el proceso principal (cua-005).
 function confirmSessionAttach() {
   const { dialog } = require('electron');
   if (!dialog || typeof dialog.showMessageBox !== 'function') return Promise.resolve(true);

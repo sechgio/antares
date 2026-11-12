@@ -137,9 +137,6 @@ export function toggleHiddenColumn(
   return next;
 }
 
-// frontend-app-012: mismas reglas que electron/sheets-formula-guard — un
-// valor que arranca con «=», «+», «-» no numérico, «@» o control se guarda
-// con apóstrofe para que Excel/LibreOffice no lo ejecute como fórmula.
 const NUMERIC_CELL_RE = /^[+-]?\d+(?:[.,]\d+)?(?:e[+-]?\d+)?%?$/i;
 const UNSAFE_CSV_FIRST_RE = /^[=+@\-\t\r\n\u000b\u000c]/;
 

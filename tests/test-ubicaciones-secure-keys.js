@@ -63,7 +63,6 @@ function main() {
   const { FILE, NS, getUbicacionesApiKeys, setUbicacionesApiKeys } = require(path.join(ROOT, 'electron', 'ubicaciones-secure-keys'));
 
   const payload = { google: 'test-google-key', mapbox: 'pk.test' };
-  // El cifrador débil ya no se exporta: el roundtrip pasa por la API pública.
   const probeFile = `ubicaciones-roundtrip-${process.pid}.json`;
   secure.writeSecureJson(probeFile, NS, payload);
   const roundtrip = secure.readSecureJson(probeFile, NS);

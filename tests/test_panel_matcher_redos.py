@@ -42,6 +42,5 @@ def test_compile_rejects_pattern_demasiado_largo() -> None:
 def test_match_input_se_acota_antes_del_match() -> None:
     rule = MatchRule(key_column="k", strategy="contains")
     stem = "x" * (_MAX_MATCH_INPUT_LEN + 5000)
-    # con contains no es ReDoS; verifica que el input largo se acota sin error
     assert match_image_to_row(rule, "x", stem + ".png") is True
     assert match_image_to_row(rule, "y", stem + ".png") is False

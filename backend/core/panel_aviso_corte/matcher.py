@@ -91,10 +91,6 @@ def match_regex(normalized_value: str, normalized_stem: str, compiled: re.Patter
     return _normalize(captured) == normalized_value
 
 
-# python-backend-007: una regex con repetición ambigua ((.+)+, (\w+)*, (a|b)*)
-# sufre backtracking catastráfico y congela el worker heavy; se rechaza en
-# compilación y se acota el largo del input antes de intentar el match. Los
-# grupos duros acotados tipo (\d+)? o (\w+{1,4}) quedan permitidos.
 _UNBOUNDED_OUTER_RE = re.compile(r"\(([^()]*)\)\s*(?:[*+]|[^{}]*\{[^}]*,\s*[^}]*\})")
 
 

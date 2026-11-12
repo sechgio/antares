@@ -151,21 +151,13 @@ jobs:
           VITE_JAMENDO_CLIENT_ID: ${{ secrets.VITE_JAMENDO_CLIENT_ID }}
         run: npx concurrently "npm run build:backend" "npm run build:frontend"
 
-      # secrets-012: antes de empaquetar, el bundle congelado se re-verifica
-      # contra su manifiesto de SHA-256 (paridad con cua-driver/media).
       - name: Verify backend hash manifest
         run: node scripts/verify-backend-manifest.js dist/backend
 
-      # secrets-007: el reloj del empaquetado se fija al último commit para
-      # reducir la deriva de timestamps entre artefactos (NSIS sigue siendo
-      # parcialmente no determinista; la fuente es al menos idéntica).
       - name: Resolve reproducible build epoch
         shell: bash
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
 
-      # secrets-010: la firma Authenticode solo se activa cuando el repositorio
-      # define WINDOWS_CODESIGN_PFX/PASSWORD, electron-builder las consume vía
-      # CSC_LINK/CSC_KEY_PASSWORD; sin secretos el build sigue publicable sin firmar.
       - name: Configure code signing (optional)
         shell: bash
         env:
@@ -206,9 +198,6 @@ jobs:
           }
           $checksums | Set-Content -LiteralPath 'dist-electron/SHA256SUMS.txt' -Encoding ascii
 
-      # secrets-010: los checksums se firman con GPG cuando el repositorio
-      # define GPG_PRIVATE_KEY; la firma (.asc) es el sexto asset y el paso
-      # publish la sube solo si existe.
       - name: Sign release checksums (GPG, optional)
         shell: bash
         env:
@@ -293,7 +282,6 @@ jobs:
             dist-electron/latest.yml
             dist-electron/SHA256SUMS.txt
           )
-          # secrets-010: la firma GPG del checksum es un asset opcional.
           expected_count=5
           if [[ -f dist-electron/SHA256SUMS.txt.asc ]]; then
             assets+=(dist-electron/SHA256SUMS.txt.asc)

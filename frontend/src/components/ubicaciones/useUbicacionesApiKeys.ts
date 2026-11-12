@@ -3,9 +3,6 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api';
 import { clearPlaintextApiKeys, LS_API_KEYS, LS_GOOGLE_MAPS_KEY } from './ubicacionesTypes';
 
-// frontend-app-010: la migración de una sola pasada es el único lector de las
-// claves en claro; el backend pasa a ser la fuente y el storage local se
-// purga en finally, con o sin éxito de la subida.
 function readLegacyPlaintextApiKeys(): Record<string, string> {
   try {
     const saved = localStorage.getItem(LS_API_KEYS);

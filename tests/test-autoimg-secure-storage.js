@@ -49,8 +49,7 @@ function withElectronStub() {
 
 function writeLegacyV1Envelope(payload) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  // Replica el cifrador v1 heredado (clave derivada de rutas públicas) para
-  // fabricar un sobre antiguo: el módulo ya no expone esa API débil.
+  // Replica del cifrador v1 heredado: el módulo ya no expone esa API.
   const seed = `antares:${path.join(os.tmpdir(), 'antares-autoimg')}:autoimg:${namespace}`;
   const key = crypto.createHash('sha256').update(seed).digest();
   const iv = crypto.randomBytes(12);

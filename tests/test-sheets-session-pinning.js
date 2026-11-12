@@ -112,9 +112,6 @@ async function main() {
       return { ok: true, status: 200, json: async () => ({}), text: async () => '{}' };
     };
 
-    // Escenario 1: escritura simple lleva el Bearer de la cuenta activa; tras un
-    // cambio de cuenta, una llamada NUEVA se acredita a la cuenta nueva (los
-    // lotes dentro de una operación son los que quedan protegidos, escenarios 2-3).
     await sheets.openSpreadsheet('SHEETID-A-0012');
     await sheets.writeRange('LOGS!A2:E2', [['atribucion-a']]);
     const writes = sentRequests.filter((r) => r.method === 'PUT');
@@ -129,8 +126,6 @@ async function main() {
       'una llamada nueva tras el cambio se acredita a la cuenta activa nueva',
     );
 
-    // Escenario 2: openSpreadsheet dentro del pin no secuestra el Sheet con la
-    // cuenta nueva: falla cerrado y no deja la hoja enlazada a la cuenta nueva.
     changeUser('user-a');
     await sheets.openSpreadsheet('SHEETID-A-0012');
     const beforePinnedOpen = sentRequests.length;
@@ -153,9 +148,6 @@ async function main() {
       'la apertura abortada no deja el Sheet enlazado a la cuenta nueva',
     );
 
-    // Escenario 3: un lote completo de sincronización comparte un pin: la
-    // primera parte se acredita a A y, tras el cambio, la segunda parte no se
-    // ejecuta (sin mezcla de filas de dos cuentas).
     changeUser('user-a');
     await sheets.openSpreadsheet('SHEETID-A-0012');
     const beforeBatch = sentRequests.length;
@@ -175,8 +167,6 @@ async function main() {
       .filter((r) => r.url.includes('values:batchUpdate') && r.method === 'POST');
     assert(batchWrites.length === 1 && batchWrites[0].auth === 'Bearer access-a', 'solo el lote de la cuenta original sale por el wire');
 
-    // Escenario 4: el pin no queda pegado al módulo: fuera del pin, la sesión
-    // activa nueva funciona con normalidad.
     const tokensB = await sheets.getValidTokens();
     assert(tokensB?.access_token === 'access-b', 'fuera del pin la cuenta nueva opera con normalidad');
 

@@ -117,9 +117,6 @@ export const DEFAULT_MANUAL_DATA = {
 
 export type ManualData = typeof DEFAULT_MANUAL_DATA;
 
-// frontend-app-009: un parche manipulado (localStorage alterado) puede traer
-// claves «__proto__» / «constructor» / «prototype» que intercambian el
-// prototipo del acumulador; se descartan antes de fusionar.
 const UNSAFE_MERGE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 export function deepMergeStyles<T extends Record<string, unknown>>(base: T, patch: Record<string, unknown>): T {

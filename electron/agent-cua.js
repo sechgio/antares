@@ -26,10 +26,6 @@ const MISSING_DRIVER = 'El driver de computer use no está instalado. Descarga e
 
 let runtime = null;
 let starting = null;
-// (cua-022) Las ventanas y elementos que descubre una conversación viven en su
-// propio registro con caducidad: nada de una conversación anota aprobaciones ni
-// Carpetas de otra, y los ids de ventana vistos por una no sirven a otra más
-// allá de lo que su propio descubrimiento traiga.
 const SESSION_STORE_TTL_MS = 24 * 60 * 60_000;
 const MAX_WINDOWS_PER_SESSION = 200;
 const MAX_ELEMENTS_PER_SESSION = 5000;
@@ -190,8 +186,6 @@ function targetWindow(params, sessionId) {
 function approvalContext(name, params = {}, sessionId = null) {
   if (name === 'cua_launch_app') {
     const app = String(params.name || path.basename(String(params.path || ''))).trim();
-    // La aprobación fija el ejecutable exacto: la misma app con otra ruta
-    // no puede reutilizar una aprobación por nombre (cua-010).
     return app ? { app, ...(params.path ? { path: String(params.path) } : {}) } : {};
   }
   const win = targetWindow(params, sessionId);

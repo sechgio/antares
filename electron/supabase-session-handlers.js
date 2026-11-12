@@ -1,7 +1,3 @@
-// sb-011: la sesión de Supabase (access + refresh token) del renderer se
-// persistía en texto claro en localStorage del perfil de Chromium. Este
-// módulo guarda el blob cifrado con safeStorage/DPAPI en userData; el
-// renderer solo sostiene el contenido en memoria durante su ejecución.
 const { readSecureJson, writeSecureJson, clearSecureJson } = require('./autoimg-secure-storage');
 
 const SESSION_FILE = 'supabase-session.json';

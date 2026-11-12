@@ -228,8 +228,6 @@ def test_generate_pdf_happy_path_and_filename(catalog_env, monkeypatch) -> None:
 
 
 def test_safe_filename_format_bloquea_atributos() -> None:
-    # python-backend-001: el patrón vive en disco; str.format no debe dar
-    # acceso a atributos ({x.__class__.__mro__...}).
     fields = {"id": "a", "nombre": "Fmt", "desde": "0000001", "hasta": "0000001"}
     assert formatos._safe_filename_format("{id}_{desde}.pdf", fields) == "a_0000001.pdf"
     assert formatos._safe_filename_format("{id}_{desde}.pdf", fields, sufijo="-0000005") == "a_0000001-0000005.pdf"

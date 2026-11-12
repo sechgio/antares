@@ -418,7 +418,6 @@ async function main() {
   }
 
   {
-    // cua-002: un verbo destructivo con prefijo envolvente no puede evadir el diálogo humano.
     const { bridge, state } = makeBridge();
     const shellBridge = async (method, params) => {
       const result = await bridge(method, params);
@@ -442,9 +441,6 @@ async function main() {
   }
 
   {
-    // llm-001: guardar una skill pide decisión humana aunque el modo sea Acceso
-    // completo: el cuerpo cruza conversaciones. El canal «Otros» ni siquiera
-    // acepta una regla allow en bloque.
     const { bridge, state } = makeBridge();
     const skillsBridge = async (method, params) => {
       const result = await bridge(method, params);
@@ -1113,8 +1109,7 @@ async function main() {
     fs.mkdirSync(path.join(policyRoot, 'Antares', 'ai-agent'), { recursive: true });
     const policyFile = path.join(policyRoot, 'Antares', 'ai-agent', 'browser-policy.json');
     fs.writeFileSync(policyFile, JSON.stringify({ always_allowed: ['panel.miejemplo.pe'] }));
-    // El conjunto de auto-aprobación web del executor coincide con el catálogo pasivo
-    // del navegador (TOOLS con flag false); desincronizarlos dejaría fuera o colaría herramientas.
+    // Debe coincidir con el conjunto no transaccional del catálogo del navegador.
     const { WEB_AUTO_APPROVE } = require('../electron/agent-execution');
     const passiveCatalog = Object.entries(realBrowserCatalog.TOOLS).filter(([, definition]) => definition[2] === false).map(([name]) => name);
     assert(JSON.stringify([...WEB_AUTO_APPROVE].sort()) === JSON.stringify(passiveCatalog.sort()),

@@ -16,7 +16,6 @@ def mcp_root(tmp_path, monkeypatch):
 def test_stdio_call_requires_fresh_approval_context(mcp_root):
     server = mcp_servers.add_server("SinContexto", "stdio", command="x")
     with pytest.raises(ValueError, match="contexto de aprobación"):
-        # El freno dispara antes de arrancar cualquier proceso: «x» nunca se ejecuta.
         mcp_servers.call_tool(server["id"], "echo", {})
 
 

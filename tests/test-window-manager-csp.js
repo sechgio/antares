@@ -36,8 +36,6 @@ function run() {
   }
   const prodScriptSources = prodCsp.match(/(?:^|;)\s*script-src\s+([^;]+)/)?.[1] ?? '';
   assert(prodScriptSources.trim() === "'self'", 'production scripts are restricted to self');
-  // wshell-002: frame-src queda acotado al puerto real del preview; el
-  // comodín solo aparece como respaldo mientras el servidor no ha escuchado.
   const prodFrameSources = prodCsp.match(/(?:^|;)\s*frame-src\s+([^;]+)/)?.[1] ?? '';
   assert(prodFrameSources.includes("'self'"), 'production frames include self');
   assert(

@@ -14,18 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      # actions/checkout v4.2.2
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Install Factory Droid (versión fijada)
         env:
           DROID_VERSION: 1.8.0
-          # sha256 de factory-cli/releases/1.8.0/linux/x64/droid (verificado
-          # contra droid.sha256 publicado). Renovar ambos valores deliberadamente.
           DROID_BINARY_SHA256: 95591cc8f0e93c4fd95155a096d4f3e79f7a34f3c75a8a01751779a618346335
         run: |
           set -euo pipefail
-          # No se ejecuta ningún script remoto: se descarga el binario versionado
-          # y se verifica contra el digest incrustado (fallo cerrado).
           curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
             -o "$RUNNER_TEMP/droid" \
             "https://downloads.factory.ai/factory-cli/releases/${DROID_VERSION}/linux/x64/droid"
@@ -39,13 +34,9 @@ jobs:
           FACTORY_API_KEY: ${{ secrets.FACTORY_API_KEY }}
       - name: Upload security review output
         if: always()
-        # actions/upload-artifact v4.6.2
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: deep-security-review-${{ github.run_id }}
           path: ~/security-audits/
           if-no-files-found: warn
-          # secrets-009: los mapas de vulnerabilidades en claro amplían el
-          # daño de un token robado; retención mínima, el informe persiste en
-          # el repo de auditoría, no en artefactos.
           retention-days: 7

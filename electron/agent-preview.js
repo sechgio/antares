@@ -33,11 +33,6 @@ let reloadTimer = null;
 let onChange = null;
 const pages = new Map();
 
-// Política para los archivos locales servidos (las páginas sintetizadas usan
-// la de agent-pages). El HTML del usuario no está saneado, así que la política
-// bloquea todo recurso remoto y la lectura por fetch/connect, conservando los
-// recursos hermanos de la misma carpeta (img/media/font-src 'self') y el
-// JavaScript inline que el archivo ya traía.
 const LOCAL_PREVIEW_CSP = "default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; "
   + "img-src 'self' data: blob:; media-src 'self'; font-src 'self' data:; connect-src 'none'; frame-src 'none'; "
   + "object-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'";
@@ -233,9 +228,8 @@ function close() {
   pages.clear();
 }
 
-// Origen efectivo del servidor una vez escuchando ('' si todavía no);
-// window-manager lo usa para acotar frame-src al puerto real (wshell-002)
-// en vez de un comodín 127.0.0.1:*.
+// Origen efectivo del servidor ('' si aún no escuchó); window-manager acota
+// frame-src a este puerto real en vez del comodín 127.0.0.1:*.
 function originUrl() {
   return origin || '';
 }

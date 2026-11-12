@@ -162,8 +162,6 @@ async function sheetValues(spreadsheetId, range) {
 
 async function updateRange(params) {
   const id = _id(params.spreadsheet_id, 'Hoja');
-  // Celdas neutralizadas también en la comparación: lo releído del Sheet es
-  // el texto guardado tras neutralizar, no el original con «=»/«+».
   const values = neutralizeCells(cloud.matrix(params.values));
   const body = await cloud.write(
     () => _request(`${SHEETS}/${id}/values/${encodeURIComponent(String(params.range))}?valueInputOption=USER_ENTERED`, {

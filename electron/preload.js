@@ -59,11 +59,7 @@ function resolveIsPackaged() {
   const prefix = '--app-is-packaged=';
   const argv = Array.isArray(process.argv) ? process.argv : [];
   const arg = argv.find((a) => typeof a === 'string' && a.startsWith(prefix));
-  // ipc-bridge-022: cuando main pasa el flag (siempre en la ventana
-  // principal), MANDA el flag — misma fuente que el isDev del proceso
-  // principal. NODE_ENV/asar quedan como respaldo para ventanas que no lo
-  // reciban, nunca como segunda opinión que pueda desalinear el gate del
-  // preload con el check de confianza del renderer.
+  // ipc-bridge-022: el flag de main MANDA; NODE_ENV solo respalda y nunca anula el gate.
   if (arg) return arg.slice(prefix.length) === '1';
   try {
     if (typeof __dirname !== 'undefined' && /[\\/]app\.asar[\\/]/.test(__dirname)) return true;
@@ -75,9 +71,7 @@ function resolveIsPackaged() {
 const isDev = !resolveIsPackaged();
 
 function loadSupabaseSessionSeed() {
-  // sb-011: la sesión de Supabase se descifra en main y se siembra aquí, en
-  // el mundo del preload, ANTES de que el código de página importe el cliente
-  // de supabase-js: el storage síncrono la encuentra sin tocar localStorage.
+  // sb-011: siembra por sendSync ANTES de que la página importe supabase-js.
   try {
     return ipcRenderer.sendSync('supabase-session-get');
   } catch {

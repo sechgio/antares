@@ -48,9 +48,7 @@ function sanitizeError(err) {
   return safe;
 }
 
-// co-012: claves credenciales más allá de la lista fija original, y firmas de
-// tokens de terceros en valores (Anthropic/OpenAI, GitHub, Slack, Google,
-// AWS). «next_page_token» y cursores de paginación quedan fuera a propósito.
+// co-012: claves credenciales y firmas de tokens de terceros; «next_page_token» queda fuera a propósito.
 const CREDENTIAL_KEY_RE = /(secret|password|passwd|credential|authorization|api[-_]?key|bearer|cookie|jwt)/i;
 const TOKEN_KEY_RE = /(?:(?:access|refresh|id|auth|session|credential)[_-]?token$|^token$)/i;
 const SECRET_VALUE_RE = /(?:sk-(?:ant-)?[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{16,}|gho_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{10,}|xox[baprs]-[A-Za-z0-9-]{10,}|glpat-[A-Za-z0-9_-]{16,}|AIza[0-9A-Za-z_-]{30,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})/i;

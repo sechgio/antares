@@ -17,7 +17,6 @@ def test_user_error_message_value_error_passthrough():
 
 
 def test_user_error_message_value_error_redacts_windows_paths():
-    # python-backend-014: los ValueError internos ya no filtran rutas absolutas
     exc = _user_error_message(ValueError(r"no se pudo abrir C:\Users\secreto\datos.xlsx"))
     mapped = str(exc)
     assert "secreto" not in mapped

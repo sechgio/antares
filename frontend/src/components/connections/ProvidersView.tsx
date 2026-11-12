@@ -73,9 +73,6 @@ export default function ProvidersView() {
       addToast({ message: 'Introduce la clave de acceso o la dirección del servicio antes de guardar.', type: 'error' });
       return;
     }
-    // llm-006: cambiar el destino de un proveedor ya configurado redirige
-    // TODA conversación siguiente (y su clave guardada) a esa URL: exige
-    // reconocerlo expresamente.
     if (p.editable_base_url && p.base_url && baseUrl !== p.base_url) {
       const ok = await confirm({
         title: 'Cambiar la dirección del servicio',

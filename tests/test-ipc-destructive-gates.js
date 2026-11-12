@@ -1,9 +1,5 @@
 'use strict';
 
-// M5: ipc-bridge-003 (db_clear confirmado en main), ipc-bridge-008 /
-// storage-path-handling-001 (techo de sesiones staged), ipc-bridge-002
-// (denylist de ejecutables), ipc-bridge-011 (rutas relativas a unidad),
-// ipc-bridge-017 (tope de grabaciones).
 const fs = require('fs');
 const path = require('path');
 const { strict: assert } = require('assert');
@@ -19,7 +15,6 @@ function evict(name) {
 async function main() {
   console.log('Testing destructive IPC gates...\n');
 
-  // --- db_clear: confirmación en el proceso main (ipc-bridge-003) ---
   {
     const dialogs = [];
     const router = loadIpcRouter({
@@ -50,7 +45,6 @@ async function main() {
       assert(sawCancelAgain, 'el segundo intento inmediato topa con el límite de ritmo');
       assert.strictEqual(dialogs.length, 1, 'el límite de ritmo no reabre el diálogo');
 
-      // Otros métodos no pasan por el diálogo.
       dialogs.length = 0;
       try {
         await router._callBackend('documents_list', {});
@@ -64,7 +58,6 @@ async function main() {
     void confirmations;
   }
 
-  // --- staged sessions: techo por ventana y global (ipc-bridge-008) ---
   {
     evict(path.join(__dirname, '..', 'electron', 'file-capabilities'));
     const caps = require('../electron/file-capabilities');
@@ -96,7 +89,6 @@ async function main() {
     assert.match(sourceText, /_now\(\) - session\.createdAt >= MAX_STAGED_AGE_MS/, 'edad absoluta en append');
   }
 
-  // --- rutas relativas a unidad (ipc-bridge-011) ---
   {
     evict(path.join(__dirname, '..', 'electron', 'file-capabilities'));
     const caps = require('../electron/file-capabilities');
@@ -115,7 +107,6 @@ async function main() {
     );
   }
 
-  // --- recorder: tope de sesiones (ipc-bridge-017) ---
   {
     evict(path.join(__dirname, '..', 'electron', 'editor-recorder'));
     const { RecordingSessionManager } = require('../electron/editor-recorder');
@@ -128,7 +119,6 @@ async function main() {
     manager.create('sess_despues');
   }
 
-  // --- denylist de ejecutables ampliada (ipc-bridge-002) ---
   {
     const policy = require('../electron/ipc-file-policy');
     const source = fs.readFileSync(path.join(__dirname, '..', 'electron', 'ipc-file-policy.js'), 'utf8');

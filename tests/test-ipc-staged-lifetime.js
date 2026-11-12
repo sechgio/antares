@@ -12,8 +12,6 @@ function loadRouterWithHandler({ documentsDir, downloadsDir, userDataDir, fakePr
     electron: {
       ipcMain: {
         handle: (channel, fn) => handlers.set(channel, fn),
-        // sb-011: el canal sendSync de la semilla de sesión se registra junto
-        // a los handle(); el stub no necesita responder nada.
         on: () => {},
         removeHandler: () => {},
       },
@@ -101,8 +99,6 @@ async function main() {
   try {
     assert(typeof ipcCall === 'function', 'ipc-call handler registrado');
 
-    // ipc-002: process_start ya no acepta destinos crudos fuera de raíces
-    // registradas por diálogo; el test registra docsDir como raíz.
     await handleDialogCall('dialog_folder', { pickOnly: true }, {
       async showOpenDialog() { return { canceled: false, filePaths: [docsDir] }; },
       async showSaveDialog() { return { canceled: true }; },

@@ -8,10 +8,6 @@ const { assertAllowedReadPath, assertPathNotSymlink, assertPathNotSymlinkAsync }
 const TOKEN_TTL_MS = 30 * 60 * 1000;
 const MAX_CHUNK_BYTES = 8 * 1024 * 1024;
 const MAX_STAGED_FILE_BYTES = 1024 * 1024 * 1024;
-// ipc-bridge-008 / storage-path-handling-001: file_staged_create es llamable
-// en bucle desde el renderer. Techo de sesiones (por ventana y global),
-// presupuesto de bytes en curso y edad máxima absoluta (el TTL refrescaba
-// con cada chunk, así que una sesión alimentada no expiraba nunca).
 const MAX_STAGED_SESSIONS_PER_WINDOW = 4;
 const MAX_STAGED_SESSIONS_TOTAL = 12;
 const MAX_STAGED_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;

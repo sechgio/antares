@@ -118,8 +118,6 @@ async function main() {
   assert.ok(!own.api.scopeGranted(['Files.ReadWrite.All'], 'Files.ReadWrite') , 'un scope parecido no cuenta como concedido');
   console.log('[PASS] Los scopes concedidos se reconocen con las formas que devuelve cada proveedor.');
 
-  // co-007: un flujo PKCE no pide y no persiste client_secret; un legado con
-  // secreto se reescribe limpio al cargarlo.
   const specOverride = { auth: { type: 'oauth_pkce', scopes: ['read'], callback_port: 42831, callback_path: '/callback' } };
   const origRequire = require;
   const custom = (() => {

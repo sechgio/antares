@@ -6,9 +6,6 @@ from html import escape
 from backend.core.design.models import LAYOUTS
 from backend.core.design.types import JsonObject
 
-# python-backend-005: los colores y fuentes del tema llegan del renderer;
-# una llave o comilla suelta rompe la regla y abre CSS arbitrario (exfil
-# por content:url, spoofing). Solo pasa charset seguro o el fallback.
 _CSS_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{3,8}$|^[a-zA-Z]{1,32}$|^rgba?\(\s*[\d.,%\s]{1,60}\)$")
 
 

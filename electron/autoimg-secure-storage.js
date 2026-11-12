@@ -42,10 +42,6 @@ function decryptPayloadAes(namespace, encoded) {
   return JSON.parse(decrypted.toString('utf8'));
 }
 
-// cloud-oauth-connectors-002: el cifrador v1 (clave derivada de rutas públicas)
-// era ofuscación reversible; no vuelve a exponerse como API del módulo. Solo
-// sobrevive la lectura de sobres legados v1 para migrarlos a safeStorage.
-
 function encryptPayload(namespace, payload) {
   const json = JSON.stringify(payload);
   if (_safeStorageAvailable()) {

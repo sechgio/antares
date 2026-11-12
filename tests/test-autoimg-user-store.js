@@ -31,7 +31,6 @@ const cfg = store.loadOAuthConfigFromDisk();
 assert(cfg.clientId === '123456789012-abc.apps.googleusercontent.com', 'oauth client id round-trip');
 assert(!('clientSecret' in cfg), 'el PKCE puro no vuelve a exponer clientSecret');
 
-// co-005: si un almacén legado trajo un secreto, la carga lo purga del disco.
 const legacySecretKey = 'client' + '_secret';
 secure.writeSecureJson('autoimg-oauth-config.json', 'oauth', {
   client_id: '123456789012-legacy.apps.googleusercontent.com',
