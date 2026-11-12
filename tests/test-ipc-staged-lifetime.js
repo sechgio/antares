@@ -12,6 +12,9 @@ function loadRouterWithHandler({ documentsDir, downloadsDir, userDataDir, fakePr
     electron: {
       ipcMain: {
         handle: (channel, fn) => handlers.set(channel, fn),
+        // sb-011: el canal sendSync de la semilla de sesión se registra junto
+        // a los handle(); el stub no necesita responder nada.
+        on: () => {},
         removeHandler: () => {},
       },
       app: {

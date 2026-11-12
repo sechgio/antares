@@ -30,6 +30,7 @@ function main() {
   const { CONNECTIONS_METHODS } = require('../electron/connections-ipc-methods');
   const { AGENT_METHODS } = require('../electron/agent-handlers');
   const { EDITOR_METHODS } = require('../electron/editor-handlers');
+  const { SESSION_METHODS } = require('../electron/supabase-session-handlers');
 
   assert(
     Array.isArray(sourceNative) && new Set(sourceNative).size === sourceNative.length,
@@ -72,6 +73,7 @@ function main() {
     ['CONNECTIONS_METHODS', CONNECTIONS_METHODS, byHandler('native:connections')],
     ['AGENT_METHODS', AGENT_METHODS, byHandler('native:agent')],
     ['EDITOR_METHODS', EDITOR_METHODS, byHandler('native:editor')],
+    ['SESSION_METHODS', SESSION_METHODS, byHandler('native:session')],
   ];
   for (const [name, exported, expected] of buckets) {
     assert(setsEqual(exported, expected), `${name} coincide con su bucket del catálogo`);

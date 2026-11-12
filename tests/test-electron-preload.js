@@ -2,18 +2,19 @@ const Module = require('module');
 
 const { assert, finish, evictModule } = require('./helpers/harness');
 
-function loadPreload({ packaged = false, nodeEnv, allowedMethods, filePath = '', fileInputNonce = '' } = {}) {
+function loadPreload({ packaged = false, nodeEnv, allowedMethods, filePath = '', fileInputNonce = '', seedBlob = null } = {}) {
   const originalLoad = Module._load;
-  let exposedApi = null;
+  const exposures = {};
   const invokeCalls = [];
   const sendCalls = [];
+  const syncCalls = [];
 
   Module._load = function patchedLoad(request, parent, isMain) {
     if (request === 'electron') {
       return {
         contextBridge: {
-          exposeInMainWorld(_name, api) {
-            exposedApi = api;
+          exposeInMainWorld(name, api) {
+            exposures[name] = api;
           },
         },
         ipcRenderer: {
@@ -23,6 +24,11 @@ function loadPreload({ packaged = false, nodeEnv, allowedMethods, filePath = '',
           },
           send(method, ...args) {
             sendCalls.push([method, ...args]);
+          },
+          sendSync(channel) {
+            // sb-011: sin backend cifrado en el stub, no hay sesión que sembrar.
+            syncCalls.push(channel);
+            return seedBlob;
           },
           on() {},
           removeListener() {},
@@ -44,7 +50,7 @@ function loadPreload({ packaged = false, nodeEnv, allowedMethods, filePath = '',
   try {
     evictModule('electron/preload.js');
     require('../electron/preload.js');
-    return { exposedApi, invokeCalls, sendCalls };
+    return { exposedApi: exposures.electronAPI, supabaseSessionSeed: exposures.supabaseSessionSeed, invokeCalls, sendCalls, syncCalls };
   } finally {
     process.argv = prevArgv;
     Module._load = originalLoad;
@@ -56,7 +62,9 @@ async function run() {
   console.log('Testing preload IPC allowlist...\n');
 
   {
-    const { exposedApi, invokeCalls, sendCalls } = loadPreload({ packaged: false });
+    const { exposedApi, supabaseSessionSeed, invokeCalls, sendCalls } = loadPreload({ packaged: false });
+    assert(exposedApi && typeof exposedApi.invoke === 'function', 'electronAPI sigue expuesto tras la semilla');
+    assert(supabaseSessionSeed === null, 'sin backend cifrado no se siembra sesion de Supabase');
     await exposedApi.invoke('dialog_files');
     assert(invokeCalls[0][0] === 'ipc-call', 'dialog_files should be forwarded through ipc-call');
     assert(invokeCalls[0][1] === 'dialog_files', 'dialog_files should stay allowlisted');
@@ -77,6 +85,18 @@ async function run() {
     await exposedApi.invoke('totally_unknown_method');
     assert(invokeCalls[0][0] === 'ipc-call', 'unknown methods should still be forwarded in dev');
     assert(invokeCalls[0][1] === 'totally_unknown_method', 'unknown method name should be preserved in dev');
+  }
+
+  {
+    // sb-011: con el backend devolviendo el blob, el preload lo siembra por
+    // sendSync y lo expone para el storage síncrono de supabase-js.
+    const blob = { 'sb-antares-auth-token': JSON.stringify({ access_token: 'AT', refresh_token: 'RT' }) };
+    const { supabaseSessionSeed, syncCalls } = loadPreload({ packaged: true, seedBlob: blob });
+    assert(
+      JSON.stringify(supabaseSessionSeed) === JSON.stringify(blob),
+      'la semilla de sesion se expone completa y sin rutas',
+    );
+    assert(syncCalls[0] === 'supabase-session-get', 'la semilla llega por el canal cifrado dedicado');
   }
 
   {

@@ -74,6 +74,17 @@ function resolveIsPackaged() {
 
 const isDev = !resolveIsPackaged();
 
+function loadSupabaseSessionSeed() {
+  // sb-011: la sesión de Supabase se descifra en main y se siembra aquí, en
+  // el mundo del preload, ANTES de que el código de página importe el cliente
+  // de supabase-js: el storage síncrono la encuentra sin tocar localStorage.
+  try {
+    return ipcRenderer.sendSync('supabase-session-get');
+  } catch {
+    return null;
+  }
+}
+
 try {
   contextBridge.exposeInMainWorld('electronAPI', {
     invoke: (method, params = {}) => {
@@ -135,6 +146,7 @@ try {
     canvasAssetGet: (ref) => ipcRenderer.invoke('ipc-call', 'canvas_asset_get', { ref }),
     canvasAssetInfo: (ref) => ipcRenderer.invoke('ipc-call', 'canvas_asset_info', { ref }),
   });
+  contextBridge.exposeInMainWorld('supabaseSessionSeed', loadSupabaseSessionSeed());
 } catch (err) {
   if (isDev) {
     console.error('[preload] Failed to expose electronAPI:', err);
