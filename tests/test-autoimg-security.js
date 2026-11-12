@@ -47,8 +47,7 @@ function main() {
   throwsSecret(() => assertNoSecretInObject({ Authorization: 'Bearer abc' }), 'clave Authorization bloqueada');
   throwsSecret(() => assertNoSecretInObject({ apiKey: 'valor' }), 'clave apiKey bloqueada');
   throwsSecret(() => assertNoSecretInObject({ sessionToken: 'x'.repeat(24) }), 'clave session_token bloqueada');
-  // Muestras construidas por partes: ningún literal con forma de credencial
-  // dentro del propio test.
+  // Muestras por partes: ningún literal del test tiene forma de credencial.
   const fakeAnthropicKey = 'sk-' + 'ant-api03-' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456';
   const fakeGithubToken = 'ghp_' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
   const fakeSlackToken = 'xox' + 'b-123456789-' + 'abcdefghijklmnopqrstuvwxyz';

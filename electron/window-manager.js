@@ -56,7 +56,6 @@ function createWindow(isDev) {
     if (details.url.startsWith('http://127.0.0.1:') && require('./agent-preview').isPage(details.url)) {
       return callback({ responseHeaders: details.responseHeaders });
     }
-    // frame-src queda acotado al puerto real del preview.
     const previewOrigin = require('./agent-preview').originUrl();
     const previewFrameSrc = previewOrigin || 'http://127.0.0.1:*';
     callback({

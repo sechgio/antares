@@ -228,8 +228,7 @@ function close() {
   pages.clear();
 }
 
-// Origen efectivo del servidor ('' si aún no escuchó); window-manager acota
-// frame-src a este puerto real en vez del comodín 127.0.0.1:*.
+// '' hasta escuchar: window-manager acota frame-src a este puerto real, nunca al comodín 127.0.0.1:*.
 function originUrl() {
   return origin || '';
 }

@@ -377,8 +377,7 @@ function _assertNoRawAbsolutePaths(params, options = {}) {
         }
       }
       if (/^[a-zA-Z]:/.test(value) && !/^[a-zA-Z]:[\\/]/.test(value)) {
-        // ipc-bridge-011: «C:foo» (relativa a la unidad actual) no es absoluta
-        // para path.isAbsolute y esquivaba el gate hacia el backend.
+        // «C:foo» es relativa a la unidad actual para path.isAbsolute: esquivaba el gate.
         throw new Error(`drive-relative paths not allowed for ${keyPath.join('.')}; use a file token`);
       }
       if (value.includes('..') && (value.includes('/') || value.includes('\\'))) {

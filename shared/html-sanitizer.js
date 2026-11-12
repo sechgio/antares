@@ -53,9 +53,7 @@ const URL_ATTR_RE = /(href|src|xlink:href|srcset|poster|action|formaction|backgr
 // Solo espacios de la especificación: \s de JS deja fuera C0/DEL que el parser de URL quita («\u0001javascript:»).
 const _URL_NOISE_RE = /[\s\x00-\x1f\x7f]+/g;
 
-// (Evasión por nombre de atributo) Los parsers decodifican character references
-// Los parsers decodifican character references también en el NOMBRE del atributo (sr&#99; = src);
-// un nombre legítimo nunca trae «&#», así que cualquier atributo que tras decodificar sea on*/URL se elimina.
+// Los parsers decodifican character references en el NOMBRE del atributo (sr&#99; = src); ningún nombre legítimo trae «&#».
 const DANGEROUS_DECODED_ATTR_NAMES = /^(?:on[a-z]+|href|src|xlink:href|srcset|poster|action|formaction|background|cite|ping|longdesc)$/i;
 const _ATTR_NAME_TOKEN_RE = /([\s/])([^\s"'>=]+)(\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*))?/g;
 const _TAG_OPEN_RE = /<[a-zA-Z](?:"[^"]*"|'[^']*'|[^"'>])*>/g;

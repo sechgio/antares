@@ -962,8 +962,7 @@ function planCheck(answer, api) {
   return { continue: `${shared.CHECK_MARKER} ${notice}` };
 }
 
-// «Permitir siempre» solo exime las herramientas web no transaccionales: debe
-// coincidir con el catálogo (TOOLS con flag false); una pasiva nueva exige añadirla aquí.
+// «Permitir siempre» solo exime herramientas no transaccionales; sincronizado a propósito con el catálogo (TOOLS flag false).
 const WEB_AUTO_APPROVE = new Set(['web_open', 'web_back', 'web_forward', 'web_reload', 'web_read', 'web_find',
   'web_scroll', 'web_hover', 'web_screenshot', 'web_text', 'web_console', 'web_network', 'web_wait', 'web_handover']);
 

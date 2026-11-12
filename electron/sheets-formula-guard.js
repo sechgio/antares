@@ -1,7 +1,6 @@
 'use strict';
 
-// USER_ENTERED: una celda que empieza con «=», «+», «-» no numérico, «@» o control se interpreta como fórmula;
-// el apóstrofe la guarda como texto y los números con signo (-123.45, +7, 1e9, 50%) pasan intactos.
+// USER_ENTERED: «=», «+», «@», «-» no numérico o control se ejecutan como fórmula; el apóstrofe lo guarda como texto.
 
 const NUMERIC_CELL_RE = /^[+-]?\d+(?:[.,]\d+)?(?:e[+-]?\d+)?%?$/i;
 const UNSAFE_FIRST_RE = /^[=+@\-\t\r\n\u000b\u000c]/;

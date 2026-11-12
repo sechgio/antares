@@ -20,8 +20,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   });
 }
 
-// sb-011: el preload siembra window.supabaseSessionSeed por sendSync ANTES de
-// evaluar este módulo; en navegador (dev web) no hay semilla y se conserva el localStorage clásico.
+// sb-011: el preload siembra window.supabaseSessionSeed por sendSync ANTES de evaluar este módulo; en web no hay semilla.
 type SessionBlob = Record<string, string>;
 
 interface ElectronBridge {
