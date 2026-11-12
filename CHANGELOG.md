@@ -67,6 +67,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Los archivos con acceso en una conversación de Agent se muestran encima del compositor, alineados con el chat, como tarjetas con icono y tipo (hoja de cálculo, PDF, imagen, documento, carpeta) en lugar de una píldora suelta en la esquina superior izquierda. La carpeta de trabajo ya no se repite en esa fila: se muestra solo en el botón de carpeta del compositor, donde también se puede quitar para volver a los borradores.
 - El chat de Agent es más ancho (960 px en lugar de 720 px, con el compositor alineado) y los gráficos ocupan todo ese ancho, alineados con los mensajes del usuario, para que el contenido amplio no necesite scroll lateral.
 - En Complementos, conectar un proveedor pide antes de abrir el navegador una confirmación con los permisos exactos que se van a conceder, y mientras llega la autorización la lista muestra «Conectando…»: el estado se refresca solo cuando el navegador termina y «Cancelar conexión» (nuevo método IPC `connections_cancel`) abandona el intento sin bloquear ni obligar a esperar al tiempo de espera. Un error de autorización que llega por el canal `connections.changed` aparece como aviso en pantalla.
+- Agent consulta la memoria una vez por sesión y congela su bloque al final del prompt estable, detrás de las instrucciones fijas, en lugar de reinyectarla en cada turno: el prefijo cacheable del proveedor sobrevive entre turnos y el bloque solo se regenera al compactar o al abrir una conversación nueva. `memory_remember` y `procedure_learn` siguen guardando al disco sin alterar el turno en curso.
 
 ### Removed
 - Se retiran los métodos IPC sin consumidor `agent_approvals_history`, `agent_grants_list` y `agent_grants_revoke`, con sus handlers nativos y sus entradas del catálogo compartido: eran puentes a datos internos de agente que la interfaz ya no consulta desde que desapareció el historial de aprobaciones.
@@ -119,6 +120,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - El navegador de Agent resuelve el DNS de cada destino antes de salir: un dominio público que resuelva a una dirección privada o local (DNS del atacante o rebinding) se bloquea en `web_open`, `web_download` y en cada petición de la sesión del navegador (redirecciones y subrecursos incluidos); sin resolución verificable no navega.
 
 ### Fixed
+- El Generador Reportes descarta la selección y los datos anteriores al importar otro archivo o cambiar de hoja; una carga pendiente, vacía o fallida ya no permite exportar un reporte con registros de la selección anterior.
 - `npm run dev` comprueba y repara las dependencias de la raíz y del frontend, restaura el binario de Electron si falta y avisa de archivos bloqueados antes de reinstalar con Antares abierto.
 - Anotar el navegador de Agent recaptura la página con CDP y vuelve a acoplar la vista antes de leer el raster, con `capturePage` como respaldo si CDP no está disponible.
 - Cambiar el modelo de una conversación de Agent con perfil ya cruza el IPC: la sesión se materializa como JSON antes de responder, sin proxies no clonables.

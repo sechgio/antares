@@ -80,7 +80,6 @@ function assertAuthSessionCurrent(session) {
 }
 
 async function _refreshAccessToken(tokens, session = captureAuthSession()) {
-  // Pendiente de deduplicar con spotify-session._refreshTokens y connections-session.
   assertAuthSessionCurrent(session);
   const config = requireOAuthConfig();
   if (!tokens?.refresh_token) {

@@ -455,6 +455,32 @@ function defaultToolNames(specs) {
   return specs.filter((spec) => CORE_MODULES.has(spec.module) || CORE_TOOLS.has(spec.name)).map((spec) => spec.name);
 }
 
+// Texto del aviso de presupuesto que budgetWarning añade al último resultado de herramienta.
+function budgetWarningText(rounds) {
+  return `Aviso de Antares: llevas ${rounds} de ${MAX_TOOL_STEPS} pasos de herramienta en este turno. `
+    + 'Actualiza task_plan con lo verificado y prioriza lo pendiente; al llegar al límite el turno se pausa y el usuario '
+    + `puede Reanudar. No te detengas solo por este aviso. ${shared.PLAN_TITLE_TRUST}`;
+}
+
+// Texto del recordatorio de plan que planReminder añade al último resultado de herramienta.
+function planReminderText(since, planNext) {
+  const next = planNext ? `«${planNext}»` : 'el siguiente paso';
+  return `Aviso de Antares: llevas ${since} pasos de herramienta sin actualizar task_plan. `
+    + `Actualiza el plan con lo verificado y el siguiente paso (${next}) antes de seguir.`;
+}
+
+// Avisos fijos que Antares añade a la conversación, en su variante más larga. El chequeo
+// de presupuestos los mide junto al prompt base; el prefijo de comprobación es constante.
+function reminderTexts() {
+  const next = 'el paso siguiente';
+  return [
+    LIMIT_NOTE,
+    PLAN_CHECK_TEXT.replace('{steps}', `«Paso»`).replace('{next}', `«${next}»`),
+    budgetWarningText(MAX_TOOL_STEPS),
+    planReminderText(MAX_TOOL_STEPS, next),
+  ];
+}
+
 function moduleToolNames(modules) {
   const wanted = new Set(modules);
   return [...shared.toolSpecs.values()].filter((spec) => wanted.has(spec.module)).map((spec) => spec.name);
@@ -705,9 +731,7 @@ function envelopeToolResults(messages) {
 function budgetWarning(messages, rounds) {
   const last = messages[messages.length - 1];
   if (rounds < BUDGET_WARNING_STEPS || rounds >= MAX_TOOL_STEPS || !last || last.role !== 'toolResult') return undefined;
-  const notice = `Aviso de Antares: llevas ${rounds} de ${MAX_TOOL_STEPS} pasos de herramienta en este turno. `
-    + 'Actualiza task_plan con lo verificado y prioriza lo pendiente; al llegar al límite el turno se pausa y el usuario '
-    + `puede Reanudar. No te detengas solo por este aviso. ${shared.PLAN_TITLE_TRUST}`;
+  const notice = budgetWarningText(rounds);
   const content = Array.isArray(last.content) ? last.content : [{ type: 'text', text: String(last.content || '') }];
   return [...messages.slice(0, -1), { ...last, content: [...content, { type: 'text', text: notice }] }];
 }
@@ -718,9 +742,7 @@ function planReminder(messages, turn, rounds) {
   if (since - (turn.planReminderAt || 0) < PLAN_REMINDER_STEPS) return undefined;
   const last = messages[messages.length - 1];
   if (!last || last.role !== 'toolResult') return undefined;
-  const next = turn.planNext ? `«${turn.planNext}»` : 'el siguiente paso';
-  const notice = `Aviso de Antares: llevas ${since} pasos de herramienta sin actualizar task_plan. `
-    + `Actualiza el plan con lo verificado y el siguiente paso (${next}) antes de seguir.`;
+  const notice = planReminderText(since, turn.planNext);
   const content = Array.isArray(last.content) ? last.content : [{ type: 'text', text: String(last.content || '') }];
   turn.planReminderAt = since;
   return [...messages.slice(0, -1), { ...last, content: [...content, { type: 'text', text: notice }] }];
@@ -1688,6 +1710,9 @@ function requireSkill(conversationId, skillId) {
 module.exports = {
   allToolSpecs,
   defaultToolNames,
+  budgetWarningText,
+  planReminderText,
+  reminderTexts,
   moduleToolNames,
   rankTools,
   WEB_AUTO_APPROVE,

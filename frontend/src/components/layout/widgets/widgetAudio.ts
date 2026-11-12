@@ -20,7 +20,6 @@ export function storedVolumeState(store: {
   return { volume, lastVolumeRef: { current: volume.get() || 25 } };
 }
 
-/** Alternates between the current volume and the last audible level. */
 export function toggleMute(
   volume: Atom<number>,
   setVolume: (value: number) => void,

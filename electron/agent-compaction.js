@@ -398,6 +398,16 @@ async function beforeCompact(compaction, runtime, context) {
     outcome: emergency ? 'emergency' : 'summary', entries: compaction.entries.length,
     summary_chars: summary.length, first_kept: compaction.firstKept,
   });
+  // La compactación es el único evento que regenera el snapshot de memoria a
+  // mitad de sesión: el bloque congelado se retira y se vuelve a consultar con
+  // el resumen como texto de recuperación. Un fallo aquí no aborta la
+  // compactación, que ya quedó registrada.
+  try {
+    await require('./agent-runtime').regenerateMemorySnapshot(sessionId, summary);
+  } catch (err) {
+    audit({ session_id: sessionId, conversation_id: conversationId, reason: compaction.reason,
+      task_id: runtime.taskId, outcome: 'memory_snapshot_error', detail: sanitizeError(err) });
+  }
   return { summary };
 }
 

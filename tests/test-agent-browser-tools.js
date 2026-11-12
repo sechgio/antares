@@ -2,8 +2,6 @@
 
 const Module = require('node:module');
 
-// el navegador del agente resuelve el DNS de cada destino: en los tests
-// toda resolución es pública
 const originalLoad = Module._load;
 Module._load = function patchedLoad(request, parent, isMain) {
   if (request === 'node:dns') {

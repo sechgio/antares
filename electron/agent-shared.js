@@ -5,6 +5,7 @@ const INTERRUPTED_RESULT = JSON.stringify({
 });
 const NOTICE_KIND = 'antares.notice';
 const CONTEXT_MARKER = '[Contexto de Antares]';
+const MEMORY_SNAPSHOT_MARKER = '[Memoria de sesión]';
 const ATTACHMENTS_MARKER = '[Adjuntos del mensaje de Antares]';
 const CHECK_MARKER = '[Comprobación de Antares]';
 const DELEGATION_GUIDE = 'Cómo elegir la delegación: agent_delegate abre una conversación aparte con historial, '
@@ -42,6 +43,9 @@ const shared = {
   turns: new Map(),
   turnRuns: new Map(),
   skillIndexes: new Map(),
+  // Snapshot de memoria congelado por sesión: presencia = ya asegurada en
+  // este proceso; el bloque duradero vive en las instrucciones de la sesión.
+  memorySnapshots: new Set(),
   unattendedApps: new Map(),
   waitingInput: new Set(),
   wakers: new Set(),
@@ -55,6 +59,7 @@ const shared = {
   INTERRUPTED_RESULT,
   NOTICE_KIND,
   CONTEXT_MARKER,
+  MEMORY_SNAPSHOT_MARKER,
   ATTACHMENTS_MARKER,
   CHECK_MARKER,
   DELEGATION_GUIDE,

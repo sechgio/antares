@@ -25,7 +25,7 @@ const projection = require('./agent-projection');
 const { validateRules } = require('./agent-channels');
 const compactionPolicy = require('./agent-compaction');
 const { loadAgentProfile, resolvePortableProfile } = require('./agent-profiles');
-const { SKILLS_GUIDE, SYSTEM_PROMPT, legacyNotes, migrateInstructions } = require('./agent-prompts');
+const { SKILLS_GUIDE, SYSTEM_PROMPT, legacyNotes, migrateInstructions, splitMemorySnapshot, withMemorySnapshot } = require('./agent-prompts');
 
 const MAX_MESSAGE_CHARS = 12_000;
 const MAX_REQUEST_ID_CHARS = 100;
@@ -806,7 +806,9 @@ async function messageSend(params) {
         + 'Conserva los modos de aprobación y verifica los resultados.'
       : 'Sin carpeta de trabajo activa: las rutas relativas se resuelven en los borradores de la conversación.',
   ].filter(Boolean).join('\n\n');
-  const memory = await memoryContext(session, content);
+  // Garantiza el snapshot de memoria de la sesión antes del envío; el bloque
+  // vive en las instrucciones, no en el mensaje de este turno.
+  await memoryContext(session, content);
   const agentConfig = await conv.agent(ctx());
   const storedInstructions = String(agentConfig.instructions || '');
   const instructions = migrateInstructions(storedInstructions);
@@ -827,7 +829,7 @@ async function messageSend(params) {
       + 'con ese skill_id y sigue next_offset hasta leer SKILL.md completo; después aplica sus instrucciones a este encargo. '
       + skill.notice
     : '';
-  const context = [mentions.context, memory.context, attachedNote, skillsNote, skillIndex?.note,
+  const context = [mentions.context, attachedNote, skillsNote, skillIndex?.note,
     ...legacyGuidance, botsNote,
     invokedSkillNote, attached.length
       ? `${shared.ATTACHMENTS_MARKER}\n${JSON.stringify(attached.map((item) => ({ path: item.path, folder: item.kind === 'folder' })))}`
@@ -1022,12 +1024,54 @@ async function skillsIndex(session, tools) {
   };
 }
 
-async function memoryContext(session, text) {
+// Snapshot de memoria congelado por sesión. El bloque se genera una sola vez
+// al iniciar la sesión y vive al final de la parte estable del prompt (después
+// de las instrucciones fijas), no en el mensaje de cada turno: así el hash del
+// prompt del sistema permanece durante toda la sesión (ver
+// agent-cache-telemetry). Las escrituras memory_remember y procedure_learn van
+// al disco sin tocar el snapshot; solo una compactación (o la siguiente
+// sesión) lo regenera, vía regenerateMemorySnapshot.
+async function memoryContext(session, initialText) {
+  if (shared.memorySnapshots.has(session.conversationId)) return { context: '' };
+  const conv = await conversation(session.id);
+  const stored = String((await conv.agent(ctx())).instructions || '');
+  if (splitMemorySnapshot(stored).snapshot) {
+    // Congelado desde un arranque anterior: el bloque vive en las
+    // instrucciones y no se regenera hasta la siguiente sesión o compactación.
+    shared.memorySnapshots.add(session.conversationId);
+    return { context: '' };
+  }
+  await _writeMemorySnapshot(session, initialText, conv, stored);
+  shared.memorySnapshots.add(session.conversationId);
+  return { context: '' };
+}
+
+// Consulta la memoria una vez y recoloca el bloque en las instrucciones de la
+// sesión. Idempotente: `withMemorySnapshot` retira siempre el bloque anterior
+// antes de colocar el nuevo, así dos ensures concurrentes no lo duplican. Con
+// memoria vacía no se escribe nada. Fallos del bridge dejan el contexto vacío.
+async function _writeMemorySnapshot(session, initialText, conv, stored) {
   const profile = await execution.sessionProfile(session);
-  return bridge('agent_internal_memory_context', {
-    session_id: session.id, text, tools: [...shared.toolSpecs.values()].map(_toolVersion), accounts: _accounts(),
-    profile_id: session.profile?.id || null, memory_scope: profile?.memory_scope || null,
-  }).catch(() => ({ context: '' }));
+  let context = '';
+  try {
+    ({ context } = await bridge('agent_internal_memory_context', {
+      session_id: session.id, text: initialText, tools: [...shared.toolSpecs.values()].map(_toolVersion),
+      accounts: _accounts(), profile_id: session.profile?.id || null,
+      memory_scope: profile?.memory_scope || null,
+    }));
+  } catch { context = ''; }
+  const instructions = withMemorySnapshot(stored, context);
+  if (instructions !== stored) await conv.configure({ instructions }, ctx());
+}
+
+// Única vía de regeneración a mitad de sesión, reservada a la compactación:
+// lee la conversación por su cuenta para saltarse el chequeo de congelado.
+async function regenerateMemorySnapshot(sessionId, initialText = '') {
+  const session = (await sessions())[String(sessionId || '')];
+  if (!session) return;
+  const conv = await conversation(session.id);
+  const stored = String((await conv.agent(ctx())).instructions || '');
+  await _writeMemorySnapshot(session, initialText, conv, stored);
 }
 
 async function _admittedRequest(session, requestId) {
@@ -1261,6 +1305,9 @@ async function shutdown() {
   }
   shared.watchers.clear();
   shared.live.clear();
+  // El snapshot vive en las instrucciones (durables); el registro solo
+  // amortiza este proceso y no debe sobrevivir al cierre del runtime.
+  shared.memorySnapshots.clear();
   require('./agent-browser').close();
   require('./agent-cua').close();
   if (shared.state) {
@@ -1272,6 +1319,7 @@ async function shutdown() {
 
 module.exports = {
   memoryContext,
+  regenerateMemorySnapshot,
   latestPlan,
   activitySnapshot: async () => {
     if (!shared.state) return [];

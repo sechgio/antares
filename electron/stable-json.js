@@ -1,6 +1,5 @@
 'use strict';
 
-// Serialización canónica para comparar firmas sin depender del orden de claves.
 function stableJson(value, omit) {
   if (Array.isArray(value)) return `[${value.map((item) => stableJson(item, omit)).join(',')}]`;
   if (value && typeof value === 'object') {
