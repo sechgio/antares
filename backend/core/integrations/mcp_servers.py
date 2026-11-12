@@ -211,7 +211,8 @@ def _stdio_env(secrets: JsonObject) -> dict[str, str]:
                     "HOME", "APPDATA", "LOCALAPPDATA", "LANG", "LC_ALL", "LC_CTYPE", "NODE_EXTRA_CA_CERTS"}
     env = {key: value for key, value in os.environ.items() if key.upper() in runtime_keys}
     for k, v in (secrets.get("env") or {}).items():
-        env[str(k)] = str(v)
+        if str(k).upper() not in runtime_keys:
+            env[str(k)] = str(v)
     return env
 
 
@@ -298,7 +299,7 @@ def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
         with _lock:
             _tools_status[server_id] = {"status": "unavailable", "checked_at": int(time.time() * 1000),
                                         "error": str(_redact(str(err), secrets))[:400]}
-        raise
+        raise ValueError(str(_redact(str(err), secrets))[:400]) from None
     clean = []
     for tool in tools:
         t = _redact(tool, secrets)
@@ -364,6 +365,8 @@ def call_tool(
         if approved_context is not None and approval_context(server_id, tool, force=False) != approved_context:
             raise ValueError("La configuración MCP cambió después de aprobar; solicita una nueva aprobación")
         server = get_server(server_id)
+        if server["transport"] != "http" and approved_context is None:
+            raise ValueError("Herramienta MCP stdio sin contexto de aprobación; vuelve a aprobarla")
         secrets = _secrets(server_id)
         tool = _resolve_tool_name(server_id, tool, advertised=advertised)
         if tool in server.get("disabled_tools", []):

@@ -30,16 +30,6 @@ function _deriveKey(namespace) {
   return crypto.createHash('sha256').update(seed).digest();
 }
 
-function encryptPayloadAes(namespace, payload) {
-  const iv = crypto.randomBytes(12);
-  const key = _deriveKey(namespace);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const json = JSON.stringify(payload);
-  const encrypted = Buffer.concat([cipher.update(json, 'utf8'), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return Buffer.concat([iv, tag, encrypted]).toString('base64');
-}
-
 function decryptPayloadAes(namespace, encoded) {
   const buf = Buffer.from(encoded, 'base64');
   const iv = buf.subarray(0, 12);
@@ -166,7 +156,5 @@ module.exports = {
   writeSecureJson,
   clearSecureJson,
   migratePlaintextJson,
-  encryptPayload: encryptPayloadAes,
-  decryptPayload: decryptPayloadAes,
   isConfidentialStorage,
 };

@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const store = require('./autoimg-user-store');
 const { fetchWithRetry } = require('./autoimg-google-fetch');
+const { neutralizeCells } = require('./sheets-formula-guard');
 const { AUTOIMG_SHEET_TABS, listMissingAutoImgTabs } = require('./autoimg-sheet-rows');
 const {
   getOAuthConfig,
@@ -51,6 +52,22 @@ onActiveUserChange(() => {
   _sheetId = null;
   _sheetMeta = null;
 });
+
+let _pinnedSession = null;
+
+function _currentAuthSession() {
+  return _pinnedSession || _captureAuthSession();
+}
+
+async function _withPinnedSession(fn) {
+  const outer = _pinnedSession;
+  if (!outer) _pinnedSession = _captureAuthSession();
+  try {
+    return await fn();
+  } finally {
+    _pinnedSession = outer || null;
+  }
+}
 
 function _buildAuthUrl(redirectUri, codeChallenge, state) {
   const cfg = _requireConfig();
@@ -111,7 +128,6 @@ async function exchangeCode(code, redirectUri) {
     body: new URLSearchParams({
       code,
       client_id: cfg.clientId,
-      client_secret: cfg.clientSecret,
       redirect_uri: uri,
       grant_type: 'authorization_code',
       code_verifier: codeVerifier,
@@ -228,7 +244,7 @@ async function revokeAuth() {
 }
 
 async function _apiFetch(url, options = {}) {
-  const session = _captureAuthSession();
+  const session = _currentAuthSession();
   const res = await googleApiFetch(url, options, {
     session,
     authErrorMessage: 'No autenticado con Google. Conecta tu cuenta en AutoIMG.',
@@ -292,6 +308,10 @@ async function ensureAutoImgTabs() {
 }
 
 async function openSpreadsheet(rawId) {
+  return _withPinnedSession(async () => _openSpreadsheetPinned(rawId));
+}
+
+async function _openSpreadsheetPinned(rawId) {
   const sheetId = parseSheetId(rawId);
   if (!sheetId) throw new Error('ID de Sheet inválido');
   const res = await _apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?fields=properties.title,sheets.properties`);
@@ -380,22 +400,30 @@ async function readRanges(ranges) {
 }
 
 async function writeRange(range, values) {
+  return _withPinnedSession(async () => _writeRangePinned(range, values));
+}
+
+async function _writeRangePinned(range, values) {
   if (!_sheetId) throw new Error('No hay Sheet abierto.');
   const encoded = encodeURIComponent(range);
   const res = await _apiFetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}/values/${encoded}?valueInputOption=USER_ENTERED`,
-    { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values }) },
+    { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: neutralizeCells(values) }) },
   );
   const data = await res.json();
   return { updated: data.updatedCells || 0 };
 }
 
 async function appendRow(range, values) {
+  return _withPinnedSession(async () => _appendRowPinned(range, values));
+}
+
+async function _appendRowPinned(range, values) {
   if (!_sheetId) throw new Error('No hay Sheet abierto.');
   const encoded = encodeURIComponent(range);
   const res = await _apiFetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}/values/${encoded}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: [values] }) },
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: neutralizeCells([values]) }) },
   );
   const data = await res.json();
   const updatedRange = data.updates?.updatedRange || '';
@@ -404,10 +432,15 @@ async function appendRow(range, values) {
 }
 
 async function batchWriteRanges(updates) {
-  if (!_sheetId || !updates.length) return { updated: 0 };
+  return _withPinnedSession(async () => _batchWriteRangesPinned(updates));
+}
+
+async function _batchWriteRangesPinned(updates) {
+  if (!updates.length) return { updated: 0 };
+  if (!_sheetId) throw new Error('No hay Sheet abierto.');
   const data = updates.map((u) => ({
     range: u.range,
-    values: u.values,
+    values: neutralizeCells(u.values),
   }));
   const res = await _apiFetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}/values:batchUpdate`,
@@ -440,6 +473,7 @@ module.exports = {
   writeRange,
   appendRow,
   batchWriteRanges,
+  withPinnedGoogleSession: _withPinnedSession,
   getValidTokens,
   refreshAccessToken,
   isInvalidGrantResponse,

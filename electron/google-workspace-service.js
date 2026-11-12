@@ -1,6 +1,7 @@
 'use strict';
 
 const cloud = require('./cloud-connector-common');
+const { neutralizeCells } = require('./sheets-formula-guard');
 
 const DRIVE = 'https://www.googleapis.com/drive/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
@@ -161,7 +162,7 @@ async function sheetValues(spreadsheetId, range) {
 
 async function updateRange(params) {
   const id = _id(params.spreadsheet_id, 'Hoja');
-  const values = cloud.matrix(params.values);
+  const values = neutralizeCells(cloud.matrix(params.values));
   const body = await cloud.write(
     () => _request(`${SHEETS}/${id}/values/${encodeURIComponent(String(params.range))}?valueInputOption=USER_ENTERED`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ range: params.range, values }),
@@ -179,7 +180,7 @@ async function append(params) {
   const id = _id(params.spreadsheet_id, 'Hoja');
   const body = await cloud.write(() => _request(
     `${SHEETS}/${id}/values/${encodeURIComponent(String(params.range))}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: cloud.matrix(params.values) }) },
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: neutralizeCells(cloud.matrix(params.values)) }) },
   ));
   return { spreadsheet_id: id, updated_range: body.updates?.updatedRange || null, updated_rows: body.updates?.updatedRows ?? null };
 }

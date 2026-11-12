@@ -197,3 +197,48 @@ def test_image_optimizer_save_files_skips_malformed_base64_instead_of_aborting(t
     assert (tmp_path / "good.jpg").read_bytes() == b"ok"
     assert (tmp_path / "also-good.jpg").read_bytes() == b"also-ok"
     assert not (tmp_path / "bad.jpg").exists()
+
+
+def test_image_optimizer_rejects_symlinked_output_folder(tmp_path) -> None:
+    # El veto examina la ruta SIN resolver: tras resolve() is_symlink() es casi siempre False.
+    real = tmp_path / "real-destino"
+    real.mkdir()
+    link = tmp_path / "atajo"
+    try:
+        link.symlink_to(real, target_is_directory=True)
+    except OSError:
+        pytest.skip("crear symlink requiere privilegio en este entorno")
+
+    with pytest.raises(ValueError, match="symlink"):
+        image_optimizer_save_files(
+            {
+                "output_folder": str(link),
+                "files": [
+                    {"filename": "foto.jpg", "content_b64": base64.b64encode(b"jpg").decode("ascii")},
+                ],
+            }
+        )
+    assert not (real / "foto.jpg").exists()
+
+
+def test_image_optimizer_rejects_symlinked_ancestor_of_output_folder(tmp_path) -> None:
+    base = tmp_path / "base"
+    base.mkdir()
+    real = tmp_path / "real-destino"
+    real.mkdir()
+    link = base / "enlace"
+    try:
+        link.symlink_to(real, target_is_directory=True)
+    except OSError:
+        pytest.skip("crear symlink requiere privilegio en este entorno")
+
+    with pytest.raises(ValueError, match="symlink"):
+        image_optimizer_save_files(
+            {
+                "output_folder": str(link / "salidas"),
+                "files": [
+                    {"filename": "foto.jpg", "content_b64": base64.b64encode(b"jpg").decode("ascii")},
+                ],
+            }
+        )
+    assert not (real / "salidas").exists()

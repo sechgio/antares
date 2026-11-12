@@ -1,9 +1,22 @@
 from __future__ import annotations
 
+import re
 from html import escape
 
 from backend.core.design.models import LAYOUTS
 from backend.core.design.types import JsonObject
+
+_CSS_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{3,8}$|^[a-zA-Z]{1,32}$|^rgba?\(\s*[\d.,%\s]{1,60}\)$")
+
+
+def _css_color(value: object, fallback: str) -> str:
+    cleaned = " ".join(str(value or "").split())
+    return cleaned if _CSS_COLOR_RE.match(cleaned) else fallback
+
+
+def _css_font(name: str) -> str:
+    safe = str(name or "").replace("\\", "").replace('"', "").replace(";", "").strip()
+    return f'"{safe[:48]}"'
 
 _STYLE = """
 @page {{ size: {width}mm {height}mm; margin: 0; }}
@@ -55,7 +68,7 @@ li::before {{ content: ""; position: absolute; left: 0; top: {bullet_top}em;
 
 
 def _font_stack(name: str) -> str:
-    return f'"{name}"'
+    return _css_font(name)
 
 
 def _px_ratio(width_mm: float) -> float:
@@ -159,10 +172,10 @@ def render_html(document: JsonObject, *, notes: bool = False) -> str:
         pad_v=f"{pad_v:g}",
         pad_h=f"{pad_h:g}",
         rule_mm=f"{max(0.6, width * 0.0025):g}",
-        background=theme.get("background", "#FFFFFF"),
-        text=theme.get("text", "#111827"),
-        muted=theme.get("muted", "#6B7280"),
-        accent=theme.get("accent", "#2563EB"),
+        background=_css_color(theme.get("background"), "#FFFFFF"),
+        text=_css_color(theme.get("text"), "#111827"),
+        muted=_css_color(theme.get("muted"), "#6B7280"),
+        accent=_css_color(theme.get("accent"), "#2563EB"),
         head_font=_font_stack(str(theme.get("headFont") or "Cambria")),
         body_font=_font_stack(str(theme.get("bodyFont") or "Calibri")),
         fs_hero=f"{40 * ratio:.1f}",

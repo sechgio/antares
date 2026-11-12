@@ -26,8 +26,26 @@ const MISSING_DRIVER = 'El driver de computer use no está instalado. Descarga e
 
 let runtime = null;
 let starting = null;
-const windows = new Map();
-const elements = new Map();
+const SESSION_STORE_TTL_MS = 24 * 60 * 60_000;
+const MAX_WINDOWS_PER_SESSION = 200;
+const MAX_ELEMENTS_PER_SESSION = 5000;
+const storesBySession = new Map();
+
+function sessionStore(sessionId) {
+  const key = String(sessionId || '');
+  if (!key) return null;
+  const now = Date.now();
+  for (const [id, store] of storesBySession) {
+    if (now - store.lastSeen > SESSION_STORE_TTL_MS) storesBySession.delete(id);
+  }
+  let store = storesBySession.get(key);
+  if (!store) {
+    store = { windows: new Map(), elements: new Map(), lastSeen: now };
+    storesBySession.set(key, store);
+  }
+  store.lastSeen = now;
+  return store;
+}
 
 function driverDir() {
   return process.resourcesPath && fs.existsSync(path.join(process.resourcesPath, 'cua-driver'))
@@ -139,33 +157,38 @@ async function ensureRuntime() {
   return starting;
 }
 
-function remember(tool, args, structured) {
-  if (!structured || typeof structured !== 'object') return;
+function remember(tool, args, structured, sessionId) {
+  const store = sessionStore(sessionId);
+  if (!store || !structured || typeof structured !== 'object') return;
   for (const win of structured.windows || []) {
-    windows.set(String(win.window_id), { pid: win.pid, app: win.app_name, title: win.title, bounds: win.bounds });
+    if (store.windows.size >= MAX_WINDOWS_PER_SESSION) store.windows.delete(store.windows.keys().next().value);
+    store.windows.set(String(win.window_id), { pid: win.pid, app: win.app_name, title: win.title, bounds: win.bounds });
   }
   if (tool === 'get_window_state' && structured.window_id !== undefined) {
-    windows.set(String(structured.window_id), { pid: structured.pid, app: structured.app_name,
+    if (store.windows.size >= MAX_WINDOWS_PER_SESSION) store.windows.delete(store.windows.keys().next().value);
+    store.windows.set(String(structured.window_id), { pid: structured.pid, app: structured.app_name,
       title: structured.window_title, bounds: structured.window_bounds });
     for (const element of structured.elements || []) {
-      if (element.element_token) elements.set(element.element_token, { role: element.role, label: element.label });
+      if (element.element_token) store.elements.set(element.element_token, { role: element.role, label: element.label });
     }
   }
-  if (elements.size > 5000) elements.clear();
+  if (store.elements.size > MAX_ELEMENTS_PER_SESSION) store.elements.clear();
 }
 
-function targetWindow(params) {
-  if (params.window_id !== undefined) return windows.get(String(params.window_id)) || null;
+function targetWindow(params, sessionId) {
+  const store = sessionStore(sessionId);
+  if (!store) return null;
+  if (params.window_id !== undefined) return store.windows.get(String(params.window_id)) || null;
   if (params.pid === undefined) return null;
-  return [...windows.values()].find((win) => win.pid === params.pid) || null;
+  return [...store.windows.values()].find((win) => win.pid === params.pid) || null;
 }
 
-function approvalContext(name, params = {}) {
+function approvalContext(name, params = {}, sessionId = null) {
   if (name === 'cua_launch_app') {
     const app = String(params.name || path.basename(String(params.path || ''))).trim();
-    return app ? { app } : {};
+    return app ? { app, ...(params.path ? { path: String(params.path) } : {}) } : {};
   }
-  const win = targetWindow(params);
+  const win = targetWindow(params, sessionId);
   const info = {};
   if (win) {
     info.app = win.app;
@@ -174,7 +197,8 @@ function approvalContext(name, params = {}) {
     // Sin app no hay concesión por app ni lista blanca: un pid se reutiliza.
     info.window = `Proceso ${params.pid} (sin leer con cua_list_windows)`;
   }
-  const element = params.element_token ? elements.get(String(params.element_token)) : null;
+  const store = sessionStore(sessionId);
+  const element = params.element_token && store ? store.elements.get(String(params.element_token)) : null;
   if (element) info.element = element.label ? `${element.role} «${element.label}»` : String(element.role || '');
   return info;
 }
@@ -234,16 +258,15 @@ async function run(name, params = {}, { sessionId, dir } = {}) {
   const current = await ensureRuntime();
   const result = await request(current, 'tools/call', { name: spec.tool, arguments: args });
   const out = shape(spec.tool, result || {}, dir);
-  remember(spec.tool, args, out);
-  const win = targetWindow(params);
+  remember(spec.tool, args, out, sessionId);
+  const win = targetWindow(params, sessionId);
   if (win && win.bounds) out.window_rect = [win.bounds.x, win.bounds.y, win.bounds.width, win.bounds.height];
   return out;
 }
 
 function close() {
   stop();
-  windows.clear();
-  elements.clear();
+  storesBySession.clear();
 }
 
-module.exports = { TOOLS, run, approvalContext, close };
+module.exports = { TOOLS, run, approvalContext, remember, close };

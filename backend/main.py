@@ -46,7 +46,12 @@ from backend.core.exceptions import (
     ValidationError,
 )
 from backend.core.import_guard import serialized_import
-from backend.core.ipc_catalog import HEAVY_METHODS, SYNC_METHODS, lane_for
+from backend.core.ipc_catalog import (
+    HEAVY_METHODS,
+    SYNC_METHODS,
+    lane_for,
+    validate_params_schema,
+)
 from backend.core.observability import (
     configure_logging,
     get_context,
@@ -65,6 +70,7 @@ from backend.core.scheduler import (
 from backend.handlers import HANDLERS, WARM_CRITICAL_DONE
 from backend.ipc_protocol import _Skip, read_message, send_notification, send_response
 from backend.utils.i18n import t
+from backend.utils.validators import redact_internal_error
 
 _shutdown_requested = False
 
@@ -90,6 +96,24 @@ logger = logging.getLogger(__name__)
 
 _WARM_WAIT_METHODS = frozenset(HEAVY_METHODS | {"preview"})
 _WARM_WAIT_TIMEOUT = 15.0
+
+_METHOD_HEAVY_MIN_LIMIT = 2
+_method_heavy_lock = threading.Lock()
+_method_heavy_inflight: dict[str, int] = {}
+
+
+def _method_heavy_limit(scheduler: Any) -> int:
+    return max(_METHOD_HEAVY_MIN_LIMIT, int(getattr(scheduler, "heavy_workers", 1) or 1))
+
+
+def _release_method_heavy(method_name: str) -> None:
+    with _method_heavy_lock:
+        remaining = _method_heavy_inflight.get(method_name, 0) - 1
+        if remaining > 0:
+            _method_heavy_inflight[method_name] = remaining
+        else:
+            _method_heavy_inflight.pop(method_name, None)
+
 _PANDAS_METHODS = frozenset({
     "db_export",
     "db_parse_mapping",
@@ -141,9 +165,9 @@ def _user_error_message(exc: Exception) -> AntaresBaseException:
     if isinstance(exc, FileNotFoundError):
         return NotFoundError("Archivo no encontrado")
     if isinstance(exc, ValueError):
-        return ValidationError(str(exc))
+        return ValidationError(redact_internal_error(str(exc)))
     if isinstance(exc, ImportError):
-        return AntaresBaseException(str(exc))
+        return AntaresBaseException(redact_internal_error(str(exc)))
     return AntaresBaseException("Error interno del servidor")
 
 
@@ -329,12 +353,33 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
                 rejected="memory_pressure_check",
             )
             return None
+    method_limit: int | None = None
     try:
         if method_name in HEAVY_METHODS:
+            method_limit = _method_heavy_limit(scheduler)
+            with _method_heavy_lock:
+                in_flight = _method_heavy_inflight.get(method_name, 0)
+                if in_flight >= method_limit:
+                    busy_error = CapacityExceededError(
+                        "Backend ocupado: demasiadas operaciones del mismo tipo en curso",
+                        details={"retryable": True, "reason": "method_busy", "limit": method_limit},
+                    )
+                    logger.warning(
+                        "Rejecting %s by method concurrency cap: inflight=%d limit=%d metrics=%s",
+                        method_name,
+                        in_flight,
+                        method_limit,
+                        scheduler.metrics(),
+                    )
+                    _reject_submit(msg_id, method_name, lane, busy_error, rejected="method_busy")
+                    return None
+                _method_heavy_inflight[method_name] = in_flight + 1
             future = scheduler.submit_heavy(_dispatch, handler, params, msg_id, method_name)
         else:
             future = scheduler.submit_light(_dispatch, handler, params, msg_id, method_name)
     except SchedulerBusy as exc:
+        if method_limit is not None:
+            _release_method_heavy(method_name)
         reason = getattr(exc, "reason", "heavy_queue_full")
         if reason == "memory_pressure":
             memory_error = MemoryPressureError(
@@ -367,11 +412,19 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
         )
         return None
     except Exception:
+        if method_limit is not None:
+            _release_method_heavy(method_name)
         logger.exception("Failed to submit %s to scheduler", method_name)
         _reject_submit(msg_id, method_name, lane, "Backend no disponible: no se pudo programar la tarea")
         return None
     if future is not None:
         future.add_done_callback(_log_future_exception)
+        if method_limit is not None:
+            def _release_on_done(_fut: Future) -> None:
+                _release_method_heavy(method_name)
+            future.add_done_callback(_release_on_done)
+    elif method_limit is not None:
+        _release_method_heavy(method_name)
     return future
 
 def main() -> None:
@@ -442,6 +495,26 @@ def main() -> None:
                     break
                 if isinstance(msg, _Skip):
                     _consecutive_errors = max(0, _consecutive_errors - 1)
+                    continue
+
+                schema_violation = validate_params_schema(msg.method, msg.params)
+                if schema_violation is not None:
+                    ipc_phase_telemetry.set_fields(
+                        msg.id,
+                        method=msg.method,
+                        lane=lane_for(msg.method),
+                        ok=False,
+                        rejected="invalid_params",
+                    )
+                    send_response(
+                        None,
+                        msg.id,
+                        error={
+                            "code": -32602,
+                            "message": schema_violation,
+                            "category": "VALIDATION_ERROR",
+                        },
+                    )
                     continue
 
                 handler = HANDLERS.get_loaded(msg.method)

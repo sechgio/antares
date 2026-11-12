@@ -1,13 +1,1 @@
-{
-  "schema_version": 1,
-  "control_tool_results": [
-    "ask_user",
-    "skills_list",
-    "skills_read",
-    "memory_search",
-    "memory_remember",
-    "procedure_learn",
-    "tools_load",
-    "task_plan"
-  ]
-}
+{"schema_version": 1, "control_tool_results": ["ask_user", "skills_list", "tools_load", "task_plan"]}

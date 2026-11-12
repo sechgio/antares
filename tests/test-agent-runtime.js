@@ -8,8 +8,9 @@ const path = require('path');
 const { assert, finish, stubModule } = require('./helpers/harness');
 const { getEventListeners } = require('node:events');
 
+const realBrowserCatalog = require('../electron/agent-browser');
 stubModule('electron/agent-cua.js', { TOOLS: new Map(), run: async () => ({}), approvalContext: () => ({}), close: () => {} });
-stubModule('electron/agent-browser.js', { ...require('../electron/agent-browser'), TOOLS: {} });
+stubModule('electron/agent-browser.js', { ...realBrowserCatalog, TOOLS: {} });
 const runtime = require('../electron/agent-runtime');
 const importer = require('../electron/agent-import');
 const { METHODS, INTERNAL_METHODS: INTERNAL_SET, nativeDispatchFor } = require('../shared/ipc-method-catalog');
@@ -242,8 +243,13 @@ async function main() {
     }]);
     assert(enveloped !== plain && enveloped[1].content[0].text.startsWith('<tool_output origin="fs_read">')
       && result.content[0].text === 'ok', 'el envoltorio solo afecta a la copia enviada al modelo');
-    assert(enveloped[2].content[0].text === 'INSTRUCCION',
-      'las instrucciones de una skill no se marcan como dato externo');
+    assert(enveloped[2].content[0].text.startsWith('<tool_output origin="skills_read">')
+      && enveloped[2].content[0].text.includes('INSTRUCCION'),
+    'el cuerpo de una skill cruza la barrera de datos como cualquier resultado de archivos');
+    const catalogStill = envelopeToolResults([{
+      role: 'toolResult', toolCallId: 'sl', toolName: 'skills_list', content: [{ type: 'text', text: 'CATALOGO' }],
+    }]);
+    assert(catalogStill[0].content[0].text === 'CATALOGO', 'el catálogo de skills sigue en el carril de control');
     const planTurn = { remaining: ['Publicar'], planNext: 'Publicar', sincePlan: 9, planReminderAt: 0 };
     assert(planReminder([user, result], planTurn, 9) === undefined, 'el recordatorio de plan espera diez pasos');
     planTurn.sincePlan = 10;
@@ -398,14 +404,67 @@ async function main() {
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Lista y limpia' });
-    assert(await waitFor(() => state.dispatches.length === 1), 'Acceso completo ejecuta el shell sin preguntar');
+    assert(await waitFor(() => state.approvals.size === 1), 'Acceso completo sigue pidiendo aprobación para el shell');
+    assert(state.dispatches.length === 0, 'no ejecuta el listado antes de la aprobación humana');
+    await runtime.handlers.agent_approve({ approval_id: [...state.approvals.values()][0].id });
     assert(await waitFor(() => [...state.approvals.values()].filter((a) => a.status === 'pending').length === 1),
-      'un comando que borra archivos sigue pidiendo aprobación en Acceso completo');
+      'un segundo comando, aunque sea de lectura, pide otra aprobación en Acceso completo');
     assert(state.dispatches.length === 1, 'no borra antes de la aprobación humana');
     const pending = [...state.approvals.values()].find((a) => a.status === 'pending');
     await runtime.handlers.agent_approve({ approval_id: pending.id });
     assert(await waitIdle(session.id), 'el shell continúa después de la aprobación humana');
     assert(state.dispatches.length === 2, 'la aprobación ejecuta el comando destructivo una vez');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    const shellBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools') result.tools.push({
+        name: 'shell_run', kind: 'backend', module: 'computer', gated: true, inputSchema: { type: 'object', properties: {} },
+      });
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('shell_run', { command: 'cmd /c del .\\tmp.txt' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Listo'),
+    ], shellBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Limpia el archivo' });
+    assert(await waitFor(() => state.approvals.size === 1), 'un verbo destructivo envuelto pide aprobación humana en Acceso completo');
+    assert(state.dispatches.length === 0, 'no borra nada antes de la aprobación humana');
+    await runtime.handlers.agent_approve({ approval_id: [...state.approvals.values()][0].id });
+    assert(await waitIdle(session.id), 'el flujo termina tras la aprobación');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    const skillsBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools') result.tools.push({
+        name: 'skill_create', kind: 'backend', module: 'agent', gated: true, inputSchema: { type: 'object', properties: {} },
+      });
+      return result;
+    };
+    await openFaux([
+      fauxAssistantMessage([fauxToolCall('skill_create', { name: 'prueba' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('hecho'),
+    ], skillsBridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    let ruleError = null;
+    try { await runtime.handlers.agent_session_rules_set({ id: session.id, rules: { other: 'allow' } }); } catch (err) { ruleError = err; }
+    assert(ruleError, 'el canal «Otros» no acepta una regla allow en bloque');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'guarda la skill' });
+    assert(await waitFor(() => state.approvals.size === 1), 'skill_create pide aprobación pese a la regla allow y el modo full');
+    assert(state.dispatches.length === 0, 'no guarda la skill antes de la aprobación humana');
+    const approval = [...state.approvals.values()][0];
+    await runtime.handlers.agent_deny({ approval_id: approval.id });
+    assert(await waitIdle(session.id), 'el turno continúa tras rechazar la creación');
+    assert(state.dispatches.length === 0, 'la skill rechazada no se guarda');
     await runtime.shutdown();
   }
 
@@ -1049,27 +1108,40 @@ async function main() {
     const policyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-agent-policy-'));
     fs.mkdirSync(path.join(policyRoot, 'Antares', 'ai-agent'), { recursive: true });
     const policyFile = path.join(policyRoot, 'Antares', 'ai-agent', 'browser-policy.json');
-    fs.writeFileSync(policyFile, JSON.stringify({ always_allowed: ['www.bcp.pe'] }));
+    fs.writeFileSync(policyFile, JSON.stringify({ always_allowed: ['panel.miejemplo.pe'] }));
+    // Debe coincidir con el conjunto no transaccional del catálogo del navegador.
+    const { WEB_AUTO_APPROVE } = require('../electron/agent-execution');
+    const passiveCatalog = Object.entries(realBrowserCatalog.TOOLS).filter(([, definition]) => definition[2] === false).map(([name]) => name);
+    assert(JSON.stringify([...WEB_AUTO_APPROVE].sort()) === JSON.stringify(passiveCatalog.sort()),
+      'WEB_AUTO_APPROVE espeja el catálogo pasivo del navegador');
     const realLocalAppData = process.env.LOCALAPPDATA;
     process.env.LOCALAPPDATA = policyRoot;
     try {
       const { bridge, state } = makeBridge();
       let executed = 0;
       runtime._internal.shared.nativeTools = {
-        nativeToolContext: async () => ({ tool_version: 'fake-v1', page_url: 'https://www.bcp.pe/panel', domain: 'www.bcp.pe', policy_blocked: false }),
-        nativeToolSpecs: () => [{ name: 'web_click', description: 'Clic web', gated: true, kind: 'native', inputSchema: { type: 'object', properties: {} } }],
+        nativeToolContext: async () => ({ tool_version: 'fake-v1', page_url: 'https://panel.miejemplo.pe/panel', domain: 'panel.miejemplo.pe', policy_blocked: false }),
+        nativeToolSpecs: () => [
+          { name: 'web_read', description: 'Leer web', gated: true, kind: 'native', inputSchema: { type: 'object', properties: {} } },
+          { name: 'web_click', description: 'Clic web', gated: true, kind: 'native', inputSchema: { type: 'object', properties: {} } },
+        ],
         runNativeTool: async () => { executed += 1; return { ok: true }; },
       };
       await openFaux([
+        fauxAssistantMessage([fauxToolCall('web_read', {})], { stopReason: 'toolUse' }),
         fauxAssistantMessage([fauxToolCall('web_click', {})], { stopReason: 'toolUse' }),
         fauxAssistantMessage('hecho'),
       ], bridge);
       const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
-      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'haz clic' });
-      assert(await waitIdle(session.id), 'el turno termina cuando el dominio está permitido siempre');
-      assert(executed === 1, 'la acción web sobre un dominio permitido siempre se ejecuta sin preguntar');
-      const decided = [...state.approvals.values()];
-      assert(decided.length === 1 && decided[0].status === 'approved', 'la aprobación del dominio autorizado se resuelve sola');
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: 'lee y haz clic' });
+      assert(await waitFor(() => executed === 1), 'la lectura web sobre un dominio permitido siempre se ejecuta sin preguntar');
+      assert(await waitFor(() => [...state.approvals.values()].some((a) => a.status === 'pending')),
+        'una acción transaccional sobre un dominio permitido siempre pide aprobación humana');
+      const pendiente = [...state.approvals.values()].find((a) => a.status === 'pending');
+      assert(pendiente.method === 'web_click', 'la aprobación pendiente es la acción transaccional');
+      await runtime.handlers.agent_deny({ approval_id: pendiente.id });
+      assert(await waitIdle(session.id), 'el turno continúa tras rechazar la acción sobre el dominio permitido');
+      assert(executed === 1, 'la acción transaccional denegada no se ejecuta aunque el dominio esté permitido siempre');
       runtime._internal.shared.nativeTools = null;
       await runtime.shutdown();
 
@@ -1324,23 +1396,22 @@ async function main() {
   }
 
   {
-    const extract = runtime._internal.extractPaths;
-    const text = String.raw`Usa @sellador con C:\trabajos\informe.pdf, "C:\Mis docs\plan v2.pdf" y (D:\datos).`;
-    const paths = extract(text);
-    assert(JSON.stringify(paths) === JSON.stringify(['C:\\Mis docs\\plan v2.pdf', 'C:\\trabajos\\informe.pdf', 'D:\\datos']),
-      'extrae rutas absolutas con y sin comillas, sin puntuación final');
-    assert(extract(String.raw`relativa\x.pdf C:relativo \\srv\share\x.pdf http://x`).length === 0, 'ignora rutas relativas y de red');
-
     const { bridge, state } = makeBridge();
     await openFaux([fauxAssistantMessage('listo')], bridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
-    const sent = await runtime.handlers.agent_message_send({ session_id: session.id, content: text, request_id: 'r-files' });
-    assert(state.grants.length === 1 && state.grants[0].session_id === session.id && state.grants[0].request_id === 'r-files',
-      'la concesión queda atribuida a la conversación y al envío del humano');
-    assert(sent.files.granted.length === 2 && sent.files.rejected[0].path === 'D:\\datos', 'el envío informa archivos concedidos y rechazados');
+    runtime._internal.shared.attachments.set('att-1', { path: String.raw`C:\adjunto\informe.pdf`, kind: 'files', created: Date.now() });
+    const sent = await runtime.handlers.agent_message_send({ session_id: session.id,
+      content: String.raw`Usa @sellador con C:\trabajos\informe.pdf, "C:\Mis docs\plan v2.pdf" y (D:\datos).`,
+      request_id: 'r-files', attachments: ['att-1'] });
+    assert(state.grants.length === 1 && state.grants[0].session_id === session.id && state.grants[0].request_id === 'r-files'
+      && JSON.stringify(state.grants[0].paths) === JSON.stringify([String.raw`C:\adjunto\informe.pdf`]),
+      'la concesión queda atribuida al envío del humano y solo cubre los adjuntos explícitos, no las rutas del texto');
+    assert(sent.files.granted.length === 1 && sent.files.rejected.length === 0, 'el envío informa el adjunto concedido');
     assert(await waitIdle(session.id), 'el turno termina');
-    const plain = await runtime.handlers.agent_message_send({ session_id: session.id, content: 'sin rutas' });
-    assert(state.grants.length === 1 && plain.files.granted.length === 0, 'un mensaje sin rutas no concede nada');
+    const plain = await runtime.handlers.agent_message_send({ session_id: session.id,
+      content: String.raw`abre C:\trabajos\otro.pdf sin adjuntarlo` });
+    assert(state.grants.length === 1 && plain.files.granted.length === 0,
+      'una ruego de ruta escrita en el texto no concede nada sin adjunto');
     assert(await waitIdle(session.id), 'el segundo turno termina');
     await runtime.handlers.agent_session_delete({ id: session.id });
     assert(state.revoked.includes(session.id), 'borrar la conversación revoca sus archivos');
@@ -1919,7 +1990,8 @@ async function main() {
     const { bridge, state } = makeBridge();
     await openFaux([fauxAssistantMessage('listo')], bridge);
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
-    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Usa @sellador con C:\\docs\\a.pdf' });
+    runtime._internal.shared.attachments.set('att-ctx', { path: String.raw`C:\docs\a.pdf`, kind: 'files', created: Date.now() });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Usa @sellador con C:\\docs\\a.pdf', attachments: ['att-ctx'] });
     assert(await waitIdle(session.id), 'el turno con contexto termina');
     const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(JSON.stringify(listed.context.modules) === JSON.stringify([{ id: 'sellador', label: 'Sellador' }]), 'el módulo mencionado queda en el contexto de la conversación');

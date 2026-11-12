@@ -12,6 +12,7 @@ function loadRouterWithHandler({ documentsDir, downloadsDir, userDataDir, fakePr
     electron: {
       ipcMain: {
         handle: (channel, fn) => handlers.set(channel, fn),
+        on: () => {},
         removeHandler: () => {},
       },
       app: {
@@ -97,6 +98,11 @@ async function main() {
 
   try {
     assert(typeof ipcCall === 'function', 'ipc-call handler registrado');
+
+    await handleDialogCall('dialog_folder', { pickOnly: true }, {
+      async showOpenDialog() { return { canceled: false, filePaths: [docsDir] }; },
+      async showSaveDialog() { return { canceled: true }; },
+    }, fakeWin, {});
 
     const staged = createStagedSession({ name: 'sellado.pdf', size: 4, webContentsId: 1 });
     await appendStagedChunk(staged.token, Buffer.from('%PDF'), 1);

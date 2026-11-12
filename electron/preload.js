@@ -59,15 +59,25 @@ function resolveIsPackaged() {
   const prefix = '--app-is-packaged=';
   const argv = Array.isArray(process.argv) ? process.argv : [];
   const arg = argv.find((a) => typeof a === 'string' && a.startsWith(prefix));
+  // ipc-bridge-022: el flag de main MANDA; NODE_ENV solo respalda y nunca anula el gate.
   if (arg) return arg.slice(prefix.length) === '1';
   try {
-    return typeof __dirname !== 'undefined' && /[\\/]app\.asar[\\/]/.test(__dirname);
+    if (typeof __dirname !== 'undefined' && /[\\/]app\.asar[\\/]/.test(__dirname)) return true;
   } catch {
-    return false;
   }
+  return process.env?.NODE_ENV === 'production';
 }
 
-const isDev = process.env?.NODE_ENV !== 'production' && !resolveIsPackaged();
+const isDev = !resolveIsPackaged();
+
+function loadSupabaseSessionSeed() {
+  // sb-011: siembra por sendSync ANTES de que la página importe supabase-js.
+  try {
+    return ipcRenderer.sendSync('supabase-session-get');
+  } catch {
+    return null;
+  }
+}
 
 try {
   contextBridge.exposeInMainWorld('electronAPI', {
@@ -130,6 +140,7 @@ try {
     canvasAssetGet: (ref) => ipcRenderer.invoke('ipc-call', 'canvas_asset_get', { ref }),
     canvasAssetInfo: (ref) => ipcRenderer.invoke('ipc-call', 'canvas_asset_info', { ref }),
   });
+  contextBridge.exposeInMainWorld('supabaseSessionSeed', loadSupabaseSessionSeed());
 } catch (err) {
   if (isDev) {
     console.error('[preload] Failed to expose electronAPI:', err);

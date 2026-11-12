@@ -44,7 +44,7 @@ const PLAN_REMINDER_STEPS = 10;
 const MAX_RECOVERABLE_FAILURES = 6;
 const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, retómalo: '
   + 'mantén un solo paso in_progress y atiende {next}; comprueba el resultado y, si el paso no puede completarse, '
-  + 'replantea el plan o márcalo como failed con la causa y di qué necesitas.';
+  + 'replantea el plan o márcalo como failed con la causa y di qué necesitas. ' + shared.PLAN_TITLE_TRUST;
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
 const SUBAGENT_TOOL = 'subagent_run';
 const SCRIPT_TOOL = script.SCRIPT_TOOL;
@@ -60,10 +60,7 @@ const UI_ACTION_TOOLS = new Set(['cua_click', 'cua_drag', 'cua_scroll', 'cua_typ
   'cua_set_value', 'cua_invoke_menu', 'cua_bring_to_front']);
 const DESKTOP_ACTION_TOOLS = new Set(['desktop_click', 'desktop_type', 'desktop_key', 'desktop_scroll',
   'desktop_launch', 'desktop_focus']);
-const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'cua_launch_app', ...UI_ACTION_TOOLS, ...DESKTOP_ACTION_TOOLS]);
-const SHELL_TOOLS = new Set(['shell_run', 'shell_job_start']);
-const DESTRUCTIVE_COMMAND = new RegExp(String.raw`(?:^\s*|[;|&({]\s*)(?:remove-item|rm|ri|del|erase|rd|rmdir|clear-content|format-volume|clear-disk)\b`
-  + String.raw`|\bformat(?:\.com)?\s+[a-z]:|\bgit\s+(?:clean\b|reset\s+--hard\b|checkout\s+--\s)|\[(?:system\.)?io\.(?:file|directory)\]::delete\b`, 'im');
+const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'cua_launch_app', 'skill_create', ...UI_ACTION_TOOLS, ...DESKTOP_ACTION_TOOLS]);
 const UNATTENDED_ACTION_TOOLS = new Set(['cua_launch_app', ...UI_ACTION_TOOLS]);
 const MAX_UNATTENDED_ACTIONS = 25;
 const MAX_LOADED_TOOLS = 25;
@@ -462,7 +459,7 @@ function defaultToolNames(specs) {
 function budgetWarningText(rounds) {
   return `Aviso de Antares: llevas ${rounds} de ${MAX_TOOL_STEPS} pasos de herramienta en este turno. `
     + 'Actualiza task_plan con lo verificado y prioriza lo pendiente; al llegar al límite el turno se pausa y el usuario '
-    + 'puede Reanudar. No te detengas solo por este aviso.';
+    + `puede Reanudar. No te detengas solo por este aviso. ${shared.PLAN_TITLE_TRUST}`;
 }
 
 // Texto del recordatorio de plan que planReminder añade al último resultado de herramienta.
@@ -693,11 +690,8 @@ function leadingSystem(messages) {
   return { messages: [messages[index], ...messages.slice(0, index), ...messages.slice(index + 1)] };
 }
 
-// Las salidas de herramientas externas llegan al modelo dentro de un bloque
-// delimitado; una etiqueta falsa en el contenido no puede cerrarlo ni abrir
-// otro. Los resultados de control (skills, memoria, pregunta al usuario) no se
-// envuelven porque su contenido sí son instrucciones de trabajo.
 const CONTROL_TOOL_RESULTS = new Set(CONTROL_TOOL_RESULT_NAMES);
+const NO_ATTACH_IMAGE = /^cua_/;
 
 function escapeToolOutputTags(text) {
   return String(text).replace(/<(\/?)\s*tool_output\b/gi, '&lt;$1tool_output');
@@ -825,7 +819,7 @@ async function pauseForBudget(api, context, reason = 'tool_budget') {
         ? 'El agente agotó su presupuesto diario de tokens. Conservé un punto de continuación; '
           + 'podrás reanudar mañana o al ampliar su presupuesto.'
         : 'Este turno alcanzó su límite de pasos. Conservé un punto de continuación. Usa Reanudar para seguir.')
-        + (remaining.length ? '\nPendiente: ' + remaining.join('; ') : '') },
+        + (remaining.length ? `\nPendiente: ${remaining.map((title) => `«${shared.neutralizePlanText(title)}»`).join('; ')}\n${shared.PLAN_TITLE_TRUST}` : '') },
     } }, ctx());
   });
   // El aborto debe interrumpir esta espera: abortTask espera a que termine este mismo hook.
@@ -990,8 +984,13 @@ function planCheck(answer, api) {
   return { continue: `${shared.CHECK_MARKER} ${notice}` };
 }
 
+// «Permitir siempre» solo exime herramientas no transaccionales; sincronizado a propósito con el catálogo (TOOLS flag false).
+const WEB_AUTO_APPROVE = new Set(['web_open', 'web_back', 'web_forward', 'web_reload', 'web_read', 'web_find',
+  'web_scroll', 'web_hover', 'web_screenshot', 'web_text', 'web_console', 'web_network', 'web_wait', 'web_handover']);
+
 function webAlwaysAllowed(name, context) {
   if (!String(name || '').startsWith('web_') || !context || context.policy_blocked) return false;
+  if (!WEB_AUTO_APPROVE.has(String(name))) return false;
   const domain = String(context.domain || '');
   return !!domain && require('./agent-browser-policy').isAlwaysAllowed(domain);
 }
@@ -1094,11 +1093,8 @@ async function beforeTool(call, api, context) {
       ...(approvedContext ? { context: approvedContext } : {}),
       ...(unattendedApps ? { unattended_apps: unattendedApps } : {}),
     }));
-    const command = (call.arguments || {}).command;
-    const fullShell = SHELL_TOOLS.has(call.name) && !unattendedApps
-      && typeof command === 'string' && !DESTRUCTIVE_COMMAND.test(command);
     const autoSource = rule === 'allow' && !NEVER_AUTO_APPROVE.has(call.name) ? 'rule'
-      : mode === 'full' && (!NEVER_AUTO_APPROVE.has(call.name) || fullShell) && rule !== 'ask' ? 'full'
+      : mode === 'full' && !NEVER_AUTO_APPROVE.has(call.name) && rule !== 'ask' ? 'full'
         : rule !== 'ask' && webAlwaysAllowed(call.name, approvedContext) ? 'web' : null;
     if (autoSource && approval.status === 'pending') {
       ({ approval } = await bridge('agent_internal_approval_decide', {
@@ -1240,7 +1236,8 @@ async function executeTool(spec, args, api, context) {
         + 'la próxima lectura lo reconstruirá desde el historial.';
     }
   }
-  const image = isError || !await acceptsImages(api, context) ? null : await resultImage(parsed);
+  const image = isError || NO_ATTACH_IMAGE.test(spec.name) || !await acceptsImages(api, context)
+    ? null : await resultImage(parsed);
   const turn = turnState(api.conversationId);
   const calls = turn.calls;
   const signature = callSignature(spec.name, args);
@@ -1594,15 +1591,32 @@ function localDay(now = Date.now()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-async function profileBudget(profile) {
-  const limit = Number(profile && profile.daily_tokens) || 0;
-  if (!limit) return null;
+const DEFAULT_UNATTENDED_DAILY_TOKENS = 2_000_000;
+
+async function budgetFor(profile, limit) {
   const doc = await shared.state.harness.snapshot(shared.state.ProfilesDoc, ctx());
   const entry = doc && doc.usage && doc.usage[profile.id];
   const day = localDay();
   const delegated = await bridge('agent_internal_profile_usage', { profile_id: profile.id, day });
   const used = (entry && entry.day === day ? Number(entry.tokens) || 0 : 0) + (Number(delegated.tokens) || 0);
-  return { limit, used, exhausted: used >= limit };
+  return { limit, used, exhausted: used >= limit, day };
+}
+
+async function profileBudget(profile) {
+  const limit = Number(profile && profile.daily_tokens) || 0;
+  if (!limit) return null;
+  return budgetFor(profile, limit);
+}
+
+async function unattendedBudget(profile) {
+  const limit = Number(profile && profile.daily_tokens) || 0;
+  if (limit) return budgetFor(profile, limit);
+  const day = localDay();
+  const doc = await shared.state.harness.snapshot(shared.state.ProfilesDoc, ctx());
+  const used = Object.values((doc && doc.usage) || {})
+    .filter((entry) => entry && entry.day === day)
+    .reduce((sum, entry) => sum + (Number(entry.tokens) || 0), 0);
+  return { limit: DEFAULT_UNATTENDED_DAILY_TOKENS, used, exhausted: used >= DEFAULT_UNATTENDED_DAILY_TOKENS, day };
 }
 
 async function recordProfileUsage(session, usage) {
@@ -1701,8 +1715,11 @@ module.exports = {
   reminderTexts,
   moduleToolNames,
   rankTools,
+  WEB_AUTO_APPROVE,
   localDay,
   profileBudget,
+  unattendedBudget,
+  DEFAULT_UNATTENDED_DAILY_TOKENS,
   profileFilter,
   profileInitialTools,
   profileToolFilter,

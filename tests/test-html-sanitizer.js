@@ -67,6 +67,27 @@ function run() {
   assert(!/onerror|onclick|onmouseover/i.test(slashPreviewOut), 'S-R2-4: la vista previa elimina los mismos manejadores');
   assert(!/onerror/i.test(sanitizeHtmlForPreview('<img src=x onerror=alert(1)>')), 'S-R2-4: el caso con espacio sigue cubierto');
 
+  const entityName = '<img sr&#99;="file:///C:/secreto.png" alt="ok">';
+  const entityPdfOut = sanitizeHtmlForPdf(entityName);
+  assert(!entityPdfOut.toLowerCase().includes('file:///c:'), 'el PDF elimina atributos con nombre ofuscado por character references');
+  assert(entityPdfOut.includes('alt="ok"'), 'el PDF conserva los atributos legítimos del mismo tag');
+  assert(!sanitizeHtmlForPreview(entityName).toLowerCase().includes('file:///c:'), 'la vista previa elimina el atributo de nombre ofuscado');
+
+  const hexName = '<img &#x73;rc="file:///etc/passwd">';
+  assert(!sanitizeHtmlForPdf(hexName).toLowerCase().includes('file:///etc/passwd'), 'el nombre ofuscado en hexadecimal también se elimina');
+
+  const handlerName = '<div o&#110;error="alert(1)" data-x="y">z</div>';
+  assert(!/onerror/i.test(sanitizeHtmlForPreview(handlerName)), 'un manejador con nombre ofuscado se elimina en vista previa');
+  assert(!/onerror/i.test(sanitizeHtmlForPdf(handlerName)), 'un manejador con nombre ofuscado se elimina en PDF');
+
+  const c0Payload = '<a href="&#1;javascript:alert(1)">x</a>';
+  assert(!sanitizeHtmlForPdf(c0Payload).toLowerCase().includes('javascript:'), 'un carácter C0 delante del esquema no burla el neutralizador (PDF)');
+  assert(!sanitizeHtmlForPreview(c0Payload).toLowerCase().includes('javascript:'), 'un carácter C0 delante del esquema no burla el neutralizador (vista previa)');
+
+  const fakeHead = '<textarea>contenido</textarea><head><meta http-equiv="Content-Security-Policy" content="default-src *"></head><body>x</body>';
+  const fakeHeadOut = sanitizeHtmlForPdf(fakeHead);
+  assert(fakeHeadOut.startsWith('<meta http-equiv="Content-Security-Policy"'), 'la CSP efectiva va siempre en el índice 0');
+
   finish();
 }
 

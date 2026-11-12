@@ -93,9 +93,16 @@ const MAX_PENDING_PER_METHOD = _positiveIntegerEnv(
 let _ipcBackpressureWaits = 0;
 const ANTARES_IPC_ERROR_PREFIX = 'ANTARES_IPC_ERROR:';
 
+const _WIN_ABS_PATH_RE = /[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]*/g;
+const _POSIX_ABS_PATH_RE = /(?<![\w])\/(?:[\w.\-]+\/)+[\w.\-]*/g;
+
+function _redactInternalPaths(message) {
+  return String(message).replace(_WIN_ABS_PATH_RE, '[ruta interna]').replace(_POSIX_ABS_PATH_RE, '[ruta interna]');
+}
+
 function _toRendererIpcError(err) {
   const payload = {
-    message: err && err.message ? String(err.message) : String(err),
+    message: _redactInternalPaths(err && err.message ? String(err.message) : String(err)),
     code: err && err.code !== undefined ? err.code : -32000,
     category: err && err.category !== undefined ? err.category : 'INTERNAL_ERROR',
     details: err && err.details !== undefined ? err.details : undefined,
@@ -710,7 +717,31 @@ function _isTransientBackendError(err) {
     || msg.includes('stdin write failed');
 }
 
+const DB_CLEAR_MIN_INTERVAL_MS = 5000;
+let _lastDbClearAttemptAt = 0;
+
+async function _maybeConfirmDbClear(method) {
+  if (method !== 'db_clear' || typeof dialog?.showMessageBox !== 'function') return;
+  const now = Date.now();
+  if (now - _lastDbClearAttemptAt < DB_CLEAR_MIN_INTERVAL_MS) {
+    throw new Error('db_clear no puede repetirse con tanta rapidez; espera unos segundos');
+  }
+  _lastDbClearAttemptAt = now;
+  const { getMainWindow } = require('./window-manager');
+  const { response } = await dialog.showMessageBox(getMainWindow(), {
+    type: 'warning',
+    buttons: ['Borrar todo', 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Borrar la base de datos local',
+    message: '¿Borrar TODOS los datos locales de Antares?',
+    detail: 'Se eliminarán los datos guardados en la base local. Esta acción no se puede deshacer.',
+  });
+  if (response !== 0) throw new Error('db_clear cancelado');
+}
+
 async function _callBackend(method, params) {
+    await _maybeConfirmDbClear(method);
     if (!isReady()) {
       if (getState() === STATE.FATAL) throw _buildUnavailableError();
       const ready = await waitForReady(STARTUP_WAIT_MS);
@@ -792,6 +823,10 @@ const _NATIVE_CALLS = {
   editor: (method, params, win) => {
     const { handleEditorCall } = require('./editor-handlers');
     return handleEditorCall(method, params, dialog, win);
+  },
+  session: (method, params) => {
+    const { handleSupabaseSessionCall } = require('./supabase-session-handlers');
+    return handleSupabaseSessionCall(method, params);
   },
 };
 
@@ -919,6 +954,17 @@ function registerIpcHandlers() {
       return _maybeTokenizeResultPaths(method, result, win);
     } catch (err) {
       throw _toRendererIpcError(err);
+    }
+  });
+
+  // sendSync ANTES de que la página cargue; sin sender confiable no se sirve nada.
+  ipcMain.on('supabase-session-get', (event) => {
+    try {
+      _requireTrustedSender(event, 'supabase-session-get');
+      const handled = _NATIVE_CALLS.session('supabase_session_get', {});
+      event.returnValue = handled && handled.handled ? handled.result.blob : null;
+    } catch {
+      event.returnValue = null;
     }
   });
 

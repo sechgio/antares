@@ -13,7 +13,7 @@ describe('createAutoimgApi', () => {
   it('mapea cada método a su nombre IPC con los params correctos', async () => {
     const cases: Array<[keyof ReturnType<typeof createAutoimgApi>, unknown[], string, unknown?]> = [
       ['autoimgOAuthConfigStatus', [], 'autoimg_oauth_config_status'],
-      ['autoimgOAuthConfigSave', ['id', 'secret'], 'autoimg_oauth_config_save', { client_id: 'id', client_secret: 'secret' }],
+      ['autoimgOAuthConfigSave', ['id'], 'autoimg_oauth_config_save', { client_id: 'id' }],
       ['autoimgSheetsAuthUrl', [], 'autoimg_sheets_auth_url'],
       ['autoimgSheetsAuthCancel', [], 'autoimg_sheets_auth_cancel'],
       ['autoimgSheetsAuthStatus', [], 'autoimg_sheets_auth_status'],

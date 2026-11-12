@@ -14,8 +14,8 @@ type IpcInvoke = <T>(method: string, params?: Record<string, unknown> | object) 
 export function createAutoimgApi(invoke: IpcInvoke) {
   return {
     autoimgOAuthConfigStatus: () => invoke<{ configured: boolean; client_id_masked?: string; storage_confidential?: boolean }>('autoimg_oauth_config_status'),
-    autoimgOAuthConfigSave: (client_id: string, client_secret: string) =>
-      invoke<{ success: boolean }>('autoimg_oauth_config_save', { client_id, client_secret }),
+    autoimgOAuthConfigSave: (client_id: string) =>
+      invoke<{ success: boolean }>('autoimg_oauth_config_save', { client_id }),
     autoimgSheetsAuthUrl: () => invoke<{ url: string; redirect_uri: string }>('autoimg_sheets_auth_url'),
     autoimgSheetsAuthCancel: () => invoke<{ success: boolean }>('autoimg_sheets_auth_cancel'),
     autoimgSheetsAuthStatus: () => invoke<{ authenticated: boolean; email?: string }>('autoimg_sheets_auth_status'),

@@ -1,8 +1,93 @@
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { PDFDocument } = require('pdf-lib');
+
+const BACKEND_MANIFEST_NAME = 'antares-backend-manifest.json';
+const MAX_MANIFEST_FILES = 4096;
+const MAX_BUNDLE_GB = 2;
+
+function isUnsafeManifestPath(rel) {
+  return typeof rel !== 'string' || !rel || rel.includes('..') || path.isAbsolute(rel);
+}
+
+function computeBackendManifest(dir) {
+  let totalBytes = 0;
+  const binaries = [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true, recursive: true });
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const abs = path.join(entry.parentPath || entry.path, entry.name);
+    const rel = path.relative(dir, abs).split(path.sep).join('/');
+    if (rel === BACKEND_MANIFEST_NAME || isUnsafeManifestPath(rel)) continue;
+    const buffer = fs.readFileSync(abs);
+    totalBytes += buffer.length;
+    if (totalBytes > MAX_BUNDLE_GB * 1024 * 1024 * 1024) {
+      throw new Error('El bundle del backend excede el techo de 2 GB para el manifiesto');
+    }
+    binaries.push({
+      path: rel,
+      sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+      byteSize: buffer.length,
+    });
+    if (binaries.length > MAX_MANIFEST_FILES) {
+      throw new Error(`El bundle del backend supera ${MAX_MANIFEST_FILES} archivos en el manifiesto`);
+    }
+  }
+  binaries.sort((a, b) => a.path.localeCompare(b.path));
+  return {
+    schemaVersion: 1,
+    description: 'Backend congelado (PyInstaller onedir): huella SHA-256 y tamaño de cada archivo. Regenerado por scripts/build-backend.js y re-verificado antes de empaquetar.',
+    binaries,
+  };
+}
+
+function writeBackendManifest(dir) {
+  const manifest = computeBackendManifest(dir);
+  fs.writeFileSync(
+    path.join(dir, BACKEND_MANIFEST_NAME),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+    'utf8',
+  );
+  return manifest;
+}
+
+function assertBackendManifest(dir) {
+  const manifestPath = path.join(dir, BACKEND_MANIFEST_NAME);
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(
+      `El backend empaquetado no trae ${BACKEND_MANIFEST_NAME}; vuelve a ejecutar npm run build:backend`,
+    );
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Manifiesto del backend ilegible: ${error.message}`);
+  }
+  if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.binaries) || manifest.binaries.length === 0) {
+    throw new Error('Manifiesto del backend inválido');
+  }
+  for (const bin of manifest.binaries) {
+    if (isUnsafeManifestPath(bin.path)) {
+      throw new Error(`Ruta inválida en el manifiesto del backend: ${JSON.stringify(bin.path)}`);
+    }
+    const file = path.join(dir, ...bin.path.split('/'));
+    if (!fs.existsSync(file)) {
+      throw new Error(`El manifiesto del backend lista un archivo ausente: ${bin.path}`);
+    }
+    const buffer = fs.readFileSync(file);
+    const digest = crypto.createHash('sha256').update(buffer).digest('hex');
+    if (digest !== bin.sha256 || buffer.length !== bin.byteSize) {
+      throw new Error(
+        `El backend empaquetado no coincide con su manifiesto: ${bin.path}`,
+      );
+    }
+  }
+  return manifest;
+}
 
 function frozenBackendEnv() {
   return {
@@ -327,4 +412,4 @@ async function verifyFrozenBackendTemplates(exePath, options = {}) {
   }
 }
 
-module.exports = { verifyFrozenBackendTemplates };
+module.exports = { verifyFrozenBackendTemplates, computeBackendManifest, writeBackendManifest, assertBackendManifest };

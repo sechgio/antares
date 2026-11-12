@@ -149,6 +149,9 @@ class SchemaState:
             if sch == schema and role in roles
         }
 
+    def policies_by_table(self, table: str) -> dict[str, Policy]:
+        return {name: pol for (tbl, name), pol in self.policies.items() if tbl == table}
+
 
 def _apply_statement(state: SchemaState, stmt: str) -> None:
     s = stmt.strip()
@@ -451,16 +454,27 @@ def test_realtime_policies_stay_scoped_to_canvas_topics() -> None:
     ]
     assert rt, "faltan políticas de autorización en realtime.messages"
     for name, pol in rt:
-        assert "canvas-document:%" in pol.expr, f"{name} no limita el topic canvas-document:*"
-        assert "'broadcast'" in pol.expr and "'presence'" in pol.expr, (
-            f"{name} no limita extension"
-        )
+        assert "canvas-document:" in pol.expr, f"{name} no limita el topic canvas-document:*"
+        assert "canvas_documents" in pol.expr, f"{name} no ancla el documento en canvas_documents"
         assert "private.is_active_user()" in pol.expr, (
             f"{name} no exige usuario activo vía helper privado"
         )
     bases = {name: pol.base for name, pol in rt}
     assert "for select" in bases["canvas_realtime_receive"]
     assert "for insert" in bases["canvas_realtime_send"]
+    pols = dict(rt)
+
+    saved = pols.get("canvas_realtime_document_saved_send")
+    assert saved is not None, "falta la política document_saved de autoridad de escritura"
+    assert "broadcast" in saved.expr and "event" in saved.expr, (
+        "document_saved debe filtrar extension broadcast y su evento"
+    )
+    assert "created_by" in saved.expr and "is_admin" in saved.expr, (
+        "document_saved exige creador del documento o admin (autoridad de escritura)"
+    )
+    presence = pols.get("canvas_realtime_send")
+    assert presence is not None
+    assert "'presence'" in presence.expr, "el canal de presencia no puede publicar broadcast"
 
 
 def test_realtime_publication_membership_is_exact() -> None:
@@ -479,6 +493,66 @@ def test_user_profiles_privilege_guard_trigger_exists() -> None:
 
 def test_board_columns_system_delete_guard_exists() -> None:
     assert ("public.board_columns", "board_columns_prevent_system_delete") in STATE.triggers
+
+
+def test_board_columns_system_columns_cannot_be_updated() -> None:
+    assert ("public.board_columns", "board_columns_protect_system_columns") in STATE.triggers
+    definition = STATE.functions[("public", "board_columns_protect_system_columns", ())].lower()
+    assert "old.is_system" in definition, "el guard de UPDATE debe reaccionar a filas de sistema"
+
+
+def test_destructive_writes_are_authority_scoped() -> None:
+    for table in ("public.espacios", "public.proyectos", "public.tareas"):
+        policies = STATE.policies_by_table(table)
+        assert not [name for name, pol in policies.items() if re.search(r"for\s+all\b", pol.base)], (
+            f"{table} ya no debe tener política FOR ALL de equipo"
+        )
+        deletes = [pol for name, pol in policies.items() if re.search(r"for\s+delete\b", pol.base)]
+        assert deletes, f"{table} exige política de DELETE acotada"
+        for pol in deletes:
+            assert "private.is_admin()" in pol.expr and "auth.uid()" in pol.expr, (
+                f"{table}: el DELETE exige creador o administrador"
+            )
+        writes = [pol for name, pol in policies.items() if re.search(r"for\s+(update|insert)\b", pol.base)]
+        assert writes, f"{table} conserva escritura de equipo"
+        for pol in writes:
+            assert "private.is_active_user()" in pol.expr
+
+
+def test_canvas_documents_update_policy_is_owner_scoped() -> None:
+    policies = STATE.policies_by_table("public.canvas_documents")
+    updates = [pol for name, pol in policies.items() if re.search(r"for\s+update\b", pol.base)]
+    assert updates, "canvas_documents exige política de UPDATE"
+    for pol in updates:
+        assert "created_by = (select auth.uid())" in pol.expr, (
+            "el UPDATE de canvas_documents exige creador o administrador"
+        )
+        assert "private.is_active_user()" in pol.expr
+
+
+def test_canvas_version_append_rpc_is_owner_scoped() -> None:
+    definition = STATE.functions[("private", "canvas_append_document_version", ("uuid", "jsonb"))].lower()
+    assert "from public.canvas_documents" in definition, "busca el documento antes de anexar"
+    assert "is distinct from auth.uid()" in definition and "private.is_admin()" in definition, (
+        "anexar versiones exige creador o administrador"
+    )
+
+
+def test_canvas_lww_rejects_client_clocks_in_the_future() -> None:
+    push = STATE.functions[("private", "canvas_push_document_lww_v2", ("jsonb", "timestamptz", "boolean"))].lower()
+    assert "interval '5 minutes'" in push and "clock_timestamp()" in push, (
+        "el push LWW rechaza timestamps futuros del cliente"
+    )
+    assert "v_existing_created_by is distinct from v_uid" in push, (
+        "el push LWW no escribe documentos ajenos"
+    )
+    dele = STATE.functions[("private", "canvas_delete_document_lww_v2", ("uuid", "timestamptz"))].lower()
+    assert "interval '5 minutes'" in dele and "clock_timestamp()" in dele, (
+        "el borrado LWW rechaza timestamps futuros del cliente"
+    )
+    assert "v_existing_created_by is distinct from v_uid" in dele, (
+        "el borrado LWW no elimina documentos ajenos"
+    )
 
 
 def test_private_schema_usage_is_not_public() -> None:

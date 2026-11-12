@@ -43,6 +43,21 @@ assert(userPolicy.isBlocked('portal.mi-banco.pe'), 'la lista blocked del usuario
 assert(userPolicy.isAlwaysAllowed('panel.miejemplo.pe'), 'la lista siempre-permitidos del usuario se carga del fichero');
 assert(!userPolicy.isAlwaysAllowed('app.ejemplo.com'), 'un perfil nuevo no hereda los permisos del anterior');
 
+const root3 = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-browser-policy-conflict-'));
+fs.mkdirSync(path.join(root3, 'Antares', 'ai-agent'), { recursive: true });
+fs.writeFileSync(path.join(root3, 'Antares', 'ai-agent', 'browser-policy.json'),
+  JSON.stringify({ blocked: ['bazar.miejemplo.pe'], always_allowed: ['miejemplo.pe', 'bazar.miejemplo.pe', 'bcp.pe'] }));
+process.env.LOCALAPPDATA = root3;
+delete require.cache[require.resolve('../electron/agent-browser-policy')];
+const conflictoPolicy = require('../electron/agent-browser-policy');
+assert(!conflictoPolicy.isAlwaysAllowed('bcp.pe') && !conflictoPolicy.isAlwaysAllowed('www.bcp.pe'),
+  'la semilla de banca gana a una entrada antigua de siempre-permitidos');
+assert(!conflictoPolicy.isAlwaysAllowed('bazar.miejemplo.pe'),
+  'un dominio bloqueado por el usuario gana a su entrada de siempre-permitidos');
+assert(conflictoPolicy.isAlwaysAllowed('miejemplo.pe') && conflictoPolicy.isAlwaysAllowed('tienda.miejemplo.pe'),
+  'el resto de subdominios del dominio permitido siguen auto-aprobándose');
+fs.rmSync(root3, { recursive: true, force: true });
+
 fs.rmSync(root, { recursive: true, force: true });
 fs.rmSync(root2, { recursive: true, force: true });
 finish();

@@ -162,7 +162,7 @@ async function main() {
     browser.setEngine('chrome');
     assert(browser.sessionOpenContext({ url: 'nuevo.example' }) === null, 'con un perfil dedicado tampoco');
     sessionAvailable = true;
-    browser.setEngine('chrome-session');
+    await browser.setEngine('chrome-session');
     const pedido = browser.sessionOpenContext({ url: 'nuevo.example/ruta' });
     assert(pedido && pedido.page_url === 'https://nuevo.example/ruta' && pedido.domain === 'nuevo.example' && pedido.policy_blocked === false,
       'en la sesión de Chrome abrir un dominio nuevo pide aprobación con su dirección y dominio');
@@ -174,6 +174,21 @@ async function main() {
     const context = await nativeToolContext('web_open', 's1', { url: 'nuevo.example' });
     assert(context.page_url === 'https://nuevo.example' && context.domain === 'nuevo.example',
       'la aprobación de web_open guarda la página para «Permitir siempre»');
+
+    const electronStub = require('electron');
+    browser.setEngine('edge');
+    electronStub.dialog = { showMessageBox: async () => ({ response: 1 }) };
+    let refused = null;
+    try { await browser.setEngine('chrome-session'); } catch (error) { refused = error; }
+    assert(refused && refused.code === 'SESSION_CONFIRM_DENIED' && browser.state().engine && browser.state().engine.id === 'edge',
+      'cancelar la confirmación deja el navegador del agente como estaba');
+    let asked = null;
+    electronStub.dialog = { showMessageBox: async (_win, options) => { asked = options; return { response: 0 }; } };
+    const accepted = await browser.setEngine('chrome-session');
+    assert(accepted.engine.id === 'chrome-session' && asked && asked.cancelId === 1 && /sesión de Chrome/i.test(asked.message),
+      'aceptar la confirmación adjunta tu sesión de Chrome con cancelación por defecto');
+    delete electronStub.dialog;
+
     browser.setEngine('edge');
     browser.close();
     assert(browser.state().engine === null, 'cerrar el navegador del agente olvida la elección');

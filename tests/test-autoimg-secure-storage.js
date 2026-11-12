@@ -49,10 +49,20 @@ function withElectronStub() {
 
 function writeLegacyV1Envelope(payload) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify({ v: 1, data: secure.encryptPayload(namespace, payload) }));
+  // Replica del cifrador v1 heredado: el módulo ya no expone esa API.
+  const seed = `antares:${path.join(os.tmpdir(), 'antares-autoimg')}:autoimg:${namespace}`;
+  const key = crypto.createHash('sha256').update(seed).digest();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const json = JSON.stringify(payload);
+  const encrypted = Buffer.concat([cipher.update(json, 'utf8'), cipher.final()]);
+  const data = Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString('base64');
+  fs.writeFileSync(filePath, JSON.stringify({ v: 1, data }));
 }
 
 try {
+  assert.strictEqual(secure.encryptPayload, undefined, 'el cifrador v1 derivado de ruta ya no se expone');
+  assert.strictEqual(secure.decryptPayload, undefined, 'el descifrador v1 ya no se expone');
   assert.strictEqual(
     secure.isConfidentialStorage(),
     false,

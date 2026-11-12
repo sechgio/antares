@@ -40,8 +40,27 @@ function _localImageEntries(rawPaths, webContentsId = null) {
 
     if (typeof resolvedPath !== 'string' || !path.isAbsolute(resolvedPath)) return [];
     if (!allowedExtensions.has(path.extname(resolvedPath).toLowerCase())) return [];
-    return [{ token, fileUrl: pathToFileURL(resolvedPath).toString() }];
+    return [{ token, path: resolvedPath, fileUrl: pathToFileURL(resolvedPath).toString() }];
   });
+}
+
+const IMAGE_MIME_BY_EXT = new Map([
+  ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.png', 'image/png'], ['.webp', 'image/webp'],
+  ['.bmp', 'image/bmp'], ['.gif', 'image/gif'], ['.tif', 'image/tiff'], ['.tiff', 'image/tiff'],
+  ['.ico', 'image/x-icon'],
+]);
+const MAX_LOCAL_IMAGE_DATA_BYTES = 20 * 1024 * 1024;
+
+async function _localImageDataUrl(entry) {
+  const ext = path.extname(entry.path).toLowerCase();
+  const mime = IMAGE_MIME_BY_EXT.get(ext);
+  if (!mime) throw new Error(`tipo de imagen no soportado: ${ext}`);
+  const stat = await fs.promises.stat(entry.path);
+  if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_LOCAL_IMAGE_DATA_BYTES) {
+    throw new Error(`imagen local no apta para incrustar: ${entry.path}`);
+  }
+  const content = await fs.promises.readFile(entry.path);
+  return `data:${mime};base64,${content.toString('base64')}`;
 }
 
 async function _cleanupStagedImageCapabilities(rawPaths, webContentsId = null) {
@@ -148,19 +167,26 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
   }
 
   const localImages = _localImageEntries(params.localImagePaths, webContentsId);
-  const allowedFileUrls = new Set(localImages.map(entry => entry.fileUrl));
+  const allowedFileUrls = new Set();
 
   const MAX_HTML_BYTES = 150 * 1024 * 1024;
   if (Buffer.byteLength(html, 'utf8') > MAX_HTML_BYTES) {
     throw new Error('HTML excede el tamaño máximo permitido (150 MB)');
   }
   const sanitizedHtml = sanitizeHtmlForPdf(html);
-  const fileUrlByToken = new Map(localImages.map(entry => [entry.token, entry.fileUrl]));
+  const dataUrlByToken = new Map();
+  await Promise.all(localImages.map(async (entry) => {
+    try {
+      dataUrlByToken.set(entry.token, await _localImageDataUrl(entry));
+    } catch {
+      dataUrlByToken.set(entry.token, '');
+    }
+  }));
   const htmlWithLocalImages = localImages.length === 0
     ? sanitizedHtml
     : sanitizedHtml.replace(
         new RegExp(localImages.map(entry => entry.token).join('|'), 'g'),
-        match => fileUrlByToken.get(match),
+        match => dataUrlByToken.get(match) || '',
       );
 
   const { BrowserWindow, session } = electronModules;
@@ -211,7 +237,7 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
       try {
         const targetSession = pdfSession || pdfWindow.webContents.session;
         if (targetSession && targetSession.webRequest) {
-          targetSession.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, null);
+          targetSession.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, null);
         }
       } catch {
       }
@@ -231,9 +257,8 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
           callback({ cancel: true });
         }
       };
-      // webRequest keeps a single listener per event: a second registration
-      // would replace this one, so the filter itself covers every scheme.
-      pdfWindow.webContents.session.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, filter);
+      // Un listener por evento: <all_urls> cubre también file:, que *://*/* nunca igualó.
+      pdfWindow.webContents.session.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, filter);
     }
 
     tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-pdf-'));

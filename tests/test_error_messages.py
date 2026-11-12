@@ -16,6 +16,21 @@ def test_user_error_message_value_error_passthrough():
     assert exc.category == "VALIDATION_ERROR"
 
 
+def test_user_error_message_value_error_redacts_windows_paths():
+    exc = _user_error_message(ValueError(r"no se pudo abrir C:\Users\secreto\datos.xlsx"))
+    mapped = str(exc)
+    assert "secreto" not in mapped
+    assert "C:" not in mapped
+    assert "[ruta]" in mapped
+    assert exc.category == "VALIDATION_ERROR"
+
+
+def test_user_error_message_value_error_redacts_posix_paths():
+    exc = _user_error_message(ValueError("no pude leer /home/usuario/secreto/plan.csv"))
+    assert "secreto" not in str(exc)
+    assert "[ruta]" in str(exc)
+
+
 def test_user_error_message_file_not_found_hides_path():
     exc = _user_error_message(FileNotFoundError(r"C:\Users\secreto\fotos\IMG_001.jpg"))
     assert str(exc) == "Archivo no encontrado"

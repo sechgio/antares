@@ -90,6 +90,25 @@ function run() {
 
   assert(DEFAULT_QUOTA_BYTES === 2 * 1024 * 1024 * 1024, 'cuota por defecto de 2 GB');
 
+  const capped = manager.create('rec-q', 64 * 1024);
+  assert(capped.quotaBytes === 64 * 1024, 'la cuota declarada inferior acota la sesión');
+  let cappedQuotaError = null;
+  try {
+    capped.append(0, Buffer.alloc(65 * 1024, 9));
+  } catch (err) {
+    cappedQuotaError = err;
+  }
+  assert(cappedQuotaError instanceof RecordingQuotaExceededError, 'la cuota declarada corta la grabación');
+  manager.abort('rec-q');
+
+  const raised = manager.create('rec-huge', 99 * 1024 * 1024 * 1024);
+  assert(raised.quotaBytes === 1024 * 1024, 'la cuota declarada nunca supera el techo del manager');
+  manager.abort('rec-huge');
+
+  const ignored = manager.create('rec-nan', 'no-soy-un-numero');
+  assert(ignored.quotaBytes === 1024 * 1024, 'la cuota declarada inválida se ignora');
+  manager.abort('rec-nan');
+
   fs.rmSync(dir, { recursive: true, force: true });
   console.log(`\n${counters.passed} passed, ${counters.failed} failed`);
   finish();

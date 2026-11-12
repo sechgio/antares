@@ -106,13 +106,23 @@ function _isUnderAllowedPdfWriteDir(dir) {
   return _isUnderRegisteredWriteRoot(dir) || _isUnderStandardUserDir(dir);
 }
 
+// Windows reserva estos nombres aunque lleven extensión (CON.pdf escribe al dispositivo).
+const WINDOWS_RESERVED_STEM_RE = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+
 function _sanitizeFilename(name) {
   if (typeof name !== 'string' || !name.trim()) return 'reporte.pdf';
   const base = path.basename(name);
-  const safe = base.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/\s+/g, ' ').trim();
+  // Windows ignora los puntos y espacios finales del nombre.
+  const safe = base
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '');
   if (!safe) return 'reporte.pdf';
-  if (!safe.toLowerCase().endsWith('.pdf')) return safe + '.pdf';
-  return safe;
+  const stem = safe.slice(0, safe.indexOf('.') === -1 ? safe.length : safe.indexOf('.'));
+  const guarded = WINDOWS_RESERVED_STEM_RE.test(stem) ? `_${safe}` : safe;
+  if (!guarded.toLowerCase().endsWith('.pdf')) return `${guarded}.pdf`;
+  return guarded;
 }
 
 function _sanitizePdfOutputPath(outputPath, fallbackFilename) {

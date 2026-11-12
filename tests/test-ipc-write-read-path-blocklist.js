@@ -23,6 +23,25 @@ function makeRouter(tmpRoot, docsDir) {
   });
 }
 
+function makeRouterWithDialog(tmpRoot, docsDir, confirmResponse) {
+  return loadIpcRouter({
+    electron: {
+      app: {
+        isPackaged: true,
+        getPath: (name) => {
+          if (name === 'documents') return docsDir;
+          if (name === 'downloads') return path.join(tmpRoot, 'dl');
+          if (name === 'userData') return tmpRoot;
+          throw new Error(`unknown path: ${name}`);
+        },
+      },
+      dialog: {
+        showMessageBoxSync: () => confirmResponse(),
+      },
+    },
+  });
+}
+
 async function run() {
   console.log('Testing raw-output blocklist on registered read paths...\n');
 
@@ -92,13 +111,69 @@ async function run() {
       },
     };
     await handleDialogCall('dialog_folder', { pickOnly: true }, dialog, { id: 1 });
-    const writeRoot = router._validateAndResolveWriteParams(
-      { outputPath: path.join(customDir, 'script.js') },
+    let scriptBlocked = '';
+    try {
+      router._validateAndResolveWriteParams(
+        { outputPath: path.join(customDir, 'script.js') },
+        null,
+      );
+    } catch (e) {
+      scriptBlocked = e.message;
+    }
+    assert(
+      /tipo de archivo no permitido/.test(scriptBlocked),
+      'write root por diálogo no habilita binarios/scripts por el canal silencioso (ipc-bridge-025)',
+    );
+    const benign = router._validateAndResolveWriteParams(
+      { outputPath: path.join(customDir, 'informe.pdf') },
       null,
     );
     assert(
-      writeRoot.outputPath === path.join(customDir, 'script.js'),
-      'write root concedido por diálogo sigue sin veto de extensiones',
+      benign.outputPath === path.join(customDir, 'informe.pdf'),
+      'el artefacto legitimo del diálogo sigue escribiéndose en la raíz concedida',
+    );
+  } finally {
+    _clearAllowedWriteRoots();
+    clearAllowedReadPaths();
+  }
+
+  try {
+    _clearAllowedWriteRoots();
+    clearAllowedReadPaths();
+    registerAllowedReadPath(readDir);
+
+    const confirmTarget = path.join(readDir, 'confirmable.xlsx');
+    await fs.promises.writeFile(confirmTarget, 'version-previa');
+    const allowRouter = makeRouterWithDialog(tmpRoot, docsDir, () => 0);
+    const acceptedOverwrite = allowRouter._validateAndResolveWriteParams(
+      { outputPath: confirmTarget },
+      null,
+    );
+    assert(
+      acceptedOverwrite.outputPath === confirmTarget,
+      'la confirmación concedida permite la sobrescritura puntual',
+    );
+
+    const cancelTarget = path.join(readDir, 'cancelable.xlsx');
+    await fs.promises.writeFile(cancelTarget, 'version-previa');
+    const denyRouter = makeRouterWithDialog(tmpRoot, docsDir, () => 1);
+    let overwriteCancelled = '';
+    try {
+      denyRouter._validateAndResolveWriteParams({ outputPath: cancelTarget }, null);
+    } catch (e) {
+      overwriteCancelled = e.message;
+    }
+    assert(
+      /cancelada/.test(overwriteCancelled),
+      'cancelar la confirmación bloquea la sobrescritura',
+    );
+
+    const freshTarget = path.join(readDir, 'nuevo-informe.xlsx');
+    const freshRouter = makeRouterWithDialog(tmpRoot, docsDir, () => 1);
+    const freshAllowed = freshRouter._validateAndResolveWriteParams({ outputPath: freshTarget }, null);
+    assert(
+      freshAllowed.outputPath === freshTarget && !fs.existsSync(freshTarget),
+      'un fichero NUEVO no pide confirmación (solo la sobrescritura)',
     );
   } finally {
     _clearAllowedWriteRoots();

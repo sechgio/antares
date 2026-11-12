@@ -253,24 +253,25 @@ async function run() {
   const localImageWindow = FakeBrowserWindow.instances[0];
   const { pathToFileURL } = require('url');
   const expectedFileUrl = pathToFileURL(realImagePath).toString();
+  const expectedDataUrl = `data:image/jpeg;base64,${fs.readFileSync(realImagePath).toString('base64')}`;
   assert(pdfWithLocalImage.handled === true, 'html_to_pdf should accept disk-backed image references');
   assert(!localImageWindow.loadedHtml.includes('antares-local-image:row-1-img-0'), 'html_to_pdf should remove local image tokens before rendering');
   assert(
-    localImageWindow.loadedHtml.includes(expectedFileUrl),
-    'html_to_pdf should keep allowlisted file:// image URLs after sanitization',
+    localImageWindow.loadedHtml.includes(expectedDataUrl),
+    'html_to_pdf embeds allowlisted local images as data: URLs',
   );
   assert(
-    !localImageWindow.loadedHtml.includes('file:///etc/passwd'),
-    'html_to_pdf should still strip unregistered file:// URLs',
+    !localImageWindow.loadedHtml.includes(expectedFileUrl) && !localImageWindow.loadedHtml.includes('file:///etc/passwd'),
+    'html_to_pdf renders no file: URLs at all',
   );
 
   let allowedDecision = null;
-  localImageWindow.onBeforeRequest({ url: expectedFileUrl }, (decision) => { allowedDecision = decision; });
-  assert(allowedDecision.cancel === false, 'html_to_pdf should allow only registered local image files');
+  localImageWindow.onBeforeRequest({ url: expectedDataUrl }, (decision) => { allowedDecision = decision; });
+  assert(allowedDecision.cancel === false, 'html_to_pdf allows embedded data: images');
 
   let blockedDecision = null;
-  localImageWindow.onBeforeRequest({ url: 'file:///etc/passwd' }, decision => { blockedDecision = decision; });
-  assert(blockedDecision.cancel === true, 'html_to_pdf should block unregistered local file URLs');
+  localImageWindow.onBeforeRequest({ url: expectedFileUrl }, decision => { blockedDecision = decision; });
+  assert(blockedDecision.cancel === true, 'html_to_pdf no longer loads images via file:; data: is the only image channel');
 
   let remoteDecision = null;
   localImageWindow.onBeforeRequest({ url: 'https://evil.example/pixel.png' }, decision => { remoteDecision = decision; });

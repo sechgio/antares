@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import ctypes
 import hashlib
 import hmac
-import importlib
 import json
 import logging
 import os
 import secrets
 import sys
+from ctypes import wintypes
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Protocol, cast
+from typing import cast
 
 from backend.core.integrations.types import JsonObject
 from backend.utils.paths import user_data_path
@@ -51,47 +52,80 @@ def _machine_key(namespace: str) -> bytes:
     return hmac.new(material, f"antares:{_NS}:{namespace}".encode(), hashlib.sha256).digest()
 
 
-class _Win32Crypt(Protocol):
-    def CryptProtectData(self, data: bytes, *args: object) -> bytes: ...
-    def CryptUnprotectData(self, data: bytes, *args: object) -> tuple[bytes, bytes]: ...
+class _CRYPT_DATA_BLOB(ctypes.Structure):
+    _fields_ = [
+        ("cbData", wintypes.DWORD),
+        ("pbData", ctypes.c_void_p),
+    ]
 
 
-def _dpapi_module() -> _Win32Crypt | None:
+def _blob(data: bytes) -> _CRYPT_DATA_BLOB:
+    buf = (ctypes.c_ubyte * max(len(data), 1)).from_buffer_copy(data or b"\x00")
+    blob = _CRYPT_DATA_BLOB(len(data), ctypes.cast(buf, ctypes.c_void_p))
+    blob._holder = buf  # mantiene vivo el buffer mientras exista el BLOB
+    return blob
+
+
+_crypt32_cache: ctypes.WinDLL | None = None
+_crypt32_checked = False
+
+
+def _crypt32_dll() -> ctypes.WinDLL | None:
+    global _crypt32_cache, _crypt32_checked
     if sys.platform != "win32":
         return None
-    try:
-        return cast(_Win32Crypt, importlib.import_module("win32ctypes.pywin32.win32crypt"))
-    except Exception:
-        return None
+    if not _crypt32_checked:
+        _crypt32_checked = True
+        try:
+            _crypt32_cache = ctypes.WinDLL("crypt32")
+        except OSError:
+            _crypt32_cache = None
+    return _crypt32_cache
 
 
 def _dpapi_available() -> bool:
-    return _dpapi_module() is not None
+    return _crypt32_dll() is not None
+
+
+def _dpapi_free(ptr: int | None) -> None:
+    if ptr:
+        ctypes.windll.kernel32.LocalFree(ctypes.c_void_p(ptr))
 
 
 def _dpapi_seal(namespace: str, payload: JsonObject) -> JsonObject:
-    mod = _dpapi_module()
-    if mod is None:
+    dll = _crypt32_dll()
+    if dll is None:
         raise ValueError("DPAPI no disponible en esta plataforma")
-    blob = mod.CryptProtectData(
-        json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        f"Antares connections:{namespace}",
-        None,
-        None,
-        None,
-        0,
-    )
-    return {"v": 2, "kind": "dpapi", "data": base64.b64encode(blob).decode("ascii")}
+    plain = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    blob = _blob(plain)
+    out = _CRYPT_DATA_BLOB()
+    description = ctypes.c_wchar_p(f"Antares connections:{namespace}")
+    if not dll.CryptProtectData(
+        ctypes.byref(blob), description, None, None, None, 0, ctypes.byref(out)
+    ):
+        raise ValueError("CryptProtectData falló")
+    try:
+        data = ctypes.string_at(out.pbData, out.cbData)
+    finally:
+        _dpapi_free(out.pbData)
+    return {"v": 2, "kind": "dpapi", "data": base64.b64encode(data).decode("ascii")}
 
 
 def _dpapi_open(encoded: str) -> JsonObject:
-    mod = _dpapi_module()
-    if mod is None:
+    dll = _crypt32_dll()
+    if dll is None:
         raise ValueError("DPAPI no disponible en esta plataforma")
-    blob = base64.b64decode(encoded)
-    data, _desc = mod.CryptUnprotectData(blob, None, None, None, 0)
-    result: JsonObject = json.loads(bytes(data).decode("utf-8"))
-    return result
+    blob = _blob(base64.b64decode(encoded))
+    out = _CRYPT_DATA_BLOB()
+    if not dll.CryptUnprotectData(
+        ctypes.byref(blob), None, None, None, None, 0, ctypes.byref(out)
+    ):
+        raise ValueError("payload DPAPI no descifrable en esta plataforma")
+    try:
+        data = ctypes.string_at(out.pbData, out.cbData)
+    finally:
+        _dpapi_free(out.pbData)
+    return cast(JsonObject, json.loads(data.decode("utf-8")))
 
 
 def _xor_stream(key: bytes, iv: bytes, length: int) -> bytes:
@@ -101,21 +135,6 @@ def _xor_stream(key: bytes, iv: bytes, length: int) -> bytes:
         out.extend(hmac.new(key, iv + counter.to_bytes(8, "big"), hashlib.sha256).digest())
         counter += 1
     return bytes(out[:length])
-
-
-def _hmac_seal(namespace: str, payload: JsonObject) -> JsonObject:
-    enc_key = _machine_key(namespace)
-    mac_key = hashlib.sha256(enc_key + b":mac").digest()
-    iv = secrets.token_bytes(16)
-    plain = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    stream = _xor_stream(enc_key, iv, len(plain))
-    ciphertext = bytes(a ^ b for a, b in zip(plain, stream, strict=True))
-    tag = hmac.new(mac_key, iv + ciphertext, hashlib.sha256).digest()
-    return {
-        "v": 3,
-        "kind": "hmac-sha256-stream",
-        "data": base64.b64encode(iv + tag + ciphertext).decode("ascii"),
-    }
 
 
 def _hmac_open(namespace: str, encoded: str) -> JsonObject:
@@ -135,7 +154,12 @@ def _hmac_open(namespace: str, encoded: str) -> JsonObject:
 
 def seal(namespace: str, path: Path, payload: JsonObject) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    envelope = _dpapi_seal(namespace, payload) if _dpapi_available() else _hmac_seal(namespace, payload)
+    if not _dpapi_available():
+        raise ValueError(
+            "El cifrado DPAPI no está disponible: Antares no guardará el secreto sin cifrado confidencial. "
+            "Reinicia la sesión de Windows e inténtalo de nuevo."
+        )
+    envelope = _dpapi_seal(namespace, payload)
     envelope["savedAt"] = datetime.now(timezone.utc).isoformat()
     tmp = path.with_suffix(f".{secrets.token_hex(4)}.tmp")
     try:

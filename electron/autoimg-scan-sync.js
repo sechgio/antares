@@ -252,6 +252,10 @@ async function listArrastre({ force = false } = {}) {
 }
 
 async function _syncToSheetCore() {
+  return sheets.withPinnedGoogleSession(async () => _syncToSheetCoreImpl());
+}
+
+async function _syncToSheetCoreImpl() {
   await ensureSheetId();
   const start = Date.now();
 

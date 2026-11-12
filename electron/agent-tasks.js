@@ -449,11 +449,12 @@ function userRequest(entries) {
 function planBrief(plan) {
   if (!plan || !Array.isArray(plan.steps) || !plan.steps.length) return '';
   const steps = plan.steps.slice(0, MAX_PLAN_STEPS).map((step, index) =>
-    `${index + 1}. [${PLAN_STATUS[step.status] || PLAN_STATUS.pending}] ${quoted(step.title, MAX_PLAN_STEP_CHARS)}`);
+    `${index + 1}. [${PLAN_STATUS[step.status] || PLAN_STATUS.pending}] ${quoted(unmarked(step.title), MAX_PLAN_STEP_CHARS)}`);
   const rest = plan.steps.length > MAX_PLAN_STEPS ? `\n(+${plan.steps.length - MAX_PLAN_STEPS} pasos más en el plan)` : '';
-  return `Plan compartido de la conversación principal${plan.goal ? ` («${quoted(plan.goal, 200)}»)` : ''}:\n`
+  return `Plan compartido de la conversación principal${plan.goal ? ` («${quoted(unmarked(plan.goal), 200)}»)` : ''}:\n`
     + `${steps.join('\n')}${rest}\n`
-    + 'Sitúa tu encargo dentro de ese plan y devuelve evidencia del paso que te toca; no lo des por hecho.';
+    + 'Sitúa tu encargo dentro de ese plan y devuelve evidencia del paso que te toca; no lo des por hecho. '
+    + `${shared.PLAN_TITLE_TRUST}`;
 }
 
 function delegationBrief(job, sharedPlan = '') {
@@ -1185,7 +1186,7 @@ async function tick() {
         continue;
       }
       const execution = require('./agent-execution');
-      const budget = await execution.profileBudget(await execution.sessionProfile(session));
+      const budget = await execution.unattendedBudget(await execution.sessionProfile(session));
       if (budget && budget.exhausted) {
         const midnight = new Date();
         midnight.setHours(24, 0, 0, 0);

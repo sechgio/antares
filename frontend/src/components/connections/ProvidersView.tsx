@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertCircle, ChevronRight, ExternalLink, KeyRound, PlugZap, ShieldCheck, Trash2 } from 'lucide-react';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { errorMessage } from '../../utils/errors';
+import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
 import { useProviderProbe } from './useProviderProbe';
 import Button from '../ui/Button';
@@ -21,6 +22,7 @@ interface FormState {
 
 export default function ProvidersView() {
   const { addToast } = useToast();
+  const { confirm } = useDialog();
   const { statuses, setStatuses, probing, probe: runProbe } = useProviderProbe();
   const [providers, setProviders] = useState<AiProviderSpec[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,6 +72,15 @@ export default function ProvidersView() {
     if (!apiKey && !baseUrl && !(p.needs_key && p.has_key)) {
       addToast({ message: 'Introduce la clave de acceso o la dirección del servicio antes de guardar.', type: 'error' });
       return;
+    }
+    if (p.editable_base_url && p.base_url && baseUrl !== p.base_url) {
+      const ok = await confirm({
+        title: 'Cambiar la dirección del servicio',
+        description: `Las peticiones de Antares —y la clave guardada— pasarán a enviarse a ${baseUrl || 'la dirección por defecto del proveedor'} desde la próxima conversación. ¿Cambiar la dirección de ${p.label}?`,
+        confirmLabel: 'Cambiar dirección',
+        type: 'confirm',
+      });
+      if (!ok) return;
     }
     setForms((s) => ({ ...s, [p.id]: { apiKey, baseUrl, model, saving: true } }));
     try {

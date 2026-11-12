@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
 import sys
 import threading
@@ -452,13 +453,21 @@ def generate_pdf(fmt_id: str, desde: int, hasta: int) -> tuple[bytes, str]:
     pad = (entry.get("mapping") or {}).get("padding", 7)
     desde_s = str(desde).zfill(pad)
     hasta_s = str(hasta).zfill(pad)
-    pattern = entry["filename_pattern"]
-    if desde == hasta:
-        filename = pattern.format(id=entry["id"], nombre=entry["nombre"], desde=desde_s, hasta=hasta_s)
-    else:
-        base = pattern.replace(".pdf", "")
-        filename = f"{base.format(id=entry['id'], nombre=entry['nombre'], desde=desde_s, hasta=hasta_s)}-{hasta_s}.pdf"
+    fieldd = {"id": entry["id"], "nombre": entry["nombre"], "desde": desde_s, "hasta": hasta_s}
+    filename = _safe_filename_format(entry["filename_pattern"], fieldd, sufijo=("" if desde == hasta else f"-{hasta_s}"))
     return pdf_bytes, filename
+
+
+_FILENAME_FIELD_RE = re.compile(r"\{\{\s*((?:id|nombre|desde|hasta)(?::[^{}]*)?)\s*\}\}")
+
+
+def _safe_filename_format(pattern: str, fields: dict[str, str], sufijo: str = "") -> str:
+    escaped = pattern.replace("{", "{{").replace("}", "}}")
+    reopened = _FILENAME_FIELD_RE.sub("{\\1}", escaped)
+    base = reopened.format(**fields)
+    if sufijo:
+        return f"{base.replace('.pdf', '')}{sufijo}.pdf"
+    return base
 
 
 _load_catalog()

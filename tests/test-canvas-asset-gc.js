@@ -24,6 +24,7 @@ async function main() {
       getCanvasAssetInfo,
       assetsDir,
       gcOrphanCanvasAssets,
+      markAssetPending,
       GC_GRACE_MS,
       toAssetRef,
     } = require('../electron/canvas-assets.js');
@@ -204,6 +205,31 @@ async function main() {
       releaseGc();
       fsp.readFile = realReadFile;
       fsp.stat = realStat;
+    }
+
+    // storage-006: las marcas corren en la misma cadena de escritura que el GC.
+    const concurrentIds = [];
+    for (let i = 0; i < 6; i++) {
+      const a = await putCanvasAsset(Buffer.from(`concurrent-mark-${i}-${'z'.repeat(16)}`));
+      concurrentIds.push(a.asset_id);
+    }
+    await Promise.all(concurrentIds.map((id) => markAssetPending(id)));
+    const pendingNow = JSON.parse(await fsp.readFile(pendingFile, 'utf8'));
+    const pendingIds = new Set(pendingNow.map((e) => e.id));
+    for (const id of concurrentIds) {
+      assert.ok(pendingIds.has(id), 'cada marca concurrente quedó en pending-assets.json');
+    }
+
+    const serializedMarkIds = [];
+    for (let i = 0; i < 6; i++) {
+      const a = await putCanvasAsset(Buffer.from(`concurrent-mark-${i}-xxxxxxxxxxxx`));
+      serializedMarkIds.push(a.asset_id);
+    }
+    await Promise.all(serializedMarkIds.map((id) => markAssetPending(id)));
+    const pendingAfterMarks = JSON.parse(await fsp.readFile(pendingFile, 'utf8'));
+    const markIdsPresent = new Set(pendingAfterMarks.map((e) => e.id));
+    for (const id of serializedMarkIds) {
+      assert.ok(markIdsPresent.has(id), 'cada marca concurrente quedó en pending-assets.json');
     }
 
     console.log('  ✓ GC removes stale orphans, keeps refs + grace');

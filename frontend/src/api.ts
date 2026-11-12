@@ -18,6 +18,7 @@ import { reportsApi } from './api/reportsApi';
 import { selladorApi } from './api/selladorApi';
 import { createSpotifyApi } from './api/spotifyApi';
 import { spreadsheetApi } from './api/spreadsheetApi';
+import { createSupabaseSessionApi } from './api/supabaseSessionApi';
 import { systemApi } from './api/systemApi';
 import { toolsApi } from './api/toolsApi';
 import { ubicacionesApi } from './api/ubicacionesApi';
@@ -110,4 +111,5 @@ export const api = {
   ...aiProvidersApi,
   ...createAutoimgApi(_invoke),
   ...createSpotifyApi(_invoke),
+  ...createSupabaseSessionApi(_invoke),
 };

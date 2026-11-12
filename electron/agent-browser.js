@@ -7,6 +7,7 @@ const { fileURLToPath } = require('node:url');
 const preview = require('./agent-preview');
 
 const PARTITION = 'persist:antares-agent-browser';
+const USER_PARTITION = 'persist:antares-agent-user';
 const MAX_TEXT = 3_500;
 const MAX_ELEMENTS = 80;
 const MAX_CANDIDATES = 400;
@@ -38,6 +39,13 @@ const MODIFIERS = { ctrl: 'control', control: 'control', shift: 'shift', alt: 'a
 const VIRTUAL_KEYS = { Enter: 13, Tab: 9, Escape: 27, Space: 32, Backspace: 8, Delete: 46,
   Up: 38, Down: 40, Left: 37, Right: 39, Home: 36, End: 35, PageUp: 33, PageDown: 34,
   ';': 186, '=': 187, ',': 188, '-': 189, '.': 190, '/': 191, '`': 192, '[': 219, '\\': 220, ']': 221, "'": 222 };
+
+const URL_SECRET_KEY_RE = /([?&])(token|access_token|refresh_token|code|key|secret|password|passwd|sig|signature|session|sessionid|sid|auth|authorization|credential|api_key|apikey|jwt|nonce)=[^&#]*/gi;
+const { redactText } = require('./app-log');
+
+function redactUrlSecrets(url) {
+  return String(url || '').replace(URL_SECRET_KEY_RE, (match, sep, key) => `${sep}${key}=`);
+}
 
 const REF = { type: 'string', description: 'Referencia «ref» de un elemento devuelto por web_read' };
 const TOOLS = {
@@ -180,7 +188,7 @@ let consoleLog = [];
 const netLog = new Map();
 let consoleSeq = 0;
 let netSeq = 0;
-let sessionReady = false;
+const barrierSessions = new Set();
 let downloadSlot = null;
 let engineChoice = null;
 let engineLink = null;
@@ -343,9 +351,12 @@ function requestAllowed(url, pageUrl, mainFrame) {
   return isPublicResolution(url).catch(() => false);
 }
 
-function prepareSession(electron) {
-  const ses = electron.session.fromPartition(PARTITION);
-  if (sessionReady) return ses;
+const sessionCache = new Map();
+
+function prepareSession(electron, partition = PARTITION) {
+  let ses = sessionCache.get(partition);
+  if (!ses) ses = electron.session.fromPartition(partition);
+  if (barrierSessions.has(partition)) return ses;
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
   ses.setUserAgent(siteUserAgent(ses.getUserAgent()));
@@ -377,7 +388,8 @@ function prepareSession(electron) {
       completed ? { saved_path: target, filename: name, bytes: item.getReceivedBytes() } : null);
     });
   });
-  sessionReady = true;
+  sessionCache.set(partition, ses);
+  barrierSessions.add(partition);
   return ses;
 }
 
@@ -412,7 +424,7 @@ async function startDownload(url, drafts) {
     if (downloadSlot === slot) slot.settle(new Error('La descarga no comenzó; comprueba la dirección'), null);
   }, LOAD_TIMEOUT_MS);
   try {
-    require('electron').session.fromPartition(PARTITION).downloadURL(slot.url);
+    prepareSession(require('electron'), PARTITION).downloadURL(slot.url);
   } catch (error) {
     slot.settle(error, null);
   }
@@ -541,7 +553,7 @@ function ensureTab(id) {
   const tab = tabEntry(id);
   if (tab.view && alive(tab.view.webContents)) return tab;
   const electron = require('electron');
-  const ses = prepareSession(electron);
+  const ses = prepareSession(electron, id === AGENT_TAB ? PARTITION : USER_PARTITION);
   tab.view = new electron.WebContentsView({
     webPreferences: {
       session: ses,
@@ -711,11 +723,38 @@ function engines() {
 }
 
 // Cambia dónde navega la pestaña del agente; las pestañas del usuario siguen en el integrado.
+function confirmSessionAttach() {
+  const { dialog } = require('electron');
+  if (!dialog || typeof dialog.showMessageBox !== 'function') return Promise.resolve(true);
+  const win = require('./window-manager').getMainWindow();
+  return dialog.showMessageBox(win && !win.isDestroyed() ? win : undefined, {
+    type: 'question',
+    buttons: ['Adjuntar mi sesión', 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Mi sesión de Chrome',
+    message: '¿Quieres que el agente navegue con tu sesión de Chrome?',
+    detail: 'El agente usará tus cookies y sesión activa de Chrome. Abrir un dominio que no esté en '
+      + '«Permitir siempre» pedirá tu aprobación en cada caso. Puedes volver al navegador integrado cuando quieras.',
+  }).then((response) => response && response.response === 0);
+}
+
 function setEngine(id) {
   const next = !id || id === 'integrado' ? null : String(id);
   if (next && !require('./agent-browser-engines').detect().some((engine) => engine.id === next)) {
     throw browserError('Ese navegador no está instalado en este equipo', 'ENGINE_MISSING');
   }
+  if (next === engineChoice) return state();
+  if (next && require('./agent-browser-engines').isSession(next)) {
+    return confirmSessionAttach().then((confirmed) => {
+      if (!confirmed) throw browserError('No se adjuntó la sesión de Chrome: el agente sigue en su navegador', 'SESSION_CONFIRM_DENIED');
+      return applyEngine(next);
+    });
+  }
+  return applyEngine(next);
+}
+
+function applyEngine(next) {
   if (next === engineChoice) return state();
   const tab = tabs.get(AGENT_TAB);
   if (tab && alive(tab.external)) tab.external.close();
@@ -1047,7 +1086,7 @@ async function snapshot(contents, offset = 0, budget = RESULT_BUDGET) {
   const start = Math.max(0, Number(offset) || 0);
   const text = String(page.text || '');
   const result = fit({
-    url: page.url,
+    url: redactUrlSecrets(page.url),
     title: page.title,
     text: text.slice(start, start + MAX_TEXT),
     elements: page.elements.map(describe),
@@ -1109,7 +1148,7 @@ async function findElements(contents, params) {
   refDocuments.set(contents, page.time_origin);
   const more = page.total - page.matches.length;
   return fit({
-    url: page.url,
+    url: redactUrlSecrets(page.url),
     matches: page.matches.map(describe),
     ...(page.total === 0 ? { note: 'Ningún elemento visible coincide; prueba con otro texto, sin role o desplázate con web_scroll' } : {}),
     ...(more > 0 ? { matches_more: more, note: 'Hay más coincidencias: afina el texto o añade role' } : {}),
@@ -1118,11 +1157,11 @@ async function findElements(contents, params) {
 
 function pageReported(mark) {
   const errors = consoleLog.filter((entry) => entry.seq > mark.console && entry.level === 'error')
-    .slice(-HEALTH_KEEP).map((entry) => entry.text.slice(0, 200));
+    .slice(-HEALTH_KEEP).map((entry) => redactText(entry.text.slice(0, 200)));
   const failed = [...netLog.values()]
     .filter((entry) => entry.seq > mark.net && ((entry.status ?? 0) >= 400 || (entry.error && !/ERR_ABORTED/.test(entry.error))))
     .slice(-HEALTH_KEEP)
-    .map((entry) => `${entry.error ? 'falló' : entry.status} ${entry.method || '·'} ${entry.url.slice(0, 160)}${entry.error ? ` (${entry.error})` : ''}`);
+    .map((entry) => `${entry.error ? 'falló' : entry.status} ${entry.method || '·'} ${redactUrlSecrets(entry.url).slice(0, 160)}${entry.error ? ` (${entry.error})` : ''}`);
   if (!errors.length && !failed.length) return {};
   return { page_reported: { ...(errors.length ? { console_errors: errors } : {}), ...(failed.length ? { failed_requests: failed } : {}) } };
 }
@@ -1149,7 +1188,7 @@ async function pageText(contents, offset = 0) {
   const page = await contents.executeJavaScript(PAGE_TEXT, true);
   const start = Math.max(0, Number(offset) || 0);
   const text = String(page.text || '');
-  const result = fit({ url: page.url, title: page.title, text: text.slice(start, start + MAX_PAGE_TEXT) });
+  const result = fit({ url: redactUrlSecrets(page.url), title: page.title, text: text.slice(start, start + MAX_PAGE_TEXT) });
   const end = start + result.text.length;
   return { ...result, text_offset: start, text_total: text.length, ...(end < text.length ? { next_offset: end } : {}) };
 }
@@ -1355,7 +1394,7 @@ async function screenshot(contents, dir, fullPage = false) {
   const old = (await fs.promises.readdir(dir)).filter((name) => name.startsWith('web-')).sort().slice(0, -KEEP_SCREENS);
   await Promise.all(old.map((name) => fs.promises.rm(path.join(dir, name), { force: true })));
   const size = image.getSize();
-  return { url: contents.getURL(), title: contents.getTitle(), width: size.width, height: size.height,
+  return { url: redactUrlSecrets(contents.getURL()), title: contents.getTitle(), width: size.width, height: size.height,
     image: { path: target, mime: 'image/jpeg' } };
 }
 
@@ -1376,7 +1415,7 @@ async function capture(id = activeTab) {
   }
   const { width, height } = image.getSize();
   if (!width || !height) throw browserError('No se pudo capturar la página para anotar', 'CAPTURE_FAILED');
-  return { png_base64: image.toPNG().toString('base64'), width, height, url: contents.getURL(), title: contents.getTitle() };
+  return { png_base64: image.toPNG().toString('base64'), width, height, url: redactUrlSecrets(contents.getURL()), title: contents.getTitle() };
 }
 
 const INSPECT = (x, y) => `(() => {
@@ -1494,13 +1533,13 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
   }
   if (name === 'web_text') return pageText(contents, params.offset);
   if (name === 'web_console') {
-    return fit({ url: contents.getURL(), messages: consoleLog.map((item) => `[${item.level}] ${item.text}`) });
+    return fit({ url: redactUrlSecrets(contents.getURL()), messages: consoleLog.map((item) => `[${item.level}] ${redactText(item.text)}`) });
   }
   if (name === 'web_network') {
     await ensureDebugger(contents);
     return fit({
-      url: contents.getURL(),
-      requests: [...netLog.values()].map((item) => `${item.status ?? '·'} ${item.method || '·'}${item.type ? ` ${item.type}` : ''} ${item.url}${item.error ? ` (falló: ${item.error})` : ''}`),
+      url: redactUrlSecrets(contents.getURL()),
+      requests: [...netLog.values()].map((item) => `${item.status ?? '·'} ${item.method || '·'}${item.type ? ` ${item.type}` : ''} ${redactUrlSecrets(item.url)}${item.error ? ` (falló: ${item.error})` : ''}`),
     });
   }
   if (name === 'web_wait') return waitFor(contents, params);
@@ -1767,4 +1806,4 @@ function close() {
   preview.close();
 }
 
-module.exports = { engines, setEngine, sessionOpenContext, TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, isWeb, isPrivateHostname, isAllowedWebUrl, isPublicResolution, state, dock, capture, inspect, navigate, openPage, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };
+module.exports = { engines, setEngine, sessionOpenContext, TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, redactUrlSecrets, isWeb, isPrivateHostname, isAllowedWebUrl, isPublicResolution, state, dock, capture, inspect, navigate, openPage, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };

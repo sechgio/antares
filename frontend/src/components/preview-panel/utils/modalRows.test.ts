@@ -171,4 +171,30 @@ describe("buildCsvContent", () => {
     expect(lines[0]).toBe("﻿#,ID,Nombre,Fotos");
     expect(lines[1]).toBe('1,"1","An ""comillas"" ana",2');
   });
+
+  it("prefija fórmulas y deja números con signo intactos (frontend-app-012)", () => {
+    const items = filterAndSortRows({
+      data: [
+        { ID: "1", Nombre: "=HYPERLINK(\"http://e\",\"x\")" },
+        { ID: "2", Nombre: "-3" },
+        { ID: "3", Nombre: "@tabla" },
+        { ID: "4", Nombre: "+7" },
+      ],
+      headers: ["ID", "Nombre"],
+      rowPhotoMap: buildRowPhotoMap(
+        [{ ID: "1" }, { ID: "2" }, { ID: "3" }, { ID: "4" }],
+        "ID",
+        imgMap,
+      ),
+      query: "",
+      photoFilter: "all",
+      sortCol: null,
+      sortDir: "asc",
+    });
+    const csv = buildCsvContent(["ID", "Nombre"], items);
+    expect(csv).toContain('"\'=HYPERLINK(""http://e"",""x"")"');
+    expect(csv).toContain('"-3"');
+    expect(csv).toContain("\"'@tabla\"");
+    expect(csv).toContain('"+7"');
+  });
 });

@@ -421,7 +421,7 @@ def _approval_ensure(params: JsonObject) -> JsonObject:
                 approval = store.decide_approval(str(approval["id"]), True) or approval
             else:
                 raise ValidationError("Esta aplicación no está en la lista blanca del encargo programado")
-        elif app and f"app:{os.path.normcase(app)}" in store.grants_for(session_id):
+        elif store.consume_computer_app_grant(session_id, f"app:{os.path.normcase(app)}"):
             approval = store.decide_approval(str(approval["id"]), True) or approval
     if approval.get("status") == "pending":
         approval = _guard_decision(store, approval, method, snapshot["params"]) or approval

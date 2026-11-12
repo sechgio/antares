@@ -645,7 +645,7 @@ def test_pandas_preload_does_not_block_process_status(monkeypatch) -> None:
         return message
 
     messages = iter([
-        type("Msg", (), {"method": "db_export", "params": {}, "id": "export"})(),
+        type("Msg", (), {"method": "db_export", "params": {"path": "export.xlsx"}, "id": "export"})(),
         type("Msg", (), {"method": "process_status", "params": {}, "id": "status"})(),
         None,
     ])
@@ -670,6 +670,100 @@ def test_pandas_preload_does_not_block_process_status(monkeypatch) -> None:
     assert unblocked_by_status == [True]
     assert ("status", {"running": True}) in responses
     assert ("export", {"exported": True}) in responses
+
+
+def test_heavy_method_concurrency_cap_rejects_same_method(monkeypatch) -> None:
+    responses: list[tuple[int, object, object]] = []
+    holders: list[Future] = []
+    submitted: list[str] = []
+
+    class PendingScheduler:
+        heavy_workers = 2
+
+        def submit_heavy(self, fn, *args, **kwargs):
+            future = Future()
+            holders.append(future)
+            submitted.append(args[3])
+            return future
+
+        def submit_light(self, fn, *args, **kwargs):
+            raise AssertionError("light no participa en el tope por método")
+
+        def metrics(self) -> dict:
+            return {}
+
+    monkeypatch.setattr(backend_main, "get_scheduler", lambda: PendingScheduler())
+    monkeypatch.setattr(
+        backend_main,
+        "send_response",
+        lambda result, msg_id, error=None: responses.append((msg_id, result, error)),
+    )
+    backend_main._method_heavy_inflight.clear()
+
+    def handler(_params: object) -> dict[str, bool]:
+        return {"ok": True}
+
+    try:
+        f1 = backend_main._submit_handler(handler, {}, 11, "db_export")
+        f2 = backend_main._submit_handler(handler, {}, 12, "db_export")
+        f3 = backend_main._submit_handler(handler, {}, 13, "db_export")
+        assert f1 is not None and f2 is not None
+        assert f3 is None, "el tercer submit del mismo método debe rechazarse"
+        assert submitted == ["db_export", "db_export"]
+        msg_id, result, error = responses[-1]
+        assert (msg_id, result) == (13, None)
+        payload = error.to_dict() if hasattr(error, "to_dict") else error
+        assert payload["category"] == "CAPACITY_EXCEEDED"
+        assert payload["details"]["reason"] == "method_busy"
+        assert payload["details"]["retryable"] is True
+
+        f4 = backend_main._submit_handler(handler, {}, 14, "spreadsheet_parse")
+        assert f4 is not None
+        assert submitted == ["db_export", "db_export", "spreadsheet_parse"]
+
+        holders[0].set_result(None)
+        f5 = backend_main._submit_handler(handler, {}, 15, "db_export")
+        assert f5 is not None
+        assert submitted[-1] == "db_export"
+    finally:
+        for fut in holders:
+            if not fut.done():
+                fut.set_result(None)
+        backend_main._method_heavy_inflight.clear()
+
+
+def test_heavy_method_concurrency_cap_releases_on_submit_failure(monkeypatch) -> None:
+    responses: list[tuple[int, object, object]] = []
+
+    class FailingScheduler:
+        heavy_workers = 1
+
+        def submit_heavy(self, fn, *args, **kwargs):
+            raise RuntimeError("boom")
+
+        def submit_light(self, fn, *args, **kwargs):
+            raise RuntimeError("boom")
+
+        def metrics(self) -> dict:
+            return {}
+
+    monkeypatch.setattr(backend_main, "get_scheduler", lambda: FailingScheduler())
+    monkeypatch.setattr(
+        backend_main,
+        "send_response",
+        lambda result, msg_id, error=None: responses.append((msg_id, result, error)),
+    )
+    backend_main._method_heavy_inflight.clear()
+
+    def handler(_params: object) -> dict[str, bool]:
+        return {"ok": True}
+
+    try:
+        assert backend_main._submit_handler(handler, {}, 21, "db_export") is None
+        assert backend_main._method_heavy_inflight == {}, "el ticket debe liberarse si submit falla"
+        assert responses and responses[0][0] == 21
+    finally:
+        backend_main._method_heavy_inflight.clear()
 
 
 def test_main_unknown_method_rejected_without_import(monkeypatch) -> None:

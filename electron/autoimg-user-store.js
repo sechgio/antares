@@ -10,20 +10,19 @@ function loadOAuthConfigFromDisk() {
     typeof raw.client_secret === 'string' || typeof raw.clientSecret === 'string'
   ));
   const cfg = readSecureJson(OAUTH_CONFIG_FILE, OAUTH_CONFIG_NS);
-  if (!cfg) return { clientId: '', clientSecret: '' };
-  return {
-    clientId: cfg.client_id || cfg.clientId || '',
-    clientSecret: cfg.client_secret || cfg.clientSecret || '',
-  };
+  if (!cfg) return { clientId: '' };
+  const clientId = String(cfg.client_id || cfg.clientId || '');
+  if (cfg.client_secret !== undefined || cfg.clientSecret !== undefined) {
+    writeSecureJson(OAUTH_CONFIG_FILE, OAUTH_CONFIG_NS, { client_id: clientId });
+  }
+  return { clientId };
 }
 
-function saveOAuthConfig(clientId, clientSecret) {
+function saveOAuthConfig(clientId) {
   const id = String(clientId || '').trim();
-  const secret = String(clientSecret || '').trim();
   if (!id || id.length < 12) throw new Error('Client ID inválido');
   validateClientId(id);
-  if (!secret || secret.length < 8) throw new Error('Client Secret inválido');
-  writeSecureJson(OAUTH_CONFIG_FILE, OAUTH_CONFIG_NS, { client_id: id, client_secret: secret });
+  writeSecureJson(OAUTH_CONFIG_FILE, OAUTH_CONFIG_NS, { client_id: id });
   return { success: true };
 }
 

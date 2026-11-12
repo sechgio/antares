@@ -20,26 +20,24 @@ function isInvalidGrantResponse(body) {
 function _normalizeOAuthConfig(config) {
   return {
     clientId: String(config.clientId || '').trim(),
-    clientSecret: String(config.clientSecret || '').trim(),
   };
 }
 
 function getOAuthConfig() {
   const fromEnv = _normalizeOAuthConfig({
     clientId: process.env.AUTOIMG_GOOGLE_CLIENT_ID || '',
-    clientSecret: process.env.AUTOIMG_GOOGLE_CLIENT_SECRET || '',
   });
-  if (fromEnv.clientId && fromEnv.clientSecret) return fromEnv;
+  if (fromEnv.clientId) return fromEnv;
   return _normalizeOAuthConfig(store.loadOAuthConfigFromDisk());
 }
 
-function saveOAuthConfig(clientId, clientSecret) {
-  return store.saveOAuthConfig(clientId, clientSecret);
+function saveOAuthConfig(clientId) {
+  return store.saveOAuthConfig(clientId);
 }
 
 function getOAuthConfigStatus() {
   const config = getOAuthConfig();
-  const configured = Boolean(config.clientId && config.clientSecret);
+  const configured = Boolean(config.clientId);
   return {
     configured,
     client_id_masked: configured ? maskClientId(config.clientId) : undefined,
@@ -48,9 +46,9 @@ function getOAuthConfigStatus() {
 
 function requireOAuthConfig() {
   const config = getOAuthConfig();
-  if (!config.clientId || !config.clientSecret) {
+  if (!config.clientId) {
     throw new Error(
-      'Credenciales OAuth no configuradas. En AutoIMG, abre el apartado "Credenciales OAuth" e ingresa tu Client ID y Client Secret de Google Cloud.',
+      'Credenciales OAuth no configuradas. En AutoIMG, abre el apartado "Credenciales OAuth" e ingresa tu Client ID de Google Cloud (tipo aplicación de escritorio).',
     );
   }
   validateClientId(config.clientId);
@@ -90,7 +88,6 @@ async function _refreshAccessToken(tokens, session = captureAuthSession()) {
   }
   const body = new URLSearchParams({
     client_id: config.clientId,
-    client_secret: config.clientSecret,
     refresh_token: tokens.refresh_token,
     grant_type: 'refresh_token',
   });

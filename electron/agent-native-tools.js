@@ -237,6 +237,9 @@ async function nativeToolContext(name, sessionId, params = {}) {
   const { createHash } = require('node:crypto');
   const hash = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
   const context = { tool_version: hash({ policy: 1, spec: selected }) };
+  if (selected.gated && RENDERER_TOOLS[name] && params && Object.keys(params).length) {
+    context.params_digest = hash(params);
+  }
   if (WEB[name] && selected.gated) {
     const policy = require('./agent-browser-policy');
     const browserContext = await require('./agent-browser').approvalContext();
@@ -253,7 +256,7 @@ async function nativeToolContext(name, sessionId, params = {}) {
   }
   if (CLOUD[name]) return Object.assign(context, await CLOUD[name].context(name));
   if (CUA.has(name)) {
-    if (selected.gated) context.computer = require('./agent-cua').approvalContext(name, params);
+    if (selected.gated) context.computer = require('./agent-cua').approvalContext(name, params, sessionId);
     return context;
   }
   if (selected.module === 'espacios') {

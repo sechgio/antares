@@ -6,7 +6,7 @@ import math
 from datetime import datetime, timezone
 from typing import Any, cast
 
-import jsonschema  # type: ignore
+import jsonschema
 
 from backend.utils.paths import resource_path
 

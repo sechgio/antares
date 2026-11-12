@@ -186,6 +186,7 @@ function ServerCard({ server, onDeleted }: { server: McpServer; onDeleted: () =>
 
 export default function McpServersView() {
   const { addToast } = useToast();
+  const { confirm } = useDialog();
   const [servers, setServers] = useState<McpServer[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
@@ -234,6 +235,16 @@ export default function McpServersView() {
       const config = publicConfig(jsonMode ? JSON.parse(jsonConfig) : { name: name.trim(), transport, url: url.trim(), command: command.trim(),
         args: args.trim().startsWith('[') ? JSON.parse(args) : args.trim() ? args.trim().split(/\s+/) : [] });
       const oauth = oauthConfig ?? config.oauth;
+      if (config.transport !== 'http') {
+        const ok = await confirm({
+          title: 'Ejecución nativa en tu equipo',
+          description: 'Un servidor MCP stdio ejecuta el comando que declare como proceso nativo con tus permisos de usuario, '
+            + 'fuera del sandbox de Antares. Sus herramientas solo se ejecutarán tras tu aprobación en cada conversación. ¿Registrar este servidor?',
+          confirmLabel: 'Registrar servidor stdio',
+          type: 'confirm',
+        });
+        if (!ok) return;
+      }
       await mcpApi.mcpServerAdd({
         ...config,
         secrets:

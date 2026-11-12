@@ -88,6 +88,10 @@ ignore_missing_imports = true
 module = "comtypes.*"
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "jsonschema.*"
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--tb=short -m 'not slow' -n 4"

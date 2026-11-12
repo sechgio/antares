@@ -3,12 +3,13 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { mcpApi } from '../../api/mcpApi';
 import McpServersView from './McpServersView';
 
-const { addToast } = vi.hoisted(() => ({ addToast: vi.fn() }));
+const { addToast, dialogConfirm } = vi.hoisted(() => ({ addToast: vi.fn(), dialogConfirm: vi.fn() }));
 vi.mock('../../hooks/useToast', () => ({ useToast: () => ({ addToast }) }));
-vi.mock('../../hooks/useDialog', () => ({ useDialog: () => ({ confirm: vi.fn() }) }));
+vi.mock('../../hooks/useDialog', () => ({ useDialog: () => ({ confirm: dialogConfirm }) }));
 
 beforeEach(() => {
   vi.restoreAllMocks(); addToast.mockClear();
+  dialogConfirm.mockReset().mockResolvedValue(true);
   vi.spyOn(mcpApi, 'mcpServersList').mockResolvedValue({ servers: [{ id: 's1', name: 'Servidor local', transport: 'stdio',
     url: '', command: 'python', args: ['mcp.py'], secret_keys: ['API_KEY'], tools_count: 1 }] });
   vi.spyOn(mcpApi, 'mcpServerTools').mockResolvedValue({ tools: [{ name: 'search', description: 'Buscar', enabled: true }] });
@@ -38,5 +39,18 @@ it('el JSON conserva argumentos con espacios y separa los secretos', async () =>
   expect(JSON.parse((screen.getByRole('textbox', { name: 'Configuración JSON del servidor' }) as HTMLTextAreaElement).value).args).toEqual(['archivo con espacios.py']);
   fireEvent.change(screen.getByRole('textbox', { name: 'Secretos del servidor' }), { target: { value: 'API_KEY=secret' } });
   fireEvent.click(screen.getByRole('button', { name: 'Registrar servidor' }));
+  await waitFor(() => expect(dialogConfirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'Ejecución nativa en tu equipo' })));
   await waitFor(() => expect(add).toHaveBeenCalledWith(expect.objectContaining({ args: ['archivo con espacios.py'], secrets: { env: { API_KEY: 'secret' } } })));
+});
+
+it('no registra un servidor stdio si se rechaza la confirmación de ejecución nativa', async () => {
+  const add = vi.spyOn(mcpApi, 'mcpServerAdd').mockResolvedValue({ server: { id: 's3', name: 'Local', transport: 'stdio', url: '', command: 'python', args: [], secret_keys: [], tools_count: null } });
+  dialogConfirm.mockResolvedValueOnce(false);
+  render(<McpServersView />);
+  fireEvent.click(screen.getByRole('button', { name: 'Añadir servidor' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Nombre del servidor' }), { target: { value: 'Local' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Registrar servidor' }));
+  await waitFor(() => expect(dialogConfirm).toHaveBeenCalled());
+  expect(add).not.toHaveBeenCalled();
+  expect(addToast).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
 });

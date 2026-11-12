@@ -24,6 +24,12 @@ assert(web.filter((s) => !s.gated).map((s) => s.name).sort().join()
   === 'web_back,web_console,web_find,web_forward,web_handover,web_hover,web_network,web_open,web_read,web_reload,web_screenshot,web_scroll,web_text,web_wait',
   'buscar, texto, consola, red, captura, desplazar, esperar, pasar el puntero, cesión del control y navegación se usan sin aprobación');
 
+assert(browser.redactUrlSecrets('https://id.example/cb?code=abc123&state=xyz&scope=read')
+    === 'https://id.example/cb?code=&state=xyz&scope=read',
+  'los valores de credencial de una URL se redactan conservando la clave');
+assert(browser.redactUrlSecrets('https://id.example/cb?access_token=a%20b==&next=/hoja')
+  === 'https://id.example/cb?access_token=&next=/hoja', 'la redacción soporta valores con «=» y claves ajenas intactas');
+
 async function main() {
   const { mkdtempSync, rmSync, readFileSync } = require('node:fs');
   const { tmpdir } = require('node:os');

@@ -114,6 +114,26 @@ def test_history_export_csv_drops_missing_gracefully(seeded_db) -> None:
     assert rows == []
 
 
+def test_history_export_csv_neutraliza_formulas(seeded_db) -> None:
+    save_run(
+        files=["a.jpg"],
+        options={"formato": "JPEG", "calidad": 90},
+        patron="=HYPERLINK(\"http://evil.example\",\"gano\")",
+        formato="=cmd|'/c calc'!A1",
+        calidad=90,
+        resize=None,
+        ok_count=1,
+        err_count=0,
+        run_type="conversion",
+        duration_ms=10,
+    )
+    result = HANDLERS["history_export"]({})
+    text = base64.b64decode(result["csv"]).decode("utf-8")
+    assert not any(line.startswith("=") for line in text.splitlines())
+    assert "'=HYPERLINK" in text
+    assert "'=cmd" in text
+
+
 def test_history_get_returns_run_with_parsed_json(seeded_db) -> None:
     result = HANDLERS["history_get"]({"id": 1})
     run = result["run"]

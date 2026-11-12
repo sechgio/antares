@@ -22,7 +22,6 @@ async function handleAutoimgCall(method, params = {}) {
 
       case 'autoimg_oauth_config_save': {
         const clientId = typeof params.client_id === 'string' ? params.client_id : '';
-        const clientSecret = typeof params.client_secret === 'string' ? params.client_secret : '';
         const { dialog } = require('electron');
         const win = getMainWindow();
         const confirm = await dialog.showMessageBox(win || undefined, {
@@ -31,13 +30,13 @@ async function handleAutoimgCall(method, params = {}) {
           defaultId: 0,
           cancelId: 0,
           title: 'Guardar credenciales OAuth',
-          message: '¿Guardar el Client ID / Secret de Google OAuth?',
-          detail: 'Solo continúa si obtuviste estas credenciales desde tu propio proyecto de Google Cloud.',
+          message: '¿Guardar el Client ID de Google OAuth?',
+          detail: 'Solo continúa si obtuviste este Client ID desde tu propio proyecto de Google Cloud (aplicación de escritorio). El flujo autoriza con PKCE y no necesita Client Secret.',
         });
         if (confirm.response !== 1) {
           return { handled: true, result: { success: false, cancelled: true } };
         }
-        const result = sheets.saveOAuthConfig(clientId, clientSecret);
+        const result = sheets.saveOAuthConfig(clientId);
         return { handled: true, result };
       }
 

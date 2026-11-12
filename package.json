@@ -57,7 +57,7 @@
     "pr-fix:ship": "node scripts/pr-fix-loop.js --ship",
     "pr-fix:merge": "node scripts/pr-fix-loop.js --ship --merge",
     "hooks:install": "node scripts/install-hooks.js",
-    "postinstall": "electron-builder install-app-deps && node scripts/install-hooks.js || true"
+    "postinstall": "node scripts/postinstall.js"
   },
   "devDependencies": {
     "concurrently": "^10.0.4",

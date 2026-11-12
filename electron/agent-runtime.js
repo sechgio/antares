@@ -29,27 +29,12 @@ const { SKILLS_GUIDE, SYSTEM_PROMPT, legacyNotes, migrateInstructions, splitMemo
 
 const MAX_MESSAGE_CHARS = 12_000;
 const MAX_REQUEST_ID_CHARS = 100;
-const MAX_MESSAGE_PATHS = 20;
 const ATTACHMENT_TTL_MS = 60 * 60 * 1000;
 const MAX_ATTACHMENTS = 20;
 const MAX_PASTED_BYTES = 20 * 1024 * 1024;
 const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_INDEXED_SKILLS = 40;
 const IMAGE_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
-const QUOTED_PATH_RE = /["'`\u201c\u201d]([A-Za-z]:\\[^"'`\u201c\u201d\r\n]+)["'`\u201c\u201d]/g;
-const BARE_PATH_RE = /(?:^|[\s(\[])([A-Za-z]:\\[^\s"'`<>|*?]+)/g;
-
-function extractPaths(content) {
-  const found = [];
-  const push = (raw) => {
-    const value = raw.replace(/[.,;:!?)\]]+$/, '');
-    if (value && !found.includes(value)) found.push(value);
-  };
-  for (const match of content.matchAll(QUOTED_PATH_RE)) push(match[1]);
-  const unquoted = content.replace(QUOTED_PATH_RE, ' ');
-  for (const match of unquoted.matchAll(BARE_PATH_RE)) push(match[1]);
-  return found.slice(0, MAX_MESSAGE_PATHS);
-}
 const CANCELLED_NOTE =
   '⏹ Turno detenido por el usuario. Una herramienta ya iniciada puede seguir ejecutándose; ' +
   'comprueba su resultado antes de repetirla.';
@@ -791,7 +776,8 @@ async function messageSend(params) {
     }));
   }
   const attached = _takeAttachments(params.attachments);
-  const paths = [...extractPaths(mentionText), ...attached.filter((a) => a.kind === 'files').map((a) => a.path)];
+  // Solo los adjuntos explícitos conceden lectura; las rutas en el texto no conceden nada.
+  const paths = attached.filter((a) => a.kind === 'files').map((a) => a.path);
   const folders = attached.filter((a) => a.kind === 'folder').map((a) => a.path);
   const files = paths.length || folders.length
     ? await bridge('agent_internal_grants_add', { session_id: sessionId, request_id: requestId || null, paths, folders })
@@ -1392,6 +1378,5 @@ module.exports = {
     state: () => shared.state,
     shared,
     _providerOverrides: shared.providerOverrides,
-    extractPaths,
   },
 };

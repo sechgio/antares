@@ -55,22 +55,40 @@ async function main() {
     },
   });
   const native = nativeModule.exports;
-  const approvedContext = await native.nativeToolContext('canvas_apply_layers');
+  const argsSaving = { id: 'doc', expected_updated_at: 'revision-vigente', layers: [] };
+  const approvedContext = await native.nativeToolContext('canvas_apply_layers', 'abc123', argsSaving);
   wc.isCrashed = () => true;
-  const saving = native.runNativeTool('canvas_apply_layers', { id: 'doc', expected_updated_at: 'revision-vigente', layers: [] }, { approvedContext });
+  const saving = native.runNativeTool('canvas_apply_layers', { ...argsSaving }, { approvedContext });
   await new Promise(setImmediate);
   assert.equal(calls.length, 1, 'Canvas usa el backend si el proceso del renderer ha caído');
   const saved = await saving;
   assert.equal(saved.layers[0].id, 'guardada');
   assert.equal(calls[0].method, 'agent_canvas_apply_layers');
-  await assert.rejects(native.runNativeTool('canvas_apply_layers', { id: 'doc', expected_updated_at: 'antigua' }, { approvedContext }), /revisión/);
+  const argsStale = { id: 'doc', expected_updated_at: 'antigua' };
+  const staleContext = await native.nativeToolContext('canvas_apply_layers', 'abc123', argsStale);
+  await assert.rejects(native.runNativeTool('canvas_apply_layers', { ...argsStale }, { approvedContext: staleContext }), /revisión/);
   wc.isCrashed = () => false;
-  const guarded = native.runNativeTool('canvas_apply_layers', { id: 'doc', expected_updated_at: 'revision-vigente' }, { approvedContext });
+  const argsGuarded = { id: 'doc', expected_updated_at: 'revision-vigente' };
+  const guardedContext = await native.nativeToolContext('canvas_apply_layers', 'abc123', argsGuarded);
+  const guarded = native.runNativeTool('canvas_apply_layers', { ...argsGuarded }, { approvedContext: guardedContext });
   const guardedRejected = assert.rejects(guarded, /cambios sin guardar/);
   await new Promise(setImmediate);
   api.acceptRendererResult({ id: sent.at(-1)[2].id, error: 'Canvas tiene cambios sin guardar' });
   await guardedRejected;
   assert.equal(calls.length, 2, 'un rechazo del editor no se reintenta en el backend');
+  const withArgs = await native.nativeToolContext('canvas_apply_layers', 'abc123',
+    { id: 'doc', expected_updated_at: 'revision-vigente' });
+  assert.equal(withArgs.params_digest, (await native.nativeToolContext('canvas_apply_layers', 'abc123',
+    { id: 'doc', expected_updated_at: 'revision-vigente' })).params_digest,
+    'los mismos argumentos producen la misma aprobación');
+  let tampered = false;
+  try {
+    await native.runNativeTool('canvas_apply_layers', { id: 'doc', expected_updated_at: 'revision-vieja' }, { approvedContext: withArgs });
+  } catch { tampered = true; }
+  assert(tampered && calls.length === 2, 'cambiar los argumentos tras aprobar no inicia el efecto');
+  const executed = await native.runNativeTool('canvas_apply_layers', { id: 'doc', expected_updated_at: 'revision-vigente' },
+    { approvedContext: withArgs });
+  assert.equal(executed.layers[0].id, 'guardada', 'ejecutar con los argumentos aprobados usa el estado vigente');
   console.log('[PASS] Renderer: correlación, límite, respuestas tardías e incertidumbre tras cierre/timeout.');
 }
 main().catch((err) => { console.error(err); process.exitCode = 1; });

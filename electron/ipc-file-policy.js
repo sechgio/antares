@@ -254,10 +254,15 @@ async function cleanupStagedTokens(tokens, webContentsId = null) {
 }
 
 const FORBIDDEN_FALLBACK_EXTENSIONS = new Set([
-  '.bat', '.cmd', '.com', '.cpl', '.dll', '.exe', '.hta', '.jar', '.js', '.jse',
-  '.lnk', '.msc', '.msi', '.msp', '.ocx', '.ps1', '.psm1', '.reg', '.scr',
-  '.sys', '.url', '.vbe', '.vbs', '.wsf', '.wsh',
+  '.bat', '.cmd', '.chm', '.com', '.cpl', '.dll', '.exe', '.gadget', '.hta',
+  '.jar', '.js', '.jse', '.lnk', '.msc', '.msi', '.msp', '.ocx', '.pif',
+  '.ps1', '.psm1', '.py', '.pyw', '.pyz', '.pyzw', '.reg', '.scr', '.sys',
+  '.url', '.vbe', '.vbs', '.wsf', '.wsh', '.xlsm', '.docm',
 ]);
+
+const READ_ONLY_OVERWRITE_TTL_MS = 10 * 60 * 1000;
+const READ_ONLY_OVERWRITE_MAX_CONFIRMATIONS = 64;
+const _confirmedReadOnlyOverwrites = new Map();
 
 function _outputExtension(resolvedPath) {
   // Windows ignora puntos/espacios finales y trata ':' como stream alternativo:
@@ -266,6 +271,41 @@ function _outputExtension(resolvedPath) {
   const colon = base.indexOf(':');
   const name = colon === -1 ? base : base.slice(0, colon);
   return path.extname(name).toLowerCase();
+}
+
+function _confirmReadOnlyOverwrite(resolvedPath) {
+  const key = resolvedPath.toLowerCase();
+  const now = Date.now();
+  const confirmedUntil = _confirmedReadOnlyOverwrites.get(key);
+  if (confirmedUntil && confirmedUntil > now) return;
+  const { dialog } = require('electron');
+  let owner = null;
+  try {
+    const { getMainWindow } = require('./window-manager');
+    owner = typeof getMainWindow === 'function' ? getMainWindow() : null;
+  } catch {
+    owner = null;
+  }
+  const options = {
+    type: 'question',
+    buttons: ['Sobrescribir', 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Sobrescribir archivo existente',
+    message: `«${path.basename(resolvedPath)}» ya existe en una carpeta registrada solo para lectura.`,
+    detail: 'Antares solo escribe sobre un archivo existente de esa carpeta con tu confirmación. Para escribir sin preguntas, elige el destino con el diálogo de guardado.',
+  };
+  const response = owner && !owner.isDestroyed()
+    ? dialog.showMessageBoxSync(owner, options)
+    : dialog.showMessageBoxSync(options);
+  if (response !== 0) {
+    throw new Error('Sobrescritura cancelada por el usuario');
+  }
+  _confirmedReadOnlyOverwrites.set(key, now + READ_ONLY_OVERWRITE_TTL_MS);
+  if (_confirmedReadOnlyOverwrites.size > READ_ONLY_OVERWRITE_MAX_CONFIRMATIONS) {
+    const oldest = _confirmedReadOnlyOverwrites.keys().next();
+    if (!oldest.done) _confirmedReadOnlyOverwrites.delete(oldest.value);
+  }
 }
 
 function _assertAllowedRawOutputPath(outRaw) {
@@ -279,24 +319,26 @@ function _assertAllowedRawOutputPath(outRaw) {
       ? (fs.lstatSync(resolved).isDirectory() ? resolved : path.dirname(resolved))
       : path.dirname(resolved);
     const { isUnderAllowedWriteRoot } = require('./dialog-handlers');
-    const { _isUnderStandardUserDir } = require('./write-roots');
     if (!isUnderAllowedWriteRoot(dir) && !isAllowedReadPath(resolved) && !isAllowedReadPath(dir)) {
-      if (!_isUnderStandardUserDir(dir)) {
-        throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
-      }
+      throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
     }
-    // El veto de ejecutables aplica siempre que no haya write root por
-    // diálogo: que la ruta estuviera registrada antes para lectura no
-    // habilita sobrescribir un binario (p. ej. el .exe abierto ayer).
-    if (!isUnderAllowedWriteRoot(dir) && FORBIDDEN_FALLBACK_EXTENSIONS.has(_outputExtension(resolved))) {
+    if (FORBIDDEN_FALLBACK_EXTENSIONS.has(_outputExtension(resolved))) {
       throw new Error('tipo de archivo no permitido en la ruta de salida');
     }
     const { hasSymlinkAncestor } = require('./path-allowlist');
     if (hasSymlinkAncestor(resolved)) {
       throw new Error('symlink no permitido en ruta de salida');
     }
+    if (fs.existsSync(resolved) && !isUnderAllowedWriteRoot(dir)) {
+      _confirmReadOnlyOverwrite(resolved);
+    }
   } catch (e) {
-    if (e.message.includes('no está permitida') || e.message.includes('no permitido') || e.message.includes('symlink')) {
+    if (
+      e.message.includes('no está permitida')
+      || e.message.includes('no permitido')
+      || e.message.includes('symlink')
+      || e.message.includes('cancelada')
+    ) {
       throw e;
     }
     throw new Error(`ruta de salida no permitida: ${e.message}`);

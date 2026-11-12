@@ -41,4 +41,5 @@ function isTrustedRendererFrame(event, mainWindow, isDev) {
 
 module.exports = {
   isTrustedRendererFrame,
+  isTrustedRendererUrl,
 };

@@ -36,7 +36,7 @@ _spill_replace_lock = threading.Lock()
 def _spill_file_path(doc_id: str, suffix: str = ".json", *, legacy: bool = False) -> Path:
     store = _canvas_core.get_canvas_store()
     spill_dir = store.spill_dir
-    safe_id = Path(str(doc_id)).name or "unknown"
+    safe_id = sanitizar_nombre(Path(str(doc_id)).name) or "unknown"
     if legacy:
         return spill_dir / f"{safe_id}{suffix}"
     prefix = HISTORY_SPILL_PREFIX if suffix == "_history.json" else DOCUMENT_SPILL_PREFIX

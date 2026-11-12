@@ -1883,3 +1883,22 @@ def test_canvas_save_history_reports_unencodable_payloads_as_validation_errors(
         canvas_handlers.canvas_save_history(
             {"id": created["id"], "past": [{"type": "diff", "ops": [{"v": "\ud800"}]}], "future": []},
         )
+
+
+def test_spill_paths_sanitize_ids_with_path_characters(tmp_path: Path, monkeypatch) -> None:
+    store = CanvasStore(tmp_path)
+    monkeypatch.setattr("backend.core.canvas.get_canvas_store", lambda: store)
+
+    hostile = "doc:ads"
+    for suffix in (".json", "_history.json"):
+        path = canvas_handlers._spill_file_path(hostile, suffix)
+        assert ":" not in path.name
+        assert path.parent == store.spill_dir
+
+    written = canvas_handlers._spill_payload(hostile, {"a": 1})
+    assert written is not None
+    assert Path(written).is_file()
+    assert json.loads(Path(written).read_text(encoding="utf-8"))["a"] == 1
+
+    canvas_handlers._cleanup_spill(hostile)
+    assert not Path(written).exists()

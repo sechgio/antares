@@ -3,6 +3,7 @@ const path = require('path');
 
 const MAX_IN_FLIGHT_BYTES = 8 * 1024 * 1024;
 const DEFAULT_QUOTA_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_RECORDING_SESSIONS = 8;
 
 class RecordingQuotaExceededError extends Error {
   constructor(quotaBytes) {
@@ -85,14 +86,22 @@ class RecordingSessionManager {
     fs.mkdirSync(directory, { recursive: true });
   }
 
-  create(sessionId) {
+  create(sessionId, declaredQuotaBytes) {
     if (this.sessions.has(sessionId)) {
       throw new Error(`la sesión ${sessionId} ya existe`);
+    }
+    if (this.sessions.size >= MAX_RECORDING_SESSIONS) {
+      throw new Error('demasiadas sesiones de grabación en curso');
+    }
+    let quotaBytes = this.quotaBytes;
+    const declared = Number(declaredQuotaBytes);
+    if (Number.isSafeInteger(declared) && declared > 0) {
+      quotaBytes = Math.min(declared, quotaBytes);
     }
     const session = new RecordingSession({
       sessionId,
       directory: this.directory,
-      quotaBytes: this.quotaBytes,
+      quotaBytes,
     });
     this.sessions.set(sessionId, session);
     return session;

@@ -69,6 +69,36 @@ class _Skill:
     content: str | None = None
 
 
+def _provenance(path: Path, grants: dict[str, JsonObject], workspace: Path, library: Path,
+                levels: tuple[Path, ...], profile_root: Path | None) -> str:
+    """Origen del cuerpo de una skill: la biblioteca y el perfil son confiables; un
+    adjunto, el workspace o un home externo son contenido de archivos que el modelo
+    debe tratar como dato ajeno."""
+    try:
+        root = path.parent.parent if path.name == "SKILL.md" else path.parent
+        if any(path.parent == level for level in levels):
+            root = path.parent
+        for grant in grants.values():
+            target = Path(str(grant.get("path") or ""))
+            if str(target) and (root == target or root.is_relative_to(target)):
+                return "attachment"
+        if root == library:
+            return "library"
+        for level in levels:
+            if root == level:
+                if profile_root is not None and level == profile_root:
+                    return "profile"
+                return "shared" if level.name == "_shared" else "external"
+        for home in _external_homes():
+            if root == home or root.is_relative_to(home):
+                return "external"
+        if str(workspace) and (root == workspace or root.is_relative_to(workspace)):
+            return "workspace"
+        return "external"
+    except (OSError, ValueError):
+        return "external"
+
+
 def _authorized(path: Path, grants: dict[str, JsonObject], workspace: Path, library: Path,
                 levels: tuple[Path, ...] = ()) -> Path:
     for root in levels:
@@ -380,6 +410,7 @@ def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace:
         if type(limit) is not int or not 1 <= limit <= 20:
             raise ValueError("El límite debe estar entre 1 y 20")
         catalog, warnings, truncated = _catalog(grants, workspace, library, levels)
+        profile_root = levels[0] if agent_id is not None else None
         words = query.split()
         matches = []
         for candidate_skill in [*portable, *catalog]:
@@ -389,7 +420,9 @@ def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace:
         return computer_files.fit({
             "skills": [{"id": skill.id, "name": skill.name,
                         "description": (computer_files.utf16_slice(skill.description, 0, 240)
-                                        if skill.id.startswith("profile:") else skill.description[:240]), "location": str(skill.path)}
+                                        if skill.id.startswith("profile:") else skill.description[:240]), "location": str(skill.path),
+                        "provenance": "profile" if skill.id.startswith("profile:")
+                        else _provenance(skill.path, grants, workspace, library, levels, profile_root)}
                        for skill in matches[:limit]],
             "total": len(matches), "truncated": truncated or len(matches) > limit,
             "library": str(library), "warnings": warnings, "notice": _NOTICE,
@@ -438,7 +471,9 @@ def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace:
         end = min(total, offset + _PAGE_CHARS)
         result = {"id": skill.id, "name": skill.name, "file_path": relative, "content": chunk(end),
                   "offset": offset, "total_chars": total, "next_offset": end if end < total else None,
-                  **({} if skill_id.startswith("profile:") else {"notice": _NOTICE})}
+                  "provenance": "profile" if portable_page
+                  else _provenance(skill.path, grants, workspace, library, levels, levels[0] if agent_id is not None else None),
+                  **({} if portable_page else {"notice": _NOTICE})}
         while computer_files.serialized_size(result, utf16=portable_page) > 5600:
             end = offset + (end - offset) * 3 // 4
             result.update(content=chunk(end), next_offset=end if end < total else None)

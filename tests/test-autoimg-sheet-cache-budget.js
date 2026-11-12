@@ -76,6 +76,7 @@ async function main() {
     },
     appendRow: async () => ({ success: true }),
     batchWriteRanges: async () => ({ success: true }),
+    withPinnedGoogleSession: async (fn) => fn(),
   });
 
   const nis = require('../electron/autoimg-nis');

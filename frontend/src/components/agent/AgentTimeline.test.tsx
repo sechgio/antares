@@ -787,8 +787,21 @@ it('detalla el comando y la ruta en la aprobación de una acción del equipo', (
   expect(screen.getByText('Get-ChildItem', { exact: true })).toBeVisible();
   expect(screen.getByText('Carpeta: C:\datos')).toBeInTheDocument();
   expect(screen.getByText(/puede acceder al equipo completo/)).toBeInTheDocument();
-  expect(screen.getByText(/En Acceso completo solo se piden los comandos que borran o descartan archivos/)).toBeInTheDocument();
+  expect(screen.getByText(/pide aprobación humana para cada comando, también en Acceso completo/)).toBeInTheDocument();
   expect(screen.queryByText(/elimina o descarta archivos/)).not.toBeInTheDocument();
+});
+
+it('muestra las instrucciones completas al aprobar la creación de una skill', () => {
+  render(<ApprovalCard busy={false} onDecide={vi.fn()} approval={{
+    id: 'a2', session_id: 's', call_id: 'c2', method: 'skill_create', status: 'pending', created_at: 1, decided_at: null,
+    params: { name: 'informe-semanal', description: 'Arma el informe', content: 'PASO 1: leer datos\nPASO 2: redactar' },
+  }} />);
+  expect(screen.getByText('Instrucciones que se guardarán (visibles completas antes de aprobar)')).toBeInTheDocument();
+  expect(screen.getByText('Descripción: Arma el informe')).toBeInTheDocument();
+  const label = screen.getByText('Instrucciones de la skill');
+  const cuerpo = label.parentElement?.querySelector('pre');
+  expect(cuerpo?.textContent).toContain('PASO 1: leer datos');
+  expect(cuerpo?.textContent).toContain('PASO 2: redactar');
 });
 
 it.each([

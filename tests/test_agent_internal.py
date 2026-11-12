@@ -894,3 +894,37 @@ def test_cua_nativa_exige_su_contexto_actual(store):
     with pytest.raises(ValidationError, match="contexto actual"):
         agent_internal.HANDLERS["agent_internal_approval_ensure"](
             {"session_id": "s1", "call_id": "c-cua-sin", "method": "cua_click", "params": {"pid": 42}})
+
+
+def test_cua_grant_se_agota_y_recordar_lo_renueva(store):
+    first = _cua_ensure("c-cua-cap")
+    agent_internal.HANDLERS["agent_internal_approval_decide"](
+        {"approval_id": first["id"], "approve": True, "grant_app": True})
+    grant = store.grants_for("s1")["app:notepad.exe"]
+    assert grant["max_uses"] == agent.COMPUTER_APP_GRANT_MAX_USES
+    assert grant["uses"] == 0
+    assert _cua_ensure("c-cua-cap2", "cua_type_text")["status"] == "approved"
+    outcomes = [store.consume_computer_app_grant("s1", "app:notepad.exe") for _ in range(grant["max_uses"])]
+    assert outcomes.count(False) == 1 and outcomes[-1] is False
+    assert _cua_ensure("c-cua-cap3", "cua_type_text")["status"] == "pending"
+    refreshed = _cua_ensure("c-cua-cap4", "cua_type_text")
+    agent_internal.HANDLERS["agent_internal_approval_decide"](
+        {"approval_id": refreshed["id"], "approve": True, "grant_app": True})
+    assert store.grants_for("s1")["app:notepad.exe"]["uses"] == 0
+    assert _cua_ensure("c-cua-cap5", "cua_hotkey")["status"] == "approved"
+
+
+def test_resource_grants_no_participan_del_tope_computer_app(store):
+    store.add_grants("s1", [{"path": "C:/carpeta", "mode": "folder", "key": "folder:c:/carpeta"}])
+    with pytest.raises(KeyError):
+        store._grants["s1"]["folder:c:/carpeta"]["max_uses"]
+    assert store.consume_computer_app_grant("s1", "folder:c:/carpeta") is False
+
+
+def test_approval_queda_done_tras_consumir_el_dispatch(store):
+    approval = store.create_approval("s1", {"id": "c-done", "name": "db_clear", "params": {}})
+    store.decide_approval(str(approval["id"]), True)
+    outcome, record = store.dispatch_claim("s1", "c-done", "db_clear", {}, str(approval["id"]))
+    assert outcome == "new"
+    store.dispatch_finish("s1", "c-done", str(record["op_id"]), "succeeded", "{}")
+    assert store.get_approval(str(approval["id"]))["status"] == "done"

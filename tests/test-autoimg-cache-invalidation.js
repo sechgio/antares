@@ -41,6 +41,7 @@ async function main() {
     },
     batchWriteRanges: async () => ({ success: true }),
     batchReadRanges: async () => ({}),
+    withPinnedGoogleSession: async (fn) => fn(),
   });
 
   stubModule(drivePath, {

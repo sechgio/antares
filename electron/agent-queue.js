@@ -300,6 +300,7 @@ async function tickQueue(state, claimToken) {
       if (!idle) continue;
       const pending = (await bridge('agent_internal_approvals_pending', { session_id: sessionId })).approvals;
       if (pending.length) continue;
+      if ((await require('./agent-execution').unattendedBudget(await require('./agent-execution').sessionProfile(session))).exhausted) continue;
       await startQueueTask(state, session, pendingQueue[0], claimToken);
     } catch (err) {
       console.warn('[agent] queue tick failed:', require('./agent-execution').sanitizeProviderError(String(err?.message || err)));

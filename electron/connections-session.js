@@ -90,7 +90,18 @@ function publicOAuthConfig(provider) {
 }
 
 function loadOAuthConfig(provider) {
-  const cfg = readSecureJson(_oauthConfigFile(provider), _oauthConfigNs(provider));
+  const spec = getProvider(provider);
+  const isPkce = spec && spec.auth && spec.auth.type === 'oauth_pkce';
+  let cfg = readSecureJson(_oauthConfigFile(provider), _oauthConfigNs(provider));
+  if (isPkce && cfg && (cfg.client_secret !== undefined || cfg.clientSecret !== undefined)) {
+    const cleanId = String(cfg.client_id || cfg.clientId || '').trim();
+    if (cleanId) {
+      writeSecureJson(_oauthConfigFile(provider), _oauthConfigNs(provider), { client_id: cleanId });
+      cfg = { client_id: cleanId };
+    } else {
+      cfg = null;
+    }
+  }
   const clientId = String((cfg && cfg.client_id) || '').trim();
   if (!clientId) {
     const shared = publicOAuthConfig(provider);
@@ -121,6 +132,7 @@ function saveOAuthConfig(provider, clientId, clientSecret) {
   if (spec.auth.requires_client_secret && !secret) {
     throw new Error(`${spec.label} necesita también el Client Secret de tu app.`);
   }
+  const isPkce = spec.auth && spec.auth.type === 'oauth_pkce';
   const previous = loadOAuthConfig(provider);
   if (previous.clientId && previous.clientId !== id) {
     _clearTokens(provider);
@@ -128,7 +140,7 @@ function saveOAuthConfig(provider, clientId, clientSecret) {
   }
   writeSecureJson(_oauthConfigFile(provider), _oauthConfigNs(provider), {
     client_id: id,
-    ...(secret ? { client_secret: secret } : {}),
+    ...(!isPkce && secret ? { client_secret: secret } : {}),
   });
   return { success: true, configured: true };
 }

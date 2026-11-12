@@ -48,7 +48,7 @@ function isBlocked(host) {
 }
 
 function isAlwaysAllowed(host) {
-  return entries('always_allowed').some((entry) => matches(host, entry));
+  return !isBlocked(host) && entries('always_allowed').some((entry) => matches(host, entry));
 }
 
 function addAlwaysAllowed(host) {

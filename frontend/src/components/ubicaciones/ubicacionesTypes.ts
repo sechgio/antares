@@ -94,8 +94,8 @@ export const LS_FORMATO = 'antares:ubicaciones:formato';
 export const LS_OUTPUT_MODE = 'antares:ubicaciones:outputMode';
 export const LS_INPUT_MODE = 'antares:ubicaciones:inputMode';
 export const LS_MANUAL_DATA = 'antares:ubicaciones:manualData';
-const LS_API_KEYS = 'antares:ubicaciones:apiKeys';
-const LS_GOOGLE_MAPS_KEY = 'antares:ubicaciones:googleMapsKey';
+export const LS_API_KEYS = 'antares:ubicaciones:apiKeys';
+export const LS_GOOGLE_MAPS_KEY = 'antares:ubicaciones:googleMapsKey';
 export const LS_ZOOM = 'antares:ubicaciones:zoom';
 export const LS_PROVIDER = 'antares:ubicaciones:provider';
 export const LS_GEOCODE = 'antares:ubicaciones:geocode';
@@ -104,26 +104,6 @@ export const LS_GEOCODE_COUNTRY = 'antares:ubicaciones:geocodeCountry';
 export function clearPlaintextApiKeys(): void {
   localStorage.removeItem(LS_API_KEYS);
   localStorage.removeItem(LS_GOOGLE_MAPS_KEY);
-}
-
-export function readPlaintextApiKeys(): Record<string, string> {
-  try {
-    const saved = localStorage.getItem(LS_API_KEYS);
-    if (saved) {
-      const parsed: unknown = JSON.parse(saved);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        const out: Record<string, string> = {};
-        for (const [k, v] of Object.entries(parsed)) {
-          if (typeof v === 'string' && v.trim()) out[k] = v;
-        }
-        return out;
-      }
-    }
-    const oldGoogleKey = localStorage.getItem(LS_GOOGLE_MAPS_KEY);
-    if (oldGoogleKey) return { google: oldGoogleKey };
-  } catch {
-  }
-  return {};
 }
 
 export const DEFAULT_MANUAL_DATA = {
@@ -137,9 +117,12 @@ export const DEFAULT_MANUAL_DATA = {
 
 export type ManualData = typeof DEFAULT_MANUAL_DATA;
 
+const UNSAFE_MERGE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 export function deepMergeStyles<T extends Record<string, unknown>>(base: T, patch: Record<string, unknown>): T {
   const out = { ...base };
   for (const key of Object.keys(patch)) {
+    if (UNSAFE_MERGE_KEYS.has(key)) continue;
     const val = patch[key];
     const baseVal = base[key];
     if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
