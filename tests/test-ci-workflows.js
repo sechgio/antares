@@ -190,6 +190,12 @@ function run() {
   assert(setupCi.includes('frontend/package-lock.json'), 'setup-ci cache key includes the frontend lockfile');
   assert(setupCi.includes('npm ci'), 'setup-ci installs root dependencies with npm ci');
   assert(setupCi.includes('npm ci --prefix frontend'), 'setup-ci installs frontend dependencies with npm ci');
+  assert(
+    setupCi.includes('~/AppData/Local/electron/Cache') &&
+      setupCi.includes('~/AppData/Local/electron-builder/Cache') &&
+      setupCi.includes("hashFiles('package-lock.json')"),
+    'setup-ci restores the Electron and electron-builder caches keyed by the root lockfile',
+  );
   assert(fs.existsSync(UV_LOCK_PATH), 'Python toolchain has a committed uv lockfile');
   assert(setupCi.includes('uv sync --locked --extra dev'), 'setup-ci installs Python dependencies from uv.lock');
   assert(setupCi.includes('python -m pip install uv==0.11.19'), 'setup-ci bootstraps the pinned uv version');
@@ -214,6 +220,18 @@ function run() {
   assert(
     pyproject.includes('"pytest-xdist>=3.6.0"') && /^addopts\s*=\s*"[^"]*-n 4"/m.test(pyproject),
     'Backend pytest distributes the suite across four workers instead of running serially',
+  );
+  assert(
+    runner.includes('async function runNodeTestsParallel') &&
+      runner.includes('const PARALLEL_NODE_CONCURRENCY = readParallelConcurrency()') &&
+      runner.includes('ANTARES_NODE_TEST_CONCURRENCY') &&
+      runner.includes('await runNodeTestsParallel(ELECTRON_TESTS)'),
+    'The electron suite runs as a bounded, overridable pool of parallel Node workers',
+  );
+  assert(runner.includes('runNodeTests(CONTRACT_TESTS)'), 'The contract suite stays serial');
+  assert(
+    runner.includes('node tests failed:'),
+    'The Node test pool fails closed naming every failed test file',
   );
   assert(runner.includes("'test-quality-ratchet.js'"), 'test runner treats quality-ratchet as a contract test');
   assert(runner.includes("'test-review-policy.js'"), 'test runner treats review-policy as a contract test');

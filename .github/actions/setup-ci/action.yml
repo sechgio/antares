@@ -55,6 +55,17 @@ runs:
       shell: bash
       run: uv sync --locked --extra dev
 
+    - name: Restore Electron and electron-builder caches
+      if: inputs.root == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: |
+          ~/AppData/Local/electron/Cache
+          ~/AppData/Local/electron-builder/Cache
+        key: electron-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+        restore-keys: |
+          electron-toolchain-${{ runner.os }}-${{ runner.arch }}-
+
     - name: Install Node dependencies
       if: inputs.root == 'true'
       shell: bash
