@@ -156,6 +156,31 @@ jobs:
       - name: Verify backend hash manifest
         run: node scripts/verify-backend-manifest.js dist/backend
 
+      # secrets-007: el reloj del empaquetado se fija al último commit para
+      # reducir la deriva de timestamps entre artefactos (NSIS sigue siendo
+      # parcialmente no determinista; la fuente es al menos idéntica).
+      - name: Resolve reproducible build epoch
+        shell: bash
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
+
+      # secrets-010: la firma Authenticode solo se activa cuando el repositorio
+      # define WINDOWS_CODESIGN_PFX/PASSWORD, electron-builder las consume vía
+      # CSC_LINK/CSC_KEY_PASSWORD; sin secretos el build sigue publicable sin firmar.
+      - name: Configure code signing (optional)
+        shell: bash
+        env:
+          WINDOWS_CODESIGN_PFX: ${{ secrets.WINDOWS_CODESIGN_PFX }}
+          WINDOWS_CODESIGN_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
+        run: |
+          if [[ -n "$WINDOWS_CODESIGN_PFX" ]]; then
+            echo "CSC_LINK=$WINDOWS_CODESIGN_PFX" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=$WINDOWS_CODESIGN_PASSWORD" >> "$GITHUB_ENV"
+            echo "ANTARES_CODESIGN=1" >> "$GITHUB_ENV"
+          else
+            echo "ANTARES_CODESIGN=0" >> "$GITHUB_ENV"
+            echo "Secret WINDOWS_CODESIGN_PFX ausente: el artefacto se publicara sin firma Authenticode."
+          fi
+
       - name: Build Electron App
         run: npx --no-install electron-builder --win --publish never
 
@@ -181,6 +206,28 @@ jobs:
           }
           $checksums | Set-Content -LiteralPath 'dist-electron/SHA256SUMS.txt' -Encoding ascii
 
+      # secrets-010: los checksums se firman con GPG cuando el repositorio
+      # define GPG_PRIVATE_KEY; la firma (.asc) es el sexto asset y el paso
+      # publish la sube solo si existe.
+      - name: Sign release checksums (GPG, optional)
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [[ -z "$GPG_PRIVATE_KEY" ]]; then
+            echo "Secret GPG_PRIVATE_KEY ausente: SHA256SUMS.txt queda sin firma GPG."
+            exit 0
+          fi
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          fingerprint="$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')"
+          if [[ -z "$fingerprint" ]]; then
+            echo "No se encontro la clave secreta importada (fingerprint vacio)."
+            exit 1
+          fi
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+            --local-user "$fingerprint" --armor --detach-sign dist-electron/SHA256SUMS.txt
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -191,6 +238,7 @@ jobs:
             dist-electron/Antares-Portable-*.exe
             dist-electron/latest.yml
             dist-electron/SHA256SUMS.txt
+            dist-electron/SHA256SUMS.txt.asc
           if-no-files-found: error
           retention-days: 7
 
@@ -245,6 +293,12 @@ jobs:
             dist-electron/latest.yml
             dist-electron/SHA256SUMS.txt
           )
+          # secrets-010: la firma GPG del checksum es un asset opcional.
+          expected_count=5
+          if [[ -f dist-electron/SHA256SUMS.txt.asc ]]; then
+            assets+=(dist-electron/SHA256SUMS.txt.asc)
+            expected_count=6
+          fi
           for asset in "${assets[@]}"; do
             if [[ ! -f "$asset" ]]; then
               echo "Missing release asset: $asset"
@@ -255,8 +309,8 @@ jobs:
           gh release upload "$RELEASE_TAG" "${assets[@]}" --repo "$REPOSITORY"
 
           uploaded_count="$(gh release view "$RELEASE_TAG" --repo "$REPOSITORY" --json assets --jq '.assets | length')"
-          if [[ "$uploaded_count" -ne 5 ]]; then
-            echo "Expected 5 uploaded assets, found $uploaded_count"
+          if [[ "$uploaded_count" -ne "$expected_count" ]]; then
+            echo "Expected $expected_count uploaded assets, found $uploaded_count"
             exit 1
           fi
 
