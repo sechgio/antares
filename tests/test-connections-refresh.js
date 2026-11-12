@@ -117,6 +117,46 @@ async function main() {
   assert.ok(!own.api.scopeGranted(microsoft, 'Tasks.ReadWrite'), 'un permiso ausente sigue faltando');
   assert.ok(!own.api.scopeGranted(['Files.ReadWrite.All'], 'Files.ReadWrite') , 'un scope parecido no cuenta como concedido');
   console.log('[PASS] Los scopes concedidos se reconocen con las formas que devuelve cada proveedor.');
+
+  // co-007: un flujo PKCE no pide y no persiste client_secret; un legado con
+  // secreto se reescribe limpio al cargarlo.
+  const specOverride = { auth: { type: 'oauth_pkce', scopes: ['read'], callback_port: 42831, callback_path: '/callback' } };
+  const origRequire = require;
+  const custom = (() => {
+    const stored = new Map();
+    const module = { exports: {} };
+    const deps = {
+      './autoimg-secure-storage': {
+        readSecureJson: (file) => stored.get(file) || null,
+        writeSecureJson: (file, ns, value) => stored.set(file, value),
+        clearSecureJson: (file) => stored.delete(file),
+      },
+      './autoimg-google-fetch': { fetchWithRetry: async () => ({ ok: true, json: async () => ({}) }) },
+      './autoimg-security': { maskClientId: (id) => id },
+      './autoimg-oauth-flow': {},
+      './connections-providers': { getProvider: () => specOverride },
+      './ipc-router': { _callBackend: async () => ({}) },
+      './app-log': { appendLogEvent: () => {} },
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../electron/connections-session.js'), 'utf8'), {
+      module, require: (name) => deps[name] || origRequire(name), Buffer, URLSearchParams, console,
+      process: { env: {}, resourcesPath: '' },
+    });
+    return { api: module.exports, stored };
+  })();
+  custom.api.saveOAuthConfig('demo', 'client-pkce', 'secreto-que-no-debe-guardarse');
+  const savedCfg = custom.stored.get('connections/demo-oauth-config.json');
+  assert.ok(savedCfg && savedCfg.client_id === 'client-pkce', 'PKCE guarda el client id');
+  assert.ok(!('client_secret' in savedCfg) && !('clientSecret' in savedCfg), 'PKCE nunca persiste el secret');
+  const confidential = session(async () => ({ tokens: fresh }), {});
+  assert.equal(confidential.api.loadOAuthConfig('demo').clientSecret, 'secret', 'un proveedor confidencial conserva su secret');
+  custom.stored.set('connections/demo-oauth-config.json', { client_id: 'client-pkce', client_secret: 'legado' });
+  const purged = custom.api.loadOAuthConfig('demo');
+  assert.equal(purged.clientId, 'client-pkce', 'PKCE legado conserva el client id');
+  assert.equal(purged.clientSecret, '', 'PKCE legado no expone secret');
+  const rewritten = custom.stored.get('connections/demo-oauth-config.json');
+  assert.ok(!('client_secret' in rewritten) && !('clientSecret' in rewritten), 'la carga legada purga el secret del almacen');
+  console.log('[PASS] Los flujos PKCE de conexiones no piden ni persisten client_secret; el legado se purga.');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });
