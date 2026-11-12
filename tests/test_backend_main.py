@@ -645,7 +645,7 @@ def test_pandas_preload_does_not_block_process_status(monkeypatch) -> None:
         return message
 
     messages = iter([
-        type("Msg", (), {"method": "db_export", "params": {}, "id": "export"})(),
+        type("Msg", (), {"method": "db_export", "params": {"path": "export.xlsx"}, "id": "export"})(),
         type("Msg", (), {"method": "process_status", "params": {}, "id": "status"})(),
         None,
     ])

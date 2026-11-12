@@ -15,6 +15,20 @@ from backend.utils.validators import sanitizar_nombre
 
 MAX_DEDUP_ATTEMPTS = 1000
 
+_MAX_PATH_COMPONENTS = 64
+
+
+def _assert_no_symlink_component(path: Path) -> None:
+    probe = path
+    depth = 0
+    while probe != probe.parent and depth < _MAX_PATH_COMPONENTS:
+        if probe.is_symlink():
+            raise ValueError("symlink no permitido en carpeta de salida")
+        probe = probe.parent
+        depth += 1
+    if probe.is_symlink():
+        raise ValueError("symlink no permitido en carpeta de salida")
+
 
 def _safe_filename(value: str, fallback: str) -> str:
     base = value.strip().replace("\\", "/").split("/")[-1].strip()
@@ -48,11 +62,12 @@ def image_optimizer_save_files(params: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(msg)
 
     resolved_folder = str(params.get("_resolved_output_path") or output_folder).strip() or output_folder
-    from pathlib import Path as _P
-    rf = _P(resolved_folder).expanduser().resolve()
-    if rf.is_symlink():
-        raise ValueError("symlink no permitido en carpeta de salida")
-    destination = rf
+    unresolved = Path(str(resolved_folder)).expanduser()
+    # storage-path-handling-019: is_symlink() tras resolve() es casi siempre
+    # False (resolve sigue los enlaces) y el veto quedaba muerto; el examen va
+    # componente a componente sobre la ruta sin resolver, como el veto Electron.
+    _assert_no_symlink_component(unresolved)
+    destination = unresolved.resolve()
     destination.mkdir(parents=True, exist_ok=True)
 
     seen: dict[str, int] = {}

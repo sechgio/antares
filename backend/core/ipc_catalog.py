@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import functools
 import json
+import logging
 from typing import Any
 
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
+
 from backend.utils.paths import resource_path
+
+logger = logging.getLogger(__name__)
 
 _CATALOG_PATH = resource_path("shared/ipc-method-catalog.json")
 _CATALOG: dict[str, Any] = json.loads(  # allowlist: dict[str, Any]
@@ -71,6 +78,38 @@ def input_schema_for(method: str) -> dict[str, object]:
     entry = _entry(method)
     schema = entry.get("inputSchema") if entry else None
     return schema if isinstance(schema, dict) else {"type": "object", "properties": {}}
+
+
+@functools.cache
+def _schema_validator_for(method: str) -> Any:
+    # ipc-bridge-006: el catálogo declara inputSchema por método pero nada lo
+    # imponía en el ingress; ahora cada schema declarado se compila una vez y
+    # su validador se aplica en el dispatcher de main.py. Los métodos sin
+    # inputSchema (o con un schema inválido) se despachan como hasta hoy.
+    entry = _entry(method)
+    schema = entry.get("inputSchema") if entry else None
+    if not isinstance(schema, dict) or not schema:
+        return None
+    try:
+        return Draft202012Validator(schema)
+    except SchemaError:
+        logger.warning("inputSchema inválido en el catálogo para %s; se ignora", method)
+        return None
+
+
+def validate_params_schema(method: str, params: object) -> str | None:
+    """Devuelve None si `params` cumple el inputSchema del catálogo (o el método
+    no declara schema); en caso contrario, un mensaje de usuario listo para el
+    envelope de error."""
+    validator = _schema_validator_for(method)
+    if validator is None:
+        return None
+    value = params if isinstance(params, dict) else {}
+    first = next(validator.iter_errors(value), None)
+    if first is None:
+        return None
+    route = "/".join(str(part) for part in first.absolute_path) or "raíz"
+    return f"Parámetros inválidos para {method} ({route}): {first.message}"
 
 _TIMEOUTS: dict[str, Any] = _CATALOG.get("timeouts", {})  # allowlist: dict[str, Any]
 _DEFAULT_TIMEOUT_MS = 30_000

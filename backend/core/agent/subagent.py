@@ -7,7 +7,7 @@ import time
 import uuid
 from collections.abc import Callable
 
-import jsonschema  # type: ignore[import-untyped]
+import jsonschema
 
 from backend.core.agent import agent_chat
 from backend.core.agent.cancel import RunCancelled

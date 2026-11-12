@@ -46,7 +46,12 @@ from backend.core.exceptions import (
     ValidationError,
 )
 from backend.core.import_guard import serialized_import
-from backend.core.ipc_catalog import HEAVY_METHODS, SYNC_METHODS, lane_for
+from backend.core.ipc_catalog import (
+    HEAVY_METHODS,
+    SYNC_METHODS,
+    lane_for,
+    validate_params_schema,
+)
 from backend.core.observability import (
     configure_logging,
     get_context,
@@ -446,6 +451,30 @@ def main() -> None:
                     break
                 if isinstance(msg, _Skip):
                     _consecutive_errors = max(0, _consecutive_errors - 1)
+                    continue
+
+                # ipc-bridge-006: los params entran por el único ingress del
+                # backend (la tubería con Electron); lo que el catálogo declara
+                # en inputSchema se impone aquí, antes del despacho por lane,
+                # cubriendo también el salto LLM de native:agent.
+                schema_violation = validate_params_schema(msg.method, msg.params)
+                if schema_violation is not None:
+                    ipc_phase_telemetry.set_fields(
+                        msg.id,
+                        method=msg.method,
+                        lane=lane_for(msg.method),
+                        ok=False,
+                        rejected="invalid_params",
+                    )
+                    send_response(
+                        None,
+                        msg.id,
+                        error={
+                            "code": -32602,
+                            "message": schema_violation,
+                            "category": "VALIDATION_ERROR",
+                        },
+                    )
                     continue
 
                 handler = HANDLERS.get_loaded(msg.method)

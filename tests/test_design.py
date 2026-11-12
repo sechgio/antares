@@ -77,6 +77,29 @@ def test_render_html_escapes_model_text_and_rejects_css_injection() -> None:
     assert "url(" not in html
 
 
+def test_render_html_theme_sink_rejects_css_even_without_normalize() -> None:
+    # python-backend-005 / parsers-008: el sumidero aplica el filtro aunque el
+    # llamador se salte normalize_document.
+    html = render_html(
+        {
+            "page": {},
+            "theme": {
+                "background": "#FFF}body{display:none}",
+                "text": "red; } html { display: none",
+                "accent": "rgba(0,0,0,0)'); content: url(https://exfil",
+                "headFont": 'x"; } body { background: url(//e)',
+                "bodyFont": "y'; } * { display: none",
+            },
+            "slides": [{"layout": "bullets", "title": "<img src=x onerror=alert(1)>"}],
+        }
+    )
+    assert "background: #FFFFFF;" in html
+    assert "#FFF}body{display:none}" not in html
+    assert "content: url(" not in html
+    assert "<img" not in html
+    assert "&lt;img" in html
+
+
 def test_render_html_emits_one_section_per_slide_at_the_preset_size() -> None:
     doc = normalize_document(
         {
