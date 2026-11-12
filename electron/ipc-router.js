@@ -93,9 +93,18 @@ const MAX_PENDING_PER_METHOD = _positiveIntegerEnv(
 let _ipcBackpressureWaits = 0;
 const ANTARES_IPC_ERROR_PREFIX = 'ANTARES_IPC_ERROR:';
 
+// ipc-bridge-024: las rutas locales no cruzan al dominio de confianza del
+// renderer; el contrato de tokens espera que no se filtren ni por mensajes.
+const _WIN_ABS_PATH_RE = /[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]*/g;
+const _POSIX_ABS_PATH_RE = /(?<![\w])\/(?:[\w.\-]+\/)+[\w.\-]*/g;
+
+function _redactInternalPaths(message) {
+  return String(message).replace(_WIN_ABS_PATH_RE, '[ruta interna]').replace(_POSIX_ABS_PATH_RE, '[ruta interna]');
+}
+
 function _toRendererIpcError(err) {
   const payload = {
-    message: err && err.message ? String(err.message) : String(err),
+    message: _redactInternalPaths(err && err.message ? String(err.message) : String(err)),
     code: err && err.code !== undefined ? err.code : -32000,
     category: err && err.category !== undefined ? err.category : 'INTERNAL_ERROR',
     details: err && err.details !== undefined ? err.details : undefined,

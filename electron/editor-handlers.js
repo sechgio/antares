@@ -50,7 +50,7 @@ async function runEditorRecording(method, params = {}, window) {
   const manager = _recordingManager();
   const sessionId = String(params.sessionId || '');
   if (method === 'editor_recording_create') {
-    const session = manager.create(sessionId);
+    const session = manager.create(sessionId, params.quotaBytes);
     return { sessionId: session.sessionId, maxInFlightBytes: manager.maxInFlightBytes };
   }
   if (method === 'editor_recording_append') {

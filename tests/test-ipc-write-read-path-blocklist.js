@@ -23,6 +23,25 @@ function makeRouter(tmpRoot, docsDir) {
   });
 }
 
+function makeRouterWithDialog(tmpRoot, docsDir, confirmResponse) {
+  return loadIpcRouter({
+    electron: {
+      app: {
+        isPackaged: true,
+        getPath: (name) => {
+          if (name === 'documents') return docsDir;
+          if (name === 'downloads') return path.join(tmpRoot, 'dl');
+          if (name === 'userData') return tmpRoot;
+          throw new Error(`unknown path: ${name}`);
+        },
+      },
+      dialog: {
+        showMessageBoxSync: () => confirmResponse(),
+      },
+    },
+  });
+}
+
 async function run() {
   console.log('Testing raw-output blocklist on registered read paths...\n');
 
@@ -112,6 +131,52 @@ async function run() {
     assert(
       benign.outputPath === path.join(customDir, 'informe.pdf'),
       'el artefacto legitimo del diálogo sigue escribiéndose en la raíz concedida',
+    );
+  } finally {
+    _clearAllowedWriteRoots();
+    clearAllowedReadPaths();
+  }
+
+  // ipc-bridge-020: sobrescribir un fichero existente bajo una carpeta
+  // registrada solo para lectura pide confirmación; cancelar bloquea; crear
+  // un fichero nuevo pide nada.
+  try {
+    _clearAllowedWriteRoots();
+    clearAllowedReadPaths();
+    registerAllowedReadPath(readDir);
+
+    const confirmTarget = path.join(readDir, 'confirmable.xlsx');
+    await fs.promises.writeFile(confirmTarget, 'version-previa');
+    const allowRouter = makeRouterWithDialog(tmpRoot, docsDir, () => 0);
+    const acceptedOverwrite = allowRouter._validateAndResolveWriteParams(
+      { outputPath: confirmTarget },
+      null,
+    );
+    assert(
+      acceptedOverwrite.outputPath === confirmTarget,
+      'la confirmación concedida permite la sobrescritura puntual',
+    );
+
+    const cancelTarget = path.join(readDir, 'cancelable.xlsx');
+    await fs.promises.writeFile(cancelTarget, 'version-previa');
+    const denyRouter = makeRouterWithDialog(tmpRoot, docsDir, () => 1);
+    let overwriteCancelled = '';
+    try {
+      denyRouter._validateAndResolveWriteParams({ outputPath: cancelTarget }, null);
+    } catch (e) {
+      overwriteCancelled = e.message;
+    }
+    assert(
+      /cancelada/.test(overwriteCancelled),
+      'cancelar la confirmación bloquea la sobrescritura',
+    );
+
+    const freshTarget = path.join(readDir, 'nuevo-informe.xlsx');
+    const freshRouter = makeRouterWithDialog(tmpRoot, docsDir, () => 1);
+    const freshAllowed = freshRouter._validateAndResolveWriteParams({ outputPath: freshTarget }, null);
+    assert(
+      freshAllowed.outputPath === freshTarget && !fs.existsSync(freshTarget),
+      'un fichero NUEVO no pide confirmación (solo la sobrescritura)',
     );
   } finally {
     _clearAllowedWriteRoots();

@@ -260,6 +260,12 @@ const FORBIDDEN_FALLBACK_EXTENSIONS = new Set([
   '.url', '.vbe', '.vbs', '.wsf', '.wsh', '.xlsm', '.docm',
 ]);
 
+// ipc-bridge-020: confirmaciones de sobrescritura bajo raíces de solo lectura,
+// con memoria por ruta para no castigar los re-export seguidos en la sesión.
+const READ_ONLY_OVERWRITE_TTL_MS = 10 * 60 * 1000;
+const READ_ONLY_OVERWRITE_MAX_CONFIRMATIONS = 64;
+const _confirmedReadOnlyOverwrites = new Map();
+
 function _outputExtension(resolvedPath) {
   // Windows ignora puntos/espacios finales y trata ':' como stream alternativo:
   // "informe.exe." e "informe.exe:data" deben detectarse como ejecutables.
@@ -267,6 +273,41 @@ function _outputExtension(resolvedPath) {
   const colon = base.indexOf(':');
   const name = colon === -1 ? base : base.slice(0, colon);
   return path.extname(name).toLowerCase();
+}
+
+function _confirmReadOnlyOverwrite(resolvedPath) {
+  const key = resolvedPath.toLowerCase();
+  const now = Date.now();
+  const confirmedUntil = _confirmedReadOnlyOverwrites.get(key);
+  if (confirmedUntil && confirmedUntil > now) return;
+  const { dialog } = require('electron');
+  let owner = null;
+  try {
+    const { getMainWindow } = require('./window-manager');
+    owner = typeof getMainWindow === 'function' ? getMainWindow() : null;
+  } catch {
+    owner = null;
+  }
+  const options = {
+    type: 'question',
+    buttons: ['Sobrescribir', 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Sobrescribir archivo existente',
+    message: `«${path.basename(resolvedPath)}» ya existe en una carpeta registrada solo para lectura.`,
+    detail: 'Antares solo escribe sobre un archivo existente de esa carpeta con tu confirmación. Para escribir sin preguntas, elige el destino con el diálogo de guardado.',
+  };
+  const response = owner && !owner.isDestroyed()
+    ? dialog.showMessageBoxSync(owner, options)
+    : dialog.showMessageBoxSync(options);
+  if (response !== 0) {
+    throw new Error('Sobrescritura cancelada por el usuario');
+  }
+  _confirmedReadOnlyOverwrites.set(key, now + READ_ONLY_OVERWRITE_TTL_MS);
+  if (_confirmedReadOnlyOverwrites.size > READ_ONLY_OVERWRITE_MAX_CONFIRMATIONS) {
+    const oldest = _confirmedReadOnlyOverwrites.keys().next();
+    if (!oldest.done) _confirmedReadOnlyOverwrites.delete(oldest.value);
+  }
 }
 
 function _assertAllowedRawOutputPath(outRaw) {
@@ -298,8 +339,19 @@ function _assertAllowedRawOutputPath(outRaw) {
     if (hasSymlinkAncestor(resolved)) {
       throw new Error('symlink no permitido en ruta de salida');
     }
+    // ipc-bridge-020: la capacidad de lectura no daña la integridad de los
+    // ficheros ya existentes: escribir sobre uno en una carpeta registrada
+    // solo para lectura pide confirmación expresa del usuario.
+    if (fs.existsSync(resolved) && !isUnderAllowedWriteRoot(dir)) {
+      _confirmReadOnlyOverwrite(resolved);
+    }
   } catch (e) {
-    if (e.message.includes('no está permitida') || e.message.includes('no permitido') || e.message.includes('symlink')) {
+    if (
+      e.message.includes('no está permitida')
+      || e.message.includes('no permitido')
+      || e.message.includes('symlink')
+      || e.message.includes('cancelada')
+    ) {
       throw e;
     }
     throw new Error(`ruta de salida no permitida: ${e.message}`);

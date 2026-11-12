@@ -86,7 +86,7 @@ class RecordingSessionManager {
     fs.mkdirSync(directory, { recursive: true });
   }
 
-  create(sessionId) {
+  create(sessionId, declaredQuotaBytes) {
     if (this.sessions.has(sessionId)) {
       throw new Error(`la sesión ${sessionId} ya existe`);
     }
@@ -95,10 +95,17 @@ class RecordingSessionManager {
     if (this.sessions.size >= MAX_RECORDING_SESSIONS) {
       throw new Error('demasiadas sesiones de grabación en curso');
     }
+    // ipc-bridge-016: la cuota declarada por la UI solo recorta el techo de la
+    // sesión (nunca lo sube) o el catálogo prometería un cupo que no se aplica.
+    let quotaBytes = this.quotaBytes;
+    const declared = Number(declaredQuotaBytes);
+    if (Number.isSafeInteger(declared) && declared > 0) {
+      quotaBytes = Math.min(declared, quotaBytes);
+    }
     const session = new RecordingSession({
       sessionId,
       directory: this.directory,
-      quotaBytes: this.quotaBytes,
+      quotaBytes,
     });
     this.sessions.set(sessionId, session);
     return session;
