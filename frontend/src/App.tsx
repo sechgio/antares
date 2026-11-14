@@ -124,31 +124,11 @@ function ElectronOnlyNotice() {
 const CLOUD_AUTH_TABS = new Set<TabId>(['espacios']);
 
 function AuthGate() {
-  const { user, loading, signOut } = useAuth();
-
   if (!window.electronAPI) {
     return <ElectronOnlyNotice />;
   }
 
-  if (!loading && user?.isDisabled) {
-    return <DisabledUserNotice onSignOut={signOut} />;
-  }
-
   return <AppContent />;
-}
-
-function DisabledUserNotice({ onSignOut }: { onSignOut: () => Promise<void> }) {
-  React.useEffect(() => { onSignOut(); }, [onSignOut]);
-  return (
-    <div className="flex h-screen w-screen items-center justify-center bg-[var(--bg-base)] px-6 text-center text-[var(--text-primary)]">
-      <div className="max-w-sm">
-        <h1 className="text-xl font-semibold">Cuenta desactivada</h1>
-        <p className="mt-2 text-sm text-[var(--text-muted)]">
-          Tu cuenta ha sido desactivada. Contacta al administrador.
-        </p>
-      </div>
-    </div>
-  );
 }
 
 function AppContent() {

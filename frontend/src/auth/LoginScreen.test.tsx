@@ -13,7 +13,6 @@ vi.mock('./AuthContext', () => ({
     signIn: vi.fn(),
     signUp: vi.fn(),
     signOut: vi.fn(),
-    refreshUser: vi.fn(),
   }),
 }));
 

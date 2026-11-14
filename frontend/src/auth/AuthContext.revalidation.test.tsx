@@ -43,13 +43,14 @@ function mockSession() {
 
 function mockProfile(
   row: { display_name: string; is_admin: boolean; is_disabled: boolean } | null,
+  error: { message: string } | null = null,
 ) {
   vi.mocked(supabase!.from).mockReturnValue({
     select: vi.fn(() => ({
       eq: vi.fn(() => ({
         maybeSingle: vi.fn(() => ({
           data: row,
-          error: null,
+          error,
         })),
       })),
     })),
@@ -124,5 +125,25 @@ describe('AuthProvider session revalidation', () => {
     });
     expect(supabase!.auth.signOut).toHaveBeenCalled();
     expect(result.current.error).toMatch(/desactivad/i);
+  });
+
+  it('keeps the session when a revalidation profile fetch fails transiently', async () => {
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await waitFor(() => {
+      expect(result.current.user?.id).toBe('u1');
+    });
+
+    mockProfile(null, { message: 'temporary network failure' });
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(supabase!.auth.getSession).toHaveBeenCalledTimes(2);
+    });
+    expect(result.current.user?.id).toBe('u1');
+    expect(supabase!.auth.signOut).not.toHaveBeenCalled();
   });
 });

@@ -16,7 +16,6 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
-  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -25,12 +24,18 @@ function loadSupabaseModule() {
   return import('../lib/supabase');
 }
 
-const _profileInflight = new Map<string, Promise<Partial<AppUser> | null>>();
+interface ProfileSnapshot {
+  displayName: string | null;
+  isAdmin: boolean;
+  isDisabled: boolean;
+}
+
+const _profileInflight = new Map<string, Promise<ProfileSnapshot | null>>();
 
 async function _fetchProfile(
   client: AuthClient,
   userId: string,
-): Promise<Partial<AppUser> | null> {
+): Promise<ProfileSnapshot | null> {
   if (!client) return null;
   const pending = _profileInflight.get(userId);
   if (pending) return pending;
@@ -58,14 +63,13 @@ async function _fetchProfile(
 
 function _mapUser(
   supabaseUser: { id: string; email?: string; created_at?: string },
-  profile: Partial<AppUser> | null,
+  profile: ProfileSnapshot | null,
 ): AppUser {
   return {
     id: supabaseUser.id,
     email: supabaseUser.email ?? '',
     displayName: profile?.displayName ?? null,
     isAdmin: profile?.isAdmin ?? false,
-    isDisabled: profile?.isDisabled ?? false,
     createdAt: supabaseUser.created_at ?? '',
   };
 }
@@ -135,7 +139,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         message: errorMessage(err, String(err)),
       });
       if (gen === authGenRef.current && mountedRef.current) {
-        setUser(null);
         setLoading(false);
       }
     }
@@ -162,7 +165,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             message: errorMessage(err, String(err)),
           });
           if (mountedRef.current && gen === authGenRef.current) {
-            setUser(null);
             setLoading(false);
           }
         });
@@ -334,8 +336,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, error, signIn, signUp, signOut, refreshUser }),
-    [user, loading, error, signIn, signUp, signOut, refreshUser],
+    () => ({ user, loading, error, signIn, signUp, signOut }),
+    [user, loading, error, signIn, signUp, signOut],
   );
 
   return (
