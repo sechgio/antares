@@ -262,11 +262,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           revokeDisabledSession(userId);
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') && mountedRef.current) {
+          console.warn(`[auth] user-profile channel ${status.toLowerCase()}`);
+          void refreshUser();
+        }
+      });
     return () => {
       void client.removeChannel(channel);
     };
-  }, [user?.id, revokeDisabledSession]);
+  }, [user?.id, revokeDisabledSession, refreshUser]);
+
+  useEffect(() => {
+    const revalidate = () => {
+      if (mountedRef.current) void refreshUser();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') revalidate();
+    };
+    window.addEventListener('focus', revalidate);
+    window.addEventListener('online', revalidate);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', revalidate);
+      window.removeEventListener('online', revalidate);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [refreshUser]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     const { supabase } = await loadSupabaseModule();

@@ -425,6 +425,81 @@ describe('AuthProvider', () => {
     expect(result.current.error).toMatch(/desactivad/i);
   });
 
+  it('revalidates the session on window focus and signs out a newly disabled profile', async () => {
+    (supabase.auth.getSession as any).mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'tok',
+          user: { id: 'u1', email: 'a@b.com', created_at: '2026-01-01' },
+        },
+      },
+      error: null,
+    });
+    mockProfile({ display_name: 'A', is_admin: false, is_disabled: false });
+    (supabase.auth.signOut as any).mockResolvedValue({ error: null });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await waitFor(() => {
+      expect(result.current.user?.id).toBe('u1');
+    });
+
+    mockProfile({ display_name: 'A', is_admin: false, is_disabled: true });
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.user).toBeNull();
+    });
+    expect(supabase.auth.signOut).toHaveBeenCalled();
+    expect(result.current.error).toMatch(/desactivad/i);
+  });
+
+  it('revalidates the session when the profile channel reports CHANNEL_ERROR', async () => {
+    let statusCallback: ((status: string) => void) | null = null;
+    const channel = {
+      on: vi.fn().mockReturnThis(),
+      subscribe: vi.fn((cb: (status: string) => void) => {
+        statusCallback = cb;
+        return channel;
+      }),
+    };
+    (supabase.channel as any).mockReturnValue(channel);
+
+    (supabase.auth.getSession as any).mockResolvedValue({
+      data: {
+        session: {
+          access_token: 'tok',
+          user: { id: 'u1', email: 'a@b.com', created_at: '2026-01-01' },
+        },
+      },
+      error: null,
+    });
+    mockProfile({ display_name: 'A', is_admin: false, is_disabled: false });
+    (supabase.auth.signOut as any).mockResolvedValue({ error: null });
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+
+    await waitFor(() => {
+      expect(result.current.user?.id).toBe('u1');
+    });
+    expect(statusCallback).not.toBeNull();
+
+    mockProfile({ display_name: 'A', is_admin: false, is_disabled: true });
+    await act(async () => {
+      statusCallback?.('CHANNEL_ERROR');
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.user).toBeNull();
+    });
+    expect(supabase.auth.signOut).toHaveBeenCalled();
+    expect(result.current.error).toMatch(/desactivad/i);
+  });
+
   it('does not fetch profile twice on boot', async () => {
     const session = {
       access_token: 'tok',
