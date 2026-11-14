@@ -73,6 +73,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 - Se retiran los métodos IPC sin consumidor `agent_approvals_history`, `agent_grants_list` y `agent_grants_revoke`, con sus handlers nativos y sus entradas del catálogo compartido: eran puentes a datos internos de agente que la interfaz ya no consulta desde que desapareció el historial de aprobaciones.
 - Se retira la migración one-shot de sesiones de agente (`flows_retirement`) y su hilo de arranque: la flota instalada ya la ejecutó y no dejaba estado consumible por otros componentes.
+- Se retira superficie sin consumidor alrededor de la sesión: el método IPC `supabase_session_clear` (el cierre de sesión ya reescribe el archivo cifrado vía `supabase_session_put`), el aviso «Cuenta desactivada» de la app —inalcanzable porque la revocación siempre ocurre antes de fijar el usuario—, el campo `isDisabled` de `AppUser` y `refreshUser` del contrato de `useAuth`.
 
 ### Security
 - La cola pesada del backend deja de ser un único pasillo apilable: cada método pesado (exportes, renders, PDF) admite como máximo los workers del backend en vuelo o en cola, y el excedente se rechaza con error reintentable y su causa, así un export en bucle o un botón atascado ya no acapara workers y cola y deja sin servicio el resto de operaciones (ipc-bridge-015).
@@ -151,6 +152,8 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Agent deja de insistir con una herramienta que falla por la misma causa aunque cambie los argumentos: tras tres errores equivalentes (mismo mensaje salvo rutas, direcciones, números, identificadores y valores citados) bloquea la siguiente llamada y pide diagnosticar o informar qué lo bloquea. Un resultado correcto reinicia el contador; los errores recuperables tienen su propio límite.
 - Las acciones de escritorio de Agent (`desktop_click`, `desktop_type`, `desktop_key`, `desktop_scroll`, `desktop_launch` y `desktop_focus`) exigen aprobación humana también en Acceso completo, igual que las `cua_*`. En un encargo programado se bloquean, porque no identifican la aplicación de la lista blanca, y `desktop_type` no escribe si el foco está en un campo de contraseña.
 - El selector de razonamiento aparece también para un modelo personalizado DeepSeek V4 sin capacidades declaradas, con Bajo, Alto y Máximo, y el nivel elegido viaja al proveedor.
+- Una cuenta desactivada o eliminada cierra su sesión aunque el aviso realtime se pierda (equipo dormido o sin red en ese momento): la app revalida el perfil al recuperar el foco, volver a ser visible o recuperar la red, y también cuando el canal de perfil reporta error o agota la suscripción. Antes la interfaz podía quedar abierta hasta que expirara el token de acceso, aunque el servidor ya denegaba todos los datos.
+- Recuperar el foco con la red caída ya no expulsa a la pantalla de acceso: un fallo transitorio al releer el perfil conserva la sesión en lugar de limpiar al usuario; el cierre sigue ocurriendo solo cuando la revocación es real (perfil desactivado, perfil borrado o sesión ausente).
 
 ### Added
 - Agent registra el riesgo de los comandos pendientes sin conceder aprobaciones adicionales y descubre las skills locales de Codex y Claude Code.

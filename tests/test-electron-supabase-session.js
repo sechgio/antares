@@ -47,8 +47,8 @@ function throwsWith(fn, match, label) {
 
 assert(
   JSON.stringify([...SESSION_METHODS].sort())
-    === JSON.stringify(['supabase_session_clear', 'supabase_session_get', 'supabase_session_put']),
-  'SESSION_METHODS cubre los tres métodos del catálogo',
+    === JSON.stringify(['supabase_session_get', 'supabase_session_put']),
+  'SESSION_METHODS cubre los métodos del catálogo',
 );
 
 const unknown = handleSupabaseSessionCall('supabase_session_unknown', {});
@@ -76,7 +76,7 @@ throwsWith(
   'blob sobredimensionado rechazado',
 );
 
-expectSuccess(handleSupabaseSessionCall('supabase_session_clear', {}), 'clear');
-expectResult(handleSupabaseSessionCall('supabase_session_get', {}), { blob: null }, 'get tras clear');
+const cleared = handleSupabaseSessionCall('supabase_session_clear', {});
+assert(cleared && cleared.handled === false, 'supabase_session_clear retirado no se atiende');
 
-console.log('[PASS] sesión de Supabase cifrada en main (get/put/clear + validación de blob)');
+console.log('[PASS] sesión de Supabase cifrada en main (get/put + validación de blob)');

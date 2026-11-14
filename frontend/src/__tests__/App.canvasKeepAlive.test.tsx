@@ -41,7 +41,6 @@ vi.mock('../auth/AuthContext', () => ({
       email: 'test@test.com',
       displayName: 'Test',
       isAdmin: true,
-      isDisabled: false,
       createdAt: '',
     },
     loading: false,
@@ -49,7 +48,6 @@ vi.mock('../auth/AuthContext', () => ({
     signIn: async () => ({ error: null }),
     signUp: async () => ({ error: null }),
     signOut: async () => {},
-    refreshUser: async () => {},
   }),
 }));
 
