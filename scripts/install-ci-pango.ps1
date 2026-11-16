@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $pangoDir = Join-Path $env:LOCALAPPDATA 'antares-pango-dlls'
+$fcCacheDir = Join-Path $pangoDir 'fc-cache'
 $sentinel = Join-Path $pangoDir 'libpango-1.0-0.dll'
 
 if (-not (Test-Path -LiteralPath $sentinel)) {
@@ -15,10 +16,13 @@ if (-not (Test-Path -LiteralPath $sentinel)) {
     Copy-Item -Path 'C:\msys64\mingw64\bin\*.dll' -Destination $pangoDir -Force
 }
 
+New-Item -ItemType Directory -Force -Path $fcCacheDir | Out-Null
 $pangoDir | Out-File -LiteralPath $env:GITHUB_PATH -Append
 "WEASYPRINT_DLL_DIRECTORIES=$pangoDir" | Out-File -LiteralPath $env:GITHUB_ENV -Append
+"FONTCONFIG_CACHE=$fcCacheDir" | Out-File -LiteralPath $env:GITHUB_ENV -Append
 
 $env:WEASYPRINT_DLL_DIRECTORIES = $pangoDir
+$env:FONTCONFIG_CACHE = $fcCacheDir
 uv run --project . --locked --extra dev python -c "from weasyprint import HTML; pdf = HTML(string='<p>Pango CI smoke</p>').write_pdf(); assert pdf.startswith(b'%PDF-')"
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE

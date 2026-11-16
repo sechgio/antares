@@ -16,6 +16,118 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.event_name != 'merge_group' }}
 
 jobs:
+  lint:
+    name: Lint, format, and audits (Windows)
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          filter: blob:none
+          fetch-depth: 0
+
+      - name: Setup lint toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          node: 'false'
+          frontend: 'false'
+
+      - name: Run oxlint and ruff
+        run: bun run lint && bun run format:check
+
+      - name: Run guards and dependency audits
+        shell: bash
+        run: >-
+          bun run check:any && bun run check:ratchet &&
+          bun run audit:python && bun run audit:node
+
+  typecheck:
+    name: Typecheck (Windows)
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          filter: blob:none
+
+      - name: Setup typecheck toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          node: 'false'
+          root: 'false'
+
+      - name: Typecheck frontend (bun check)
+        run: bun run typecheck:frontend
+
+      - name: Typecheck backend (mypy)
+        run: bun run typecheck:backend
+
+  build:
+    name: Frontend build and budgets (Windows)
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          filter: blob:none
+
+      - name: Setup build toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          node: 'false'
+          python: 'false'
+          root: 'false'
+
+      - name: Build frontend and check budgets
+        run: bun run build:frontend
+
+  contracts:
+    name: Contracts and prompt budgets (Windows)
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          filter: blob:none
+
+      - name: Setup contract toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          node: 'false'
+          frontend: 'false'
+
+      - name: Run contract suites and prompt budget
+        shell: bash
+        run: node scripts/run-test-suites.js contracts && node scripts/check-budgets.js --agent-prompt-only
+
+  electron:
+    name: Electron and runtime tests (Windows)
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          filter: blob:none
+
+      - name: Setup Electron test toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          frontend: 'false'
+
+      - name: Run Electron and turns suites
+        shell: bash
+        run: node scripts/run-test-suites.js electron && node scripts/run-test-suites.js turns
+
   frontend:
     name: Frontend tests (Windows, shard 1/2)
     runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
@@ -30,6 +142,7 @@ jobs:
       - name: Setup frontend toolchain
         uses: ./.github/actions/setup-ci
         with:
+          node: 'false'
           python: 'false'
           root: 'false'
 
@@ -50,6 +163,7 @@ jobs:
       - name: Setup frontend toolchain
         uses: ./.github/actions/setup-ci
         with:
+          node: 'false'
           python: 'false'
           root: 'false'
 
@@ -70,6 +184,7 @@ jobs:
       - name: Setup backend toolchain
         uses: ./.github/actions/setup-ci
         with:
+          node: 'false'
           root: 'false'
           frontend: 'false'
 
@@ -109,35 +224,9 @@ jobs:
       - name: Run slow stress and scalability tests (excluded from the default gate)
         run: uv run --project . --locked --extra dev pytest tests/test_stress_conversion.py tests/test_scalability_baseline.py -m slow -q
 
-  quality:
-    name: Quality and build (Windows)
-    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
-    timeout-minutes: 15
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-          filter: blob:none
-
-      - name: Setup CI toolchain
-        uses: ./.github/actions/setup-ci
-
-      - name: Run quality checks
-        shell: bash
-        run: >-
-          bun run lint:python && bun run typecheck:backend &&
-          bun run check:any && bun run check:ratchet &&
-          bun run audit:python && bun run audit:node &&
-          node scripts/run-test-suites.js contracts && node scripts/run-test-suites.js electron &&
-          node scripts/run-test-suites.js turns
-
-      - name: Build frontend and check budgets
-        run: bun run build:frontend
-
   verify:
     name: Lint, audit, and test (Windows)
-    needs: [frontend, frontend-shard-2, backend, quality]
+    needs: [lint, typecheck, build, contracts, electron, frontend, frontend-shard-2, backend]
     if: always()
     runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-2vcpu-windows-2025' || 'windows-latest' }}
     timeout-minutes: 5
@@ -145,11 +234,24 @@ jobs:
       - name: Require every job to succeed
         shell: pwsh
         env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          TYPECHECK_RESULT: ${{ needs.typecheck.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          CONTRACTS_RESULT: ${{ needs.contracts.result }}
+          ELECTRON_RESULT: ${{ needs.electron.result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           FRONTEND_SHARD_2_RESULT: ${{ needs.frontend-shard-2.result }}
           BACKEND_RESULT: ${{ needs.backend.result }}
-          QUALITY_RESULT: ${{ needs.quality.result }}
         run: |
-          foreach ($result in @($env:FRONTEND_RESULT, $env:FRONTEND_SHARD_2_RESULT, $env:BACKEND_RESULT, $env:QUALITY_RESULT)) {
+          foreach ($result in @(
+            $env:LINT_RESULT,
+            $env:TYPECHECK_RESULT,
+            $env:BUILD_RESULT,
+            $env:CONTRACTS_RESULT,
+            $env:ELECTRON_RESULT,
+            $env:FRONTEND_RESULT,
+            $env:FRONTEND_SHARD_2_RESULT,
+            $env:BACKEND_RESULT
+          )) {
             if ($result -ne 'success') { throw "Required CI job ended with: $result" }
           }
