@@ -246,7 +246,7 @@ function runQualityCommand(command, label, options = {}) {
 
 function runQualityGate() {
   console.log('');
-  runQualityCommand('npm run ci 2>&1', 'Quality gate (npm run ci)', { timeout: QUALITY_GATE_TIMEOUT_MS });
+  runQualityCommand('bun run ci 2>&1', 'Quality gate (bun run ci)', { timeout: QUALITY_GATE_TIMEOUT_MS });
 }
 
 module.exports = {

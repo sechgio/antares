@@ -23,7 +23,7 @@ const ADVISORY = 'advisory';
 const STATUS_ICON = { pass: '✅', warn: '⚠️', fail: '❌', skip: '⏭️' };
 const VERDICT_ICON = { blocked: '❌', warning: '⚠️', ok: '✅' };
 const GENERATED_PATHS = [
-  /(^|\/)(package-lock\.json|uv\.lock|pnpm-lock\.yaml|yarn\.lock|poetry\.lock|Cargo\.lock|composer\.lock|Gemfile\.lock|go\.sum)$/,
+  /(^|\/)(bun\.lockb?|package-lock\.json|uv\.lock|pnpm-lock\.yaml|yarn\.lock|poetry\.lock|Cargo\.lock|composer\.lock|Gemfile\.lock|go\.sum)$/,
   /(^|\/)__snapshots__\//,
   /\.snap$/,
   /\.min\.(js|css)$/,

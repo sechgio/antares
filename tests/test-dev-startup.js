@@ -29,15 +29,15 @@ async function main() {
     write(path.join(fixture, 'frontend', 'package.json'), JSON.stringify({
       dependencies: { react: '1' }, devDependencies: { vite: '1' },
     }));
-    const fakeNpm = path.join(fixture, 'npm.cjs');
-    write(fakeNpm, `
+    const fakeBun = path.join(fixture, 'bun.cjs');
+    write(fakeBun, `
       const fs = require('node:fs');
       const path = require('node:path');
       const root = __dirname;
       const args = process.argv.slice(2);
       fs.appendFileSync(path.join(root, 'calls.jsonl'), JSON.stringify({ args, cwd: process.cwd() }) + '\\n');
       if (args[0] === 'run') process.exit(Number(process.env.FIXTURE_LAUNCH_STATUS || 0));
-      if (process.env.FIXTURE_INSTALL_FAIL) { console.error('npm error EPERM: archivo bloqueado'); process.exit(7); }
+      if (process.env.FIXTURE_INSTALL_FAIL) { console.error('bun error EPERM: archivo bloqueado'); process.exit(7); }
       if (process.env.FIXTURE_INSTALL_NOOP) process.exit(0);
       if (process.env.ELECTRON_SKIP_BINARY_DOWNLOAD) process.exit(9);
       const pkg = require(path.join(process.cwd(), 'package.json'));
@@ -71,16 +71,16 @@ async function main() {
       if (fs.existsSync(log)) fs.unlinkSync(log);
       return spawnSync(process.execPath, [path.join(fixture, 'scripts', 'dev.js')], {
         cwd: os.tmpdir(), encoding: 'utf8', timeout: 15000,
-        env: { ...process.env, npm_execpath: fakeNpm, ELECTRON_SKIP_BINARY_DOWNLOAD: '1', ...env },
+        env: { ...process.env, BUN_EXECPATH: fakeBun, ELECTRON_SKIP_BINARY_DOWNLOAD: '1', ...env },
       });
     };
 
     let result = run();
     assert(result.status === 0, `missing dependencies are installed before launch: ${result.stderr}`);
-    assert(calls().filter((call) => call.args[0] === 'ci').length === 2, 'fresh checkout installs root and frontend');
-    assert(calls().filter((call) => call.args[0] === 'ci').every((call) =>
-      call.args.includes('--include=dev') && call.args.includes('--bin-links=true') && call.args.includes('--ignore-scripts=false')),
-    'repair includes dev dependencies, command shims and install scripts');
+    assert(calls().filter((call) => call.args[0] === 'install').length === 2, 'fresh checkout installs root and frontend');
+    assert(calls().filter((call) => call.args[0] === 'install').every((call) =>
+      call.args.includes('--frozen-lockfile')),
+    'repair installs from frozen lockfile');
     assert(calls().at(-1)?.args.join(' ') === 'run dev:app', 'application launches only after preparation');
 
     result = run({ FIXTURE_LAUNCH_STATUS: '3' });

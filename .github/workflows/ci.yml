@@ -3,8 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
+  merge_group:
   pull_request:
-    branches: [main]
+    branches: [main, 'feat/**']
   workflow_dispatch:
 
 permissions:
@@ -12,54 +13,59 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.event_name != 'merge_group' }}
 
 jobs:
   frontend:
     name: Frontend tests (Windows, shard 1/2)
-    runs-on: windows-latest
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
     timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          filter: blob:none
 
       - name: Setup frontend toolchain
         uses: ./.github/actions/setup-ci
         with:
-          root: 'true'
+          python: 'false'
+          root: 'false'
 
       - name: Run frontend tests (shard 1 of 2)
         run: node scripts/run-test-suites.js frontend 1/2
 
   frontend-shard-2:
     name: Frontend tests (Windows, shard 2/2)
-    runs-on: windows-latest
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
     timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          filter: blob:none
 
       - name: Setup frontend toolchain
         uses: ./.github/actions/setup-ci
         with:
-          root: 'true'
+          python: 'false'
+          root: 'false'
 
       - name: Run frontend tests (shard 2 of 2)
         run: node scripts/run-test-suites.js frontend 2/2
 
   backend:
     name: Backend tests (Windows)
-    runs-on: windows-latest
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
     timeout-minutes: 25
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          filter: blob:none
 
       - name: Setup backend toolchain
         uses: ./.github/actions/setup-ci
@@ -71,16 +77,15 @@ jobs:
         id: runner-image
         shell: pwsh
         run: |
-          if (-not $env:ImageOS -or -not $env:ImageVersion) { throw 'Missing runner image metadata' }
-          "version=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          $os = if ($env:ImageOS) { $env:ImageOS } else { 'windows' }
+          $ver = if ($env:ImageVersion) { $env:ImageVersion } else { 'custom' }
+          "version=$os-$ver" >> $env:GITHUB_OUTPUT
 
       - name: Cache installed Pango runtime
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
-          path: |
-            C:\msys64\mingw64
-            C:\msys64\var\lib\pacman\local
-          key: pango-runtime-${{ runner.os }}-${{ runner.arch }}-${{ steps.runner-image.outputs.version }}-${{ hashFiles('scripts/install-ci-pango.ps1') }}
+          path: ~/AppData/Local/antares-pango-dlls
+          key: pango-dlls-${{ runner.os }}-${{ runner.arch }}-${{ steps.runner-image.outputs.version }}-${{ hashFiles('scripts/install-ci-pango.ps1') }}
 
       - name: Install and validate Pango
         shell: pwsh
@@ -106,13 +111,14 @@ jobs:
 
   quality:
     name: Quality and build (Windows)
-    runs-on: windows-latest
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
     timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          filter: blob:none
 
       - name: Setup CI toolchain
         uses: ./.github/actions/setup-ci
@@ -120,20 +126,20 @@ jobs:
       - name: Run quality checks
         shell: bash
         run: >-
-          npm run lint:python && npm run typecheck:backend &&
-          npm run check:any && npm run check:ratchet &&
-          npm run audit:python && npm run audit:node &&
+          bun run lint:python && bun run typecheck:backend &&
+          bun run check:any && bun run check:ratchet &&
+          bun run audit:python && bun run audit:node &&
           node scripts/run-test-suites.js contracts && node scripts/run-test-suites.js electron &&
           node scripts/run-test-suites.js turns
 
       - name: Build frontend and check budgets
-        run: npm run build:frontend
+        run: bun run build:frontend
 
   verify:
     name: Lint, audit, and test (Windows)
     needs: [frontend, frontend-shard-2, backend, quality]
     if: always()
-    runs-on: windows-latest
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-2vcpu-windows-2025' || 'windows-latest' }}
     timeout-minutes: 5
     steps:
       - name: Require every job to succeed

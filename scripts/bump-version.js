@@ -26,24 +26,13 @@ function updateFile(filePath, replacements) {
   }
 }
 
-function updateLockfileVersion(filePath, newVersion) {
-  if (!fs.existsSync(filePath)) return;
-  const lock = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  lock.version = newVersion;
-  if (lock.packages && lock.packages['']) {
-    lock.packages[''].version = newVersion;
-  }
-  fs.writeFileSync(filePath, JSON.stringify(lock, null, 2) + '\n', 'utf8');
-  console.log(`✓ Updated ${filePath}`);
-}
-
 const args = process.argv.slice(2);
 const type = args.find(a => ['patch', 'minor', 'major'].includes(a)) || 'patch';
 const shouldPr = args.includes('--pr');
 
 if (args.includes('--push')) {
   console.error('\n✗ --push está deprecado. Los cambios van vía PR:');
-  console.error('  npm run push:ship -- --message "release: vX.Y.Z"');
+  console.error('  bun run push:ship -- --message "release: vX.Y.Z"');
   console.error('  o: node scripts/bump-version.js patch --pr\n');
   process.exit(1);
 }
@@ -64,9 +53,6 @@ if (fs.existsSync(frontendPkgPath)) {
   fs.writeFileSync(frontendPkgPath, JSON.stringify(frontendPkg, null, 2) + '\n', 'utf8');
   console.log('✓ Updated frontend/package.json');
 }
-
-updateLockfileVersion('package-lock.json', newVersion);
-updateLockfileVersion('frontend/package-lock.json', newVersion);
 
 updateFile('backend/version.py', [
   { regex: /__version__\s*=\s*"[^"]+"/, template: `__version__ = "${newVersion}"` },
@@ -92,7 +78,7 @@ if (shouldPr) {
     console.log('\nEnviando bump vía PR...');
     execSync(`node scripts/push-loop.js ${pushArgs}`, { stdio: 'inherit' });
     console.log('\n✓ Versión bump enviada vía PR.');
-    console.log('  Tras merge a main, ejecuta: npm run release:ship');
+    console.log('  Tras merge a main, ejecuta: bun run release:ship');
   } catch (err) {
     console.error('\n✗ Failed to open release PR:', err.message);
     process.exit(1);
@@ -100,5 +86,5 @@ if (shouldPr) {
 } else {
   console.log('Recuerda enviar vía PR:');
   console.log(`  node scripts/bump-version.js ${type} --pr`);
-  console.log('  Tras merge: npm run release:ship');
+  console.log('  Tras merge: bun run release:ship');
 }

@@ -25,4 +25,4 @@ run('electron-builder install-app-deps');
 console.log('[postinstall] Rebuild nativo de electron terminado.');
 
 run('node scripts/install-hooks.js', { warnOnly: true });
-console.log('[postinstall] Ganchos git listos (reintento manual: npm run hooks:install).');
+console.log('[postinstall] Ganchos git listos (reintento manual: bun run hooks:install).');

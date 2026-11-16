@@ -8,8 +8,8 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       echo ""
       echo "✗ Push directo a '$protected_branch' bloqueado."
       echo "  Usa el pipeline PR-first:"
-      echo "    npm run push:dry-run"
-      echo "    npm run push:ship -- --message \"tipo: descripción\""
+      echo "    bun run push:dry-run"
+      echo "    bun run push:ship -- --message \"tipo: descripción\""
       echo ""
       exit 1
       ;;

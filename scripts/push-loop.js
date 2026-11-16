@@ -137,10 +137,10 @@ function defaultPrBody(branch, message) {
     message || `- Cambios en branch \`${branch}\``,
     '',
     '## Test plan',
-    '- [x] `npm run lint:python`',
-    '- [x] `npm run typecheck:backend`',
-    '- [x] `npm run typecheck:frontend`',
-    '- [x] `npm test`',
+    '- [x] `bun run lint:python`',
+    '- [x] `bun run typecheck:backend`',
+    '- [x] `bun run typecheck:frontend`',
+    '- [x] `bun test`',
   ].join('\n');
 }
 

@@ -134,7 +134,7 @@ function _buildFailureMessage(label, result) {
 }
 
 function runBuild() {
-  const backendBuild = shDetailed('npm run build:backend 2>&1', { silent: true, timeout: 300000 });
+  const backendBuild = shDetailed('bun run build:backend 2>&1', { silent: true, timeout: 300000 });
   if (!backendBuild.ok) {
     throw new Error(_buildFailureMessage('backend', backendBuild));
   }
@@ -142,7 +142,7 @@ function runBuild() {
     throw new Error('Build del backend no produjo dist/backend/AntaresBackend.exe');
   }
 
-  const frontendBuild = shDetailed('npm run build:frontend 2>&1', { silent: true, timeout: 120000 });
+  const frontendBuild = shDetailed('bun run build:frontend 2>&1', { silent: true, timeout: 120000 });
   if (!frontendBuild.ok) {
     throw new Error(_buildFailureMessage('frontend', frontendBuild));
   }
