@@ -11,32 +11,63 @@ console.log('Testing build size guardrails...\n');
 
 const spec = readProjectFile('backend', 'backend.spec');
 for (const moduleName of ['scipy', 'numba', 'llvmlite', 'torch', 'tensorflow', 'cv2']) {
-  assert(spec.includes(`'${moduleName}'`) || spec.includes(`"${moduleName}"`), `PyInstaller should exclude optional heavy module ${moduleName}`);
+  assert(
+    spec.includes(`'${moduleName}'`) || spec.includes(`"${moduleName}"`),
+    `PyInstaller should exclude optional heavy module ${moduleName}`,
+  );
 }
 for (const moduleName of ['pandas._testing', 'pandas.io.json', 'pandas.io.parquet', 'pandas.io.sql']) {
-  const inExcludes = new RegExp(`excludes=\\[[\\s\\S]*?'${moduleName.replace(/\./g, '\\.').replace(/'/g, "\\'")}'`).test(spec);
+  const inExcludes = new RegExp(
+    `excludes=\\[[\\s\\S]*?'${moduleName.replace(/\./g, '\\.').replace(/'/g, "\\'")}'`,
+  ).test(spec);
   assert(!inExcludes, `PyInstaller must NOT exclude ${moduleName} (pandas imports it internally)`);
 }
-assert(spec.includes("'pandas'") && spec.includes('collect_submodules'), 'PyInstaller should collect all pandas submodules via collect_submodules');
-assert(spec.includes("'openpyxl'") && spec.includes('collect_submodules'), 'PyInstaller should collect all openpyxl submodules via collect_submodules');
-assert(spec.includes("'weasyprint'") && spec.includes('collect_submodules'), 'PyInstaller should collect all weasyprint submodules via collect_submodules');
-assert(spec.includes("'docx'") && spec.includes('collect_submodules'), 'PyInstaller should collect all python-docx submodules via collect_submodules');
+assert(
+  spec.includes("'pandas'") && spec.includes('collect_submodules'),
+  'PyInstaller should collect all pandas submodules via collect_submodules',
+);
+assert(
+  spec.includes("'openpyxl'") && spec.includes('collect_submodules'),
+  'PyInstaller should collect all openpyxl submodules via collect_submodules',
+);
+assert(
+  spec.includes("'weasyprint'") && spec.includes('collect_submodules'),
+  'PyInstaller should collect all weasyprint submodules via collect_submodules',
+);
+assert(
+  spec.includes("'docx'") && spec.includes('collect_submodules'),
+  'PyInstaller should collect all python-docx submodules via collect_submodules',
+);
 assert(
   spec.includes("'pymupdf'") && spec.includes('collect_submodules'),
   'PyInstaller should collect pymupdf for sellador page raster previews',
 );
 assert(spec.includes("'ssl'"), 'PyInstaller should include ssl for WeasyPrint HTTPSHandler');
-assert(spec.includes("strip=False"), 'PyInstaller must not strip binaries (corrupts ssl DLLs on Windows)');
-assert(spec.includes("collect_submodules('backend.handlers')") || spec.includes('collect_submodules("backend.handlers")'),
-  'PyInstaller should collect every lazy handler module through one package-level guarantee');
-assert(spec.includes("backend/templates"), 'PyInstaller should bundle backend HTML templates for report generator');
+assert(spec.includes('strip=False'), 'PyInstaller must not strip binaries (corrupts ssl DLLs on Windows)');
+assert(
+  spec.includes("collect_submodules('backend.handlers')") || spec.includes('collect_submodules("backend.handlers")'),
+  'PyInstaller should collect every lazy handler module through one package-level guarantee',
+);
+assert(spec.includes('backend/templates'), 'PyInstaller should bundle backend HTML templates for report generator');
 
 const builderConfig = readProjectFile('electron-builder.yml');
-assert(/electronLanguages:\s*\n\s*-\s*es\s*\n\s*-\s*en-US/m.test(builderConfig), 'electron-builder should keep only Spanish and English Electron locales');
-assert(builderConfig.includes('compression: maximum'), 'electron-builder should use maximum compression for smaller installer artifacts');
-assert(builderConfig.includes('- "assets/icon.ico"'), 'electron-builder should keep only the runtime window icon from assets');
+assert(
+  /electronLanguages:\s*\n\s*-\s*es\s*\n\s*-\s*en-US/m.test(builderConfig),
+  'electron-builder should keep only Spanish and English Electron locales',
+);
+assert(
+  builderConfig.includes('compression: maximum'),
+  'electron-builder should use maximum compression for smaller installer artifacts',
+);
+assert(
+  builderConfig.includes('- "assets/icon.ico"'),
+  'electron-builder should keep only the runtime window icon from assets',
+);
 assert(!builderConfig.includes('- "assets/**/*"'), 'electron-builder should not duplicate all assets inside app.asar');
-assert(!/extraResources:\s*\n\s*-\s*from:\s*assets/m.test(builderConfig), 'electron-builder should not duplicate assets as external resources');
+assert(
+  !/extraResources:\s*\n\s*-\s*from:\s*assets/m.test(builderConfig),
+  'electron-builder should not duplicate assets as external resources',
+);
 
 const nodeModulesInclude = builderConfig.lastIndexOf('- "node_modules/**/*"');
 const sourcemapExclude = builderConfig.lastIndexOf('- "!**/node_modules/**/*.map"');
@@ -47,42 +78,96 @@ const backendBuild = readProjectFile('scripts', 'build-backend.js');
 for (const staleName of ['AntaresBackend.exe', 'HidroConvertBackend.exe']) {
   assert(backendBuild.includes(staleName), `backend build should guard against stale ${staleName}`);
 }
-assert(backendBuild.includes('removeInsideProject'), 'backend build should clean stale PyInstaller output before rebuilding');
+assert(
+  backendBuild.includes('removeInsideProject'),
+  'backend build should clean stale PyInstaller output before rebuilding',
+);
 assert(backendBuild.includes("'.venv'"), 'backend build should prefer the project .venv Python over PATH');
 assert(backendBuild.includes('venv312'), 'backend build should keep venv312 as a fallback before PATH');
-assert(backendBuild.includes('resolvePythonCommand'), 'backend build should resolve Python before invoking PyInstaller');
-assert(backendBuild.includes('onedir') || backendBuild.includes('copyDirFlat'), 'backend build should produce an onedir layout (not onefile)');
-assert(backendBuild.includes("path.join(distDir, 'backend')") || backendBuild.includes('distBackendDir'), 'backend build should stage under dist/backend');
+assert(
+  backendBuild.includes('resolvePythonCommand'),
+  'backend build should resolve Python before invoking PyInstaller',
+);
+assert(
+  backendBuild.includes('onedir') || backendBuild.includes('copyDirFlat'),
+  'backend build should produce an onedir layout (not onefile)',
+);
+assert(
+  backendBuild.includes("path.join(distDir, 'backend')") || backendBuild.includes('distBackendDir'),
+  'backend build should stage under dist/backend',
+);
 assert(builderConfig.includes('from: dist/backend'), 'electron-builder should pack onedir from dist/backend');
-assert(spec.includes('COLLECT(') || spec.includes('exclude_binaries=True'), 'PyInstaller spec should use onedir COLLECT');
+assert(
+  spec.includes('COLLECT(') || spec.includes('exclude_binaries=True'),
+  'PyInstaller spec should use onedir COLLECT',
+);
 
 const frozenBackendSmoke = readProjectFile('scripts', 'verify-frozen-backend.js');
-assert(frozenBackendSmoke.includes('sellador_inspect_pdf'), 'frozen backend smoke should probe sellador PDF inspection');
-assert(frozenBackendSmoke.includes('sellador_render_page'), 'frozen backend smoke should probe sellador page rendering');
+assert(
+  frozenBackendSmoke.includes('sellador_inspect_pdf'),
+  'frozen backend smoke should probe sellador PDF inspection',
+);
+assert(
+  frozenBackendSmoke.includes('sellador_render_page'),
+  'frozen backend smoke should probe sellador page rendering',
+);
 assert(frozenBackendSmoke.includes('canvas_list'), 'frozen backend smoke should probe the lazy Canvas handler');
-assert(frozenBackendSmoke.includes("image/jpeg"), 'frozen backend smoke should assert JPEG preview output');
+assert(frozenBackendSmoke.includes('image/jpeg'), 'frozen backend smoke should assert JPEG preview output');
 assert(frozenBackendSmoke.includes('PDFDocument.create'), 'frozen backend smoke should create an isolated PDF fixture');
 
 const packageJson = JSON.parse(readProjectFile('package.json'));
-assert(packageJson.scripts['clean:dist-electron'] === 'node scripts/clean-dist-electron.js', 'package scripts should expose a safe Electron output cleanup command');
-assert(packageJson.scripts['clean:after-package'] === 'node scripts/clean-after-package.js', 'package scripts should expose a post-package cleanup command');
-assert(packageJson.scripts['build:win'].includes('bun run clean:dist-electron && electron-builder'), 'build:win should clean stale Electron artifacts before packaging');
-assert(packageJson.scripts['build:win'].includes('bun run clean:after-package'), 'build:win should remove unpacked/staging artifacts after packaging');
+assert(
+  packageJson.scripts['clean:dist-electron'] === 'node scripts/clean-dist-electron.js',
+  'package scripts should expose a safe Electron output cleanup command',
+);
+assert(
+  packageJson.scripts['clean:after-package'] === 'node scripts/clean-after-package.js',
+  'package scripts should expose a post-package cleanup command',
+);
+assert(
+  packageJson.scripts['build:win'].includes('bun run clean:dist-electron && electron-builder'),
+  'build:win should clean stale Electron artifacts before packaging',
+);
+assert(
+  packageJson.scripts['build:win'].includes('bun run clean:after-package'),
+  'build:win should remove unpacked/staging artifacts after packaging',
+);
 assert(packageJson.scripts['dist'] === 'bun run build:win', 'dist should delegate to the Windows-only build');
-assert(packageJson.scripts['dist:dir'].includes('bun run clean:dist-electron && electron-builder'), 'dist:dir should clean stale Electron artifacts before packaging');
-assert(packageJson.scripts['dist:dir'].includes('electron-builder --win --dir'), 'dist:dir should produce an unpacked Windows build');
-assert(!packageJson.scripts['dist:dir'].includes('bun run clean:after-package'), 'dist:dir should keep unpacked output for inspection');
-assert(packageJson.scripts['dev:app'].includes('electron electron/main.js'), 'dev:app should run Vite + Electron without packaging an installer');
-assert(packageJson.scripts['preview:unpacked'] === 'bun run dist:dir && node scripts/run-unpacked.js', 'preview:unpacked should package dir and launch without installer');
+assert(
+  packageJson.scripts['dist:dir'].includes('bun run clean:dist-electron && electron-builder'),
+  'dist:dir should clean stale Electron artifacts before packaging',
+);
+assert(
+  packageJson.scripts['dist:dir'].includes('electron-builder --win --dir'),
+  'dist:dir should produce an unpacked Windows build',
+);
+assert(
+  !packageJson.scripts['dist:dir'].includes('bun run clean:after-package'),
+  'dist:dir should keep unpacked output for inspection',
+);
+assert(
+  packageJson.scripts['dev:app'].includes('electron electron/main.js'),
+  'dev:app should run Vite + Electron without packaging an installer',
+);
+assert(
+  packageJson.scripts['preview:unpacked'] === 'bun run dist:dir && node scripts/run-unpacked.js',
+  'preview:unpacked should package dir and launch without installer',
+);
 const runUnpacked = readProjectFile('scripts', 'run-unpacked.js');
 assert(runUnpacked.includes('AntaresBackend.exe'), 'run-unpacked should refuse to launch without packaged backend exe');
-assert(/['"]resources['"]\s*,\s*['"]backend['"]/.test(runUnpacked), 'run-unpacked should look for backend under resources/backend');
+assert(
+  /['"]resources['"]\s*,\s*['"]backend['"]/.test(runUnpacked),
+  'run-unpacked should look for backend under resources/backend',
+);
 assert(!packageJson.scripts['build:mac'], 'build:mac should not exist (Windows-only installer)');
 assert(!packageJson.scripts['build:linux'], 'build:linux should not exist (Windows-only installer)');
 assert(!packageJson.scripts['build:all'], 'build:all should not exist (Windows-only installer)');
 assert(backendBuild.includes("process.platform !== 'win32'"), 'backend build should refuse non-Windows hosts');
 assert(!builderConfig.includes('\nmac:'), 'electron-builder should not define mac targets (Windows-only installer)');
-assert(!builderConfig.includes('\nlinux:'), 'electron-builder should not define linux targets (Windows-only installer)');
+assert(
+  !builderConfig.includes('\nlinux:'),
+  'electron-builder should not define linux targets (Windows-only installer)',
+);
 
 const electronClean = readProjectFile('scripts', 'clean-dist-electron.js');
 assert(electronClean.includes('dist-electron'), 'Electron cleanup should target dist-electron only');
