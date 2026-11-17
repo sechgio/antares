@@ -23,7 +23,10 @@ import { useMyTasks } from '../hooks/useMyTasks';
 const row = { id: 'task-1', title: 'Informe' } as MyTask;
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  mocks.fetch.mockReset();
+  mocks.fetchOrigins.mockReset();
+  mocks.subscribe.mockReset();
+  mocks.unsubscribe.mockReset();
   mocks.realtime = undefined;
   mocks.fetch.mockResolvedValue([row]);
   mocks.fetchOrigins.mockResolvedValue([{

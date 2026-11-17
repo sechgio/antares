@@ -1,13 +1,19 @@
 import '@testing-library/jest-dom';
 import { cleanup } from '@testing-library/react';
-import { afterEach } from 'vitest';
-import i18n from './i18n';
+import { afterAll, afterEach, vi } from 'vitest';
+
+async function resetI18nLanguage() {
+  const current = (await import('./i18n')).default;
+  await current.changeLanguage('es');
+}
 
 afterEach(async () => {
   cleanup();
+  vi.clearAllTimers();
+  vi.useRealTimers();
   if (typeof localStorage !== 'undefined') localStorage.clear();
   if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
-  await i18n.changeLanguage('es');
+  await resetI18nLanguage();
 });
 
 // Repone Storage en memoria si el localStorage experimental de Node oculta el de jsdom y falla.
@@ -59,6 +65,28 @@ if (typeof globalThis.ResizeObserver !== 'function') {
     disconnect() {}
   }
   globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
+}
+
+if (typeof globalThis.IntersectionObserver !== 'function') {
+  class IntersectionObserverStub {
+    callback: IntersectionObserverCallback;
+    root = null;
+    rootMargin = '0px';
+    thresholds = [0];
+    constructor(callback: IntersectionObserverCallback) {
+      this.callback = callback;
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+  }
+  globalThis.IntersectionObserver = IntersectionObserverStub as unknown as typeof IntersectionObserver;
+  if (typeof window !== 'undefined') {
+    window.IntersectionObserver = IntersectionObserverStub as unknown as typeof IntersectionObserver;
+  }
 }
 
 if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
@@ -158,4 +186,95 @@ Object.defineProperty(import.meta, 'env', {
     DEV: true,
   },
   writable: true,
+});
+
+const baselineElectronApi = typeof window !== 'undefined' ? window.electronAPI : undefined;
+const baselineResizeObserver = globalThis.ResizeObserver;
+const baselineIntersectionObserver = globalThis.IntersectionObserver;
+const baselineWebSocket = globalThis.WebSocket;
+const baselineMatchMedia = typeof window !== 'undefined' ? window.matchMedia : undefined;
+const baselineCreateObjectURL = URL.createObjectURL?.bind(URL);
+const baselineRevokeObjectURL = URL.revokeObjectURL?.bind(URL);
+
+// Baseline de props mutables en prototipos DOM: restaura descriptores originales
+// y elimina props propias filtradas (p. ej. stubs de getBoundingClientRect que
+// quedan como propiedad propia y tapan los stubs de Element.prototype).
+const DOM_PROTO_KEYS = [
+  'getBoundingClientRect',
+  'offsetHeight',
+  'offsetWidth',
+  'offsetLeft',
+  'offsetTop',
+  'clientHeight',
+  'clientWidth',
+  'scrollIntoView',
+  'scrollTo',
+  'scrollBy',
+  'scroll',
+];
+const domProtoBaselines: Array<{ proto: object; key: string; desc?: PropertyDescriptor }> = [];
+if (typeof Element !== 'undefined' && typeof HTMLElement !== 'undefined') {
+  for (const proto of [Element.prototype, HTMLElement.prototype]) {
+    for (const key of DOM_PROTO_KEYS) {
+      domProtoBaselines.push({ proto, key, desc: Object.getOwnPropertyDescriptor(proto, key) });
+    }
+  }
+}
+const windowMetricBaselines: Array<{ key: string; desc?: PropertyDescriptor }> = [];
+if (typeof window !== 'undefined') {
+  for (const key of ['innerWidth', 'innerHeight', 'outerWidth', 'outerHeight', 'devicePixelRatio']) {
+    windowMetricBaselines.push({ key, desc: Object.getOwnPropertyDescriptor(window, key) });
+  }
+}
+
+function restoreDomBaselines() {
+  for (const { proto, key, desc } of domProtoBaselines) {
+    if (desc) {
+      Object.defineProperty(proto, key, desc);
+    } else {
+      delete (proto as Record<string, unknown>)[key];
+    }
+  }
+  if (typeof window !== 'undefined') {
+    for (const { key, desc } of windowMetricBaselines) {
+      if (desc) {
+        Object.defineProperty(window, key, desc);
+      } else {
+        delete (window as unknown as Record<string, unknown>)[key];
+      }
+    }
+  }
+}
+
+afterAll(async () => {
+  cleanup();
+  vi.clearAllTimers();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+  vi.resetModules();
+  restoreDomBaselines();
+
+  globalThis.ResizeObserver = baselineResizeObserver;
+  globalThis.IntersectionObserver = baselineIntersectionObserver;
+  globalThis.WebSocket = baselineWebSocket;
+  URL.createObjectURL = baselineCreateObjectURL as typeof URL.createObjectURL;
+  URL.revokeObjectURL = baselineRevokeObjectURL as typeof URL.revokeObjectURL;
+  if (typeof window !== 'undefined') {
+    window.IntersectionObserver = baselineIntersectionObserver;
+    if (baselineMatchMedia) window.matchMedia = baselineMatchMedia;
+    window.electronAPI = baselineElectronApi;
+    if (typeof localStorage !== 'undefined') localStorage.clear();
+    if (typeof sessionStorage !== 'undefined') sessionStorage.clear();
+    document.body.innerHTML = '';
+    document.head.innerHTML = '';
+    document.documentElement.className = '';
+    document.documentElement.removeAttribute('style');
+    for (const attr of [...document.documentElement.attributes]) {
+      if (attr.name.startsWith('data-')) document.documentElement.removeAttribute(attr.name);
+    }
+    window.history.replaceState(null, '', '/');
+  }
+  await resetI18nLanguage();
 });

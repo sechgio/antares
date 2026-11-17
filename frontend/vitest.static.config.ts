@@ -8,6 +8,7 @@ const STATIC_CSS_TESTS = [
   'src/components/panel-aviso-corte/panel-styles.test.ts',
   'src/components/padron/vpad-styles.test.ts',
   'src/__tests__/perfHarnessPage.test.ts',
+  'src/components/canvas/__tests__/guides.test.ts',
 ]
 
 export default defineConfig({

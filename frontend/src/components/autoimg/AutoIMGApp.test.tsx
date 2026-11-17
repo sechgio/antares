@@ -39,9 +39,13 @@ vi.mock('../../api', () => ({
 
 import AutoIMGApp from './AutoIMGApp';
 
+const resetMockApi = () => {
+  for (const fn of Object.values(mockApi)) fn.mockReset();
+};
+
 describe('AutoIMGApp layout and navigation', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    resetMockApi();
     notifyState.callback = null;
   });
 
@@ -56,9 +60,7 @@ describe('AutoIMGApp layout and navigation', () => {
 
   it('keeps sidebar panels visible when switching tabs', async () => {
     render(<AutoIMGApp />);
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Carpetas' })).toBeInTheDocument();
-    });
+    await screen.findByLabelText('Conectado');
     fireEvent.click(screen.getByRole('button', { name: 'Carpetas' }));
     expect(screen.getByText('Conexión')).toBeInTheDocument();
     expect(screen.getByText('OAuth')).toBeInTheDocument();
@@ -117,7 +119,7 @@ describe('AutoIMGApp layout and navigation', () => {
 
 describe('AutoIMGApp bootstrap refresh', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    resetMockApi();
     notifyState.callback = null;
   });
 

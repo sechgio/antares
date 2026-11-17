@@ -5,15 +5,15 @@ import { api } from '../../../api';
 
 vi.mock('../../../api', () => ({
   api: {
-    editorRecordingCreate: vi.fn().mockResolvedValue({ sessionId: 'rec-1', maxInFlightBytes: 8388608 }),
-    editorRecordingAppend: vi.fn().mockResolvedValue({ sessionId: 'rec-1', seq: 0, writtenBytes: 1024 }),
-    editorRecordingFinish: vi.fn().mockResolvedValue({
+    editorRecordingCreate: vi.fn(async () => ({ sessionId: 'rec-1', maxInFlightBytes: 8388608 })),
+    editorRecordingAppend: vi.fn(async () => ({ sessionId: 'rec-1', seq: 0, writtenBytes: 1024 })),
+    editorRecordingFinish: vi.fn(async () => ({
       sessionId: 'rec-1',
       path: '/tmp/rec-1.webm',
       writtenBytes: 2048,
       file_token: 'ft_1',
-    }),
-    editorRecordingAbort: vi.fn().mockResolvedValue({ sessionId: 'rec-1', aborted: true }),
+    })),
+    editorRecordingAbort: vi.fn(async () => ({ sessionId: 'rec-1', aborted: true })),
   },
 }));
 

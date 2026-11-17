@@ -11,19 +11,19 @@ vi.mock('../../api', async (importOriginal) => {
     ...actual,
     api: {
       ...actual.api,
-      spreadsheetParse: vi.fn().mockResolvedValue({
+      spreadsheetParse: vi.fn(async () => ({
         workbookName: 'datos.csv',
         sheets: [{ name: 'Sheet1', rows: [['SGIO', 'OTRA'], ['1', '2']] }],
         warnings: [],
-      }),
+      })),
       spreadsheetGetRows: vi.fn(),
-      fileTokenCleanup: vi.fn().mockResolvedValue({ cleaned: true }),
+      fileTokenCleanup: vi.fn(async () => ({ cleaned: true })),
     },
   };
 });
 
 vi.mock('../../utils/stageFile', () => ({
-  stageFileForIpc: vi.fn().mockResolvedValue('ft_test'),
+  stageFileForIpc: vi.fn(async () => 'ft_test'),
 }));
 
 const CUSTOM_COLS_KEY = 'antares_preview_custom_columns';

@@ -342,9 +342,11 @@ function run() {
   );
   assert(
     viteConfig.includes("pool: 'threads'") &&
-      viteConfig.includes('fileParallelism: true') &&
-      viteConfig.includes('maxWorkers: 4'),
-    'Frontend Vitest runs test files in parallel on a bounded worker pool',
+      viteConfig.includes('isolate: false') &&
+      viteConfig.includes('fileParallelism: false') &&
+      viteConfig.includes('maxWorkers: os.availableParallelism()') &&
+      viteConfig.includes('mockReset: true'),
+    'Frontend Vitest shares module state with sequential files per core-matched worker',
   );
   assertSingleWorker(staticVitestConfig, 'Static Vitest');
   assert(

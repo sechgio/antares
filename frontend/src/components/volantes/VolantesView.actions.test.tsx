@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import VolantesView from "./VolantesView";
 import { createPdfDocument } from "./utils/pdf";
 
@@ -78,6 +78,10 @@ vi.mock("../../utils/history", () => ({
 }));
 
 describe("VolantesView actions", () => {
+  beforeEach(() => {
+    draftState.records = [];
+  });
+
   it("keeps template and import actions available with no selected record", () => {
     render(
       <VolantesView />,

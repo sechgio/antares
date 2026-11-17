@@ -34,7 +34,7 @@ const { mockSupabase } = vi.hoisted(() => {
   }
 
   const channel = {
-    on: vi.fn().mockReturnThis(),
+    on: vi.fn(function (this: unknown) { return this; }),
     subscribe: vi.fn((cb?: (status: string) => void) => {
       if (typeof cb === 'function') cb('SUBSCRIBED');
       return { unsubscribe: vi.fn() };
@@ -43,7 +43,7 @@ const { mockSupabase } = vi.hoisted(() => {
   return {
     mockSupabase: {
       from: vi.fn(() => createThenableChain()),
-      rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
+      rpc: vi.fn(async () => ({ data: [], error: null })),
       channel: vi.fn(() => channel),
       removeChannel: vi.fn(),
     },

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const telemetry = vi.fn().mockResolvedValue(undefined);
+const telemetry = vi.fn(async () => undefined);
 
 vi.mock('../api', () => ({
   api: { telemetry: (...args: unknown[]) => telemetry(...args) },

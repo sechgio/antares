@@ -2,11 +2,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const addToast = vi.fn();
-const confirm = vi.fn().mockResolvedValue(true);
+const confirm = vi.fn(async () => true);
 const sessionState: Record<string, unknown> = {};
 
-const exportPanelDocument = vi.fn().mockResolvedValue({ filename: 'panel.pdf' });
-const saveFeatureHistory = vi.fn().mockResolvedValue(undefined);
+const exportPanelDocument = vi.fn(async () => ({ filename: 'panel.pdf' }));
+const saveFeatureHistory = vi.fn(async () => undefined);
 
 vi.mock('../../hooks/useToast', () => ({ useToast: () => ({ addToast }) }));
 vi.mock('../../hooks/useDialog', () => ({ useDialog: () => ({ confirm }) }));

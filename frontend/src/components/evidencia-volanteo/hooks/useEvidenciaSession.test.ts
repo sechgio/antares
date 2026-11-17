@@ -20,6 +20,7 @@ describe("useEvidenciaSession", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     loadSession.mockResolvedValue(null);
+    saveSession.mockResolvedValue(undefined);
   });
 
   it("arranca con defaults y una página vacía", async () => {

@@ -180,11 +180,14 @@ function currentStageDocument(): CanvasDocument {
 }
 
 describe('CanvasView lifecycle', () => {
-  const docA = makeDoc('doc-a', 'Alpha');
-  const docB = makeDoc('doc-b', 'Beta');
+  let docA = makeDoc('doc-a', 'Alpha');
+  let docB = makeDoc('doc-b', 'Beta');
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    docA = makeDoc('doc-a', 'Alpha');
+    docB = makeDoc('doc-b', 'Beta');
     vi.useRealTimers();
+    await import('../sync/canvasCloudSync');
     syncCanvasDocuments.mockReset();
     syncCanvasDocuments.mockResolvedValue({
       pulled: 0,
@@ -195,6 +198,12 @@ describe('CanvasView lifecycle', () => {
       pushErrors: 0,
     });
 
+    for (const fn of Object.values(api)) {
+      if (typeof fn === 'function' && 'mockReset' in fn) {
+        (fn as ReturnType<typeof vi.fn>).mockReset();
+      }
+    }
+    vi.mocked(api.canvasDelete).mockResolvedValue({ success: true });
     vi.mocked(api.canvasList).mockResolvedValue({
       documents: [
         { id: docA.id, name: docA.name, updatedAt: docA.updatedAt! },
@@ -702,6 +711,7 @@ describe('CanvasView lifecycle', () => {
     });
 
     await renderReady();
+    await waitFor(() => expect(syncCalls).toBe(1));
 
     await act(async () => {
       window.dispatchEvent(new Event('focus'));
