@@ -54,6 +54,17 @@ La etiqueta `size/exempt` del repositorio declara la misma excepción ante el ga
 - Trabaja en una feature branch con prefijo `feat/` por defecto y entrega mediante PR hacia `main`; nunca hagas push directo a `main`. Stagea solo los archivos declarados con `git add -- <archivos>`, nunca `git add -A` ni `git add .`. Revisa `git status` y `git diff --cached` antes de commitear.
 - Los commits usan Conventional Commits. Mantén secretos, `.env`, `dist/`, `release/`, caches y `__pycache__` fuera de los commits.
 
+## Limpieza en pruebas frontend (Vitest)
+
+La suite corre con `isolate: false`, orden aleatorio (`shuffle`) y `mockReset: true`: el estado compartido debe quedar como estaba al terminar cada archivo y cada test.
+
+- Declara las impls por defecto en la fábrica `vi.fn(impl)`; `mockReset` borra las impls encadenadas con `.mockReturnValue()`/`.mockResolvedValue()`.
+- Restablece en `beforeEach` el estado mutable de `vi.hoisted`; `vi.clearAllMocks()` limpia llamadas pero no restaura implementaciones.
+- Captura todos los listeners de `onNotify` en un array y despacha en fan-out: componentes lazy (p. ej. el tab por defecto) pueden suscribirse entre dos notificaciones y una captura de "último gana" se traga eventos.
+- Precarga con `await import` los módulos mockeados que la app importa dinámicamente antes de disparar el flujo; importaciones concurrentes de un módulo cuya fábrica mock sigue evaluándose pueden resolver el módulo real.
+- No asignes stubs directos a prototipos DOM (`Element`/`HTMLElement.prototype`) ni a métricas de `window` sin restaurar el descriptor original; `test-setup` repone los baselines al cerrar cada archivo.
+- Espera efectos observables con `waitFor` en vez de asumir que el handler terminó: `onNotify` no propaga la promesa del callback.
+
 ## Restricción de Markdown (HARD RULE)
 
 Solo se permite commit o push de estos Markdown: `AGENTS.md`, `CODING_STANDARDS.md`, `CHANGELOG.md`, `CLAUDE.md`, `README.md`, `CONTEXT.md`, `docs/adr/*.md`, `docs/adr/README.md` y `.github/pull_request_template.md`.
