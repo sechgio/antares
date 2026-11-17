@@ -19,16 +19,19 @@ function resolveBunBinary() {
 
 function bun(args, cwd, env = process.env) {
   const cli = process.env.BUN_EXECPATH;
-  return spawnSync(cli ? process.execPath : resolveBunBinary(),
-    cli ? [cli, ...args] : args, {
-      cwd, env, stdio: 'inherit', windowsHide: true,
-    });
+  return spawnSync(cli ? process.execPath : resolveBunBinary(), cli ? [cli, ...args] : args, {
+    cwd,
+    env,
+    stdio: 'inherit',
+    windowsHide: true,
+  });
 }
 
 function missingDependencies(dir, commands) {
   const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
-  const missing = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter((name) =>
-    !fs.existsSync(path.join(dir, 'node_modules', name, 'package.json')));
+  const missing = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter(
+    (name) => !fs.existsSync(path.join(dir, 'node_modules', name, 'package.json')),
+  );
   for (const name of commands) {
     const moduleDir = path.join(dir, 'node_modules', name);
     try {
@@ -50,7 +53,9 @@ function checkElectronUnlocked() {
   try {
     fs.closeSync(fs.openSync(executable, 'r+'));
   } catch (error) {
-    throw new Error(`Cierra Antares desde la bandeja del sistema y vuelve a ejecutar bun run dev. Electron está bloqueado o sin permiso de escritura (${error.code}).`);
+    throw new Error(
+      `Cierra Antares desde la bandeja del sistema y vuelve a ejecutar bun run dev. Electron está bloqueado o sin permiso de escritura (${error.code}).`,
+    );
   }
 }
 
@@ -58,13 +63,20 @@ function prepareDependencies(dir, commands) {
   const missing = missingDependencies(dir, commands);
   if (!missing.length) return;
   checkElectronUnlocked();
-  console.log(`[dev] Faltan dependencias en ${dir === ROOT ? 'la raíz' : 'frontend'}: ${missing.join(', ')}. Reparando con bun install --frozen-lockfile...`);
+  console.log(
+    `[dev] Faltan dependencias en ${dir === ROOT ? 'la raíz' : 'frontend'}: ${missing.join(', ')}. Reparando con bun install --frozen-lockfile...`,
+  );
   const result = bun(['install', '--frozen-lockfile'], dir, installEnv);
   if (result.error || result.status !== 0) {
-    throw new Error(`bun install falló en ${dir} (${result.error?.message || result.status}). Cierra Antares si aparece EPERM o EBUSY y vuelve a ejecutar bun run dev; revisa arriba el error de bun.`);
+    throw new Error(
+      `bun install falló en ${dir} (${result.error?.message || result.status}). Cierra Antares si aparece EPERM o EBUSY y vuelve a ejecutar bun run dev; revisa arriba el error de bun.`,
+    );
   }
   const remaining = missingDependencies(dir, commands);
-  if (remaining.length) throw new Error(`La instalación sigue incompleta en ${dir}: ${remaining.join(', ')}. Revisa la salida de bun install.`);
+  if (remaining.length)
+    throw new Error(
+      `La instalación sigue incompleta en ${dir}: ${remaining.join(', ')}. Revisa la salida de bun install.`,
+    );
 }
 
 function electronBinaryExists() {
@@ -83,10 +95,15 @@ try {
     checkElectronUnlocked();
     console.log('[dev] Falta el binario de Electron. Descargando...');
     const result = spawnSync(process.execPath, [path.join(ELECTRON, 'install.js')], {
-      cwd: ROOT, env: installEnv, stdio: 'inherit', windowsHide: true,
+      cwd: ROOT,
+      env: installEnv,
+      stdio: 'inherit',
+      windowsHide: true,
     });
     if (result.error || result.status !== 0 || !electronBinaryExists()) {
-      throw new Error(`No se pudo instalar el binario de Electron (${result.error?.message || result.status}). Revisa la conexión y el error de descarga anterior.`);
+      throw new Error(
+        `No se pudo instalar el binario de Electron (${result.error?.message || result.status}). Revisa la conexión y el error de descarga anterior.`,
+      );
     }
   }
   const result = bun(['run', 'dev:app'], ROOT);

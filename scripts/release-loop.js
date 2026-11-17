@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-
 const fs = require('fs');
 const path = require('path');
 const {
@@ -40,21 +39,16 @@ function validateEnvironment({ refreshRemote = true } = {}) {
       .split(/\s+/)
       .map(Number);
     if (ahead !== 0 || behind !== 0) {
-      throw new Error(
-        `HEAD debe coincidir exactamente con origin/main (ahead=${ahead}, behind=${behind}).`
-      );
+      throw new Error(`HEAD debe coincidir exactamente con origin/main (ahead=${ahead}, behind=${behind}).`);
     }
     return;
   }
 
   sh('git fetch --dry-run origin main 2>&1', { silent: true });
-  const remoteHead = sh('git ls-remote origin refs/heads/main', { silent: true })
-    .split(/\s+/)[0];
+  const remoteHead = sh('git ls-remote origin refs/heads/main', { silent: true }).split(/\s+/)[0];
   const head = sh('git rev-parse HEAD', { silent: true });
   if (remoteHead && remoteHead !== head) {
-    throw new Error(
-      `HEAD debe coincidir exactamente con origin/main (HEAD=${head}, origin/main=${remoteHead}).`
-    );
+    throw new Error(`HEAD debe coincidir exactamente con origin/main (HEAD=${head}, origin/main=${remoteHead}).`);
   }
 }
 
@@ -76,14 +70,9 @@ function detectVersion() {
     throw new Error(`El tag v${version} ya existe en origin. Bump la versión primero.`);
   }
 
-  const releaseCheck = shDetailed(
-    `gh release view "v${version}" --json tagName 2>&1`,
-    { silent: true }
-  );
+  const releaseCheck = shDetailed(`gh release view "v${version}" --json tagName 2>&1`, { silent: true });
   if (!releaseCheck.ok && !/release not found/i.test(releaseCheck.output)) {
-    throw new Error(
-      `No se pudo verificar si existe el release v${version}: ${releaseCheck.output || 'gh falló.'}`
-    );
+    throw new Error(`No se pudo verificar si existe el release v${version}: ${releaseCheck.output || 'gh falló.'}`);
   }
   if (releaseCheck.ok && releaseCheck.output) {
     throw new Error(`El release v${version} ya existe en GitHub.`);
@@ -105,23 +94,21 @@ function validateChangelog(version) {
   if (!match) {
     throw new Error(
       `CHANGELOG.md no tiene entrada para [${version}] con fecha (YYYY-MM-DD).\n` +
-      `  Agrega: ## [${version}] — YYYY-MM-DD\n\n` +
-      `  ### Added | Changed | Fixed | Removed | Security\n` +
-      `  - descripción de cambios`
+        `  Agrega: ## [${version}] — YYYY-MM-DD\n\n` +
+        `  ### Added | Changed | Fixed | Removed | Security\n` +
+        `  - descripción de cambios`,
     );
   }
 
   const startIndex = match.index + match[0].length;
   const remaining = content.slice(startIndex);
   const nextHeader = remaining.match(/\n##\s+\[/);
-  const entryContent = nextHeader
-    ? remaining.slice(0, nextHeader.index)
-    : remaining;
+  const entryContent = nextHeader ? remaining.slice(0, nextHeader.index) : remaining;
 
   if (!/###\s+(Added|Changed|Deprecated|Removed|Fixed|Security)/.test(entryContent)) {
     throw new Error(
       `La entrada de CHANGELOG para [${version}] no tiene secciones.\n` +
-      `  Debe incluir al menos una de: ### Added, ### Changed, ### Fixed, etc.`
+        `  Debe incluir al menos una de: ### Added, ### Changed, ### Fixed, etc.`,
     );
   }
 }
@@ -175,10 +162,7 @@ function main() {
 }
 
 function runReleaseLoop(isShip, doBuild) {
-  step(
-    '① Entorno (gh auth, remote, branch, clean, up-to-date)',
-    () => validateEnvironment({ refreshRemote: isShip }),
-  );
+  step('① Entorno (gh auth, remote, branch, clean, up-to-date)', () => validateEnvironment({ refreshRemote: isShip }));
 
   let version;
   step('② Detectar versión', () => {
