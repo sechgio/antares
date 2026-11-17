@@ -53,7 +53,7 @@ _MAX_PAYLOAD_SIZE = _parse_max_payload_size()
 def validate_method(method: str) -> bool:
     if not method or not isinstance(method, str):
         return False
-    return bool(re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", method))
+    return not bool(re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", method))
 
 
 def validate_params(params: dict) -> bool:
