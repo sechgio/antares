@@ -65,7 +65,7 @@ function run() {
   const ciJobs = ci.split(/^jobs:\s*$/m)[1] || '';
   const job = (name) =>
     ciJobs.match(new RegExp(`^  ${name}:\\s*\\r?\\n([\\s\\S]*?)(?=^  [\\w-]+:|$(?![\\s\\S]))`, 'm'))?.[1] || '';
-  const workerJobs = ['lint', 'typecheck', 'build', 'contracts', 'electron', 'frontend', 'frontend-shard-2', 'backend'];
+  const workerJobs = ['lint', 'typecheck', 'build', 'contracts', 'electron', 'frontend', 'frontend-shard-2', 'frontend-shard-3', 'backend'];
   assert(
     (ciJobs.match(/^  [\w-]+:\s*$/gm) || []).length === workerJobs.length + 1,
     'CI splits lint, typecheck, build, contracts, electron, frontend and backend into parallel jobs plus one required aggregate',
@@ -88,9 +88,10 @@ function run() {
     'The frontend build checks types with bun check and verifies both bundle budgets',
   );
   assert(
-    job('frontend').includes('node scripts/run-test-suites.js frontend 1/2') &&
-      job('frontend-shard-2').includes('node scripts/run-test-suites.js frontend 2/2'),
-    'The frontend suite is split into two independent shards instead of one long job',
+    job('frontend').includes('node scripts/run-test-suites.js frontend 1/3') &&
+      job('frontend-shard-2').includes('node scripts/run-test-suites.js frontend 2/3') &&
+      job('frontend-shard-3').includes('node scripts/run-test-suites.js frontend 3/3'),
+    'The frontend suite is split into three duration-balanced shards instead of one long job',
   );
   assert(
     job('lint').includes('bun run lint && bun run format:check') &&
@@ -183,7 +184,7 @@ function run() {
     assert(calls.length === 1, `Windows CI runs the ${suite} suite exactly once`);
   }
   assert(
-    (ciJobs.match(/node scripts\/run-test-suites\.js frontend\b/g) || []).length === 2,
+    (ciJobs.match(/node scripts\/run-test-suites\.js frontend\b/g) || []).length === 3,
     'Windows CI runs the frontend suite exactly once per shard',
   );
   assert(
@@ -207,7 +208,7 @@ function run() {
     job('verify').includes('name: Lint, audit, and test (Windows)') &&
       job('verify').includes('if: always()') &&
       job('verify').includes(
-        'needs: [lint, typecheck, build, contracts, electron, frontend, frontend-shard-2, backend]',
+        'needs: [lint, typecheck, build, contracts, electron, frontend, frontend-shard-2, frontend-shard-3, backend]',
       ),
     'The existing required check always evaluates every parallel worker job',
   );
@@ -229,7 +230,7 @@ function run() {
         '-Command',
         `
       function Invoke-Gate { ${gate} }
-      $names = @('LINT_RESULT', 'TYPECHECK_RESULT', 'BUILD_RESULT', 'CONTRACTS_RESULT', 'ELECTRON_RESULT', 'FRONTEND_RESULT', 'FRONTEND_SHARD_2_RESULT', 'BACKEND_RESULT')
+      $names = @('LINT_RESULT', 'TYPECHECK_RESULT', 'BUILD_RESULT', 'CONTRACTS_RESULT', 'ELECTRON_RESULT', 'FRONTEND_RESULT', 'FRONTEND_SHARD_2_RESULT', 'FRONTEND_SHARD_3_RESULT', 'BACKEND_RESULT')
       foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, 'success') }
       Invoke-Gate
       foreach ($name in $names) {
@@ -257,7 +258,7 @@ function run() {
     );
   }
   assert(
-    ['frontend', 'frontend-shard-2'].every(
+    ['frontend', 'frontend-shard-2', 'frontend-shard-3'].every(
       (name) => job(name).includes("python: 'false'") && job(name).includes("root: 'false'"),
     ),
     'Frontend shards skip Python and root Electron installs after moving agent-profiles to root Vitest',

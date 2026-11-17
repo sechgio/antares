@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import budgets from '../shared/budgets.json'
 import { STATIC_CSS_TESTS } from './vitest.static.config.ts'
+import DurationSequencer from './vitest.sequencer.ts'
 
 const sharedHtmlSanitizerPath = path.resolve(import.meta.dirname, '../shared/html-sanitizer.js')
 
@@ -151,6 +152,7 @@ export default defineConfig(({ mode }) => ({
     maxWorkers: os.availableParallelism(),
     mockReset: true,
     sequence: {
+      sequencer: DurationSequencer,
       shuffle: {
         files: true,
         tests: true,
