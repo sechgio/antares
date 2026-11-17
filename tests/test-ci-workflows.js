@@ -3,6 +3,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const { assert, assertActionsPinned, finish } = require('./helpers/harness');
+const affected = require('../scripts/ci-affected.js');
 
 const ROOT = path.join(__dirname, '..');
 const CI_PATH = path.join(ROOT, '.github', 'workflows', 'ci.yml');
@@ -18,6 +19,8 @@ const VITE_CONFIG_PATH = path.join(ROOT, 'frontend', 'vite.config.ts');
 const STATIC_VITEST_CONFIG_PATH = path.join(ROOT, 'frontend', 'vitest.static.config.ts');
 const PANGO_SETUP_PATH = path.join(ROOT, 'scripts', 'install-ci-pango.ps1');
 const EDITOR_MEDIA_SETUP_PATH = path.join(ROOT, 'scripts', 'install-ci-editor-media.ps1');
+const PREPUSH_HOOK_PATH = path.join(ROOT, '.githooks', 'pre-push');
+const PREPUSH_CHECK_PATH = path.join(ROOT, 'scripts', 'pre-push-check.js');
 
 function assertSingleWorker(config, label) {
   assert(
@@ -33,6 +36,8 @@ function run() {
   const release = fs.readFileSync(RELEASE_PATH, 'utf8');
   const setupCi = fs.readFileSync(SETUP_CI_PATH, 'utf8');
   const runner = fs.readFileSync(RUNNER_PATH, 'utf8');
+  const prePushHook = fs.readFileSync(PREPUSH_HOOK_PATH, 'utf8');
+  const prePushCheck = fs.readFileSync(PREPUSH_CHECK_PATH, 'utf8');
   const packageJson = JSON.parse(fs.readFileSync(PACKAGE_PATH, 'utf8'));
   const frontendPackageJson = JSON.parse(fs.readFileSync(FRONTEND_PACKAGE_PATH, 'utf8'));
   const nodeVersion = fs.readFileSync(NODE_VERSION_PATH, 'utf8').trim();
@@ -77,20 +82,119 @@ function run() {
     'backend',
   ];
   assert(
-    (ciJobs.match(/^  [\w-]+:\s*$/gm) || []).length === workerJobs.length + 1,
-    'CI splits lint, typecheck, build, contracts, electron, frontend and backend into parallel jobs plus one required aggregate',
+    (ciJobs.match(/^  [\w-]+:\s*$/gm) || []).length === workerJobs.length + 2,
+    'CI splits lint, typecheck, build, contracts, electron, frontend and backend into parallel jobs plus the changes selector and one required aggregate',
   );
   assert(!/^\s+(?:strategy|matrix):/m.test(ci), 'CI does not accidentally multiply suites through a matrix');
   assert(!ci.includes('ubuntu-latest'), 'PR CI runs only on Windows');
-  for (const name of [...workerJobs, 'verify']) {
+  for (const name of [...workerJobs, 'changes', 'verify']) {
     assert(
       job(name).includes('windows-latest') && job(name).includes('blacksmith-'),
       `${name} routes Windows jobs to Blacksmith when enabled with windows-latest fallback`,
     );
   }
-  for (const name of workerJobs) {
-    assert(!job(name).includes('needs:'), `${name} runs in parallel without upstream job dependencies`);
+  const selectedJobs = workerJobs.filter((name) => name !== 'lint');
+  for (const name of selectedJobs) {
+    assert(
+      job(name).includes('needs: changes'),
+      `${name} waits only for the changes selector before its affected gate`,
+    );
   }
+  assert(!job('lint').includes('needs:'), 'Lint stays unselected so changed-file format and audits always gate the PR');
+  const gateByJob = {
+    typecheck: 'typecheck',
+    build: 'build',
+    contracts: 'contracts',
+    electron: 'electron',
+    frontend: 'frontend',
+    'frontend-shard-2': 'frontend',
+    'frontend-shard-3': 'frontend',
+    backend: 'backend',
+  };
+  for (const [name, gate] of Object.entries(gateByJob)) {
+    assert(
+      job(name).includes(`if: needs.changes.outputs.${gate} == 'true'`),
+      `${name} only runs on PRs whose changed files affect the ${gate} area`,
+    );
+  }
+  for (const output of Object.values(gateByJob)) {
+    assert(
+      job('changes').includes(`${output}: \${{ steps.affected.outputs.${output} }}`),
+      `changes job publishes the ${output} selection`,
+    );
+  }
+  assert(
+    job('changes').includes('node scripts/ci-affected.js'),
+    'The changes job delegates affected selection to the versioned classifier',
+  );
+  assert(
+    affected.AREAS.every((area) => Object.values(gateByJob).includes(area)),
+    'Every classifier area gates at least one CI job',
+  );
+  assert(
+    Object.values(affected.classify(['AGENTS.md', 'docs/setup.md'])).every((on) => on === false),
+    'Documentation-only changes select no heavy job beyond lint',
+  );
+  const frontendOnly = affected.classify(['frontend/src/App.tsx']);
+  assert(
+    frontendOnly.frontend === true &&
+      frontendOnly.build === true &&
+      frontendOnly.typecheck === true &&
+      frontendOnly.backend === false &&
+      frontendOnly.electron === false &&
+      frontendOnly.contracts === false,
+    'A frontend source change selects only frontend, build and typecheck jobs',
+  );
+  const backendOnly = affected.classify(['backend/services/foo.py', 'tests/test_foo.py']);
+  assert(
+    backendOnly.backend === true &&
+      backendOnly.electron === true &&
+      backendOnly.typecheck === true &&
+      backendOnly.frontend === false &&
+      backendOnly.contracts === false &&
+      backendOnly.build === false,
+    'A backend change selects backend plus the node tests that spawn it, not frontend or contracts',
+  );
+  for (const path of [
+    'shared/budgets.json',
+    'electron/preload.js',
+    'scripts/run-test-suites.js',
+    '.github/workflows/ci.yml',
+    '.gitattributes',
+    'mystery/dir/file.xyz',
+  ]) {
+    assert(
+      Object.values(affected.classify([path])).every((on) => on === true),
+      `${path} selects every job: unknown or shared paths must never skip coverage`,
+    );
+  }
+  for (const name of ['frontend', 'frontend-shard-2', 'frontend-shard-3']) {
+    assert(
+      job(name).includes('with-budget.js 60 -- node scripts/run-test-suites.js frontend'),
+      `${name} fails the step when the test run exceeds the 60s shard budget`,
+    );
+  }
+  assert(
+    (ciJobs.match(/with-budget\.js/g) || []).length >= 10,
+    'Every measured step enforces a hard wall-clock budget instead of relying on job timeouts',
+  );
+  assert(
+    (ciJobs.match(/timeout-minutes: [23]/g) || []).length >= selectedJobs.length,
+    'Checkout and setup steps carry hard timeouts so a hung install fails fast',
+  );
+  assert(
+    prePushHook.includes('node scripts/pre-push-check.js') &&
+      prePushHook.includes('refs/heads/"$protected_branch"') &&
+      prePushHook.indexOf('protected_branch') < prePushHook.indexOf('pre-push-check.js'),
+    'The pre-push hook keeps the main-push guard and then runs the fast changed-file check',
+  );
+  assert(
+    prePushCheck.includes('BUDGET_SECONDS = 9') &&
+      prePushCheck.includes('check-format.js') &&
+      prePushCheck.includes('oxlint') &&
+      prePushCheck.includes('bun'),
+    'The pre-push check formats and lints changed files and typechecks with bun check under a 9s cap',
+  );
   assert(
     frontendPackageJson.scripts.build.startsWith('bun check && ') &&
       frontendPackageJson.scripts.build.includes('node scripts/canvas-appear-budget.mjs') &&
@@ -104,18 +208,21 @@ function run() {
     'The frontend suite is split into three duration-balanced shards instead of one long job',
   );
   assert(
-    job('lint').includes('bun run lint && bun run format:check') &&
-      job('lint').includes('bun run check:any && bun run check:ratchet') &&
-      job('lint').includes('bun run audit:python && bun run audit:node'),
-    'Lint job runs oxlint, ruff, oxfmt, quality ratchet, any-guard and dependency audits',
+    job('lint').includes('with-budget.js 60 -- bun run lint') &&
+      job('lint').includes('with-budget.js 30 -- bun run format:check') &&
+      job('lint').includes('with-budget.js 60 -- bun run check:any') &&
+      job('lint').includes('with-budget.js 30 -- bun run check:ratchet') &&
+      job('lint').includes('with-budget.js 90 -- bun run audit:python') &&
+      job('lint').includes('with-budget.js 60 -- bun run audit:node'),
+    'Lint job runs oxlint, ruff, oxfmt, quality ratchet, any-guard and dependency audits under hard budgets',
   );
   assert(
     job('typecheck').includes('bun run typecheck:frontend') && job('typecheck').includes('bun run typecheck:backend'),
     'Typecheck job runs bun check and mypy independently of tests and build',
   );
   assert(
-    job('build').includes('run: bun run build:frontend'),
-    'Build job runs frontend build and bundle budgets in parallel',
+    job('build').includes('with-budget.js 120 -- bun run build:frontend'),
+    'Build job runs frontend build and bundle budgets in parallel under a hard budget',
   );
   assert(
     job('contracts').includes('node scripts/run-test-suites.js contracts') &&
@@ -123,8 +230,9 @@ function run() {
     'Contracts job runs contract suites and agent prompt budget outside the slowest jobs',
   );
   assert(
-    job('electron').includes('node scripts/run-test-suites.js electron && node scripts/run-test-suites.js turns'),
-    'Electron job runs electron and turns suites in parallel with build and lint',
+    job('electron').includes('with-budget.js 200 -- node scripts/run-test-suites.js electron') &&
+      job('electron').includes('with-budget.js 60 -- node scripts/run-test-suites.js turns'),
+    'Electron job runs electron and turns suites in parallel with build and lint under hard budgets',
   );
   assert(pangoSetup.includes('pacman -S mingw-w64-x86_64-pango'), 'Windows tests install Pango');
   assert(
@@ -218,15 +326,22 @@ function run() {
     job('verify').includes('name: Lint, audit, and test (Windows)') &&
       job('verify').includes('if: always()') &&
       job('verify').includes(
-        'needs: [lint, typecheck, build, contracts, electron, frontend, frontend-shard-2, frontend-shard-3, backend]',
+        'needs: [changes, lint, typecheck, build, contracts, electron, frontend, frontend-shard-2, frontend-shard-3, backend]',
       ),
-    'The existing required check always evaluates every parallel worker job',
+    'The existing required check always evaluates the selector and every worker job',
   );
   assert(
-    workerJobs.every((name) => job('verify').includes(`needs.${name}.result`)) &&
-      job('verify').includes("if ($result -ne 'success') { throw"),
-    'The required check rejects failed, cancelled and skipped workers',
+    ['changes', ...workerJobs].every((name) => job('verify').includes(`needs.${name}.result`)) &&
+      job('verify').includes("$gate -eq 'true' -and $result -ne 'success'") &&
+      job('verify').includes("$gate -ne 'true' -and $result -ne 'success' -and $result -ne 'skipped'"),
+    'The required check fails selected jobs unless they succeed and rejects failures in unselected jobs',
   );
+  for (const output of new Set(Object.values(gateByJob))) {
+    assert(
+      job('verify').includes(`needs.changes.outputs.${output}`),
+      `The required check reads the ${output} selection to validate skips`,
+    );
+  }
   assert(
     job('backend').includes('pytest tests/test_stress_conversion.py tests/test_scalability_baseline.py -m slow'),
     'Windows CI runs slow stress tests and scalability baselines',
@@ -240,25 +355,42 @@ function run() {
         '-Command',
         `
       function Invoke-Gate { ${gate} }
-      $names = @('LINT_RESULT', 'TYPECHECK_RESULT', 'BUILD_RESULT', 'CONTRACTS_RESULT', 'ELECTRON_RESULT', 'FRONTEND_RESULT', 'FRONTEND_SHARD_2_RESULT', 'FRONTEND_SHARD_3_RESULT', 'BACKEND_RESULT')
-      foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, 'success') }
+      $resultNames = @('TYPECHECK_RESULT', 'BUILD_RESULT', 'CONTRACTS_RESULT', 'ELECTRON_RESULT', 'FRONTEND_RESULT', 'FRONTEND_SHARD_2_RESULT', 'FRONTEND_SHARD_3_RESULT', 'BACKEND_RESULT')
+      $gateNames = @('GATE_TYPECHECK', 'GATE_BUILD', 'GATE_CONTRACTS', 'GATE_ELECTRON', 'GATE_FRONTEND', 'GATE_BACKEND')
+      function Reset-Env {
+        [Environment]::SetEnvironmentVariable('CHANGES_RESULT', 'success')
+        [Environment]::SetEnvironmentVariable('LINT_RESULT', 'success')
+        foreach ($name in $gateNames) { [Environment]::SetEnvironmentVariable($name, 'true') }
+        foreach ($name in $resultNames) { [Environment]::SetEnvironmentVariable($name, 'success') }
+      }
+      function Test-Rejected { try { Invoke-Gate; return $false } catch { return $true } }
+      Reset-Env
       Invoke-Gate
-      foreach ($name in $names) {
+      foreach ($name in $resultNames) {
         foreach ($state in @('failure', 'cancelled', 'skipped', '')) {
           [Environment]::SetEnvironmentVariable($name, $state)
-          $rejected = $false
-          try { Invoke-Gate } catch { $rejected = $true }
-          if (-not $rejected) { throw "Gate accepted $name=$state" }
+          if (-not (Test-Rejected)) { throw "Gate accepted selected $name=$state" }
         }
         [Environment]::SetEnvironmentVariable($name, 'success')
       }
+      foreach ($name in $gateNames) { [Environment]::SetEnvironmentVariable($name, 'false') }
+      foreach ($name in $resultNames) { [Environment]::SetEnvironmentVariable($name, 'skipped') }
+      Invoke-Gate
+      [Environment]::SetEnvironmentVariable('TYPECHECK_RESULT', 'failure')
+      if (-not (Test-Rejected)) { throw 'Gate accepted failure in an unselected job' }
+      Reset-Env
+      [Environment]::SetEnvironmentVariable('CHANGES_RESULT', 'failure')
+      if (-not (Test-Rejected)) { throw 'Gate accepted a failed changes job' }
+      Reset-Env
+      [Environment]::SetEnvironmentVariable('LINT_RESULT', 'skipped')
+      if (-not (Test-Rejected)) { throw 'Gate accepted skipped lint' }
     `,
       ],
       { encoding: 'utf8', windowsHide: true },
     );
     assert(
       result.status === 0,
-      `The actual PowerShell gate accepts success and rejects every failure state: ${result.stderr}`,
+      `The actual PowerShell gate accepts success plus unselected skips and rejects every other state: ${result.stderr}`,
     );
   }
   for (const input of ['node', 'python', 'root', 'frontend']) {
