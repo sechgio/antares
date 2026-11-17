@@ -25,7 +25,10 @@ function run() {
   assert(fs.existsSync(path.join(__dirname, '..', 'bun.lock')), 'root bun.lock exists');
   assert(fs.existsSync(path.join(__dirname, '..', 'frontend', 'bun.lock')), 'frontend/bun.lock exists');
   assert(!fs.existsSync(path.join(__dirname, '..', 'package-lock.json')), 'legacy root package-lock.json is removed');
-  assert(!fs.existsSync(path.join(__dirname, '..', 'frontend', 'package-lock.json')), 'legacy frontend/package-lock.json is removed');
+  assert(
+    !fs.existsSync(path.join(__dirname, '..', 'frontend', 'package-lock.json')),
+    'legacy frontend/package-lock.json is removed',
+  );
   const versions = {
     'package.json': rootPkg.version,
     'frontend/package.json': frontendPkg.version,

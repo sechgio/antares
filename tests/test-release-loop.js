@@ -19,19 +19,13 @@ function run() {
     !content.includes("trySh('bun run lint:python") &&
       !content.includes("trySh('bun run typecheck:backend") &&
       !content.includes("trySh('bun run typecheck:frontend"),
-    'quality gate does not swallow mandatory command failures'
+    'quality gate does not swallow mandatory command failures',
   );
   assert(!content.includes("trySh('bun run ci"), 'quality gate cannot fail open');
   assert(!loopUtils.includes("trySh('bun run ci"), 'shared quality gate cannot fail open');
 
-  assert(
-    content.includes('const remoteTag = sh('),
-    'remote tag lookup must fail closed when git ls-remote fails',
-  );
-  assert(
-    content.includes('shDetailed('),
-    'GitHub release lookup must distinguish not-found from command failures',
-  );
+  assert(content.includes('const remoteTag = sh('), 'remote tag lookup must fail closed when git ls-remote fails');
+  assert(content.includes('shDetailed('), 'GitHub release lookup must distinguish not-found from command failures');
   assert(
     content.includes('git fetch --dry-run origin main') && content.includes('refreshRemote'),
     'dry-run must not mutate git refs while ship mode refreshes origin/main',
@@ -39,7 +33,7 @@ function run() {
 
   assert(
     content.includes('HEAD...origin/main') || content.includes('HEAD === origin/main'),
-    'release requires local HEAD to equal origin/main'
+    'release requires local HEAD to equal origin/main',
   );
   assert(content.includes('git tag -a'), 'release creates an annotated tag');
   assert(!content.includes('gh release create'), 'local release loop leaves publication to GitHub Actions');
