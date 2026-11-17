@@ -41,12 +41,18 @@ describe('rum', () => {
     await vi.waitFor(() => expect(onCLS).toHaveBeenCalled());
     const send = onCLS.mock.calls[0][0] as (m: unknown) => void;
     send({ name: 'LCP', value: 1200, rating: 'good', delta: 50, id: 'm1' });
-    await vi.waitFor(() => expect(telemetry).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'LCP', value: 1200, rating: 'good', delta: 50, id: 'm1',
-        navigationType: '',
-      }),
-    ));
+    await vi.waitFor(() =>
+      expect(telemetry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'LCP',
+          value: 1200,
+          rating: 'good',
+          delta: 50,
+          id: 'm1',
+          navigationType: '',
+        }),
+      ),
+    );
     const payload = telemetry.mock.calls.at(-1)?.[0] as { timestamp: number };
     expect(payload.timestamp).toBeGreaterThan(0);
   });
@@ -69,9 +75,9 @@ describe('rum', () => {
     expect(onLCP).toHaveBeenCalled();
     const send = onCLS.mock.calls[0][0] as (m: unknown) => void;
     send({ name: 'CLS', value: 0.1, rating: 'good', delta: 0.1, id: 'x' });
-    await vi.waitFor(() => expect(telemetry).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'CLS', value: 0.1 }),
-    ));
+    await vi.waitFor(() =>
+      expect(telemetry).toHaveBeenCalledWith(expect.objectContaining({ name: 'CLS', value: 0.1 })),
+    );
   });
 
   it('initRUM sin muestreo no carga web-vitals', async () => {

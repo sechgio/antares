@@ -13,7 +13,15 @@ vi.mock('../../api', async (importOriginal) => {
       ...actual.api,
       spreadsheetParse: vi.fn(async () => ({
         workbookName: 'datos.csv',
-        sheets: [{ name: 'Sheet1', rows: [['SGIO', 'OTRA'], ['1', '2']] }],
+        sheets: [
+          {
+            name: 'Sheet1',
+            rows: [
+              ['SGIO', 'OTRA'],
+              ['1', '2'],
+            ],
+          },
+        ],
         warnings: [],
       })),
       spreadsheetGetRows: vi.fn(),
@@ -50,20 +58,30 @@ function getMappingScrollContainer() {
 describe('PreviewPanelView column mapping', () => {
   it('carga la plantilla catalogada solicitada desde Agent', async () => {
     sessionStorage.setItem('agent:open:previewPanel', 'report.html');
-    const list = vi.spyOn(api, 'templatesList').mockResolvedValue({ templates: [{ id: 'report', name: 'Reporte', filename: 'report.html' }] });
-    const get = vi.spyOn(api, 'templateGet').mockResolvedValue({ name: 'Reporte', content: '<html><body>Plantilla de prueba</body></html>' });
+    const list = vi
+      .spyOn(api, 'templatesList')
+      .mockResolvedValue({ templates: [{ id: 'report', name: 'Reporte', filename: 'report.html' }] });
+    const get = vi
+      .spyOn(api, 'templateGet')
+      .mockResolvedValue({ name: 'Reporte', content: '<html><body>Plantilla de prueba</body></html>' });
     try {
       renderView();
       await waitFor(() => expect(get).toHaveBeenCalledWith('report.html'));
       expect(sessionStorage.getItem('agent:open:previewPanel')).toBeNull();
-    } finally { list.mockRestore(); get.mockRestore(); }
+    } finally {
+      list.mockRestore();
+      get.mockRestore();
+    }
   });
   beforeEach(() => {
     localStorage.clear();
-    localStorage.setItem(CUSTOM_COLS_KEY, JSON.stringify([
-      { id: 'custom_1', name: 'PERSONALIZADA 1', mappedTo: 'NOMBRE' },
-      { id: 'custom_2', name: 'PERSONALIZADA 2', mappedTo: 'FECHA' },
-    ]));
+    localStorage.setItem(
+      CUSTOM_COLS_KEY,
+      JSON.stringify([
+        { id: 'custom_1', name: 'PERSONALIZADA 1', mappedTo: 'NOMBRE' },
+        { id: 'custom_2', name: 'PERSONALIZADA 2', mappedTo: 'FECHA' },
+      ]),
+    );
     const win = window as unknown as { electronAPI?: Record<string, unknown> };
     win.electronAPI = {
       ...(win.electronAPI || {}),
@@ -136,47 +154,77 @@ describe('PreviewPanelView column mapping', () => {
     expect(await screen.findByText('SGIO EXTRA')).toBeInTheDocument();
   }, 15000);
 
-  it.each(['headers-only', 'empty', 'unreadable'])('clears the previous report when a replacement workbook is %s', async (replacement) => {
-    const parse = vi.mocked(api.spreadsheetParse).mockReset().mockResolvedValueOnce({
-      workbookName: 'original.csv',
-      sheets: [{ name: 'Original', rows: [['SGIO'], ['old-record']] }],
-      warnings: [],
-    });
-    const { container } = renderView();
-    const input = container.querySelector('input[accept=".csv,.xlsx,.xls"]')!;
-    fireEvent.change(input, { target: { files: [new File(['original'], 'original.csv')] } });
-    await screen.findByText('old-record');
-    fireEvent.click(screen.getByLabelText('Cerrar vista previa'));
-    fireEvent.click(screen.getByRole('button', { name: 'Seleccionar fila' }));
-    fireEvent.click(await screen.findByRole('option', { name: /old-record/ }));
-    expect(screen.getByRole('button', { name: 'Descargar PDF' })).toBeEnabled();
+  it.each(['headers-only', 'empty', 'unreadable'])(
+    'clears the previous report when a replacement workbook is %s',
+    async (replacement) => {
+      const parse = vi
+        .mocked(api.spreadsheetParse)
+        .mockReset()
+        .mockResolvedValueOnce({
+          workbookName: 'original.csv',
+          sheets: [{ name: 'Original', rows: [['SGIO'], ['old-record']] }],
+          warnings: [],
+        });
+      const { container } = renderView();
+      const input = container.querySelector('input[accept=".csv,.xlsx,.xls"]')!;
+      fireEvent.change(input, { target: { files: [new File(['original'], 'original.csv')] } });
+      await screen.findByText('old-record');
+      fireEvent.click(screen.getByLabelText('Cerrar vista previa'));
+      fireEvent.click(screen.getByRole('button', { name: 'Seleccionar fila' }));
+      fireEvent.click(await screen.findByRole('option', { name: /old-record/ }));
+      expect(screen.getByRole('button', { name: 'Descargar PDF' })).toBeEnabled();
 
-    if (replacement === 'unreadable') parse.mockRejectedValueOnce(new Error('Archivo ilegible'));
-    else parse.mockResolvedValueOnce({
-      workbookName: 'replacement.csv',
-      sheets: replacement === 'empty' ? [] : [{ name: 'Replacement', rows: [['SGIO']] }],
-      warnings: [],
-    });
-    fireEvent.change(input, { target: { files: [new File(['replacement'], 'replacement.csv')] } });
-    await waitFor(() => expect(parse).toHaveBeenCalledTimes(2));
+      if (replacement === 'unreadable') parse.mockRejectedValueOnce(new Error('Archivo ilegible'));
+      else
+        parse.mockResolvedValueOnce({
+          workbookName: 'replacement.csv',
+          sheets: replacement === 'empty' ? [] : [{ name: 'Replacement', rows: [['SGIO']] }],
+          warnings: [],
+        });
+      fireEvent.change(input, { target: { files: [new File(['replacement'], 'replacement.csv')] } });
+      await waitFor(() => expect(parse).toHaveBeenCalledTimes(2));
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Seleccionar fila' })).toHaveTextContent('-- Seleccionar Fila --'));
-    expect(screen.getByRole('button', { name: 'Descargar PDF' })).toBeDisabled();
-    expect(screen.queryByText('1 registros cargados')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Todo (0)' }));
-    expect(screen.getByRole('button', { name: 'PDF Consolidado' })).toBeDisabled();
-  });
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Seleccionar fila' })).toHaveTextContent('-- Seleccionar Fila --'),
+      );
+      expect(screen.getByRole('button', { name: 'Descargar PDF' })).toBeDisabled();
+      expect(screen.queryByText('1 registros cargados')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Todo (0)' }));
+      expect(screen.getByRole('button', { name: 'PDF Consolidado' })).toBeDisabled();
+    },
+  );
 
   it('disables stale report actions while a spill sheet loads and after it fails, then allows recovery', async () => {
-    vi.mocked(api.spreadsheetParse).mockReset().mockResolvedValue({
-      workbookName: 'datos.xlsx', sheets: [], warnings: [], result_file_token: 'spill_failure',
-      sheet_meta: [{ name: 'Sheet1', rowCount: 2 }, { name: 'Sheet2', rowCount: 2 }],
-    });
-    const page = { name: 'Sheet1', rows: [['SGIO'], ['old-record']], offset: 0, limit: 2000, total: 2, has_more: false };
+    vi.mocked(api.spreadsheetParse)
+      .mockReset()
+      .mockResolvedValue({
+        workbookName: 'datos.xlsx',
+        sheets: [],
+        warnings: [],
+        result_file_token: 'spill_failure',
+        sheet_meta: [
+          { name: 'Sheet1', rowCount: 2 },
+          { name: 'Sheet2', rowCount: 2 },
+        ],
+      });
+    const page = {
+      name: 'Sheet1',
+      rows: [['SGIO'], ['old-record']],
+      offset: 0,
+      limit: 2000,
+      total: 2,
+      has_more: false,
+    };
     let rejectLoad: (error: Error) => void = () => {};
-    const pending = new Promise<typeof page>((_resolve, reject) => { rejectLoad = reject; });
-    const getRows = vi.mocked(api.spreadsheetGetRows).mockReset()
-      .mockResolvedValueOnce(page).mockReturnValueOnce(pending).mockResolvedValueOnce(page);
+    const pending = new Promise<typeof page>((_resolve, reject) => {
+      rejectLoad = reject;
+    });
+    const getRows = vi
+      .mocked(api.spreadsheetGetRows)
+      .mockReset()
+      .mockResolvedValueOnce(page)
+      .mockReturnValueOnce(pending)
+      .mockResolvedValueOnce(page);
     const { container } = renderView();
     fireEvent.change(container.querySelector('input[accept=".csv,.xlsx,.xls"]')!, {
       target: { files: [new File(['workbook'], 'datos.xlsx')] },
@@ -204,21 +252,31 @@ describe('PreviewPanelView column mapping', () => {
   });
 
   it('does not retain rows from the active spill sheet between selections', async () => {
-    vi.mocked(api.spreadsheetParse).mockReset().mockResolvedValue({
-      workbookName: 'datos.xlsx',
-      sheets: [],
-      warnings: [],
-      result_file_token: 'spill_preview',
-      sheet_meta: [
-        { name: 'Sheet1', rowCount: 2 },
-        { name: 'Sheet2', rowCount: 3 },
-      ],
-    });
+    vi.mocked(api.spreadsheetParse)
+      .mockReset()
+      .mockResolvedValue({
+        workbookName: 'datos.xlsx',
+        sheets: [],
+        warnings: [],
+        result_file_token: 'spill_preview',
+        sheet_meta: [
+          { name: 'Sheet1', rowCount: 2 },
+          { name: 'Sheet2', rowCount: 3 },
+        ],
+      });
     const getRows = vi.mocked(api.spreadsheetGetRows);
     getRows.mockReset().mockImplementation(async ({ sheet }) => {
-      const rows = sheet === 'Sheet2'
-        ? [['SGIO', 'OTRA'], ['2', 'dos'], ['3', 'tres']]
-        : [['SGIO', 'OTRA'], ['1', 'uno']];
+      const rows =
+        sheet === 'Sheet2'
+          ? [
+              ['SGIO', 'OTRA'],
+              ['2', 'dos'],
+              ['3', 'tres'],
+            ]
+          : [
+              ['SGIO', 'OTRA'],
+              ['1', 'uno'],
+            ];
       return {
         name: sheet || '',
         rows,
@@ -232,7 +290,13 @@ describe('PreviewPanelView column mapping', () => {
     const { container } = renderView();
     const fileInput = container.querySelector('input[accept=".csv,.xlsx,.xls"]') as HTMLInputElement | null;
     fireEvent.change(fileInput!, {
-      target: { files: [new File(['workbook'], 'datos.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })] },
+      target: {
+        files: [
+          new File(['workbook'], 'datos.xlsx', {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          }),
+        ],
+      },
     });
 
     await waitFor(() => expect(getRows).toHaveBeenCalledTimes(1));
@@ -250,15 +314,35 @@ describe('PreviewPanelView column mapping', () => {
   }, 15000);
 
   it('ignores a pending sheet load after importing a replacement workbook', async () => {
-    vi.mocked(api.spreadsheetParse).mockReset().mockResolvedValueOnce({
-      workbookName: 'original.xlsx', sheets: [], warnings: [], result_file_token: 'spill_old',
-      sheet_meta: [{ name: 'Sheet1', rowCount: 2 }, { name: 'Sheet2', rowCount: 2 }],
-    }).mockResolvedValueOnce({
-      workbookName: 'replacement.csv', sheets: [{ name: 'New', rows: [['SGIO'], ['new-record']] }], warnings: [],
-    });
-    const page = { name: 'Sheet1', rows: [['SGIO'], ['old-record']], offset: 0, limit: 2000, total: 2, has_more: false };
+    vi.mocked(api.spreadsheetParse)
+      .mockReset()
+      .mockResolvedValueOnce({
+        workbookName: 'original.xlsx',
+        sheets: [],
+        warnings: [],
+        result_file_token: 'spill_old',
+        sheet_meta: [
+          { name: 'Sheet1', rowCount: 2 },
+          { name: 'Sheet2', rowCount: 2 },
+        ],
+      })
+      .mockResolvedValueOnce({
+        workbookName: 'replacement.csv',
+        sheets: [{ name: 'New', rows: [['SGIO'], ['new-record']] }],
+        warnings: [],
+      });
+    const page = {
+      name: 'Sheet1',
+      rows: [['SGIO'], ['old-record']],
+      offset: 0,
+      limit: 2000,
+      total: 2,
+      has_more: false,
+    };
     let resolveSheet: (value: typeof page) => void = () => {};
-    const pending = new Promise<typeof page>((resolve) => { resolveSheet = resolve; });
+    const pending = new Promise<typeof page>((resolve) => {
+      resolveSheet = resolve;
+    });
     vi.mocked(api.spreadsheetGetRows).mockReset().mockResolvedValueOnce(page).mockReturnValueOnce(pending);
     const { container } = renderView();
     const input = container.querySelector('input[accept=".csv,.xlsx,.xls"]')!;
@@ -271,7 +355,10 @@ describe('PreviewPanelView column mapping', () => {
 
     fireEvent.change(input, { target: { files: [new File(['replacement'], 'replacement.csv')] } });
     await screen.findByText('new-record');
-    await act(async () => { resolveSheet({ ...page, name: 'Sheet2' }); await pending; });
+    await act(async () => {
+      resolveSheet({ ...page, name: 'Sheet2' });
+      await pending;
+    });
     expect(screen.getByText('new-record')).toBeInTheDocument();
     expect(screen.queryByText('old-record')).not.toBeInTheDocument();
   });
@@ -280,10 +367,15 @@ describe('PreviewPanelView column mapping', () => {
     type ParseResult = Awaited<ReturnType<typeof api.spreadsheetParse>>;
     let resolveFirst: (result: ParseResult) => void = () => {};
     let resolveSecond: (result: ParseResult) => void = () => {};
-    const first = new Promise<ParseResult>((resolve) => { resolveFirst = resolve; });
-    const second = new Promise<ParseResult>((resolve) => { resolveSecond = resolve; });
+    const first = new Promise<ParseResult>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const second = new Promise<ParseResult>((resolve) => {
+      resolveSecond = resolve;
+    });
 
-    vi.mocked(api.spreadsheetParse).mockReset()
+    vi.mocked(api.spreadsheetParse)
+      .mockReset()
       .mockImplementationOnce(async () => first)
       .mockImplementationOnce(async () => second);
     vi.mocked(api.fileTokenCleanup).mockReset().mockResolvedValue({ cleaned: true });

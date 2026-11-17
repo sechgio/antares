@@ -65,7 +65,17 @@ function run() {
   const ciJobs = ci.split(/^jobs:\s*$/m)[1] || '';
   const job = (name) =>
     ciJobs.match(new RegExp(`^  ${name}:\\s*\\r?\\n([\\s\\S]*?)(?=^  [\\w-]+:|$(?![\\s\\S]))`, 'm'))?.[1] || '';
-  const workerJobs = ['lint', 'typecheck', 'build', 'contracts', 'electron', 'frontend', 'frontend-shard-2', 'frontend-shard-3', 'backend'];
+  const workerJobs = [
+    'lint',
+    'typecheck',
+    'build',
+    'contracts',
+    'electron',
+    'frontend',
+    'frontend-shard-2',
+    'frontend-shard-3',
+    'backend',
+  ];
   assert(
     (ciJobs.match(/^  [\w-]+:\s*$/gm) || []).length === workerJobs.length + 1,
     'CI splits lint, typecheck, build, contracts, electron, frontend and backend into parallel jobs plus one required aggregate',

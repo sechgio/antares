@@ -125,17 +125,30 @@ describe('AutoIMGApp bootstrap refresh', () => {
 
   it('keeps valid coverage and folders without refreshing an unchanged Sheet', async () => {
     let finishBootstrap!: (value: Awaited<ReturnType<typeof mockApi.autoimgBootstrap>>) => void;
-    const initialBootstrap = new Promise<Awaited<ReturnType<typeof mockApi.autoimgBootstrap>>>((resolve) => { finishBootstrap = resolve; });
+    const initialBootstrap = new Promise<Awaited<ReturnType<typeof mockApi.autoimgBootstrap>>>((resolve) => {
+      finishBootstrap = resolve;
+    });
     mockApi.autoimgSheetsAuthStatus.mockResolvedValueOnce({ authenticated: true });
     const bootstrap = {
-      connected: true, sheetLinked: true, lastSync: '2026-07-03', autoSync: false,
-      totalNis: 10, completos: 8, faltantes: 2,
+      connected: true,
+      sheetLinked: true,
+      lastSync: '2026-07-03',
+      autoSync: false,
+      totalNis: 10,
+      completos: 8,
+      faltantes: 2,
       folders: [{ name: 'Cached folder', folder_id: 'abc', activo: true, ultimo_scan: '', cant_archivos: 0 }],
-      bdRows: [], logRows: [], arrastre: [],
+      bdRows: [],
+      logRows: [],
+      arrastre: [],
     };
     mockApi.autoimgBootstrap.mockReturnValue(initialBootstrap);
-    await act(async () => { render(<AutoIMGApp />); });
-    await act(async () => { finishBootstrap(bootstrap); });
+    await act(async () => {
+      render(<AutoIMGApp />);
+    });
+    await act(async () => {
+      finishBootstrap(bootstrap);
+    });
     expect(screen.getByRole('status', { name: 'Cobertura y auto-sync' })).toHaveTextContent(/8\s*\/\s*10/);
     act(() => {
       notifyState.callback!('autoimg.sync.from_complete', { cached: true });
@@ -150,17 +163,28 @@ describe('AutoIMGApp bootstrap refresh', () => {
     expect(mockApi.autoimgBootstrap).toHaveBeenLastCalledWith(true);
   });
 
-  it.each([undefined, { cached: false }, { cached: 'true' }])('refreshes when cached is not explicitly true: %j', async (params) => {
-    mockApi.autoimgBootstrap.mockResolvedValue({
-      connected: true, sheetLinked: true, lastSync: '', autoSync: false,
-      folders: [], bdRows: [], logRows: [], arrastre: [],
-    });
-    render(<AutoIMGApp />);
-    await screen.findByRole('button', { name: /Escanear/ });
-    await act(async () => { notifyState.callback!('autoimg.sync.from_complete', params); });
-    expect(mockApi.autoimgBootstrap).toHaveBeenCalledTimes(2);
-    expect(mockApi.autoimgBootstrap).toHaveBeenLastCalledWith(true);
-  });
+  it.each([undefined, { cached: false }, { cached: 'true' }])(
+    'refreshes when cached is not explicitly true: %j',
+    async (params) => {
+      mockApi.autoimgBootstrap.mockResolvedValue({
+        connected: true,
+        sheetLinked: true,
+        lastSync: '',
+        autoSync: false,
+        folders: [],
+        bdRows: [],
+        logRows: [],
+        arrastre: [],
+      });
+      render(<AutoIMGApp />);
+      await screen.findByRole('button', { name: /Escanear/ });
+      await act(async () => {
+        notifyState.callback!('autoimg.sync.from_complete', params);
+      });
+      expect(mockApi.autoimgBootstrap).toHaveBeenCalledTimes(2);
+      expect(mockApi.autoimgBootstrap).toHaveBeenLastCalledWith(true);
+    },
+  );
 
   it.each([
     { connected: false, sheetLinked: true },
@@ -168,11 +192,19 @@ describe('AutoIMGApp bootstrap refresh', () => {
     { connected: true, sheetLinked: true, error: 'Lectura fallida' },
   ])('refreshes cached notifications without a valid snapshot: %j', async (status) => {
     mockApi.autoimgBootstrap.mockResolvedValue({
-      ...status, lastSync: '', autoSync: false, folders: [], bdRows: [], logRows: [], arrastre: [],
+      ...status,
+      lastSync: '',
+      autoSync: false,
+      folders: [],
+      bdRows: [],
+      logRows: [],
+      arrastre: [],
     });
     render(<AutoIMGApp />);
     await act(async () => {});
-    await act(async () => { notifyState.callback!('autoimg.sync.from_complete', { cached: true }); });
+    await act(async () => {
+      notifyState.callback!('autoimg.sync.from_complete', { cached: true });
+    });
     expect(mockApi.autoimgBootstrap).toHaveBeenCalledTimes(2);
   });
 

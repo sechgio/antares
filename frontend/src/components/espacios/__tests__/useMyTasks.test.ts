@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MyTask } from '../types';
 
 const mocks = vi.hoisted(() => ({
-  fetch: vi.fn(), fetchOrigins: vi.fn(), subscribe: vi.fn(), unsubscribe: vi.fn(), realtime: undefined as undefined | (() => void),
+  fetch: vi.fn(),
+  fetchOrigins: vi.fn(),
+  subscribe: vi.fn(),
+  unsubscribe: vi.fn(),
+  realtime: undefined as undefined | (() => void),
 }));
 vi.mock('../api/espaciosApi', () => ({
   MY_TASKS_PAGE_SIZE: 2,
@@ -29,9 +33,14 @@ beforeEach(() => {
   mocks.unsubscribe.mockReset();
   mocks.realtime = undefined;
   mocks.fetch.mockResolvedValue([row]);
-  mocks.fetchOrigins.mockResolvedValue([{
-    proyecto_id: 'project-1', proyecto_name: 'Proyecto', espacio_id: 'space-1', espacio_name: 'Espacio',
-  }]);
+  mocks.fetchOrigins.mockResolvedValue([
+    {
+      proyecto_id: 'project-1',
+      proyecto_name: 'Proyecto',
+      espacio_id: 'space-1',
+      espacio_name: 'Espacio',
+    },
+  ]);
   mocks.subscribe.mockReturnValue({ id: 'channel' });
 });
 
@@ -48,7 +57,9 @@ describe('useMyTasks', () => {
     mocks.fetch.mockRejectedValueOnce(new Error('No disponible'));
     const { result } = renderHook(() => useMyTasks('user-1', {}));
     await waitFor(() => expect(result.current.error).toBe('No disponible'));
-    await act(async () => { await result.current.reload(); });
+    await act(async () => {
+      await result.current.reload();
+    });
     expect(result.current.tasks).toEqual([row]);
     expect(result.current.error).toBeNull();
   });
@@ -56,7 +67,11 @@ describe('useMyTasks', () => {
   it('debounces realtime invalidations and replaces rows without duplicates', async () => {
     const { result } = renderHook(() => useMyTasks('user-1', {}));
     await waitFor(() => expect(result.current.loading).toBe(false));
-    act(() => { mocks.realtime?.(); mocks.realtime?.(); mocks.realtime?.(); });
+    act(() => {
+      mocks.realtime?.();
+      mocks.realtime?.();
+      mocks.realtime?.();
+    });
     await waitFor(() => expect(mocks.fetch).toHaveBeenCalledTimes(2));
     expect(result.current.tasks).toEqual([row]);
   });
@@ -66,7 +81,9 @@ describe('useMyTasks', () => {
     await waitFor(() => expect(result.current.tasks).toEqual([row]));
     mocks.fetch.mockResolvedValueOnce([]);
 
-    act(() => { mocks.realtime?.(); });
+    act(() => {
+      mocks.realtime?.();
+    });
 
     await waitFor(() => expect(result.current.tasks).toEqual([]));
   });
@@ -85,11 +102,15 @@ describe('useMyTasks', () => {
     mocks.fetch.mockResolvedValueOnce([row, second]).mockResolvedValueOnce([third]);
     const { result } = renderHook(() => useMyTasks('user-1', {}));
     await waitFor(() => expect(result.current.hasMore).toBe(true));
-    await act(async () => { await result.current.loadMore(); });
+    await act(async () => {
+      await result.current.loadMore();
+    });
     expect(result.current.tasks).toHaveLength(3);
 
     mocks.fetch.mockResolvedValueOnce([row, second, { ...third, title: 'Actualizada' }]);
-    act(() => { mocks.realtime?.(); });
+    act(() => {
+      mocks.realtime?.();
+    });
 
     await waitFor(() => expect(result.current.tasks[2]?.title).toBe('Actualizada'));
     expect(mocks.fetch).toHaveBeenLastCalledWith(expect.anything(), 0, 3);

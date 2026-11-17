@@ -2,10 +2,7 @@ import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-li
 import { StrictMode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEmptyDocument, type CanvasDocument, type CanvasTool } from '../types';
-import {
-  abortActivePointerGestureSession,
-  createPointerGestureSession,
-} from '../ops/pointerGestureSession';
+import { abortActivePointerGestureSession, createPointerGestureSession } from '../ops/pointerGestureSession';
 import { createLayer } from '../constants';
 import type { DrawRect } from '../ops/drawHelpers';
 
@@ -166,7 +163,6 @@ import { queueCanvasCloudPush } from '../sync/cloudQueue';
 import { loadCanvasPresets } from '../presets/loadPresets';
 import { boxCss } from './fixtures';
 
-
 function makeDoc(id: string, name = id): CanvasDocument {
   const doc = createEmptyDocument(name);
   doc.id = id;
@@ -249,23 +245,35 @@ describe('CanvasView lifecycle', () => {
     await renderReady();
     const base = currentStageDocument();
     const layer = { ...createLayer('text'), id: 'agent-title', value: 'Título del agente' };
-    const result = { id: base.id, updatedAt: '2026-10-21T10:00:00.001Z', layers: [...base.layers, layer], fields: [],
-      createdLayers: [{ id: layer.id, name: layer.name }] };
+    const result = {
+      id: base.id,
+      updatedAt: '2026-10-21T10:00:00.001Z',
+      layers: [...base.layers, layer],
+      fields: [],
+      createdLayers: [{ id: layer.id, name: layer.name }],
+    };
     const invoke = vi.spyOn(agentApi, 'agentCanvasApplyLayers').mockResolvedValue(result);
     try {
-      await expect(getAgentCanvasEditor()?.applyLayers({ id: base.id, expected_updated_at: 'obsoleta', layers: [] }))
-        .rejects.toThrow('revisión');
+      await expect(
+        getAgentCanvasEditor()?.applyLayers({ id: base.id, expected_updated_at: 'obsoleta', layers: [] }),
+      ).rejects.toThrow('revisión');
       expect(invoke).not.toHaveBeenCalled();
       vi.mocked(queueCanvasCloudPush).mockRejectedValueOnce(new Error('Sin conexión'));
       await act(async () => {
-        await getAgentCanvasEditor()?.applyLayers({ id: base.id, expected_updated_at: base.updatedAt, layers: [layer] });
+        await getAgentCanvasEditor()?.applyLayers({
+          id: base.id,
+          expected_updated_at: base.updatedAt,
+          layers: [layer],
+        });
       });
       expect(currentStageDocument().layers).toEqual(result.layers);
       expect(getAgentCanvasEditor()?.dirty()).toBe(false);
       expect(queueCanvasCloudPush).toHaveBeenCalledWith(expect.objectContaining({ layers: result.layers }));
       fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true });
       await waitFor(() => expect(currentStageDocument().layers).toEqual(base.layers));
-    } finally { invoke.mockRestore(); }
+    } finally {
+      invoke.mockRestore();
+    }
   });
 
   it('una edición del usuario durante la llamada de capas se conserva y presenta conflicto', async () => {
@@ -273,16 +281,30 @@ describe('CanvasView lifecycle', () => {
     const base = currentStageDocument();
     const result = { id: base.id, updatedAt: '2026-10-21T10:00:00.001Z', layers: [], fields: [], createdLayers: [] };
     let finish = (_result: typeof result) => {};
-    const invoke = vi.spyOn(agentApi, 'agentCanvasApplyLayers').mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const invoke = vi.spyOn(agentApi, 'agentCanvasApplyLayers').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
     try {
-      const pending = getAgentCanvasEditor()?.applyLayers({ id: base.id, expected_updated_at: base.updatedAt, layers: [] });
+      const pending = getAgentCanvasEditor()?.applyLayers({
+        id: base.id,
+        expected_updated_at: base.updatedAt,
+        layers: [],
+      });
       act(() => latestStageActions?.onDrawLayer?.('rect', { x: 10, y: 10, w: 20, h: 20 }));
       const edited = currentStageDocument();
-      await act(async () => { finish(result); await pending; });
+      await act(async () => {
+        finish(result);
+        await pending;
+      });
       expect(currentStageDocument().layers).toEqual(edited.layers);
       expect(getAgentCanvasEditor()?.dirty()).toBe(true);
       expect(screen.getByTestId('sync-conflict-bar')).toBeTruthy();
-    } finally { invoke.mockRestore(); }
+    } finally {
+      invoke.mockRestore();
+    }
   });
 
   it.each([
@@ -341,11 +363,15 @@ describe('CanvasView lifecycle', () => {
     );
     act(() => latestStageActions?.onPreviewLayers?.(previewLayers));
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
     expect(api.canvasSave).not.toHaveBeenCalled();
 
     act(() => latestStageActions?.onCancelGesture?.());
-    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
 
     expect(api.canvasSave).toHaveBeenCalledTimes(1);
     const saved = vi.mocked(api.canvasSave).mock.calls[0]![0] as CanvasDocument;
@@ -372,9 +398,10 @@ describe('CanvasView lifecycle', () => {
     const currentRevisionRef = { current: 0 };
     const restoreHistory = vi.fn();
     vi.mocked(api.canvasGetHistory).mockImplementation(
-      () => new Promise((resolve) => {
-        resolveHistory = resolve;
-      }),
+      () =>
+        new Promise((resolve) => {
+          resolveHistory = resolve;
+        }),
     );
 
     renderHook(() =>
@@ -414,9 +441,10 @@ describe('CanvasView lifecycle', () => {
     const currentRevisionRef = { current: 0 };
     const restoreHistory = vi.fn();
     vi.mocked(api.canvasGetHistory).mockImplementation(
-      () => new Promise((resolve) => {
-        resolveHistory = resolve;
-      }),
+      () =>
+        new Promise((resolve) => {
+          resolveHistory = resolve;
+        }),
     );
 
     renderHook(() =>
@@ -576,9 +604,7 @@ describe('CanvasView lifecycle', () => {
 
     await waitFor(() => expect(api.canvasCreate).toHaveBeenCalled());
     await waitFor(() => {
-      expect(
-        (screen.getByLabelText('Nombre del documento') as HTMLInputElement).value,
-      ).toBe('Plantilla X');
+      expect((screen.getByLabelText('Nombre del documento') as HTMLInputElement).value).toBe('Plantilla X');
     });
     await waitFor(() => {
       const pushed = vi
@@ -595,14 +621,16 @@ describe('CanvasView lifecycle', () => {
     let resolveHistory: (value: { past: CanvasDocument[]; future: CanvasDocument[] }) => void = () => {};
     const restoredPast = [{ ...docA, name: 'Restored undo state' }];
     vi.mocked(api.canvasBootstrap).mockImplementation(
-      () => new Promise((resolve) => {
-        resolveBoot = resolve;
-      }),
+      () =>
+        new Promise((resolve) => {
+          resolveBoot = resolve;
+        }),
     );
     vi.mocked(api.canvasGetHistory).mockImplementation(
-      () => new Promise((resolve) => {
-        resolveHistory = resolve;
-      }),
+      () =>
+        new Promise((resolve) => {
+          resolveHistory = resolve;
+        }),
     );
 
     render(<CanvasView active />);
@@ -729,15 +757,14 @@ describe('CanvasView lifecycle', () => {
       expect(screen.queryByTestId('sync-conflict-bar')).toBeNull();
     });
     await waitFor(() => {
-      expect(api.canvasSave).toHaveBeenCalledWith(
-        expect.objectContaining({ id: localDoc.id }),
-        { touch: true, slim: true },
-      );
+      expect(api.canvasSave).toHaveBeenCalledWith(expect.objectContaining({ id: localDoc.id }), {
+        touch: true,
+        slim: true,
+      });
     });
-    expect(queueCanvasCloudPush).toHaveBeenCalledWith(
-      expect.objectContaining({ id: localDoc.id }),
-      { forceResurrect: true },
-    );
+    expect(queueCanvasCloudPush).toHaveBeenCalledWith(expect.objectContaining({ id: localDoc.id }), {
+      forceResurrect: true,
+    });
 
     await act(async () => {
       window.dispatchEvent(new Event('focus'));
@@ -772,10 +799,10 @@ describe('CanvasView lifecycle', () => {
     fireEvent.click(screen.getByTestId('sync-conflict-use-remote'));
 
     await waitFor(() => {
-      expect(api.canvasSave).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Remote2' }),
-        { touch: false, slim: true },
-      );
+      expect(api.canvasSave).toHaveBeenCalledWith(expect.objectContaining({ name: 'Remote2' }), {
+        touch: false,
+        slim: true,
+      });
     });
     expect(screen.queryByTestId('sync-conflict-bar')).toBeNull();
   });
@@ -791,9 +818,7 @@ describe('CanvasView lifecycle', () => {
       expect(api.canvasSave).toHaveBeenCalled();
     });
     const select = screen.getByLabelText('Archivo abierto') as HTMLSelectElement;
-    expect([...select.options].map((o) => o.value)).toEqual(
-      expect.arrayContaining([docA.id, docB.id]),
-    );
+    expect([...select.options].map((o) => o.value)).toEqual(expect.arrayContaining([docA.id, docB.id]));
 
     vi.mocked(api.canvasList).mockResolvedValue({
       documents: [
@@ -861,9 +886,10 @@ describe('CanvasView lifecycle', () => {
     let resolveSave: (value: { document: CanvasDocument }) => void = () => {};
     await renderReady();
     vi.mocked(api.canvasSave).mockImplementation(
-      () => new Promise((resolve) => {
-        resolveSave = resolve;
-      }),
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
     );
     vi.mocked(api.canvasSave).mockClear();
     vi.useFakeTimers();
@@ -1087,10 +1113,12 @@ describe('CanvasView lifecycle', () => {
 
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Importar' }));
-    await waitFor(() => expect(pdfImportMocks.importPdfFile).toHaveBeenCalledWith(
-      file,
-      expect.objectContaining({ pageStart: 1, pageEnd: 1, mixedPagePolicy: 'reject' }),
-    ));
+    await waitFor(() =>
+      expect(pdfImportMocks.importPdfFile).toHaveBeenCalledWith(
+        file,
+        expect.objectContaining({ pageStart: 1, pageEnd: 1, mixedPagePolicy: 'reject' }),
+      ),
+    );
     await waitFor(() => expect(screen.getByText(/1 importados · 0 aproximados/)).toBeInTheDocument());
     expect(screen.getByText('PDF rect')).toBeInTheDocument();
 
@@ -1129,11 +1157,13 @@ describe('CanvasView shortcuts (F2, Ctrl+Shift+L/H) y punto dirty', () => {
 
   async function renderReadyWithRect() {
     const doc = makeDoc('doc-kbd', 'Kbd');
-    doc.layers.push(createLayer('rect', {
-      id: 'r1',
-      name: 'Caja',
-      cssVars: { '--translate-x': '10mm' },
-    }));
+    doc.layers.push(
+      createLayer('rect', {
+        id: 'r1',
+        name: 'Caja',
+        cssVars: { '--translate-x': '10mm' },
+      }),
+    );
     vi.mocked(api.canvasBootstrap).mockResolvedValue({
       documents: [{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt! }],
       document: doc,

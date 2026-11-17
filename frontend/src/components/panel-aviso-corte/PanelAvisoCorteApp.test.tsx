@@ -24,9 +24,7 @@ vi.mock('./components/LogoPicker', () => ({
   default: () => <div data-testid="logo-picker" />,
 }));
 vi.mock('./components/ImageUploader', () => ({
-  default: ({ onClear }: { onClear: () => void }) => (
-    <button data-testid="clear-images" onClick={onClear} />
-  ),
+  default: ({ onClear }: { onClear: () => void }) => <button data-testid="clear-images" onClick={onClear} />,
 }));
 vi.mock('./components/ExcelImporter', () => ({
   default: () => <div data-testid="excel-importer" />,
@@ -47,9 +45,7 @@ vi.mock('./components/ExportBar', () => ({
   default: () => <div data-testid="export-bar" />,
 }));
 vi.mock('../ui/ThemedSelect', () => ({
-  default: ({ 'aria-label': label }: { 'aria-label'?: string }) => (
-    <div aria-label={label} />
-  ),
+  default: ({ 'aria-label': label }: { 'aria-label'?: string }) => <div aria-label={label} />,
 }));
 
 vi.mock('./hooks/usePanelSession', () => ({
@@ -135,7 +131,9 @@ describe('PanelAvisoCorteApp', () => {
     render(<PanelAvisoCorteApp />);
     fireEvent.click(screen.getByLabelText('Exportar documento'));
     await waitFor(() =>
-      expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ message: MSG_CUADRANTE_REQUIRED, type: 'error' })),
+      expect(addToast).toHaveBeenCalledWith(
+        expect.objectContaining({ message: MSG_CUADRANTE_REQUIRED, type: 'error' }),
+      ),
     );
     expect(exportPanelDocument).not.toHaveBeenCalled();
   });
@@ -150,9 +148,7 @@ describe('PanelAvisoCorteApp', () => {
     render(<PanelAvisoCorteApp />);
     fireEvent.click(screen.getByLabelText('Exportar documento'));
     await waitFor(() => expect(exportPanelDocument).toHaveBeenCalledTimes(1));
-    await waitFor(() =>
-      expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' })),
-    );
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' })));
     expect(saveFeatureHistory).toHaveBeenCalledWith(
       'panel_aviso_corte',
       'panel.pdf',

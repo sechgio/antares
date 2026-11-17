@@ -55,9 +55,27 @@ if (typeof globalThis.ResizeObserver !== 'function') {
       this.callback = callback;
     }
     observe(target: Element) {
-      const rect = target.getBoundingClientRect?.() ?? { width: 800, height: 600, top: 0, left: 0, bottom: 600, right: 800, x: 0, y: 0, toJSON: () => ({}) };
+      const rect = target.getBoundingClientRect?.() ?? {
+        width: 800,
+        height: 600,
+        top: 0,
+        left: 0,
+        bottom: 600,
+        right: 800,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      };
       this.callback(
-        [{ target, contentRect: rect, borderBoxSize: [], contentBoxSize: [], devicePixelContentBoxSize: [] } as ResizeObserverEntry],
+        [
+          {
+            target,
+            contentRect: rect,
+            borderBoxSize: [],
+            contentBoxSize: [],
+            devicePixelContentBoxSize: [],
+          } as ResizeObserverEntry,
+        ],
         this as unknown as ResizeObserver,
       );
     }
@@ -147,35 +165,48 @@ if (typeof window !== 'undefined') {
 }
 
 const defaultTheme = {
-  name: 'Precision Linear', bg: '#0A0D12', bg_secondary: '#111522',
-  fg: '#FFFFFF', fg_muted: '#7C8494', accent: '#5E6AD2',
-  accent_light: '#8B93FF', accent_hover: '#4D57BE',
-  accent_dark: '#343B8F', border: '#27304E', blue_hover: '#22C7A9',
-  error: '#EB001B', warning: '#F79E1B', success: '#76b900', orange: '#8B93FF',
+  name: 'Precision Linear',
+  bg: '#0A0D12',
+  bg_secondary: '#111522',
+  fg: '#FFFFFF',
+  fg_muted: '#7C8494',
+  accent: '#5E6AD2',
+  accent_light: '#8B93FF',
+  accent_hover: '#4D57BE',
+  accent_dark: '#343B8F',
+  border: '#27304E',
+  blue_hover: '#22C7A9',
+  error: '#EB001B',
+  warning: '#F79E1B',
+  success: '#76b900',
+  orange: '#8B93FF',
 };
 
 if (typeof window !== 'undefined') {
   Object.defineProperty(window, 'electronAPI', {
-  value: {
-    invoke: async (method: string, _params?: Record<string, unknown>) => {
-      if (method === 'version') return { version: '0.10.6' };
-      if (method === 'formats') return { formats: ['JPEG', 'PNG', 'WEBP'] };
-      if (method === 'formatos_list') return { formats: [] };
-      if (method === 'db_fields') return { fields: [{ name: 'codigo', type: 'string', required: true, unique: false }] };
-      if (method === 'theme_get') return defaultTheme;
-      if (method === 'theme_presets') return { presets: ['Precision Linear'] };
-      if (method === 'history_list') return { runs: [] };
-      if (method === 'technical_reports_list') return { reports: [] };
-      if (method === 'templates_list') return { templates: [] };
-      throw new Error(`IPC method not allowed: ${method} (test stub — añade el método al stub si el test lo necesita)`);
+    value: {
+      invoke: async (method: string, _params?: Record<string, unknown>) => {
+        if (method === 'version') return { version: '0.10.6' };
+        if (method === 'formats') return { formats: ['JPEG', 'PNG', 'WEBP'] };
+        if (method === 'formatos_list') return { formats: [] };
+        if (method === 'db_fields')
+          return { fields: [{ name: 'codigo', type: 'string', required: true, unique: false }] };
+        if (method === 'theme_get') return defaultTheme;
+        if (method === 'theme_presets') return { presets: ['Precision Linear'] };
+        if (method === 'history_list') return { runs: [] };
+        if (method === 'technical_reports_list') return { reports: [] };
+        if (method === 'templates_list') return { templates: [] };
+        throw new Error(
+          `IPC method not allowed: ${method} (test stub — añade el método al stub si el test lo necesita)`,
+        );
+      },
+      onNotify: () => () => {},
+      minimizeWindow: async () => ({}),
+      maximizeWindow: async () => ({}),
+      closeWindow: async () => ({}),
     },
-    onNotify: () => () => {},
-    minimizeWindow: async () => ({}),
-    maximizeWindow: async () => ({}),
-    closeWindow: async () => ({}),
-  },
-  writable: true,
-});
+    writable: true,
+  });
 }
 
 Object.defineProperty(import.meta, 'env', {

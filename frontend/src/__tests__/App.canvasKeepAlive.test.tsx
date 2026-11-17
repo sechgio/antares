@@ -7,7 +7,9 @@ import { registerCanvasFlushOwner } from '../utils/ackCanvasFlush';
 const { mockSupabase } = vi.hoisted(() => {
   const empty = { data: [] as unknown[], error: null };
   const queryResult = vi.fn(async () => empty);
-  const returnThis = function (this: unknown) { return this; };
+  const returnThis = function (this: unknown) {
+    return this;
+  };
   const chain = {
     select: vi.fn(returnThis),
     insert: vi.fn(returnThis),
@@ -114,9 +116,12 @@ describe('App Canvas keep-alive', () => {
     expect(await screen.findByTestId('canvas-keep-alive', {}, { timeout: 15000 })).toBeInTheDocument();
 
     fireEvent.click(await findSidebarTab('Conversión'));
-    await waitFor(() => {
-      expect(screen.getByText(/Arrastra imágenes o videos aquí/i)).toBeInTheDocument();
-    }, { timeout: 8000 });
+    await waitFor(
+      () => {
+        expect(screen.getByText(/Arrastra imágenes o videos aquí/i)).toBeInTheDocument();
+      },
+      { timeout: 8000 },
+    );
 
     expect(screen.getByTestId('canvas-keep-alive')).toBeInTheDocument();
 

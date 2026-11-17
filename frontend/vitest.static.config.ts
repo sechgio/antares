@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from 'vitest/config';
 
 const STATIC_CSS_TESTS = [
   'src/__tests__/responsive-surfaces.test.ts',
@@ -9,7 +9,7 @@ const STATIC_CSS_TESTS = [
   'src/components/padron/vpad-styles.test.ts',
   'src/__tests__/perfHarnessPage.test.ts',
   'src/components/canvas/__tests__/guides.test.ts',
-]
+];
 
 export default defineConfig({
   test: {
@@ -19,6 +19,6 @@ export default defineConfig({
     fileParallelism: false,
     maxWorkers: 1,
   },
-})
+});
 
-export { STATIC_CSS_TESTS }
+export { STATIC_CSS_TESTS };
