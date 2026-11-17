@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../hooks/useToast';
 import { api } from '../../api';
 import PreviewPanelView from './PreviewPanelView';
@@ -90,6 +90,15 @@ describe('PreviewPanelView column mapping', () => {
       fileStagedComplete: vi.fn(),
       onNotify: vi.fn(() => () => undefined),
     };
+  });
+
+  afterEach(async () => {
+    // Vacia el parseo en vuelo del archivo anterior antes del mockReset
+    // del test siguiente: una continuación tardía se comería el
+    // mockResolvedValueOnce y el load real devolvería undefined.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
   });
 
   it('keeps the mapping list scroll position after deleting a custom column', () => {
