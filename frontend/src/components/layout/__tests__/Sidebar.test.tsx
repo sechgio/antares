@@ -6,7 +6,7 @@ import { ToastProvider } from '../../../hooks/useToast';
 
 const STORAGE_KEY = 'antares_sidebar_expanded';
 const mockSignOut = vi.fn(async () => {});
-const TEST_USER = { id: 'u1', email: 'user@test.com', displayName: 'Test User', isAdmin: false, isDisabled: false, createdAt: '' };
+const TEST_USER = { id: 'u1', email: 'user@test.com', displayName: 'Test User', isAdmin: false, createdAt: '' };
 let mockUser: typeof TEST_USER | null = TEST_USER;
 
 vi.mock('../../../auth/AuthContext', () => ({
