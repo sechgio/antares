@@ -1,40 +1,38 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import { visualizer } from 'rollup-plugin-visualizer'
-import path from 'node:path'
-import budgets from '../shared/budgets.json'
-import { STATIC_CSS_TESTS } from './vitest.static.config.ts'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { visualizer } from 'rollup-plugin-visualizer';
+import path from 'node:path';
+import budgets from '../shared/budgets.json';
+import { STATIC_CSS_TESTS } from './vitest.static.config.ts';
+import DurationSequencer from './vitest.sequencer.ts';
 
-const sharedHtmlSanitizerPath = path.resolve(import.meta.dirname, '../shared/html-sanitizer.js')
+const sharedHtmlSanitizerPath = path.resolve(import.meta.dirname, '../shared/html-sanitizer.js');
 
 const sharedHtmlSanitizerPlugin = {
   name: 'shared-html-sanitizer',
   enforce: 'pre' as const,
   transform(code: string, id: string) {
-    if (path.normalize(id.split('?')[0]) !== path.normalize(sharedHtmlSanitizerPath)) return null
+    if (path.normalize(id.split('?')[0]) !== path.normalize(sharedHtmlSanitizerPath)) return null;
 
-    const match = code.match(/module\.exports\s*=\s*\{([\s\S]*?)\}\s*;/)
+    const match = code.match(/module\.exports\s*=\s*\{([\s\S]*?)\}\s*;/);
     if (!match) {
-      return `${code}\nexport { sanitizeHtmlForPdf, sanitizeHtmlForPreview, sanitizeHtmlForCanvasPreview, CSP_META, PREVIEW_CSP_META, CANVAS_PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };\n`
+      return `${code}\nexport { sanitizeHtmlForPdf, sanitizeHtmlForPreview, sanitizeHtmlForCanvasPreview, CSP_META, PREVIEW_CSP_META, CANVAS_PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };\n`;
     }
-    const raw = match[1]
+    const raw = match[1];
     const keys = raw
       .split(',')
       .map((part) => part.split(':')[0].trim().split(/\s+/)[0].trim())
       .map((k) => k.replace(/^['"]|['"]$/g, ''))
-      .filter(Boolean)
+      .filter(Boolean);
     if (keys.length === 0) {
       return code.replace(
         /module\.exports\s*=\s*\{[\s\S]*?\}\s*;/,
         'export { sanitizeHtmlForPdf, sanitizeHtmlForPreview, sanitizeHtmlForCanvasPreview, CSP_META, PREVIEW_CSP_META, CANVAS_PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };',
-      )
+      );
     }
-    return code.replace(
-      /module\.exports\s*=\s*\{[\s\S]*?\}\s*;/,
-      `export { ${keys.join(', ')} };`,
-    )
+    return code.replace(/module\.exports\s*=\s*\{[\s\S]*?\}\s*;/, `export { ${keys.join(', ')} };`);
   },
-}
+};
 
 export default defineConfig(({ mode }) => ({
   plugins: [
@@ -76,40 +74,37 @@ export default defineConfig(({ mode }) => ({
       output: {
         onlyExplicitManualChunks: false,
         manualChunks(id) {
-          if (id.includes('\0vite/preload-helper')) return 'vite-preload'
-          const n = id.replace(/\\/g, '/')
-          if (n.includes('/node_modules/framer-motion/')) return 'vendor-framer'
-          if (n.includes('/node_modules/lucide-react/')) return 'vendor-icons'
-          if (
-            n.includes('/node_modules/react-dom/') ||
-            n.includes('/node_modules/scheduler/')
-          ) {
-            return 'vendor-react'
+          if (id.includes('\0vite/preload-helper')) return 'vite-preload';
+          const n = id.replace(/\\/g, '/');
+          if (n.includes('/node_modules/framer-motion/')) return 'vendor-framer';
+          if (n.includes('/node_modules/lucide-react/')) return 'vendor-icons';
+          if (n.includes('/node_modules/react-dom/') || n.includes('/node_modules/scheduler/')) {
+            return 'vendor-react';
           }
-          if (n.includes('/node_modules/react/')) return 'vendor-react'
+          if (n.includes('/node_modules/react/')) return 'vendor-react';
           if (n.includes('/node_modules/jspdf/') || n.includes('/node_modules/jspdf-')) {
-            return 'vendor-jspdf'
+            return 'vendor-jspdf';
           }
-          if (n.includes('/node_modules/html-to-image/')) return 'vendor-html-to-image'
-          if (n.includes('/node_modules/pdfjs-dist/')) return 'vendor-pdfjs'
+          if (n.includes('/node_modules/html-to-image/')) return 'vendor-html-to-image';
+          if (n.includes('/node_modules/pdfjs-dist/')) return 'vendor-pdfjs';
           if (n.includes('/node_modules/i18next/') || n.includes('/node_modules/react-i18next/')) {
-            return 'vendor-i18n'
+            return 'vendor-i18n';
           }
-          if (n.includes('/node_modules/web-vitals/')) return 'vendor-web-vitals'
-          if (n.includes('/node_modules/@fullcalendar/')) return 'vendor-fullcalendar'
-          if (n.includes('/node_modules/@supabase/')) return 'vendor-supabase'
-          if (n.includes('/node_modules/@dnd-kit/')) return 'vendor-dnd'
-          return undefined
+          if (n.includes('/node_modules/web-vitals/')) return 'vendor-web-vitals';
+          if (n.includes('/node_modules/@fullcalendar/')) return 'vendor-fullcalendar';
+          if (n.includes('/node_modules/@supabase/')) return 'vendor-supabase';
+          if (n.includes('/node_modules/@dnd-kit/')) return 'vendor-dnd';
+          return undefined;
         },
         assetFileNames: (assetInfo) => {
-          const info = assetInfo.name || ''
+          const info = assetInfo.name || '';
           if (/\.(png|jpe?g|gif|svg|webp|ico)$/i.test(info)) {
-            return 'assets/images/[name]-[hash][extname]'
+            return 'assets/images/[name]-[hash][extname]';
           }
           if (/\.css$/i.test(info)) {
-            return 'assets/css/[name]-[hash][extname]'
+            return 'assets/css/[name]-[hash][extname]';
           }
-          return 'assets/[name]-[hash][extname]'
+          return 'assets/[name]-[hash][extname]';
         },
         chunkFileNames: 'assets/js/[name]-[hash].js',
         entryFileNames: 'assets/js/[name]-[hash].js',
@@ -121,8 +116,8 @@ export default defineConfig(({ mode }) => ({
     assetsInlineLimit: 4096,
     modulePreload: {
       resolveDependencies(_filename, deps) {
-        const forbidden = budgets.shellPreload?.forbiddenShell ?? []
-        return deps.filter((dep) => !forbidden.some((name) => dep.includes(name)))
+        const forbidden = budgets.shellPreload?.forbiddenShell ?? [];
+        return deps.filter((dep) => !forbidden.some((name) => dep.includes(name)));
       },
     },
   },
@@ -131,27 +126,25 @@ export default defineConfig(({ mode }) => ({
     legalComments: 'none',
   },
   optimizeDeps: {
-    include: [
-      'react',
-      'react-dom',
-      'lucide-react',
-      'i18next',
-      'react-i18next',
-    ],
+    include: ['react', 'react-dom', 'lucide-react', 'i18next', 'react-i18next'],
     exclude: ['pdfjs-dist'],
   },
   test: {
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
+    isolate: false,
     pool: 'threads',
-    fileParallelism: true,
-    maxWorkers: 4,
-    exclude: [
-      '**/node_modules/**',
-      '**/dist/**',
-      ...STATIC_CSS_TESTS,
-    ],
+    fileParallelism: false,
+    mockReset: true,
+    sequence: {
+      sequencer: DurationSequencer,
+      shuffle: {
+        files: true,
+        tests: true,
+      },
+    },
+    exclude: ['**/node_modules/**', '**/dist/**', ...STATIC_CSS_TESTS],
     coverage: {
       provider: 'v8',
       reportsDirectory: './coverage',
@@ -164,4 +157,4 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
-}))
+}));

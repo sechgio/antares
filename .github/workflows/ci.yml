@@ -16,8 +16,152 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.event_name != 'merge_group' }}
 
 jobs:
-  frontend:
-    name: Frontend tests (Windows, shard 1/2)
+  changes:
+    name: Compute affected jobs (Windows)
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-2vcpu-windows-2025' || 'windows-latest' }}
+    timeout-minutes: 5
+    outputs:
+      typecheck: ${{ steps.affected.outputs.typecheck }}
+      build: ${{ steps.affected.outputs.build }}
+      contracts: ${{ steps.affected.outputs.contracts }}
+      electron: ${{ steps.affected.outputs.electron }}
+      frontend: ${{ steps.affected.outputs.frontend }}
+      backend: ${{ steps.affected.outputs.backend }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          filter: blob:none
+          fetch-depth: 0
+
+      - name: Setup Node for the classifier
+        uses: ./.github/actions/setup-ci
+        with:
+          python: 'false'
+          root: 'false'
+          frontend: 'false'
+
+      - name: Select affected jobs
+        id: affected
+        run: node scripts/ci-affected.js
+
+  lint:
+    name: Lint, format, and audits (Windows)
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Preserve LF line endings on checkout
+        run: git config --global core.autocrlf false
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          filter: blob:none
+          fetch-depth: 0
+        timeout-minutes: 2
+
+      - name: Setup lint toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          frontend: 'false'
+        timeout-minutes: 3
+
+      - name: Run oxlint and ruff
+        run: >-
+          node scripts/with-budget.js 60 -- bun run lint &&
+          node scripts/with-budget.js 30 -- bun run format:check
+
+      - name: Run guards and dependency audits
+        shell: bash
+        run: >-
+          node scripts/with-budget.js 60 -- bun run check:any &&
+          node scripts/with-budget.js 30 -- bun run check:ratchet &&
+          node scripts/with-budget.js 90 -- bun run audit:python &&
+          node scripts/with-budget.js 60 -- bun run audit:node
+
+  typecheck:
+    name: Typecheck (Windows)
+    needs: changes
+    if: needs.changes.outputs.typecheck == 'true'
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          filter: blob:none
+        timeout-minutes: 2
+
+      - name: Setup typecheck toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          node: 'false'
+          root: 'false'
+        timeout-minutes: 3
+
+      - name: Typecheck frontend (bun check)
+        run: node scripts/with-budget.js 60 -- bun run typecheck:frontend
+
+      - name: Typecheck backend (mypy)
+        run: node scripts/with-budget.js 90 -- bun run typecheck:backend
+
+  build:
+    name: Frontend build and budgets (Windows)
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          filter: blob:none
+        timeout-minutes: 2
+
+      - name: Setup build toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          python: 'false'
+          root: 'false'
+        timeout-minutes: 3
+
+      - name: Build frontend and check budgets
+        run: node scripts/with-budget.js 120 -- bun run build:frontend
+
+  contracts:
+    name: Contracts and prompt budgets (Windows)
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          filter: blob:none
+        timeout-minutes: 2
+
+      - name: Setup contract toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          frontend: 'false'
+        timeout-minutes: 3
+
+      - name: Run contract suites and prompt budget
+        shell: bash
+        run: >-
+          node scripts/with-budget.js 90 -- node scripts/run-test-suites.js contracts &&
+          node scripts/with-budget.js 30 -- node scripts/check-budgets.js --agent-prompt-only
+
+  electron:
+    name: Electron and runtime tests (Windows)
+    needs: changes
+    if: needs.changes.outputs.electron == 'true'
     runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
     timeout-minutes: 15
     steps:
@@ -26,18 +170,48 @@ jobs:
         with:
           persist-credentials: false
           filter: blob:none
+        timeout-minutes: 2
+
+      - name: Setup Electron test toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          frontend: 'false'
+        timeout-minutes: 3
+
+      - name: Run Electron and turns suites
+        shell: bash
+        run: >-
+          node scripts/with-budget.js 200 -- node scripts/run-test-suites.js electron &&
+          node scripts/with-budget.js 60 -- node scripts/run-test-suites.js turns
+
+  frontend:
+    name: Frontend tests (Windows, shard 1/3)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          filter: blob:none
+        timeout-minutes: 2
 
       - name: Setup frontend toolchain
         uses: ./.github/actions/setup-ci
         with:
           python: 'false'
           root: 'false'
+        timeout-minutes: 3
 
-      - name: Run frontend tests (shard 1 of 2)
-        run: node scripts/run-test-suites.js frontend 1/2
+      - name: Run frontend tests (shard 1 of 3)
+        run: node scripts/with-budget.js 60 -- node scripts/run-test-suites.js frontend 1/3
 
   frontend-shard-2:
-    name: Frontend tests (Windows, shard 2/2)
+    name: Frontend tests (Windows, shard 2/3)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
     timeout-minutes: 15
     steps:
@@ -46,18 +220,47 @@ jobs:
         with:
           persist-credentials: false
           filter: blob:none
+        timeout-minutes: 2
 
       - name: Setup frontend toolchain
         uses: ./.github/actions/setup-ci
         with:
           python: 'false'
           root: 'false'
+        timeout-minutes: 3
 
-      - name: Run frontend tests (shard 2 of 2)
-        run: node scripts/run-test-suites.js frontend 2/2
+      - name: Run frontend tests (shard 2 of 3)
+        run: node scripts/with-budget.js 60 -- node scripts/run-test-suites.js frontend 2/3
+
+  frontend-shard-3:
+    name: Frontend tests (Windows, shard 3/3)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          filter: blob:none
+        timeout-minutes: 2
+
+      - name: Setup frontend toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          node: 'false'
+          python: 'false'
+          root: 'false'
+        timeout-minutes: 3
+
+      - name: Run frontend tests (shard 3 of 3)
+        run: node scripts/with-budget.js 60 -- node scripts/run-test-suites.js frontend 3/3
 
   backend:
     name: Backend tests (Windows)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
     timeout-minutes: 25
     steps:
@@ -66,12 +269,14 @@ jobs:
         with:
           persist-credentials: false
           filter: blob:none
+        timeout-minutes: 2
 
       - name: Setup backend toolchain
         uses: ./.github/actions/setup-ci
         with:
           root: 'false'
           frontend: 'false'
+        timeout-minutes: 3
 
       - name: Identify runner image
         id: runner-image
@@ -104,52 +309,56 @@ jobs:
         run: ./scripts/install-ci-editor-media.ps1
 
       - name: Run backend tests
-        run: node scripts/run-test-suites.js backend
+        run: node scripts/with-budget.js 300 -- node scripts/run-test-suites.js backend
 
       - name: Run slow stress and scalability tests (excluded from the default gate)
-        run: uv run --project . --locked --extra dev pytest tests/test_stress_conversion.py tests/test_scalability_baseline.py -m slow -q
-
-  quality:
-    name: Quality and build (Windows)
-    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
-    timeout-minutes: 15
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-          filter: blob:none
-
-      - name: Setup CI toolchain
-        uses: ./.github/actions/setup-ci
-
-      - name: Run quality checks
-        shell: bash
-        run: >-
-          bun run lint:python && bun run typecheck:backend &&
-          bun run check:any && bun run check:ratchet &&
-          bun run audit:python && bun run audit:node &&
-          node scripts/run-test-suites.js contracts && node scripts/run-test-suites.js electron &&
-          node scripts/run-test-suites.js turns
-
-      - name: Build frontend and check budgets
-        run: bun run build:frontend
+        run: node scripts/with-budget.js 300 -- uv run --project . --locked --extra dev pytest tests/test_stress_conversion.py tests/test_scalability_baseline.py -m slow -q
 
   verify:
     name: Lint, audit, and test (Windows)
-    needs: [frontend, frontend-shard-2, backend, quality]
+    needs: [changes, lint, typecheck, build, contracts, electron, frontend, frontend-shard-2, frontend-shard-3, backend]
     if: always()
     runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-2vcpu-windows-2025' || 'windows-latest' }}
     timeout-minutes: 5
     steps:
-      - name: Require every job to succeed
+      - name: Require selected jobs to succeed
         shell: pwsh
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          TYPECHECK_RESULT: ${{ needs.typecheck.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          CONTRACTS_RESULT: ${{ needs.contracts.result }}
+          ELECTRON_RESULT: ${{ needs.electron.result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           FRONTEND_SHARD_2_RESULT: ${{ needs.frontend-shard-2.result }}
+          FRONTEND_SHARD_3_RESULT: ${{ needs.frontend-shard-3.result }}
           BACKEND_RESULT: ${{ needs.backend.result }}
-          QUALITY_RESULT: ${{ needs.quality.result }}
+          GATE_TYPECHECK: ${{ needs.changes.outputs.typecheck }}
+          GATE_BUILD: ${{ needs.changes.outputs.build }}
+          GATE_CONTRACTS: ${{ needs.changes.outputs.contracts }}
+          GATE_ELECTRON: ${{ needs.changes.outputs.electron }}
+          GATE_FRONTEND: ${{ needs.changes.outputs.frontend }}
+          GATE_BACKEND: ${{ needs.changes.outputs.backend }}
         run: |
-          foreach ($result in @($env:FRONTEND_RESULT, $env:FRONTEND_SHARD_2_RESULT, $env:BACKEND_RESULT, $env:QUALITY_RESULT)) {
-            if ($result -ne 'success') { throw "Required CI job ended with: $result" }
+          if ($env:CHANGES_RESULT -ne 'success') { throw "changes job ended with: $env:CHANGES_RESULT" }
+          if ($env:LINT_RESULT -ne 'success') { throw "lint job ended with: $env:LINT_RESULT" }
+          $selected = [ordered]@{
+            typecheck = @($env:GATE_TYPECHECK, $env:TYPECHECK_RESULT)
+            build = @($env:GATE_BUILD, $env:BUILD_RESULT)
+            contracts = @($env:GATE_CONTRACTS, $env:CONTRACTS_RESULT)
+            electron = @($env:GATE_ELECTRON, $env:ELECTRON_RESULT)
+            'frontend shard 1' = @($env:GATE_FRONTEND, $env:FRONTEND_RESULT)
+            'frontend shard 2' = @($env:GATE_FRONTEND, $env:FRONTEND_SHARD_2_RESULT)
+            'frontend shard 3' = @($env:GATE_FRONTEND, $env:FRONTEND_SHARD_3_RESULT)
+            backend = @($env:GATE_BACKEND, $env:BACKEND_RESULT)
+          }
+          foreach ($name in $selected.Keys) {
+            $gate, $result = $selected[$name]
+            if ($gate -eq 'true' -and $result -ne 'success') {
+              throw "Selected job '$name' ended with: $result"
+            }
+            if ($gate -ne 'true' -and $result -ne 'success' -and $result -ne 'skipped') {
+              throw "Unselected job '$name' ended with: $result"
+            }
           }

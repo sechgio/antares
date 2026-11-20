@@ -1,0 +1,20 @@
+{
+  "printWidth": 120,
+  "tabWidth": 2,
+  "useTabs": false,
+  "semi": true,
+  "singleQuote": true,
+  "trailingComma": "all",
+  "ignorePatterns": [
+    "dist/**",
+    "dist-electron/**",
+    "frontend/dist/**",
+    "frontend/coverage/**",
+    "node_modules/**",
+    "frontend/node_modules/**",
+    ".venv/**",
+    "scratch/**",
+    "bun.lock",
+    "frontend/bun.lock"
+  ]
+}

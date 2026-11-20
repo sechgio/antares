@@ -2,11 +2,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const addToast = vi.fn();
-const confirm = vi.fn().mockResolvedValue(true);
+const confirm = vi.fn(async () => true);
 const sessionState: Record<string, unknown> = {};
 
-const exportEvidenciaDocument = vi.fn().mockResolvedValue({ filename: 'out.pdf' });
-const saveFeatureHistory = vi.fn().mockResolvedValue(undefined);
+const exportEvidenciaDocument = vi.fn(async () => ({ filename: 'out.pdf' }));
+const saveFeatureHistory = vi.fn(async () => undefined);
 
 vi.mock('../../hooks/useToast', () => ({ useToast: () => ({ addToast }) }));
 vi.mock('../../hooks/useDialog', () => ({ useDialog: () => ({ confirm }) }));
@@ -27,9 +27,7 @@ vi.mock('./components/CuadranteRangesEditor', () => ({
   default: () => <div data-testid="ranges-editor" />,
 }));
 vi.mock('./components/ImageUploader', () => ({
-  default: ({ onClear }: { onClear: () => void }) => (
-    <button data-testid="clear-images" onClick={onClear} />
-  ),
+  default: ({ onClear }: { onClear: () => void }) => <button data-testid="clear-images" onClick={onClear} />,
 }));
 vi.mock('./components/SheetPreview', () => ({
   default: () => <div data-testid="sheet-preview" />,
@@ -120,9 +118,7 @@ describe('EvidenciaVolanteoApp', () => {
     render(<EvidenciaVolanteoApp />);
     fireEvent.click(screen.getByText('Exportar documento'));
     await waitFor(() => expect(exportEvidenciaDocument).toHaveBeenCalledTimes(1));
-    await waitFor(() =>
-      expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' })),
-    );
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' })));
     expect(saveFeatureHistory).toHaveBeenCalledWith(
       'evidencia_volanteo',
       'out.pdf',

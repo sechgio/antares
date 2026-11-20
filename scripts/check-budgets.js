@@ -52,13 +52,15 @@ function distMatchesSources() {
   return SOURCE_ROOTS.every((src) => newestMtimeMs(src) <= builtAt);
 }
 
-if (!distMatchesSources()) {
-  console.log('frontend/dist está ausente o más viejo que sus fuentes — construyendo para medir...');
-  sh('bun run build:frontend');
-}
+if (!process.argv.includes('--agent-prompt-only')) {
+  if (!distMatchesSources()) {
+    console.log('frontend/dist está ausente o más viejo que sus fuentes — construyendo para medir...');
+    sh('bun run build:frontend');
+  }
 
-sh('node frontend/scripts/canvas-appear-budget.mjs');
-sh('node frontend/scripts/shell-preload-budget.mjs');
+  sh('node frontend/scripts/canvas-appear-budget.mjs');
+  sh('node frontend/scripts/shell-preload-budget.mjs');
+}
 
 // Techo de tokens del prompt base del agente (sistema + herramientas por defecto +
 // avisos fijos) definido en shared/budgets.json. Las herramientas del backend llegan

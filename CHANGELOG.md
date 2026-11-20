@@ -26,6 +26,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - Instalación y scripts migran de npm a Bun 1.4.4 (`bun.lock` y `frontend/bun.lock` reemplazan a `package-lock.json`): usa `bun install --frozen-lockfile` y `bun run <script>`. CI cachea `node_modules`, `.venv` y las DLL de Pango directamente.
+- CI separa la calidad en cinco jobs paralelos (lint, typecheck, build, contracts y Electron), añade oxlint para JS/TS y oxfmt para los archivos nuevos, y revisa tipos del frontend con `bun check` (TypeScript 7 como alternativa en `typecheck:frontend:tsc`), incluido `tsconfig.node.json`.
 - La suite Node de CI (Electron) corre en un grupo acotado de 4 workers en paralelo (override operativo con `ANTARES_NODE_TEST_CONCURRENCY`), con salida prefijada por archivo y fallo agregado, y `setup-ci` restaura las cachés de Electron y electron-builder antes de `npm ci`: el CI de un PR baja de ~6-9 a ~4-5 minutos sin cambiar qué suites se ejecutan.
 - El recorte mecánico de contexto de Agent repite su corte anterior mientras la petición quepa, y los avisos de pasos y de plan ya enviados se reponen en las peticiones siguientes: el prefijo enviado deja de cambiar en cada paso y el proveedor reutiliza la caché.
 - Agent trabaja con un tope de 500 000 tokens de contexto aunque el modelo admita más, y compacta al 80 % de esa ventana en lugar de apurar hasta el margen de respuesta.
