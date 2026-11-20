@@ -77,6 +77,7 @@ antares/
 
 - **Sistema Operativo**: Windows 10 / Windows 11 (64-bit)
 - **Node.js**: `v18.0.0` o superior
+- **Bun**: `v1.4.4` (gestor de paquetes y scripts; `bun.lock` es el lockfile)
 - **Python**: `3.11` o superior (con `pip` habilitado)
 
 ---
@@ -117,8 +118,8 @@ git clone <URL_DEL_REPOSITORIO>
 cd antares
 
 # Instalar dependencias del proyecto y frontend
-npm install
-cd frontend && npm install && cd ..
+bun install --frozen-lockfile
+bun install --frozen-lockfile --cwd frontend
 
 # Instalar uv y sincronizar el entorno Python bloqueado
 python -m pip install uv==0.11.19
@@ -129,31 +130,31 @@ uv sync --locked --extra dev --extra build
 
 ```bash
 # Modo dev: Vite (:5173) + Electron + backend Python (sin instalador, hot reload)
-npm run dev
+bun run dev
 
 # Preview empaquetado sin instalador (win-unpacked; build completo, más lento)
-npm run preview:unpacked
+bun run preview:unpacked
 ```
-`npm run dev` no genera instalador ni `win-unpacked`: abre Electron contra Vite en desarrollo.
+`bun run dev` no genera instalador ni `win-unpacked`: abre Electron contra Vite en desarrollo.
 
 ### 3. Verificación y Calidad de Código
 
 ```bash
 # Ejecutar suite de pruebas completa (Pytest + Node / Vitest)
-npm test
+bun run test
 
 # Verificación de tipos en Frontend
-npm run typecheck:frontend
+bun run typecheck:frontend
 
 # Linter de Python (Ruff)
-npm run lint:python
+bun run lint:python
 ```
 
 ### 4. Compilación para Producción
 
 ```bash
 # Compilar binarios y empaquetar instalador para Windows
-npm run build:win
+bun run build:win
 ```
 
 ---

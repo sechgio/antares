@@ -64,7 +64,11 @@ function effectiveBodyLength(body) {
     .filter((line) => {
       const t = line.trim();
       return (
-        t.length > 0 && !/^#{1,6}\s/.test(t) && !/^- \[[ xX]\]/.test(t) && !/^([-*_]\s*){3,}$/.test(t) && !/^>/.test(t)
+        t.length > 0 &&
+        !/^#{1,6}\s/.test(t) &&
+        !/^- \[[ xX]\]/.test(t) &&
+        !/^([-*_]\s*){3,}$/.test(t) &&
+        !/^>/.test(t)
       );
     })
     .join('')
@@ -73,7 +77,9 @@ function effectiveBodyLength(body) {
 
 function isBot(user) {
   if (!user) return false;
-  return Boolean(user.is_bot || user.type === 'Bot' || /\[bot\]$/i.test(String(user.login || '')));
+  return Boolean(
+    user.is_bot || user.type === 'Bot' || /\[bot\]$/i.test(String(user.login || '')),
+  );
 }
 
 function hasThirdPartyApproval(pr) {
@@ -175,9 +181,7 @@ function evaluatePolicy(pr, meta = {}) {
       'intencion',
       'Intención declarada',
       'skip',
-      botAuthor
-        ? 'PR abierto por un bot: no se exige intención.'
-        : 'El diff solo toca archivos generados: no se exige intención.',
+      botAuthor ? 'PR abierto por un bot: no se exige intención.' : 'El diff solo toca archivos generados: no se exige intención.',
       true,
     );
   } else {
@@ -193,16 +197,20 @@ function evaluatePolicy(pr, meta = {}) {
   }
 
   const sizeDetail =
-    generatedLines > 0
-      ? `${effectiveLines} efectivas (${generatedLines} generadas excluidas)`
-      : `${effectiveLines} líneas`;
+    generatedLines > 0 ? `${effectiveLines} efectivas (${generatedLines} generadas excluidas)` : `${effectiveLines} líneas`;
   const size = classifySize(effectiveLines);
   const sizeUnknownReason =
     data.additions == null && data.deletions == null
       ? 'GitHub no devolvió el recuento de líneas (diff demasiado grande)'
       : `Listado de archivos incompleto (${files.length}/${changedFiles})`;
   if (sizeUnknown) {
-    add('tamano', 'Tamaño del PR', 'skip', `${sizeUnknownReason}: no se puede medir ni bloquear por tamaño.`, true);
+    add(
+      'tamano',
+      'Tamaño del PR',
+      'skip',
+      `${sizeUnknownReason}: no se puede medir ni bloquear por tamaño.`,
+      true,
+    );
   } else if (size === 'ok') {
     add('tamano', 'Tamaño del PR', 'pass', `${sizeDetail} en ${files.length} archivo(s)`, true);
   } else if (size === 'warn') {
@@ -260,13 +268,20 @@ function evaluatePolicy(pr, meta = {}) {
   );
 
   if (sizeUnknown) {
-    add('alcance', 'Alcance declarado', 'skip', `${sizeUnknownReason}: no se puede auditar el alcance.`);
+    add(
+      'alcance',
+      'Alcance declarado',
+      'skip',
+      `${sizeUnknownReason}: no se puede auditar el alcance.`,
+    );
   } else {
     gate(
       'alcance',
       'Alcance declarado',
       effectiveLines <= SIZE_WARN || sizeExempt || /cambio amplio/i.test(body),
-      effectiveLines <= SIZE_WARN ? 'Diff acotado' : 'Declarado con `cambio amplio:` o la etiqueta `size/exempt`',
+      effectiveLines <= SIZE_WARN
+        ? 'Diff acotado'
+        : 'Declarado con `cambio amplio:` o la etiqueta `size/exempt`',
       `${effectiveLines} líneas efectivas (>${SIZE_WARN}) sin \`cambio amplio:\` en el cuerpo ni etiqueta \`${EXEMPT_LABEL}\`. Declara la excepción del AGENTS.md o parte el PR.`,
     );
   }
@@ -279,7 +294,10 @@ function evaluatePolicy(pr, meta = {}) {
     'Sin aprobación de alguien que no sea el autor. Objetivo: 100% de PRs con revisor distinto.',
   );
 
-  const tax = taxonomyCompliance((data.reviews || []).concat(data.comments || []), data.author && data.author.login);
+  const tax = taxonomyCompliance(
+    (data.reviews || []).concat(data.comments || []),
+    data.author && data.author.login,
+  );
   if (!commentsComplete) {
     add(
       'taxonomia',
@@ -339,9 +357,7 @@ function renderReport(pr, result, extra = {}) {
     `Brutas: ${result.changedLines}${stats.generatedLines > 0 ? ` · generadas excluidas: ${stats.generatedLines}` : ''} · autor: @${(pr && pr.author && pr.author.login) || '?'}`,
   ];
   if (extra.headSha && pr) {
-    lines.push(
-      `Commit auditado: \`${String(extra.headSha).slice(0, 7)}\` · \`${pr.baseRefName || 'main'}\` ← \`${pr.headRefName || ''}\``,
-    );
+    lines.push(`Commit auditado: \`${String(extra.headSha).slice(0, 7)}\` · \`${pr.baseRefName || 'main'}\` ← \`${pr.headRefName || ''}\``);
   }
   lines.push(
     ...checkSection('Bloqueantes', blocked),
@@ -420,12 +436,7 @@ async function run() {
   if (args.json) {
     console.log(
       JSON.stringify(
-        {
-          repo,
-          pr: { number: pr.number, title: pr.title, url: pr.url, author: pr.author && pr.author.login },
-          ...result,
-          timingMs,
-        },
+        { repo, pr: { number: pr.number, title: pr.title, url: pr.url, author: pr.author && pr.author.login }, ...result, timingMs },
         null,
         2,
       ),

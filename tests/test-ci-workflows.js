@@ -328,6 +328,14 @@ function run() {
     'CI does not repeat the full suite alongside parallel suites',
   );
   assert(
+    runner.includes("run(bunCommand, ['run', 'test:all'], frontend)"),
+    'The unsharded frontend suite still runs every frontend test',
+  );
+  assert(
+    !/run: node scripts\/run-test-suites\.js\s*$/m.test(ci),
+    'CI does not repeat the full suite alongside parallel suites',
+  );
+  assert(
     job('verify').includes('name: Lint, audit, and test (Windows)') &&
       job('verify').includes('if: always()') &&
       job('verify').includes(
@@ -455,7 +463,7 @@ function run() {
 
   assert(packageJson.scripts.ci.includes('bun run audit:node'), 'shared CI gate includes Node dependency audits');
   assert(packageJson.scripts.ci.includes('bun run check:ratchet'), 'shared CI gate includes the quality ratchet');
-  assert(packageJson.scripts.ci.includes('bun test'), 'shared CI gate runs the full test suite');
+  assert(packageJson.scripts.ci.split(' && ').includes('bun run test'), 'shared CI gate runs the full test suite');
   assert(
     packageJson.scripts['typecheck:backend'].includes('uv run --project . --locked --extra dev mypy backend'),
     'backend typecheck uses the locked Python environment',
@@ -466,10 +474,7 @@ function run() {
   );
   assert(packageJson.scripts.test === 'node scripts/run-test-suites.js', 'full suite delegates to run-test-suites.js');
   assert(
-    runner.includes("'uv'") &&
-      runner.includes("'--locked'") &&
-      runner.includes("'pytest'") &&
-      runner.includes("'../tests'"),
+    runner.includes("run('uv', ['run', '--project', ROOT, '--locked', '--extra', 'dev', 'pytest', '../tests', '-v']"),
     'test runner runs pytest through the locked Python environment',
   );
   assert(

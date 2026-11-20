@@ -12,29 +12,12 @@ let home;
 
 function runSkills(name, profile, params = {}, catalog = []) {
   const root = path.resolve(import.meta.dirname, '../..');
-  return JSON.parse(
-    execFileSync(
-      'uv',
-      [
-        'run',
-        '--project',
-        root,
-        '--locked',
-        '--extra',
-        'dev',
-        'python',
-        path.join(root, 'tests/helpers/agent_skills_probe.py'),
-      ],
-      {
-        cwd: root,
-        encoding: 'utf8',
-        windowsHide: true,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, PYTHONPATH: root, PYTHONUTF8: '1' },
-        input: JSON.stringify({ root: home, name, params, catalog, profile_skills: [...profile.skills.values()] }),
-      },
-    ),
-  );
+  return JSON.parse(execFileSync('uv', ['run', '--project', root, '--locked', '--extra', 'dev',
+    'python', path.join(root, 'tests/helpers/agent_skills_probe.py')], {
+    cwd: root, encoding: 'utf8', windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, PYTHONPATH: root, PYTHONUTF8: '1' },
+    input: JSON.stringify({ root: home, name, params, catalog, profile_skills: [...profile.skills.values()] }),
+  }));
 }
 
 const listProfileSkills = (profile, params) => runSkills('skills_list', profile, params);
@@ -52,10 +35,7 @@ function skill(directory, name, body = 'Instrucciones cargables.') {
 }
 
 function profile(slug = 'reviewer', metadata = {}) {
-  write(
-    `${slug}/agent.json`,
-    JSON.stringify({ name: 'Revisor', slug, model: 'local-model', description: 'Revisa entregas', ...metadata }),
-  );
+  write(`${slug}/agent.json`, JSON.stringify({ name: 'Revisor', slug, model: 'local-model', description: 'Revisa entregas', ...metadata }));
   write(`${slug}/AGENTS.md`, 'Rol: revisar. Tono: claro. Límites: solo lectura.');
 }
 
@@ -75,12 +55,7 @@ describe('perfiles portables', () => {
     skill('reviewer/skills/review', 'review');
     skill('reviewer/skills/summary', 'summary');
     const loaded = loadAgentProfile('reviewer', 'Sistema base');
-    expect(loaded).toMatchObject({
-      name: 'Revisor',
-      slug: 'reviewer',
-      model: 'local-model',
-      description: 'Revisa entregas',
-    });
+    expect(loaded).toMatchObject({ name: 'Revisor', slug: 'reviewer', model: 'local-model', description: 'Revisa entregas' });
     expect(loaded.instructions).toBe('Sistema base\n\nRol: revisar. Tono: claro. Límites: solo lectura.');
     expect(listProfileSkills(loaded).skills.map((item) => item.name)).toEqual(['review', 'summary']);
     expect(listProfileSkills(loaded).skills[0]).not.toHaveProperty('content');
@@ -127,13 +102,8 @@ describe('perfiles portables', () => {
     expect(() => loadAgentProfile('reviewer')).toThrow(/slug.*other.*carpeta.*reviewer/);
   });
 
-  it.each([
-    'Sin frontmatter',
-    '---\nname: review\n---\nTexto',
-    '---\ndescription: Revisa\n---\nTexto',
-    '---\nname: review\ndescription: []\n---\nTexto',
-    '---\nname: [\n---\nTexto',
-  ])('4: rechaza SKILL.md inválido: %s', (content) => {
+  it.each(['Sin frontmatter', '---\nname: review\n---\nTexto', '---\ndescription: Revisa\n---\nTexto',
+    '---\nname: review\ndescription: []\n---\nTexto', '---\nname: [\n---\nTexto'])('4: rechaza SKILL.md inválido: %s', (content) => {
     write('reviewer/skills/review/SKILL.md', content);
     expect(() => loadAgentProfile('reviewer')).toThrow(/SKILL\.md.*(?:frontmatter|description|name)/);
   });
@@ -155,19 +125,13 @@ describe('perfiles portables', () => {
   });
 
   it('admite YAML con BOM, CRLF, comillas y descripción multilínea', () => {
-    write(
-      'reviewer/skills/review/SKILL.md',
-      '\uFEFF---\r\nname: "review"\r\ndescription: >-\r\n  Revisa documentos:\r\n  texto y tablas.\r\n---\r\nInstrucciones',
-    );
+    write('reviewer/skills/review/SKILL.md', '\uFEFF---\r\nname: "review"\r\ndescription: >-\r\n  Revisa documentos:\r\n  texto y tablas.\r\n---\r\nInstrucciones');
     expect(loadAgentProfile('reviewer').skills.get('review').description).toBe('Revisa documentos: texto y tablas.');
   });
 
-  it.each(['../secret', '_shared', 'a/b', 'C:\\secret'])(
-    'rechaza slugs que no identifican una carpeta de agente: %s',
-    (slug) => {
-      expect(() => loadAgentProfile(slug)).toThrow(/Slug de agente inválido/);
-    },
-  );
+  it.each(['../secret', '_shared', 'a/b', 'C:\\secret'])('rechaza slugs que no identifican una carpeta de agente: %s', (slug) => {
+    expect(() => loadAgentProfile(slug)).toThrow(/Slug de agente inválido/);
+  });
 
   it('no registra skills de otro agente', () => {
     profile('writer');
@@ -179,10 +143,7 @@ describe('perfiles portables', () => {
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-external-skills-'));
     try {
       fs.mkdirSync(path.join(outside, 'private'));
-      fs.writeFileSync(
-        path.join(outside, 'private/SKILL.md'),
-        '---\nname: private\ndescription: Secreto\n---\nContenido',
-      );
+      fs.writeFileSync(path.join(outside, 'private/SKILL.md'), '---\nname: private\ndescription: Secreto\n---\nContenido');
       fs.mkdirSync(path.join(home, '_shared'));
       fs.symlinkSync(outside, path.join(home, '_shared/skills'), 'junction');
       expect(() => loadAgentProfile('reviewer')).toThrow(/sale de la carpeta/);
@@ -223,9 +184,7 @@ describe('perfiles portables', () => {
     skill('reviewer/skills/large', 'large');
     const loaded = loadAgentProfile('reviewer');
     write('reviewer/skills/large/scripts/large.txt', 'x'.repeat(64 * 1024 + 1));
-    expect(() => readProfileSkill(loaded, { skill_id: 'profile:large', file_path: 'scripts/large.txt' })).toThrow(
-      /64 KiB/,
-    );
+    expect(() => readProfileSkill(loaded, { skill_id: 'profile:large', file_path: 'scripts/large.txt' })).toThrow(/64 KiB/);
   });
 
   it('conserva la búsqueda por minúsculas del formato portable', () => {
@@ -255,10 +214,7 @@ describe('perfiles portables', () => {
 
   it('respeta el presupuesto serializado en listados y páginas con escapes', () => {
     for (let i = 0; i < 20; i++) {
-      write(
-        `reviewer/skills/item-${i}/SKILL.md`,
-        `---\nname: item-${i}\ndescription: ${'d'.repeat(1024)}\n---\n${'\u0001'.repeat(9000)}`,
-      );
+      write(`reviewer/skills/item-${i}/SKILL.md`, `---\nname: item-${i}\ndescription: ${'d'.repeat(1024)}\n---\n${'\u0001'.repeat(9000)}`);
     }
     const loaded = loadAgentProfile('reviewer');
     const list = listProfileSkills(loaded, { limit: 20 });
@@ -275,11 +231,7 @@ describe('perfiles portables', () => {
   it('combina fuentes sin perder IDs, totales ni límites del catálogo base', () => {
     skill('reviewer/skills/review', 'review');
     const loaded = loadAgentProfile('reviewer');
-    const catalog = Array.from({ length: 30 }, (_, i) => ({
-      id: i.toString(16).padStart(24, '0'),
-      name: `base-${i}`,
-      description: 'Biblioteca',
-    }));
+    const catalog = Array.from({ length: 30 }, (_, i) => ({ id: i.toString(16).padStart(24, '0'), name: `base-${i}`, description: 'Biblioteca' }));
     const merged = runSkills('skills_list', loaded, { limit: 2 }, catalog);
     expect(merged.skills.map((item) => item.id)).toEqual(['profile:review', catalog[0].id]);
     expect(merged).toMatchObject({ total: 31, truncated: true });
@@ -288,10 +240,7 @@ describe('perfiles portables', () => {
 
   it('conserva offsets UTF-16 y el techo serializado con emojis en contenido y metadatos', () => {
     for (let i = 0; i < 12; i++) {
-      write(
-        `reviewer/skills/emoji-${i}/SKILL.md`,
-        `---\nname: emoji-${i}\ndescription: ${'😀'.repeat(480)}\n---\n${'😀'.repeat(4000)}`,
-      );
+      write(`reviewer/skills/emoji-${i}/SKILL.md`, `---\nname: emoji-${i}\ndescription: ${'😀'.repeat(480)}\n---\n${'😀'.repeat(4000)}`);
     }
     const loaded = loadAgentProfile('reviewer');
     const list = listProfileSkills(loaded, { limit: 12 });
@@ -311,22 +260,15 @@ describe('perfiles portables', () => {
     }
     const outside = write('outside/secret.txt', 'Secreto');
     fs.symlinkSync(path.dirname(outside), path.join(home, 'reviewer/skills/review/link'), 'junction');
-    expect(() => readProfileSkill(loaded, { skill_id: 'profile:review', file_path: 'link/secret.txt' })).toThrow(
-      /sale de la carpeta/,
-    );
+    expect(() => readProfileSkill(loaded, { skill_id: 'profile:review', file_path: 'link/secret.txt' })).toThrow(/sale de la carpeta/);
   });
 
   it('carga hooks declarativos con contexto recortado y tools sin duplicados', () => {
-    write(
-      'reviewer/hooks.json',
-      JSON.stringify({
-        hooks: [
-          { event: 'subagentStart', context: '  Revisa el contrato.  ' },
-          { event: 'preToolUse', context: 'Confirma el ámbito.', tools: ['canvas_list', 'canvas_list'] },
-          { event: 'postToolUse', context: 'Anota el resultado.' },
-        ],
-      }),
-    );
+    write('reviewer/hooks.json', JSON.stringify({ hooks: [
+      { event: 'subagentStart', context: '  Revisa el contrato.  ' },
+      { event: 'preToolUse', context: 'Confirma el ámbito.', tools: ['canvas_list', 'canvas_list'] },
+      { event: 'postToolUse', context: 'Anota el resultado.' },
+    ] }));
     const loaded = loadAgentProfile('reviewer');
     expect(loaded.hooks).toEqual([
       { event: 'subagentStart', context: 'Revisa el contrato.' },
@@ -344,46 +286,16 @@ describe('perfiles portables', () => {
     ['raíz no objeto', '[]', /objeto con «hooks»/],
     ['campo extra en la raíz', JSON.stringify({ hooks: [], command: 'rm' }), /campo no admitido: command/],
     ['hooks no es lista', JSON.stringify({ hooks: {} }), /lista «hooks»/],
-    [
-      'más de 32 hooks',
-      JSON.stringify({ hooks: Array.from({ length: 33 }, () => ({ event: 'subagentStop', context: 'x' })) }),
-      /máximo de 32 hooks/,
-    ],
+    ['más de 32 hooks', JSON.stringify({ hooks: Array.from({ length: 33 }, () => ({ event: 'subagentStop', context: 'x' })) }), /máximo de 32 hooks/],
     ['hook no objeto', JSON.stringify({ hooks: ['x'] }), /hook 1: se espera un objeto/],
-    [
-      'campo no admitido',
-      JSON.stringify({ hooks: [{ event: 'subagentStart', context: 'x', command: 'rm' }] }),
-      /campo no admitido: command/,
-    ],
+    ['campo no admitido', JSON.stringify({ hooks: [{ event: 'subagentStart', context: 'x', command: 'rm' }] }), /campo no admitido: command/],
     ['evento inválido', JSON.stringify({ hooks: [{ event: 'beforeAll', context: 'x' }] }), /event debe ser/],
-    [
-      'contexto vacío',
-      JSON.stringify({ hooks: [{ event: 'subagentStart', context: '   ' }] }),
-      /context de texto no vacío/,
-    ],
-    [
-      'contexto excesivo',
-      JSON.stringify({ hooks: [{ event: 'subagentStart', context: 'x'.repeat(2001) }] }),
-      /context excede 2000/,
-    ],
-    [
-      'texto total excesivo',
-      JSON.stringify({
-        hooks: Array.from({ length: 5 }, () => ({ event: 'subagentStop', context: 'x'.repeat(2000) })),
-      }),
-      /excede 8000/,
-    ],
-    [
-      'tools en subagentStart',
-      JSON.stringify({ hooks: [{ event: 'subagentStart', context: 'x', tools: ['canvas_list'] }] }),
-      /tools solo se admite/,
-    ],
+    ['contexto vacío', JSON.stringify({ hooks: [{ event: 'subagentStart', context: '   ' }] }), /context de texto no vacío/],
+    ['contexto excesivo', JSON.stringify({ hooks: [{ event: 'subagentStart', context: 'x'.repeat(2001) }] }), /context excede 2000/],
+    ['texto total excesivo', JSON.stringify({ hooks: Array.from({ length: 5 }, () => ({ event: 'subagentStop', context: 'x'.repeat(2000) })) }), /excede 8000/],
+    ['tools en subagentStart', JSON.stringify({ hooks: [{ event: 'subagentStart', context: 'x', tools: ['canvas_list'] }] }), /tools solo se admite/],
     ['tools vacío', JSON.stringify({ hooks: [{ event: 'preToolUse', context: 'x', tools: [] }] }), /lista de nombres/],
-    [
-      'tool inválida',
-      JSON.stringify({ hooks: [{ event: 'preToolUse', context: 'x', tools: ['Canvas List'] }] }),
-      /lista de nombres/,
-    ],
+    ['tool inválida', JSON.stringify({ hooks: [{ event: 'preToolUse', context: 'x', tools: ['Canvas List'] }] }), /lista de nombres/],
   ])('rechaza hooks inválidos: %s', (_label, content, pattern) => {
     write('reviewer/hooks.json', content);
     expect(() => loadAgentProfile('reviewer')).toThrow(pattern);
@@ -391,14 +303,11 @@ describe('perfiles portables', () => {
 
   it('filtra el contexto declarado por evento y herramienta', () => {
     const hooks = require('../../electron/agent-hooks');
-    const profile = {
-      name: 'Revisor',
-      hooks: [
-        { event: 'preToolUse', context: 'Ámbito general.' },
-        { event: 'preToolUse', context: 'Solo canvas.', tools: ['canvas_list'] },
-        { event: 'postToolUse', context: 'Cierre.', tools: ['otra'] },
-      ],
-    };
+    const profile = { name: 'Revisor', hooks: [
+      { event: 'preToolUse', context: 'Ámbito general.' },
+      { event: 'preToolUse', context: 'Solo canvas.', tools: ['canvas_list'] },
+      { event: 'postToolUse', context: 'Cierre.', tools: ['otra'] },
+    ] };
     expect(hooks.contextFor(profile, 'preToolUse', 'canvas_list')).toContain('Ámbito general.');
     expect(hooks.contextFor(profile, 'preToolUse', 'canvas_list')).toContain('Solo canvas.');
     expect(hooks.contextFor(profile, 'preToolUse', 'otra')).toContain('Ámbito general.');
@@ -424,43 +333,23 @@ describe('integración con el arranque del agente', () => {
     const faux = fauxProvider();
     runtime._internal._providerOverrides.set('faux', faux.provider);
     const bridge = vi.fn(async (method, params) => {
-      if (method === 'agent_internal_tools')
-        return {
-          tools: ['skills_list', 'skills_read'].map((name) => ({
-            name,
-            module: 'agent',
-            kind: 'backend',
-            gated: false,
-            inputSchema: { type: 'object', properties: { skill_id: { type: 'string' } } },
-          })),
-        };
-      if (method === 'agent_internal_provider')
-        return { provider: params.provider, style: 'openai_chat', default_model: 'faux-2' };
+      if (method === 'agent_internal_tools') return { tools: ['skills_list', 'skills_read'].map((name) => ({
+        name, module: 'agent', kind: 'backend', gated: false,
+        inputSchema: { type: 'object', properties: { skill_id: { type: 'string' } } },
+      })) };
+      if (method === 'agent_internal_provider') return { provider: params.provider, style: 'openai_chat', default_model: 'faux-2' };
       if (method === 'agent_internal_approvals_pending') return { approvals: [] };
       if (method === 'agent_internal_mentions') return { modules: [], unknown: [], ambiguous: [] };
       if (method === 'agent_internal_memory_context') return { context: '' };
       if (method === 'agent_internal_artifacts') return { artifacts: [], questions: [], context: {} };
       if (method === 'agent_internal_dispatch') {
-        return {
-          result: JSON.stringify(
-            runSkills(
-              params.name,
-              { skills: new Map((params.context?.profile_skills || []).map((item) => [item.name, item])) },
-              params.params,
-              catalog,
-            ),
-          ),
-        };
+        return { result: JSON.stringify(runSkills(params.name,
+          { skills: new Map((params.context?.profile_skills || []).map((item) => [item.name, item])) }, params.params, catalog)) };
       }
       throw new Error(`Puente inesperado: ${method}`);
     });
     const open = async () => {
-      await runtime.open({
-        storage: await openNodeSqliteStorage(path.join(home, 'runtime.sqlite')),
-        dir: home,
-        bridge,
-        skipImport: true,
-      });
+      await runtime.open({ storage: await openNodeSqliteStorage(path.join(home, 'runtime.sqlite')), dir: home, bridge, skipImport: true });
       await require('../../electron/agent-tasks').stop();
     };
     await open();
@@ -486,34 +375,21 @@ describe('integración con el arranque del agente', () => {
       }
       f.faux.setResponses([
         f.fauxAssistantMessage([f.fauxToolCall('skills_list', {})], { stopReason: 'toolUse' }),
-        f.fauxAssistantMessage([f.fauxToolCall('skills_read', { skill_id: 'profile:review' })], {
-          stopReason: 'toolUse',
-        }),
+        f.fauxAssistantMessage([f.fauxToolCall('skills_read', { skill_id: 'profile:review' })], { stopReason: 'toolUse' }),
         f.fauxAssistantMessage('Revisión completada'),
       ]);
       await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Revisa con la skill.' });
       await conv.waitForIdle(ctx());
-      await vi.waitFor(
-        async () => {
-          const entries = await conv.entries({}, 500, undefined, ctx());
-          const results = entries.items.filter((entry) => entry.kind === 'pi.tool-result');
-          expect(results).toHaveLength(restart ? 4 : 2);
-          expect(JSON.stringify(results.slice(-2))).toContain('Instrucción del perfil portable');
-          expect(JSON.stringify(results.slice(-2))).toContain('common');
-        },
-        { timeout: 10000 },
-      );
+      await vi.waitFor(async () => {
+        const entries = await conv.entries({}, 500, undefined, ctx());
+        const results = entries.items.filter((entry) => entry.kind === 'pi.tool-result');
+        expect(results).toHaveLength(restart ? 4 : 2);
+        expect(JSON.stringify(results.slice(-2))).toContain('Instrucción del perfil portable');
+        expect(JSON.stringify(results.slice(-2))).toContain('common');
+      }, { timeout: 10000 });
     }
-    expect(
-      f.bridge.mock.calls.filter(
-        ([method, params]) => method === 'agent_internal_dispatch' && params.name === 'skills_list',
-      ),
-    ).toHaveLength(2);
-    expect(
-      f.bridge.mock.calls.filter(
-        ([method, params]) => method === 'agent_internal_dispatch' && params.name === 'skills_read',
-      ),
-    ).toHaveLength(2);
+    expect(f.bridge.mock.calls.filter(([method, params]) => method === 'agent_internal_dispatch' && params.name === 'skills_list')).toHaveLength(2);
+    expect(f.bridge.mock.calls.filter(([method, params]) => method === 'agent_internal_dispatch' && params.name === 'skills_read')).toHaveLength(2);
   }, 30000);
 
   it('conserva las skills de biblioteca y sus lecturas al seleccionar un perfil portable', async () => {
@@ -525,9 +401,7 @@ describe('integración con el arranque del agente', () => {
     f.faux.setResponses([
       f.fauxAssistantMessage([f.fauxToolCall('skills_list', {})], { stopReason: 'toolUse' }),
       f.fauxAssistantMessage([f.fauxToolCall('skills_read', { skill_id: libraryId })], { stopReason: 'toolUse' }),
-      f.fauxAssistantMessage([f.fauxToolCall('skills_read', { skill_id: 'profile:common' })], {
-        stopReason: 'toolUse',
-      }),
+      f.fauxAssistantMessage([f.fauxToolCall('skills_read', { skill_id: 'profile:common' })], { stopReason: 'toolUse' }),
       f.fauxAssistantMessage('Terminado'),
     ]);
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Consulta ambas fuentes.' });
@@ -542,44 +416,33 @@ describe('integración con el arranque del agente', () => {
     expect(results.every((result) => !result.isError)).toBe(true);
   }, 30000);
 
-  it.each(['ausente', 'JSON inválido', 'skill inválida'])(
-    'aísla un perfil %s al reabrir y permite recuperarlo',
-    async (failure) => {
-      profile('reviewer', { model: 'faux-1' });
-      const f = await fixture();
-      const healthy = (await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' })).session;
-      const portable = (await runtime.handlers.agent_session_create({ provider: 'faux', profile_id: 'reviewer' }))
-        .session;
-      await runtime.shutdown();
-      if (failure === 'ausente') fs.unlinkSync(path.join(home, 'reviewer/agent.json'));
-      if (failure === 'JSON inválido') write('reviewer/agent.json', '{');
-      if (failure === 'skill inválida') write('reviewer/skills/review/SKILL.md', 'Sin frontmatter');
-      await f.open();
-      expect((await runtime.handlers.agent_sessions_list()).sessions).toHaveLength(2);
-      f.faux.setResponses([f.fauxAssistantMessage('Chat sano')]);
-      await runtime.handlers.agent_message_send({ session_id: healthy.id, content: 'Saluda.' });
-      await (await conversation(healthy.id)).waitForIdle(ctx());
-      await expect(
-        runtime.handlers.agent_message_send({ session_id: portable.id, content: 'Saluda.' }),
-      ).rejects.toThrow(/agent\.json|SKILL\.md/);
-      profile('reviewer', { model: 'faux-1' });
-      skill('reviewer/skills/review', 'review');
-      f.faux.setResponses([f.fauxAssistantMessage('Perfil recuperado')]);
-      await runtime.handlers.agent_message_send({ session_id: portable.id, content: 'Saluda.' });
-      const conv = await conversation(portable.id);
-      await conv.waitForIdle(ctx());
-      expect(JSON.stringify((await conv.entries({}, 500, undefined, ctx())).items)).toContain('Perfil recuperado');
-    },
-    30000,
-  );
+  it.each(['ausente', 'JSON inválido', 'skill inválida'])('aísla un perfil %s al reabrir y permite recuperarlo', async (failure) => {
+    profile('reviewer', { model: 'faux-1' });
+    const f = await fixture();
+    const healthy = (await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' })).session;
+    const portable = (await runtime.handlers.agent_session_create({ provider: 'faux', profile_id: 'reviewer' })).session;
+    await runtime.shutdown();
+    if (failure === 'ausente') fs.unlinkSync(path.join(home, 'reviewer/agent.json'));
+    if (failure === 'JSON inválido') write('reviewer/agent.json', '{');
+    if (failure === 'skill inválida') write('reviewer/skills/review/SKILL.md', 'Sin frontmatter');
+    await f.open();
+    expect((await runtime.handlers.agent_sessions_list()).sessions).toHaveLength(2);
+    f.faux.setResponses([f.fauxAssistantMessage('Chat sano')]);
+    await runtime.handlers.agent_message_send({ session_id: healthy.id, content: 'Saluda.' });
+    await (await conversation(healthy.id)).waitForIdle(ctx());
+    await expect(runtime.handlers.agent_message_send({ session_id: portable.id, content: 'Saluda.' })).rejects.toThrow(/agent\.json|SKILL\.md/);
+    profile('reviewer', { model: 'faux-1' });
+    skill('reviewer/skills/review', 'review');
+    f.faux.setResponses([f.fauxAssistantMessage('Perfil recuperado')]);
+    await runtime.handlers.agent_message_send({ session_id: portable.id, content: 'Saluda.' });
+    const conv = await conversation(portable.id);
+    await conv.waitForIdle(ctx());
+    expect(JSON.stringify((await conv.entries({}, 500, undefined, ctx())).items)).toContain('Perfil recuperado');
+  }, 30000);
 
   it('respeta un modelo explícito y da prioridad al perfil guardado aunque la carpeta coincida', async () => {
     await fixture();
-    const explicit = await runtime.handlers.agent_session_create({
-      provider: 'faux',
-      model: 'faux-1',
-      profile_id: 'reviewer',
-    });
+    const explicit = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: 'reviewer' });
     expect(explicit.session.model).toBe('faux-1');
     const state = runtime._internal.state();
     await state.harness.commit(async (tx) => {
@@ -598,9 +461,7 @@ describe('integración con el arranque del agente', () => {
     const state = runtime._internal.state();
     const create = vi.spyOn(state.harness, 'createConversation');
     try {
-      await expect(runtime.handlers.agent_session_create({ provider: 'faux', profile_id: 'missing' })).rejects.toThrow(
-        /agent\.json/,
-      );
+      await expect(runtime.handlers.agent_session_create({ provider: 'faux', profile_id: 'missing' })).rejects.toThrow(/agent\.json/);
       expect(create).not.toHaveBeenCalled();
     } finally {
       create.mockRestore();

@@ -65,7 +65,6 @@ jobs:
       - name: Setup lint toolchain
         uses: ./.github/actions/setup-ci
         with:
-          node: 'false'
           frontend: 'false'
         timeout-minutes: 3
 
@@ -126,7 +125,6 @@ jobs:
       - name: Setup build toolchain
         uses: ./.github/actions/setup-ci
         with:
-          node: 'false'
           python: 'false'
           root: 'false'
         timeout-minutes: 3
@@ -151,7 +149,6 @@ jobs:
       - name: Setup contract toolchain
         uses: ./.github/actions/setup-ci
         with:
-          node: 'false'
           frontend: 'false'
         timeout-minutes: 3
 
@@ -204,7 +201,6 @@ jobs:
       - name: Setup frontend toolchain
         uses: ./.github/actions/setup-ci
         with:
-          node: 'false'
           python: 'false'
           root: 'false'
         timeout-minutes: 3
@@ -229,7 +225,6 @@ jobs:
       - name: Setup frontend toolchain
         uses: ./.github/actions/setup-ci
         with:
-          node: 'false'
           python: 'false'
           root: 'false'
         timeout-minutes: 3
@@ -279,7 +274,6 @@ jobs:
       - name: Setup backend toolchain
         uses: ./.github/actions/setup-ci
         with:
-          node: 'false'
           root: 'false'
           frontend: 'false'
         timeout-minutes: 3
