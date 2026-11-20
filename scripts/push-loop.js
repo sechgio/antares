@@ -136,7 +136,7 @@ function defaultPrBody(branch, message) {
     '- [x] `bun run lint:python`',
     '- [x] `bun run typecheck:backend`',
     '- [x] `bun run typecheck:frontend`',
-    '- [x] `bun test`',
+    '- [x] `bun run test`',
   ].join('\n');
 }
 

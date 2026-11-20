@@ -307,7 +307,7 @@ function run() {
 
   assert(packageJson.scripts.ci.includes('bun run audit:node'), 'shared CI gate includes Node dependency audits');
   assert(packageJson.scripts.ci.includes('bun run check:ratchet'), 'shared CI gate includes the quality ratchet');
-  assert(packageJson.scripts.ci.includes('bun test'), 'shared CI gate runs the full test suite');
+  assert(packageJson.scripts.ci.split(' && ').includes('bun run test'), 'shared CI gate runs the full test suite');
   assert(
     packageJson.scripts['typecheck:backend'].includes('uv run --project . --locked --extra dev mypy backend'),
     'backend typecheck uses the locked Python environment',

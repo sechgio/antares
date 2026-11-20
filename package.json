@@ -48,7 +48,7 @@
     "check:any": "uv run --project . --locked --extra dev python scripts/check_any_guard.py",
     "check:protection": "node scripts/branch-protection-check.js",
     "check:ratchet": "node scripts/quality-ratchet.js",
-    "ci": "bun run lint && bun run format:check && bun run typecheck:backend && bun run check:any && bun run check:ratchet && bun run audit:python && bun run audit:node && bun run typecheck:frontend && bun run check:budgets && bun test",
+    "ci": "bun run lint && bun run format:check && bun run typecheck:backend && bun run check:any && bun run check:ratchet && bun run audit:python && bun run audit:node && bun run typecheck:frontend && bun run check:budgets && bun run test",
     "bump:patch": "node scripts/bump-version.js patch",
     "bump:minor": "node scripts/bump-version.js minor",
     "bump:major": "node scripts/bump-version.js major",
