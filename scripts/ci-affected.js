@@ -19,11 +19,13 @@ const RULES = [
     re: /^(?:package\.json|bun\.lock|\.gitattributes|\.node-version|\.oxlintrc\.json|\.oxfmtrc\.json|.*\.config\.(?:js|ts|mjs|cjs)|tsconfig[^/]*\.json)$/,
     areas: EVERYTHING,
   },
-  { re: /^frontend\//, areas: ['typecheck', 'build', 'frontend'] },
+  // Node contract/electron tests read frontend sources (IPC allowlist, tailwind,
+  // chunk graph, version sync, observability contract).
+  { re: /^frontend\//, areas: ['typecheck', 'build', 'frontend', 'contracts', 'electron'] },
   // backend-spawner node tests launch the real backend, so backend changes also
-  // exercise the electron suite.
-  { re: /^backend\//, areas: ['typecheck', 'backend', 'electron'] },
-  { re: /^(?:pyproject\.toml|uv\.lock)$/, areas: ['typecheck', 'backend', 'electron'] },
+  // exercise the electron suite; version sync reads backend/version.py and pyproject.
+  { re: /^backend\//, areas: ['typecheck', 'backend', 'electron', 'contracts'] },
+  { re: /^(?:pyproject\.toml|uv\.lock)$/, areas: ['typecheck', 'backend', 'electron', 'contracts'] },
   { re: /^media\//, areas: ['backend', 'electron'] },
   { re: /^tests\/[^/]*\.py$/, areas: ['backend', 'electron'] },
   { re: /^tests\/.*\.py$/, areas: ['backend', 'electron'] },
@@ -45,7 +47,8 @@ function classify(changedPaths) {
 
 function changedFiles(baseRef) {
   const mergeBase = execFileSync('git', ['merge-base', baseRef, 'HEAD'], { encoding: 'utf8' }).trim();
-  return execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMR', `${mergeBase}...HEAD`], {
+  // Deleted and renamed-away paths count too: removing a module can break its importers.
+  return execFileSync('git', ['diff', '--name-only', '--no-renames', `${mergeBase}...HEAD`], {
     encoding: 'utf8',
   })
     .split(/\r?\n/)

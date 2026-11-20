@@ -140,10 +140,10 @@ function run() {
     frontendOnly.frontend === true &&
       frontendOnly.build === true &&
       frontendOnly.typecheck === true &&
-      frontendOnly.backend === false &&
-      frontendOnly.electron === false &&
-      frontendOnly.contracts === false,
-    'A frontend source change selects only frontend, build and typecheck jobs',
+      frontendOnly.contracts === true &&
+      frontendOnly.electron === true &&
+      frontendOnly.backend === false,
+    'A frontend source change selects frontend, build, typecheck and the node tests that read frontend sources, not backend',
   );
   const backendOnly = affected.classify(['backend/services/foo.py', 'tests/test_foo.py']);
   assert(
@@ -151,9 +151,14 @@ function run() {
       backendOnly.electron === true &&
       backendOnly.typecheck === true &&
       backendOnly.frontend === false &&
-      backendOnly.contracts === false &&
+      backendOnly.contracts === true &&
       backendOnly.build === false,
-    'A backend change selects backend plus the node tests that spawn it, not frontend or contracts',
+    'A backend change selects backend plus the node tests that spawn or read it, not frontend or build',
+  );
+  const affectedSource = fs.readFileSync(path.join(ROOT, 'scripts', 'ci-affected.js'), 'utf8');
+  assert(
+    affectedSource.includes("'--no-renames'") && !affectedSource.includes('--diff-filter'),
+    'The selector counts deleted and renamed-away paths so a deletion-only PR cannot skip coverage',
   );
   for (const path of [
     'shared/budgets.json',
