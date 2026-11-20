@@ -495,9 +495,8 @@ function run() {
     viteConfig.includes("pool: 'threads'") &&
       viteConfig.includes('isolate: false') &&
       viteConfig.includes('fileParallelism: false') &&
-      viteConfig.includes('maxWorkers: os.availableParallelism()') &&
       viteConfig.includes('mockReset: true'),
-    'Frontend Vitest shares module state with sequential files per core-matched worker',
+    'Frontend Vitest shares module state with sequential files in one worker per shard',
   );
   assertSingleWorker(staticVitestConfig, 'Static Vitest');
   assert(

@@ -5,11 +5,15 @@ import { api } from '../../api';
 import PreviewPanelView from './PreviewPanelView';
 import Toast from '../ui/Toast';
 
+// Imports dinámicos que otro archivo deja en vuelo pueden ejecutar la fábrica async
+// más de una vez; todas deben devolver el mismo `api` que el test configura.
+const mockedApi = vi.hoisted(() => ({ current: null as unknown }));
+
 vi.mock('../../api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api')>();
   return {
     ...actual,
-    api: {
+    api: (mockedApi.current ??= {
       ...actual.api,
       spreadsheetParse: vi.fn(async () => ({
         workbookName: 'datos.csv',
@@ -26,7 +30,7 @@ vi.mock('../../api', async (importOriginal) => {
       })),
       spreadsheetGetRows: vi.fn(),
       fileTokenCleanup: vi.fn(async () => ({ cleaned: true })),
-    },
+    }) as typeof actual.api,
   };
 });
 

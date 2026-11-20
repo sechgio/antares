@@ -1,7 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { visualizer } from 'rollup-plugin-visualizer';
-import os from 'node:os';
 import path from 'node:path';
 import budgets from '../shared/budgets.json';
 import { STATIC_CSS_TESTS } from './vitest.static.config.ts';
@@ -137,7 +136,6 @@ export default defineConfig(({ mode }) => ({
     isolate: false,
     pool: 'threads',
     fileParallelism: false,
-    maxWorkers: os.availableParallelism(),
     mockReset: true,
     sequence: {
       sequencer: DurationSequencer,
