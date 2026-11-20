@@ -1,4 +1,4 @@
-const { app, Menu, ipcMain, Tray, Notification } = require('electron');
+const { app, Menu, ipcMain, Tray } = require('electron');
 const { createWindow } = require('./window-manager');
 const { raceTimeout } = require('./async-utils');
 const { startPythonBackend, killPython } = require('./backend-spawner');
@@ -64,33 +64,6 @@ const isDev = !app.isPackaged;
 const ownsRuntime = app.requestSingleInstanceLock();
 if (!ownsRuntime) app.quit();
 let _tray = null;
-const _trayStates = new Map();
-let _trayPolling = false;
-
-async function _notifyAgentActivity() {
-  if (!_tray || _trayPolling || _shutdownStarted) return;
-  _trayPolling = true;
-  try {
-    const win = require('./window-manager').getMainWindow();
-    const states = await require('./agent-runtime').activitySnapshot();
-    for (const item of states) {
-      const previous = _trayStates.get(item.id);
-      _trayStates.set(item.id, item.status);
-      if (previous === item.status || win?.isVisible() || !Notification.isSupported()) continue;
-      const needsInput = item.status === 'waiting_input' || item.status === 'waiting_approval';
-      const ended = ['running', 'waiting_input', 'waiting_approval', 'waiting_event'].includes(previous)
-        && ['completed', 'failed', 'uncertain'].includes(item.status);
-      const needsReview = item.status === 'uncertain';
-      if (!needsInput && !ended && !needsReview) continue;
-      const body = item.status === 'waiting_approval' ? 'Necesita tu aprobación' : item.status === 'waiting_input' ? 'Necesita datos para continuar'
-        : item.status === 'failed' || needsReview ? 'El encargo requiere revisión' : 'El encargo terminó';
-      const notification = new Notification({ title: item.title, body });
-      notification.on('click', _showMainWindow);
-      notification.show();
-    }
-  } catch (err) { console.warn('[main] agent tray status failed:', err?.message); }
-  finally { _trayPolling = false; }
-}
 
 function _showMainWindow() {
   let win = require('./window-manager').getMainWindow();
@@ -155,8 +128,6 @@ app.whenReady().then(async () => {
     { label: 'Salir', click: () => app.quit() },
   ]));
   _tray.on('double-click', _showMainWindow);
-  const agentTrayTimer = setInterval(_notifyAgentActivity, 2000);
-  agentTrayTimer.unref?.();
   const canvasAssetGcInitialTimer = setTimeout(runCanvasAssetGc, CANVAS_ASSET_GC_INITIAL_DELAY_MS);
   canvasAssetGcInitialTimer.unref?.();
   const canvasAssetGcTimer = setInterval(runCanvasAssetGc, CANVAS_ASSET_GC_INTERVAL_MS);

@@ -69,27 +69,8 @@ async function main() {
   assert.equal(state.restored, 1);
   app.emit('second-instance');
   assert.equal(state.started, 1);
-  state.visible = false;
-  state.activity = [{ id: 's1', title: 'Encargo', status: 'waiting_input' }];
-  await intervals.get(2000)();
-  await intervals.get(2000)();
-  assert.equal(state.notifications.length, 1);
-  state.activity[0].status = 'completed';
-  await intervals.get(2000)();
-  assert.equal(state.notifications.length, 2);
-  state.notifications[1].emit('click');
-  assert.equal(state.visible, true);
-  state.visible = false;
-  state.activity[0].status = 'uncertain';
-  await intervals.get(2000)();
-  assert.equal(state.notifications[2].options.body, 'El encargo requiere revisión');
-  state.activity = [{ id: 's2', title: 'Espera', status: 'waiting_event' }];
-  await intervals.get(2000)();
-  assert.equal(state.notifications.length, 3, 'entrar en waiting_event no notifica');
-  state.activity[0].status = 'completed';
-  await intervals.get(2000)();
-  assert.equal(state.notifications.length, 4, 'salir de waiting_event sí notifica el cierre');
-  assert.equal(state.notifications[3].options.body, 'El encargo terminó');
+  assert.equal(intervals.has(2000), false, 'no se sondea la actividad para notificaciones del sistema');
+  assert.equal(state.notifications.length, 0);
   state.tray.menu[2].click();
   assert.equal(state.lastSend[1], 'app.flush-canvas-before-quit');
   assert.equal(state.killed, 0);
@@ -102,6 +83,6 @@ async function main() {
   assert.equal(second.state.started, 0);
   assert.equal(second.state.killed, 0);
   assert.equal(second.state.quit, true);
-  console.log('[PASS] Tray conserva el backend, evita duplicarlo, notifica y espera el flush antes de Salir.');
+  console.log('[PASS] Tray conserva el backend, evita duplicarlo, no notifica y espera el flush antes de Salir.');
 }
 main().catch((err) => { console.error(err); process.exitCode = 1; });
