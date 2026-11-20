@@ -30,12 +30,12 @@ function resolveChangedFiles(baseRef) {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
       }).trim();
-      const committed = execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMR', `${mergeBase}...HEAD`], {
+      const committed = execFileSync('git', ['diff', '--name-only', '--diff-filter=A', `${mergeBase}...HEAD`], {
         cwd: ROOT,
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
       });
-      const working = execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMR', 'HEAD'], {
+      const working = execFileSync('git', ['diff', '--name-only', '--diff-filter=A', 'HEAD'], {
         cwd: ROOT,
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
@@ -68,7 +68,7 @@ function main() {
     .filter((f) => FORMAT_EXT.has(path.extname(f)) && !EXCLUDED.test(f) && fs.existsSync(path.join(ROOT, f)));
 
   if (files.length === 0) {
-    console.log('oxfmt: no changed format-eligible files to check.');
+    console.log('oxfmt: no new format-eligible files to check.');
     return;
   }
 

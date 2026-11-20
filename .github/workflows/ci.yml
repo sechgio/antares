@@ -34,7 +34,6 @@ jobs:
       - name: Setup lint toolchain
         uses: ./.github/actions/setup-ci
         with:
-          node: 'false'
           frontend: 'false'
 
       - name: Run oxlint and ruff
@@ -83,7 +82,6 @@ jobs:
       - name: Setup build toolchain
         uses: ./.github/actions/setup-ci
         with:
-          node: 'false'
           python: 'false'
           root: 'false'
 
@@ -104,7 +102,6 @@ jobs:
       - name: Setup contract toolchain
         uses: ./.github/actions/setup-ci
         with:
-          node: 'false'
           frontend: 'false'
 
       - name: Run contract suites and prompt budget
@@ -145,7 +142,6 @@ jobs:
       - name: Setup frontend toolchain
         uses: ./.github/actions/setup-ci
         with:
-          node: 'false'
           python: 'false'
           root: 'false'
 
@@ -166,7 +162,6 @@ jobs:
       - name: Setup frontend toolchain
         uses: ./.github/actions/setup-ci
         with:
-          node: 'false'
           python: 'false'
           root: 'false'
 
@@ -187,7 +182,6 @@ jobs:
       - name: Setup backend toolchain
         uses: ./.github/actions/setup-ci
         with:
-          node: 'false'
           root: 'false'
           frontend: 'false'
 

@@ -1,18 +1,18 @@
 {
   "name": "antares-app",
   "version": "0.11.12",
-  "private": true,
   "description": "Antares",
-  "homepage": ".",
-  "bugs": {
-    "url": "https://github.com/sechgio/antares/issues"
-  },
   "author": "Antares <dev@antares.app>",
+  "private": true,
+  "main": "electron/main.js",
+  "homepage": ".",
   "repository": {
     "type": "git",
     "url": "https://github.com/sechgio/antares.git"
   },
-  "main": "electron/main.js",
+  "bugs": {
+    "url": "https://github.com/sechgio/antares/issues"
+  },
   "scripts": {
     "dev": "node scripts/dev.js",
     "dev:app": "concurrently \"cd frontend && bun run dev\" \"wait-on http://localhost:5173 && electron electron/main.js\"",
@@ -42,7 +42,6 @@
     "typecheck:backend": "uv run --project . --locked --extra dev mypy backend",
     "typecheck:frontend": "cd frontend && bun check && bun check -p tsconfig.node.json",
     "typecheck:frontend:tsc": "cd frontend && bun x tsc --noEmit",
-    "typecheck:local": "cd frontend && bun x tsrs --noEmit --fast && bun x tsrs --noEmit --fast -p tsconfig.node.json",
     "audit:python": "uv run --project . --locked --extra dev python scripts/audit_python.py",
     "audit:node": "bun audit --omit=dev --audit-level=high && bun audit --cwd frontend --omit=dev --audit-level=high",
     "check:budgets": "node scripts/check-budgets.js",
@@ -65,14 +64,6 @@
     "hooks:install": "node scripts/install-hooks.js",
     "postinstall": "node scripts/postinstall.js"
   },
-  "dependencies": {
-    "@earendil-works/chord": "1.0.4",
-    "@earendil-works/pi-ai": "1.0.4",
-    "@earendil-works/pi-durable": "1.0.4",
-    "electron-updater": "^6.8.9",
-    "js-yaml": "^4.3.2",
-    "pdf-lib": "^1.17.1"
-  },
   "devDependencies": {
     "concurrently": "^10.0.4",
     "electron": "^44.9.3",
@@ -83,17 +74,25 @@
     "vitest": "^4.1.5",
     "wait-on": "^9.1.0"
   },
-  "overrides": {
-    "@electron/get": "^5.1.0",
-    "builder-util-runtime": "^9.7.0",
-    "dompurify": "^3.4.17",
-    "js-yaml": "^4.3.2",
-    "nanoid": "^3.3.18",
-    "shell-quote": "^1.12.0",
-    "tar": "^7.5.21"
-  },
   "engines": {
     "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "@earendil-works/chord": "1.0.4",
+    "@earendil-works/pi-ai": "1.0.4",
+    "@earendil-works/pi-durable": "1.0.4",
+    "electron-updater": "^6.8.9",
+    "js-yaml": "^4.3.2",
+    "pdf-lib": "^1.17.1"
+  },
+  "overrides": {
+    "tar": "^7.5.21",
+    "dompurify": "^3.4.17",
+    "js-yaml": "^4.3.2",
+    "builder-util-runtime": "^9.7.0",
+    "nanoid": "^3.3.18",
+    "shell-quote": "^1.12.0",
+    "@electron/get": "^5.1.0"
   },
   "trustedDependencies": [
     "electron"

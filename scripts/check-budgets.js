@@ -84,17 +84,13 @@ async function agentPromptCheck() {
     defaultToolNames: execution.defaultToolNames,
     reminderTexts: execution.reminderTexts,
   });
-  console.log(
-    `[agentPrompt] prompt base estimado en ${estimate.tokens} tokens ` +
-      `(sistema ${estimate.system} + herramientas ${estimate.tools} de ${estimate.toolCount}, ` +
-      `selección ${estimate.toolSelection} + avisos ${estimate.reminders}); techo ${ceiling}`,
-  );
+  console.log(`[agentPrompt] prompt base estimado en ${estimate.tokens} tokens `
+    + `(sistema ${estimate.system} + herramientas ${estimate.tools} de ${estimate.toolCount}, `
+    + `selección ${estimate.toolSelection} + avisos ${estimate.reminders}); techo ${ceiling}`);
   if (estimate.tokens > ceiling) {
-    throw new Error(
-      `El prompt base del agente supera el techo: ${estimate.tokens} > ${ceiling} tokens. ` +
-        'Recorta el prompt de sistema, las herramientas por defecto o los avisos; si el aumento es ' +
-        'justificado, sube agentPrompt.maxTokens en shared/budgets.json y explícalo en el PR.',
-    );
+    throw new Error(`El prompt base del agente supera el techo: ${estimate.tokens} > ${ceiling} tokens. `
+      + 'Recorta el prompt de sistema, las herramientas por defecto o los avisos; si el aumento es '
+      + 'justificado, sube agentPrompt.maxTokens en shared/budgets.json y explícalo en el PR.');
   }
 }
 
