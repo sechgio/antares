@@ -14,7 +14,7 @@ function testArtifacts() {
   const template = path.join(ROOT, '.github', 'pull_request_template.md');
   const text = fs.readFileSync(template, 'utf8');
   assert(text.includes('## Risk'), 'la plantilla pide la sección de riesgo');
-  assert(/npm run ci/.test(text), 'la plantilla exige CI en local');
+  assert(/bun run ci/.test(text), 'la plantilla exige CI en local');
   assert(text.includes('suggestion:'), 'la plantilla recuerda la taxonomía al revisor');
 
   const workflow = path.join(ROOT, '.github', 'workflows', 'review-policy.yml');
@@ -165,6 +165,8 @@ function testGeneratedPaths() {
   console.log('\nRutas generadas:');
 
   assert(policy.isGeneratedPath('uv.lock'), 'uv.lock es generado');
+  assert(policy.isGeneratedPath('bun.lock'), 'bun.lock es generado');
+  assert(policy.isGeneratedPath('frontend/bun.lock'), 'frontend/bun.lock anidado es generado');
   assert(policy.isGeneratedPath('frontend/package-lock.json'), 'package-lock anidado es generado');
   assert(policy.isGeneratedPath('frontend/src/x/__snapshots__/a.snap'), 'los snapshots son generados');
   assert(policy.isGeneratedPath('assets/app.min.js'), 'los minificados son generados');

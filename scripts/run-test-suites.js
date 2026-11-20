@@ -1,12 +1,19 @@
 #!/usr/bin/env node
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const TESTS_DIR = path.join(ROOT, 'tests');
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+function resolveBunCommand() {
+  if (process.env.BUN_BIN) return process.env.BUN_BIN;
+  const homeBun = path.join(os.homedir(), '.bun', 'bin', process.platform === 'win32' ? 'bun.exe' : 'bun');
+  if (fs.existsSync(homeBun)) return homeBun;
+  return process.platform === 'win32' ? 'bun.exe' : 'bun';
+}
+const bunCommand = resolveBunCommand();
 
 const CONTRACT_TESTS = [
   'test-version-sync.js',
@@ -122,11 +129,11 @@ async function runNodeTestsParallel(testNames) {
 function runFrontendSuite(shard) {
   const frontend = path.join(ROOT, 'frontend');
   if (shard) {
-    run(npmCommand, ['run', 'test', '--', `--shard=${shard}`], frontend);
-    if (shard.split('/')[0] === '1') run(npmCommand, ['run', 'test:static'], frontend);
+    run(bunCommand, ['run', 'test', '--', `--shard=${shard}`], frontend);
+    if (shard.split('/')[0] === '1') run(bunCommand, ['run', 'test:static'], frontend);
     return;
   }
-  run(npmCommand, ['run', 'test:all'], frontend);
+  run(bunCommand, ['run', 'test:all'], frontend);
 }
 
 async function runSuite(name, shard = null) {
@@ -141,7 +148,7 @@ async function runSuite(name, shard = null) {
       await runNodeTestsParallel(ELECTRON_TESTS);
       return;
     case 'turns':
-      run(npmCommand, ['run', 'test:turns'], ROOT);
+      run(bunCommand, ['run', 'test:turns'], ROOT);
       return;
     case 'frontend':
       runFrontendSuite(shard);

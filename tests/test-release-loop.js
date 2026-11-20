@@ -14,15 +14,15 @@ function run() {
   const loopUtils = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'loop-utils.js'), 'utf8');
 
   assert(content.includes('runQualityGate'), 'quality gate delegates to the shared fail-closed helper');
-  assert(loopUtils.includes("runQualityCommand('npm run ci 2>&1'"), 'shared quality gate runs npm run ci');
+  assert(loopUtils.includes("runQualityCommand('bun run ci 2>&1'"), 'shared quality gate runs bun run ci');
   assert(
-    !content.includes("trySh('npm run lint:python") &&
-      !content.includes("trySh('npm run typecheck:backend") &&
-      !content.includes("trySh('npm run typecheck:frontend"),
+    !content.includes("trySh('bun run lint:python") &&
+      !content.includes("trySh('bun run typecheck:backend") &&
+      !content.includes("trySh('bun run typecheck:frontend"),
     'quality gate does not swallow mandatory command failures'
   );
-  assert(!content.includes("trySh('npm run ci"), 'quality gate cannot fail open');
-  assert(!loopUtils.includes("trySh('npm run ci"), 'shared quality gate cannot fail open');
+  assert(!content.includes("trySh('bun run ci"), 'quality gate cannot fail open');
+  assert(!loopUtils.includes("trySh('bun run ci"), 'shared quality gate cannot fail open');
 
   assert(
     content.includes('const remoteTag = sh('),

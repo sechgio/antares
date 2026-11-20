@@ -1,5 +1,5 @@
 name: Setup CI
-description: Node from .node-version, Python 3.11, locked uv, npm ci (root + frontend)
+description: Node from .node-version, Bun 1.4.4, Python 3.11, locked uv, cached node_modules and .venv
 
 inputs:
   python:
@@ -15,63 +15,105 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      with:
+        node-version-file: '.node-version'
+
+    - name: Install Bun
+      shell: bash
+      env:
+        BUN_VERSION: 1.4.4
+        BUN_WIN_SHA256: cd2c0fccc78f3ede1f50ca827a15f063eda13d4d150a3d0674f4f6e323d864a5
+        BUN_LINUX_SHA256: bf8ccbfb2b0b80159e0f9a6d15c55317add8077534dbc6130a3edb52fccb395c
+      run: |
+        set -euo pipefail
+        mkdir -p "$HOME/.bun/bin"
+        if [[ "${RUNNER_OS}" == "Windows" ]]; then
+          archive="$RUNNER_TEMP/bun-windows-x64.zip"
+          curl -fsSL --retry 3 --retry-all-errors -o "$archive" \
+            "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-windows-x64.zip"
+          echo "${BUN_WIN_SHA256}  ${archive}" | sha256sum -c -
+          unzip -qo "$archive" -d "$RUNNER_TEMP/bun-extract"
+          mv -f "$RUNNER_TEMP/bun-extract/bun-windows-x64/bun.exe" "$HOME/.bun/bin/bun.exe"
+          cygpath -w "$HOME/.bun/bin" >> "$GITHUB_PATH"
+        else
+          archive="$RUNNER_TEMP/bun-linux-x64.zip"
+          curl -fsSL --retry 3 --retry-all-errors -o "$archive" \
+            "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip"
+          echo "${BUN_LINUX_SHA256}  ${archive}" | sha256sum -c -
+          unzip -qo "$archive" -d "$RUNNER_TEMP/bun-extract"
+          install -m 755 "$RUNNER_TEMP/bun-extract/bun-linux-x64/bun" "$HOME/.bun/bin/bun"
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+        fi
+
     - name: Setup Python
       if: inputs.python == 'true'
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
       with:
         python-version: '3.11'
 
-    - name: Setup Node.js
-      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-      with:
-        node-version-file: '.node-version'
-        cache: npm
-        cache-dependency-path: |
-          package-lock.json
-          frontend/package-lock.json
-
     - name: Install uv
       if: inputs.python == 'true'
       shell: bash
-      run: python -m pip install uv==0.11.19
+      env:
+        UV_VERSION: 0.11.19
+        UV_WIN_SHA256: 1665fc8e37b5d70a134820d6d7891747471a2ac8bc940ee7af0b69fd03b28d61
+        UV_LINUX_SHA256: 7035608168e106375b36d0c818d537a889c51a8625fe7f8f7cad5e62b947c368
+      run: |
+        set -euo pipefail
+        mkdir -p "$HOME/.local/bin"
+        if [[ "${RUNNER_OS}" == "Windows" ]]; then
+          archive="$RUNNER_TEMP/uv-x86_64-pc-windows-msvc.zip"
+          curl -fsSL --retry 3 --retry-all-errors -o "$archive" \
+            "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-pc-windows-msvc.zip"
+          echo "${UV_WIN_SHA256}  ${archive}" | sha256sum -c -
+          unzip -qo "$archive" -d "$HOME/.local/bin"
+          cygpath -w "$HOME/.local/bin" >> "$GITHUB_PATH"
+        else
+          archive="$RUNNER_TEMP/uv-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSL --retry 3 --retry-all-errors -o "$archive" \
+            "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${UV_LINUX_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" --strip-components=1 -C "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        fi
 
-    - name: Locate uv cache
+    - name: Cache Python virtualenv
       if: inputs.python == 'true'
-      id: uv-cache
-      shell: bash
-      run: echo "dir=$(uv cache dir)" >> "$GITHUB_OUTPUT"
-
-    - name: Cache Python dependencies
-      if: inputs.python == 'true'
+      id: cache-venv
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
       with:
-        path: ${{ steps.uv-cache.outputs.dir }}
-        key: uv-${{ runner.os }}-${{ hashFiles('uv.lock', '.github/actions/setup-ci/action.yml') }}
-        restore-keys: |
-          uv-${{ runner.os }}-
+        path: .venv
+        key: venv-${{ runner.os }}-${{ runner.arch }}-${{ env.pythonLocation }}-${{ hashFiles('uv.lock', 'pyproject.toml') }}
 
     - name: Sync Python dependencies
-      if: inputs.python == 'true'
+      if: inputs.python == 'true' && steps.cache-venv.outputs.cache-hit != 'true'
       shell: bash
       run: uv sync --locked --extra dev
 
-    - name: Restore Electron and electron-builder caches
+    - name: Cache root node_modules
       if: inputs.root == 'true'
+      id: cache-root-modules
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
       with:
-        path: |
-          ~/AppData/Local/electron/Cache
-          ~/AppData/Local/electron-builder/Cache
-        key: electron-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
-        restore-keys: |
-          electron-toolchain-${{ runner.os }}-${{ runner.arch }}-
+        path: node_modules
+        key: node-modules-root-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
 
-    - name: Install Node dependencies
-      if: inputs.root == 'true'
+    - name: Install root dependencies
+      if: inputs.root == 'true' && steps.cache-root-modules.outputs.cache-hit != 'true'
       shell: bash
-      run: npm ci
+      run: bun install --frozen-lockfile
+
+    - name: Cache frontend node_modules
+      if: inputs.frontend == 'true'
+      id: cache-frontend-modules
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: frontend/node_modules
+        key: node-modules-frontend-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('frontend/bun.lock') }}
 
     - name: Install frontend dependencies
-      if: inputs.frontend == 'true'
+      if: inputs.frontend == 'true' && steps.cache-frontend-modules.outputs.cache-hit != 'true'
       shell: bash
-      run: npm ci --prefix frontend
+      run: bun install --frozen-lockfile --cwd frontend

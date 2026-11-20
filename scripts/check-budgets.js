@@ -54,7 +54,7 @@ function distMatchesSources() {
 
 if (!distMatchesSources()) {
   console.log('frontend/dist está ausente o más viejo que sus fuentes — construyendo para medir...');
-  sh('npm run build:frontend');
+  sh('bun run build:frontend');
 }
 
 sh('node frontend/scripts/canvas-appear-budget.mjs');

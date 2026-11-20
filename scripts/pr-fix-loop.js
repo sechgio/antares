@@ -90,7 +90,7 @@ function captureFailedRunLogs(prNumber) {
 }
 
 function applyPythonLintFix() {
-  const fix = trySh('npm run lint:fix 2>&1');
+  const fix = trySh('bun run lint:fix 2>&1');
   const fmt = trySh('uv run --project . --locked --extra dev ruff format backend tests scripts 2>&1');
   if (!workingTreeDirty()) return null;
   return `ruff --fix + format:${(fix || '').slice(0, 200)}\n${(fmt || '').slice(0, 200)}`;

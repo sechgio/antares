@@ -25,6 +25,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - La memoria del agente admite entradas de diario con fecha (hoy por defecto) y autoría por versión. No se inyectan en cada turno: solo se consultan con `memory_search`, que ordena las coincidencias por relevancia y después por la fecha del diario; las preferencias y los hechos conservan su comportamiento y las correcciones del usuario siguen prevaleciendo.
 
 ### Changed
+- Instalación y scripts migran de npm a Bun 1.4.4 (`bun.lock` y `frontend/bun.lock` reemplazan a `package-lock.json`): usa `bun install --frozen-lockfile` y `bun run <script>`. CI cachea `node_modules`, `.venv` y las DLL de Pango directamente.
 - La suite Node de CI (Electron) corre en un grupo acotado de 4 workers en paralelo (override operativo con `ANTARES_NODE_TEST_CONCURRENCY`), con salida prefijada por archivo y fallo agregado, y `setup-ci` restaura las cachés de Electron y electron-builder antes de `npm ci`: el CI de un PR baja de ~6-9 a ~4-5 minutos sin cambiar qué suites se ejecutan.
 - El recorte mecánico de contexto de Agent repite su corte anterior mientras la petición quepa, y los avisos de pasos y de plan ya enviados se reponen en las peticiones siguientes: el prefijo enviado deja de cambiar en cada paso y el proveedor reutiliza la caché.
 - Agent trabaja con un tope de 500 000 tokens de contexto aunque el modelo admita más, y compacta al 80 % de esa ventana en lugar de apurar hasta el margen de respuesta.

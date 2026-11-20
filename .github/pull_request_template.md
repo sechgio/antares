@@ -20,7 +20,7 @@
 
 ## Verification
 
-- [ ] `npm run ci` pasa en local y probé la ruta negativa
+- [ ] `bun run ci` pasa en local y probé la ruta negativa
 - [ ] Revisé mi diff completo; sin `any` / `# type: ignore` / `eslint-disable` sin justificar
 - [ ] `CHANGELOG.md` y docs/ADR actualizados si aplica
 

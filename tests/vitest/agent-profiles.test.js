@@ -7,11 +7,11 @@ import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
-const { loadAgentProfile } = require('../../../electron/agent-profiles');
+const { loadAgentProfile } = require('../../electron/agent-profiles');
 let home;
 
 function runSkills(name, profile, params = {}, catalog = []) {
-  const root = path.resolve(import.meta.dirname, '../../..');
+  const root = path.resolve(import.meta.dirname, '../..');
   return JSON.parse(execFileSync('uv', ['run', '--project', root, '--locked', '--extra', 'dev',
     'python', path.join(root, 'tests/helpers/agent_skills_probe.py')], {
     cwd: root, encoding: 'utf8', windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
@@ -302,7 +302,7 @@ describe('perfiles portables', () => {
   });
 
   it('filtra el contexto declarado por evento y herramienta', () => {
-    const hooks = require('../../../electron/agent-hooks');
+    const hooks = require('../../electron/agent-hooks');
     const profile = { name: 'Revisor', hooks: [
       { event: 'preToolUse', context: 'Ámbito general.' },
       { event: 'preToolUse', context: 'Solo canvas.', tools: ['canvas_list'] },
@@ -319,8 +319,8 @@ describe('perfiles portables', () => {
 });
 
 describe('integración con el arranque del agente', () => {
-  const runtime = require('../../../electron/agent-runtime');
-  const { conversation, ctx } = require('../../../electron/agent-shared');
+  const runtime = require('../../electron/agent-runtime');
+  const { conversation, ctx } = require('../../electron/agent-shared');
 
   afterEach(async () => {
     await runtime.shutdown();
@@ -350,7 +350,7 @@ describe('integración con el arranque del agente', () => {
     });
     const open = async () => {
       await runtime.open({ storage: await openNodeSqliteStorage(path.join(home, 'runtime.sqlite')), dir: home, bridge, skipImport: true });
-      await require('../../../electron/agent-tasks').stop();
+      await require('../../electron/agent-tasks').stop();
     };
     await open();
     return { open, bridge, faux, fauxAssistantMessage, fauxToolCall };

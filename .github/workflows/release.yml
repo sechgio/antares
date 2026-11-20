@@ -27,7 +27,7 @@ jobs:
     name: Lint, audit, and test
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - name: Validate release tag format
@@ -46,6 +46,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.sha }}
           persist-credentials: false
+          filter: blob:none
 
       - name: Setup CI toolchain
         uses: ./.github/actions/setup-ci
@@ -63,14 +64,14 @@ jobs:
           fi
 
       - name: Run CI checks
-        run: npm run ci
+        run: bun run ci
 
   build:
     name: Build release artifacts
     permissions:
       contents: read
     needs: [verify]
-    runs-on: windows-latest
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-8vcpu-windows-2025' || 'windows-latest' }}
     timeout-minutes: 60
     steps:
       - name: Checkout repository
@@ -78,22 +79,17 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.sha }}
           persist-credentials: false
+          filter: blob:none
 
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - name: Setup CI toolchain
+        uses: ./.github/actions/setup-ci
         with:
-          node-version-file: '.node-version'
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            frontend/package-lock.json
+          python: 'false'
 
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.11'
-          cache: pip
-          cache-dependency-path: uv.lock
 
       - name: Cache MSYS2 packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -118,14 +114,12 @@ jobs:
           path: |
             ~/AppData/Local/electron/Cache
             ~/AppData/Local/electron-builder/Cache
-          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
           restore-keys: |
             electron-${{ runner.os }}-${{ runner.arch }}-
 
-      - name: Install dependencies
+      - name: Install Python build dependencies
         run: |
-          npm ci
-          npm ci --prefix frontend
           python -m pip install uv==0.11.19
           uv sync --locked --extra build
 
@@ -149,7 +143,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_JAMENDO_CLIENT_ID: ${{ secrets.VITE_JAMENDO_CLIENT_ID }}
-        run: npx concurrently "npm run build:backend" "npm run build:frontend"
+        run: bun x concurrently "bun run build:backend" "bun run build:frontend"
 
       - name: Verify backend hash manifest
         run: node scripts/verify-backend-manifest.js dist/backend
@@ -174,7 +168,7 @@ jobs:
           fi
 
       - name: Build Electron App
-        run: npx --no-install electron-builder --win --publish never
+        run: bun x electron-builder --win --publish never
 
       - name: Generate release checksums
         shell: pwsh
@@ -235,7 +229,7 @@ jobs:
     name: Publish GitHub Release
     needs: [build]
     if: github.event_name == 'push' || inputs.publish
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_USE_BLACKSMITH == 'true' && 'blacksmith-2vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     timeout-minutes: 15
     environment: production
     permissions:
