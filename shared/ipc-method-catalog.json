@@ -259,7 +259,6 @@
     "spreadsheet_export_volantes_template": { "handler": "backend:spreadsheet", "lane": "heavy", "timeout": "long", "rawOutputPath": true, "inputSchema": {"type":"object","properties":{"output_path":{},"overwrite":{},"path":{}}} },
     "spreadsheet_get_rows": { "handler": "backend:spreadsheet", "lane": "heavy", "timeout": "long", "fileTokens": [["result_file_token"], ["cache_token"]], "inputSchema": {"type":"object","properties":{"cache_token":{},"limit":{},"offset":{},"path":{},"result_path":{},"sheet":{},"sheet_index":{},"sheet_name":{}}} },
     "spreadsheet_parse": { "handler": "backend:spreadsheet", "lane": "heavy", "timeout": "heavy", "fileTokens": [["file_token"], ["path"], ["excelPath"]], "inputSchema": {"type":"object","properties":{"excelPath":{},"file_token":{},"format_hint":{},"path":{},"xlsx_b64":{}}} },
-    "supabase_session_clear": { "handler": "native:session", "idempotent": true },
     "supabase_session_get": { "handler": "native:session", "idempotent": true },
     "supabase_session_put": { "handler": "native:session", "inputSchema": {"type":"object","properties":{"blob":{"type":"object"}},"required":["blob"],"additionalProperties":false} },
     "technical_reports_autocomplete_contratista": { "handler": "backend:technical_reports", "idempotent": true, "orchestratable": true, "inputSchema": {"type":"object","properties":{"cs":{}}} },
