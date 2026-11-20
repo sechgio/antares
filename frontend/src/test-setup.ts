@@ -1,6 +1,26 @@
 import '@testing-library/jest-dom';
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure, getConfig } from '@testing-library/react';
 import { afterAll, afterEach, vi } from 'vitest';
+
+// findBy*/waitFor pueden resolver antes de que React corra los efectos pasivos que programó con
+// setImmediate; una vuelta más de setImmediate (FIFO) los aplica. El wrapper base se fija una vez
+// porque Testing Library persiste entre archivos con isolate: false.
+const testGlobals = globalThis as typeof globalThis & {
+  __baseAsyncWrapper?: ReturnType<typeof getConfig>['asyncWrapper'];
+  setImmediate?: (callback: () => void) => unknown;
+};
+const baseAsyncWrapper = (testGlobals.__baseAsyncWrapper ??= getConfig().asyncWrapper);
+const realSetImmediate = testGlobals.setImmediate;
+if (typeof realSetImmediate === 'function') {
+  configure({
+    asyncWrapper: (cb) =>
+      baseAsyncWrapper(async () => {
+        const result = await cb();
+        await new Promise<void>((resolve) => realSetImmediate(() => resolve()));
+        return result;
+      }),
+  });
+}
 
 async function resetI18nLanguage() {
   const current = (await import('./i18n')).default;
