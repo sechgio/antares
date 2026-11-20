@@ -55,12 +55,13 @@ vi.mock('../lib/supabase', () => ({ supabase: mockSupabase }));
 vi.mock('../auth/AuthContext', () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => children,
   useAuth: () => ({
-    user: { id: 'test', email: 'test@test.com', displayName: 'Test', isAdmin: true, createdAt: '' },
+    user: { id: 'test', email: 'test@test.com', displayName: 'Test', isAdmin: true, isDisabled: false, createdAt: '' },
     loading: false,
     error: null,
     signIn: async () => ({ error: null }),
     signUp: async () => ({ error: null }),
     signOut: async () => {},
+    refreshUser: async () => {},
   }),
 }));
 

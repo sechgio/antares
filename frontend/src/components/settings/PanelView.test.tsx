@@ -25,12 +25,13 @@ vi.mock('../../lib/supabase', () => ({
 
 vi.mock('../../auth/AuthContext', () => ({
   useAuth: () => ({
-    user: { id: 'admin-1', email: 'admin@test.com', displayName: 'Admin', isAdmin: true, createdAt: '' },
+    user: { id: 'admin-1', email: 'admin@test.com', displayName: 'Admin', isAdmin: true, isDisabled: false, createdAt: '' },
     loading: false,
     error: null,
     signIn: vi.fn(),
     signUp: vi.fn(),
     signOut: vi.fn(),
+    refreshUser: vi.fn(),
   }),
 }));
 

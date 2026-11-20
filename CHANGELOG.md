@@ -73,7 +73,6 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ### Removed
 - Se retiran los métodos IPC sin consumidor `agent_approvals_history`, `agent_grants_list` y `agent_grants_revoke`, con sus handlers nativos y sus entradas del catálogo compartido: eran puentes a datos internos de agente que la interfaz ya no consulta desde que desapareció el historial de aprobaciones.
 - Se retira la migración one-shot de sesiones de agente (`flows_retirement`) y su hilo de arranque: la flota instalada ya la ejecutó y no dejaba estado consumible por otros componentes.
-- Se retira superficie sin consumidor alrededor de la sesión: el método IPC `supabase_session_clear` (el cierre de sesión ya reescribe el archivo cifrado vía `supabase_session_put`), el aviso «Cuenta desactivada» de la app —inalcanzable porque la revocación siempre ocurre antes de fijar el usuario—, el campo `isDisabled` de `AppUser` y `refreshUser` del contrato de `useAuth`.
 
 ### Security
 - La cola pesada del backend deja de ser un único pasillo apilable: cada método pesado (exportes, renders, PDF) admite como máximo los workers del backend en vuelo o en cola, y el excedente se rechaza con error reintentable y su causa, así un export en bucle o un botón atascado ya no acapara workers y cola y deja sin servicio el resto de operaciones (ipc-bridge-015).

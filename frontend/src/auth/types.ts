@@ -3,5 +3,6 @@ export type AppUser = {
   email: string;
   displayName: string | null;
   isAdmin: boolean;
+  isDisabled: boolean;
   createdAt: string;
 };

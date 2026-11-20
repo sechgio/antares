@@ -16,6 +16,7 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -24,18 +25,12 @@ function loadSupabaseModule() {
   return import('../lib/supabase');
 }
 
-interface ProfileSnapshot {
-  displayName: string | null;
-  isAdmin: boolean;
-  isDisabled: boolean;
-}
-
-const _profileInflight = new Map<string, Promise<ProfileSnapshot | null>>();
+const _profileInflight = new Map<string, Promise<Partial<AppUser> | null>>();
 
 async function _fetchProfile(
   client: AuthClient,
   userId: string,
-): Promise<ProfileSnapshot | null> {
+): Promise<Partial<AppUser> | null> {
   if (!client) return null;
   const pending = _profileInflight.get(userId);
   if (pending) return pending;
@@ -63,13 +58,14 @@ async function _fetchProfile(
 
 function _mapUser(
   supabaseUser: { id: string; email?: string; created_at?: string },
-  profile: ProfileSnapshot | null,
+  profile: Partial<AppUser> | null,
 ): AppUser {
   return {
     id: supabaseUser.id,
     email: supabaseUser.email ?? '',
     displayName: profile?.displayName ?? null,
     isAdmin: profile?.isAdmin ?? false,
+    isDisabled: profile?.isDisabled ?? false,
     createdAt: supabaseUser.created_at ?? '',
   };
 }
@@ -336,8 +332,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, error, signIn, signUp, signOut }),
-    [user, loading, error, signIn, signUp, signOut],
+    () => ({ user, loading, error, signIn, signUp, signOut, refreshUser }),
+    [user, loading, error, signIn, signUp, signOut, refreshUser],
   );
 
   return (
