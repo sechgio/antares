@@ -45,17 +45,11 @@ function run() {
 
   assert(Boolean(minimumPython), 'The backend declares its minimum Python version');
   assert(setupCi.includes(`python-version: '${minimumPython}'`), 'CI installs the minimum supported Python version');
-  assert(
-    release.includes(`python-version: '${minimumPython}'`),
-    'Release packaging installs the minimum supported Python version',
-  );
+  assert(release.includes(`python-version: '${minimumPython}'`), 'Release packaging installs the minimum supported Python version');
 
   assert(/permissions:\r?\n\s+contents:\s+read/.test(ci), 'CI has explicit read-only permissions');
   assert(ci.includes('merge_group:'), 'CI runs the full suite in merge_group');
-  assert(
-    ci.includes("cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.event_name != 'merge_group' }}"),
-    'CI cancels obsolete PR runs without cancelling main or merge_group',
-  );
+  assert(ci.includes("cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.event_name != 'merge_group' }}"), 'CI cancels obsolete PR runs without cancelling main or merge_group');
   assert(ci.includes('timeout-minutes:'), 'CI has a bounded job timeout');
   assert(ci.includes('uses: ./.github/actions/setup-ci'), 'CI reuses the shared setup-ci composite action');
   assert(!/\bnpm\b/.test(ci), 'CI uses bun instead of npm');
@@ -63,20 +57,13 @@ function run() {
   assert(ci.includes('filter: blob:none'), 'CI checkout uses blobless clones');
   assertActionsPinned(ci, 'CI');
   const ciJobs = ci.split(/^jobs:\s*$/m)[1] || '';
-  const job = (name) =>
-    ciJobs.match(new RegExp(`^  ${name}:\\s*\\r?\\n([\\s\\S]*?)(?=^  [\\w-]+:|$(?![\\s\\S]))`, 'm'))?.[1] || '';
+  const job = (name) => ciJobs.match(new RegExp(`^  ${name}:\\s*\\r?\\n([\\s\\S]*?)(?=^  [\\w-]+:|$(?![\\s\\S]))`, 'm'))?.[1] || '';
   const workerJobs = ['lint', 'typecheck', 'build', 'contracts', 'electron', 'frontend', 'frontend-shard-2', 'backend'];
-  assert(
-    (ciJobs.match(/^  [\w-]+:\s*$/gm) || []).length === workerJobs.length + 1,
-    'CI splits lint, typecheck, build, contracts, electron, frontend and backend into parallel jobs plus one required aggregate',
-  );
+  assert((ciJobs.match(/^  [\w-]+:\s*$/gm) || []).length === workerJobs.length + 1, 'CI splits lint, typecheck, build, contracts, electron, frontend and backend into parallel jobs plus one required aggregate');
   assert(!/^\s+(?:strategy|matrix):/m.test(ci), 'CI does not accidentally multiply suites through a matrix');
   assert(!ci.includes('ubuntu-latest'), 'PR CI runs only on Windows');
   for (const name of [...workerJobs, 'verify']) {
-    assert(
-      job(name).includes('windows-latest') && job(name).includes('blacksmith-'),
-      `${name} routes Windows jobs to Blacksmith when enabled with windows-latest fallback`,
-    );
+    assert(job(name).includes('windows-latest') && job(name).includes('blacksmith-'), `${name} routes Windows jobs to Blacksmith when enabled with windows-latest fallback`);
   }
   for (const name of workerJobs) {
     assert(!job(name).includes('needs:'), `${name} runs in parallel without upstream job dependencies`);
@@ -98,53 +85,22 @@ function run() {
       job('lint').includes('bun run audit:python && bun run audit:node'),
     'Lint job runs oxlint, ruff, oxfmt, quality ratchet, any-guard and dependency audits',
   );
-  assert(
-    job('typecheck').includes('bun run typecheck:frontend') && job('typecheck').includes('bun run typecheck:backend'),
-    'Typecheck job runs bun check and mypy independently of tests and build',
-  );
-  assert(
-    job('build').includes('run: bun run build:frontend'),
-    'Build job runs frontend build and bundle budgets in parallel',
-  );
+  assert(job('typecheck').includes('bun run typecheck:frontend') && job('typecheck').includes('bun run typecheck:backend'), 'Typecheck job runs bun check and mypy independently of tests and build');
+  assert(job('build').includes('run: bun run build:frontend'), 'Build job runs frontend build and bundle budgets in parallel');
   assert(
     job('contracts').includes('node scripts/run-test-suites.js contracts') &&
       job('contracts').includes('node scripts/check-budgets.js --agent-prompt-only'),
     'Contracts job runs contract suites and agent prompt budget outside the slowest jobs',
   );
-  assert(
-    job('electron').includes('node scripts/run-test-suites.js electron && node scripts/run-test-suites.js turns'),
-    'Electron job runs electron and turns suites in parallel with build and lint',
-  );
+  assert(job('electron').includes('node scripts/run-test-suites.js electron && node scripts/run-test-suites.js turns'), 'Electron job runs electron and turns suites in parallel with build and lint');
   assert(pangoSetup.includes('pacman -S mingw-w64-x86_64-pango'), 'Windows tests install Pango');
-  assert(
-    pangoSetup.includes('if ($LASTEXITCODE -ne 0)') && pangoSetup.includes('exit $LASTEXITCODE'),
-    'Pango installation failures stop the backend branch',
-  );
-  assert(
-    !job('lint').includes('install-ci-pango') &&
-      !job('frontend').includes('install-ci-pango') &&
-      !job('build').includes('install-ci-pango'),
-    'Only the backend runner installs Pango',
-  );
-  assert(
-    pangoSetup.includes('WEASYPRINT_DLL_DIRECTORIES=') && pangoSetup.includes('$env:WEASYPRINT_DLL_DIRECTORIES ='),
-    'Windows tests configure WeasyPrint DLLs for validation and later steps',
-  );
+  assert(pangoSetup.includes('if ($LASTEXITCODE -ne 0)') && pangoSetup.includes('exit $LASTEXITCODE'), 'Pango installation failures stop the backend branch');
+  assert(!job('lint').includes('install-ci-pango') && !job('frontend').includes('install-ci-pango') && !job('build').includes('install-ci-pango'), 'Only the backend runner installs Pango');
+  assert(pangoSetup.includes('WEASYPRINT_DLL_DIRECTORIES=') && pangoSetup.includes('$env:WEASYPRINT_DLL_DIRECTORIES ='), 'Windows tests configure WeasyPrint DLLs for validation and later steps');
   assert(pangoSetup.includes("pdf.startswith(b'%PDF-')"), 'Fresh and cached runtimes must render a real PDF');
-  assert(
-    job('backend').indexOf('Install and validate Pango') < job('backend').indexOf('Run backend tests'),
-    'Pango validation precedes backend tests',
-  );
-  assert(
-    ci.includes('~/AppData/Local/antares-pango-dlls') && pangoSetup.includes('antares-pango-dlls'),
-    'Pango cache stores only the WeasyPrint DLL directory',
-  );
-  assert(
-    ci.includes('steps.runner-image.outputs.version') &&
-      ci.includes("hashFiles('scripts/install-ci-pango.ps1')") &&
-      !job('backend').includes('restore-keys:'),
-    'Pango cache cannot cross runner images or installer versions',
-  );
+  assert(job('backend').indexOf('Install and validate Pango') < job('backend').indexOf('Run backend tests'), 'Pango validation precedes backend tests');
+  assert(ci.includes('~/AppData/Local/antares-pango-dlls') && pangoSetup.includes('antares-pango-dlls'), 'Pango cache stores only the WeasyPrint DLL directory');
+  assert(ci.includes('steps.runner-image.outputs.version') && ci.includes("hashFiles('scripts/install-ci-pango.ps1')") && !job('backend').includes('restore-keys:'), 'Pango cache cannot cross runner images or installer versions');
   assert(
     editorMediaSetup.includes('node scripts/prepare-editor-media.js install') &&
       editorMediaSetup.includes('node scripts/prepare-editor-media.js verify'),
@@ -159,10 +115,7 @@ function run() {
     editorMediaSetup.includes('ANTARES_FFMPEG_DIR=') && editorMediaSetup.includes('$env:GITHUB_ENV'),
     'Editor media provisioning exports ANTARES_FFMPEG_DIR to the backend tests',
   );
-  assert(
-    editorMediaSetup.includes('if ($LASTEXITCODE -ne 0)') && editorMediaSetup.includes('exit $LASTEXITCODE'),
-    'Editor media provisioning failures stop the backend branch',
-  );
+  assert(editorMediaSetup.includes('if ($LASTEXITCODE -ne 0)') && editorMediaSetup.includes('exit $LASTEXITCODE'), 'Editor media provisioning failures stop the backend branch');
   assert(
     job('backend').includes('Install and validate editor media') &&
       job('backend').indexOf('Install and validate editor media') < job('backend').indexOf('Run backend tests'),
@@ -172,12 +125,7 @@ function run() {
     job('backend').includes('editor-media-') && job('backend').includes("hashFiles('media/manifest.json')"),
     'Editor media cache is keyed by the media manifest, runner OS, architecture and image version',
   );
-  assert(
-    !job('lint').includes('install-ci-editor-media') &&
-      !job('frontend').includes('install-ci-editor-media') &&
-      !job('build').includes('install-ci-editor-media'),
-    'Only the backend runner provisions editor media',
-  );
+  assert(!job('lint').includes('install-ci-editor-media') && !job('frontend').includes('install-ci-editor-media') && !job('build').includes('install-ci-editor-media'), 'Only the backend runner provisions editor media');
   for (const suite of ['contracts', 'backend', 'electron', 'turns']) {
     const calls = ciJobs.match(new RegExp(`node scripts/run-test-suites\\.js ${suite}\\b`, 'g')) || [];
     assert(calls.length === 1, `Windows CI runs the ${suite} suite exactly once`);
@@ -191,24 +139,14 @@ function run() {
     'The test runner forwards the shard to Vitest via bun',
   );
   assert(
-    runner.includes("shard.split('/')[0] === '1'") &&
-      runner.includes("run(bunCommand, ['run', 'test:static'], frontend)"),
+    runner.includes("shard.split('/')[0] === '1'") && runner.includes("run(bunCommand, ['run', 'test:static'], frontend)"),
     'The single-worker static suite runs exactly once, in the first shard',
   );
+  assert(runner.includes("run(bunCommand, ['run', 'test:all'], frontend)"), 'The unsharded frontend suite still runs every frontend test');
+  assert(!/run: node scripts\/run-test-suites\.js\s*$/m.test(ci), 'CI does not repeat the full suite alongside parallel suites');
   assert(
-    runner.includes("run(bunCommand, ['run', 'test:all'], frontend)"),
-    'The unsharded frontend suite still runs every frontend test',
-  );
-  assert(
-    !/run: node scripts\/run-test-suites\.js\s*$/m.test(ci),
-    'CI does not repeat the full suite alongside parallel suites',
-  );
-  assert(
-    job('verify').includes('name: Lint, audit, and test (Windows)') &&
-      job('verify').includes('if: always()') &&
-      job('verify').includes(
-        'needs: [lint, typecheck, build, contracts, electron, frontend, frontend-shard-2, backend]',
-      ),
+    job('verify').includes('name: Lint, audit, and test (Windows)') && job('verify').includes('if: always()') &&
+      job('verify').includes('needs: [lint, typecheck, build, contracts, electron, frontend, frontend-shard-2, backend]'),
     'The existing required check always evaluates every parallel worker job',
   );
   assert(
@@ -216,18 +154,10 @@ function run() {
       job('verify').includes("if ($result -ne 'success') { throw"),
     'The required check rejects failed, cancelled and skipped workers',
   );
-  assert(
-    job('backend').includes('pytest tests/test_stress_conversion.py tests/test_scalability_baseline.py -m slow'),
-    'Windows CI runs slow stress tests and scalability baselines',
-  );
+  assert(job('backend').includes('pytest tests/test_stress_conversion.py tests/test_scalability_baseline.py -m slow'), 'Windows CI runs slow stress tests and scalability baselines');
   if (process.platform === 'win32') {
     const gate = job('verify').split('        run: |')[1].trim();
-    const result = spawnSync(
-      'pwsh',
-      [
-        '-NoProfile',
-        '-Command',
-        `
+    const result = spawnSync('pwsh', ['-NoProfile', '-Command', `
       function Invoke-Gate { ${gate} }
       $names = @('LINT_RESULT', 'TYPECHECK_RESULT', 'BUILD_RESULT', 'CONTRACTS_RESULT', 'ELECTRON_RESULT', 'FRONTEND_RESULT', 'FRONTEND_SHARD_2_RESULT', 'BACKEND_RESULT')
       foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name, 'success') }
@@ -241,35 +171,18 @@ function run() {
         }
         [Environment]::SetEnvironmentVariable($name, 'success')
       }
-    `,
-      ],
-      { encoding: 'utf8', windowsHide: true },
-    );
-    assert(
-      result.status === 0,
-      `The actual PowerShell gate accepts success and rejects every failure state: ${result.stderr}`,
-    );
+    `], { encoding: 'utf8', windowsHide: true });
+    assert(result.status === 0, `The actual PowerShell gate accepts success and rejects every failure state: ${result.stderr}`);
   }
   for (const input of ['node', 'python', 'root', 'frontend']) {
-    assert(
-      new RegExp(`  ${input}:[\\s\\S]*?default: 'true'`).test(setupCi),
-      `Release setup keeps ${input} enabled by default`,
-    );
+    assert(new RegExp(`  ${input}:[\\s\\S]*?default: 'true'`).test(setupCi), `Release setup keeps ${input} enabled by default`);
   }
   assert(
-    ['frontend', 'frontend-shard-2'].every(
-      (name) => job(name).includes("python: 'false'") && job(name).includes("root: 'false'"),
-    ),
+    ['frontend', 'frontend-shard-2'].every((name) => job(name).includes("python: 'false'") && job(name).includes("root: 'false'")),
     'Frontend shards skip Python and root Electron installs after moving agent-profiles to root Vitest',
   );
-  assert(
-    job('backend').includes("frontend: 'false'") && job('backend').includes("root: 'false'"),
-    'Backend setup skips both Node installs',
-  );
-  assert(
-    packageJson.scripts['audit:python'].endsWith('python scripts/audit_python.py'),
-    'The shared audit uses the tested lock exporter',
-  );
+  assert(job('backend').includes("frontend: 'false'") && job('backend').includes("root: 'false'"), 'Backend setup skips both Node installs');
+  assert(packageJson.scripts['audit:python'].endsWith('python scripts/audit_python.py'), 'The shared audit uses the tested lock exporter');
 
   assert(nodeVersion === '22.19.0', '.node-version pins Node 22.19.0');
   assert(setupCi.includes("node-version-file: '.node-version'"), 'setup-ci reads the committed Node version file');
@@ -277,32 +190,14 @@ function run() {
     setupCi.includes('path: .venv') && setupCi.includes("hashFiles('uv.lock', 'pyproject.toml')"),
     'setup-ci caches .venv directly keyed by uv.lock and pyproject.toml',
   );
-  assert(
-    setupCi.includes("hashFiles('frontend/bun.lock')") && setupCi.includes('path: frontend/node_modules'),
-    'setup-ci caches frontend/node_modules keyed by frontend/bun.lock',
-  );
-  assert(
-    setupCi.includes('bun install --frozen-lockfile'),
-    'setup-ci installs root dependencies with bun install --frozen-lockfile',
-  );
-  assert(
-    setupCi.includes('bun install --frozen-lockfile --cwd frontend'),
-    'setup-ci installs frontend dependencies with bun install --frozen-lockfile',
-  );
-  assert(
-    setupCi.includes("hashFiles('bun.lock')") && setupCi.includes('path: node_modules'),
-    'setup-ci caches root node_modules keyed by bun.lock',
-  );
+  assert(setupCi.includes("hashFiles('frontend/bun.lock')") && setupCi.includes('path: frontend/node_modules'), 'setup-ci caches frontend/node_modules keyed by frontend/bun.lock');
+  assert(setupCi.includes('bun install --frozen-lockfile'), 'setup-ci installs root dependencies with bun install --frozen-lockfile');
+  assert(setupCi.includes('bun install --frozen-lockfile --cwd frontend'), 'setup-ci installs frontend dependencies with bun install --frozen-lockfile');
+  assert(setupCi.includes("hashFiles('bun.lock')") && setupCi.includes('path: node_modules'), 'setup-ci caches root node_modules keyed by bun.lock');
   assert(fs.existsSync(UV_LOCK_PATH), 'Python toolchain has a committed uv lockfile');
   assert(setupCi.includes('uv sync --locked --extra dev'), 'setup-ci installs Python dependencies from uv.lock');
-  assert(
-    setupCi.includes('UV_VERSION: 0.11.19') && setupCi.includes('sha256sum -c'),
-    'setup-ci installs the pinned uv release verified by SHA-256',
-  );
-  assert(
-    setupCi.includes('BUN_VERSION: 1.4.4') && setupCi.includes('bun-windows-x64.zip'),
-    'setup-ci installs the pinned Bun release verified by SHA-256',
-  );
+  assert(setupCi.includes('UV_VERSION: 0.11.19') && setupCi.includes('sha256sum -c'), 'setup-ci installs the pinned uv release verified by SHA-256');
+  assert(setupCi.includes('BUN_VERSION: 1.4.4') && setupCi.includes('bun-windows-x64.zip'), 'setup-ci installs the pinned Bun release verified by SHA-256');
   assertActionsPinned(setupCi, 'setup-ci');
 
   assert(packageJson.scripts.ci.includes('bun run audit:node'), 'shared CI gate includes Node dependency audits');
@@ -318,10 +213,7 @@ function run() {
   );
   assert(packageJson.scripts.test === 'node scripts/run-test-suites.js', 'full suite delegates to run-test-suites.js');
   assert(
-    runner.includes("'uv'") &&
-      runner.includes("'--locked'") &&
-      runner.includes("'pytest'") &&
-      runner.includes("'../tests'"),
+    runner.includes("run('uv', ['run', '--project', ROOT, '--locked', '--extra', 'dev', 'pytest', '../tests', '-v']"),
     'test runner runs pytest through the locked Python environment',
   );
   assert(
@@ -336,7 +228,10 @@ function run() {
     'The electron suite runs as a bounded, overridable pool of parallel Node workers',
   );
   assert(runner.includes('runNodeTests(CONTRACT_TESTS)'), 'The contract suite stays serial');
-  assert(runner.includes('node tests failed:'), 'The Node test pool fails closed naming every failed test file');
+  assert(
+    runner.includes('node tests failed:'),
+    'The Node test pool fails closed naming every failed test file',
+  );
   assert(runner.includes("'test-quality-ratchet.js'"), 'test runner treats quality-ratchet as a contract test');
   assert(runner.includes("'test-review-policy.js'"), 'test runner treats review-policy as a contract test');
   assert(
@@ -344,8 +239,7 @@ function run() {
     'stress tests use the locked Python environment',
   );
   assert(
-    viteConfig.includes("pool: 'threads'") &&
-      viteConfig.includes('fileParallelism: true') &&
+    viteConfig.includes("pool: 'threads'") && viteConfig.includes('fileParallelism: true') &&
       viteConfig.includes('maxWorkers: 4'),
     'Frontend Vitest runs test files in parallel on a bounded worker pool',
   );
@@ -357,16 +251,10 @@ function run() {
   );
 
   assert(release.includes('uses: ./.github/actions/setup-ci'), 'Release verify reuses the shared setup-ci action');
-  assert(
-    release.includes("node-version-file: '.node-version'") || release.includes('uses: ./.github/actions/setup-ci'),
-    'Release build uses setup-ci with the committed Node version file',
-  );
+  assert(release.includes("node-version-file: '.node-version'") || release.includes('uses: ./.github/actions/setup-ci'), 'Release build uses setup-ci with the committed Node version file');
   assert(!release.includes('continue-on-error: true'), 'Release dependency audits fail closed');
   assert(release.includes('run: bun run ci'), 'Release reuses the same fail-closed CI quality gate');
-  assert(
-    release.includes('Validate required build configuration'),
-    'Release rejects missing production build configuration',
-  );
+  assert(release.includes('Validate required build configuration'), 'Release rejects missing production build configuration');
   assert(release.includes('Antares-Setup-*.exe'), 'Release allowlists the NSIS installer');
   assert(release.includes('Antares-Portable-*.exe'), 'Release allowlists the portable executable');
   assert(release.includes('latest.yml'), 'Release includes updater metadata');
@@ -374,23 +262,11 @@ function run() {
   assert(release.includes('SOURCE_DATE_EPOCH'), 'Release pins SOURCE_DATE_EPOCH from the last commit');
   assert(release.includes('WINDOWS_CODESIGN_PFX'), 'Release wires Authenticode signing from WINDOWS_CODESIGN_PFX');
   assert(release.includes('CSC_LINK'), 'Release feeds electron-builder through CSC_LINK');
-  assert(
-    release.includes('Sign release checksums (GPG, optional)'),
-    'Release includes the optional GPG checksum signature step',
-  );
+  assert(release.includes('Sign release checksums (GPG, optional)'), 'Release includes the optional GPG checksum signature step');
   assert(release.includes('SHA256SUMS.txt.asc'), 'Release uploads the GPG signature of the checksums');
-  assert(
-    release.includes('expected_count=5') && release.includes('expected_count=6'),
-    'Release accepts the asset count with and without GPG signature',
-  );
-  assert(
-    !release.includes('forceCodeSigning: true'),
-    'Release never hard-fails builds when signing secrets are absent',
-  );
-  const uploadBlock = release.slice(
-    release.indexOf('uses: actions/upload-artifact'),
-    release.indexOf('uses: actions/download-artifact'),
-  );
+  assert(release.includes('expected_count=5') && release.includes('expected_count=6'), 'Release accepts the asset count with and without GPG signature');
+  assert(!release.includes('forceCodeSigning: true'), 'Release never hard-fails builds when signing secrets are absent');
+  const uploadBlock = release.slice(release.indexOf('uses: actions/upload-artifact'), release.indexOf('uses: actions/download-artifact'));
   assert(!uploadBlock.includes('path: dist-electron'), 'Release does not upload the unpacked build directory');
   assert(!release.includes('dist-electron/* \\\n'), 'Release does not pass directories to gh release upload');
   assert(!release.includes('--clobber'), 'Release never deletes published assets during retry');

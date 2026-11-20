@@ -42,13 +42,11 @@ function validateEnvironment() {
 }
 
 function slugifyBranchName(input) {
-  return (
-    input
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 60) || 'change'
-  );
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'change';
 }
 
 function defaultBranchName(message) {
@@ -64,7 +62,7 @@ function ensureFeatureBranch(options) {
     if (!options.isShip) {
       throw new Error(
         `Estás en ${BASE_BRANCH}. En ship mode se creará una branch automáticamente; ` +
-          `usa --branch <nombre> para elegirla.`,
+        `usa --branch <nombre> para elegirla.`
       );
     }
 
@@ -75,7 +73,7 @@ function ensureFeatureBranch(options) {
   } else if (options.branch && options.branch !== branch) {
     throw new Error(
       `Ya estás en "${branch}" pero pediste --branch "${options.branch}". ` +
-        'Cambia de branch manualmente o omite --branch.',
+      'Cambia de branch manualmente o omite --branch.'
     );
   }
 
@@ -108,7 +106,13 @@ function createOrUpdatePr(branch, title, body) {
     return existing;
   }
 
-  const url = gh(['pr', 'create', '--base', BASE_BRANCH, '--head', branch, '--title', title, '--body', body]);
+  const url = gh([
+    'pr', 'create',
+    '--base', BASE_BRANCH,
+    '--head', branch,
+    '--title', title,
+    '--body', body,
+  ]);
   const match = url.match(/\/pull\/(\d+)/);
   const number = match ? Number(match[1]) : null;
   console.log(`    PR creado: ${url}`);
@@ -156,48 +160,26 @@ function main() {
     step('③ Quality Gate (lint + typecheck + test)', runQualityGate);
 
     let prNumber;
-    shipStep(
-      '④ Commit cambios locales',
-      options.isShip,
-      () => {
-        commitChanges(options.message);
-      },
-      'dry-run, usa --ship para ejecutar',
-    );
-    shipStep(
-      '⑤ Push branch a origin',
-      options.isShip,
-      () => {
-        pushBranch(branch);
-      },
-      'dry-run, usa --ship para ejecutar',
-    );
-    shipStep(
-      '⑥ Crear/actualizar Pull Request',
-      options.isShip,
-      () => {
-        const title = options.title || options.message || branch;
-        const body = defaultPrBody(branch, options.message);
-        prNumber = createOrUpdatePr(branch, title, body);
-      },
-      'dry-run, usa --ship para ejecutar',
-    );
+    shipStep('④ Commit cambios locales', options.isShip, () => {
+      commitChanges(options.message);
+    }, 'dry-run, usa --ship para ejecutar');
+    shipStep('⑤ Push branch a origin', options.isShip, () => {
+      pushBranch(branch);
+    }, 'dry-run, usa --ship para ejecutar');
+    shipStep('⑥ Crear/actualizar Pull Request', options.isShip, () => {
+      const title = options.title || options.message || branch;
+      const body = defaultPrBody(branch, options.message);
+      prNumber = createOrUpdatePr(branch, title, body);
+    }, 'dry-run, usa --ship para ejecutar');
 
     const canMerge = options.isShip && options.doMerge;
-    const mergeSkip = options.isShip
-      ? 'omitido, usa --merge para incluir'
-      : 'dry-run, usa --ship --merge para ejecutar';
-    shipStep(
-      '⑦ Esperar CI',
-      canMerge,
-      () => {
-        if (!prNumber) {
-          throw new Error('No se pudo resolver el número de PR para mergear.');
-        }
-        waitForCi(prNumber);
-      },
-      mergeSkip,
-    );
+    const mergeSkip = options.isShip ? 'omitido, usa --merge para incluir' : 'dry-run, usa --ship --merge para ejecutar';
+    shipStep('⑦ Esperar CI', canMerge, () => {
+      if (!prNumber) {
+        throw new Error('No se pudo resolver el número de PR para mergear.');
+      }
+      waitForCi(prNumber);
+    }, mergeSkip);
     shipStep('⑧ Merge PR a main', canMerge, () => mergePr(prNumber), mergeSkip);
 
     console.log('\n════════════════════════════════════════════');

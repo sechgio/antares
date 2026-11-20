@@ -1,3 +1,4 @@
+
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
@@ -26,7 +27,7 @@ function updateFile(filePath, replacements) {
 }
 
 const args = process.argv.slice(2);
-const type = args.find((a) => ['patch', 'minor', 'major'].includes(a)) || 'patch';
+const type = args.find(a => ['patch', 'minor', 'major'].includes(a)) || 'patch';
 const shouldPr = args.includes('--pr');
 
 if (args.includes('--push')) {
@@ -53,9 +54,13 @@ if (fs.existsSync(frontendPkgPath)) {
   console.log('✓ Updated frontend/package.json');
 }
 
-updateFile('backend/version.py', [{ regex: /__version__\s*=\s*"[^"]+"/, template: `__version__ = "${newVersion}"` }]);
+updateFile('backend/version.py', [
+  { regex: /__version__\s*=\s*"[^"]+"/, template: `__version__ = "${newVersion}"` },
+]);
 
-updateFile('pyproject.toml', [{ regex: /^version\s*=\s*"[^"]+"/m, template: `version = "${newVersion}"` }]);
+updateFile('pyproject.toml', [
+  { regex: /^version\s*=\s*"[^"]+"/m, template: `version = "${newVersion}"` },
+]);
 
 console.log(`\nVersion bumped to ${newVersion}`);
 

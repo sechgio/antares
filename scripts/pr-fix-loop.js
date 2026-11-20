@@ -34,7 +34,9 @@ function parseArgs(argv) {
 }
 
 function getPrInfo(prNumber) {
-  const json = trySh(`gh pr view ${prNumber} --json headRefName,state,reviewDecision,mergeable,headRepository 2>&1`);
+  const json = trySh(
+    `gh pr view ${prNumber} --json headRefName,state,reviewDecision,mergeable,headRepository 2>&1`
+  );
   if (!json || json.includes('error') || json.includes('not found')) {
     throw new Error(`No se pudo obtener info del PR #${prNumber}: ${json || '(sin respuesta)'}`);
   }
@@ -66,7 +68,7 @@ function anyCheckFails(checks) {
 
 function captureFailedRunLogs(prNumber) {
   const runsJson = trySh(
-    `gh run list --branch "$(gh pr view ${prNumber} --json headRefName --jq .headRefName)" --status failure --limit 5 --json databaseId,name,status,conclusion 2>&1`,
+    `gh run list --branch "$(gh pr view ${prNumber} --json headRefName --jq .headRefName)" --status failure --limit 5 --json databaseId,name,status,conclusion 2>&1`
   );
   if (!runsJson || runsJson.includes('error')) return '(no se pudieron obtener runs fallidos)';
   let runs = [];
@@ -164,11 +166,15 @@ function runLoop(options) {
   if (!prNumber) {
     const branch = currentBranch();
     if (branch === BASE_BRANCH) {
-      throw new Error(`Estas en ${BASE_BRANCH}. Pasa --pr <num> o cambiate a una feature branch.`);
+      throw new Error(
+        `Estas en ${BASE_BRANCH}. Pasa --pr <num> o cambiate a una feature branch.`
+      );
     }
     prNumber = findOpenPrNumber(branch);
     if (!prNumber) {
-      throw new Error(`No se encontro un PR abierto para la branch actual "${branch}". Pasa --pr <num>.`);
+      throw new Error(
+        `No se encontro un PR abierto para la branch actual "${branch}". Pasa --pr <num>.`
+      );
     }
   }
   console.log(`    PR objetivo: #${prNumber}`);
@@ -213,7 +219,7 @@ function runLoop(options) {
     if (workingTreeDirty()) {
       throw new Error(
         'El worktree tiene cambios anteriores a las heuristicas: pr-fix solo commitea lo que sus fixers generan. ' +
-          'Commitea o guarda en stash los cambios ajenos antes de usar --ship.',
+          'Commitea o guarda en stash los cambios ajenos antes de usar --ship.'
       );
     }
     const pythonFix = applyPythonLintFix();
@@ -246,7 +252,7 @@ function runLoop(options) {
       commentOnPr(
         prNumber,
         `Auto-fix no pudo resolver todos los errores en ${options.maxIter} intentos. ` +
-          'Revisión manual necesaria. Logs disponibles en las runs de CI.',
+          'Revisión manual necesaria. Logs disponibles en las runs de CI.'
       );
     }
   }

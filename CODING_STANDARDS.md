@@ -67,16 +67,16 @@ Referencia por área para las tareas enrutadas desde [AGENTS.md](AGENTS.md). Lee
 ## Entorno y calidad
 
 - Versiones, dependencias y comandos salen de `package.json`, `frontend/package.json`, `pyproject.toml`, sus lockfiles y `.node-version`. Comprueba esos archivos en lugar de inferir versiones del README.
-- Para preparar el entorno usa `npm ci`, `npm ci --prefix frontend` y `uv sync --locked --extra dev`. El empaquetado soportado se verifica en Windows.
-- Consulta los scripts antes de elegir comandos de build, auditoría o calidad. `scripts/run-test-suites.js` define las suites de `npm test`; usa `-m slow` solo para pruebas explícitamente lentas.
+- Para preparar el entorno usa `bun install --frozen-lockfile`, `bun install --frozen-lockfile --cwd frontend` y `uv sync --locked --extra dev`. El empaquetado soportado se verifica en Windows.
+- Consulta los scripts antes de elegir comandos de build, auditoría o calidad. `scripts/run-test-suites.js` define las suites de `bun run test`; usa `-m slow` solo para pruebas explícitamente lentas.
 - `scripts/check_any_guard.py` requiere excepciones explícitas y justificadas. Para límites de calidad y bundles consulta `.quality-baseline.json`, `shared/budgets.json`, `scripts/quality-ratchet.js` y `scripts/check-budgets.js`; los aumentos de techo siguen la política de AGENTS.
 - Cumple los budgets de Canvas y shell en `shared/budgets.json` y `scripts/check-budgets.js`, incluidos límites de incremento, vendors iniciales y modulepreload.
 
 ## Git, PR y releases
 
-- Publica cambios con `npm run push:ship`; inspecciona con `npm run push:dry-run`. Proporciona el mensaje requerido y usa los flags del script, conservando sus validaciones. `push:merge` añade espera de checks y solicitud de merge.
+- Publica cambios con `bun run push:ship`; inspecciona con `bun run push:dry-run`. Proporciona el mensaje requerido y usa los flags del script, conservando sus validaciones. `push:merge` añade espera de checks y solicitud de merge.
 - `push:ship` y `pr-fix:ship` commitean el índice si tiene archivos; con índice vacío recurren a `git add -A`. Stagea selectivamente antes de invocarlos. Con índice vacío solo pueden ejecutarse si no hay cambios ajenos. `pr-fix:ship` además aborta ante cambios previos a sus heurísticas.
-- Para un PR existente usa `npm run pr-fix` como inspección; `pr-fix:ship` aplica fixes acotados y `pr-fix:merge` solicita merge cuando está aprobado, sin conflictos y con checks verdes. Consulta flags y límites en `scripts/pr-fix-loop.js`.
+- Para un PR existente usa `bun run pr-fix` como inspección; `pr-fix:ship` aplica fixes acotados y `pr-fix:merge` solicita merge cuando está aprobado, sin conflictos y con checks verdes. Consulta flags y límites en `scripts/pr-fix-loop.js`.
 - El cuerpo del PR incluye propósito, issue/PR relacionado si existe, riesgo, evidencia de tests y screenshots para UI. Sigue `.github/pull_request_template.md`; consulta `scripts/review-policy-check.js` para la política ejecutable.
 - Documenta merge, sync con `origin/main`, conflictos y restauraciones aprobadas en el PR. Son operaciones de rama, no parte del diff de tarea; mantén staging selectivo de los commits propios.
 - Releases requieren branch `main`, árbol limpio, HEAD exactamente en `origin/main`, changelog con versión/fecha/sección y tag no duplicado. No borres cambios ajenos para cumplirlo.
