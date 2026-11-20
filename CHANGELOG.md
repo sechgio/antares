@@ -73,6 +73,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - Agent consulta la memoria una vez por sesión y congela su bloque al final del prompt estable, detrás de las instrucciones fijas, en lugar de reinyectarla en cada turno: el prefijo cacheable del proveedor sobrevive entre turnos y el bloque solo se regenera al compactar o al abrir una conversación nueva. `memory_remember` y `procedure_learn` siguen guardando al disco sin alterar el turno en curso.
 
 ### Removed
+- Antares ya no muestra notificaciones de Windows cuando un encargo de Agent necesita datos o aprobación, termina o requiere revisión con la ventana oculta; el icono de la bandeja se mantiene.
 - Se retiran los métodos IPC sin consumidor `agent_approvals_history`, `agent_grants_list` y `agent_grants_revoke`, con sus handlers nativos y sus entradas del catálogo compartido: eran puentes a datos internos de agente que la interfaz ya no consulta desde que desapareció el historial de aprobaciones.
 - Se retira la migración one-shot de sesiones de agente (`flows_retirement`) y su hilo de arranque: la flota instalada ya la ejecutó y no dejaba estado consumible por otros componentes.
 - Se retira superficie sin consumidor alrededor de la sesión: el método IPC `supabase_session_clear` (el cierre de sesión ya reescribe el archivo cifrado vía `supabase_session_put`), el aviso «Cuenta desactivada» de la app —inalcanzable porque la revocación siempre ocurre antes de fijar el usuario—, el campo `isDisabled` de `AppUser` y `refreshUser` del contrato de `useAuth`.
