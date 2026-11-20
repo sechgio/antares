@@ -34,7 +34,9 @@ const { mockSupabase } = vi.hoisted(() => {
   }
 
   const channel = {
-    on: vi.fn().mockReturnThis(),
+    on: vi.fn(function (this: unknown) {
+      return this;
+    }),
     subscribe: vi.fn((cb?: (status: string) => void) => {
       if (typeof cb === 'function') cb('SUBSCRIBED');
       return { unsubscribe: vi.fn() };
@@ -43,7 +45,7 @@ const { mockSupabase } = vi.hoisted(() => {
   return {
     mockSupabase: {
       from: vi.fn(() => createThenableChain()),
-      rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
+      rpc: vi.fn(async () => ({ data: [], error: null })),
       channel: vi.fn(() => channel),
       removeChannel: vi.fn(),
     },
@@ -114,9 +116,12 @@ describe('App', () => {
   it('keeps conversion empty-state actions visible before files are selected', async () => {
     render(<App />);
     fireEvent.click(await findSidebarTab('Conversión'));
-    await waitFor(() => {
-      expect(screen.getByText(/Arrastra imágenes o videos aquí/i)).toBeInTheDocument();
-    }, { timeout: 8000 });
+    await waitFor(
+      () => {
+        expect(screen.getByText(/Arrastra imágenes o videos aquí/i)).toBeInTheDocument();
+      },
+      { timeout: 8000 },
+    );
     expect(await screen.findByRole('button', { name: /Seleccionar archivos/i }, { timeout: 8000 })).toBeInTheDocument();
   }, 20000);
 
@@ -137,7 +142,9 @@ describe('App', () => {
     render(<App />);
     fireEvent.click(await findSidebarTab(/Informes técnicos|Informes tecnicos/i));
 
-    expect(await screen.findByRole('heading', { name: /Informes técnicos|Informes tecnicos/i }, { timeout: 5000 })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: /Informes técnicos|Informes tecnicos/i }, { timeout: 5000 }),
+    ).toBeInTheDocument();
   });
 
   it('renders the image optimizer without its title in a full-height workspace', async () => {
@@ -166,9 +173,12 @@ describe('App', () => {
         { timeout: 5000 },
       );
       if (tab.id === 'canvas') {
-        await waitFor(() => {
-          expect(document.querySelector('.canvas-app')).toBeTruthy();
-        }, { timeout: 15000 });
+        await waitFor(
+          () => {
+            expect(document.querySelector('.canvas-app')).toBeTruthy();
+          },
+          { timeout: 15000 },
+        );
       }
     }
   }, 90000);
@@ -176,10 +186,20 @@ describe('App', () => {
   it('opens providers below plugins in settings and keeps connections in Complementos', async () => {
     vi.spyOn(connectionsApi, 'connectionsProviders').mockResolvedValue({ providers: [], categories: [] });
     vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [] });
-    vi.spyOn(mcpApi, 'mcpServersList').mockResolvedValue({ servers: [{
-      id: 'test-server', name: 'Servidor de prueba', transport: 'stdio', url: '',
-      command: 'test', args: [], secret_keys: [], tools_count: null,
-    }] });
+    vi.spyOn(mcpApi, 'mcpServersList').mockResolvedValue({
+      servers: [
+        {
+          id: 'test-server',
+          name: 'Servidor de prueba',
+          transport: 'stdio',
+          url: '',
+          command: 'test',
+          args: [],
+          secret_keys: [],
+          tools_count: null,
+        },
+      ],
+    });
     const deleteServer = vi.spyOn(mcpApi, 'mcpServerDelete');
     render(<App />);
     await findSidebarTab('Conversión');

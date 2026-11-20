@@ -6,25 +6,28 @@ import { registerCanvasFlushOwner } from '../utils/ackCanvasFlush';
 
 const { mockSupabase } = vi.hoisted(() => {
   const empty = { data: [] as unknown[], error: null };
-  const queryResult = vi.fn().mockResolvedValue(empty);
-  const chain = {
-    select: vi.fn().mockReturnThis(),
-    insert: vi.fn().mockReturnThis(),
-    update: vi.fn().mockReturnThis(),
-    delete: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    order: vi.fn().mockImplementation(() => queryResult()),
-    single: vi.fn().mockResolvedValue({ data: null, error: null }),
+  const queryResult = vi.fn(async () => empty);
+  const returnThis = function (this: unknown) {
+    return this;
   };
-  const channel = { on: vi.fn().mockReturnThis(), subscribe: vi.fn().mockReturnValue({}) };
+  const chain = {
+    select: vi.fn(returnThis),
+    insert: vi.fn(returnThis),
+    update: vi.fn(returnThis),
+    delete: vi.fn(returnThis),
+    eq: vi.fn(returnThis),
+    order: vi.fn(() => queryResult()),
+    single: vi.fn(async () => ({ data: null, error: null })),
+  };
+  const channel = { on: vi.fn(returnThis), subscribe: vi.fn(() => ({})) };
   return {
     mockSupabase: {
       from: vi.fn(() => chain),
-      rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
+      rpc: vi.fn(async () => ({ data: [], error: null })),
       channel: vi.fn(() => channel),
       removeChannel: vi.fn(),
       auth: {
-        getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
+        getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
         onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
       },
     },
@@ -56,12 +59,12 @@ vi.mock('../auth/AuthContext', () => ({
 describe('App Canvas keep-alive', () => {
   it('acknowledges quit flush when Canvas has never been mounted', async () => {
     const previousApi = window.electronAPI;
-    let notifyHandler: ((method: string, params: unknown) => void | Promise<void>) | undefined;
+    const listeners: Array<(method: string, params: unknown) => void | Promise<void>> = [];
     const canvasFlushAck = vi.fn(async () => ({ ok: true }));
     window.electronAPI = {
       ...previousApi!,
       onNotify: (callback) => {
-        notifyHandler = callback;
+        listeners.push(callback);
         return () => {};
       },
       canvasFlushAck,
@@ -69,9 +72,9 @@ describe('App Canvas keep-alive', () => {
 
     try {
       render(<App />);
-      await waitFor(() => expect(notifyHandler).toBeDefined());
+      await waitFor(() => expect(listeners.length).toBeGreaterThan(0));
       await act(async () => {
-        await notifyHandler?.('app.flush-canvas-before-quit', {});
+        for (const cb of listeners) await cb('app.flush-canvas-before-quit', {});
       });
       expect(canvasFlushAck).toHaveBeenCalledTimes(1);
     } finally {
@@ -81,12 +84,12 @@ describe('App Canvas keep-alive', () => {
 
   it('leaves the quit flush ack to Canvas while it owns the flush', async () => {
     const previousApi = window.electronAPI;
-    let notifyHandler: ((method: string, params: unknown) => void | Promise<void>) | undefined;
+    const listeners: Array<(method: string, params: unknown) => void | Promise<void>> = [];
     const canvasFlushAck = vi.fn(async () => ({ ok: true }));
     window.electronAPI = {
       ...previousApi!,
       onNotify: (callback) => {
-        notifyHandler = callback;
+        listeners.push(callback);
         return () => {};
       },
       canvasFlushAck,
@@ -95,9 +98,9 @@ describe('App Canvas keep-alive', () => {
 
     try {
       render(<App />);
-      await waitFor(() => expect(notifyHandler).toBeDefined());
+      await waitFor(() => expect(listeners.length).toBeGreaterThan(0));
       await act(async () => {
-        await notifyHandler?.('app.flush-canvas-before-quit', {});
+        for (const cb of listeners) await cb('app.flush-canvas-before-quit', {});
       });
       expect(canvasFlushAck).not.toHaveBeenCalled();
     } finally {
@@ -113,9 +116,12 @@ describe('App Canvas keep-alive', () => {
     expect(await screen.findByTestId('canvas-keep-alive', {}, { timeout: 15000 })).toBeInTheDocument();
 
     fireEvent.click(await findSidebarTab('Conversión'));
-    await waitFor(() => {
-      expect(screen.getByText(/Arrastra imágenes o videos aquí/i)).toBeInTheDocument();
-    }, { timeout: 8000 });
+    await waitFor(
+      () => {
+        expect(screen.getByText(/Arrastra imágenes o videos aquí/i)).toBeInTheDocument();
+      },
+      { timeout: 8000 },
+    );
 
     expect(screen.getByTestId('canvas-keep-alive')).toBeInTheDocument();
 

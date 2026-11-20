@@ -10,5 +10,11 @@
     "allowSyntheticDefaultImports": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "vitest.static.config.ts", "../shared/budgets.json"]
+  "include": [
+    "vite.config.ts",
+    "vitest.static.config.ts",
+    "vitest.sequencer.ts",
+    "vitest.durations.json",
+    "../shared/budgets.json"
+  ]
 }

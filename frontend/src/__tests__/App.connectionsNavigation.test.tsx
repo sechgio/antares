@@ -16,7 +16,9 @@ vi.mock('../components/connections/ProvidersView', () => ({
 }));
 vi.mock('../components/agent', () => ({
   default: ({ onConfigureProvider }: { onConfigureProvider?: () => void }) => (
-    <button type="button" onClick={onConfigureProvider}>Configurar IA</button>
+    <button type="button" onClick={onConfigureProvider}>
+      Configurar IA
+    </button>
   ),
 }));
 
@@ -32,17 +34,33 @@ it('no hay tab de Conexiones y el agente abre la sección Proveedores de Ajustes
 
 it('transmite la incertidumbre de una escritura sin alterar los rechazos confirmados', async () => {
   const previousApi = window.electronAPI;
-  let notify: ((method: string, params: unknown) => void | Promise<void>) | undefined;
-  window.electronAPI = { ...previousApi!, onNotify: (callback) => { notify = callback; return () => {}; } };
+  const listeners: Array<(method: string, params: unknown) => void | Promise<void>> = [];
+  window.electronAPI = {
+    ...previousApi!,
+    onNotify: (callback) => {
+      listeners.push(callback);
+      return () => {};
+    },
+  };
   const response = vi.spyOn(agentApi, 'agentRendererResult').mockResolvedValue({ accepted: true });
+  const notifyAll = async (params: unknown) => {
+    await act(async () => {
+      for (const cb of listeners) await cb('agent.renderer-tool', params);
+    });
+  };
   try {
     render(<App />);
-    await waitFor(() => expect(notify).toBeDefined());
-    executeRendererTool.mockRejectedValue(Object.assign(new Error('Respuesta perdida'), { name: 'AgentEffectUncertainError' }));
-    await act(async () => { await notify?.('agent.renderer-tool', { id: 'op1', method: 'espacios_espacio_create', params: {} }); });
-    expect(response).toHaveBeenCalledWith('op1', undefined, 'Respuesta perdida', true);
+    await waitFor(() => expect(listeners.length).toBeGreaterThan(0));
+    executeRendererTool.mockRejectedValue(
+      Object.assign(new Error('Respuesta perdida'), { name: 'AgentEffectUncertainError' }),
+    );
+    await notifyAll({ id: 'op1', method: 'espacios_espacio_create', params: {} });
+    await waitFor(() => expect(response).toHaveBeenCalledWith('op1', undefined, 'Respuesta perdida', true));
     executeRendererTool.mockRejectedValue(new Error('Permiso denegado [42501]'));
-    await act(async () => { await notify?.('agent.renderer-tool', { id: 'op2', method: 'espacios_espacio_create', params: {} }); });
-    expect(response).toHaveBeenCalledWith('op2', undefined, 'Permiso denegado [42501]', false);
-  } finally { window.electronAPI = previousApi; response.mockRestore(); }
+    await notifyAll({ id: 'op2', method: 'espacios_espacio_create', params: {} });
+    await waitFor(() => expect(response).toHaveBeenCalledWith('op2', undefined, 'Permiso denegado [42501]', false));
+  } finally {
+    window.electronAPI = previousApi;
+    response.mockRestore();
+  }
 });
