@@ -9,7 +9,8 @@ const testGlobals = globalThis as typeof globalThis & {
   __baseAsyncWrapper?: ReturnType<typeof getConfig>['asyncWrapper'];
   setImmediate?: (callback: () => void) => unknown;
 };
-const baseAsyncWrapper = (testGlobals.__baseAsyncWrapper ??= getConfig().asyncWrapper);
+testGlobals.__baseAsyncWrapper ??= getConfig().asyncWrapper;
+const baseAsyncWrapper = testGlobals.__baseAsyncWrapper;
 const realSetImmediate = testGlobals.setImmediate;
 if (typeof realSetImmediate === 'function') {
   configure({
