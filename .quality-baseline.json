@@ -2,7 +2,7 @@
   "updatedAt": "2026-11-17",
   "metrics": {
     "typeIgnore": {
-      "value": 5,
+      "value": 2,
       "direction": "max"
     },
     "anyInFrontend": {
@@ -14,7 +14,7 @@
       "direction": "max"
     },
     "largeFiles": {
-      "value": 91,
+      "value": 92,
       "direction": "max"
     }
   }
