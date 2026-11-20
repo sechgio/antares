@@ -115,18 +115,22 @@ app.whenReady().then(async () => {
     console.warn('[main] log/temp init failed:', err && err.message);
   }
   Menu.setApplicationMenu(null);
-  startPythonBackend(isDev).then(() => require('./agent-runtime').open()).catch((err) => {
-    console.error('[main] startPythonBackend threw:', err);
-  });
+  startPythonBackend(isDev)
+    .then(() => require('./agent-runtime').open())
+    .catch((err) => {
+      console.error('[main] startPythonBackend threw:', err);
+    });
   createWindow(isDev);
   _installWindowCloseGuard();
   _tray = new Tray(require('node:path').join(__dirname, '..', 'assets', 'icon.ico'));
   _tray.setToolTip('Antares');
-  _tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Mostrar Antares', click: _showMainWindow },
-    { type: 'separator' },
-    { label: 'Salir', click: () => app.quit() },
-  ]));
+  _tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Mostrar Antares', click: _showMainWindow },
+      { type: 'separator' },
+      { label: 'Salir', click: () => app.quit() },
+    ]),
+  );
   _tray.on('double-click', _showMainWindow);
   const canvasAssetGcInitialTimer = setTimeout(runCanvasAssetGc, CANVAS_ASSET_GC_INITIAL_DELAY_MS);
   canvasAssetGcInitialTimer.unref?.();
@@ -148,7 +152,10 @@ function _shutdownOnce() {
   if (_shutdownStarted) return;
   _shutdownStarted = true;
   if (!ownsRuntime) return;
-  if (_tray) { _tray.destroy(); _tray = null; }
+  if (_tray) {
+    _tray.destroy();
+    _tray = null;
+  }
   appendLogLine('INFO', '[main] app quit');
   appendLogEvent('INFO', 'app.shutdown', { component: 'electron' });
   try {
@@ -164,7 +171,9 @@ function _shutdownOnce() {
     console.warn('[main] cleanupAutoUpdater threw during shutdown:', err && err.message);
   }
   try {
-    require('./agent-runtime').shutdown().catch(() => {});
+    require('./agent-runtime')
+      .shutdown()
+      .catch(() => {});
   } catch (err) {
     console.warn('[main] agent runtime shutdown threw:', err && err.message);
   }
@@ -303,7 +312,7 @@ async function _flushCanvasBeforeQuit(win) {
 
 async function _flushCanvasAndQuit(win) {
   try {
-    if (win && !win.isDestroyed() && await _flushCanvasBeforeQuit(win) === 'save_failed') {
+    if (win && !win.isDestroyed() && (await _flushCanvasBeforeQuit(win)) === 'save_failed') {
       _isQuittingDeferred = false;
       appendLogEvent('WARN', 'app.flush-aborted', { component: 'electron', reason: 'editor_save_failed' });
       return;
@@ -316,13 +325,18 @@ async function _flushCanvasAndQuit(win) {
   await raceTimeout(flushLogQueue(), 5_000, () => {});
   _allowQuit = true;
   if (win && !win.isDestroyed()) {
-    try { win.destroy(); } catch {}
+    try {
+      win.destroy();
+    } catch {}
   }
   app.quit();
 }
 
 app.on('before-quit', (event) => {
-  if (!ownsRuntime) { _allowQuit = true; return; }
+  if (!ownsRuntime) {
+    _allowQuit = true;
+    return;
+  }
   if (_allowQuit) return;
   if (_isQuittingDeferred) {
     event.preventDefault();
@@ -343,8 +357,14 @@ app.on('before-quit', (event) => {
 });
 app.on('will-quit', _shutdownOnce);
 process.on('exit', _shutdownOnce);
-process.on('SIGINT', () => { _shutdownOnce(); process.exit(0); });
-process.on('SIGTERM', () => { _shutdownOnce(); process.exit(0); });
+process.on('SIGINT', () => {
+  _shutdownOnce();
+  process.exit(0);
+});
+process.on('SIGTERM', () => {
+  _shutdownOnce();
+  process.exit(0);
+});
 
 app.on('window-all-closed', () => {
   if (!_tray && process.platform !== 'darwin') app.quit();
