@@ -58,8 +58,6 @@ async function resolveHost(signal?: AbortSignal): Promise<string> {
       try {
         const payload = (await fetchJson(`https://api.audius.co`, undefined)) as { data?: unknown };
         const first = Array.isArray(payload?.data) ? payload.data[0] : null;
-        // `httpsUrl` devuelve `href`, que trae `/` final: concatenarlo con `/v1/...`
-        // produce `//v1/...` y Audius responde 404 en /v1/tracks/search.
         const resolved = typeof first === 'string' ? httpsUrl(first) : null;
         resolvedHost = resolved ? resolved.replace(/\/$/, '') : HOST_FALLBACK;
         return resolvedHost;

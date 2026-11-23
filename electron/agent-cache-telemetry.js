@@ -4,13 +4,6 @@ const crypto = require('node:crypto');
 const appLog = require('./app-log');
 const { stableJson } = require('./stable-json');
 
-// Telemetría local del prefijo cacheable: solo hashes, etiquetas y conteos.
-// El contenido del usuario se usa solo para calcular hashes; nunca se escribe.
-// Los eventos van al log estructurado de observabilidad, no a la consola.
-// completeSimple (compactación) queda fuera a propósito: su prompt resume la
-// conversación y no debe compararse con la petición normal anterior.
-// El mapa conserva 256 sesiones por LRU; hashear cuesta O(payload), el mismo
-// payload que ya se envía al proveedor.
 const MAX_SESSIONS = 256;
 const CACHE_CONTROL = new Set(['cache_control']);
 const sessions = new Map();
@@ -39,7 +32,6 @@ function prefixSegments(payload) {
   return {
     systemHash: digest(system),
     systemBlocks: system.length,
-    // Longitud del JSON canónico, no del texto: incluye claves y sintaxis.
     systemJsonChars: system.reduce((total, part) => total + stableJson(part, CACHE_CONTROL).length, 0),
     toolsHash: digest(payload && payload.tools !== undefined ? payload.tools : []),
     toolCount: Array.isArray(payload && payload.tools) ? payload.tools.length : 0,
@@ -114,9 +106,6 @@ function recordUsage(request, message) {
   });
 }
 
-// Envuelve stream/streamSimple para observar el payload que recibe el
-// proveedor y el usage del mensaje final. La telemetría nunca debe alterar la
-// petición.
 function withCacheTelemetry(api) {
   const wrap = (stream) => (model, context, options) => {
     const sessionId = options && typeof options.sessionId === 'string' ? options.sessionId : '';

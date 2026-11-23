@@ -1,11 +1,5 @@
 'use strict';
 
-// Computer use con cua-driver (trycua, MIT): un daemon `serve` propio en un pipe con
-// nombre aleatorio y un proxy `mcp --socket` por stdio que habla JSON-RPC. El driver
-// actúa por accesibilidad y en segundo plano (no mueve el cursor ni roba el foco) e
-// informa el efecto de cada acción. La política del daemon solo admite las herramientas
-// expuestas aquí: si su archivo no existiera, el driver correría sin política, así que
-// se escribe y se comprueba antes de arrancar.
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -194,7 +188,6 @@ function approvalContext(name, params = {}, sessionId = null) {
     info.app = win.app;
     info.window = win.title;
   } else if (params.pid !== undefined) {
-    // Sin app no hay concesión por app ni lista blanca: un pid se reutiliza.
     info.window = `Proceso ${params.pid} (sin leer con cua_list_windows)`;
   }
   const store = sessionStore(sessionId);
@@ -226,7 +219,6 @@ function shape(tool, result, dir) {
     throw new Error(`${text || 'El driver rechazó la acción'}${code}`);
   }
   const out = structured || {};
-  // La versión Markdown del árbol duplica `elements`.
   delete out.tree_markdown;
   delete out._legacy_windows;
   if (!structured && text) out.summary = text;

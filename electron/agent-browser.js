@@ -28,7 +28,6 @@ const NET_KEEP = 300;
 const MAX_PAGE_TEXT = 12_000;
 const LOAD_TIMEOUT_MS = 30_000;
 const SETTLE_MS = 700;
-// Tras el DOM listo no se espera a que acaben imágenes, anuncios ni medidores.
 const READY_GRACE_MS = 1_500;
 const KEY_CODES = {
   enter: 'Enter', return: 'Enter', tab: 'Tab', esc: 'Escape', escape: 'Escape', space: 'Space', backspace: 'Backspace',
@@ -160,8 +159,6 @@ const USER_CONTROL_ERROR = 'El usuario tiene el control del navegador ahora mism
 const USER_BUSY_ERROR = 'El usuario está usando el navegador en este momento; espera unos segundos antes de volver a actuar en la página';
 const SECRET_FIELD_ERROR = 'El campo pide una contraseña, un código o datos de tarjeta: el agente no escribe en él. '
   + 'Cede el control con web_handover para que lo complete el usuario';
-// Documento (performance.timeOrigin) cuyo snapshot numeró las refs de cada pestaña:
-// el contador se reinicia en cada carga y la misma ref señalaría otro elemento.
 const refDocuments = new WeakMap();
 const SECRET_FIELD_JS = `(el) => el.type === 'password' || String(el.getAttribute('autocomplete') || '').toLowerCase().split(/\\s+/)
   .some((token) => ['one-time-code', 'current-password', 'new-password'].includes(token) || token.startsWith('cc-'))`;
@@ -290,9 +287,6 @@ function publicWebUrl(url) {
   return url;
 }
 
-// Un nombre público puede resolver a una IP privada (DNS del atacante o
-// rebinding): antes de salir se resuelve el host y se comprueba cada
-// dirección; sin resolución verificable no hay navegación.
 async function isPublicResolution(url) {
   let host;
   try { host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, ''); } catch { return false; }
@@ -307,9 +301,6 @@ async function isPublicResolution(url) {
   return addresses.length > 0 && !addresses.some((entry) => isPrivateHostname(entry.address));
 }
 
-// Una ruta local previsualizable (.html, .pdf o imagen) o un file:// es vista
-// previa; «dominio.com/x.html» sigue siendo web. El servidor de agent-preview
-// ya sirve estos tipos con su MIME correcto.
 const PREVIEWABLE_LOCAL = /\.(?:html?|pdf|png|jpe?g|gif|webp|avif|ico|bmp|svg|mp4|webm|mp3|wav|ogg)$/i;
 function localTarget(raw) {
   const value = String(raw || '').trim();
@@ -335,15 +326,10 @@ function normalizeUrl(raw) {
   return `https://www.bing.com/search?q=${encodeURIComponent(value)}`;
 }
 
-// Los sitios ven un Chrome normal: sin «Electron/…» ni el nombre de la app,
-// que muchos tratan como tráfico automatizado (igual que Claude Desktop).
 function siteUserAgent(agent) {
   return String(agent).replace(/\s(?!(?:Mozilla|AppleWebKit|Chrome|Safari)\/)[^\s/()]+\/[^\s()]+/g, '');
 }
 
-// Política de red común al navegador integrado y a los externos: la vista previa
-// local por su origen exacto y, para lo demás, solo destinos con IP pública.
-// Devuelve un booleano cuando puede decidir sin resolver el DNS.
 function requestAllowed(url, pageUrl, mainFrame) {
   if (preview.isPage(pageUrl) && !mainFrame) return preview.isPage(url);
   if (preview.owns(url)) return true;
@@ -360,17 +346,12 @@ function prepareSession(electron, partition = PARTITION) {
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
   ses.setUserAgent(siteUserAgent(ses.getUserAgent()));
-  // Última barrera contra el rebinding: ni las redirecciones ni los
-  // subrecursos de una página limpia pueden apuntar a una IP privada.
-  // La única excepción es la vista previa local, por su origen y prefijo exactos.
   ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*', 'file:///*'] }, (details, callback) => {
     const pageTab = [...tabs.values()].find((tab) => tab.view?.webContents.id === details.webContentsId);
     const decision = requestAllowed(details.url, pageTab ? pageTab.view.webContents.getURL() : '', details.resourceType === 'mainFrame');
     if (typeof decision === 'boolean') return callback({ cancel: !decision });
     decision.then((allowed) => callback({ cancel: !allowed }));
   });
-  // Toda descarga se cancela salvo que web_download la haya pedido: el
-  // navegador del agente nunca escribe en el disco por decisión de una página.
   ses.on('will-download', (event, item) => {
     const slot = downloadSlot;
     if (!slot || item.getURLChain()[0] !== slot.url) { event.preventDefault(); item.cancel(); return; }
@@ -459,7 +440,6 @@ function hostWindow(electron) {
   return created;
 }
 
-// La pestaña del agente puede vivir en un navegador externo (ADR 0005): entonces manda esa.
 function tabContents(tab) {
   if (tab && alive(tab.external)) return tab.external;
   return tab && tab.view && alive(tab.view.webContents) ? tab.view.webContents : null;
@@ -528,7 +508,6 @@ function tabEntry(id) {
   return tab;
 }
 
-// Escucha común a la vista de Electron y a la pestaña externa: consola y red del agente, carga y avisos al panel.
 function observe(id, contents) {
   if (id === AGENT_TAB) {
     consoleLog = [];
@@ -537,8 +516,6 @@ function observe(id, contents) {
       consoleLog.push({ level: String(level || 'info'), text: String(message || ''), seq: ++consoleSeq });
       if (consoleLog.length > CONSOLE_KEEP) consoleLog.shift();
     });
-    // El debugger se adjunta al crear la página para que Network capture las
-    // peticiones desde la primera carga, no solo desde la primera interacción.
     contents.debugger.on('message', (_event, method, params) => noteNetwork(method, params));
     ensureDebugger(contents).catch(() => { });
   }
@@ -722,7 +699,6 @@ function engines() {
   return { engine: engineChoice, available };
 }
 
-// Cambia dónde navega la pestaña del agente; las pestañas del usuario siguen en el integrado.
 function confirmSessionAttach() {
   const { dialog } = require('electron');
   if (!dialog || typeof dialog.showMessageBox !== 'function') return Promise.resolve(true);
@@ -767,8 +743,6 @@ function applyEngine(next) {
   return state();
 }
 
-// En «Mi sesión de Chrome» la pestaña comparte las cookies del usuario: abrir un dominio
-// que no esté en «Permitir siempre» requiere aprobación. Devuelve el contexto que la pide, o null.
 function sessionOpenContext(params = {}) {
   if (!require('./agent-browser-engines').isSession(engineChoice)) return null;
   let url;
@@ -782,12 +756,10 @@ function sessionOpenContext(params = {}) {
   return { page_url: url, domain, policy_blocked: policy.isBlocked(domain) };
 }
 
-// Lanza el navegador elegido si hace falta y le abre su pestaña, con la misma política de red que el integrado.
 async function agentTab() {
   if (!engineChoice) return ensureTab(AGENT_TAB);
   const tab = tabEntry(AGENT_TAB);
   if (alive(tab.external)) return tab;
-  // El agente y la barra de dirección pueden pedirla a la vez: una sola apertura para los dos.
   if (!tab.opening) tab.opening = openExternal(tab).finally(() => { tab.opening = null; });
   return tab.opening;
 }
@@ -880,9 +852,6 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Abrir o volver atrás espera a que el usuario deje la página; el clic o la
-// escritura no, porque ya podrían haber enviado entrada. La espera ocurre antes
-// de navegar, así que no repite ningún efecto.
 async function waitForHumanIdle(name, tab) {
   if (tab && tab.userControl) throw userControlError();
   if (READ_TOOLS.has(name)) return;
@@ -924,8 +893,6 @@ async function load(contents, url) {
   await settled;
 }
 
-// Raíces donde buscar elementos: el documento, los shadow roots abiertos y los
-// marcos del mismo origen, con el desplazamiento de cada marco respecto a la página.
 const DEEP_JS = `
   const roots = (start) => {
     const out = [];
@@ -1034,7 +1001,6 @@ const SNAPSHOT = `(() => {
   let pointerScan = ${POINTER_SCAN};
   for (const item of all) {
     const nodes = [...item.root.querySelectorAll(selector)];
-    // Controles sin rol que solo delata el cursor, como las tarjetas con onClick de React.
     for (const node of item.root.querySelectorAll('div,span,li,img,svg,td,p')) {
       if (pointerScan-- <= 0) break;
       if (node.closest(selector)) continue;
@@ -1126,7 +1092,6 @@ const FIND = (query) => `(() => {
     for (const el of item.root.querySelectorAll('*')) {
       if (++scanned > 20000 || found.length >= ${MAX_CANDIDATES}) break;
       if (query.role && roleOf(el) !== query.role) continue;
-      // Un nodo sin nombre propio solo coincide por su texto directo: así el contenedor no gana al botón.
       if (query.text && !(el.matches(named)
         ? [labelOf(el, item.root), el.placeholder, el.title, el.alt].some((value) => value && matches(value))
         : matches(ownText(el)))) continue;
@@ -1211,8 +1176,6 @@ function assertSameDocument(result) {
   }
 }
 
-// Ejecuta `body` en la página con `found` resuelto desde la ref, en marcos y shadow DOM incluidos.
-// Una ref de otro documento falla con PAGE_CHANGED y una que ya no existe, con «ya no está».
 async function inRef(contents, ref, body) {
   const id = refId(ref);
   const result = await contents.executeJavaScript(`(() => {
@@ -1237,7 +1200,6 @@ async function locate(contents, ref, { scroll = true } = {}) {
     const r = el.getBoundingClientRect();
     const lx = r.left + r.width / 2;
     const ly = r.top + r.height / 2;
-    // El clic va a lo que esté encima del centro: un aviso o un diálogo lo taparían.
     const toggle = el.type === 'checkbox' || el.type === 'radio';
     let surface = el, root = found.root, x = lx, y = ly, covered = null;
     for (;;) {
@@ -1329,7 +1291,6 @@ async function clickAt(input, point, clicks = 1) {
   const y = Math.round(point.y);
   await send(input, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'left', clickCount: 1 });
   await delay(30);
-  // Chromium reconoce el doble clic por el clickCount creciente de cada pulsación.
   for (let clickCount = 1; clickCount <= clicks; clickCount += 1) {
     for (const type of ['mousePressed', 'mouseReleased']) {
       await send(input, 'Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount });
@@ -1349,7 +1310,6 @@ async function dragTo(input, params) {
     { type, x: Math.round(x), y: Math.round(y), button: 'left', ...extra });
   await mouse('mouseMoved', from.x, from.y);
   await mouse('mousePressed', from.x, from.y, { buttons: 1, clickCount: 1 });
-  // Pasos intermedios: las librerías de arrastre esperan superar un umbral de movimiento antes de empezar.
   for (let step = 1; step <= DRAG_STEPS; step += 1) {
     await delay(16);
     await mouse('mouseMoved', from.x + ((to.x - from.x) * step) / DRAG_STEPS, from.y + ((to.y - from.y) * step) / DRAG_STEPS,
@@ -1403,8 +1363,6 @@ async function capture(id = activeTab) {
   if (!contents) throw browserError('No hay ninguna página abierta para anotar', 'NO_PAGE');
   let image;
   try {
-    // CDP captura la superficie compuesta de la página, incluido el contenido
-    // acelerado por GPU; capturePage puede devolver negro si la vista se movió.
     await ensureDebugger(contents);
     const shot = await contents.debugger.sendCommand('Page.captureScreenshot', { format: 'png', fromSurface: true });
     image = require('electron').nativeImage.createFromBuffer(Buffer.from(String(shot.data || ''), 'base64'));
@@ -1462,8 +1420,6 @@ function reloadPreview() {
   }
 }
 
-// La ruta se autoriza como en fs_read (espacio de trabajo o carpeta adjunta) y
-// se sirve su carpeta, que también debe estar autorizada.
 async function previewUrl(file, resolvePath) {
   if (!resolvePath) throw new Error('La vista previa de archivos locales requiere una conversación');
   const status = await resolvePath(file);
@@ -1622,7 +1578,6 @@ async function waitFor(contents, params) {
   let met = false;
   let waited = 0;
   for (;;) {
-    // Una navegación en curso rechaza el script: cuenta como condición aún no cumplida.
     const state = await contents.executeJavaScript(check, true).catch(() => null);
     met = !!(state && state.text && state.gone && state.url);
     if (met || waited >= timeout) break;

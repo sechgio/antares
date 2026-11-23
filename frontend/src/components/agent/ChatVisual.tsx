@@ -195,7 +195,6 @@ function Frame({ lang, source }: { lang: 'svg' | 'html'; source: string }) {
     if (content) setHeight(Math.min(Math.max(content, 40), 640));
     setReady(true);
   };
-  // Sin allow-scripts el contenido no ejecuta código; allow-same-origin solo permite medir su altura.
   return <iframe ref={ref} title={lang === 'svg' ? 'Gráfico' : 'Interfaz'} sandbox="allow-same-origin" srcDoc={doc}
     loading="lazy" onLoad={measure} style={{ height }}
     className={`block w-full border-0 transition-opacity duration-200 ${ready ? 'opacity-100' : 'opacity-0'}`} />;

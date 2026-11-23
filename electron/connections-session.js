@@ -292,8 +292,6 @@ async function beginConnect(provider, onComplete, onError) {
   }
   const url = `${spec.auth.authorize_url}?${params.toString()}`;
 
-  // Se resuelve en diferido: este módulo se carga en VM por
-  // tests/test-connections-refresh.js con un mapa de dependencias explícito.
   const { wireBrowserCallbackServer } = require('./oauth-session');
   wireBrowserCallbackServer({
     port,
@@ -370,9 +368,6 @@ async function probeAccount(provider) {
   }
 }
 
-// Los proveedores no devuelven los scopes tal como se pidieron: Google
-// expande email/profile a userinfo.*, Microsoft omite offline_access (la
-// renovación lo demuestra) y puede prefijar los de Graph con su recurso.
 const SCOPE_ALIASES = {
   email: ['https://www.googleapis.com/auth/userinfo.email'],
   profile: ['https://www.googleapis.com/auth/userinfo.profile'],

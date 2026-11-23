@@ -105,8 +105,6 @@
 @media (prefers-reduced-motion: reduce) { .agent-browser-progress { animation: none; opacity: 0.6; } }
 .agent-avatar { overflow: visible; flex-shrink: 0; }
 
-/* Avatares vivos de la barra lateral: flotan, parpadean y miran; el desfase
-   por agente (--agent-avatar-delay) evita que se muevan al unísono. */
 .agent-sidebar .agent-avatar {
   transform-origin: 50% 90%;
   animation: agentAvatarBob 3.2s ease-in-out var(--agent-avatar-delay, 0s) infinite;
@@ -142,8 +140,6 @@
   outline-offset: 3px;
 }
 .agent-model-menu input:focus-visible { outline: none; }
-/* La omnibox es una barra plana: el anillo global la convierte en una caja;
-   el foco se marca con fondo tenue y hairline inferior. */
 .agent-workspace .agent-browser-address:focus-visible { outline: none; }
 
 .agent-shimmer,
@@ -169,7 +165,6 @@
 .agent-thinking-dots span:nth-child(3) { animation-delay: 320ms; }
 .agent-subagent-body[inert] { visibility: hidden; }
 .agent-workspace [aria-label="Mensajes"] > div:empty { display: none; }
-/* Los turnos fuera de pantalla no se pintan: un historial largo no agota la memoria de pintado. */
 .agent-workspace .agent-transcript-turn { content-visibility: auto; contain-intrinsic-size: auto 480px; overflow-clip-margin: 12px; }
 .agent-activity-icons > span + span { margin-left: -5px; box-shadow: 0 0 0 2px var(--agent-panel, var(--bg-surface)); }
 .agent-activity-body { animation: agentActivityIn 160ms var(--ease-out) both; }

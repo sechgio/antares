@@ -270,7 +270,6 @@ export default memo(function LeftSidebar({
         try {
           handle.releasePointerCapture(event.pointerId);
         } catch {
-          // Pointer capture may already have been released by the browser.
         } finally {
           cleanup();
         }

@@ -217,7 +217,7 @@ async function _jpegDimensions(read) {
       pos += 2;
       break;
     }
-    if (marker === 0xDA) return null; // SOS: entropy-coded data follows
+    if (marker === 0xDA) return null;
     if (marker === 0x01 || marker === 0xD8 || marker === 0xD9 || (marker >= 0xD0 && marker <= 0xD7)) continue;
     const lenBuf = await read(pos, 2);
     if (!lenBuf || lenBuf.length < 2) return null;
@@ -255,7 +255,6 @@ async function _probeImageDimensions(read) {
     return _webpDimensions(head);
   }
   if (head.length >= 22 && head.readUInt16LE(0) === 0 && head.readUInt16LE(2) === 1) {
-    // ICO: first directory entry declares dims; PNG payloads carry their own header.
     if (head.readUInt16LE(4) < 1) return null;
     const inner = await read(head.readUInt32LE(18), 24);
     if (inner && _isPngHeader(inner)) {

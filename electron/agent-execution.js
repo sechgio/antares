@@ -64,15 +64,12 @@ const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'cua_launch_
 const UNATTENDED_ACTION_TOOLS = new Set(['cua_launch_app', ...UI_ACTION_TOOLS]);
 const MAX_UNATTENDED_ACTIONS = 25;
 const MAX_LOADED_TOOLS = 25;
-// Herramientas meta que un agente delegado conserva aunque no sean lecturas:
-// solo hablan con su conversación principal (aviso intermedio y salas).
 const CHILD_CONTROL_TOOLS = new Set(['agent_wake_parent', 'agent_room']);
 const MAX_DEFAULT_TOOLS = 100;
 const MAX_OPENAI_TOOLS = 128;
 
 const REASONING_OPENAI_MODEL = /deepseek-(r1|reasoner)|qwq|qwen3|gpt-oss|thinking/i;
 const REASONING_ANTHROPIC_MODEL = /claude-(3-7|(opus|sonnet|haiku|fable)-[4-9])/i;
-// DeepSeek V4 expone off/low/high/max; minimal, medium y xhigh no se envían.
 const DEEPSEEK_V4_MODEL = /\bdeepseek[-_ ]v4(?:[.\-_:]|$)/i;
 const DEEPSEEK_V4_LEVEL_MAP = { off: 'none', minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' };
 const VISION_MODEL = /gpt-4o|gpt-4\.1|gpt-5|\bo[34]\b|\bo[34]-|claude|gemini|vision|[-_/]vl\b|\bvl[-_]|llava|pixtral|grok-4|llama-4|gemma-3/i;
@@ -143,9 +140,6 @@ async function ensureProvider(providerId, modelId) {
   shared.state.models.setProvider(await buildProvider(record));
 }
 
-// pi-ai trata un host desconocido como la API oficial de OpenAI («store», rol
-// «developer», max_completion_tokens); los servidores compatibles (Ollama, LM
-// Studio, vLLM, llama.cpp…) esperan el contrato clásico de Chat Completions.
 const OPENAI_NATIVE_HOST = /(^|\.)(openai\.com|openrouter\.ai|openai\.azure\.com)$/i;
 const LONG_CACHE_HOST = /(^|\.)(openai\.com|openrouter\.ai|anthropic\.com)$/i;
 
@@ -160,11 +154,6 @@ function modelDefinition(info, id, api, verified, catalogModel) {
   const classic = info.custom && api === 'openai-completions' && !OPENAI_NATIVE_HOST.test(host);
   const official = LONG_CACHE_HOST.test(host);
   const flags = official && verified && verified.api === api ? verified.compat || {} : {};
-  // Caché del prefijo: la retención larga (1 h / 24 h) solo viaja a las APIs
-  // oficiales; los modelos que el catálogo de pi-ai verifica reciben las
-  // herramientas nuevas como bloques tool_addition, así tools_load no cambia la
-  // lista enviada; y Claude vía OpenRouter lleva marcas cache_control aunque el
-  // proveedor sea propio (pi-ai solo las pone al proveedor «openrouter»).
   const compat = {
     ...(official ? {} : { supportsLongCacheRetention: false }),
     ...(flags.supportsMidConvoSystemMessages && flags.supportsMidConvoToolChanges
@@ -194,8 +183,6 @@ function modelDefinition(info, id, api, verified, catalogModel) {
     },
     contextWindow: compaction.compactionWindow(working, (shared.state && shared.state.compaction) || compaction.DEFAULT_POLICY),
     workingWindow: working,
-    // El techo de salida del catálogo: el razonamiento comparte max_tokens con
-    // la respuesta y con 8 k un nivel alto dejaba la respuesta truncada.
     maxTokens: Math.min(Number(catalog.maxTokens) || (reasoning ? REASONING_MAX_TOKENS : DEFAULT_MAX_TOKENS),
       Math.floor(contextWindow / 4)),
     reasoning,
@@ -251,8 +238,6 @@ async function buildProvider(record) {
           record.info = fresh;
           return {
             auth: {
-              // El SDK OpenAI exige una apiKey no vacía; los proveedores sin
-              // auth (Ollama y otros endpoints locales) llevan un placeholder.
               apiKey: fresh.api_key || (fresh.auth_type === 'none' ? 'antares-local' : undefined),
               baseUrl: fresh.base_url || undefined,
               headers: fresh.extra_headers || undefined,
@@ -262,16 +247,12 @@ async function buildProvider(record) {
       },
     },
     models: [...modelIds].map((id) => modelDefinition(info, id, api, anthropic ? catalog[id] : undefined, catalog[id])),
-    // La telemetría va dentro del tope de OpenAI para observar la lista final,
-    // no la anterior al recorte; en Anthropic no hay transformación previa.
     api: withWorkingWindow(anthropic
       ? withCacheTelemetry(shared.deps.aiAnthropic.anthropicMessagesApi())
       : cappedOpenAIApi(withCacheTelemetry(shared.deps.aiOpenai.openAICompletionsApi()))),
   });
 }
 
-// model.contextWindow es la ventana de compactación de pi-durable; pi-ai recorta
-// max_tokens con la ventana del modelo, así que el proveedor recibe la de trabajo.
 function withWorkingWindow(api) {
   const wrap = (stream) => (model, context, options) => stream(
     model && model.workingWindow ? { ...model, contextWindow: model.workingWindow } : model, context, options);
@@ -455,22 +436,18 @@ function defaultToolNames(specs) {
   return specs.filter((spec) => CORE_MODULES.has(spec.module) || CORE_TOOLS.has(spec.name)).map((spec) => spec.name);
 }
 
-// Texto del aviso de presupuesto que budgetWarning añade al último resultado de herramienta.
 function budgetWarningText(rounds) {
   return `Aviso de Antares: llevas ${rounds} de ${MAX_TOOL_STEPS} pasos de herramienta en este turno. `
     + 'Actualiza task_plan con lo verificado y prioriza lo pendiente; al llegar al límite el turno se pausa y el usuario '
     + `puede Reanudar. No te detengas solo por este aviso. ${shared.PLAN_TITLE_TRUST}`;
 }
 
-// Texto del recordatorio de plan que planReminder añade al último resultado de herramienta.
 function planReminderText(since, planNext) {
   const next = planNext ? `«${planNext}»` : 'el siguiente paso';
   return `Aviso de Antares: llevas ${since} pasos de herramienta sin actualizar task_plan. `
     + `Actualiza el plan con lo verificado y el siguiente paso (${next}) antes de seguir.`;
 }
 
-// Avisos fijos que Antares añade a la conversación, en su variante más larga. El chequeo
-// de presupuestos los mide junto al prompt base; el prefijo de comprobación es constante.
 function reminderTexts() {
   const next = 'el paso siguiente';
   return [
@@ -569,7 +546,6 @@ function contextWindowFor(session) {
   return compaction.workingWindow(window > 0 ? window : DEFAULT_CONTEXT_WINDOW);
 }
 
-// La ventana con la que pi-durable decide compactar (ver compactionWindow).
 function compactionWindowFor(session) {
   const model = shared.state && shared.state.models
     && shared.state.models.getModel(session && session.provider, session && session.model);
@@ -629,8 +605,6 @@ async function refreshTools() {
             const sessionId = await sessionForConversation(api.conversationId, api, context);
             const turn = turnState(api.conversationId);
             trackSilentTurn(message, turn, !!messageText(message.content).trim());
-            // emptyAnswerRetried da una segunda petición tras una respuesta vacía;
-            // el contador de silencio es el tope duro si el proveedor la ignora.
             if (emptyAnswer(message) && turn.emptyAnswerRetried) {
               message.stopReason = 'error';
               message.errorMessage = 'El proveedor terminó sin una respuesta visible después de volver a pedir el resultado. Intenta enviar el encargo de nuevo.';
@@ -658,8 +632,6 @@ async function refreshTools() {
 }
 
 let tokenEstimator;
-// Cortes del recorte mecánico por conversación, para que la siguiente petición
-// pueda repetirlos y conservar el prefijo cacheado (ver compactMessages).
 const requestCuts = new Map();
 
 async function compactRequest(messages, api, context) {
@@ -678,12 +650,6 @@ async function compactRequest(messages, api, context) {
   });
 }
 
-// pi-durable escribe el prompt base al preparar la primera generación, detrás
-// del mensaje que la provocó. Los modelos que aceptan mensajes de sistema a
-// mitad de conversación lo enviarían como una actualización y sin herramientas
-// iniciales; al encabezar la petición vuelve a ser el prompt de sistema y el
-// ancla fija de la lista de herramientas. Al resto no le cambia nada: pi-ai ya
-// reúne sus mensajes de sistema al principio.
 function leadingSystem(messages) {
   const index = messages.findIndex((message) => message.role === 'system');
   if (index <= 0) return undefined;
@@ -748,10 +714,6 @@ function planReminder(messages, turn, rounds) {
   return [...messages.slice(0, -1), { ...last, content: [...content, { type: 'text', text: notice }] }];
 }
 
-// Los avisos se añaden al último resultado solo en la copia enviada. Se guardan
-// por toolCallId y se reponen en las peticiones siguientes: sin ellos ese
-// resultado viajaría distinto de como se cacheó y el proveedor reescribiría la
-// caché desde ahí. notify recibe la petición y devuelve la versión con aviso.
 const sentNotices = new Map();
 
 function withSentNotices(conversationId, messages, notify) {
@@ -822,12 +784,9 @@ async function pauseForBudget(api, context, reason = 'tool_budget') {
         + (remaining.length ? `\nPendiente: ${remaining.map((title) => `«${shared.neutralizePlanText(title)}»`).join('; ')}\n${shared.PLAN_TITLE_TRUST}` : '') },
     } }, ctx());
   });
-  // El aborto debe interrumpir esta espera: abortTask espera a que termine este mismo hook.
   try {
     await shared.deps.chord.awaitWithContext(stopped, context);
   } finally {
-    // El aborto no despacha afterResponse (pi-durable cierra el run antes): sin este
-    // cierre se perdería la entrada «failed» y el log abierto pasaría al turno siguiente.
     await closeTurnLog({ stopReason: 'aborted', errorMessage: null, content: [] }, api);
   }
 }
@@ -984,7 +943,6 @@ function planCheck(answer, api) {
   return { continue: `${shared.CHECK_MARKER} ${notice}` };
 }
 
-// «Permitir siempre» solo exime herramientas no transaccionales; sincronizado a propósito con el catálogo (TOOLS flag false).
 const WEB_AUTO_APPROVE = new Set(['web_open', 'web_back', 'web_forward', 'web_reload', 'web_read', 'web_find',
   'web_scroll', 'web_hover', 'web_screenshot', 'web_text', 'web_console', 'web_network', 'web_wait', 'web_handover']);
 
@@ -1006,8 +964,6 @@ async function beforeTool(call, api, context) {
   }
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   const session = await requireSession(sessionId);
-  // El hijo solo conserva los controles de su propio ciclo de vida: avisar al
-  // padre y participar en salas no son lecturas del backend ni amplían acceso.
   const childControl = !!session.delegation && CHILD_CONTROL_TOOLS.has(call.name);
   if (!childControl && !await toolEnabled(sessionId, call.name, context)) {
     return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
@@ -1411,8 +1367,6 @@ async function dispatchTool(spec, args, sessionId, api, context) {
   }
 }
 
-// Sin visión, pi-ai sustituye la imagen por un aviso pegado al texto del
-// resultado; no adjuntarla mantiene el JSON íntegro para el modelo.
 async function acceptsImages(api, context) {
   const ref = (await api.agent(context)).model;
   const model = ref && shared.state.models.getModel(ref.provider, ref.modelId);
@@ -1474,7 +1428,6 @@ async function dispatchMeta(spec, args, sessionId, api, context, options = {}) {
 }
 
 async function dispatchScript(args, sessionId, api, context) {
-  // Las llamadas internas no consumen los pasos del turno; MAX_CALLS acota el script.
   return script.dispatchScript(args, sessionId, api, context, {
     toolSpecs: shared.toolSpecs,
     conversation,

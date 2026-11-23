@@ -172,7 +172,6 @@ export default function ConnectionsView({ detailId, onDetailChange, onProvidersC
     try {
       await connectionsApi.connectionsCancel(p.id);
     } catch {
-      // El flujo local termina solo; un fallo al cancelar no requiere acción.
     } finally {
       await refresh();
     }

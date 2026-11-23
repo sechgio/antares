@@ -203,8 +203,6 @@ function continuationConfig(args) {
   return { max_rounds: args.max_rounds, idle_minutes: idle, ...(nudge ? { nudge } : {}), rounds: 0 };
 }
 
-// Claves de trazado del turno que delegó: permiten reconstruir qué petición y
-// qué llamada abrieron el encargo sin conceder nada al hijo.
 function lineageOf(api, parent, previous) {
   const request = String(api?.taskId || '');
   const root = String(previous?.root_parent_request_id || parent.delegation?.root_parent_request_id || request);
@@ -332,8 +330,6 @@ async function delegate(profile, args, sessionId, api, context) {
       agentModel = { provider: profile.model.provider, modelId: profile.model.model };
       style = info.style || 'openai_chat';
     }
-    // Sin nivel explícito pi-durable arranca sin razonamiento: la delegación
-    // hereda el esfuerzo de la conversación principal, ajustado a su modelo.
     const levels = await execution.reasoningLevels(agentModel.provider, agentModel.modelId);
     const options = {
       ownership: { kind: 'ownerless' },
@@ -367,8 +363,6 @@ async function delegate(profile, args, sessionId, api, context) {
     if (args.fork === true) {
       const parentConv = await conversation(sessionId);
       const page = await parentConv.entries({}, 40, undefined, ctx());
-      // Nunca cortar en una llamada a herramienta sin su resultado: el proveedor
-      // del hijo rechazaría el historial heredado.
       const at = page.items.find((entry) => entry.kind !== 'pi.assistant'
         || !(entry.model?.[0]?.content || []).some((block) => block.type === 'toolCall'))?.id;
       if (!at) throw validation('No hay contexto de esta conversación que copiar todavía');
@@ -405,8 +399,6 @@ async function startChild(child) {
   const state = shared.state;
   await require('./agent-execution').ensureProvider(child.provider, child.model);
   const conv = await conversation(child.id);
-  // Garantiza el snapshot de memoria del hijo; el bloque va en sus
-  // instrucciones, no repetido en el encargo de cada ronda.
   await require('./agent-runtime').memoryContext(child, child.delegation.content);
   const plan = await parentPlanText(child.delegation.parent_session_id);
   await require('./agent-projection').ensureWatcher(child);
@@ -760,8 +752,6 @@ async function delegationState(state, child) {
   return continuationStep(state, (await sessions())[child.id] || child);
 }
 
-// Un hijo estancado terminó sin respuesta final o quedó con error: un nudge le da
-// otra oportunidad con el mismo historial. Una respuesta completa no se toca.
 async function childStalled(child) {
   if (child.continuation || child.last_error) return true;
   const entries = await require('./agent-projection').allEntries(await conversation(child.id));
@@ -871,8 +861,6 @@ function stillDeliverable(map, children) {
 async function deliverDelegations(state, parent, children, open) {
   const single = children.length === 1;
   const ids = children.map((child) => child.id).sort();
-  // Cada entrega necesita un requestId propio: pi-durable deduplica y una
-  // delegación retomada volvería a usar la clave de su entrega anterior.
   const rounds = children.map((child) => Number(child.delegation.round) || 0).sort().join('-');
   const key = single ? `delegate:${ids[0]}:${rounds}`
     : `delegate-batch:${crypto.createHash('sha256').update(`${ids.join(':')}:${rounds}`).digest('hex').slice(0, 24)}`;
@@ -948,8 +936,6 @@ async function collectDelegations(state) {
       }
       continue;
     }
-    // Mientras su sala siga abierta el miembro no entrega informe: sus turnos
-    // son parte del encargo y el cierre de la sala lo desbloquea.
     if (job.room_id) {
       const room = rooms[job.room_id];
       if (room && room.status === 'open') continue;
@@ -1208,8 +1194,6 @@ async function tick() {
         }, ctx());
         if (!claimed) continue;
         await require('./agent-execution').ensureProvider(session.provider, session.model);
-        // Garantiza el snapshot de memoria de la sesión; el bloque vive en sus
-        // instrucciones, no en el aviso de este encargo.
         await require('./agent-runtime').memoryContext(session, task.content);
         const conv = await conversation(session.id);
         await require('./agent-projection').ensureWatcher(session);

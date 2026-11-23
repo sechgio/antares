@@ -5,9 +5,6 @@ const path = require('node:path');
 const { createCdpContents } = require('./agent-browser-cdp');
 const { createBidiContents, bidiTransport } = require('./agent-browser-bidi');
 
-// Navegadores Chromium externos (ADR 0005). Con perfil dedicado se lanzan con
-// --remote-debugging-pipe, así que solo Antares puede controlarlos; «Mi sesión
-// de Chrome» se conecta al Chrome abierto cuando el usuario lo permite.
 
 const ENGINES = [
   { id: 'chrome', label: 'Google Chrome', roots: ['PROGRAMFILES', 'PROGRAMFILES(X86)', 'LOCALAPPDATA'], file: 'Google\\Chrome\\Application\\chrome.exe' },
@@ -33,7 +30,6 @@ function isSession(id) {
   return id === SESSION_ENGINE.id;
 }
 
-// El opera.exe de la raíz es un lanzador que reabre el binario versionado y perdería la tubería.
 function versionedOpera(file, { exists, readdir }) {
   const dir = path.win32.dirname(file);
   let versions = [];
@@ -59,7 +55,6 @@ function detect({ env = process.env, exists = fs.existsSync, readdir = fs.readdi
   return out;
 }
 
-// Respuestas por id y eventos a los oyentes; el formato de cada mensaje lo pone el transporte.
 function transportCore(write) {
   const pending = new Map();
   const listeners = new Set();
@@ -98,7 +93,6 @@ function transportCore(write) {
   };
 }
 
-// Mensajes JSON terminados en \0: fd 3 para órdenes y fd 4 para respuestas y eventos.
 function pipeTransport(writable, readable) {
   const core = transportCore((text) => writable.write(`${text}\0`));
   let buffer = '';
@@ -132,8 +126,6 @@ function attachment(headers = []) {
   return /^\s*attachment/i.test(header('content-disposition')) || DOWNLOAD_TYPES.test(header('content-type'));
 }
 
-// Pestañas del agente sobre un transporte CDP ya abierto, con la política de red en cada sesión.
-// En la sesión del usuario no se toca nada global del navegador: las descargas se cortan por pestaña.
 function controller(transport, engine, { session, shutdown }) {
   const targets = new Set();
   const exitHandlers = new Set();
@@ -148,7 +140,6 @@ function controller(transport, engine, { session, shutdown }) {
   };
   const patterns = [{ urlPattern: '*', requestStage: 'Request' },
     ...(session ? ['Document', 'Other'].map((resourceType) => ({ urlPattern: '*', resourceType, requestStage: 'Response' })) : [])];
-  // Cada pestaña protegida guarda su política; las sesiones hijas (iframes, workers) heredan la de su pestaña.
   const guard = async (sessionId, tab) => {
     guarded.set(sessionId, tab);
     await transport.send('Fetch.enable', { patterns }, sessionId);
@@ -172,7 +163,6 @@ function controller(transport, engine, { session, shutdown }) {
       const info = params.targetInfo || {};
       const child = params.sessionId;
       if (info.type === 'page') {
-        // Una ventana emergente no se carga fuera de la pestaña del agente: se cierra y su dirección se abre en ella.
         transport.send('Target.closeTarget', { targetId: info.targetId }).catch(() => { });
         if (info.url && info.url !== 'about:blank') tab.onPopup(info.url);
         return;
@@ -190,7 +180,6 @@ function controller(transport, engine, { session, shutdown }) {
       label: engine.label,
       session: !!session,
       onExit(handler) { exitHandlers.add(handler); },
-      // allow(url, pageUrl, mainFrame) decide cada petición; onPopup(url) recibe las ventanas emergentes cerradas.
       async openTab({ allow, onPopup }) {
         const { targetId } = await transport.send('Target.createTarget', { url: 'about:blank' });
         targets.add(targetId);
@@ -244,8 +233,6 @@ async function launchDedicated(engine, { profileRoot, spawn }) {
   return link;
 }
 
-// Chrome 144+ publica el puerto del Chrome abierto en DevToolsActivePort cuando el usuario
-// activa la depuración remota, y pide permiso en su propia ventana en cada conexión.
 function sessionEndpoint(userDataDir, readFile) {
   let text;
   try { text = readFile(path.win32.join(userDataDir, 'DevToolsActivePort'), 'utf8'); } catch { text = ''; }
@@ -280,7 +267,6 @@ async function connectSession(engine, { readFile, WebSocketImpl, acceptMs }) {
   const transport = socketTransport(socket);
   const { end, link } = controller(transport, engine, {
     session: true,
-    // Solo cierra lo que abrió el agente: el Chrome del usuario sigue abierto.
     shutdown(targets) {
       Promise.allSettled(targets.map((targetId) => transport.send('Target.closeTarget', { targetId })))
         .finally(() => { try { socket.close(); } catch { } });
@@ -297,8 +283,6 @@ async function connectSession(engine, { readFile, WebSocketImpl, acceptMs }) {
   return link;
 }
 
-// Firefox no admite CDP desde la versión 141: se controla por WebDriver BiDi. Solo escucha en
-// 127.0.0.1 con un puerto aleatorio y acepta una sola sesión, la que abre Antares al arrancar.
 const FIREFOX_START_MS = 30_000;
 const FIREFOX_PREFS = {
   'browser.shell.checkDefaultBrowser': false,
@@ -392,7 +376,6 @@ async function launchFirefox(engine, { profileRoot, spawn, WebSocketImpl, startM
   child.on('error', end);
   socket.addEventListener('close', end);
   const answer = (method, request) => transport.send(method, { request }).catch(() => { });
-  // La intercepción es de todo el navegador: es un perfil dedicado, así que todo lo que carga pasa por la política.
   transport.on(({ method, params = {} }) => {
     if (method === 'browsingContext.contextCreated') {
       const owner = owners.get(params.parent || params.originalOpener);
@@ -405,7 +388,6 @@ async function launchFirefox(engine, { profileRoot, spawn, WebSocketImpl, startM
       const request = params.request || {};
       const popup = popups.get(params.context);
       if (popup && params.navigation) {
-        // Una ventana emergente no carga: se cierra y su dirección se abre en la pestaña del agente.
         popups.delete(params.context);
         answer('network.failRequest', request.request);
         transport.send('browsingContext.close', { context: params.context }).catch(() => { });

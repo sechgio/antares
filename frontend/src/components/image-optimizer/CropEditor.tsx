@@ -131,8 +131,6 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      // mousedown y no click: un arrastre que empieza en el recuadro y termina
-      // sobre el fondo despacha el click en este ancestro y cerraría sin guardar.
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

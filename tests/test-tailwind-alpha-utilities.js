@@ -1,5 +1,3 @@
-// Tailwind 3 omite las utilidades `var(--token)/NN` y genera CSS inválido para
-// `shadow-[... var(--x)/NN ...]`; este guard detecta ambas formas.
 
 const fs = require('fs');
 const path = require('path');

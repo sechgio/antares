@@ -1,6 +1,5 @@
 'use strict';
 
-// USER_ENTERED: «=», «+», «@», «-» no numérico o control se ejecutan como fórmula; el apóstrofe lo guarda como texto.
 
 const NUMERIC_CELL_RE = /^[+-]?\d+(?:[.,]\d+)?(?:e[+-]?\d+)?%?$/i;
 const UNSAFE_FIRST_RE = /^[=+@\-\t\r\n\u000b\u000c]/;

@@ -197,8 +197,6 @@ async function startQueueTask(state, session, task, claimToken) {
   let submitted = false;
   try {
     await require('./agent-execution').ensureProvider(session.provider, session.model);
-    // Garantiza el snapshot de memoria de la sesión; el bloque vive en sus
-    // instrucciones, no en el aviso de este encargo.
     await require('./agent-runtime').memoryContext(session, task.content);
     const conv = await conversation(session.id);
     const projection = require('./agent-projection');

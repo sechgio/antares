@@ -62,7 +62,7 @@ class _CRYPT_DATA_BLOB(ctypes.Structure):
 def _blob(data: bytes) -> _CRYPT_DATA_BLOB:
     buf = (ctypes.c_ubyte * max(len(data), 1)).from_buffer_copy(data or b"\x00")
     blob = _CRYPT_DATA_BLOB(len(data), ctypes.cast(buf, ctypes.c_void_p))
-    blob._holder = buf  # mantiene vivo el buffer mientras exista el BLOB
+    blob._holder = buf
     return blob
 
 

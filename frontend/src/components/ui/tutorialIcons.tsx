@@ -1,6 +1,3 @@
-/** Íconos SVG inline compartidos por los tutoriales (padrón, volantes, …).
- *  Todos usan trazo currentColor a 32px para heredar el color del overlay.
- */
 
 interface IconProps {
   className?: string;

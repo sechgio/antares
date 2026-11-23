@@ -497,8 +497,6 @@ export default function AgentView({ onConfigureProvider, onOpenModule }: { activ
     setShowJump(false);
   }, [sessionId]);
 
-  // Los paneles, imágenes y pasos crecen sin cambiar el texto del último
-  // mensaje; seguir cualquier cambio de altura mantiene el final a la vista.
   useEffect(() => {
     const list = listRef.current;
     if (!list) return;

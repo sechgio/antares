@@ -3,9 +3,6 @@
 const crypto = require('node:crypto');
 const { shared, ctx, conversation, requireSession, sessions, validation, wakeWaiters } = require('./agent-shared');
 
-// Sala de turnos entre delegaciones de una misma conversación. El padre la abre,
-// cada miembro habla por orden y el padre recibe un resumen al cerrarse. Sin IPC
-// propio: el estado vive en RoomsDoc y se consulta con la misma herramienta.
 const MAX_MEMBERS = 4;
 const MAX_ROUNDS = 3;
 const MAX_TOPIC = 200;
@@ -73,8 +70,6 @@ function unmarked(text) {
     .replaceAll(shared.CHECK_MARKER, '(Comprobación de Antares)');
 }
 
-// Los valores anidados de un commit quedan ligados al overlay que ya se asentó:
-// fuera de él solo se usan copias planas.
 function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -245,7 +240,6 @@ async function extendTurn(state, roomId, turn) {
   }, ctx()).catch(() => {});
 }
 
-// pi-durable deduplica `submit` por requestId, así que un reintento no repite el aviso.
 async function deliver(state, roomId, room, turn) {
   const startedAt = Date.now();
   let status = 'error';
@@ -282,9 +276,6 @@ async function notifyParent(state, room, kind) {
   wakeWaiters();
 }
 
-// Un avance de turno se decide y se escribe en un solo commit: el post del
-// miembro, el timeout del orquestador y el cierre del padre no pueden duplicar
-// el turno siguiente.
 async function settle(state, roomId, memberId, outcome, messages = [], turnKey = '', reason = '', replyTo = '') {
   if (!OUTCOMES.has(outcome)) throw validation('Resultado de turno no válido');
   const raw = (Array.isArray(messages) ? messages : [messages])

@@ -31,7 +31,6 @@ export function toggleId(list: string[], id: string, on: boolean): string[] {
   return on ? [...rest, id] : rest;
 }
 
-/** Splits items into pinned, custom sections and the rest, keeping their order. */
 export function arrangeSidebar<T extends { id: string }>(items: T[], prefs: SidebarPrefs, showHidden: boolean) {
   const shown = showHidden ? items : items.filter((item) => !prefs.hidden.includes(item.id));
   const pinned = shown.filter((item) => prefs.pinned.includes(item.id));

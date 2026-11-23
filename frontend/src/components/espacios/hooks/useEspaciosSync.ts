@@ -379,8 +379,6 @@ export function useEspaciosSync(userId: string | undefined) {
       activeEspacioId,
       activeProyectoId,
       ({ eventType, table, new: row, old }) => {
-        // DELETE events only carry the primary key in `old` (REPLICA IDENTITY
-        // DEFAULT), so resolve them by id instead of validating a full row.
         if (eventType === 'DELETE') {
           const id = old?.id;
           if (typeof id !== 'string') return;

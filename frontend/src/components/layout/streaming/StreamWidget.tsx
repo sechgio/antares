@@ -327,10 +327,6 @@ export function StreamItemList<I extends StreamItem, T extends StreamItem = Stre
   );
 }
 
-/**
- * "Now playing" row shared by the stream widgets: current track with the live
- * marker (Audius swaps it for its equalizer), open-in-service link and error.
- */
 export function NowPlayingRow({
   p,
   track,
@@ -381,7 +377,6 @@ export function NowPlayingRow({
   );
 }
 
-/** Transport controls row (previous / play / next / mute / volume) of the panel footer. */
 export function StreamControlsRow({
   player,
   p,
@@ -429,7 +424,6 @@ export function StreamControlsRow({
   );
 }
 
-/** Play/next pair shown on the widget bar, outside the popover panel. */
 export function StreamBarActions({
   p,
   status,

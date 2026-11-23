@@ -43,8 +43,6 @@ const shared = {
   turns: new Map(),
   turnRuns: new Map(),
   skillIndexes: new Map(),
-  // Snapshot de memoria congelado por sesión: presencia = ya asegurada en
-  // este proceso; el bloque duradero vive en las instrucciones de la sesión.
   memorySnapshots: new Set(),
   unattendedApps: new Map(),
   waitingInput: new Set(),
@@ -77,8 +75,6 @@ const MAX_PLAN_STEP_DEPENDENCIES = Number(PLAN_CONTRACT.max_step_dependencies) |
 const planWrites = new Map();
 const deletedPlans = new Set();
 
-// Los proveedores compatibles con OpenAI pueden repetir ids («call_0») entre turnos
-// o dejarlos vacíos; la tarea de pi-durable identifica cada llamada de forma estable.
 const TASK_SUFFIX = '@task:';
 
 function dispatchCallId(callId, taskId) {
@@ -217,7 +213,6 @@ async function readPlan(sessionId) {
 }
 
 async function deleteSessionAndPlan(sessionId) {
-  // Marca antes de drenar: un task_plan en vuelo no puede recrear el plan tras el borrado.
   deletedPlans.add(sessionId);
   try {
     const pending = planWrites.get(sessionId);

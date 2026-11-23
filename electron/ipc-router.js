@@ -957,7 +957,6 @@ function registerIpcHandlers() {
     }
   });
 
-  // sendSync ANTES de que la página cargue; sin sender confiable no se sirve nada.
   ipcMain.on('supabase-session-get', (event) => {
     try {
       _requireTrustedSender(event, 'supabase-session-get');

@@ -218,8 +218,6 @@ async function listTurns(filters = {}, overrides = {}) {
   const matches = [];
   for (const filePath of listLogFiles(logPath)) {
     if (limit != null && matches.length >= limit) break;
-    // Todo lo escrito en un rotado terminó antes de su instante de rotación:
-    // si ese instante es anterior a --since, ninguna entrada puede pasar el filtro.
     const stamp = Number.isFinite(since) ? rotationStampMs(path.basename(filePath), base, stem) : null;
     if (stamp != null && stamp < since) continue;
     try {

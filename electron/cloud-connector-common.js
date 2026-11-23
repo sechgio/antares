@@ -30,23 +30,6 @@ function _httpError(label, res) {
   return err;
 }
 
-/**
- * Plantilla común del patrón "tokens → Authorization: Bearer → fetch → refresh
- * una sola vez si 401 → reintento". Lo que cada servicio hace distinto se
- * inyecta por callbacks para preservar su comportamiento exacto:
- *
- * - `getTokens()`: obtiene los tokens vigentes del servicio.
- * - `hasAuthToken(tokens)`: decide si el token es utilizable (por defecto
- *   exige `access_token`; google-session solo exige tener tokens).
- * - `missingTokenError()`: construye el error cuando no hay tokens.
- * - `onFetchError(err)`: si se pasa, traduce errores de transporte; si no,
- *   el error original se propaga tal cual.
- * - `assertSessionCurrent()`: si se pasa, se ejecuta tras obtener tokens y
- *   tras cada fetch (sesión Google por usuario activo).
- * - `canRefresh(tokens)` + `refresh(tokens, res)`: refresh único ante 401;
- *   si `refresh` devuelve tokens, se reintenta la petición con el nuevo
- *   Bearer y por última vez (nunca hay un segundo refresh).
- */
 async function bearerRequest({
   fetch: fetchImpl,
   url,
@@ -96,21 +79,12 @@ async function request(provider, label, url, options = {}, { raw = false } = {})
       err.transport = true;
       return err;
     },
-    // getValidTokens de connections-session ya refresca vía backend antes de
-    // devolver tokens: no hay reintento adicional sobre 401.
   });
   if (!res.ok) throw _httpError(label, res);
   if (raw) return res;
   return res.status === 204 ? {} : res.json();
 }
 
-/**
- * Handlers del servidor de callback (onCode/onDenied/onTimeout) para un flujo
- * OAuth en navegador. `connect(code)` ejecuta el intercambio y cualquier paso
- * intermedio y devuelve el estado que recibe `onComplete`; `label` es el
- * nombre visible del servicio en "Autorización cancelada en ${label}";
- * `cancel()` limpia el estado del flujo en curso.
- */
 function browserOAuthCallbackHandlers({ label, connect, onComplete, onError, cancel }) {
   return {
     onCode: async (code) => {
@@ -140,12 +114,6 @@ function browserOAuthCallbackHandlers({ label, connect, onComplete, onError, can
   };
 }
 
-/**
- * Une el ciclo de vida del servidor de callback con el flujo en curso: guarda
- * `stop` si el flujo sigue vigente (vía `setStop`) o cierra el servidor si fue
- * sustituido por otro arranque; si el arranque falla, notifica y limpia solo
- * si el flujo sigue siendo el actual (`isCurrent`).
- */
 function wireOAuthCallbackServer(serverPromise, { isCurrent, setStop, onError, cancel }) {
   serverPromise
     .then(({ stop }) => {
@@ -159,14 +127,6 @@ function wireOAuthCallbackServer(serverPromise, { isCurrent, setStop, onError, c
     });
 }
 
-/**
- * Intercambio de código del flujo OAuth en navegador: POST al endpoint de
- * token; `invalid_grant` se traduce al mensaje de reautorización del servicio
- * y se exige un `refresh_token` en la respuesta. El `body` y los `fetchOpts`
- * los arma el servicio para preservar los campos y el orden exactos de cada
- * proveedor; devuelve `data` para que cada servicio construya y persista sus
- * tokens como ya lo hace.
- */
 async function exchangeBrowserOAuthCode({
   fetch: fetchImpl,
   tokenUrl,

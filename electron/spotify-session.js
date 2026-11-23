@@ -23,8 +23,6 @@ const API_BASE = 'https://api.spotify.com/v1';
 
 const DEFAULT_CALLBACK_PORT = 43830;
 const CALLBACK_PATH = '/callback';
-// Puerto explícito obligatorio: Spotify exige coincidencia exacta del redirect_uri
-// registrado en la app, y un URI sin puerto iría al 80 (que no podemos abrir).
 const LOOPBACK_REDIRECT_RE = /^http:\/\/(localhost|127\.0\.0\.1):\d{1,5}\/[a-z0-9\-/]*$/i;
 
 const SCOPES = [
@@ -304,8 +302,6 @@ async function getAuthStatus() {
 
 async function revokeAuth() {
   cancelBrowserOAuthFlow();
-  // Spotify no expone endpoint de revocación: borrar tokens locales y el usuario
-  // revoca el acceso en spotify.com/account/apps si lo desea.
   clearTokens();
   return { success: true };
 }

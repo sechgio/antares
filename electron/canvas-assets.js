@@ -274,7 +274,6 @@ async function getCanvasAssetInfo(assetIdOrRef) {
   if (verifiedAssetStatKeys.get(id.toLowerCase()) !== assetStatKey(stat)) {
     await getCanvasAsset(id);
   }
-  // Re-tomar el write-lock aquí sería esperar sobre sí mismo (getCanvasAssetInfo ya lo toma).
   await _markAssetPendingUnlocked(id.toLowerCase());
   return { asset_id: id, ref: toAssetRef(id), bytes: stat.size };
 }

@@ -22,7 +22,6 @@ function fakeTransport() {
       return handler ? handler(params, sessionId) : {};
     },
     on: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
-    // Sin sessionId explícito el evento es de la pestaña; con undefined, de la sesión del navegador.
     emit: (method, params, ...rest) => {
       const sessionId = rest.length ? rest[0] : SESSION;
       for (const listener of [...listeners]) listener({ method, params, sessionId });

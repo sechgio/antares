@@ -50,8 +50,6 @@ interface FakeSupabaseOpts {
 }
 
 function makeSupabase(opts: FakeSupabaseOpts) {
-  // select() devuelve un objeto thenable (para list/fetch) y a la vez chainable
-  // (eq/in/is/maybeSingle para el select puntual del push).
   const selectChain = () => {
     const thenable = Promise.resolve(opts.list ?? { data: [], error: null });
     const sel: Record<string, unknown> = {

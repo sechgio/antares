@@ -189,9 +189,6 @@ async function verifyFrozenBackendTemplates(exePath, options = {}) {
         done();
         return;
       }
-      // En Windows el hijo puede seguir reteniendo archivos (p. ej. el WAL de
-      // SQLite del smoke dir) unos ms tras kill(); esperar a 'close' evita
-      // EBUSY al limpiar smokePdf.directory en el finally.
       const killTimer = setTimeout(done, 5_000);
       proc.once('close', () => {
         clearTimeout(killTimer);

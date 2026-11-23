@@ -4,11 +4,6 @@ const { SYSTEM_PROMPT } = require('./agent-prompts');
 
 let tokenEstimator;
 
-// Estima los tokens del prompt base que toda conversación envía siempre: el prompt de
-// sistema, las definiciones de las herramientas por defecto y los avisos fijos. Usa el
-// mismo estimador de pi-ai que comparte la compactación en tiempo real; las instrucciones
-// de perfil son aporte del usuario y no cuentan. La selección de herramientas y los
-// avisos los aporta agent-execution para medir exactamente lo que el runtime publica.
 async function basePromptEstimate(specs, { defaultToolNames, reminderTexts }) {
   tokenEstimator ||= await import('@earendil-works/pi-ai/utils/estimate');
   const { estimateTextTokens } = tokenEstimator;

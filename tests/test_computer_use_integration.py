@@ -9,9 +9,6 @@ import pytest
 from backend.core.computer_use import driver, policy
 from backend.core.computer_use.targets import DriverError
 
-# Estos tests abren Notepad real: hay que ejecutarlos en serie (-n0) porque
-# Win11 Notepad fusiona instancias en pestañas de una misma ventana y dos
-# lanzamientos en paralelo se roban el foco y el título entre sí.
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.skipif(sys.platform != "win32", reason="computer-use solo existe en Windows"),

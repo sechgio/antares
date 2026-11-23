@@ -20,7 +20,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
   });
 }
 
-// sb-011: el preload siembra window.supabaseSessionSeed por sendSync ANTES de evaluar este módulo; en web no hay semilla.
 type SessionBlob = Record<string, string>;
 
 interface ElectronBridge {
@@ -51,7 +50,6 @@ export function createSecureSupabaseStorage(): {
   const blob: SessionBlob = { ...seeded };
   const persist = () => {
     void bridge.invoke('supabase_session_put', { blob: { ...blob } }).catch(() => {
-      // Sin cifrado en main la sesión queda solo en memoria: nunca texto claro en disco.
     });
   };
   return {

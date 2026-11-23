@@ -1,17 +1,6 @@
 #!/usr/bin/env node
 'use strict';
 
-// Evaluación manual del agente sobre tareas fijas. Arranca el runtime real del
-// agente (pi-durable + backend Python local, igual que la app) sin interfaz,
-// corre un catálogo fijo de tareas sin efectos externos y guarda una traza
-// JSON con pasos, tokens, duración y éxito de cada tarea para comparar ramas:
-//
-//   node scripts/agent-eval.js --provider openai [--model m] [--label rama-a] [--out ruta]
-//
-// NO forma parte de npm test: requiere un proveedor configurado en
-// Proveedores IA (clave local) y un entorno de backend. Las trazas aterrizan
-// (por defecto) en benchmarks/agent-eval/<label>-<fecha>.json; comparar dos
-// ejecuciones es contrastar sus resultados tarea por tarea.
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -23,10 +12,6 @@ const DEFAULT_OUT_DIR = path.join(ROOT, 'benchmarks', 'agent-eval');
 const ANSWER_MAX_CHARS = 4_000;
 const POLL_INTERVAL_MS = 1_000;
 
-// Tareas fijas, autocontenidas y sin efectos fuera del espacio temporal de la
-// evaluación: cubren respuesta directa, lectura del espacio de trabajo, plan,
-// memoria y carga de módulos, los caminos que el prompt base y las herramientas
-// por defecto alimentan en cada turno.
 const TASKS = [
   {
     id: 'consulta_directa',
@@ -95,8 +80,6 @@ function sanitizeFilename(value) {
   return String(value || 'eval').replace(/[^A-Za-z0-9_.-]+/g, '_').slice(0, 80) || 'eval';
 }
 
-// Último mensaje visible del assistant tras un instante dado: representa la
-// respuesta final de la tarea en esta conversación recién creada.
 function finalAssistant(messages, afterTs) {
   return [...messages].reverse().find((message) => message.role === 'assistant' && !message.partial
     && !message.notice && !(message.tool_calls || []).length && (message.ts || 0) >= afterTs) || null;
@@ -158,10 +141,6 @@ async function denyPendingApprovals(handlers, sessionId) {
   return (status.pending_approvals || []).length;
 }
 
-// Corre una tarea en una conversación nueva: siembra el espacio de trabajo si
-// la tarea lo pide, envía el prompt y espera al asentamiento del turno (con
-// límite de tiempo y cancelación). Rechaza aprobaciones inesperadas: las
-// tareas fijas son de solo lectura o sin efectos externos.
 async function runTask(handlers, task, { provider, model, workspace, timeoutMs }) {
   const startedAt = Date.now();
   const finish = (messages, usage, lastError, status) => traceOf(task, {
@@ -180,8 +159,6 @@ async function runTask(handlers, task, { provider, model, workspace, timeoutMs }
     const sentAt = Date.now();
     const deadline = sentAt + timeoutMs;
 
-    // Bucle de asentamiento: la tarea terminó cuando hay respuesta final del
-    // assistant posterior al envío; sin ella, al vencer el plazo se cancela.
     let status = { running: true, pending_approvals: [], last_error: null };
     let outcome = 'timeout';
     let approvalsDenied = false;
@@ -201,7 +178,6 @@ async function runTask(handlers, task, { provider, model, workspace, timeoutMs }
       }
     }
     if (outcome === 'timeout' && approvalsDenied) {
-      // Tras el rechazo, el turno se asienta con su aviso antes de tomar la traza.
       for (let i = 0; i < 10 && status.running; i += 1) {
         await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
         status = await handlers.agent_turn_status({ session_id: sessionId });
@@ -255,7 +231,6 @@ async function main() {
     const tasks = TASKS.filter((task) => !args.tasks || args.tasks.includes(task.id));
     if (!tasks.length) throw new Error(`Ninguna tarea coincide con --tasks ${args.tasks.join(',')}\n${usage()}`);
     if (args.dryRun) {
-      // Valida entorno (backend + proveedor) sin gastar tokens de modelos.
       console.log(`[agent-eval] dry-run: provider=${provider} model=${model} label=${meta.label} `
         + `out=${args.out} timeout=${args.timeout}ms tareas=${tasks.length}`);
       for (const task of tasks) console.log(`[agent-eval]   ${task.id}: ${task.prompt}`);
@@ -297,8 +272,6 @@ async function main() {
   }
 }
 
-// El arnés corre por CLI; los ayudantes puros de la traza se exportan para que
-// las pruebas de contrato de trazas no necesiten ni backend ni proveedor.
 if (require.main === module) main().catch((error) => {
   console.error(`[agent-eval] ${error.message}`);
   process.exitCode = 1;

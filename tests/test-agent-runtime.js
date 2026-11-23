@@ -165,7 +165,6 @@ function makeBridge() {
 async function openFaux(responses, bridge, { faux: fauxOptions = {}, settings } = {}) {
   const { MemoryStorage } = await import('@earendil-works/pi-durable');
   const { fauxProvider } = await import('@earendil-works/pi-ai');
-  // Directorio propio: sin él, el registro de compactaciones caía en el del usuario.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-faux-'));
   await runtime.open({ storage: new MemoryStorage(), bridge, skipImport: true, settings, dir });
   const faux = fauxProvider(fauxOptions);
@@ -1109,7 +1108,6 @@ async function main() {
     fs.mkdirSync(path.join(policyRoot, 'Antares', 'ai-agent'), { recursive: true });
     const policyFile = path.join(policyRoot, 'Antares', 'ai-agent', 'browser-policy.json');
     fs.writeFileSync(policyFile, JSON.stringify({ always_allowed: ['panel.miejemplo.pe'] }));
-    // Debe coincidir con el conjunto no transaccional del catálogo del navegador.
     const { WEB_AUTO_APPROVE } = require('../electron/agent-execution');
     const passiveCatalog = Object.entries(realBrowserCatalog.TOOLS).filter(([, definition]) => definition[2] === false).map(([name]) => name);
     assert(JSON.stringify([...WEB_AUTO_APPROVE].sort()) === JSON.stringify(passiveCatalog.sort()),
@@ -1766,9 +1764,6 @@ async function main() {
       'Electron envía la versión de cada herramienta');
     const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(!messages.some((m) => m.role === 'user' && String(m.content).includes('usa la B')), 'la memoria no aparece como texto del usuario');
-    // Snapshot congelado por sesión: el bloque vive al final de las
-    // instrucciones, tras las guías fijas, y los turnos siguientes no
-    // reconsultan memoria ni reinyectan el bloque.
     const marker = runtime._internal.shared.MEMORY_SNAPSHOT_MARKER;
     const runtimeState = runtime._internal.state();
     const sessionDoc = await runtimeState.harness.snapshot(runtimeState.SessionsDoc, runtimeState.ctx);

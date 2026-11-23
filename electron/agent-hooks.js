@@ -19,7 +19,6 @@ function contextFor(profile, event, tool) {
   return `${HEADINGS[event]}\n${rules.map((rule) => `- ${rule.context}`).join('\n')}`;
 }
 
-// El hook deja constancia en el registro de la app; nunca ejecuta código.
 function record(session, event, tool) {
   const name = session && session.profile && session.profile.name ? session.profile.name : 'perfil';
   console.log(`[agent] hook ${event}${tool ? ` (${tool})` : ''} aplicado desde «${name}»`);

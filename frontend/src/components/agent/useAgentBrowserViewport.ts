@@ -90,7 +90,6 @@ export default function useAgentBrowserViewport({ viewportRef, panelRef, open, s
         if (!coveredRef.current) { void sendBounds(viewportBounds(element)); return; }
         frozenRef.current = true;
         setFrozenPage(`data:image/png;base64,${shot.png_base64}`);
-        // El raster entra en el DOM antes de retirar la vista nativa.
         requestAnimationFrame(() => {
           if (mountedRef.current && coveredRef.current && !annotatingRef.current && !capturingRef.current) sendBounds(null);
         });
@@ -104,7 +103,6 @@ export default function useAgentBrowserViewport({ viewportRef, panelRef, open, s
     const report = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        // Durante la captura el acople lo controla annotate: no lo pises.
         if (capturingRef.current) return;
         const panel = panelRef.current;
         const conversation = panel?.previousElementSibling;
@@ -114,13 +112,9 @@ export default function useAgentBrowserViewport({ viewportRef, panelRef, open, s
           setLayout((prev) => prev.width === width && prev.available === available ? prev : { width, available });
         }
         const rect = element.getBoundingClientRect();
-        // Solo se retira si está medido y completamente fuera de pantalla; un rect en
-        // ceros significa que el layout aún no midió, no que esté oculto.
         const measured = rect.width > 0 && rect.height > 0;
         const offscreen = measured && (rect.right <= 0 || rect.bottom <= 0
           || rect.left >= window.innerWidth || rect.top >= window.innerHeight);
-        // La vista nativa pinta encima del DOM: si un menú o diálogo la pisa,
-        // se congela la página y se retira la vista para que el menú quede encima.
         const covered = Array.from(document.querySelectorAll(OVERLAY)).some((overlay) => {
           const box = overlay.getBoundingClientRect();
           return box.width > 0 && box.height > 0 && box.left < rect.right && box.right > rect.left && box.top < rect.bottom && box.bottom > rect.top;
@@ -163,7 +157,6 @@ export default function useAgentBrowserViewport({ viewportRef, panelRef, open, s
     observer.observe(element);
     if (panelRef.current?.parentElement) observer.observe(panelRef.current.parentElement);
     const overlays = new MutationObserver(report);
-    // subtree: diálogos como Ajustes se montan dentro de #root, no en <body>.
     overlays.observe(document.body, { childList: true, subtree: true });
     window.addEventListener('resize', report);
     document.addEventListener('visibilitychange', report);

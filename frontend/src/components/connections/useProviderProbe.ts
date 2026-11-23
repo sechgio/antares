@@ -3,10 +3,6 @@ import { aiProvidersApi, type AiProviderSpec, type AiProviderStatus } from '../.
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 
-/** Estado y acción de "Probar conexión" compartidos por la vista de proveedores
- *  y la sección de modelos personalizados. `setStatuses` se expone para que cada
- *  consumidor gestione sus propios invalidados/limpiezas.
- */
 export function useProviderProbe() {
   const { addToast } = useToast();
   const [statuses, setStatuses] = useState<Record<string, AiProviderStatus | undefined>>({});

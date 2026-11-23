@@ -8,9 +8,6 @@ const MAX_RESULT_JSON_CHARS = 500_000;
 const PRINT_CHUNK_CHARS = 100_000;
 const WORKER_FLAG = 'antaresScriptWorker';
 
-// Bootstrap que se compila dentro del contexto. Recibe los puentes del host,
-// pero los devuelve solo a través de funciones creadas por el propio contexto:
-// el código del modelo nunca recibe un objeto del host.
 function scriptBootstrap(hostCall, hostPrint, hostDone, catalogJson, maxResultChars, printChunkChars) {
   'use strict';
   const pending = new Map();
@@ -125,8 +122,6 @@ function scriptBootstrap(hostCall, hostPrint, hostDone, catalogJson, maxResultCh
   return { tools, print, console, settle, finish };
 }
 
-// Se compila como fuente dentro del vm; pasar la función desde el padre
-// expondría sus prototipos y rompería el aislamiento del contexto.
 const BOOTSTRAP_SOURCE = `(${scriptBootstrap.toString()})`;
 
 function startWorker(data) {
@@ -166,8 +161,6 @@ function startWorker(data) {
     bridge.settle(Number(message.id), message.ok === true, String(message.text || ''));
   });
 
-  // La invocación va dentro del vm: el timeout cubre también la parte síncrona
-  // del cuerpo, no solo la evaluación que crea la función.
   const runner = `(async () => {
 ${String(data.code || '')}
 })()`;

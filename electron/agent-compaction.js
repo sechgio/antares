@@ -1,10 +1,5 @@
 'use strict';
 
-// Política de contexto y compactación del agente. pi-durable ya corta, resume y
-// coloca el resumen en un punto seguro (nunca entre una llamada y su resultado);
-// este módulo aporta la política de Antares: umbrales configurables, el resumen
-// «sagrado» en español, la redacción de secretos, la barrera dato/directriz y
-// el registro auditable. Ver docs/adr/0003-compaccion-contexto-agente.md.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -26,8 +21,6 @@ const POLICY_KEYS = [
 const AUDIT_LOG = 'compactions-log.jsonl';
 const TOOL_RESULT_CLIP = 2000;
 const EMERGENCY_CLIP = 300;
-// Los resultados de control contienen instrucciones de trabajo, no datos
-// externos; la barrera dato/directriz no debe degradarlos a cita.
 const CONTROL_TOOL_RESULTS = new Set(CONTROL_TOOL_RESULT_NAMES);
 
 const CONTEXT_MARKER = shared.CONTEXT_MARKER;
@@ -125,10 +118,6 @@ function loadPolicy(dir) {
   }
 }
 
-// Ventana de trabajo: el agente no llena más de WORKING_CONTEXT_CAP aunque el
-// modelo admita más, y compacta al COMPACT_PERCENT de esa ventana en lugar de
-// apurar hasta el margen de respuesta: cada compactación reescribe la caché, y
-// con margen ocurren menos.
 const WORKING_CONTEXT_CAP = 500000;
 const COMPACT_PERCENT = 80;
 
@@ -136,10 +125,6 @@ function workingWindow(contextWindow) {
   return Math.min(contextWindow, WORKING_CONTEXT_CAP);
 }
 
-// pi-durable compacta en «ventana − reserveTokens» con una reserva global. Para
-// que compacte al porcentaje de cada modelo recibe esta ventana en
-// model.contextWindow; la de trabajo viaja aparte (model.workingWindow) y es la
-// que usan la UI, el guardián mecánico y el proveedor.
 function compactionWindow(working, policy) {
   if (!policy || !policy.enabled) return working;
   return Math.min(working, Math.floor((working * COMPACT_PERCENT) / 100) + policy.reserveTokens);
@@ -173,9 +158,6 @@ function blockText(content) {
     .map((block) => block.text);
 }
 
-// Envoltorio que pi-durable coloca al reinyectar un resumen previo. Compartido
-// por la proyección (mostrar el resumen al usuario) y la transcripción (no
-// atribuir al usuario lo que es un resumen colocado).
 const COMPACTION_WRAPPER_RE = /^The conversation history before this point was compacted into the following summary:\s*<summary>\s*([\s\S]*?)\s*<\/summary>\s*$/;
 
 function unwrapCompactionSummary(text) {
@@ -300,9 +282,6 @@ function addUsage(total, usage) {
   }
 }
 
-// La llamada de resumen sale de este hook y no de pi-durable: su gasto se
-// apunta en pi.usage igual que el del resumidor propio, para que el medidor lo cuente.
-// Un fallo al apuntar el gasto no debe convertir un resumen válido en uno de emergencia.
 async function recordSummaryUsage(runtime, message) {
   if (!message.usage) return;
   const { pi } = shared.deps;
@@ -326,9 +305,6 @@ function waitRetry(ms, signal) {
   });
 }
 
-// Sin razonamiento: resumir no lo necesita y en los modelos OpenAI-compatibles
-// sus tokens comparten max_tokens con el resumen, que acababa cortado por
-// «length». El techo de salida es el de pi-durable (80 % de la reserva).
 async function summarize(runtime, model, transcript) {
   const { isRetryableAssistantError, retryDelayMs } = await import('@earendil-works/pi-ai/utils/retry');
   const policy = runtime.settings.compaction;
@@ -349,11 +325,6 @@ async function summarize(runtime, model, transcript) {
   }
 }
 
-// Hook beforeCompact de pi.CompactionTask. Punto seguro garantizado por
-// pi-durable: el tramo a resumir queda congelado antes de crearse la tarea y el
-// resumen se coloca en un boundary, nunca entre una llamada y su resultado.
-// Antes de resumir se rechaza si hay aprobación pendiente o herramienta en
-// curso; el rechazo es barato y la verificación del umbral vuelve a intentarlo.
 async function beforeCompact(compaction, runtime, context) {
   const conversationId = runtime.conversationId;
   const sessionId = await sessionForConversation(conversationId, null, context);
@@ -398,10 +369,6 @@ async function beforeCompact(compaction, runtime, context) {
     outcome: emergency ? 'emergency' : 'summary', entries: compaction.entries.length,
     summary_chars: summary.length, first_kept: compaction.firstKept,
   });
-  // La compactación es el único evento que regenera el snapshot de memoria a
-  // mitad de sesión: el bloque congelado se retira y se vuelve a consultar con
-  // el resumen como texto de recuperación. Un fallo aquí no aborta la
-  // compactación, que ya quedó registrada.
   try {
     await require('./agent-runtime').regenerateMemorySnapshot(sessionId, summary);
   } catch (err) {

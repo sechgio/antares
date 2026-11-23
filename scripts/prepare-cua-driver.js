@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-// Instala y verifica el driver de computer use (cua-driver) contra cua-driver/manifest.json.
-// Uso:
-//   node scripts/prepare-cua-driver.js verify
-//   node scripts/prepare-cua-driver.js install <ruta del zip oficial>
 const fs = require('fs');
 const os = require('os');
 const path = require('path');

@@ -52,7 +52,6 @@ function createWindow(isDev) {
   };
 
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    // Las páginas del agente embebidas en el chat traen su propia CSP aislada (sin red ni bridge).
     if (details.url.startsWith('http://127.0.0.1:') && require('./agent-preview').isPage(details.url)) {
       return callback({ responseHeaders: details.responseHeaders });
     }
@@ -70,10 +69,6 @@ function createWindow(isDev) {
     });
   });
 
-  // Deny-by-default en la sesión principal: sin handler, Electron aprueba
-  // todo (micrófono incluido) ante cualquier renderer comprometido. Solo se
-  // concede lo que la UI usa: micrófono y captura de pantalla del editor, y
-  // portapapeles del lienzo. El permiso va atado al webContents que pide.
   const allowedPermissions = new Set([
     'media',
     'display-capture',
@@ -94,8 +89,6 @@ function createWindow(isDev) {
     (webContents, permission) => isTrustedMainFrame(webContents) && allowedPermissions.has(permission),
   );
 
-  // Icecast/SomaFM rechaza el stream con 403 si llega un Referer externo
-  // (anti-hotlink): el renderer siempre envía el de su propio origen.
   mainWindow.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
     const requestHeaders = { ...details.requestHeaders };
     const referer = requestHeaders.Referer ?? requestHeaders.referer;

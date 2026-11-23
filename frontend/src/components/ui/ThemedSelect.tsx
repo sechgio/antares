@@ -29,7 +29,6 @@ interface ThemedSelectProps {
 const MENU_GAP = 4;
 const MENU_MAX_H = 224;
 
-/** Shared measuring frame: off-screen and invisible until the popover is anchored. */
 const PANEL_HIDDEN_STYLE: CSSProperties = { top: -9999, left: -9999, visibility: 'hidden' };
 
 interface ThemedSelectPanelProps {
@@ -37,25 +36,15 @@ interface ThemedSelectPanelProps {
   panelRef: RefObject<HTMLDivElement | null>;
   role?: 'listbox' | 'dialog';
   ariaLabel?: string;
-  /** Resolved popover box; `null` keeps the panel hidden while measuring. */
   position: PopoverPosition | null;
-  /** Exact style keys applied once the position is resolved. */
   positionStyle?: (position: PopoverPosition) => CSSProperties;
-  /** Overrides the hidden frame; defaults to the shared off-screen fallback. */
   hiddenStyle?: CSSProperties;
-  /** Portal target. Defaults to `document.body`. */
   host?: HTMLElement | null;
   className?: string;
   dataPlacement?: string;
   children: ReactNode;
 }
 
-/**
- * Anchored portal surface of the ThemedSelect family (ThemedSelect itself,
- * StatusPicker, SelectPicker, CanvasSelect, FontPicker): it owns the portal,
- * the off-screen measuring frame and the mousedown guard, while callers keep
- * their exact container classes, option rows and style maps.
- */
 export function ThemedSelectPanel({
   id,
   panelRef,
@@ -86,10 +75,6 @@ export function ThemedSelectPanel({
   );
 }
 
-/**
- * Resolves the portal host of canvas-anchored pickers: the `.canvas-app` root
- * when the picker lives inside the canvas, falling back to `document.body`.
- */
 export function usePortalHost(
   isOpen: boolean,
   containerRef: RefObject<HTMLElement | null>,

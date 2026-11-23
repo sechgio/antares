@@ -37,8 +37,6 @@ function formatFolderErrorScan(message) {
   return msg.startsWith('ERROR:') ? msg : `ERROR: ${msg}`;
 }
 
-// Las escrituras van con USER_ENTERED: un valor externo (nombre de carpeta de
-// Drive) que empiece por =, +, - o @ se interpretaría como fórmula en el Sheet.
 function _sheetSafeText(value) {
   const s = String(value ?? '');
   return /^[=+\-@]/.test(s) ? `'${s}` : s;
@@ -64,7 +62,6 @@ async function markFolderErrorsInSheet(folderSummary) {
     }
     if (fValues.length) await sheets.writeRange('FOLDERS!A:E', fValues);
   } catch {
-    // Los errores ya viajan en el resumen del escaneo; fallar el marcado no debe abortarlo.
   }
 }
 
@@ -154,8 +151,6 @@ async function removeFolder({ folder_id }) {
   }
   if (!filtered.length) filtered.push(['NOMBRE', 'FOLDER_ID', 'ACTIVO', 'ULTIMO_SCAN', 'CANT_ARCHIVOS']);
   await sheets.writeRange('FOLDERS!A:E', filtered);
-  // values.update solo reemplaza las filas enviadas: sin limpiar el remanente,
-  // la última carpeta queda duplicada en la hoja y reaparece al volver a leer.
   if (values.length > filtered.length) {
     const emptyTail = Array.from(
       { length: values.length - filtered.length },

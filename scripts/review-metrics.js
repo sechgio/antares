@@ -39,8 +39,6 @@ function hoursBetween(from, to) {
 }
 
 function firstReviewSignal(pr) {
-  // `gh` no expone cuándo se marcó listo un borrador: medirlo desde la creación castigaría al
-  // autor por tenerlo abierto, así que los borradores se excluyen en lugar de inflar la métrica.
   if (pr.isDraft) return null;
   const authorLogin = pr.author && pr.author.login;
   const stamps = [];

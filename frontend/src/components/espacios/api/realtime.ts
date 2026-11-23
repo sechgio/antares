@@ -140,9 +140,6 @@ export function subscribeMyTasks(
     return null;
   }
 
-  // UPDATE filters only see the new row, so assignee_id=eq.userId would miss
-  // a task reassigned away from this user. One invalidation channel covers the
-  // four source tables and lets RLS keep inaccessible rows out of the stream.
   let channel = supabase.channel(`my-tasks:${userId}`);
   for (const table of ['tareas', 'proyectos', 'espacios', 'board_columns']) {
     channel = channel.on(

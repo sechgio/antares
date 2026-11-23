@@ -18,8 +18,6 @@ const probe = (p, path = '/') =>
   });
 
 async function main() {
-  // Guardia del flujo vigente: cancel detiene el servidor activo y limpia los
-  // slots del intento pendiente.
   {
     const pending = createPendingFlow();
     pending.slots.redirectUri = 'http://127.0.0.1:1';
@@ -39,9 +37,6 @@ async function main() {
     );
   }
 
-  // Orquestación completa sobre servidores reales: un segundo begin cierra el
-  // servidor del intento anterior y el callback vigente entrega code + target
-  // a connect y el estado final a onComplete.
   {
     const pending = createPendingFlow();
     const portA = await findAvailablePort();
@@ -110,7 +105,6 @@ async function main() {
     assert(closedAfterFinish === 'refused', 'el servidor se cierra al completar el flujo');
   }
 
-  // State incorrecto: onDenied invalid_state, sin connect ni onComplete.
   {
     const pending = createPendingFlow();
     const port = await findAvailablePort();
@@ -134,7 +128,6 @@ async function main() {
     );
   }
 
-  // callbackPath: el armado respeta el path del proveedor y rechaza el resto.
   {
     const pending = createPendingFlow();
     const port = await findAvailablePort();

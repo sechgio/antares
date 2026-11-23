@@ -80,7 +80,6 @@ const cases = {
     assert.throws(() => parseArgs(['--no-existe']), /--no-existe/);
   },
   'sin proveedor ni env, la evaluación no arranca ni adivina el proveedor': () => {
-    // Era un default mágico a «openai» en silencio; ahora es un error antes de arrancar el backend.
     const { spawnSync } = require('node:child_process');
     const result = spawnSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'agent-eval.js')], {
       encoding: 'utf8',

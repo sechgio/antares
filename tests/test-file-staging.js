@@ -103,6 +103,27 @@ async function main() {
     assert.throws(() => resolveCapability(cap4.token, 'read', 1), /capability not found|expired/);
   }
 
+  {
+    const owners = [];
+    for (let i = 0; i < 4; i++) {
+      const flight = createStagedSession({ name: `vuelo-${i}.bin`, size: 4, webContentsId: 7 });
+      await appendStagedChunk(flight.token, Buffer.from('data'), 7);
+      owners.push(flight);
+    }
+    assert.throws(
+      () => createStagedSession({ name: 'excede.bin', size: 4, webContentsId: 7 }),
+      /staged session limit reached for this window/,
+      'cuatro subidas en vuelo agotan el cupo de la ventana',
+    );
+
+    await completeStagedSession(owners[0].token, 7);
+    const nueva = createStagedSession({ name: 'nueva.bin', size: 4, webContentsId: 7 });
+    assert.ok(nueva.token, 'completar una sesión libera el cupo aunque nadie haya llamado a cleanup');
+    await appendStagedChunk(nueva.token, Buffer.from('data'), 7);
+    await abortStagedSession(nueva.token, 7);
+    for (const flight of owners) await abortStagedSession(flight.token, 7);
+  }
+
   const root = path.join(os.tmpdir(), `antares-staged-${process.pid}`);
   if (fs.existsSync(root)) {
     fs.rmSync(root, { recursive: true, force: true });

@@ -180,7 +180,6 @@ async function main() {
     const afterDelete = await reopenedState.harness.snapshot(reopenedState.PlanDoc, reopenedState.ctx);
     assert.equal(afterDelete.plans[parent.id], undefined, 'el borrado elimina el plan');
 
-    // Una escritura en vuelo y otra posterior no pueden recrear el plan tras el borrado.
     const raceCommit = reopenedState.harness.commit.bind(reopenedState.harness);
     let releaseWrite;
     const gate = new Promise((resolve) => { releaseWrite = resolve; });

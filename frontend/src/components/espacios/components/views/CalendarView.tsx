@@ -724,7 +724,6 @@ export default function CalendarView({
           border-left-width: 0;
         }
 
-        /* FullCalendar estira all-day si no tiene height auto. */
         .espacios-calendar .fc-timeGridWeek-view .fc-daygrid-body {
           height: auto !important;
           width: 100% !important;

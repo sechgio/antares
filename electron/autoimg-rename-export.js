@@ -75,8 +75,6 @@ async function _renameExportCore({ dest_folder_id, only_completos = true } = {})
     });
   }
 
-  // Drive permite nombres duplicados: sin este chequeo cada re-ejecución
-  // (reintento, cancelación, kill de la app) vuelve a copiar todo.
   const destinoExisting = new Map();
   for (const name of destinoNames) {
     throwIfCancelled();

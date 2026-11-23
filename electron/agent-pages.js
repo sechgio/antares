@@ -112,7 +112,6 @@ import(source).catch(() => {
   };
 }
 
-// En el chat la página adopta los colores de Antares que envía el padre; solo se aceptan estas variables y valores de color.
 const EMBED_SCRIPT = `<script>(() => {
   const report = () => parent.postMessage({ type: 'antares-page-height', height: document.body.getBoundingClientRect().height }, '*');
   new ResizeObserver(report).observe(document.body);

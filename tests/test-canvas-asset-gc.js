@@ -207,7 +207,6 @@ async function main() {
       fsp.stat = realStat;
     }
 
-    // storage-006: las marcas corren en la misma cadena de escritura que el GC.
     const concurrentIds = [];
     for (let i = 0; i < 6; i++) {
       const a = await putCanvasAsset(Buffer.from(`concurrent-mark-${i}-${'z'.repeat(16)}`));

@@ -109,8 +109,6 @@ async function _open(options = {}) {
       kind: 'antares.agent.plans', version: 1, scope: 'session', initial: () => ({ plans: {} }),
     });
     const registry = pi.createRegistry();
-    // Retención larga: una aprobación o una pausa de más de 5 minutos no vacía
-    // la caché del prefijo (solo la reciben las APIs oficiales, ver modelDefinition).
     const settings = {
       ...(options.settings || {}),
       stream: { cacheRetention: 'long', ...(options.settings && options.settings.stream) },
@@ -196,9 +194,6 @@ function toPublicSession(current) {
   rest.reasoning_levels = rest.reasoning_levels
     ? [...rest.reasoning_levels]
     : (execution.supportsReasoning(style, rest.model) ? LEGACY_REASONING : []);
-  // Los documentos leídos con tx.doc() son drafts de Chord: sus objetos y
-  // arrays anidados son proxies que Electron no puede clonar al responder por
-  // IPC. La sesión es JSON durable, así que se materializa antes de salir.
   return JSON.parse(JSON.stringify(rest));
 }
 
@@ -642,8 +637,6 @@ async function roomsList(params) {
   return require('./agent-rooms').listRooms(String((params && params.session_id) || ''));
 }
 
-// El historial es la fuente de verdad; el doc guardado cubre compactación e
-// importación, donde la llamada original puede ya no estar en la conversación.
 function _latestPlan(messages, saved) {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const calls = messages[i].tool_calls || [];
@@ -776,7 +769,6 @@ async function messageSend(params) {
     }));
   }
   const attached = _takeAttachments(params.attachments);
-  // Solo los adjuntos explícitos conceden lectura; las rutas en el texto no conceden nada.
   const paths = attached.filter((a) => a.kind === 'files').map((a) => a.path);
   const folders = attached.filter((a) => a.kind === 'folder').map((a) => a.path);
   const files = paths.length || folders.length
@@ -806,8 +798,6 @@ async function messageSend(params) {
         + 'Conserva los modos de aprobación y verifica los resultados.'
       : 'Sin carpeta de trabajo activa: las rutas relativas se resuelven en los borradores de la conversación.',
   ].filter(Boolean).join('\n\n');
-  // Garantiza el snapshot de memoria de la sesión antes del envío; el bloque
-  // vive en las instrucciones, no en el mensaje de este turno.
   await memoryContext(session, content);
   const agentConfig = await conv.agent(ctx());
   const storedInstructions = String(agentConfig.instructions || '');
@@ -858,8 +848,6 @@ async function messageSend(params) {
       if (skill) execution.requireSkill(session.conversationId, null);
       if (!(err && (err.name === 'ConversationBusy' || /busy/i.test(err.message || '')))) throw err;
       if (attempt === 1) throw validation('Ya hay un turno en curso en esta conversación');
-      // Un abort recién resuelto puede dejar el boundary cerrándose un
-      // instante: espera acotada a idle antes de rendirse.
       await Promise.race([conv.waitForIdle(ctx()), new Promise((r) => setTimeout(r, 5000))]);
     }
   }
@@ -1024,20 +1012,11 @@ async function skillsIndex(session, tools) {
   };
 }
 
-// Snapshot de memoria congelado por sesión. El bloque se genera una sola vez
-// al iniciar la sesión y vive al final de la parte estable del prompt (después
-// de las instrucciones fijas), no en el mensaje de cada turno: así el hash del
-// prompt del sistema permanece durante toda la sesión (ver
-// agent-cache-telemetry). Las escrituras memory_remember y procedure_learn van
-// al disco sin tocar el snapshot; solo una compactación (o la siguiente
-// sesión) lo regenera, vía regenerateMemorySnapshot.
 async function memoryContext(session, initialText) {
   if (shared.memorySnapshots.has(session.conversationId)) return { context: '' };
   const conv = await conversation(session.id);
   const stored = String((await conv.agent(ctx())).instructions || '');
   if (splitMemorySnapshot(stored).snapshot) {
-    // Congelado desde un arranque anterior: el bloque vive en las
-    // instrucciones y no se regenera hasta la siguiente sesión o compactación.
     shared.memorySnapshots.add(session.conversationId);
     return { context: '' };
   }
@@ -1046,10 +1025,6 @@ async function memoryContext(session, initialText) {
   return { context: '' };
 }
 
-// Consulta la memoria una vez y recoloca el bloque en las instrucciones de la
-// sesión. Idempotente: `withMemorySnapshot` retira siempre el bloque anterior
-// antes de colocar el nuevo, así dos ensures concurrentes no lo duplican. Con
-// memoria vacía no se escribe nada. Fallos del bridge dejan el contexto vacío.
 async function _writeMemorySnapshot(session, initialText, conv, stored) {
   const profile = await execution.sessionProfile(session);
   let context = '';
@@ -1064,8 +1039,6 @@ async function _writeMemorySnapshot(session, initialText, conv, stored) {
   if (instructions !== stored) await conv.configure({ instructions }, ctx());
 }
 
-// Única vía de regeneración a mitad de sesión, reservada a la compactación:
-// lee la conversación por su cuenta para saltarse el chequeo de congelado.
 async function regenerateMemorySnapshot(sessionId, initialText = '') {
   const session = (await sessions())[String(sessionId || '')];
   if (!session) return;
@@ -1095,8 +1068,6 @@ async function toolsList(params = {}) {
   } else {
     tools = await execution.allToolSpecs();
   }
-  // Avisar al padre solo tiene sentido dentro de una delegación; el selector
-  // del usuario no ofrece una herramienta que siempre fallaría.
   tools = tools.filter((tool) => tool.name !== 'agent_wake_parent' || !!session?.delegation);
   return {
     tools: tools.map((t) => ({
@@ -1305,8 +1276,6 @@ async function shutdown() {
   }
   shared.watchers.clear();
   shared.live.clear();
-  // El snapshot vive en las instrucciones (durables); el registro solo
-  // amortiza este proceso y no debe sobrevivir al cierre del runtime.
   shared.memorySnapshots.clear();
   require('./agent-browser').close();
   require('./agent-cua').close();

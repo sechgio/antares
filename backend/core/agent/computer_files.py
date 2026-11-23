@@ -376,7 +376,6 @@ def search(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> Jso
 def _glob_match(relative: str, name: str, wanted: str) -> bool:
     if "/" not in wanted:
         return fnmatch.fnmatch(name, wanted)
-    # fnmatch deja que * cruce "/", así que solo falta que **/ admita la raíz.
     return fnmatch.fnmatch(relative, wanted) or (wanted.startswith("**/") and fnmatch.fnmatch(relative, wanted[3:]))
 
 

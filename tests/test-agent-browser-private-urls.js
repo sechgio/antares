@@ -4,8 +4,6 @@ const fs = require('node:fs');
 const Module = require('module');
 const path = require('node:path');
 
-// agent-browser captura node:dns al cargar: el stub se instala antes del
-// require y delega en una función intercambiable para cada caso.
 let lookupBehavior = null;
 const originalLoad = Module._load;
 Module._load = function patchedLoad(request, parent, isMain) {

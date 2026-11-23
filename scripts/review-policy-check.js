@@ -111,7 +111,6 @@ function taxonomyCompliance(comments, authorLogin) {
   return { total: list.length, prefixed, ratio: prefixed / list.length };
 }
 
-// `(?![\s\S])` en lugar de `$`: en modo multilínea `$` también encaja al final de cada línea.
 function sectionText(body, heading) {
   const match = String(body || '').match(
     new RegExp(`^##[^\\S\\n]*${heading}\\b[^\\n]*\\n([\\s\\S]*?)(?=^##[^\\S\\n]*\\S|(?![\\s\\S]))`, 'im'),

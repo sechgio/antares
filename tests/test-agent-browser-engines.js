@@ -75,7 +75,6 @@ async function transportTest() {
   assert(closed === 'cerrado' && after === 'cerrado', 'al cerrarse rechaza lo pendiente y lo que se envíe después');
 }
 
-// Un Chromium falso que habla CDP por la tubería del proceso lanzado.
 function fakeBrowser({ failStart = false } = {}) {
   const commands = [];
   const child = new EventEmitter();
@@ -199,7 +198,6 @@ async function launchTest() {
   }
 }
 
-// Un Chrome abierto por el usuario: acepta o rechaza la conexión y responde CDP por WebSocket.
 function fakeSessionChrome() {
   const sockets = [];
   const commands = [];
@@ -304,7 +302,6 @@ async function sessionTest() {
   assert(contents.isDestroyed() && exited === 1, 'al cortarse la conexión la pestaña se da por cerrada y se avisa al agente');
 }
 
-// Un Firefox falso: anuncia WebDriver BiDi por stderr y responde por WebSocket.
 function fakeFirefox({ announce = true } = {}) {
   const child = new EventEmitter();
   child.stdout = new PassThrough();

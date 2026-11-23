@@ -2,9 +2,6 @@ import { atom } from '../layout/radio/core';
 
 export { useValue as useAtomValue } from '../layout/radio/core';
 
-/**
- * Port del plugin de Hermes Desktop (VGFreakXBL/hermes-sticky-notes, MIT).
- */
 
 export type Anchor = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 export type StickyTint = 'classic' | 'soft' | 'ghost';

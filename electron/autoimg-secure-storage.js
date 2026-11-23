@@ -48,9 +48,6 @@ function encryptPayload(namespace, payload) {
     const buf = safeStorage.encryptString(json);
     return { v: 2, data: Buffer.from(buf).toString('base64') };
   }
-  // La clave derivada de rutas públicas (v1) solo sirve para LEER sobres
-  // legados; es ofuscación reversible, no cifrado. Escribir credenciales
-  // nuevas con ella escondía el problema: fallamos en voz alta.
   throw new Error(
     'El cifrado de credenciales (safeStorage/DPAPI) no está disponible: Antares no guardará los secretos sin cifrado confidencial. Reinicia la sesión de Windows e inténtalo de nuevo.',
   );

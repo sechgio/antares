@@ -58,7 +58,6 @@ describe('Virtualized TableView & ListView Components', () => {
     });
 
     it('exposes list semantics in virtualized rows', () => {
-      // jsdom no calcula layout: la lista solo se monta con altura medida.
       const rectSpy = vi
         .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
         .mockReturnValue({
@@ -145,7 +144,6 @@ describe('Virtualized TableView & ListView Components', () => {
     });
 
     it('exposes list semantics in virtualized rows', () => {
-      // jsdom no calcula layout: la lista solo se monta con altura medida.
       const rectSpy = vi
         .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
         .mockReturnValue({

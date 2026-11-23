@@ -121,11 +121,8 @@ export default function AgentBrowserPanel({ onClose, onAnnotate }: {
     }
     capturingRef.current = true;
     try {
-      // El menú desacopla la vista nativa para no taparlo; hay que reacoplarla
-      // y dejar que pinte antes de leer el raster de la página.
       if (!(await dockViewport())) throw new Error('El navegador no está visible');
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-      // Reacoplar otra vez por si el cierre del menú disparó un desacople.
       await dockViewport();
       const capture = await agentApi.agentBrowserCapture();
       capturingRef.current = false;

@@ -112,7 +112,6 @@ async function getRenameDestConfig() {
     try {
       saveRenameDest(folderId, local.name || '');
     } catch {
-      // Best-effort: el Sheet es la fuente de verdad; el espejo local solo acelera arranques.
     }
   }
   return { folder_id: folderId, name: local.name || '' };

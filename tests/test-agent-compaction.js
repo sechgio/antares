@@ -495,8 +495,6 @@ async function main() {
   }
 
   {
-    // El snapshot de memoria está congelado por sesión: los turnos no vuelven
-    // a consultarla; la compactación es el único evento que lo regenera.
     const { script, state: bridgeState } = await openCompaction();
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const runtimeState = runtime._internal.state();
@@ -510,8 +508,6 @@ async function main() {
     assert(bridgeState.memoryCalls?.length === 1, 'la memoria se consulta una sola vez al iniciar la sesión');
     assert(!String(await instructionsOf()).includes(marker), 'sin recuerdos activos no se escribe ningún bloque');
     const turnCalls = () => bridgeState.memoryCalls.filter((call) => !String(call.text).includes('Encargo actual'));
-    // Las llamadas de regeneración se reconocen por la cabecera del resumen
-    // ('Encargo actual'), formato estable del resumidor de este suite.
     bridgeState.memory = 'Memoria local disponible para esta conversación:\n- Preferencia: Informes — usa la B';
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Sigue con el informe' });
     assert(await waitIdle(session.id), 'el segundo turno termina');

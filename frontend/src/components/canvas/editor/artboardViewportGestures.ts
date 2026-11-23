@@ -127,7 +127,6 @@ export function createArtboardViewportGestures(deps: ArtboardViewportGestureDeps
       try {
         captureTarget.releasePointerCapture(pointerId);
       } catch {
-        // The browser may release capture before pointercancel/blur reaches React.
       }
     };
 

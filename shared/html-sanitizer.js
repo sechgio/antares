@@ -28,9 +28,6 @@ function isAllowedGoogleFontUrl(url) {
   return GOOGLE_FONT_HOST_RE.test(String(url).trim());
 }
 
-// Numeric refs decode in browsers without the trailing semicolon; named refs
-// keep it required (the no-semicolon legacy named set is not decoded inside
-// attributes when followed by alnum/'=', so requiring ';' matches that).
 const _URL_ENTITY_RE = /&(?:#(x[0-9a-fA-F]+|\d+);?|([a-zA-Z][a-zA-Z0-9]*);)/g;
 const _NAMED_URL_ENTITIES = {
   colon: ':', tab: '\t', newline: '\n', sol: '/', bsol: '\\',
@@ -50,10 +47,8 @@ function _decodeUrlEntities(value) {
 
 const URL_ATTR_RE = /(href|src|xlink:href|srcset|poster|action|formaction|background|cite|ping|longdesc)\s*=\s*(['"]?)\s*([^"'>]+)\2/gi;
 
-// Solo espacios de la especificación: \s de JS deja fuera C0/DEL que el parser de URL quita («\u0001javascript:»).
 const _URL_NOISE_RE = /[\s\x00-\x1f\x7f]+/g;
 
-// Los parsers decodifican character references en el NOMBRE del atributo (sr&#99; = src); ningún nombre legítimo trae «&#».
 const DANGEROUS_DECODED_ATTR_NAMES = /^(?:on[a-z]+|href|src|xlink:href|srcset|poster|action|formaction|background|cite|ping|longdesc)$/i;
 const _ATTR_NAME_TOKEN_RE = /([\s/])([^\s"'>=]+)(\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*))?/g;
 const _TAG_OPEN_RE = /<[a-zA-Z](?:"[^"]*"|'[^']*'|[^"'>])*>/g;
@@ -139,7 +134,6 @@ function stripOrKeepLink(fullTag) {
 }
 
 function injectContentSecurityPolicy(stripped, cspMeta) {
-  // La primera política manda: copia en el índice 0 para que un head falso en raw-text no desplace la CSP efectiva.
   if (/(^|[\s>])<head\b([^>]*)>/i.test(stripped)) {
     return cspMeta + stripped.replace(/(^|[\s>])<head\b([^>]*)>/i, `$1<head$2>${cspMeta}`);
   }

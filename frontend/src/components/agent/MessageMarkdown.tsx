@@ -19,8 +19,6 @@ function VisualPlaceholder({ lang }: { lang: string }) {
   );
 }
 
-// Como en CommonMark, «_» pegado a letras o números no abre ni cierra énfasis:
-// gmail_search o mi_archivo_final.pdf se muestran tal cual.
 const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|(?<![\p{L}\p{N}_])__[^_\n]+__(?![\p{L}\p{N}_])|\*[^*\n]+\*|(?<![\p{L}\p{N}_])_[^_\n]+_(?![\p{L}\p{N}_])|\[[^\]\n]+\]\((?:<[^>\n]+>|[^)\s]+)\))/gu;
 
 function inline(text: string, keyPrefix: string, onPreview: ((resource: string) => void) | null): ReactNode[] {

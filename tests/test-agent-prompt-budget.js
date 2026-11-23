@@ -17,8 +17,6 @@ const TOOL = (name, module, description, gated = false) => ({
   inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
 });
 
-// Más de MAX_DEFAULT_TOOLS (100): activa la selección de núcleo que una conversación
-// nueva aplica sobre el catálogo completo.
 function fixtureSpecs({ extraCore = [] } = {}) {
   const core = [
     TOOL('fs_list', 'computer'), TOOL('fs_read', 'computer'), TOOL('document_generate', 'documents'),

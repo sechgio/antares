@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-# cp1252 va antes que latin-1: latin-1 decodifica cualquier byte y se quedaría
-# con los caracteres de control en lugar de la raya y las comillas tipográficas;
-# esa misma garantía hace que la escalera siempre devuelva texto.
 _CSV_ENCODINGS = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
 
 

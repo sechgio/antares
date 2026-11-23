@@ -3,9 +3,6 @@
 const { EventEmitter } = require('node:events');
 const { allowed } = require('./agent-browser-cdp');
 
-// Adaptador PageContents para Firefox (ADR 0005, fase 4): WebDriver BiDi en lugar
-// de CDP. Traduce las órdenes CDP que usan las herramientas web_* y emite los
-// eventos de red con forma CDP para que web_network y page_reported no cambien.
 
 const CONSOLE_LEVELS = { error: 'error', warn: 'warning', debug: 'debug' };
 const SPECIAL_KEYS = {
@@ -15,7 +12,6 @@ const SPECIAL_KEYS = {
 const MODIFIER_KEYS = [[1, ''], [2, ''], [4, ''], [8, '']];
 const BUTTONS = { left: 0, middle: 1, right: 2 };
 
-// Respuestas por id y eventos con el formato de WebDriver BiDi sobre WebSocket.
 function bidiTransport(socket) {
   const pending = new Map();
   const listeners = new Set();
@@ -62,7 +58,6 @@ function header(headers = [], name) {
   return found ? String(found.value && typeof found.value === 'object' ? found.value.value : found.value || '') : '';
 }
 
-// Las expresiones de las herramientas son llamadas (() => …)(): se devuelven como JSON, igual que executeJavaScript.
 function wrap(code) {
   return `(async () => JSON.stringify(await (${String(code).trim().replace(/;+$/, '')}\n)))()`;
 }
@@ -107,7 +102,6 @@ async function createBidiContents(transport, { context, imageFromBuffer = (buffe
       contents.emit('page-title-updated', {}, title);
     }
   }).catch(() => { });
-  // BiDi no expone el historial: se lleva aquí, como lo vería el usuario con atrás y adelante.
   const recordNavigation = (url) => {
     if (page.traversing > 0) { page.traversing -= 1; return; }
     if (page.history[page.index] === url) return;
@@ -123,7 +117,6 @@ async function createBidiContents(transport, { context, imageFromBuffer = (buffe
   };
   const network = (method, params) => debuggerEvents.emit('message', {}, method, params);
 
-  // Los iframes son contextos hijos: su red y su consola cuentan; su carga, no.
   const frames = new Set();
   const unsubscribe = transport.on(({ method, params = {} }) => {
     const from = params.context ?? (params.source && params.source.context);
@@ -172,7 +165,6 @@ async function createBidiContents(transport, { context, imageFromBuffer = (buffe
   });
   const keys = (actions) => call('input.performActions', { context, actions: [{ type: 'key', id: 'teclado', actions }] });
 
-  // Traducción de las órdenes CDP permitidas que usan las herramientas web_*.
   const translate = async (method, params = {}) => {
     if (['Emulation.setFocusEmulationEnabled', 'Network.enable', 'Page.enable'].includes(method)) return {};
     if (method === 'Input.dispatchMouseEvent') {

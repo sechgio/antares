@@ -49,7 +49,6 @@ def test_parse_csv_bytes_arbitrarios_decodifican_via_latin1() -> None:
 
 
 def test_parse_csv_lee_cp1252_antes_que_latin1() -> None:
-    # En cp1252 0x97 y 0x92 son raya y comilla tipográfica; latin-1 las lee como control.
     content = "Cliente;Observacion\nZona 2 \u2014 alta\u2019 ok;listo\n".encode("cp1252")
 
     rows = parse_csv_bytes(content)

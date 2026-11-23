@@ -27,8 +27,6 @@ function resolveFileInputNonce() {
   return arg ? arg.slice(prefix.length) : '';
 }
 
-// Vive solo en el mundo aislado del preload: el contexto de la página no puede
-// leerlo, así que un renderer comprometido no puede forjar registros de rutas.
 const FILE_INPUT_NONCE = resolveFileInputNonce();
 
 function reportRendererError(payload) {
@@ -59,7 +57,6 @@ function resolveIsPackaged() {
   const prefix = '--app-is-packaged=';
   const argv = Array.isArray(process.argv) ? process.argv : [];
   const arg = argv.find((a) => typeof a === 'string' && a.startsWith(prefix));
-  // ipc-bridge-022: el flag de main MANDA; NODE_ENV solo respalda y nunca anula el gate.
   if (arg) return arg.slice(prefix.length) === '1';
   try {
     if (typeof __dirname !== 'undefined' && /[\\/]app\.asar[\\/]/.test(__dirname)) return true;
@@ -71,7 +68,6 @@ function resolveIsPackaged() {
 const isDev = !resolveIsPackaged();
 
 function loadSupabaseSessionSeed() {
-  // sb-011: siembra por sendSync ANTES de que la página importe supabase-js.
   try {
     return ipcRenderer.sendSync('supabase-session-get');
   } catch {

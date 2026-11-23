@@ -171,7 +171,6 @@ def _apply_statement(state: SchemaState, stmt: str) -> None:
     m = re.match(r"create\s+schema\s+(?:if\s+not\s+exists\s+)?(\w+)", low)
     if m:
         schema = m.group(1)
-        # New schemas default to USAGE granted to PUBLIC.
         state.schema_usage.setdefault(schema, {"public"})
         return
 
@@ -208,7 +207,6 @@ def _apply_statement(state: SchemaState, stmt: str) -> None:
         key = (m.group(1), m.group(2), _normalize_signature(m.group(3)))
         is_replace = bool(re.match(r"create\s+or\s+replace", low))
         if key not in state.functions or not is_replace:
-            # Fresh function: Postgres grants EXECUTE to PUBLIC by default.
             state.func_execute[key] = {"public"}
         state.functions[key] = s
         return

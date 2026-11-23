@@ -89,7 +89,6 @@ function loadSkills(directory, root) {
   return skills;
 }
 
-// Hooks declarativos: solo contexto y registro, nunca comandos ni permisos.
 function loadHooks(directory, root) {
   const file = path.join(directory, 'hooks.json');
   if (!fs.existsSync(file)) return [];

@@ -6,9 +6,6 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { pathToFileURL, fileURLToPath } = require('node:url');
 
-// Vista previa de HTML como la de Claude Code: un servidor estático solo en
-// loopback que sirve la carpeta del archivo. La ruta lleva un prefijo aleatorio
-// para que ninguna otra página abierta en el navegador pueda adivinarla.
 const HOST = '127.0.0.1';
 const RELOAD_DEBOUNCE_MS = 150;
 const TYPES = {
@@ -57,7 +54,6 @@ function hosts() {
 async function handle(req, res) {
   const deny = (status) => { res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end(String(status)); };
   if (req.method !== 'GET' && req.method !== 'HEAD') return deny(405);
-  // Un dominio que resuelva a 127.0.0.1 (rebinding) llega con su propio Host.
   if (!hosts().has(String(req.headers.host || '').toLowerCase())) return deny(403);
   const page = pages.get(String(req.url || '').split(/[?#]/)[0]);
   if (page) {
@@ -75,7 +71,6 @@ async function handle(req, res) {
   let target = path.resolve(root, rel || '.');
   if (!inside(target, root)) return deny(404);
   try {
-    // Un enlace simbólico dentro de la carpeta no puede sacar archivos de ella.
     const realRoot = await fs.promises.realpath(root);
     let real = await fs.promises.realpath(target);
     if (!inside(real, realRoot)) return deny(404);
@@ -127,8 +122,6 @@ function stopWatching() {
   watcher = null;
 }
 
-// Recarga en vivo: cualquier cambio en la carpeta servida avisa una sola vez
-// por ráfaga de guardados.
 function watch(dir) {
   stopWatching();
   try {
@@ -144,15 +137,12 @@ function watch(dir) {
 
 function setRoot(dir) {
   if (root && key(root) === key(dir)) return;
-  // Cada carpeta tiene su propio prefijo: una URL vieja no abre otra carpeta.
   token = crypto.randomBytes(16).toString('hex');
   root = dir;
   fileRoot = '';
   watch(dir);
 }
 
-// Devuelve la URL de vista previa del archivo; sin servidor (no pudo escuchar)
-// cae a file:// confinado a la misma carpeta.
 async function open(file, { onReload } = {}) {
   const dir = path.dirname(file);
   onChange = onReload || null;
@@ -228,7 +218,6 @@ function close() {
   pages.clear();
 }
 
-// '' hasta escuchar: window-manager acota frame-src a este puerto real, nunca al comodín 127.0.0.1:*.
 function originUrl() {
   return origin || '';
 }

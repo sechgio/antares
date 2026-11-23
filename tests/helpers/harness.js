@@ -78,8 +78,6 @@ function evictModule(spec) {
   delete require.cache[_resolveRepoModule(spec)];
 }
 
-// El navegador del agente resuelve el DNS de cada destino: en los tests toda
-// resolución es pública.
 function stubPublicDns() {
   const Module = require('node:module');
   const originalLoad = Module._load;

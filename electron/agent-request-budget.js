@@ -1,8 +1,5 @@
 'use strict';
 
-// pi-durable resume con un resumen cuando la ventana lo permite; este guardián
-// cubre las ventanas pequeñas, donde su corte (20 k de contexto reciente) no
-// llega a activarse, y evita que una petición desborde sin compactar.
 const KEEP_RECENT_MESSAGES = 8;
 const KEEP_RECENT_TOOL_RESULTS = 3;
 const KEEP_RECENT_USER_TURNS = 2;
@@ -214,16 +211,6 @@ function hardTrim(messages) {
   return changed ? next : null;
 }
 
-// estimate mide la petición entera, con el uso que informa el proveedor; cada
-// etapa se mide como esa cifra menos lo que recortó, porque el uso es fijo y,
-// medida de nuevo, ningún recorte la bajaría hasta llegar al pliegue total.
-// messageTokens estima un mensaje suelto; por defecto, estimate de ese mensaje.
-// cuts guarda entre peticiones de la misma conversación dónde cortaron la poda
-// y el recorte. Cortar siempre a una distancia fija del final cambiaría un
-// mensaje antiguo en cada paso y el proveedor volvería a escribir en caché todo
-// lo posterior; por eso se reutiliza el corte anterior mientras deje como mucho
-// CUT_SLACK elementos recientes de más y la petición quepa con él. Si no, se
-// corta como siempre.
 function compactMessages(messages, { budget, estimate, messageTokens = (message) => estimate([message]), cuts }) {
   if (!Array.isArray(messages) || !budget || typeof estimate !== 'function') return undefined;
   const measured = estimate(messages);

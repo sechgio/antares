@@ -258,8 +258,6 @@ def print_artifact(
         try:
             store.dispatch_note(session_id, op_id, {"job_id": job_id, "printer_name": params["printer_name"], "pdf_sha256": file["sha256"]})
         except Exception:
-            # StartDoc ya ocurrió: fallar el journal no demuestra que el
-            # spooler carezca de efecto, incluso si AbortDoc se solicita.
             raise RunCancelled() from None
 
     try:

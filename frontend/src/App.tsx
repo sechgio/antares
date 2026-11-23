@@ -164,11 +164,8 @@ function AppContent() {
   }, [handleTabChange]);
 
   useEffect(() => {
-    // La vista nativa del navegador se pinta ENCIMA del DOM por coordenadas de
-    // pantalla: no la oculta display:none. Solo desaparece mandando bounds:null.
     const hideBrowser = () => {
       void agentApi.agentBrowser('bounds', { bounds: null }).catch((err) => {
-        // No silenciar: si falla, la vista nativa se queda flotando sobre otras pestañas.
         reportFrontendError({
           kind: 'api_error',
           view: 'app:agentBrowser.hide',

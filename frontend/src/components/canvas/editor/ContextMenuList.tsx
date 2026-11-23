@@ -25,11 +25,6 @@ interface ContextMenuListProps<TId extends string, TArg extends string | number>
   onClose: () => void;
 }
 
-/** Renderiza la lista de items de los menús contextuales del canvas (capa y página).
- *  El contenedor raíz `.canvas-context-menu` con su testid/posición pertenece a
- *  cada menú concreto; este componente solo pinta separators, submenús, tips y
- *  la acción de cada item.
- */
 export default function ContextMenuList<TId extends string, TArg extends string | number>({
   items,
   onAction,

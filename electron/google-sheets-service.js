@@ -369,8 +369,6 @@ function getSheetId() {
 }
 
 function _mapBatchGetResult(ranges, valueRanges) {
-  // batchGet devuelve valueRanges en el mismo orden del request: emparejar
-  // posicionalmente (mapear por nombre de tab rompe dos rangos del mismo tab).
   const byRange = Object.fromEntries(ranges.map((range) => [range, []]));
   (valueRanges || []).forEach((entry, i) => {
     const key = ranges[i];

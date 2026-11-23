@@ -110,7 +110,6 @@ export interface NamespacedStorage {
   set(key: string, value: unknown): void;
 }
 
-/** localStorage namespaced per player, tolerant of quota/permission failures. */
 export function createNamespacedStorage(prefix: string): NamespacedStorage {
   return {
     get<T>(key: string, fallback: T): T {

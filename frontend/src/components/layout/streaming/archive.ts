@@ -53,8 +53,6 @@ export function parseLength(value: number | string | undefined): number {
   return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
 }
 
-/* IA publica cada tema en varios formatos (VBR MP3 + Ogg Vorbis): agrupar por
-   número/título de pista y quedarse con la variante MP3 evita duplicar la cola. */
 function fileKey(file: RawFile): string {
   if (file.track !== undefined && file.track !== '') return `t:${file.track}`;
   const base = file.title ?? file.name ?? '';
@@ -111,7 +109,6 @@ export async function fetchItemTracks(
   return toTracks(item, payload.files);
 }
 
-/* Lucene: el texto libre del usuario no puede llevar operadores sin cerrar. */
 const sanitize = (text: string): string =>
   text
     .replace(/[+\-!(){}[\]^"~*?:\\/|&]/g, ' ')

@@ -106,13 +106,11 @@ function _isUnderAllowedPdfWriteDir(dir) {
   return _isUnderRegisteredWriteRoot(dir) || _isUnderStandardUserDir(dir);
 }
 
-// Windows reserva estos nombres aunque lleven extensión (CON.pdf escribe al dispositivo).
 const WINDOWS_RESERVED_STEM_RE = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
 
 function _sanitizeFilename(name) {
   if (typeof name !== 'string' || !name.trim()) return 'reporte.pdf';
   const base = path.basename(name);
-  // Windows ignora los puntos y espacios finales del nombre.
   const safe = base
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
     .replace(/\s+/g, ' ')

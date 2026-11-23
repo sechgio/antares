@@ -275,8 +275,6 @@ async function projectMessages(conv, session) {
     if (effectByCall.has(id)) ambiguousEffects.add(id);
     else effectByCall.set(id, effect);
   }
-  // Un proveedor puede repetir «call_0» entre turnos. Sin el id de tarea en la
-  // entrada, asociar el recibo equivocado sería peor que no mostrar recibo.
   for (const id of ambiguousEffects) effectByCall.delete(id);
   const entries = await allEntries(conv);
   const spend = await conversationSpend(convId);
@@ -295,8 +293,6 @@ async function projectMessages(conv, session) {
   const liveRound = live.run && lastAssistant ? lastAssistant.id : null;
 
   const messages = [];
-  // pi.usage es el libro de gasto de la conversación: incluye también las
-  // llamadas de resumen de pi-durable, que no dejan entrada de asistente.
   const usage = {
     input: spend.input,
     output: spend.output,
@@ -326,8 +322,6 @@ async function projectMessages(conv, session) {
       messages.push({ role: 'assistant', content: String((entry.data && entry.data.text) || ''), notice: true, ts: entryTs(entry, msg) });
       continue;
     }
-    // El resumen es contexto del modelo, no conversación: el chat sigue fluido y
-    // el medidor cuenta la compactación. Solo se avisa del resumen de emergencia.
     if (entry.kind === 'pi.compaction') {
       const { unwrapCompactionSummary, isEmergencySummary } = require('./agent-compaction');
       const raw = textOf(msg);
@@ -442,8 +436,6 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, effectByCall
     base.result = textOf(result.msg);
     const diagnostics = (result.entry.data && result.entry.data.diagnostics) || [];
     const blocked = result.msg.isError && diagnostics.some((d) => d && (d.code === 'blocked' || d.code === 'tool_unavailable'));
-    // Detener el turno aborta la herramienta: pi-durable conserva su salida parcial
-    // como resultado y le añade un aviso <harness> para el modelo que el usuario no necesita.
     const aborted = result.msg.isError && diagnostics.some((d) => d && d.code === 'aborted');
     if (aborted) base.result = base.result.replace(/\n?<harness>\n[\s\S]*?\n<\/harness>\s*$/, '') || INTERRUPTED_RESULT;
     base.status = !result.msg.isError ? 'done' : blocked ? 'denied' : aborted ? 'interrupted' : 'failed';

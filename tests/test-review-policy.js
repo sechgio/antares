@@ -612,7 +612,6 @@ function testMetrics() {
 function testUnmeasurableSize() {
   console.log('\nDiff sin recuento de líneas:');
 
-  // GitHub omite additions/deletions/changed_files cuando el diff es demasiado grande.
   const unknown = policy.evaluatePolicy({
     number: 40,
     body: goodPrBody(),

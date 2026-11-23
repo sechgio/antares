@@ -265,8 +265,6 @@ const READ_ONLY_OVERWRITE_MAX_CONFIRMATIONS = 64;
 const _confirmedReadOnlyOverwrites = new Map();
 
 function _outputExtension(resolvedPath) {
-  // Windows ignora puntos/espacios finales y trata ':' como stream alternativo:
-  // "informe.exe." e "informe.exe:data" deben detectarse como ejecutables.
   const base = path.basename(resolvedPath).replace(/[ .]+$/, '');
   const colon = base.indexOf(':');
   const name = colon === -1 ? base : base.slice(0, colon);

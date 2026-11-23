@@ -4,7 +4,6 @@ import { chunkArray } from './chunk';
 
 export type PdfOrientation = 'landscape' | 'portrait';
 
-/** CSS px per mm at 96dpi. */
 export const PX_PER_MM = 3.7795;
 export const DEFAULT_JPEG_QUALITY = 0.92;
 export const PDF_EXPORT_BATCH_SIZE = 10;
@@ -53,7 +52,6 @@ export async function waitForFonts(): Promise<void> {
   }
 }
 
-/** Two animation frames so layout/paint settle before capture. */
 export function waitForPaint(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 }

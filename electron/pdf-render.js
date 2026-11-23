@@ -257,7 +257,6 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
           callback({ cancel: true });
         }
       };
-      // Un listener por evento: <all_urls> cubre también file:, que *://*/* nunca igualó.
       pdfWindow.webContents.session.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, filter);
     }
 

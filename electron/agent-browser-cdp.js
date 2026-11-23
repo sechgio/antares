@@ -2,10 +2,6 @@
 
 const { EventEmitter } = require('node:events');
 
-// Adaptador PageContents (ADR 0005): presenta una pestaña de un Chromium externo,
-// controlada por CDP, con el subconjunto de WebContents que usan las herramientas web_*.
-// El transporte se inyecta: { send(method, params, sessionId) → Promise, on(listener) → unsubscribe }.
-// Quien lo abre activa Target.setDiscoverTargets en el navegador: de ahí salen el título y el cierre.
 
 const FORBIDDEN_PAGE = new Set(['Page.setDownloadBehavior']);
 const ALLOWED_EXACT = new Set(['Runtime.evaluate', 'Network.enable', 'Emulation.setFocusEmulationEnabled']);
@@ -114,7 +110,6 @@ async function createCdpContents(transport, { targetId, sessionId, imageFromBuff
       if (exceptionDetails) throw evaluationError(exceptionDetails);
       return result.value;
     },
-    // Mundo aislado recién creado en cada llamada: un contexto de una navegación anterior ya no existe.
     async executeJavaScriptInIsolatedWorld(worldId, scripts, userGesture = false) {
       const { executionContextId } = await call('Page.createIsolatedWorld',
         { frameId: page.frameId, worldName: `antares-${worldId}`, grantUniveralAccess: false });

@@ -12,24 +12,6 @@ const {
   wireOAuthCallbackServer,
 } = require('./cloud-connector-common');
 
-/**
- * Piezas compartidas de los flujos OAuth en navegador (google-sheets-service
- * y spotify-session comparten la orquestación completa; connections-session
- * adopta solo el armado del servidor de callback).
- *
- * - `createPendingFlow()`: estado del intento en curso (redirect_uri, PKCE y
- *   state pendientes, más el guardia del servidor vivo) con su cancelación.
- * - `beginBrowserOAuthFlow()`: cancela el intento anterior, resuelve
- *   puerto/redirect_uri del proveedor, genera PKCE + state, construye la URL
- *   y une el ciclo de vida del servidor con el intento vigente.
- * - `wireBrowserCallbackServer()`: arma el servidor de callback con los
- *   handlers de navegador compartidos de cloud-connector-common.
- *
- * No se unifica a propósito lo que diverge por proveedor (almacenamiento y
- * refresco de tokens, determinación de estado, revocación, parámetros extras
- * de autorización): la evidencia línea a línea muestra implementaciones
- * distintas para cada servicio.
- */
 
 function createPendingFlow() {
   let callbackFlow = null;
@@ -55,12 +37,6 @@ function createPendingFlow() {
   return { slots, cancel, start };
 }
 
-/**
- * Une el armado del servidor (puerto, state esperado, path de callback y
- * handlers de navegador) con el ciclo de vida del intento: `isCurrent`/
- * `setStop` los aporta el guardia del flujo vigente o la custodia por
- * proveedor (mapa de connections-session).
- */
 function wireBrowserCallbackServer({
   port,
   expectedState,
@@ -83,13 +59,6 @@ function wireBrowserCallbackServer({
   );
 }
 
-/**
- * Arranque del flujo: `resolveTarget()` (async) aporta `{ port, redirectUri,
- * callbackPath? }` del proveedor; `buildAuthUrl(redirectUri, codeChallenge,
- * oauthState)` arma la URL con los parámetros exactos del proveedor;
- * `connect(code, target)` ejecuta el intercambio y devuelve el estado que
- * recibe `onComplete`. Devuelve `{ url, redirect_uri }`.
- */
 async function beginBrowserOAuthFlow(pending, {
   resolveTarget,
   buildAuthUrl,

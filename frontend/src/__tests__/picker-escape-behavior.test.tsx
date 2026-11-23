@@ -26,7 +26,6 @@ const FOLIO_OPTIONS = [
 interface EscapeCase {
   name: string;
   role: 'listbox' | 'dialog';
-  /** Mirrors `stopEscapePropagation: true` passed to useAnchoredPopover. */
   stopEscapePropagation?: boolean;
   mountAndOpen: () => void;
 }

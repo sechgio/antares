@@ -230,8 +230,6 @@ def _audio_chain(
     if delay:
         parts.append(delay)
     parts.append(f"aresample={sample_rate}")
-    # Rellenar solo hasta el final del timeline: apad sin whole_dur
-    # alargaría el audio indefinidamente y el render no terminaría.
     parts.append(f"apad=whole_dur={_s(timeline_end_us)}")
 
     label = f"a{chain_index}"

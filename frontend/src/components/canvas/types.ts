@@ -282,8 +282,6 @@ export function pageCountFromDoc(doc: CanvasDocument): number {
   return indices.length ? Math.max(...indices) + 1 : 1;
 }
 
-// Mirrors Python's int()/float() string grammar so TS and backend normalization
-// agree: digits with optional single-underscore separators, no hex/octal/binary.
 const PY_INT_STRING_RE = /^[+-]?\d(?:_?\d)*$/;
 const PY_FLOAT_STRING_RE = /^[+-]?(?:\d(?:_?\d)*(?:\.(?:\d(?:_?\d)*)?)?|\.\d(?:_?\d)*)(?:[eE][+-]?\d(?:_?\d)*)?$/;
 

@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// Fast pre-push gate: oxfmt + oxlint on changed files plus a whole-project
-// `bun check`. Hard budget: 9 seconds wall clock.
 
 const { execFileSync, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -31,7 +29,6 @@ function changedFiles() {
     const upstream = git(['rev-parse', '--abbrev-ref', '@{upstream}'])[0];
     if (upstream) base = git(['merge-base', upstream, 'HEAD'])[0];
   } catch {
-    /* no upstream yet */
   }
   if (!base) {
     for (const ref of ['origin/main', 'HEAD~1']) {
@@ -39,7 +36,6 @@ function changedFiles() {
         base = git(['merge-base', ref, 'HEAD'])[0];
         if (base) break;
       } catch {
-        /* try next ref */
       }
     }
   }

@@ -47,6 +47,8 @@ const EMPTY_PATH_KEY_SET = new Set();
 
 const _capabilities = new Map();
 const _stagedSessions = new Map();
+const _retainedSessions = new Map();
+const _allStagedSessions = [_stagedSessions, _retainedSessions];
 let _stagedRoot = null;
 let _sweepTimer = null;
 
@@ -179,11 +181,13 @@ function sweepExpired() {
   for (const [k, v] of _capabilities) {
     if (v.expiresAt <= now) _capabilities.delete(k);
   }
-  for (const [k, v] of _stagedSessions) {
-    if (v.expiresAt <= now || now - v.createdAt >= MAX_STAGED_AGE_MS) {
-      if (v.readToken) _capabilities.delete(v.readToken);
-      if (v.tmpPath) fsp.rm(v.tmpPath, { force: true }).catch(() => {});
-      _stagedSessions.delete(k);
+  for (const sessions of _allStagedSessions) {
+    for (const [k, v] of sessions) {
+      if (v.expiresAt <= now || now - v.createdAt >= MAX_STAGED_AGE_MS) {
+        if (v.readToken) _capabilities.delete(v.readToken);
+        if (v.tmpPath) fsp.rm(v.tmpPath, { force: true }).catch(() => {});
+        sessions.delete(k);
+      }
     }
   }
   try {
@@ -199,6 +203,22 @@ async function _ensureStagedRoot() {
   return root;
 }
 
+function _findStaged(token) {
+  return _stagedSessions.get(token) || _retainedSessions.get(token);
+}
+
+function _deleteStaged(token) {
+  for (const sessions of _allStagedSessions) sessions.delete(token);
+}
+
+function _sumStagedBytes() {
+  let sum = 0;
+  for (const sessions of _allStagedSessions) {
+    for (const session of sessions.values()) sum += session.bytesWritten;
+  }
+  return sum;
+}
+
 function createStagedSession({ name, size, webContentsId }) {
   if (typeof name !== 'string' || !name.trim()) throw new Error('name required');
   const safeName = path.basename(name).replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').slice(0, 120) || 'upload';
@@ -207,7 +227,7 @@ function createStagedSession({ name, size, webContentsId }) {
     : [..._stagedSessions.values()].filter((s) => s.webContentsId === webContentsId).length;
   if (perWindow >= MAX_STAGED_SESSIONS_PER_WINDOW) throw new Error('staged session limit reached for this window');
   if (_stagedSessions.size >= MAX_STAGED_SESSIONS_TOTAL) throw new Error('staged session limit reached');
-  const stagedBytes = [..._stagedSessions.values()].reduce((sum, s) => sum + s.bytesWritten, 0);
+  const stagedBytes = _sumStagedBytes();
   if (stagedBytes >= MAX_STAGED_TOTAL_BYTES) throw new Error('staged upload budget exhausted; wait for pending uploads');
   const token = _newToken('antares-staged');
   const root = _getStagedRoot();
@@ -221,7 +241,6 @@ function createStagedSession({ name, size, webContentsId }) {
     webContentsId: webContentsId ?? null,
     createdAt: _now(),
     expiresAt: _now() + TOKEN_TTL_MS,
-    completed: false,
     completing: false,
     pendingWrite: Promise.resolve(),
   };
@@ -243,19 +262,19 @@ function _chunkToBuffer(chunk) {
 }
 
 async function appendStagedChunk(token, chunk, webContentsId) {
-  const session = _stagedSessions.get(token);
+  const session = _findStaged(token);
   if (!session) throw new Error('staged session not found');
-  if (_isExpired(session)) { _stagedSessions.delete(token); throw new Error('staged session expired'); }
+  if (_isExpired(session)) { _deleteStaged(token); throw new Error('staged session expired'); }
   if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId) throw new Error('staged session window mismatch');
-  if (session.completed || session.completing) throw new Error('staged session already completed');
+  if (_retainedSessions.has(token) || session.completing) throw new Error('staged session already completed');
   if (_now() - session.createdAt >= MAX_STAGED_AGE_MS) {
-    _stagedSessions.delete(token);
+    _deleteStaged(token);
     throw new Error('staged session lifetime exceeded');
   }
   const buf = _chunkToBuffer(chunk);
   if (buf.length === 0) throw new Error('empty chunk');
   if (buf.length > MAX_CHUNK_BYTES) throw new Error('chunk too large');
-  const stagedBytes = [..._stagedSessions.values()].reduce((sum, s) => sum + s.bytesWritten, 0);
+  const stagedBytes = _sumStagedBytes();
   if (stagedBytes + buf.length > MAX_STAGED_TOTAL_BYTES) throw new Error('staged uploads exceed global budget');
   const write = session.pendingWrite.catch(() => {}).then(async () => {
     if (session.bytesWritten + buf.length > MAX_STAGED_FILE_BYTES) throw new Error('staged file exceeds 1 GiB');
@@ -270,11 +289,11 @@ async function appendStagedChunk(token, chunk, webContentsId) {
 }
 
 async function completeStagedSession(token, webContentsId) {
-  const session = _stagedSessions.get(token);
+  const session = _findStaged(token);
   if (!session) throw new Error('staged session not found');
-  if (_isExpired(session)) { _stagedSessions.delete(token); throw new Error('staged session expired'); }
+  if (_isExpired(session)) { _deleteStaged(token); throw new Error('staged session expired'); }
   if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId) throw new Error('staged session window mismatch');
-  if (session.completed || session.completing) throw new Error('already completed');
+  if (_retainedSessions.has(token) || session.completing) throw new Error('already completed');
   session.completing = true;
   try {
     await session.pendingWrite;
@@ -291,8 +310,9 @@ async function completeStagedSession(token, webContentsId) {
     });
     cap.staged = true;
     cap.stagedSessionToken = token;
-    session.completed = true;
     session.readToken = cap.token;
+    _stagedSessions.delete(token);
+    _retainedSessions.set(token, session);
     return cap;
   } finally {
     session.completing = false;
@@ -300,21 +320,23 @@ async function completeStagedSession(token, webContentsId) {
 }
 
 async function abortStagedSession(token, webContentsId = null) {
-  const session = _stagedSessions.get(token);
+  const session = _findStaged(token);
   if (!session) return;
   if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId) throw new Error('staged session window mismatch');
-  _stagedSessions.delete(token);
+  _deleteStaged(token);
   if (session.readToken) _capabilities.delete(session.readToken);
   if (session.tmpPath) await fsp.rm(session.tmpPath, { force: true }).catch(() => {});
 }
 
 async function cleanupAllStaged() {
   _cleanupSweep();
-  for (const v of _stagedSessions.values()) {
-    if (v.tmpPath) await fsp.rm(v.tmpPath, { force: true }).catch(() => {});
-    if (v.readToken) _capabilities.delete(v.readToken);
+  for (const sessions of _allStagedSessions) {
+    for (const v of sessions.values()) {
+      if (v.tmpPath) await fsp.rm(v.tmpPath, { force: true }).catch(() => {});
+      if (v.readToken) _capabilities.delete(v.readToken);
+    }
+    sessions.clear();
   }
-  _stagedSessions.clear();
   if (_stagedRoot) await fsp.rm(_stagedRoot, { recursive: true, force: true }).catch(() => {});
   for (const [k, v] of _capabilities) {
     if (v.staged && v.path && v.path.includes(STAGED_DIR_PREFIX)) {
@@ -377,7 +399,6 @@ function _assertNoRawAbsolutePaths(params, options = {}) {
         }
       }
       if (/^[a-zA-Z]:/.test(value) && !/^[a-zA-Z]:[\\/]/.test(value)) {
-        // «C:foo» es relativa a la unidad actual para path.isAbsolute: esquivaba el gate.
         throw new Error(`drive-relative paths not allowed for ${keyPath.join('.')}; use a file token`);
       }
       if (value.includes('..') && (value.includes('/') || value.includes('\\'))) {

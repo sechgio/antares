@@ -1,9 +1,5 @@
 'use strict';
 
-// Prueba real con el cua-driver instalado (node scripts/prepare-cua-driver.js install <zip>).
-// Solo corre con ANTARES_CUA_REAL=1 porque abre una ventana en el escritorio: un formulario
-// propio de PowerShell con un título único, nunca una app del usuario, y al final solo
-// cierra ese proceso.
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
