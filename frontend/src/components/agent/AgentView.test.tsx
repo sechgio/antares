@@ -726,11 +726,9 @@ it('regula el razonamiento con los niveles del modelo y lo guarda al soltar', as
     sessions: [{ ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'xhigh' }, plain],
   });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  const save = vi
-    .spyOn(agentApi, 'agentSessionReasoningSet')
-    .mockResolvedValueOnce({
-      session: { ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'medium' },
-    });
+  const save = vi.spyOn(agentApi, 'agentSessionReasoningSet').mockResolvedValueOnce({
+    session: { ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'medium' },
+  });
   render(<AgentView />);
   await act(async () => {});
   fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Alto' }));
@@ -760,11 +758,9 @@ it('ofrece el nivel máximo cuando el modelo lo admite', async () => {
     sessions: [{ ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'high' }],
   });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  const save = vi
-    .spyOn(agentApi, 'agentSessionReasoningSet')
-    .mockResolvedValueOnce({
-      session: { ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'max' },
-    });
+  const save = vi.spyOn(agentApi, 'agentSessionReasoningSet').mockResolvedValueOnce({
+    session: { ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'max' },
+  });
   render(<AgentView />);
   await act(async () => {});
   fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Alto' }));
@@ -1160,13 +1156,11 @@ it('no repite el estado de trabajo mientras una herramienta en curso ya lo muest
     status,
     gated: true,
   });
-  const list = vi
-    .spyOn(agentApi, 'agentMessagesList')
-    .mockResolvedValue({
-      ...empty,
-      running: true,
-      messages: [{ role: 'assistant', content: '', ts: 1, tool_calls: [call('running')] }],
-    } as never);
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+    ...empty,
+    running: true,
+    messages: [{ role: 'assistant', content: '', ts: 1, tool_calls: [call('running')] }],
+  } as never);
   const { unmount } = render(<AgentView />);
   await act(async () => {});
   await act(async () => {
@@ -2159,13 +2153,11 @@ it('reintenta el texto con la misma identidad si se pierde la respuesta de acept
 });
 
 it('marca el estado desactualizado si falla el sondeo y lo recupera sin perder el historial', async () => {
-  const list = vi
-    .spyOn(agentApi, 'agentMessagesList')
-    .mockResolvedValue({
-      ...empty,
-      running: true,
-      messages: [{ role: 'assistant', content: 'Última respuesta recibida', ts: 1 }],
-    });
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+    ...empty,
+    running: true,
+    messages: [{ role: 'assistant', content: 'Última respuesta recibida', ts: 1 }],
+  });
   localStorage.setItem('antares-agent-session', 's1');
   vi.useFakeTimers();
   render(<AgentView />);
@@ -2448,20 +2440,18 @@ it.each([false, true])(
 );
 
 it('explica la actividad sin anunciar de nuevo los segundos transcurridos', async () => {
-  const list = vi
-    .spyOn(agentApi, 'agentMessagesList')
-    .mockResolvedValue({
-      ...empty,
-      running: true,
-      messages: [
-        {
-          role: 'assistant',
-          content: '',
-          ts: 1,
-          tool_calls: [{ id: 'read', name: 'fs_read', params: {}, gated: false, status: 'running' }],
-        },
-      ],
-    });
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+    ...empty,
+    running: true,
+    messages: [
+      {
+        role: 'assistant',
+        content: '',
+        ts: 1,
+        tool_calls: [{ id: 'read', name: 'fs_read', params: {}, gated: false, status: 'running' }],
+      },
+    ],
+  });
   localStorage.setItem('antares-agent-session', 's1');
   vi.useFakeTimers();
   render(<AgentView />);
@@ -2552,15 +2542,13 @@ it.each([false, true])(
 
 it('deja la cadena fuera del chat cuando la respuesta progresiva termina', async () => {
   const update = agentUpdates();
-  const list = vi
-    .spyOn(agentApi, 'agentMessagesList')
-    .mockResolvedValue({
-      ...empty,
-      running: true,
-      messages: [
-        { role: 'assistant', content: 'Respuesta parcial', reasoning: 'Comparando documentos', partial: true, ts: 1 },
-      ],
-    });
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+    ...empty,
+    running: true,
+    messages: [
+      { role: 'assistant', content: 'Respuesta parcial', reasoning: 'Comparando documentos', partial: true, ts: 1 },
+    ],
+  });
   localStorage.setItem('antares-agent-session', 's1');
   render(<AgentView />);
   await act(async () => {});
