@@ -1,4 +1,3 @@
-
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
@@ -41,13 +40,16 @@ function main() {
 
   const throwsSecret = (fn, label) => {
     let threw = null;
-    try { fn(); } catch (error) { threw = error; }
+    try {
+      fn();
+    } catch (error) {
+      threw = error;
+    }
     assert(threw !== null, label);
   };
   throwsSecret(() => assertNoSecretInObject({ Authorization: 'Bearer abc' }), 'clave Authorization bloqueada');
   throwsSecret(() => assertNoSecretInObject({ apiKey: 'valor' }), 'clave apiKey bloqueada');
   throwsSecret(() => assertNoSecretInObject({ sessionToken: 'x'.repeat(24) }), 'clave session_token bloqueada');
-  // Muestras por partes: ningún literal del test tiene forma de credencial.
   const fakeAnthropicKey = 'sk-' + 'ant-api03-' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456';
   const fakeGithubToken = 'ghp_' + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
   const fakeSlackToken = 'xox' + 'b-123456789-' + 'abcdefghijklmnopqrstuvwxyz';

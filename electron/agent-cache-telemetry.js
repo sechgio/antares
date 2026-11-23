@@ -4,13 +4,6 @@ const crypto = require('node:crypto');
 const appLog = require('./app-log');
 const { stableJson } = require('./stable-json');
 
-// Telemetría local del prefijo cacheable: solo hashes, etiquetas y conteos.
-// El contenido del usuario se usa solo para calcular hashes; nunca se escribe.
-// Los eventos van al log estructurado de observabilidad, no a la consola.
-// completeSimple (compactación) queda fuera a propósito: su prompt resume la
-// conversación y no debe compararse con la petición normal anterior.
-// El mapa conserva 256 sesiones por LRU; hashear cuesta O(payload), el mismo
-// payload que ya se envía al proveedor.
 const MAX_SESSIONS = 256;
 const CACHE_CONTROL = new Set(['cache_control']);
 const sessions = new Map();
@@ -30,8 +23,11 @@ function prefixSegments(payload) {
     system.push(...(Array.isArray(payload.system) ? payload.system : [payload.system]));
   }
   let index = 0;
-  while (index < messages.length && messages[index]
-    && (messages[index].role === 'system' || messages[index].role === 'developer')) {
+  while (
+    index < messages.length &&
+    messages[index] &&
+    (messages[index].role === 'system' || messages[index].role === 'developer')
+  ) {
     system.push(messages[index]);
     index += 1;
   }
@@ -39,7 +35,6 @@ function prefixSegments(payload) {
   return {
     systemHash: digest(system),
     systemBlocks: system.length,
-    // Longitud del JSON canónico, no del texto: incluye claves y sintaxis.
     systemJsonChars: system.reduce((total, part) => total + stableJson(part, CACHE_CONTROL).length, 0),
     toolsHash: digest(payload && payload.tools !== undefined ? payload.tools : []),
     toolCount: Array.isArray(payload && payload.tools) ? payload.tools.length : 0,
@@ -51,8 +46,12 @@ function prefixSegments(payload) {
 function comparePrefixes(previous, current) {
   if (!previous) return { break: 'initial', historyIndex: null, previousMessages: null };
   let historyIndex = 0;
-  while (historyIndex < previous.historyHashes.length && historyIndex < current.historyHashes.length
-    && previous.historyHashes[historyIndex] === current.historyHashes[historyIndex]) historyIndex += 1;
+  while (
+    historyIndex < previous.historyHashes.length &&
+    historyIndex < current.historyHashes.length &&
+    previous.historyHashes[historyIndex] === current.historyHashes[historyIndex]
+  )
+    historyIndex += 1;
   const previousMessages = previous.historyHashes.length;
   if (previous.systemHash !== current.systemHash) return { break: 'system', historyIndex: null, previousMessages };
   if (previous.toolsHash !== current.toolsHash) return { break: 'tools', historyIndex: null, previousMessages };
@@ -63,7 +62,7 @@ function comparePrefixes(previous, current) {
 function emit(event, fields) {
   try {
     appLog.appendLogEvent('INFO', event, fields);
-  } catch { }
+  } catch {}
 }
 
 function recordRequest(sessionId, payload) {
@@ -114,9 +113,6 @@ function recordUsage(request, message) {
   });
 }
 
-// Envuelve stream/streamSimple para observar el payload que recibe el
-// proveedor y el usage del mensaje final. La telemetría nunca debe alterar la
-// petición.
 function withCacheTelemetry(api) {
   const wrap = (stream) => (model, context, options) => {
     const sessionId = options && typeof options.sessionId === 'string' ? options.sessionId : '';
@@ -126,7 +122,11 @@ function withCacheTelemetry(api) {
       onPayload: async (payload, target) => {
         const next = options && options.onPayload ? await options.onPayload(payload, target) : undefined;
         const observed = next === undefined ? payload : next;
-        try { request = recordRequest(sessionId, observed); } catch { request = null; }
+        try {
+          request = recordRequest(sessionId, observed);
+        } catch {
+          request = null;
+        }
         return observed;
       },
     });
@@ -138,11 +138,13 @@ function withCacheTelemetry(api) {
         const message = await result();
         if (!reported) {
           reported = true;
-          try { recordUsage(request, message); } catch { }
+          try {
+            recordUsage(request, message);
+          } catch {}
         }
         return message;
       };
-    } catch { }
+    } catch {}
     return streamed;
   };
   return { ...api, stream: wrap(api.stream), streamSimple: wrap(api.streamSimple) };

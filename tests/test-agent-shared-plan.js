@@ -22,39 +22,70 @@ async function main() {
   const { fauxProvider, fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai');
   const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
   const report = tasks._internal;
-  const plan = report.planBrief({ goal: 'Cerrar el trimestre', steps: [
-    { title: 'Revisar el contrato', status: 'done' },
-    { title: 'Contrastar el anexo', status: 'in_progress' },
-  ] });
+  const plan = report.planBrief({
+    goal: 'Cerrar el trimestre',
+    steps: [
+      { title: 'Revisar el contrato', status: 'done' },
+      { title: 'Contrastar el anexo', status: 'in_progress' },
+    ],
+  });
   assert.match(plan, /^Plan compartido de la conversación principal \(«Cerrar el trimestre»\):\n/);
   assert.match(plan, /1\. \[hecho\] Revisar el contrato\n2\. \[en curso\] Contrastar el anexo/);
-  assert.match(report.delegationBrief({ origin: 'Revisa la factura' }, plan),
+  assert.match(
+    report.delegationBrief({ origin: 'Revisa la factura' }, plan),
     /petición del usuario: «Revisa la factura»[\s\S]*Plan compartido[\s\S]*NECESITA ENTRADA:/,
-    'el plan compartido acompaña al encargo');
+    'el plan compartido acompaña al encargo',
+  );
   assert.equal(report.planBrief(null), '', 'sin plan no se añade contexto');
-  const longPlan = report.planBrief({ steps: Array.from({ length: 10 }, (_, index) => ({
-    title: `Paso ${index + 1}`, status: 'pending',
-  })) });
+  const longPlan = report.planBrief({
+    steps: Array.from({ length: 10 }, (_, index) => ({
+      title: `Paso ${index + 1}`,
+      status: 'pending',
+    })),
+  });
   assert.match(longPlan, /8\. \[pendiente\] Paso 8/);
   assert.match(longPlan, /\+2 pasos más en el plan/);
   assert.ok(!longPlan.includes('Paso 9'), 'el plan compartido se recorta');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-shared-plan-'));
   const dbPath = path.join(dir, 'agent.sqlite');
   const bridge = async (method, params) => {
-    if (method === 'agent_internal_tools') return { tools: [
-      { name: 'canvas_list', kind: 'backend', gated: false, replay_safe: true, inputSchema: { type: 'object', properties: {} } },
-      { name: 'task_plan', kind: 'backend', gated: false, replay_safe: true, module: 'plan', inputSchema: { type: 'object', properties: {} } },
-    ] };
+    if (method === 'agent_internal_tools')
+      return {
+        tools: [
+          {
+            name: 'canvas_list',
+            kind: 'backend',
+            gated: false,
+            replay_safe: true,
+            inputSchema: { type: 'object', properties: {} },
+          },
+          {
+            name: 'task_plan',
+            kind: 'backend',
+            gated: false,
+            replay_safe: true,
+            module: 'plan',
+            inputSchema: { type: 'object', properties: {} },
+          },
+        ],
+      };
     if (method === 'agent_internal_dispatch') {
       if (params.name === 'task_plan') {
-        return { result: JSON.stringify({ recorded: true, plan: {
-          goal: params.params && params.params.goal, steps: (params.params && params.params.steps) || [],
-        } }) };
+        return {
+          result: JSON.stringify({
+            recorded: true,
+            plan: {
+              goal: params.params && params.params.goal,
+              steps: (params.params && params.params.steps) || [],
+            },
+          }),
+        };
       }
       return { result: JSON.stringify({ documents: ['Contrato'] }) };
     }
     if (method === 'agent_internal_dispatch_result') return { result: JSON.stringify({ recorded: true }) };
-    if (method === 'agent_internal_provider') return { style: 'openai_chat', base_url: 'http://unused', api_key: 'test' };
+    if (method === 'agent_internal_provider')
+      return { style: 'openai_chat', base_url: 'http://unused', api_key: 'test' };
     if (method === 'agent_internal_approvals_pending') return { approvals: [] };
     if (method === 'agent_internal_memory_context') return { context: '' };
     if (method === 'agent_internal_mentions') return { modules: [], unknown: [], ambiguous: [], context: '' };
@@ -66,10 +97,18 @@ async function main() {
   const faux = fauxProvider({ models: [{ id: 'faux-1' }] });
   runtime._internal._providerOverrides.set('faux', faux.provider);
   faux.setResponses([
-    fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Cerrar el trimestre', steps: [
-      { id: 'revisar', title: 'Revisar el contrato', status: 'done', evidence: 'contrato revisado' },
-      { id: 'contrastar', title: 'Contrastar el anexo', status: 'in_progress', dependencies: ['revisar'] },
-    ] })], { stopReason: 'toolUse' }),
+    fauxAssistantMessage(
+      [
+        fauxToolCall('task_plan', {
+          goal: 'Cerrar el trimestre',
+          steps: [
+            { id: 'revisar', title: 'Revisar el contrato', status: 'done', evidence: 'contrato revisado' },
+            { id: 'contrastar', title: 'Contrastar el anexo', status: 'in_progress', dependencies: ['revisar'] },
+          ],
+        }),
+      ],
+      { stopReason: 'toolUse' },
+    ),
     fauxAssistantMessage('Plan anotado'),
     fauxAssistantMessage('Informe del hijo'),
     fauxAssistantMessage('Informe del hijo'),
@@ -81,7 +120,9 @@ async function main() {
   try {
     await tasks.stop();
     const { profile } = await runtime.handlers.agent_profile_save({
-      name: 'Revisor', instructions: 'Revisa el contrato', tools: null,
+      name: 'Revisor',
+      instructions: 'Revisa el contrato',
+      tools: null,
     });
     const { session: parent } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     await runtime.handlers.agent_message_send({ session_id: parent.id, content: 'Organiza el cierre del trimestre' });
@@ -91,12 +132,25 @@ async function main() {
     const state = runtime._internal.state();
     const stored = await state.harness.snapshot(state.PlanDoc, state.ctx);
     assert.equal(stored.plans[parent.id]?.goal, 'Cerrar el trimestre', 'el plan vigente queda en su documento');
-    assert.deepEqual(stored.plans[parent.id].steps.map((step) => step.status), ['done', 'in_progress']);
-    assert.equal(stored.plans[parent.id].steps[0].evidence, 'contrato revisado', 'el doc conserva la evidencia canonical');
-    assert.deepEqual(stored.plans[parent.id].steps.map((step) => step.id), ['revisar', 'contrastar'],
-      'el plan guardado conserva los ids estables');
-    assert.deepEqual(stored.plans[parent.id].steps[1].dependencies, ['revisar'],
-      'el plan guardado conserva las dependencias');
+    assert.deepEqual(
+      stored.plans[parent.id].steps.map((step) => step.status),
+      ['done', 'in_progress'],
+    );
+    assert.equal(
+      stored.plans[parent.id].steps[0].evidence,
+      'contrato revisado',
+      'el doc conserva la evidencia canonical',
+    );
+    assert.deepEqual(
+      stored.plans[parent.id].steps.map((step) => step.id),
+      ['revisar', 'contrastar'],
+      'el plan guardado conserva los ids estables',
+    );
+    assert.deepEqual(
+      stored.plans[parent.id].steps[1].dependencies,
+      ['revisar'],
+      'el plan guardado conserva las dependencias',
+    );
     assert.equal(typeof stored.plans[parent.id].updated_at, 'number', 'el plan guardado se fecha');
 
     const warn = console.warn;
@@ -104,12 +158,18 @@ async function main() {
     const realSnapshot = state.harness.snapshot;
     console.warn = () => {};
     try {
-      state.harness.commit = async () => { throw new Error('fallo de disco simulado'); };
-      assert.equal(await savePlan(parent.id, { goal: 'Cerrar', steps: [
-        { title: 'Paso', status: 'pending' },
-      ] }), false, 'un guardado fallido se informa al llamador');
+      state.harness.commit = async () => {
+        throw new Error('fallo de disco simulado');
+      };
+      assert.equal(
+        await savePlan(parent.id, { goal: 'Cerrar', steps: [{ title: 'Paso', status: 'pending' }] }),
+        false,
+        'un guardado fallido se informa al llamador',
+      );
       state.harness.commit = realCommit;
-      state.harness.snapshot = async () => { throw new Error('fallo de lectura simulado'); };
+      state.harness.snapshot = async () => {
+        throw new Error('fallo de lectura simulado');
+      };
       assert.equal(await readPlan(parent.id), null, 'una lectura fallida no escala al chat');
     } finally {
       state.harness.commit = realCommit;
@@ -117,8 +177,13 @@ async function main() {
       console.warn = warn;
     }
 
-    const delegated = await tasks.delegate(profile, { agent: profile.id, task: 'Revisa el contrato' },
-      parent.id, apiFor('plan-turno-1', 'call-1'), {});
+    const delegated = await tasks.delegate(
+      profile,
+      { agent: profile.id, task: 'Revisa el contrato' },
+      parent.id,
+      apiFor('plan-turno-1', 'call-1'),
+      {},
+    );
     const child = (await sessions())[delegated.session_id];
     await tasks.startChild(child);
     const brief = JSON.stringify(await projection.allEntries(await conversation(child.id)));
@@ -160,18 +225,29 @@ async function main() {
     reopenedState.PlanDoc = undefined;
     try {
       faux.setResponses([
-        fauxAssistantMessage([fauxToolCall('task_plan', { goal: 'Cerrar el trimestre', steps: [
-          { title: 'Cerrar el trimestre', status: 'done', evidence: 'cerrado' },
-        ] })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage(
+          [
+            fauxToolCall('task_plan', {
+              goal: 'Cerrar el trimestre',
+              steps: [{ title: 'Cerrar el trimestre', status: 'done', evidence: 'cerrado' }],
+            }),
+          ],
+          { stopReason: 'toolUse' },
+        ),
         fauxAssistantMessage('Plan anotado sin respaldo'),
       ]);
       await runtime.handlers.agent_message_send({ session_id: parent.id, content: 'Actualiza el plan' });
       await until(async () => !(await runtime.handlers.agent_turn_status({ session_id: parent.id })).running);
       const listed = await messages(parent.id);
-      const call = listed.messages.flatMap((message) => message.tool_calls || [])
-        .filter((item) => item.name === 'task_plan').at(-1);
-      assert.match(String(call?.result || ''), /no se pudo guardar su respaldo persistente/,
-        'un fallo de persistencia se informa en el resultado de task_plan');
+      const call = listed.messages
+        .flatMap((message) => message.tool_calls || [])
+        .filter((item) => item.name === 'task_plan')
+        .at(-1);
+      assert.match(
+        String(call?.result || ''),
+        /no se pudo guardar su respaldo persistente/,
+        'un fallo de persistencia se informa en el resultado de task_plan',
+      );
     } finally {
       reopenedState.PlanDoc = planDoc;
     }
@@ -180,10 +256,11 @@ async function main() {
     const afterDelete = await reopenedState.harness.snapshot(reopenedState.PlanDoc, reopenedState.ctx);
     assert.equal(afterDelete.plans[parent.id], undefined, 'el borrado elimina el plan');
 
-    // Una escritura en vuelo y otra posterior no pueden recrear el plan tras el borrado.
     const raceCommit = reopenedState.harness.commit.bind(reopenedState.harness);
     let releaseWrite;
-    const gate = new Promise((resolve) => { releaseWrite = resolve; });
+    const gate = new Promise((resolve) => {
+      releaseWrite = resolve;
+    });
     reopenedState.harness.commit = async (change, context) => {
       await gate;
       return raceCommit(change, context);
@@ -192,8 +269,11 @@ async function main() {
       const inFlight = savePlan(child.id, { goal: 'Plan tardío', steps: [{ title: 'Recrear', status: 'pending' }] });
       await new Promise((resolve) => setImmediate(resolve));
       const deleting = deleteSessionAndPlan(child.id);
-      assert.equal(await savePlan(child.id, { goal: 'Plan posterior', steps: [{ title: 'Otra', status: 'pending' }] }), false,
-        'un guardado posterior al borrado se rechaza');
+      assert.equal(
+        await savePlan(child.id, { goal: 'Plan posterior', steps: [{ title: 'Otra', status: 'pending' }] }),
+        false,
+        'un guardado posterior al borrado se rechaza',
+      );
       releaseWrite();
       await inFlight;
       await deleting;
@@ -202,10 +282,16 @@ async function main() {
       reopenedState.harness.commit = raceCommit;
     }
     const afterRace = await reopenedState.harness.snapshot(reopenedState.PlanDoc, reopenedState.ctx);
-    assert.equal(afterRace.plans[child.id], undefined, 'el borrado drena la escritura en vuelo y no deja plan huérfano');
+    assert.equal(
+      afterRace.plans[child.id],
+      undefined,
+      'el borrado drena la escritura en vuelo y no deja plan huérfano',
+    );
 
-    console.log('[PASS] plan compartido: el historial es la fuente de verdad, el doc cubre la conversación sin '
-      + 'task_plan, el plan sobrevive al reinicio y el borrado limpia su documento.');
+    console.log(
+      '[PASS] plan compartido: el historial es la fuente de verdad, el doc cubre la conversación sin ' +
+        'task_plan, el plan sobrevive al reinicio y el borrado limpia su documento.',
+    );
   } finally {
     await tasks.stop();
     await runtime.shutdown();
@@ -213,4 +299,7 @@ async function main() {
   }
 }
 
-main().catch((err) => { console.error(err); process.exitCode = 1; });
+main().catch((err) => {
+  console.error(err);
+  process.exitCode = 1;
+});

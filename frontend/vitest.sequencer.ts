@@ -1,5 +1,4 @@
 import { BaseSequencer, type TestSpecification } from 'vitest/node';
-// Measured per-file seconds; regenerate from `--reporter=json` runs (name + startTime/endTime).
 import durations from './vitest.durations.json';
 
 const DURATIONS = durations as Record<string, number>;

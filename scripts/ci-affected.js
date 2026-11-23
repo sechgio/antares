@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-// Computes which CI jobs a change actually exercises and prints GitHub Actions
-// outputs (one `name=true|false` per job). Selection only narrows pull_request
-// feedback: push, merge_group and workflow_dispatch always select every job,
-// and any path the rules do not recognize selects every job too (fail-safe).
 
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -13,17 +9,12 @@ const EVERYTHING = [...AREAS];
 const DOCS = [];
 
 const RULES = [
-  // CI plumbing, shared contracts, Electron shell and the test runner can break any job.
   { re: /^(?:\.github|scripts|shared|electron)\//, areas: EVERYTHING },
   {
     re: /^(?:package\.json|bun\.lock|\.gitattributes|\.node-version|\.oxlintrc\.json|\.oxfmtrc\.json|.*\.config\.(?:js|ts|mjs|cjs)|tsconfig[^/]*\.json)$/,
     areas: EVERYTHING,
   },
-  // Node contract/electron tests read frontend sources (IPC allowlist, tailwind,
-  // chunk graph, version sync, observability contract).
   { re: /^frontend\//, areas: ['typecheck', 'build', 'frontend', 'contracts', 'electron'] },
-  // backend-spawner node tests launch the real backend, so backend changes also
-  // exercise the electron suite; version sync reads backend/version.py and pyproject.
   { re: /^backend\//, areas: ['typecheck', 'backend', 'electron', 'contracts'] },
   { re: /^(?:pyproject\.toml|uv\.lock)$/, areas: ['typecheck', 'backend', 'electron', 'contracts'] },
   { re: /^media\//, areas: ['backend', 'electron'] },
@@ -31,7 +22,6 @@ const RULES = [
   { re: /^tests\/.*\.py$/, areas: ['backend', 'electron'] },
   { re: /^tests\/.*\.(?:js|mjs|cjs|ts)$/, areas: ['contracts', 'electron'] },
   { re: /^tests\//, areas: ['backend', 'electron'] },
-  // Pure documentation: only the always-on lint job still checks these files.
   { re: /^(?:docs\/|[^/]*\.md$|LICENSE[^/]*|\.gitignore$|\.editorconfig$)/, areas: DOCS },
 ];
 
@@ -47,7 +37,6 @@ function classify(changedPaths) {
 
 function changedFiles(baseRef) {
   const mergeBase = execFileSync('git', ['merge-base', baseRef, 'HEAD'], { encoding: 'utf8' }).trim();
-  // Deleted and renamed-away paths count too: removing a module can break its importers.
   return execFileSync('git', ['diff', '--name-only', '--no-renames', `${mergeBase}...HEAD`], {
     encoding: 'utf8',
   })

@@ -15,13 +15,15 @@ const modulePath = require.resolve('../electron/autoimg-secure-storage');
 function cleanup() {
   let temporaryFiles = [];
   try {
-    temporaryFiles = fs.readdirSync(path.dirname(filePath), { withFileTypes: true })
+    temporaryFiles = fs
+      .readdirSync(path.dirname(filePath), { withFileTypes: true })
       .filter((entry) => entry.name.startsWith(`${filename}.`) && entry.name.endsWith('.tmp'))
       .map((entry) => path.join(path.dirname(filePath), entry.name));
-  } catch {
-  }
+  } catch {}
   for (const candidate of [filePath, ...temporaryFiles]) {
-    try { fs.unlinkSync(candidate); } catch {}
+    try {
+      fs.unlinkSync(candidate);
+    } catch {}
   }
 }
 
@@ -49,7 +51,6 @@ function withElectronStub() {
 
 function writeLegacyV1Envelope(payload) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  // Replica del cifrador v1 heredado: el módulo ya no expone esa API.
   const seed = `antares:${path.join(os.tmpdir(), 'antares-autoimg')}:autoimg:${namespace}`;
   const key = crypto.createHash('sha256').update(seed).digest();
   const iv = crypto.randomBytes(12);
@@ -63,11 +64,7 @@ function writeLegacyV1Envelope(payload) {
 try {
   assert.strictEqual(secure.encryptPayload, undefined, 'el cifrador v1 derivado de ruta ya no se expone');
   assert.strictEqual(secure.decryptPayload, undefined, 'el descifrador v1 ya no se expone');
-  assert.strictEqual(
-    secure.isConfidentialStorage(),
-    false,
-    'sin safeStorage no hay almacenamiento confidencial',
-  );
+  assert.strictEqual(secure.isConfidentialStorage(), false, 'sin safeStorage no hay almacenamiento confidencial');
   assert.throws(
     () => secure.writeSecureJson(filename, namespace, { access_token: 'a', refresh_token: 'b', expiry_date: 1 }),
     /no guardará los secretos sin cifrado confidencial/,
@@ -82,11 +79,7 @@ try {
     legacy,
     'los sobres v1 legados siguen legibles sin safeStorage',
   );
-  assert.strictEqual(
-    JSON.parse(fs.readFileSync(filePath, 'utf8')).v,
-    1,
-    'sin safeStorage el sobre v1 no se reescribe',
-  );
+  assert.strictEqual(JSON.parse(fs.readFileSync(filePath, 'utf8')).v, 1, 'sin safeStorage el sobre v1 no se reescribe');
 
   fs.writeFileSync(filePath, '{not-json');
   assert.strictEqual(secure.readSecureJson(filename, namespace), null, 'corrupt envelopes recover as empty state');
@@ -109,11 +102,7 @@ try {
       2,
       'con safeStorage el sobre se guarda como v2',
     );
-    assert.deepStrictEqual(
-      confidential.readSecureJson(filename, namespace),
-      first,
-      'secure value round-trips',
-    );
+    assert.deepStrictEqual(confidential.readSecureJson(filename, namespace), first, 'secure value round-trips');
 
     const originalWriteFileSync = fs.writeFileSync;
     fs.writeFileSync = (target, ...args) => {
@@ -142,7 +131,9 @@ try {
     const appLog = require('../electron/app-log');
     const events = [];
     const originalAppend = appLog.appendLogEvent;
-    appLog.appendLogEvent = (level, event, fields) => { events.push({ level, event, fields }); };
+    appLog.appendLogEvent = (level, event, fields) => {
+      events.push({ level, event, fields });
+    };
     fs.writeFileSync = (written, ...args) => {
       if (String(written).endsWith('.tmp')) throw new Error('simulated disk failure');
       return originalWriteFileSync(written, ...args);
@@ -171,7 +162,9 @@ try {
     restoreStub();
   }
 
-  console.log('[PASS] AutoIMG secure storage refuses to persist secrets without safeStorage and keeps v1 reads intact.');
+  console.log(
+    '[PASS] AutoIMG secure storage refuses to persist secrets without safeStorage and keeps v1 reads intact.',
+  );
 } finally {
   cleanup();
 }

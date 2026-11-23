@@ -200,7 +200,6 @@ def test_image_optimizer_save_files_skips_malformed_base64_instead_of_aborting(t
 
 
 def test_image_optimizer_rejects_symlinked_output_folder(tmp_path) -> None:
-    # El veto examina la ruta SIN resolver: tras resolve() is_symlink() es casi siempre False.
     real = tmp_path / "real-destino"
     real.mkdir()
     link = tmp_path / "atajo"

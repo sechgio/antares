@@ -62,11 +62,6 @@ if (!process.argv.includes('--agent-prompt-only')) {
   sh('node frontend/scripts/shell-preload-budget.mjs');
 }
 
-// Techo de tokens del prompt base del agente (sistema + herramientas por defecto +
-// avisos fijos) definido en shared/budgets.json. Las herramientas del backend llegan
-// por el puente: se vuelcan con uv para medir fuera de la app sin duplicar esquemas;
-// el resto de especificaciones las compone agent-execution en Node. Falla si el
-// prompt base crece sin subir el techo de forma justificada en el PR.
 async function agentPromptCheck() {
   const budgets = JSON.parse(fs.readFileSync(path.join(ROOT, 'shared', 'budgets.json'), 'utf8'));
   const ceiling = Number(budgets.agentPrompt && budgets.agentPrompt.maxTokens) || 0;
@@ -84,13 +79,17 @@ async function agentPromptCheck() {
     defaultToolNames: execution.defaultToolNames,
     reminderTexts: execution.reminderTexts,
   });
-  console.log(`[agentPrompt] prompt base estimado en ${estimate.tokens} tokens `
-    + `(sistema ${estimate.system} + herramientas ${estimate.tools} de ${estimate.toolCount}, `
-    + `selección ${estimate.toolSelection} + avisos ${estimate.reminders}); techo ${ceiling}`);
+  console.log(
+    `[agentPrompt] prompt base estimado en ${estimate.tokens} tokens ` +
+      `(sistema ${estimate.system} + herramientas ${estimate.tools} de ${estimate.toolCount}, ` +
+      `selección ${estimate.toolSelection} + avisos ${estimate.reminders}); techo ${ceiling}`,
+  );
   if (estimate.tokens > ceiling) {
-    throw new Error(`El prompt base del agente supera el techo: ${estimate.tokens} > ${ceiling} tokens. `
-      + 'Recorta el prompt de sistema, las herramientas por defecto o los avisos; si el aumento es '
-      + 'justificado, sube agentPrompt.maxTokens en shared/budgets.json y explícalo en el PR.');
+    throw new Error(
+      `El prompt base del agente supera el techo: ${estimate.tokens} > ${ceiling} tokens. ` +
+        'Recorta el prompt de sistema, las herramientas por defecto o los avisos; si el aumento es ' +
+        'justificado, sube agentPrompt.maxTokens en shared/budgets.json y explícalo en el PR.',
+    );
   }
 }
 

@@ -177,8 +177,7 @@ export default function CalendarView({
   const handleEventClick = (info: EventClickArg) => {
     info.jsEvent.preventDefault();
     info.jsEvent.stopPropagation();
-    const tarea =
-      (info.event.extendedProps.tarea as Tarea | undefined) ?? tareasById.get(info.event.id);
+    const tarea = (info.event.extendedProps.tarea as Tarea | undefined) ?? tareasById.get(info.event.id);
     if (tarea && onEditTask) {
       onEditTask(tarea);
     }
@@ -195,7 +194,9 @@ export default function CalendarView({
         <div className="fc-day-cell-head">
           {(onAddTaskOnDate || onAddTask) && (
             <WithHoverTooltip label="Crear tarea" placement="bottom">
-              <Button variant="none" size="none"
+              <Button
+                variant="none"
+                size="none"
                 className="fc-day-add"
                 aria-label={`Crear tarea el ${dateStr}`}
                 onClick={(e) => {
@@ -724,7 +725,6 @@ export default function CalendarView({
           border-left-width: 0;
         }
 
-        /* FullCalendar estira all-day si no tiene height auto. */
         .espacios-calendar .fc-timeGridWeek-view .fc-daygrid-body {
           height: auto !important;
           width: 100% !important;

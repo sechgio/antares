@@ -50,9 +50,13 @@ async function main() {
     await appendStagedChunk(session3b.token, Buffer.from('first'), 1);
     const originalAppendFile = fs.promises.appendFile;
     let releaseWrite;
-    const writeBlocked = new Promise((resolve) => { releaseWrite = resolve; });
+    const writeBlocked = new Promise((resolve) => {
+      releaseWrite = resolve;
+    });
     let writeStarted;
-    const started = new Promise((resolve) => { writeStarted = resolve; });
+    const started = new Promise((resolve) => {
+      writeStarted = resolve;
+    });
     fs.promises.appendFile = async (...args) => {
       writeStarted();
       await writeBlocked;
@@ -92,15 +96,31 @@ async function main() {
     assert.ok(fs.existsSync(cap4.path), 'completed staged file exists before cleanup');
 
     const { handleDialogCall } = require('../electron/dialog-handlers.js');
-    const cleaned = await handleDialogCall(
-      'file_token_cleanup',
-      { token: cap4.token },
-      {},
-      { webContents: { id: 1 } },
-    );
+    const cleaned = await handleDialogCall('file_token_cleanup', { token: cap4.token }, {}, { webContents: { id: 1 } });
     assert.strictEqual(cleaned.result.cleaned, true);
     assert.strictEqual(fs.existsSync(cap4.path), false, 'staged file deleted by token cleanup');
     assert.throws(() => resolveCapability(cap4.token, 'read', 1), /capability not found|expired/);
+  }
+
+  {
+    const owners = [];
+    for (let i = 0; i < 4; i++) {
+      const flight = createStagedSession({ name: `vuelo-${i}.bin`, size: 4, webContentsId: 7 });
+      await appendStagedChunk(flight.token, Buffer.from('data'), 7);
+      owners.push(flight);
+    }
+    assert.throws(
+      () => createStagedSession({ name: 'excede.bin', size: 4, webContentsId: 7 }),
+      /staged session limit reached for this window/,
+      'cuatro subidas en vuelo agotan el cupo de la ventana',
+    );
+
+    await completeStagedSession(owners[0].token, 7);
+    const nueva = createStagedSession({ name: 'nueva.bin', size: 4, webContentsId: 7 });
+    assert.ok(nueva.token, 'completar una sesión libera el cupo aunque nadie haya llamado a cleanup');
+    await appendStagedChunk(nueva.token, Buffer.from('data'), 7);
+    await abortStagedSession(nueva.token, 7);
+    for (const flight of owners) await abortStagedSession(flight.token, 7);
   }
 
   const root = path.join(os.tmpdir(), `antares-staged-${process.pid}`);
@@ -114,12 +134,7 @@ async function main() {
     const { handleDialogCall } = require('../electron/dialog-handlers.js');
 
     await assert.rejects(
-      () => handleDialogCall(
-        'file_staged_abort',
-        { token: session5.token },
-        {},
-        { webContents: { id: 2 } },
-      ),
+      () => handleDialogCall('file_staged_abort', { token: session5.token }, {}, { webContents: { id: 2 } }),
       /staged session window mismatch/,
       'otra ventana no puede abortar una sesión staged ajena',
     );

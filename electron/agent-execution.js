@@ -35,16 +35,19 @@ const { appendTurn } = require('./turn-log');
 const { MAX_CALLS_PER_SIGNATURE, trackSilentTurn, trackSilentToolRound } = require('./agent-turn-policy');
 
 const MAX_TOOL_STEPS = 40;
-const LIMIT_NOTE = 'Alcancé el límite de pasos de herramienta para este turno. Conservé un punto de continuación; '
-  + 'explica lo que queda pendiente y pide usar Reanudar para continuar.';
+const LIMIT_NOTE =
+  'Alcancé el límite de pasos de herramienta para este turno. Conservé un punto de continuación; ' +
+  'explica lo que queda pendiente y pide usar Reanudar para continuar.';
 const BUDGET_WARNING_STEPS = 32;
 const MAX_REPEATS = 3;
 const MAX_PLAN_CHECKS = 2;
 const PLAN_REMINDER_STEPS = 10;
 const MAX_RECOVERABLE_FAILURES = 6;
-const PLAN_CHECK_TEXT = 'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, retómalo: '
-  + 'mantén un solo paso in_progress y atiende {next}; comprueba el resultado y, si el paso no puede completarse, '
-  + 'replantea el plan o márcalo como failed con la causa y di qué necesitas. ' + shared.PLAN_TITLE_TRUST;
+const PLAN_CHECK_TEXT =
+  'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, retómalo: ' +
+  'mantén un solo paso in_progress y atiende {next}; comprueba el resultado y, si el paso no puede completarse, ' +
+  'replantea el plan o márcalo como failed con la causa y di qué necesitas. ' +
+  shared.PLAN_TITLE_TRUST;
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
 const SUBAGENT_TOOL = 'subagent_run';
 const SCRIPT_TOOL = script.SCRIPT_TOOL;
@@ -56,26 +59,54 @@ const requiredSkills = new Map();
 const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent', 'plan']);
 const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD, 'task_schedule']);
 const MEMORY_TOOLS = ['memory_search', 'memory_remember', 'procedure_learn'];
-const UI_ACTION_TOOLS = new Set(['cua_click', 'cua_drag', 'cua_scroll', 'cua_type_text', 'cua_press_key', 'cua_hotkey',
-  'cua_set_value', 'cua_invoke_menu', 'cua_bring_to_front']);
-const DESKTOP_ACTION_TOOLS = new Set(['desktop_click', 'desktop_type', 'desktop_key', 'desktop_scroll',
-  'desktop_launch', 'desktop_focus']);
-const NEVER_AUTO_APPROVE = new Set(['shell_run', 'shell_job_start', 'cua_launch_app', 'skill_create', ...UI_ACTION_TOOLS, ...DESKTOP_ACTION_TOOLS]);
+const UI_ACTION_TOOLS = new Set([
+  'cua_click',
+  'cua_drag',
+  'cua_scroll',
+  'cua_type_text',
+  'cua_press_key',
+  'cua_hotkey',
+  'cua_set_value',
+  'cua_invoke_menu',
+  'cua_bring_to_front',
+]);
+const DESKTOP_ACTION_TOOLS = new Set([
+  'desktop_click',
+  'desktop_type',
+  'desktop_key',
+  'desktop_scroll',
+  'desktop_launch',
+  'desktop_focus',
+]);
+const NEVER_AUTO_APPROVE = new Set([
+  'shell_run',
+  'shell_job_start',
+  'cua_launch_app',
+  'skill_create',
+  ...UI_ACTION_TOOLS,
+  ...DESKTOP_ACTION_TOOLS,
+]);
 const UNATTENDED_ACTION_TOOLS = new Set(['cua_launch_app', ...UI_ACTION_TOOLS]);
 const MAX_UNATTENDED_ACTIONS = 25;
 const MAX_LOADED_TOOLS = 25;
-// Herramientas meta que un agente delegado conserva aunque no sean lecturas:
-// solo hablan con su conversación principal (aviso intermedio y salas).
 const CHILD_CONTROL_TOOLS = new Set(['agent_wake_parent', 'agent_room']);
 const MAX_DEFAULT_TOOLS = 100;
 const MAX_OPENAI_TOOLS = 128;
 
 const REASONING_OPENAI_MODEL = /deepseek-(r1|reasoner)|qwq|qwen3|gpt-oss|thinking/i;
 const REASONING_ANTHROPIC_MODEL = /claude-(3-7|(opus|sonnet|haiku|fable)-[4-9])/i;
-// DeepSeek V4 expone off/low/high/max; minimal, medium y xhigh no se envían.
 const DEEPSEEK_V4_MODEL = /\bdeepseek[-_ ]v4(?:[.\-_:]|$)/i;
-const DEEPSEEK_V4_LEVEL_MAP = { off: 'none', minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' };
-const VISION_MODEL = /gpt-4o|gpt-4\.1|gpt-5|\bo[34]\b|\bo[34]-|claude|gemini|vision|[-_/]vl\b|\bvl[-_]|llava|pixtral|grok-4|llama-4|gemma-3/i;
+const DEEPSEEK_V4_LEVEL_MAP = {
+  off: 'none',
+  minimal: null,
+  low: 'low',
+  medium: null,
+  high: 'high',
+  xhigh: null,
+  max: 'max',
+};
+const VISION_MODEL =
+  /gpt-4o|gpt-4\.1|gpt-5|\bo[34]\b|\bo[34]-|claude|gemini|vision|[-_/]vl\b|\bvl[-_]|llava|pixtral|grok-4|llama-4|gemma-3/i;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_CONTEXT_WINDOW = 128000;
 const DEFAULT_MAX_TOKENS = 8192;
@@ -89,7 +120,7 @@ function supportsReasoning(style, modelId) {
   const id = String(modelId || '');
   return style === 'anthropic_messages'
     ? REASONING_ANTHROPIC_MODEL.test(id)
-    : (REASONING_OPENAI_MODEL.test(id) || DEEPSEEK_V4_MODEL.test(id));
+    : REASONING_OPENAI_MODEL.test(id) || DEEPSEEK_V4_MODEL.test(id);
 }
 
 const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -118,7 +149,8 @@ function sanitizeProviderError(message) {
     for (const secret of [info.api_key, ...Object.values(info.extra_headers || {}), ...(record.secrets || [])]) {
       if (typeof secret === 'string' && secret) {
         safe = safe.replaceAll(secret, '<REDACTED>');
-        if (secret.toLowerCase().startsWith('bearer ') && secret.length >= 15) safe = safe.replaceAll(secret.slice(7), '<REDACTED>');
+        if (secret.toLowerCase().startsWith('bearer ') && secret.length >= 15)
+          safe = safe.replaceAll(secret.slice(7), '<REDACTED>');
       }
     }
   }
@@ -133,9 +165,14 @@ async function ensureProvider(providerId, modelId) {
   }
   const info = await providerInfo(providerId);
   const existing = shared.providers.get(providerId);
-  if (existing && existing.modelIds.has(modelId) && existing.info.base_url === info.base_url
-    && JSON.stringify(existing.info.capabilities || {}) === JSON.stringify(info.capabilities || {})
-    && shared.state.models.getModel(providerId, modelId)) return;
+  if (
+    existing &&
+    existing.modelIds.has(modelId) &&
+    existing.info.base_url === info.base_url &&
+    JSON.stringify(existing.info.capabilities || {}) === JSON.stringify(info.capabilities || {}) &&
+    shared.state.models.getModel(providerId, modelId)
+  )
+    return;
   const record = existing || { info, modelIds: new Set(), secrets: new Set() };
   record.info = info;
   if (modelId) record.modelIds.add(modelId);
@@ -143,9 +180,6 @@ async function ensureProvider(providerId, modelId) {
   shared.state.models.setProvider(await buildProvider(record));
 }
 
-// pi-ai trata un host desconocido como la API oficial de OpenAI («store», rol
-// «developer», max_completion_tokens); los servidores compatibles (Ollama, LM
-// Studio, vLLM, llama.cpp…) esperan el contrato clásico de Chat Completions.
 const OPENAI_NATIVE_HOST = /(^|\.)(openai\.com|openrouter\.ai|openai\.azure\.com)$/i;
 const LONG_CACHE_HOST = /(^|\.)(openai\.com|openrouter\.ai|anthropic\.com)$/i;
 
@@ -156,35 +190,40 @@ function modelDefinition(info, id, api, verified, catalogModel) {
   const working = compaction.workingWindow(contextWindow);
   const rates = catalog.cost || {};
   let host = '';
-  try { host = new URL(info.base_url).hostname; } catch { }
+  try {
+    host = new URL(info.base_url).hostname;
+  } catch {}
   const classic = info.custom && api === 'openai-completions' && !OPENAI_NATIVE_HOST.test(host);
   const official = LONG_CACHE_HOST.test(host);
   const flags = official && verified && verified.api === api ? verified.compat || {} : {};
-  // Caché del prefijo: la retención larga (1 h / 24 h) solo viaja a las APIs
-  // oficiales; los modelos que el catálogo de pi-ai verifica reciben las
-  // herramientas nuevas como bloques tool_addition, así tools_load no cambia la
-  // lista enviada; y Claude vía OpenRouter lleva marcas cache_control aunque el
-  // proveedor sea propio (pi-ai solo las pone al proveedor «openrouter»).
   const compat = {
     ...(official ? {} : { supportsLongCacheRetention: false }),
     ...(flags.supportsMidConvoSystemMessages && flags.supportsMidConvoToolChanges
-      ? { supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true } : {}),
+      ? { supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true }
+      : {}),
     ...(api === 'openai-completions' && /(^|\.)openrouter\.ai$/i.test(host) && id.startsWith('anthropic/')
-      ? { cacheControlFormat: 'anthropic' } : {}),
+      ? { cacheControlFormat: 'anthropic' }
+      : {}),
     ...(classic ? { supportsStore: false, supportsDeveloperRole: false, maxTokensField: 'max_tokens' } : {}),
     ...(flags.forceAdaptiveThinking ? { forceAdaptiveThinking: true } : {}),
   };
-  const reasoning = typeof capabilities.reasoning === 'boolean' ? capabilities.reasoning
-    : typeof catalog.reasoning === 'boolean' ? catalog.reasoning : supportsReasoning(info.style, id);
-  const thinkingLevelMap = catalog.thinkingLevelMap
-    || (reasoning && DEEPSEEK_V4_MODEL.test(id) ? DEEPSEEK_V4_LEVEL_MAP : undefined);
+  const reasoning =
+    typeof capabilities.reasoning === 'boolean'
+      ? capabilities.reasoning
+      : typeof catalog.reasoning === 'boolean'
+        ? catalog.reasoning
+        : supportsReasoning(info.style, id);
+  const thinkingLevelMap =
+    catalog.thinkingLevelMap || (reasoning && DEEPSEEK_V4_MODEL.test(id) ? DEEPSEEK_V4_LEVEL_MAP : undefined);
   return {
     id,
     name: id,
     api,
     provider: info.provider,
     baseUrl: info.base_url,
-    input: (typeof capabilities.vision === 'boolean' ? capabilities.vision : supportsVision(id)) ? ['text', 'image'] : ['text'],
+    input: (typeof capabilities.vision === 'boolean' ? capabilities.vision : supportsVision(id))
+      ? ['text', 'image']
+      : ['text'],
     cost: {
       input: Number(rates.input) || 0,
       output: Number(rates.output) || 0,
@@ -192,12 +231,15 @@ function modelDefinition(info, id, api, verified, catalogModel) {
       cacheWrite: Number(rates.cacheWrite) || 0,
       ...(Array.isArray(rates.tiers) ? { tiers: rates.tiers } : {}),
     },
-    contextWindow: compaction.compactionWindow(working, (shared.state && shared.state.compaction) || compaction.DEFAULT_POLICY),
+    contextWindow: compaction.compactionWindow(
+      working,
+      (shared.state && shared.state.compaction) || compaction.DEFAULT_POLICY,
+    ),
     workingWindow: working,
-    // El techo de salida del catálogo: el razonamiento comparte max_tokens con
-    // la respuesta y con 8 k un nivel alto dejaba la respuesta truncada.
-    maxTokens: Math.min(Number(catalog.maxTokens) || (reasoning ? REASONING_MAX_TOKENS : DEFAULT_MAX_TOKENS),
-      Math.floor(contextWindow / 4)),
+    maxTokens: Math.min(
+      Number(catalog.maxTokens) || (reasoning ? REASONING_MAX_TOKENS : DEFAULT_MAX_TOKENS),
+      Math.floor(contextWindow / 4),
+    ),
     reasoning,
     ...(reasoning && thinkingLevelMap ? { thinkingLevelMap } : {}),
     ...(Object.keys(compat).length ? { compat } : {}),
@@ -219,7 +261,9 @@ const CATALOG_HOSTS = [
 function catalogFor(info) {
   if (MODEL_CATALOGS[info.provider]) return info.provider;
   let host = '';
-  try { host = new URL(info.base_url).hostname; } catch { }
+  try {
+    host = new URL(info.base_url).hostname;
+  } catch {}
   const match = CATALOG_HOSTS.find(([, style, pattern]) => style === info.style && pattern.test(host));
   return match ? match[0] : null;
 }
@@ -251,8 +295,6 @@ async function buildProvider(record) {
           record.info = fresh;
           return {
             auth: {
-              // El SDK OpenAI exige una apiKey no vacía; los proveedores sin
-              // auth (Ollama y otros endpoints locales) llevan un placeholder.
               apiKey: fresh.api_key || (fresh.auth_type === 'none' ? 'antares-local' : undefined),
               baseUrl: fresh.base_url || undefined,
               headers: fresh.extra_headers || undefined,
@@ -262,19 +304,17 @@ async function buildProvider(record) {
       },
     },
     models: [...modelIds].map((id) => modelDefinition(info, id, api, anthropic ? catalog[id] : undefined, catalog[id])),
-    // La telemetría va dentro del tope de OpenAI para observar la lista final,
-    // no la anterior al recorte; en Anthropic no hay transformación previa.
-    api: withWorkingWindow(anthropic
-      ? withCacheTelemetry(shared.deps.aiAnthropic.anthropicMessagesApi())
-      : cappedOpenAIApi(withCacheTelemetry(shared.deps.aiOpenai.openAICompletionsApi()))),
+    api: withWorkingWindow(
+      anthropic
+        ? withCacheTelemetry(shared.deps.aiAnthropic.anthropicMessagesApi())
+        : cappedOpenAIApi(withCacheTelemetry(shared.deps.aiOpenai.openAICompletionsApi())),
+    ),
   });
 }
 
-// model.contextWindow es la ventana de compactación de pi-durable; pi-ai recorta
-// max_tokens con la ventana del modelo, así que el proveedor recibe la de trabajo.
 function withWorkingWindow(api) {
-  const wrap = (stream) => (model, context, options) => stream(
-    model && model.workingWindow ? { ...model, contextWindow: model.workingWindow } : model, context, options);
+  const wrap = (stream) => (model, context, options) =>
+    stream(model && model.workingWindow ? { ...model, contextWindow: model.workingWindow } : model, context, options);
   return { ...api, stream: wrap(api.stream), streamSimple: wrap(api.streamSimple) };
 }
 
@@ -284,21 +324,25 @@ function capOpenAITools(payload) {
   const nameOf = (tool) => ((tool && (tool.function || tool.custom)) || {}).name;
   const called = new Set((payload.messages || []).flatMap((message) => (message.tool_calls || []).map(nameOf)));
   const rank = (tool) => (called.has(nameOf(tool)) ? 0 : shared.toolSpecs.get(nameOf(tool))?.gated ? 2 : 1);
-  const kept = new Set(tools.map((tool, index) => [rank(tool), index])
-    .sort((a, b) => a[0] - b[0] || a[1] - b[1])
-    .slice(0, MAX_OPENAI_TOOLS)
-    .map(([, index]) => index));
+  const kept = new Set(
+    tools
+      .map((tool, index) => [rank(tool), index])
+      .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+      .slice(0, MAX_OPENAI_TOOLS)
+      .map(([, index]) => index),
+  );
   return { ...payload, tools: tools.filter((_, index) => kept.has(index)) };
 }
 
 function cappedOpenAIApi(api) {
-  const wrap = (stream) => (model, context, options) => stream(model, context, {
-    ...options,
-    onPayload: async (payload, target) => {
-      const next = options && options.onPayload ? await options.onPayload(payload, target) : undefined;
-      return capOpenAITools(next === undefined ? payload : next);
-    },
-  });
+  const wrap = (stream) => (model, context, options) =>
+    stream(model, context, {
+      ...options,
+      onPayload: async (payload, target) => {
+        const next = options && options.onPayload ? await options.onPayload(payload, target) : undefined;
+        return capOpenAITools(next === undefined ? payload : next);
+      },
+    });
   return { ...api, stream: wrap(api.stream), streamSimple: wrap(api.streamSimple) };
 }
 
@@ -311,46 +355,75 @@ async function allToolSpecs() {
   merged.set(eventTool.name, eventTool);
   for (const tool of nativeTools().nativeToolSpecs()) {
     const current = merged.get(tool.name);
-    merged.set(tool.name, { ...current, ...tool, ...(tool.inheritSchema && current ? { inputSchema: current.inputSchema } : {}) });
+    merged.set(tool.name, {
+      ...current,
+      ...tool,
+      ...(tool.inheritSchema && current ? { inputSchema: current.inputSchema } : {}),
+    });
   }
   const saved = Object.values(await profiles()).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   if (saved.length > 0) {
     const tasks = require('./agent-tasks');
-    for (const tool of [tasks.DELEGATE_TOOL, tasks.CHECK_TOOL, tasks.TRANSCRIPT_TOOL, tasks.MESSAGE_TOOL, tasks.STOP_TOOL, tasks.WAKE_TOOL,
-      require('./agent-rooms').TOOL]) {
+    for (const tool of [
+      tasks.DELEGATE_TOOL,
+      tasks.CHECK_TOOL,
+      tasks.TRANSCRIPT_TOOL,
+      tasks.MESSAGE_TOOL,
+      tasks.STOP_TOOL,
+      tasks.WAKE_TOOL,
+      require('./agent-rooms').TOOL,
+    ]) {
       merged.set(tool.name, tool);
     }
     merged.set(SUBAGENT_TOOL, {
       name: SUBAGENT_TOOL,
-      description: `Delega trabajo acotado en uno de los agentes guardados del usuario y devuelve el resultado con sus pasos y su rol. `
-        + `Por defecto solo lee; role=reviewer pide una revisión y role=worker solo funciona si la ficha del agente tiene ese rol, `
-        + `con cada efecto aprobado en esta conversación. Admiten task o hasta ${SUBAGENT_MAX_TASKS} tasks agrupadas. `
-        + `output_schema valida la respuesta como JSON Schema. No hay delegación recursiva (profundidad máxima ${SUBAGENT_MAX_DEPTH}). `
-        + `${shared.DELEGATION_GUIDE} `
-        + `Agentes disponibles: ${saved.map((profile) => `«${profile.name}» (${String(profile.description || 'agente personalizado').slice(0, SUBAGENT_DESCRIPTION_MAX)})`).join('; ')}.`,
+      description:
+        `Delega trabajo acotado en uno de los agentes guardados del usuario y devuelve el resultado con sus pasos y su rol. ` +
+        `Por defecto solo lee; role=reviewer pide una revisión y role=worker solo funciona si la ficha del agente tiene ese rol, ` +
+        `con cada efecto aprobado en esta conversación. Admiten task o hasta ${SUBAGENT_MAX_TASKS} tasks agrupadas. ` +
+        `output_schema valida la respuesta como JSON Schema. No hay delegación recursiva (profundidad máxima ${SUBAGENT_MAX_DEPTH}). ` +
+        `${shared.DELEGATION_GUIDE} ` +
+        `Agentes disponibles: ${saved.map((profile) => `«${profile.name}» (${String(profile.description || 'agente personalizado').slice(0, SUBAGENT_DESCRIPTION_MAX)})`).join('; ')}.`,
       gated: false,
       kind: 'subagent',
       inputSchema: {
         type: 'object',
         properties: {
-          agent: { type: 'string', description: 'Identificador del agente mencionado o nombre exacto y único del agente guardado' },
+          agent: {
+            type: 'string',
+            description: 'Identificador del agente mencionado o nombre exacto y único del agente guardado',
+          },
           task: { type: 'string', description: 'Encargo concreto y autocontenido para el subagente' },
           tasks: {
-            type: 'array', minItems: 1, maxItems: SUBAGENT_MAX_TASKS,
+            type: 'array',
+            minItems: 1,
+            maxItems: SUBAGENT_MAX_TASKS,
             description: 'Encargos que se ejecutan en orden y se devuelven agrupados; no lo combines con task',
             items: {
               type: 'object',
               properties: {
                 task: { type: 'string', description: 'Encargo concreto y autocontenido' },
                 role: { type: 'string', enum: ['explorer', 'reviewer', 'worker'] },
-                exclude_tools: { type: 'array', items: { type: 'string' }, description: 'Herramientas que este encargo no debe usar' },
+                exclude_tools: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Herramientas que este encargo no debe usar',
+                },
                 output_schema: { type: 'object', description: 'JSON Schema que debe cumplir la respuesta' },
               },
               required: ['task'],
             },
           },
-          role: { type: 'string', enum: ['explorer', 'reviewer', 'worker'], description: 'Rol del encargo; worker requiere que la ficha lo permita' },
-          exclude_tools: { type: 'array', items: { type: 'string' }, description: 'Sustrae herramientas de las que permite la ficha' },
+          role: {
+            type: 'string',
+            enum: ['explorer', 'reviewer', 'worker'],
+            description: 'Rol del encargo; worker requiere que la ficha lo permita',
+          },
+          exclude_tools: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Sustrae herramientas de las que permite la ficha',
+          },
           output_schema: { type: 'object', description: 'JSON Schema que debe cumplir la respuesta final' },
         },
         required: ['agent'],
@@ -367,9 +440,10 @@ async function allToolSpecs() {
   }
   merged.set(TOOLS_LOAD, {
     name: TOOLS_LOAD,
-    description: 'Catálogo · tools_load (sin efectos): busca herramientas de Antares que aún no tienes por texto o por módulo y '
-      + 'las habilita desde la siguiente ronda. Sin argumentos lista los módulos disponibles. Úsala cuando el encargo '
-      + 'necesite un módulo de Antares (reportes, Canvas, AutoIMG, Espacios, conexiones, MCP…).',
+    description:
+      'Catálogo · tools_load (sin efectos): busca herramientas de Antares que aún no tienes por texto o por módulo y ' +
+      'las habilita desde la siguiente ronda. Sin argumentos lista los módulos disponibles. Úsala cuando el encargo ' +
+      'necesite un módulo de Antares (reportes, Canvas, AutoIMG, Espacios, conexiones, MCP…).',
     gated: false,
     kind: 'meta',
     module: 'agent',
@@ -383,8 +457,9 @@ async function allToolSpecs() {
   });
   merged.set('sessions_search', {
     name: 'sessions_search',
-    description: 'Busca texto en conversaciones locales anteriores y devuelve fragmentos con su conversación y mensaje de origen. '
-      + 'No busca razonamiento ni resultados de herramientas. Usa session_id para limitar la búsqueda a una conversación.',
+    description:
+      'Busca texto en conversaciones locales anteriores y devuelve fragmentos con su conversación y mensaje de origen. ' +
+      'No busca razonamiento ni resultados de herramientas. Usa session_id para limitar la búsqueda a una conversación.',
     gated: false,
     kind: 'meta',
     module: 'agent',
@@ -406,10 +481,14 @@ async function searchSessions(args, currentSessionId, context) {
   if (!query || query.length > 200) throw validation('Indica un texto de búsqueda de hasta 200 caracteres');
   const limit = args.limit === undefined ? 5 : args.limit;
   if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw validation('El límite debe estar entre 1 y 10');
-  if (args.session_id !== undefined && typeof args.session_id !== 'string') throw validation('Indica una conversación válida');
+  if (args.session_id !== undefined && typeof args.session_id !== 'string')
+    throw validation('Indica una conversación válida');
   const words = normal(query).split(/\s+/);
   const candidates = Object.values(await sessions())
-    .filter((session) => !session.deleted && (args.session_id ? session.id === args.session_id : session.id !== currentSessionId))
+    .filter(
+      (session) =>
+        !session.deleted && (args.session_id ? session.id === args.session_id : session.id !== currentSessionId),
+    )
     .sort((first, second) => (second.updated_at || 0) - (first.updated_at || 0));
   const matches = [];
   let searched = 0;
@@ -427,17 +506,24 @@ async function searchSessions(args, currentSessionId, context) {
         if (!['pi.user', 'pi.assistant'].includes(entry.kind)) continue;
         const message = entry.model && entry.model[0];
         if (!message) continue;
-        const text = typeof message.content === 'string' ? message.content : (message.content || [])
-          .filter((block) => block.type === 'text' && !String(block.text || '').startsWith(shared.CONTEXT_MARKER))
-          .map((block) => block.text || '').join('');
+        const text =
+          typeof message.content === 'string'
+            ? message.content
+            : (message.content || [])
+                .filter((block) => block.type === 'text' && !String(block.text || '').startsWith(shared.CONTEXT_MARKER))
+                .map((block) => block.text || '')
+                .join('');
         if (text.startsWith(shared.CHECK_MARKER)) continue;
         const safe = sanitizeProviderError(text);
         const normalized = normal(safe);
         if (!words.every((word) => normalized.includes(word))) continue;
         const start = Math.max(0, normalized.indexOf(words[0]) - 80);
         matches.push({
-          session_id: session.id, title: session.title, message_id: entry.id,
-          role: message.role, ts: message.timestamp || 0,
+          session_id: session.id,
+          title: session.title,
+          message_id: entry.id,
+          role: message.role,
+          ts: message.timestamp || 0,
           excerpt: `${start ? '…' : ''}${safe.slice(start, start + 300)}${safe.length > start + 300 ? '…' : ''}`,
         });
         if (matches.length >= limit) return { matches, searched_sessions: searched, truncated: true };
@@ -455,22 +541,22 @@ function defaultToolNames(specs) {
   return specs.filter((spec) => CORE_MODULES.has(spec.module) || CORE_TOOLS.has(spec.name)).map((spec) => spec.name);
 }
 
-// Texto del aviso de presupuesto que budgetWarning añade al último resultado de herramienta.
 function budgetWarningText(rounds) {
-  return `Aviso de Antares: llevas ${rounds} de ${MAX_TOOL_STEPS} pasos de herramienta en este turno. `
-    + 'Actualiza task_plan con lo verificado y prioriza lo pendiente; al llegar al límite el turno se pausa y el usuario '
-    + `puede Reanudar. No te detengas solo por este aviso. ${shared.PLAN_TITLE_TRUST}`;
+  return (
+    `Aviso de Antares: llevas ${rounds} de ${MAX_TOOL_STEPS} pasos de herramienta en este turno. ` +
+    'Actualiza task_plan con lo verificado y prioriza lo pendiente; al llegar al límite el turno se pausa y el usuario ' +
+    `puede Reanudar. No te detengas solo por este aviso. ${shared.PLAN_TITLE_TRUST}`
+  );
 }
 
-// Texto del recordatorio de plan que planReminder añade al último resultado de herramienta.
 function planReminderText(since, planNext) {
   const next = planNext ? `«${planNext}»` : 'el siguiente paso';
-  return `Aviso de Antares: llevas ${since} pasos de herramienta sin actualizar task_plan. `
-    + `Actualiza el plan con lo verificado y el siguiente paso (${next}) antes de seguir.`;
+  return (
+    `Aviso de Antares: llevas ${since} pasos de herramienta sin actualizar task_plan. ` +
+    `Actualiza el plan con lo verificado y el siguiente paso (${next}) antes de seguir.`
+  );
 }
 
-// Avisos fijos que Antares añade a la conversación, en su variante más larga. El chequeo
-// de presupuestos los mide junto al prompt base; el prefijo de comprobación es constante.
 function reminderTexts() {
   const next = 'el paso siguiente';
   return [
@@ -487,13 +573,62 @@ function moduleToolNames(modules) {
 }
 
 function normal(text) {
-  return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  return String(text || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
 }
 
-const SEARCH_STOPWORDS = new Set(['para', 'con', 'los', 'las', 'del', 'una', 'uno', 'unos', 'unas', 'que', 'por', 'como',
-  'mas', 'quiero', 'necesito', 'hacer', 'este', 'esta', 'esto', 'ese', 'esa', 'sus', 'mis', 'sobre', 'desde', 'hasta',
-  'entre', 'cuando', 'donde', 'todo', 'todos', 'toda', 'todas', 'muy', 'sin', 'hay', 'puedes', 'favor', 'usuario',
-  'requiere', 'aprobacion', 'solo', 'lectura', 'efecto', 'the', 'and', 'for', 'with']);
+const SEARCH_STOPWORDS = new Set([
+  'para',
+  'con',
+  'los',
+  'las',
+  'del',
+  'una',
+  'uno',
+  'unos',
+  'unas',
+  'que',
+  'por',
+  'como',
+  'mas',
+  'quiero',
+  'necesito',
+  'hacer',
+  'este',
+  'esta',
+  'esto',
+  'ese',
+  'esa',
+  'sus',
+  'mis',
+  'sobre',
+  'desde',
+  'hasta',
+  'entre',
+  'cuando',
+  'donde',
+  'todo',
+  'todos',
+  'toda',
+  'todas',
+  'muy',
+  'sin',
+  'hay',
+  'puedes',
+  'favor',
+  'usuario',
+  'requiere',
+  'aprobacion',
+  'solo',
+  'lectura',
+  'efecto',
+  'the',
+  'and',
+  'for',
+  'with',
+]);
 
 function rankTools(specs, args) {
   const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
@@ -507,23 +642,45 @@ function rankTools(specs, args) {
     const name = normal(spec.name);
     const hint = hints(spec.module);
     const description = normal(`${spec.label || ''} ${spec.description || ''}`);
-    return words.reduce((total, word) => total
-      + (name.includes(word) ? 3 : 0) + (hint.includes(word) ? 2 : 0) + (description.includes(word) ? 1 : 0), 0);
+    return words.reduce(
+      (total, word) =>
+        total + (name.includes(word) ? 3 : 0) + (hint.includes(word) ? 2 : 0) + (description.includes(word) ? 1 : 0),
+      0,
+    );
   };
-  const scored = specs.map((spec) => [spec, score(spec)]).filter(([, value]) => value > 0).sort((a, b) => b[1] - a[1]);
+  const scored = specs
+    .map((spec) => [spec, score(spec)])
+    .filter(([, value]) => value > 0)
+    .sort((a, b) => b[1] - a[1]);
   const floor = scored.length ? Math.ceil(scored[0][1] / 2) : 0;
-  return scored.filter(([, value]) => value >= floor).slice(0, MAX_LOADED_TOOLS).map(([spec]) => spec);
+  return scored
+    .filter(([, value]) => value >= floor)
+    .slice(0, MAX_LOADED_TOOLS)
+    .map(([spec]) => spec);
 }
 
 async function loadTools(args, sessionId, context) {
   const conv = await conversation(sessionId);
   const enabled = new Set((await conv.agent(context)).tools.map((tool) => tool.name));
   const allows = await profileToolFilter(await requireSession(sessionId));
-  const specs = [...shared.toolSpecs.values()].filter((spec) => (spec.kind !== 'meta'
-    || ['task_schedule', 'agent_delegate', 'agent_message', 'agent_check', 'agent_stop', 'agent_room', 'wait_event'].includes(spec.name))
-    && (!allows || allows(spec.name)));
+  const specs = [...shared.toolSpecs.values()].filter(
+    (spec) =>
+      (spec.kind !== 'meta' ||
+        [
+          'task_schedule',
+          'agent_delegate',
+          'agent_message',
+          'agent_check',
+          'agent_stop',
+          'agent_room',
+          'wait_event',
+        ].includes(spec.name)) &&
+      (!allows || allows(spec.name)),
+  );
   const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
-  const words = normal(args.query).split(/[^a-z0-9_]+/).filter((word) => word.length > 2);
+  const words = normal(args.query)
+    .split(/[^a-z0-9_]+/)
+    .filter((word) => word.length > 2);
   if (!modules.length && !words.length) {
     const catalog = new Map();
     for (const spec of specs) {
@@ -533,15 +690,21 @@ async function loadTools(args, sessionId, context) {
       if (enabled.has(spec.name)) item.loaded += 1;
       catalog.set(id, item);
     }
-    return { text: JSON.stringify({ modules: [...catalog.values()].sort((a, b) => a.module.localeCompare(b.module)) }) };
+    return {
+      text: JSON.stringify({ modules: [...catalog.values()].sort((a, b) => a.module.localeCompare(b.module)) }),
+    };
   }
   const found = rankTools(specs, args);
   const added = found.filter((spec) => !enabled.has(spec.name)).map((spec) => spec.name);
   const text = JSON.stringify({
     loaded: added,
     already_enabled: found.filter((spec) => enabled.has(spec.name)).map((spec) => spec.name),
-    tools: found.map((spec) => ({ name: spec.name, module: spec.module || null, gated: !!spec.gated,
-      description: String(spec.description || '').slice(0, 160) })),
+    tools: found.map((spec) => ({
+      name: spec.name,
+      module: spec.module || null,
+      gated: !!spec.gated,
+      description: String(spec.description || '').slice(0, 160),
+    })),
     ...(found.length ? {} : { note: 'Sin coincidencias; llama a tools_load sin argumentos para ver los módulos' }),
   });
   return { text, added };
@@ -552,7 +715,12 @@ async function resolveProfile(name) {
   if (!wanted) return null;
   const saved = Object.values(await profiles());
   const exact = saved.find((profile) => profile.id === wanted);
-  const matches = saved.filter((profile) => String(profile.name || '').trim().toLowerCase() === wanted.toLowerCase());
+  const matches = saved.filter(
+    (profile) =>
+      String(profile.name || '')
+        .trim()
+        .toLowerCase() === wanted.toLowerCase(),
+  );
   return exact || (matches.length === 1 ? matches[0] : null);
 }
 
@@ -561,18 +729,21 @@ function nativeTools() {
 }
 
 function contextWindowFor(session) {
-  const model = shared.state && shared.state.models
-    && shared.state.models.getModel(session && session.provider, session && session.model);
+  const model =
+    shared.state &&
+    shared.state.models &&
+    shared.state.models.getModel(session && session.provider, session && session.model);
   if (model && Number(model.contextWindow) > 0) return Number(model.workingWindow || model.contextWindow);
   const record = shared.providers.get(session && session.provider);
   const window = Number(record && record.info && record.info.capabilities && record.info.capabilities.context_window);
   return compaction.workingWindow(window > 0 ? window : DEFAULT_CONTEXT_WINDOW);
 }
 
-// La ventana con la que pi-durable decide compactar (ver compactionWindow).
 function compactionWindowFor(session) {
-  const model = shared.state && shared.state.models
-    && shared.state.models.getModel(session && session.provider, session && session.model);
+  const model =
+    shared.state &&
+    shared.state.models &&
+    shared.state.models.getModel(session && session.provider, session && session.model);
   if (model && Number(model.contextWindow) > 0) return Number(model.contextWindow);
   return compaction.compactionWindow(contextWindowFor(session), shared.state && shared.state.compaction);
 }
@@ -586,80 +757,89 @@ async function refreshTools() {
     return pi.defineTool({
       name: spec.name,
       description: String(spec.description || spec.name),
-      parameters: spec.inputSchema && typeof spec.inputSchema === 'object'
-        ? spec.inputSchema
-        : { type: 'object', properties: {} },
+      parameters:
+        spec.inputSchema && typeof spec.inputSchema === 'object'
+          ? spec.inputSchema
+          : { type: 'object', properties: {} },
       replay: spec.replay_safe === true ? 'safe' : 'unsafe',
       ...(spec.gated ? { executionMode: 'sequential' } : {}),
       execute: (args, api, context) => executeTool(spec, args, api, context),
     });
   });
-  shared.state.registry.install(pi.defineExtension({
-    name: 'antares.agent',
-    tools: registrations,
-    hooks: [
-      pi.hook(pi.ToolTask, { beforeTool }),
-      pi.hook(pi.CompactionTask, { beforeCompact: (c, r, context) => compaction.beforeCompact(c, r, context) }),
-      pi.hook(pi.GenerationTask, {
-        beforeRequest: async ({ messages }, api, context) => {
-          resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
-          if (await toolBudget(api, context) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
-          const budget = await profileBudget(await sessionProfile(
-            (await sessions())[await sessionForConversation(api.conversationId, api, context)]));
-          if (budget && budget.exhausted) await pauseForBudget(api, context, 'token_budget');
-          await noteTurnStart(api, messages || []);
-          const compacted = await compactRequest(messages, api, context);
-          const prepared = compacted || messages;
-          const enveloped = envelopeToolResults(prepared);
-          const rounds = shared.rounds.get(api.conversationId) || 0;
-          const turn = shared.turns.get(api.conversationId);
-          const next = withSentNotices(api.conversationId, enveloped, (list) => {
-            const planned = planReminder(list, turn, rounds);
-            return budgetWarning(planned || list, rounds) || planned;
-          });
-          return leadingSystem(next) || (next !== messages ? { messages: next } : undefined);
-        },
-        afterTools: async (_output, results, api, context) => {
-          await trackSilentToolRound(turnState(api.conversationId), results, api, context);
-          await countRound(api, context);
-        },
-        onYield: (answer, api) => planCheck(answer, api),
-        afterResponse: async (message, api, context) => {
-          try {
-            const sessionId = await sessionForConversation(api.conversationId, api, context);
-            const turn = turnState(api.conversationId);
-            trackSilentTurn(message, turn, !!messageText(message.content).trim());
-            // emptyAnswerRetried da una segunda petición tras una respuesta vacía;
-            // el contador de silencio es el tope duro si el proveedor la ignora.
-            if (emptyAnswer(message) && turn.emptyAnswerRetried) {
-              message.stopReason = 'error';
-              message.errorMessage = 'El proveedor terminó sin una respuesta visible después de volver a pedir el resultado. Intenta enviar el encargo de nuevo.';
-              message.content.push({ type: 'text', text: message.errorMessage });
-            }
-            await recordProfileUsage((await sessions())[sessionId], message.usage);
-            if (message.stopReason !== 'toolUse') {
-              try { require('./agent-browser').release(sessionId); } catch { }
-            }
-            if (message.stopReason === 'aborted') return;
-            if (message.errorMessage) message.errorMessage = sanitizeProviderError(message.errorMessage);
-            await commitSessions((sessions) => {
-              if (sessions[sessionId]) sessions[sessionId].last_error = message.errorMessage ? message.errorMessage.slice(0, 300) : null;
-              if (sessions[sessionId] && !message.errorMessage && message.stopReason === 'stop'
-                && (shared.rounds.get(api.conversationId) || 0) < MAX_TOOL_STEPS) delete sessions[sessionId].continuation;
+  shared.state.registry.install(
+    pi.defineExtension({
+      name: 'antares.agent',
+      tools: registrations,
+      hooks: [
+        pi.hook(pi.ToolTask, { beforeTool }),
+        pi.hook(pi.CompactionTask, { beforeCompact: (c, r, context) => compaction.beforeCompact(c, r, context) }),
+        pi.hook(pi.GenerationTask, {
+          beforeRequest: async ({ messages }, api, context) => {
+            resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
+            if ((await toolBudget(api, context)) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
+            const budget = await profileBudget(
+              await sessionProfile((await sessions())[await sessionForConversation(api.conversationId, api, context)]),
+            );
+            if (budget && budget.exhausted) await pauseForBudget(api, context, 'token_budget');
+            await noteTurnStart(api, messages || []);
+            const compacted = await compactRequest(messages, api, context);
+            const prepared = compacted || messages;
+            const enveloped = envelopeToolResults(prepared);
+            const rounds = shared.rounds.get(api.conversationId) || 0;
+            const turn = shared.turns.get(api.conversationId);
+            const next = withSentNotices(api.conversationId, enveloped, (list) => {
+              const planned = planReminder(list, turn, rounds);
+              return budgetWarning(planned || list, rounds) || planned;
             });
-          } finally {
-            if (message.stopReason !== 'toolUse' && !emptyAnswer(message)) requiredSkills.delete(api.conversationId);
-            await closeTurnLog(message, api);
-          }
-        },
-      }),
-    ],
-  }));
+            return leadingSystem(next) || (next !== messages ? { messages: next } : undefined);
+          },
+          afterTools: async (_output, results, api, context) => {
+            await trackSilentToolRound(turnState(api.conversationId), results, api, context);
+            await countRound(api, context);
+          },
+          onYield: (answer, api) => planCheck(answer, api),
+          afterResponse: async (message, api, context) => {
+            try {
+              const sessionId = await sessionForConversation(api.conversationId, api, context);
+              const turn = turnState(api.conversationId);
+              trackSilentTurn(message, turn, !!messageText(message.content).trim());
+              if (emptyAnswer(message) && turn.emptyAnswerRetried) {
+                message.stopReason = 'error';
+                message.errorMessage =
+                  'El proveedor terminó sin una respuesta visible después de volver a pedir el resultado. Intenta enviar el encargo de nuevo.';
+                message.content.push({ type: 'text', text: message.errorMessage });
+              }
+              await recordProfileUsage((await sessions())[sessionId], message.usage);
+              if (message.stopReason !== 'toolUse') {
+                try {
+                  require('./agent-browser').release(sessionId);
+                } catch {}
+              }
+              if (message.stopReason === 'aborted') return;
+              if (message.errorMessage) message.errorMessage = sanitizeProviderError(message.errorMessage);
+              await commitSessions((sessions) => {
+                if (sessions[sessionId])
+                  sessions[sessionId].last_error = message.errorMessage ? message.errorMessage.slice(0, 300) : null;
+                if (
+                  sessions[sessionId] &&
+                  !message.errorMessage &&
+                  message.stopReason === 'stop' &&
+                  (shared.rounds.get(api.conversationId) || 0) < MAX_TOOL_STEPS
+                )
+                  delete sessions[sessionId].continuation;
+              });
+            } finally {
+              if (message.stopReason !== 'toolUse' && !emptyAnswer(message)) requiredSkills.delete(api.conversationId);
+              await closeTurnLog(message, api);
+            }
+          },
+        }),
+      ],
+    }),
+  );
 }
 
 let tokenEstimator;
-// Cortes del recorte mecánico por conversación, para que la siguiente petición
-// pueda repetirlos y conservar el prefijo cacheado (ver compactMessages).
 const requestCuts = new Map();
 
 async function compactRequest(messages, api, context) {
@@ -678,12 +858,6 @@ async function compactRequest(messages, api, context) {
   });
 }
 
-// pi-durable escribe el prompt base al preparar la primera generación, detrás
-// del mensaje que la provocó. Los modelos que aceptan mensajes de sistema a
-// mitad de conversación lo enviarían como una actualización y sin herramientas
-// iniciales; al encabezar la petición vuelve a ser el prompt de sistema y el
-// ancla fija de la lista de herramientas. Al resto no le cambia nada: pi-ai ya
-// reúne sus mensajes de sistema al principio.
 function leadingSystem(messages) {
   const index = messages.findIndex((message) => message.role === 'system');
   if (index <= 0) return undefined;
@@ -698,8 +872,10 @@ function escapeToolOutputTags(text) {
 }
 
 function toolOutputBlock(toolName, text) {
-  const origin = (String(toolName || 'herramienta').replace(/[^A-Za-z0-9_.:-]+/g, '_').slice(0, 80)
-    || 'herramienta');
+  const origin =
+    String(toolName || 'herramienta')
+      .replace(/[^A-Za-z0-9_.:-]+/g, '_')
+      .slice(0, 80) || 'herramienta';
   return `<tool_output origin="${origin}">\n${escapeToolOutputTags(text)}\n</tool_output>`;
 }
 
@@ -730,7 +906,8 @@ function envelopeToolResults(messages) {
 
 function budgetWarning(messages, rounds) {
   const last = messages[messages.length - 1];
-  if (rounds < BUDGET_WARNING_STEPS || rounds >= MAX_TOOL_STEPS || !last || last.role !== 'toolResult') return undefined;
+  if (rounds < BUDGET_WARNING_STEPS || rounds >= MAX_TOOL_STEPS || !last || last.role !== 'toolResult')
+    return undefined;
   const notice = budgetWarningText(rounds);
   const content = Array.isArray(last.content) ? last.content : [{ type: 'text', text: String(last.content || '') }];
   return [...messages.slice(0, -1), { ...last, content: [...content, { type: 'text', text: notice }] }];
@@ -748,10 +925,6 @@ function planReminder(messages, turn, rounds) {
   return [...messages.slice(0, -1), { ...last, content: [...content, { type: 'text', text: notice }] }];
 }
 
-// Los avisos se añaden al último resultado solo en la copia enviada. Se guardan
-// por toolCallId y se reponen en las peticiones siguientes: sin ellos ese
-// resultado viajaría distinto de como se cacheó y el proveedor reescribiría la
-// caché desde ahí. notify recibe la petición y devuelve la versión con aviso.
 const sentNotices = new Map();
 
 function withSentNotices(conversationId, messages, notify) {
@@ -766,8 +939,8 @@ function withSentNotices(conversationId, messages, notify) {
   });
   for (const id of sent.keys()) if (!present.has(id)) sent.delete(id);
   const last = messages[messages.length - 1];
-  const notified = last && last.role === 'toolResult' && last.toolCallId && !present.has(last.toolCallId)
-    ? notify(next) : undefined;
+  const notified =
+    last && last.role === 'toolResult' && last.toolCallId && !present.has(last.toolCallId) ? notify(next) : undefined;
   if (notified) {
     sent.set(last.toolCallId, notified[notified.length - 1].content.slice(blocksOf(last.content).length));
     next = notified;
@@ -778,7 +951,7 @@ function withSentNotices(conversationId, messages, notify) {
 }
 
 async function countRound(api, context) {
-  if (await toolBudget(api, context, true) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
+  if ((await toolBudget(api, context, true)) >= MAX_TOOL_STEPS) await pauseForBudget(api, context);
 }
 
 async function toolBudget(api, context, completed = false) {
@@ -807,27 +980,41 @@ async function pauseForBudget(api, context, reason = 'tool_budget') {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   const remaining = turnState(api.conversationId).remaining || [];
   await commitSessions((map) => {
-    if (map[sessionId]) map[sessionId].continuation = {
-      reason, ...(reason === 'tool_budget' ? { rounds: MAX_TOOL_STEPS } : {}), pending_steps: remaining, created_at: Date.now(),
-    };
+    if (map[sessionId])
+      map[sessionId].continuation = {
+        reason,
+        ...(reason === 'tool_budget' ? { rounds: MAX_TOOL_STEPS } : {}),
+        pending_steps: remaining,
+        created_at: Date.now(),
+      };
   });
   const conv = await conversation(sessionId);
   const stopped = shared.state.harness.abortTask(api.taskId, ctx()).then(async () => {
     await conv.waitForIdle(ctx());
-    return conv.submit({ type: 'write', requestId: `budget:${api.taskId}`, entry: {
-      kind: shared.NOTICE_KIND, data: { text: (reason === 'token_budget'
-        ? 'El agente agotó su presupuesto diario de tokens. Conservé un punto de continuación; '
-          + 'podrás reanudar mañana o al ampliar su presupuesto.'
-        : 'Este turno alcanzó su límite de pasos. Conservé un punto de continuación. Usa Reanudar para seguir.')
-        + (remaining.length ? `\nPendiente: ${remaining.map((title) => `«${shared.neutralizePlanText(title)}»`).join('; ')}\n${shared.PLAN_TITLE_TRUST}` : '') },
-    } }, ctx());
+    return conv.submit(
+      {
+        type: 'write',
+        requestId: `budget:${api.taskId}`,
+        entry: {
+          kind: shared.NOTICE_KIND,
+          data: {
+            text:
+              (reason === 'token_budget'
+                ? 'El agente agotó su presupuesto diario de tokens. Conservé un punto de continuación; ' +
+                  'podrás reanudar mañana o al ampliar su presupuesto.'
+                : 'Este turno alcanzó su límite de pasos. Conservé un punto de continuación. Usa Reanudar para seguir.') +
+              (remaining.length
+                ? `\nPendiente: ${remaining.map((title) => `«${shared.neutralizePlanText(title)}»`).join('; ')}\n${shared.PLAN_TITLE_TRUST}`
+                : ''),
+          },
+        },
+      },
+      ctx(),
+    );
   });
-  // El aborto debe interrumpir esta espera: abortTask espera a que termine este mismo hook.
   try {
     await shared.deps.chord.awaitWithContext(stopped, context);
   } finally {
-    // El aborto no despacha afterResponse (pi-durable cierra el run antes): sin este
-    // cierre se perdería la entrada «failed» y el log abierto pasaría al turno siguiente.
     await closeTurnLog({ stopReason: 'aborted', errorMessage: null, content: [] }, api);
   }
 }
@@ -836,9 +1023,18 @@ function turnState(conversationId) {
   let turn = shared.turns.get(conversationId);
   if (!turn) {
     turn = {
-      calls: new Map(), failures: new Map(), remaining: null, checks: 0, lastCheck: null, planNext: null,
-      sincePlan: 0, planReminderAt: 0, checked: false,
-      silentTurns: 0, pendingSilent: false, roundProgress: false,
+      calls: new Map(),
+      failures: new Map(),
+      remaining: null,
+      checks: 0,
+      lastCheck: null,
+      planNext: null,
+      sincePlan: 0,
+      planReminderAt: 0,
+      checked: false,
+      silentTurns: 0,
+      pendingSilent: false,
+      roundProgress: false,
     };
     shared.turns.set(conversationId, turn);
   }
@@ -848,15 +1044,24 @@ function turnState(conversationId) {
 const TURN_SUMMARY_CHARS = 300;
 
 function boundedSummary(value) {
-  const collapsed = String(value || '').replace(/\s+/g, ' ').trim();
+  const collapsed = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return collapsed.length > TURN_SUMMARY_CHARS ? `${collapsed.slice(0, TURN_SUMMARY_CHARS)}...` : collapsed;
 }
 
 function messageText(content, excludeContext = false) {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
-    return content.filter((part) => part && part.type === 'text'
-      && (!excludeContext || !String(part.text || '').startsWith(shared.CONTEXT_MARKER))).map((part) => part.text).join(' ');
+    return content
+      .filter(
+        (part) =>
+          part &&
+          part.type === 'text' &&
+          (!excludeContext || !String(part.text || '').startsWith(shared.CONTEXT_MARKER)),
+      )
+      .map((part) => part.text)
+      .join(' ');
   }
   return '';
 }
@@ -864,8 +1069,9 @@ function messageText(content, excludeContext = false) {
 function noteTurnStart(api, messages) {
   return (async () => {
     const turn = turnState(api.conversationId);
-    const input = [...messages].reverse().find((message) => message.role === 'user'
-      && !messageText(message.content).startsWith(shared.CHECK_MARKER));
+    const input = [...messages]
+      .reverse()
+      .find((message) => message.role === 'user' && !messageText(message.content).startsWith(shared.CHECK_MARKER));
     if (turn.emptyAnswerInput !== input?.timestamp) {
       turn.emptyAnswerInput = input?.timestamp;
       delete turn.emptyAnswerRetried;
@@ -874,12 +1080,12 @@ function noteTurnStart(api, messages) {
       turn.roundProgress = false;
     }
     if (turn.log) return;
-    const sessionId = await sessionForConversation(api.conversationId, api, null) || '';
+    const sessionId = (await sessionForConversation(api.conversationId, api, null)) || '';
     let agent = '';
     try {
       const session = sessionId ? await requireSession(sessionId) : null;
       agent = session ? `${session.provider || ''}/${session.model || ''}` : '';
-    } catch { }
+    } catch {}
     turn.log = {
       turn_id: `turn_${crypto.randomUUID()}`,
       session_id: sessionId,
@@ -945,7 +1151,8 @@ function callSignature(name, args) {
 }
 
 function errorSignature(message) {
-  return String(message || '').toLowerCase()
+  return String(message || '')
+    .toLowerCase()
     .replace(/[a-z][a-z0-9+.-]*:\/\/\S+/g, '<url>')
     .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '<email>')
     .replace(/(["'`«“])[^"'`»”]*["'`»”]/g, '<valor>')
@@ -953,22 +1160,30 @@ function errorSignature(message) {
     .replace(/\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b/g, '<id>')
     .replace(/\b[0-9a-f]{8,}\b/g, '<id>')
     .replace(/\d+(?:[.,]\d+)?/g, '<n>')
-    .replace(/\s+/g, ' ').trim().slice(0, 160);
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 160);
 }
 
 function emptyAnswer(answer) {
-  return !answer.errorMessage && ['stop', 'length', 'toolUse'].includes(answer.stopReason)
-    && !messageText(answer.content).trim()
-    && !(answer.content || []).some((block) => block && block.type === 'toolCall');
+  return (
+    !answer.errorMessage &&
+    ['stop', 'length', 'toolUse'].includes(answer.stopReason) &&
+    !messageText(answer.content).trim() &&
+    !(answer.content || []).some((block) => block && block.type === 'toolCall')
+  );
 }
 
 function planCheck(answer, api) {
   const turn = shared.turns.get(api.conversationId);
   if (turn && emptyAnswer(answer) && !turn.emptyAnswerRetried) {
     turn.emptyAnswerRetried = true;
-    return { continue: `${shared.CHECK_MARKER} Tu respuesta terminó sin texto visible para el usuario. `
-      + 'Entrega el resultado usando la evidencia que ya obtuviste; si falta trabajo, continúa el encargo. '
-      + 'Si no puedes completarlo, explica el bloqueo concreto.' };
+    return {
+      continue:
+        `${shared.CHECK_MARKER} Tu respuesta terminó sin texto visible para el usuario. ` +
+        'Entrega el resultado usando la evidencia que ya obtuviste; si falta trabajo, continúa el encargo. ' +
+        'Si no puedes completarlo, explica el bloqueo concreto.',
+    };
   }
   if (!turn || !turn.remaining || !turn.remaining.length) return undefined;
   if ((turn.checks || 0) >= MAX_PLAN_CHECKS) return undefined;
@@ -984,9 +1199,22 @@ function planCheck(answer, api) {
   return { continue: `${shared.CHECK_MARKER} ${notice}` };
 }
 
-// «Permitir siempre» solo exime herramientas no transaccionales; sincronizado a propósito con el catálogo (TOOLS flag false).
-const WEB_AUTO_APPROVE = new Set(['web_open', 'web_back', 'web_forward', 'web_reload', 'web_read', 'web_find',
-  'web_scroll', 'web_hover', 'web_screenshot', 'web_text', 'web_console', 'web_network', 'web_wait', 'web_handover']);
+const WEB_AUTO_APPROVE = new Set([
+  'web_open',
+  'web_back',
+  'web_forward',
+  'web_reload',
+  'web_read',
+  'web_find',
+  'web_scroll',
+  'web_hover',
+  'web_screenshot',
+  'web_text',
+  'web_console',
+  'web_network',
+  'web_wait',
+  'web_handover',
+]);
 
 function webAlwaysAllowed(name, context) {
   if (!String(name || '').startsWith('web_') || !context || context.policy_blocked) return false;
@@ -1002,14 +1230,14 @@ async function beforeTool(call, api, context) {
   if (!spec) return { block: `Herramienta no disponible para el agente: ${call.name}` };
   const skillId = requiredSkills.get(api.conversationId);
   if (skillId && !(call.name === 'skills_read' && (call.arguments || {}).skill_id === skillId)) {
-    return { block: `Antes de cualquier otra herramienta carga la skill elegida por el usuario con skills_read y skill_id "${skillId}".` };
+    return {
+      block: `Antes de cualquier otra herramienta carga la skill elegida por el usuario con skills_read y skill_id "${skillId}".`,
+    };
   }
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   const session = await requireSession(sessionId);
-  // El hijo solo conserva los controles de su propio ciclo de vida: avisar al
-  // padre y participar en salas no son lecturas del backend ni amplían acceso.
   const childControl = !!session.delegation && CHILD_CONTROL_TOOLS.has(call.name);
-  if (!childControl && !await toolEnabled(sessionId, call.name, context)) {
+  if (!childControl && !(await toolEnabled(sessionId, call.name, context))) {
     return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
   }
   const calls = turnState(api.conversationId).calls;
@@ -1020,28 +1248,50 @@ async function beforeTool(call, api, context) {
     calls.set(signature, repeated);
   }
   if (repeated.uncertain) {
-    return { block: `El resultado anterior de ${call.name} quedó incierto y la acción podría haberse aplicado. `
-      + 'No la repitas: comprueba el estado con una herramienta de lectura o informa al usuario de qué necesitas para verificarlo.' };
+    return {
+      block:
+        `El resultado anterior de ${call.name} quedó incierto y la acción podría haberse aplicado. ` +
+        'No la repitas: comprueba el estado con una herramienta de lectura o informa al usuario de qué necesitas para verificarlo.',
+    };
   }
   const failing = turnState(api.conversationId).failures.get(call.name);
-  if ((repeated.recoveries || 0) >= MAX_RECOVERABLE_FAILURES || (failing?.recoveries || 0) >= MAX_RECOVERABLE_FAILURES) {
-    return { block: `Las últimas ${MAX_RECOVERABLE_FAILURES} recuperaciones de ${call.name} no resolvieron el fallo. No la repitas: `
-      + 'diagnostica la causa con otra herramienta, cambia de enfoque o informa al usuario de qué te bloquea.' };
+  if (
+    (repeated.recoveries || 0) >= MAX_RECOVERABLE_FAILURES ||
+    (failing?.recoveries || 0) >= MAX_RECOVERABLE_FAILURES
+  ) {
+    return {
+      block:
+        `Las últimas ${MAX_RECOVERABLE_FAILURES} recuperaciones de ${call.name} no resolvieron el fallo. No la repitas: ` +
+        'diagnostica la causa con otra herramienta, cambia de enfoque o informa al usuario de qué te bloquea.',
+    };
   }
   if (repeated.count >= MAX_REPEATS && !repeated.exempt) {
-    const detail = spec.name === 'web_click' ? 'sin cambiar de página'
-      : !spec.gated || spec.name === 'desktop_observe' ? 'con el mismo resultado o error' : 'con los mismos argumentos';
-    return { block: `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno ${detail}. No la repitas: `
-      + 'cambia de enfoque o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
+    const detail =
+      spec.name === 'web_click'
+        ? 'sin cambiar de página'
+        : !spec.gated || spec.name === 'desktop_observe'
+          ? 'con el mismo resultado o error'
+          : 'con los mismos argumentos';
+    return {
+      block:
+        `Ya llamaste a ${call.name} ${MAX_REPEATS} veces en este turno ${detail}. No la repitas: ` +
+        'cambia de enfoque o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.',
+    };
   }
   if (repeated.executions >= MAX_CALLS_PER_SIGNATURE) {
-    return { block: `Ya llamaste a ${call.name} ${MAX_CALLS_PER_SIGNATURE} veces en este turno, aun con resultados distintos. `
-      + 'No sigas sondeando: resume lo que comprobaste y pide al usuario cómo continuar.' };
+    return {
+      block:
+        `Ya llamaste a ${call.name} ${MAX_CALLS_PER_SIGNATURE} veces en este turno, aun con resultados distintos. ` +
+        'No sigas sondeando: resume lo que comprobaste y pide al usuario cómo continuar.',
+    };
   }
   if (failing && failing.count >= MAX_REPEATS) {
-    return { block: `Las últimas ${MAX_REPEATS} llamadas a ${call.name} fallaron por la misma causa aunque cambiaste los argumentos `
-      + `(«${failing.message}»). No la repitas: diagnostica la causa con otra herramienta, cambia de enfoque `
-      + 'o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.' };
+    return {
+      block:
+        `Las últimas ${MAX_REPEATS} llamadas a ${call.name} fallaron por la misma causa aunque cambiaste los argumentos ` +
+        `(«${failing.message}»). No la repitas: diagnostica la causa con otra herramienta, cambia de enfoque ` +
+        'o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.',
+    };
   }
   if (session.delegation && !childControl && (spec.kind !== 'backend' || spec.replay_safe !== true)) {
     return { block: 'El agente delegado solo puede usar lecturas idempotentes autorizadas' };
@@ -1049,7 +1299,7 @@ async function beforeTool(call, api, context) {
   const retryDelay = Math.max(repeated.retryAt || 0, failing?.retryAt || 0) - Date.now();
   if (retryDelay > 0) {
     await waitResource(context, clampRetryAfterMs(retryDelay));
-    if (!childControl && !await toolEnabled(sessionId, call.name, context)) {
+    if (!childControl && !(await toolEnabled(sessionId, call.name, context))) {
       return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
     }
   }
@@ -1062,28 +1312,39 @@ async function beforeTool(call, api, context) {
   const sessionOpen = call.name === 'web_open' && !!require('./agent-browser').sessionOpenContext(call.arguments || {});
   if (reading || (!spec.gated && !sessionOpen && !(web && (mode === 'ask' || rule !== undefined)))) return undefined;
   if (rule === 'deny') {
-    return { block: `El usuario bloqueó el canal «${channelLabel(channel)}» en esta conversación. `
-      + 'No repitas esta acción: pide permiso, cambia la regla en Permisos o propone otra vía.' };
+    return {
+      block:
+        `El usuario bloqueó el canal «${channelLabel(channel)}» en esta conversación. ` +
+        'No repitas esta acción: pide permiso, cambia la regla en Permisos o propone otra vía.',
+    };
   }
   const unattendedApps = await unattendedAllowlist(api, context, mode, spec);
   if (unattendedApps && DESKTOP_ACTION_TOOLS.has(call.name)) {
-    return { block: 'En un encargo programado las acciones desktop_* no se aprueban porque no identifican la aplicación. '
-      + 'Usa cua_launch_app y las herramientas cua_* sobre una app de la lista blanca del encargo.' };
+    return {
+      block:
+        'En un encargo programado las acciones desktop_* no se aprueban porque no identifican la aplicación. ' +
+        'Usa cua_launch_app y las herramientas cua_* sobre una app de la lista blanca del encargo.',
+    };
   }
   if (unattendedApps && UNATTENDED_ACTION_TOOLS.has(call.name)) {
     const turn = turnState(api.conversationId);
     turn.uiActions = (turn.uiActions || 0) + 1;
     if (turn.uiActions > MAX_UNATTENDED_ACTIONS) {
-      return { block: `Alcanzaste el techo de ${MAX_UNATTENDED_ACTIONS} acciones sobre apps de este encargo programado. `
-        + 'Detente e informa de lo hecho y de lo que quedó pendiente.' };
+      return {
+        block:
+          `Alcanzaste el techo de ${MAX_UNATTENDED_ACTIONS} acciones sobre apps de este encargo programado. ` +
+          'Detente e informa de lo hecho y de lo que quedó pendiente.',
+      };
     }
   }
 
   const callId = dispatchCallId(call.id, api.taskId);
   let approval;
   try {
-    const approvedContext = spec.kind === 'native'
-      ? await nativeTools().nativeToolContext(spec.name, sessionId, call.arguments || {}) : undefined;
+    const approvedContext =
+      spec.kind === 'native'
+        ? await nativeTools().nativeToolContext(spec.name, sessionId, call.arguments || {})
+        : undefined;
     ({ approval } = await bridge('agent_internal_approval_ensure', {
       session_id: sessionId,
       call_id: callId,
@@ -1093,12 +1354,19 @@ async function beforeTool(call, api, context) {
       ...(approvedContext ? { context: approvedContext } : {}),
       ...(unattendedApps ? { unattended_apps: unattendedApps } : {}),
     }));
-    const autoSource = rule === 'allow' && !NEVER_AUTO_APPROVE.has(call.name) ? 'rule'
-      : mode === 'full' && !NEVER_AUTO_APPROVE.has(call.name) && rule !== 'ask' ? 'full'
-        : rule !== 'ask' && webAlwaysAllowed(call.name, approvedContext) ? 'web' : null;
+    const autoSource =
+      rule === 'allow' && !NEVER_AUTO_APPROVE.has(call.name)
+        ? 'rule'
+        : mode === 'full' && !NEVER_AUTO_APPROVE.has(call.name) && rule !== 'ask'
+          ? 'full'
+          : rule !== 'ask' && webAlwaysAllowed(call.name, approvedContext)
+            ? 'web'
+            : null;
     if (autoSource && approval.status === 'pending') {
       ({ approval } = await bridge('agent_internal_approval_decide', {
-        approval_id: approval.id, approve: true, source: autoSource,
+        approval_id: approval.id,
+        approve: true,
+        source: autoSource,
       }));
     }
   } catch (err) {
@@ -1116,7 +1384,8 @@ async function beforeTool(call, api, context) {
       current = next || { status: 'expired' };
     }
     if (current.status === 'approved') {
-      return await toolEnabled(sessionId, call.name, context) ? undefined
+      return (await toolEnabled(sessionId, call.name, context))
+        ? undefined
         : { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
     }
     if (current.status === 'denied') return { block: 'El usuario rechazó esta acción' };
@@ -1177,7 +1446,9 @@ async function dispatchAndWait(request, context, api) {
   if (signal && signal.aborted) throw aborted();
   const first = await bridge('agent_internal_dispatch', request);
   if (signal && signal.aborted) {
-    bridge('agent_internal_dispatch_cancel', { session_id: request.session_id, call_id: request.call_id }).catch(() => {});
+    bridge('agent_internal_dispatch_cancel', { session_id: request.session_id, call_id: request.call_id }).catch(
+      () => {},
+    );
     throw aborted();
   }
   let result = first.result;
@@ -1197,7 +1468,7 @@ async function executeTool(spec, args, api, context) {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   const session = await requireSession(sessionId);
   const childControl = !!session.delegation && CHILD_CONTROL_TOOLS.has(spec.name);
-  if (!childControl && !await toolEnabled(sessionId, spec.name, context)) {
+  if (!childControl && !(await toolEnabled(sessionId, spec.name, context))) {
     const text = `Herramienta deshabilitada en esta conversación: ${spec.name}`;
     noteToolResult(api, spec.name, text, true);
     return { content: [{ type: 'text', text }], isError: true };
@@ -1216,9 +1487,16 @@ async function executeTool(spec, args, api, context) {
     if (uiAction) require('./agent-overlay').hideOverlay(sessionId);
   }
   let parsed = null;
-  try { parsed = JSON.parse(text); } catch { }
-  const rect = parsed && (Array.isArray(parsed.window_rect) ? parsed.window_rect
-    : (parsed.window && Array.isArray(parsed.window.rect) ? parsed.window.rect : null));
+  try {
+    parsed = JSON.parse(text);
+  } catch {}
+  const rect =
+    parsed &&
+    (Array.isArray(parsed.window_rect)
+      ? parsed.window_rect
+      : parsed.window && Array.isArray(parsed.window.rect)
+        ? parsed.window.rect
+        : null);
   if (rect) turnState(api.conversationId).uiRect = rect;
   const isError = script.toolFailure(parsed);
   if (spec.name === 'skills_read' && !isError && requiredSkills.get(api.conversationId) === (args || {}).skill_id) {
@@ -1231,13 +1509,16 @@ async function executeTool(spec, args, api, context) {
   }
   if (spec.name === 'task_plan' && !isError) {
     const plan = planFromParams(parsed && parsed.plan) || planFromParams(args);
-    if (plan && !await savePlan(sessionId, plan)) {
-      planWarning = 'El plan se publicó en la conversación, pero no se pudo guardar su respaldo persistente; '
-        + 'la próxima lectura lo reconstruirá desde el historial.';
+    if (plan && !(await savePlan(sessionId, plan))) {
+      planWarning =
+        'El plan se publicó en la conversación, pero no se pudo guardar su respaldo persistente; ' +
+        'la próxima lectura lo reconstruirá desde el historial.';
     }
   }
-  const image = isError || NO_ATTACH_IMAGE.test(spec.name) || !await acceptsImages(api, context)
-    ? null : await resultImage(parsed);
+  const image =
+    isError || NO_ATTACH_IMAGE.test(spec.name) || !(await acceptsImages(api, context))
+      ? null
+      : await resultImage(parsed);
   const turn = turnState(api.conversationId);
   const calls = turn.calls;
   const signature = callSignature(spec.name, args);
@@ -1254,16 +1535,24 @@ async function executeTool(spec, args, api, context) {
     outcome = outcome.replaceAll(JSON.stringify(capture.path), JSON.stringify(fingerprint));
   }
   const trackOutcome = !spec.gated || spec.name === 'desktop_observe' || spec.name === 'web_click';
-  const progress = spec.name === 'web_click'
-    ? stableJson({ url: parsed && parsed.page && parsed.page.url ? String(parsed.page.url) : '' })
-    : outcome;
+  const progress =
+    spec.name === 'web_click'
+      ? stableJson({ url: parsed && parsed.page && parsed.page.url ? String(parsed.page.url) : '' })
+      : outcome;
   const hash = crypto.createHash('sha256').update(progress).digest('hex');
   if (!isError && (!trackOutcome || repeated.outcome === undefined || repeated.outcome !== hash)) {
     turn.roundProgress = true;
   }
   repeated.uncertain = !!(parsed && parsed.uncertain === true && (spec.gated || spec.replay_safe !== true));
-  const exempt = !!(!spec.gated && spec.replay_safe === true && isError && parsed && typeof parsed === 'object'
-    && (parsed.retryable === true || parsed.recoverable === true) && parsed.uncertain !== true);
+  const exempt = !!(
+    !spec.gated &&
+    spec.replay_safe === true &&
+    isError &&
+    parsed &&
+    typeof parsed === 'object' &&
+    (parsed.retryable === true || parsed.recoverable === true) &&
+    parsed.uncertain !== true
+  );
   if (exempt) {
     repeated.exempt = true;
     repeated.count = 0;
@@ -1285,14 +1574,21 @@ async function executeTool(spec, args, api, context) {
   if (!isError) {
     failures.delete(spec.name);
   } else {
-    const message = String(typeof parsed.error === 'string' ? parsed.error : (parsed.error && parsed.error.message) || parsed.message || text);
+    const message = String(
+      typeof parsed.error === 'string'
+        ? parsed.error
+        : (parsed.error && parsed.error.message) || parsed.message || text,
+    );
     const key = errorSignature(message);
     const previous = failures.get(spec.name);
     const sameCause = previous && previous.key === key;
-    failures.set(spec.name, { key, message: message.replace(/\s+/g, ' ').slice(0, 160),
+    failures.set(spec.name, {
+      key,
+      message: message.replace(/\s+/g, ' ').slice(0, 160),
       count: exempt ? 0 : sameCause ? previous.count + 1 : 1,
       recoveries: (sameCause ? previous.recoveries || 0 : 0) + (exempt ? 1 : 0),
-      retryAt: exempt ? repeated.retryAt : 0 });
+      retryAt: exempt ? repeated.retryAt : 0,
+    });
   }
   noteToolResult(api, spec.name, text, isError);
   const hooks = require('./agent-hooks');
@@ -1308,13 +1604,17 @@ async function executeTool(spec, args, api, context) {
   } else {
     planTurn.sincePlan = (planTurn.sincePlan || 0) + 1;
   }
-  return { content: [
-    ...(pre ? [{ type: 'text', text: pre }] : []),
-    { type: 'text', text },
-    ...(planWarning ? [{ type: 'text', text: planWarning }] : []),
-    ...(image ? [image] : []),
-    ...(post ? [{ type: 'text', text: post }] : []),
-  ], isError, ...(added && added.length ? { control: { addTools: added } } : {}) };
+  return {
+    content: [
+      ...(pre ? [{ type: 'text', text: pre }] : []),
+      { type: 'text', text },
+      ...(planWarning ? [{ type: 'text', text: planWarning }] : []),
+      ...(image ? [image] : []),
+      ...(post ? [{ type: 'text', text: post }] : []),
+    ],
+    isError,
+    ...(added && added.length ? { control: { addTools: added } } : {}),
+  };
 }
 
 async function dispatchTool(spec, args, sessionId, api, context) {
@@ -1350,8 +1650,10 @@ async function dispatchTool(spec, args, sessionId, api, context) {
       }
       return { text: JSON.stringify(await require('./agent-tasks').schedule(args || {}, sessionId, api)) };
     }
-    if (spec.name === 'wait_event') return { text: JSON.stringify(await require('./agent-events').wait(args || {}, sessionId, api, context)) };
-    if (spec.name === 'sessions_search') return { text: JSON.stringify(await searchSessions(args || {}, sessionId, context)) };
+    if (spec.name === 'wait_event')
+      return { text: JSON.stringify(await require('./agent-events').wait(args || {}, sessionId, api, context)) };
+    if (spec.name === 'sessions_search')
+      return { text: JSON.stringify(await searchSessions(args || {}, sessionId, context)) };
     return loadTools(args || {}, sessionId, context);
   }
   const callId = dispatchCallId(api.callId, api.taskId);
@@ -1363,7 +1665,9 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     params: args || {},
     approval_id: approvalId,
     channel: spec.channel || channelFor(spec.name, spec.module),
-    ...(spec.kind === 'native' ? { context: await nativeTools().nativeToolContext(spec.name, sessionId, args || {}) } : {}),
+    ...(spec.kind === 'native'
+      ? { context: await nativeTools().nativeToolContext(spec.name, sessionId, args || {}) }
+      : {}),
   };
   if (spec.name === 'skills_list' || spec.name === 'skills_read') {
     request.context = { profile_id: (await requireSession(sessionId)).profile?.id || null };
@@ -1376,14 +1680,23 @@ async function dispatchTool(spec, args, sessionId, api, context) {
   }
   if (spec.kind === 'subagent') {
     const profile = await resolveProfile(args && args.agent);
-    if (!profile) return { text: JSON.stringify({ error: 'No se encontró un agente único con esa referencia; usa el identificador de un bot disponible' }) };
+    if (!profile)
+      return {
+        text: JSON.stringify({
+          error: 'No se encontró un agente único con esa referencia; usa el identificador de un bot disponible',
+        }),
+      };
     const conv = await conversation(sessionId);
     const enabled = (await conv.agent(context)).tools.map((tool) => tool.name);
     const session = await requireSession(sessionId);
     const allows = profileFilter(profile);
     const budget = await profileBudget(profile);
     if (budget && budget.exhausted) {
-      return { text: JSON.stringify({ error: 'Este agente agotó su presupuesto diario de tokens; amplíalo o continúa mañana' }) };
+      return {
+        text: JSON.stringify({
+          error: 'Este agente agotó su presupuesto diario de tokens; amplíalo o continúa mañana',
+        }),
+      };
     }
     request.context = {
       subagent: {
@@ -1402,17 +1715,16 @@ async function dispatchTool(spec, args, sessionId, api, context) {
   }
   if (spec.name === 'ask_user') shared.waitingInput.add(sessionId);
   try {
-    const text = spec.kind === 'native'
-      ? await dispatchNative(spec, request, context)
-      : await dispatchAndWait(request, context, api);
+    const text =
+      spec.kind === 'native'
+        ? await dispatchNative(spec, request, context)
+        : await dispatchAndWait(request, context, api);
     return { text };
   } finally {
     if (spec.name === 'ask_user') shared.waitingInput.delete(sessionId);
   }
 }
 
-// Sin visión, pi-ai sustituye la imagen por un aviso pegado al texto del
-// resultado; no adjuntarla mantiene el JSON íntegro para el modelo.
 async function acceptsImages(api, context) {
   const ref = (await api.agent(context)).model;
   const model = ref && shared.state.models.getModel(ref.provider, ref.modelId);
@@ -1474,17 +1786,19 @@ async function dispatchMeta(spec, args, sessionId, api, context, options = {}) {
 }
 
 async function dispatchScript(args, sessionId, api, context) {
-  // Las llamadas internas no consumen los pasos del turno; MAX_CALLS acota el script.
   return script.dispatchScript(args, sessionId, api, context, {
     toolSpecs: shared.toolSpecs,
     conversation,
     profileToolFilter,
     requireSession,
     draftsDir: (id) => nativeTools().draftsDir(id),
-    runTool: (spec, toolArgs, toolApi, toolContext, options) => script.runScriptedTool(
-      spec, toolArgs, toolApi, toolContext,
-      { ...options, beforeTool, executeTool, abortError: aborted },
-    ),
+    runTool: (spec, toolArgs, toolApi, toolContext, options) =>
+      script.runScriptedTool(spec, toolArgs, toolApi, toolContext, {
+        ...options,
+        beforeTool,
+        executeTool,
+        abortError: aborted,
+      }),
   });
 }
 
@@ -1492,7 +1806,7 @@ async function dispatchNative(spec, request, context) {
   let first = await bridge('agent_internal_dispatch', { ...request, native: true, gated: !!spec.gated });
   while (first.busy) {
     await waitResource(context);
-    if (!await toolEnabled(request.session_id, spec.name, context)) {
+    if (!(await toolEnabled(request.session_id, spec.name, context))) {
       return JSON.stringify({ error: `Herramienta deshabilitada en esta conversación: ${spec.name}` });
     }
     request.context = await nativeTools().nativeToolContext(spec.name, request.session_id, request.params);
@@ -1508,11 +1822,12 @@ async function dispatchNative(spec, request, context) {
   let text;
   let uncertain = false;
   try {
-    if (!await toolEnabled(request.session_id, spec.name, context)) {
+    if (!(await toolEnabled(request.session_id, spec.name, context))) {
       throw new Error(`Herramienta deshabilitada en esta conversación: ${spec.name}`);
     }
     const result = await nativeTools().runNativeTool(spec.name, request.params, {
-      sessionId: request.session_id, approvedContext: request.context,
+      sessionId: request.session_id,
+      approvedContext: request.context,
     });
     text = JSON.stringify(result === undefined ? null : result);
   } catch (err) {
@@ -1522,7 +1837,9 @@ async function dispatchNative(spec, request, context) {
       ...(err?.code ? { code: String(err.code) } : {}),
       ...(err?.retryable === true ? { retryable: true } : {}),
       ...(err?.recoverable === true ? { recoverable: true } : {}),
-      ...(Number.isFinite(err?.retryAfterMs) ? { retry_after_ms: Math.round(clampRetryAfterMs(err.retryAfterMs)) } : {}),
+      ...(Number.isFinite(err?.retryAfterMs)
+        ? { retry_after_ms: Math.round(clampRetryAfterMs(err.retryAfterMs)) }
+        : {}),
       ...(uncertain ? { interrupted: true, uncertain: true } : {}),
     });
   }
@@ -1540,12 +1857,15 @@ async function dispatchApproved(approval, context) {
   try {
     const spec = (await allToolSpecs()).find((tool) => tool.name === approval.method);
     if (!spec) return JSON.stringify({ error: 'La herramienta aprobada ya no está disponible' });
-    if (!await toolEnabled(approval.session_id, spec.name, context)) {
+    if (!(await toolEnabled(approval.session_id, spec.name, context))) {
       return JSON.stringify({ error: `Herramienta deshabilitada en esta conversación: ${spec.name}` });
     }
     const request = {
-      session_id: approval.session_id, call_id: approval.call_id, name: approval.method,
-      params: approval.params || {}, approval_id: approval.id,
+      session_id: approval.session_id,
+      call_id: approval.call_id,
+      name: approval.method,
+      params: approval.params || {},
+      approval_id: approval.id,
       channel: approval.channel || spec.channel || channelFor(spec.name, spec.module),
     };
     if (spec.kind === 'native') {
@@ -1554,9 +1874,14 @@ async function dispatchApproved(approval, context) {
     }
     if (spec.kind === 'meta' && spec.name === 'task_schedule' && spec.gated) {
       const taskId = dispatchTaskId(approval.call_id) || approval.call_id;
-      return dispatchMeta(spec, approval.params || {}, approval.session_id,
-        { callId: providerCallId(approval.call_id), taskId }, context,
-        { callId: approval.call_id, approvalId: approval.id });
+      return dispatchMeta(
+        spec,
+        approval.params || {},
+        approval.session_id,
+        { callId: providerCallId(approval.call_id), taskId },
+        context,
+        { callId: approval.call_id, approvalId: approval.id },
+      );
     }
     return dispatchAndWait(request, context);
   } catch (err) {
@@ -1636,8 +1961,10 @@ async function recordProfileUsage(session, usage) {
 function profileInitialTools(profile, specs) {
   const available = new Set(specs.map((spec) => spec.name));
   const allows = profileFilter(profile);
-  const base = profile && Array.isArray(profile.tools)
-    ? profile.tools.filter((name) => available.has(name)) : defaultToolNames(specs);
+  const base =
+    profile && Array.isArray(profile.tools)
+      ? profile.tools.filter((name) => available.has(name))
+      : defaultToolNames(specs);
   return allows ? (base || [...available]).filter(allows) : base;
 }
 

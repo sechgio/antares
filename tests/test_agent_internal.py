@@ -203,7 +203,6 @@ def test_tools_list_projects_backend_and_mcp_kinds(monkeypatch):
 
 def test_provider_wire_base_url_per_style(monkeypatch):
     monkeypatch.setattr(ai_providers, "get_config", lambda provider: None)
-    # Ollama sirve /v1/chat/completions: el wire base conserva el /v1.
     ollama = _provider_info("ollama")
     assert ollama["base_url"].endswith("/v1")
     assert ollama["auth_type"] == "none" and ollama["api_key"] is None
@@ -214,7 +213,6 @@ def test_provider_wire_base_url_per_style(monkeypatch):
         assert info["style"] == "openai_chat"
         assert info["base_url"].endswith("/v1") or info["base_url"].endswith("/api/v1")
         assert info["api_key"] == "sk-test"
-    # Anthropic: el SDK añade /v1/messages, el wire base es la raíz.
     anthropic = _provider_info("anthropic")
     assert anthropic["style"] == "anthropic_messages"
     assert anthropic["base_url"] == "https://api.anthropic.com"

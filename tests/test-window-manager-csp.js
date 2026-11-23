@@ -6,12 +6,9 @@ const { assert, finish, counters } = require('./helpers/harness');
 function run() {
   console.log('Testing window-manager CSP for Google Fonts...\n');
 
-  const source = fs.readFileSync(
-    path.join(__dirname, '..', 'electron', 'window-manager.js'),
-    'utf8',
-  );
+  const source = fs.readFileSync(path.join(__dirname, '..', 'electron', 'window-manager.js'), 'utf8');
 
-  const cspMatches = [...source.matchAll(/buildCsp\((["'`])((?:\\.|(?!\1)[\s\S])*)\1\)/g)];
+  const cspMatches = [...source.matchAll(/buildCsp\(\s*(["'`])((?:\\.|(?!\1)[\s\S])*)\1\s*,?\s*\)/g)];
   assert(cspMatches.length >= 2, 'dev and prod CSP strings are present');
 
   const devCsp = cspMatches[0]?.[2] ?? '';
@@ -43,13 +40,15 @@ function run() {
     'production frames only self and the pinned loopback page server',
   );
   assert(
-    /\.originUrl\(\)/.test(source)
-      && /previewOrigin \|\| 'http:\/\/127\.0\.0\.1:\*'/.test(source)
-      && /frame-src 'self' http:\/\/localhost:5173 \$\{previewFrameSrc\}/.test(source),
+    /\.originUrl\(\)/.test(source) &&
+      /previewOrigin \|\| 'http:\/\/127\.0\.0\.1:\*'/.test(source) &&
+      /frame-src 'self' http:\/\/localhost:5173 \$\{previewFrameSrc\}/.test(source),
     'dev and prod CSP pin the loopback preview in frame-src',
   );
-  assert(/startsWith\('http:\/\/127\.0\.0\.1:'\) && require\('\.\/agent-preview'\)\.isPage\(details\.url\)/.test(source),
-    'only registered agent pages keep their own CSP');
+  assert(
+    /startsWith\('http:\/\/127\.0\.0\.1:'\) && require\('\.\/agent-preview'\)\.isPage\(details\.url\)/.test(source),
+    'only registered agent pages keep their own CSP',
+  );
 
   assert(
     source.includes('onBeforeSendHeaders') && /delete\s+requestHeaders\.(R|r)eferer/.test(source),

@@ -155,10 +155,7 @@ function testEffectiveBody() {
     templateOnly.checks.some((c) => c.id === 'intencion' && c.status === 'fail'),
     'bloquea por falta de intención real',
   );
-  assert(
-    policy.effectiveBodyLength(goodPrBody()) >= policy.MIN_BODY_CHARS,
-    'la prosa real sí cuenta como intención',
-  );
+  assert(policy.effectiveBodyLength(goodPrBody()) >= policy.MIN_BODY_CHARS, 'la prosa real sí cuenta como intención');
 }
 
 function testGeneratedPaths() {
@@ -310,9 +307,7 @@ function testEvaluatePolicy() {
       { path: 'backend/core/repository.py', additions: 90, deletions: 20 },
       { path: 'tests/test_repository.py', additions: 30, deletions: 10 },
     ],
-    reviews: [
-      { author: { login: 'revisora' }, state: 'APPROVED', body: 'nit: renombra la variable' },
-    ],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED', body: 'nit: renombra la variable' }],
     comments: [],
     author: { login: 'sechgio' },
   });
@@ -461,11 +456,7 @@ function testMetrics() {
   eq(metrics.median([4, 1, 3, 2]), 2.5, 'mediana de lista par');
   eq(metrics.median([]), null, 'mediana vacía es null');
 
-  eq(
-    metrics.hoursBetween('2026-01-01T00:00:00Z', '2026-01-01T02:00:00Z'),
-    2,
-    'horas entre dos instantes',
-  );
+  eq(metrics.hoursBetween('2026-01-01T00:00:00Z', '2026-01-01T02:00:00Z'), 2, 'horas entre dos instantes');
   eq(metrics.hoursBetween('no-fecha', '2026-01-01T00:00:00Z'), null, 'fecha inválida es null');
 
   assert(policy.isBot({ login: 'dependabot[bot]' }), 'detecta bots por sufijo');
@@ -488,7 +479,12 @@ function testMetrics() {
       additions: 300,
       deletions: 50,
       reviews: [
-        { author: { login: 'revisor2' }, state: 'APPROVED', submittedAt: '2026-08-02T18:00:00Z', body: 'blocking: falta test' },
+        {
+          author: { login: 'revisor2' },
+          state: 'APPROVED',
+          submittedAt: '2026-08-02T18:00:00Z',
+          body: 'blocking: falta test',
+        },
       ],
       comments: [],
     },
@@ -522,7 +518,14 @@ function testMetrics() {
     'el objetivo de taxonomía sale de la política, no de una constante duplicada',
   );
 
-  const big = { author: { login: 'sechgio' }, createdAt: '2026-08-05T10:00:00Z', additions: 3500, deletions: 500, reviews: [], comments: [] };
+  const big = {
+    author: { login: 'sechgio' },
+    createdAt: '2026-08-05T10:00:00Z',
+    additions: 3500,
+    deletions: 500,
+    reviews: [],
+    comments: [],
+  };
   const rawOnly = metrics.computeMetrics([big]);
   eq(
     Object.fromEntries(rawOnly.map((m) => [m.id, m])).size.value,
@@ -530,15 +533,29 @@ function testMetrics() {
     'sin detalle de archivos la métrica usa el tamaño bruto',
   );
   const withFiles = metrics.computeMetrics([
-    { ...big, files: [{ path: 'uv.lock', additions: 3400, deletions: 480 }, { path: 'backend/x.py', additions: 100, deletions: 20 }] },
+    {
+      ...big,
+      files: [
+        { path: 'uv.lock', additions: 3400, deletions: 480 },
+        { path: 'backend/x.py', additions: 100, deletions: 20 },
+      ],
+    },
   ]);
   const filesById = Object.fromEntries(withFiles.map((m) => [m.id, m]));
   eq(filesById.size.value, 120, 'con el detalle de archivos excluye los generados');
   assert(filesById.size.ok, 'un bump de dependencias cumple el objetivo de tamaño');
 
-  eq(policy.effectiveChangedLines({ additions: 1200, deletions: 40 }).effective, 1240, 'sin archivos el efectivo es el bruto');
   eq(
-    policy.effectiveChangedLines({ additions: 1200, deletions: 40, files: [{ path: 'uv.lock', additions: 1150, deletions: 35 }] }).effective,
+    policy.effectiveChangedLines({ additions: 1200, deletions: 40 }).effective,
+    1240,
+    'sin archivos el efectivo es el bruto',
+  );
+  eq(
+    policy.effectiveChangedLines({
+      additions: 1200,
+      deletions: 40,
+      files: [{ path: 'uv.lock', additions: 1150, deletions: 35 }],
+    }).effective,
     55,
     'las líneas de lockfile no cuentan',
   );
@@ -549,9 +566,7 @@ function testMetrics() {
       createdAt: '2026-08-04T10:00:00Z',
       additions: 80,
       deletions: 10,
-      reviews: [
-        { author: { login: 'revisora' }, state: 'APPROVED', submittedAt: '2026-08-04T11:30:00Z' },
-      ],
+      reviews: [{ author: { login: 'revisora' }, state: 'APPROVED', submittedAt: '2026-08-04T11:30:00Z' }],
       comments: [],
     },
   ]);
@@ -584,9 +599,7 @@ function testMetrics() {
       createdAt: '2026-08-01T10:00:00Z',
       additions: 10,
       deletions: 0,
-      reviews: [
-        { author: { login: 'revisora' }, state: 'APPROVED', submittedAt: '2026-08-01T14:00:00Z' },
-      ],
+      reviews: [{ author: { login: 'revisora' }, state: 'APPROVED', submittedAt: '2026-08-01T14:00:00Z' }],
       comments: [{ author: { login: 'sechgio' }, createdAt: '2026-08-01T10:05:00Z', body: 'ping' }],
     },
   ]);
@@ -612,7 +625,6 @@ function testMetrics() {
 function testUnmeasurableSize() {
   console.log('\nDiff sin recuento de líneas:');
 
-  // GitHub omite additions/deletions/changed_files cuando el diff es demasiado grande.
   const unknown = policy.evaluatePolicy({
     number: 40,
     body: goodPrBody(),
@@ -680,7 +692,11 @@ function testIntentExemptions() {
     comments: [],
     author: { login: 'sechgio' },
   });
-  eq(generatedOnly.checks.find((c) => c.id === 'intencion').status, 'skip', 'un diff solo de lockfile no exige intención');
+  eq(
+    generatedOnly.checks.find((c) => c.id === 'intencion').status,
+    'skip',
+    'un diff solo de lockfile no exige intención',
+  );
   assert(
     generatedOnly.checks.every((c) => c.status !== 'fail'),
     'un bump de dependencias no bloquea',
@@ -752,8 +768,14 @@ function testRiskSection() {
 
   assert(policy.hasCheckedLine('- [x] ok') && policy.hasCheckedLine('* [X] ok'), 'acepta - y * en cualquier caja');
   assert(!policy.hasCheckedLine('- [ ] ok'), '- [ ] no está marcada');
-  assert(policy.sectionText('## Risk\n- [x] a\n\n## Notes\nhola', 'Risk').includes('- [x] a'), 'sectionText aísla la sección');
-  assert(policy.sectionText('## Risk\n- [x] a\n\n## Notes\nhola', 'Notes').includes('hola'), 'sectionText llega hasta la siguiente');
+  assert(
+    policy.sectionText('## Risk\n- [x] a\n\n## Notes\nhola', 'Risk').includes('- [x] a'),
+    'sectionText aísla la sección',
+  );
+  assert(
+    policy.sectionText('## Risk\n- [x] a\n\n## Notes\nhola', 'Notes').includes('hola'),
+    'sectionText llega hasta la siguiente',
+  );
 }
 
 function testTaxonomyIgnoresAuthor() {
@@ -806,7 +828,10 @@ function testStabilityAndExemptions() {
     eq([...severities][0], policy.BLOCKING, `${id} es bloqueante también cuando pasa o avisa`);
   }
 
-  assert(!policy.isNewFile({ path: 'a.py', additions: 900, deletions: 0 }), 'sin status no se puede afirmar que es nuevo');
+  assert(
+    !policy.isNewFile({ path: 'a.py', additions: 900, deletions: 0 }),
+    'sin status no se puede afirmar que es nuevo',
+  );
   assert(!policy.isNewFile({ path: 'a.py', additions: 900, deletions: 0, status: 'modified' }), 'modified no es nuevo');
   assert(policy.isNewFile({ path: 'a.py', additions: 900, deletions: 0, status: 'added' }), 'added es nuevo');
   const noStatus = policy.evaluatePolicy({
@@ -838,7 +863,11 @@ async function testCommentTruncation() {
     },
     { commentsComplete: false },
   );
-  eq(truncated.checks.find((c) => c.id === 'taxonomia').status, 'skip', 'sin la conversación completa no se mide la taxonomía');
+  eq(
+    truncated.checks.find((c) => c.id === 'taxonomia').status,
+    'skip',
+    'sin la conversación completa no se mide la taxonomía',
+  );
   assert(
     truncated.checks.find((c) => c.id === 'taxonomia').detail.includes('incompleto'),
     'el detalle dice que el listado está incompleto',
@@ -870,7 +899,8 @@ async function testCommentPagination() {
   const pageUrl = (n) => `${base}?per_page=${LIST_PER_PAGE}&page=${n}`;
   const scripted = new Map();
   const calls = [];
-  const full = (tag) => Array.from({ length: LIST_PER_PAGE }, (_, i) => ({ id: `${tag}-${i}`, user: { login: 'r' }, body: 'nit: x' }));
+  const full = (tag) =>
+    Array.from({ length: LIST_PER_PAGE }, (_, i) => ({ id: `${tag}-${i}`, user: { login: 'r' }, body: 'nit: x' }));
 
   stubModule('scripts/lib/loop-utils', {
     ghApiAsync: async (args) => {
@@ -1019,7 +1049,9 @@ function testAdvisoryChecks() {
   assert(policy.isBot({ login: 'github-actions', type: 'Bot' }), 'REST identifica bots por user.type');
   assert(!policy.isBot({ login: 'sechgio', type: 'User' }), 'un humano no es bot');
 
-  const report = policy.renderReport({ number: 22, author: { login: 'sechgio' } }, partial, { headSha: 'abc1234567890' });
+  const report = policy.renderReport({ number: 22, author: { login: 'sechgio' } }, partial, {
+    headSha: 'abc1234567890',
+  });
   assert(report.includes('### Avisos para el revisor'), 'el informe agrupa los avisos');
   assert(report.includes('Commit auditado: `abc1234`'), 'el informe identifica el commit auditado');
 }

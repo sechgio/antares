@@ -285,7 +285,6 @@ def test_silent_stream_retries_share_the_total_deadline(provider_server, monkeyp
     started = time.monotonic()
     with pytest.raises(ValueError, match=r"excedió el tiempo máximo|dejó de enviar datos"):
         agent_chat.chat(provider, "stream-silent-always", [{"role": "user", "content": "Hola"}], with_tools=False)
-    # Sin plazo compartido, tres intentos de 0,4 s superarían 1,2 s.
     assert time.monotonic() - started < 0.9
 
 

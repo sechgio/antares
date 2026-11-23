@@ -23,10 +23,7 @@ const {
   generateCodeChallenge: _generateCodeChallenge,
 } = require('./autoimg-oauth-flow');
 const { exchangeBrowserOAuthCode } = require('./cloud-connector-common');
-const {
-  beginBrowserOAuthFlow: startBrowserOAuthFlow,
-  createPendingFlow,
-} = require('./oauth-session');
+const { beginBrowserOAuthFlow: startBrowserOAuthFlow, createPendingFlow } = require('./oauth-session');
 const {
   setActiveUser,
   clearActiveUser,
@@ -136,7 +133,8 @@ async function exchangeCode(code, redirectUri) {
     invalidGrant: isInvalidGrantResponse,
     reauthMessage: REAUTH_REQUIRED_MESSAGE,
     oauthError: (errBody) => `Error OAuth: ${errBody}`,
-    noRefreshTokenMessage: 'Google no devolvió un refresh token. Revoca el acceso de la app en myaccount.google.com/permissions y vuelve a conectar.',
+    noRefreshTokenMessage:
+      'Google no devolvió un refresh token. Revoca el acceso de la app en myaccount.google.com/permissions y vuelve a conectar.',
   });
   const tokens = {
     access_token: data.access_token,
@@ -146,9 +144,7 @@ async function exchangeCode(code, redirectUri) {
   };
   const email = await _resolveGoogleEmail(tokens.access_token);
   if (!email) {
-    throw new Error(
-      'No se pudo identificar la cuenta de Google. Verifica tu conexión e intenta conectar de nuevo.',
-    );
+    throw new Error('No se pudo identificar la cuenta de Google. Verifica tu conexión e intenta conectar de nuevo.');
   }
   const userKey = setActiveUser(email);
   if (!userKey) {
@@ -188,10 +184,11 @@ async function getAuthStatus() {
     const email = info.email || undefined;
     if (email) {
       const stored = store.loadTokens();
-      const tokensUnchanged = stored
-        && stored.access_token === tokens.access_token
-        && stored.refresh_token === tokens.refresh_token
-        && stored.expiry_date === tokens.expiry_date;
+      const tokensUnchanged =
+        stored &&
+        stored.access_token === tokens.access_token &&
+        stored.refresh_token === tokens.refresh_token &&
+        stored.expiry_date === tokens.expiry_date;
       if (!(tokensUnchanged && getActiveEmail() === normalizeEmail(email))) {
         setActiveUser(email);
         store.saveTokens({
@@ -271,22 +268,21 @@ function _getTabNames() {
 
 async function _refreshSheetMeta() {
   if (!_sheetId) return;
-  const res = await _apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}?fields=properties.title,sheets.properties`);
+  const res = await _apiFetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}?fields=properties.title,sheets.properties`,
+  );
   _sheetMeta = await res.json();
 }
 
 async function _createSheetTabs(tabNames) {
   if (!_sheetId || !tabNames.length) return;
-  await _apiFetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}:batchUpdate`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requests: tabNames.map((title) => ({ addSheet: { properties: { title } } })),
-      }),
-    },
-  );
+  await _apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}:batchUpdate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      requests: tabNames.map((title) => ({ addSheet: { properties: { title } } })),
+    }),
+  });
 }
 
 async function ensureAutoImgTabs() {
@@ -314,7 +310,9 @@ async function openSpreadsheet(rawId) {
 async function _openSpreadsheetPinned(rawId) {
   const sheetId = parseSheetId(rawId);
   if (!sheetId) throw new Error('ID de Sheet inválido');
-  const res = await _apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?fields=properties.title,sheets.properties`);
+  const res = await _apiFetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?fields=properties.title,sheets.properties`,
+  );
   const data = await res.json();
   const name = data.properties?.title || '';
   _sheetId = sheetId;
@@ -349,8 +347,7 @@ async function restorePersistedSheet() {
   if (_sheetId) {
     try {
       await ensureAutoImgTabs();
-    } catch {
-    }
+    } catch {}
     return getStoredSheetConfig();
   }
   const stored = store.loadSheetConfig();
@@ -359,8 +356,7 @@ async function restorePersistedSheet() {
   if (!tokens) return getStoredSheetConfig();
   try {
     await openSpreadsheet(stored.sheet_id);
-  } catch {
-  }
+  } catch {}
   return getStoredSheetConfig();
 }
 
@@ -369,8 +365,6 @@ function getSheetId() {
 }
 
 function _mapBatchGetResult(ranges, valueRanges) {
-  // batchGet devuelve valueRanges en el mismo orden del request: emparejar
-  // posicionalmente (mapear por nombre de tab rompe dos rangos del mismo tab).
   const byRange = Object.fromEntries(ranges.map((range) => [range, []]));
   (valueRanges || []).forEach((entry, i) => {
     const key = ranges[i];
@@ -382,7 +376,9 @@ function _mapBatchGetResult(ranges, valueRanges) {
 async function readRange(range) {
   if (!_sheetId) throw new Error('No hay Sheet abierto. Usa autoimg_sheets_open primero.');
   const encoded = encodeURIComponent(range);
-  const res = await _apiFetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}/values/${encoded}`);
+  const res = await _apiFetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}/values/${encoded}`,
+  );
   const data = await res.json();
   return { values: data.values || [] };
 }
@@ -408,7 +404,11 @@ async function _writeRangePinned(range, values) {
   const encoded = encodeURIComponent(range);
   const res = await _apiFetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}/values/${encoded}?valueInputOption=USER_ENTERED`,
-    { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: neutralizeCells(values) }) },
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: neutralizeCells(values) }),
+    },
   );
   const data = await res.json();
   return { updated: data.updatedCells || 0 };
@@ -423,7 +423,11 @@ async function _appendRowPinned(range, values) {
   const encoded = encodeURIComponent(range);
   const res = await _apiFetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(_sheetId)}/values/${encoded}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: neutralizeCells([values]) }) },
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: neutralizeCells([values]) }),
+    },
   );
   const data = await res.json();
   const updatedRange = data.updates?.updatedRange || '';

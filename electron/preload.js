@@ -7,8 +7,7 @@ function resolveAllowedMethods() {
   if (arg) {
     try {
       return new Set(JSON.parse(arg.slice(prefix.length)));
-    } catch {
-    }
+    } catch {}
   }
   try {
     const { METHOD_NAMES: ALLOWED_RENDERER_METHODS } = require('../shared/ipc-method-catalog');
@@ -27,15 +26,12 @@ function resolveFileInputNonce() {
   return arg ? arg.slice(prefix.length) : '';
 }
 
-// Vive solo en el mundo aislado del preload: el contexto de la página no puede
-// leerlo, así que un renderer comprometido no puede forjar registros de rutas.
 const FILE_INPUT_NONCE = resolveFileInputNonce();
 
 function reportRendererError(payload) {
   try {
     ipcRenderer.send('renderer-error', payload);
-  } catch {
-  }
+  } catch {}
 }
 
 function registerFileInputPath(filePath) {
@@ -51,27 +47,23 @@ function registerFileInputPath(filePath) {
 function reportRendererEvent(event, fields, level) {
   try {
     ipcRenderer.send('renderer-event', { event, fields, level });
-  } catch {
-  }
+  } catch {}
 }
 
 function resolveIsPackaged() {
   const prefix = '--app-is-packaged=';
   const argv = Array.isArray(process.argv) ? process.argv : [];
   const arg = argv.find((a) => typeof a === 'string' && a.startsWith(prefix));
-  // ipc-bridge-022: el flag de main MANDA; NODE_ENV solo respalda y nunca anula el gate.
   if (arg) return arg.slice(prefix.length) === '1';
   try {
     if (typeof __dirname !== 'undefined' && /[\\/]app\.asar[\\/]/.test(__dirname)) return true;
-  } catch {
-  }
+  } catch {}
   return process.env?.NODE_ENV === 'production';
 }
 
 const isDev = !resolveIsPackaged();
 
 function loadSupabaseSessionSeed() {
-  // sb-011: siembra por sendSync ANTES de que la página importe supabase-js.
   try {
     return ipcRenderer.sendSync('supabase-session-get');
   } catch {

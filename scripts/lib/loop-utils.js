@@ -8,8 +8,6 @@ const REPO_OWNER = 'sechgio';
 const REPO_NAME = 'antares';
 const BASE_BRANCH = 'main';
 const ROOT = path.resolve(__dirname, '..', '..');
-// aislado el gate tarda ~6,5 min, pero con suites concurrentes de otras
-// sesiones en la misma máquina supera los 15 min y el kill deja "exit 1"
 const QUALITY_GATE_TIMEOUT_MS = 1800000;
 
 function sh(command, opts = {}) {
@@ -163,9 +161,7 @@ function requireGhAuth() {
 function requireOriginRepo() {
   const remoteUrl = trySh('git remote get-url origin');
   if (!remoteUrl || !remoteUrl.includes(`${REPO_OWNER}/${REPO_NAME}`)) {
-    throw new Error(
-      `Remote origin debe apuntar a ${REPO_OWNER}/${REPO_NAME}, actual: ${remoteUrl || '(sin remote)'}`,
-    );
+    throw new Error(`Remote origin debe apuntar a ${REPO_OWNER}/${REPO_NAME}, actual: ${remoteUrl || '(sin remote)'}`);
   }
 }
 

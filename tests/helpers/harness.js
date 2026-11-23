@@ -32,10 +32,7 @@ function assertOrExit(condition, message) {
 }
 
 function eq(actual, expected, message) {
-  assert(
-    actual === expected,
-    `${message} (esperado: ${JSON.stringify(expected)}, actual: ${JSON.stringify(actual)})`,
-  );
+  assert(actual === expected, `${message} (esperado: ${JSON.stringify(expected)}, actual: ${JSON.stringify(actual)})`);
 }
 
 function finish() {
@@ -78,8 +75,6 @@ function evictModule(spec) {
   delete require.cache[_resolveRepoModule(spec)];
 }
 
-// El navegador del agente resuelve el DNS de cada destino: en los tests toda
-// resolución es pública.
 function stubPublicDns() {
   const Module = require('node:module');
   const originalLoad = Module._load;
@@ -133,10 +128,13 @@ function patchSpawn(impl) {
   const childProcess = require('child_process');
   const originalSpawn = childProcess.spawn;
   const originalExecFile = childProcess.execFile;
-  const state = { count: 0, restore: () => {
-    childProcess.spawn = originalSpawn;
-    childProcess.execFile = originalExecFile;
-  } };
+  const state = {
+    count: 0,
+    restore: () => {
+      childProcess.spawn = originalSpawn;
+      childProcess.execFile = originalExecFile;
+    },
+  };
   childProcess.execFile = (command, ...args) => {
     if (command !== 'taskkill') return originalExecFile(command, ...args);
     const callback = args.at(-1);
@@ -184,9 +182,7 @@ function installInertTimers({
     return original.clearTimeout(timer);
   };
   global.setInterval = (fn, delay, ...args) => {
-    state.activeInterval = fakeInterval
-      ? { fn, delay, args }
-      : original.setInterval(fn, delay, ...args);
+    state.activeInterval = fakeInterval ? { fn, delay, args } : original.setInterval(fn, delay, ...args);
     return state.activeInterval;
   };
   global.clearInterval = (timer) => {

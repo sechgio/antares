@@ -1,5 +1,4 @@
 /// <reference lib="webworker" />
-
 import type { BatchSettings, CropOffset } from './types';
 import { computeResizeDimensions, getCropRectangle, getOutputMimeType } from './utils';
 import { errorMessage } from '@/utils/errors';
@@ -34,11 +33,7 @@ export type ProcessWorkerResponse =
 
 declare const self: DedicatedWorkerGlobalScope;
 
-async function encodeCanvas(
-  canvas: OffscreenCanvas,
-  mimeType: string,
-  quality: number,
-): Promise<Blob> {
+async function encodeCanvas(canvas: OffscreenCanvas, mimeType: string, quality: number): Promise<Blob> {
   return canvas.convertToBlob({ type: mimeType, quality });
 }
 
@@ -53,13 +48,7 @@ async function processJob(job: ProcessWorkerRequest): Promise<ProcessWorkerRespo
 
       const cropRect =
         job.shouldCrop && settings.operations.cropEnabled
-          ? getCropRectangle(
-              srcW,
-              srcH,
-              settings.crop.aspectRatio,
-              cropOffset,
-              settings.crop.cropOrigin,
-            )
+          ? getCropRectangle(srcW, srcH, settings.crop.aspectRatio, cropOffset, settings.crop.cropOrigin)
           : null;
 
       const sourceRect =
@@ -104,9 +93,8 @@ async function processJob(job: ProcessWorkerRequest): Promise<ProcessWorkerRespo
         outH,
       );
 
-      const outputFormat = job.shouldConvertFormat && settings.operations.formatEnabled
-        ? settings.format.outputFormat
-        : 'original';
+      const outputFormat =
+        job.shouldConvertFormat && settings.operations.formatEnabled ? settings.format.outputFormat : 'original';
       let mimeType = getOutputMimeType(outputFormat, sourceType);
       if (!mimeType) mimeType = 'image/jpeg';
 

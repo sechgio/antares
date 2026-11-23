@@ -24,9 +24,6 @@ _MAX_ELEMENTS_CAP = 800
 _WALK_BUDGET_S = 8.0
 _WALK_BUDGET_ACTION_S = 6.0
 _MAX_TEXT = 5_000
-# Por debajo de ~32 ms entre caracteres, el sistema coalesce los VK_PACKET de
-# inyección unicode como repetición de una misma tecla y corrompe el texto en
-# apps TSF (Notepad de Win11); 48 ms se validó perfecto en barrido empírico.
 _TYPE_CHAR_DELAY_S = 0.048
 _RawElements = dict[str, Any]  # allowlist
 _ActionContext = dict[str, Any]  # allowlist
@@ -366,7 +363,7 @@ def _ensure_foreground(hwnd: int) -> None:
     user32 = _user32()
     if user32.GetForegroundWindow() == hwnd:
         return
-    _send(_key(0x12), _key(0x12, up=True))  # Alt: habilita robar el foco desde un proceso de fondo
+    _send(_key(0x12), _key(0x12, up=True))
     _check_action_active()
     user32.SetForegroundWindow(hwnd)
     time.sleep(0.08)
@@ -406,7 +403,7 @@ def _ensure_element_focus(ctx: _ActionContext, target: JsonObject) -> None:
         if focused is not None and tuple(int(v) for v in focused.GetRuntimeId()) == tuple(
             int(v) for v in raw.GetRuntimeId()
         ):
-            return  # ya enfocado: re-enfocar resetea el contexto TSF y corrompe la entrada
+            return
     except Exception:
         pass
     _set_focus(raw)
@@ -680,8 +677,6 @@ def launch_app(app: str, args: str | None = None) -> JsonObject:
     name = raw.lower()
     if not name or "\x00" in name or len(name) > 260:
         raise ValueError("Nombre de aplicación no válido")
-    # Fuera de los alias se intenta el nombre tal cual: ShellExecute resuelve
-    # PATH y App Paths (firefox, chrome…); la aprobación del usuario sigue siendo obligatoria.
     target = _KNOWN_ALIASES.get(name, raw)
     if args is not None and (not isinstance(args, str) or "\x00" in args or len(args) > 500):
         raise ValueError("Argumentos no válidos")

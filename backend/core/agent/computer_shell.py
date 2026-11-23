@@ -92,7 +92,6 @@ def run(params: JsonObject, grants: dict[str, JsonObject], root: Path, token: An
         raise ValueError("Indica el comando")
     if len(command) > _MAX_COMMAND_CHARS:
         raise ValueError(f"El comando excede {_MAX_COMMAND_CHARS} caracteres")
-    # root guarda las salidas; workspace es la carpeta donde trabaja el comando.
     workspace = workspace or root
     cwd = computer_files.resolve(params.get("cwd") or str(workspace), grants, workspace)
     if not cwd.is_dir():

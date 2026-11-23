@@ -4,10 +4,7 @@ import { clientToMm } from '../ops/drawHelpers';
 import { layersInMarquee, type RectMm } from '../ops/selectionTransform';
 import { buildSpatialIndex } from '../ops/spatialIndex';
 import { createGestureRaf } from '../ops/gestureRaf';
-import type {
-  PointerGestureOwner,
-  PointerGestureSession,
-} from '../ops/pointerGestureSession';
+import type { PointerGestureOwner, PointerGestureSession } from '../ops/pointerGestureSession';
 import { createFrameRectCache } from './frameRectCache';
 
 const PAN_INERTIA_FRESH_MS = 80;
@@ -30,14 +27,16 @@ export function modifierReplay(schedule: (ev: PointerEvent) => void) {
     },
     onKey(ev: KeyboardEvent) {
       if (!last || !MODIFIER_KEYS.has(ev.key)) return;
-      schedule(new PointerEvent('pointermove', {
-        clientX: last.clientX,
-        clientY: last.clientY,
-        shiftKey: ev.shiftKey,
-        ctrlKey: ev.ctrlKey,
-        metaKey: ev.metaKey,
-        altKey: ev.altKey,
-      }));
+      schedule(
+        new PointerEvent('pointermove', {
+          clientX: last.clientX,
+          clientY: last.clientY,
+          shiftKey: ev.shiftKey,
+          ctrlKey: ev.ctrlKey,
+          metaKey: ev.metaKey,
+          altKey: ev.altKey,
+        }),
+      );
     },
   };
 }
@@ -126,9 +125,7 @@ export function createArtboardViewportGestures(deps: ArtboardViewportGestureDeps
       captured = false;
       try {
         captureTarget.releasePointerCapture(pointerId);
-      } catch {
-        // The browser may release capture before pointercancel/blur reaches React.
-      }
+      } catch {}
     };
 
     const raf = createGestureRaf((ev: PointerEvent) => {
@@ -143,8 +140,8 @@ export function createArtboardViewportGestures(deps: ArtboardViewportGestureDeps
         if (pinchGestureRef.current) return;
         const now = performance.now();
         const dt = Math.max(1, now - lastT);
-        const instantVx = (ev.clientX - lastX) / dt * 16;
-        const instantVy = (ev.clientY - lastY) / dt * 16;
+        const instantVx = ((ev.clientX - lastX) / dt) * 16;
+        const instantVy = ((ev.clientY - lastY) / dt) * 16;
         vx = vx * 0.6 + instantVx * 0.4;
         vy = vy * 0.6 + instantVy * 0.4;
         lastX = ev.clientX;
@@ -157,12 +154,7 @@ export function createArtboardViewportGestures(deps: ArtboardViewportGestureDeps
         raf.flush();
         setPanning(false);
         const velocityIsFresh = performance.now() - lastT <= PAN_INERTIA_FRESH_MS;
-        if (
-          !pinchGestureRef.current
-          && velocityIsFresh
-          && onStartInertia
-          && (Math.abs(vx) > 1 || Math.abs(vy) > 1)
-        ) {
+        if (!pinchGestureRef.current && velocityIsFresh && onStartInertia && (Math.abs(vx) > 1 || Math.abs(vy) > 1)) {
           onStartInertia({ vx, vy });
         }
       },
@@ -248,9 +240,7 @@ export function createArtboardViewportGestures(deps: ArtboardViewportGestureDeps
           return;
         }
         let hit =
-          currentLayers.length > 30
-            ? buildSpatialIndex(currentLayers).query(box)
-            : layersInMarquee(currentLayers, box);
+          currentLayers.length > 30 ? buildSpatialIndex(currentLayers).query(box) : layersInMarquee(currentLayers, box);
         if (groupMembers) hit = hit.filter((id) => groupMembers.has(id));
         if (ev.shiftKey) {
           const merged = Array.from(new Set([...selectedIdsRef.current, ...hit]));

@@ -47,6 +47,8 @@ const EMPTY_PATH_KEY_SET = new Set();
 
 const _capabilities = new Map();
 const _stagedSessions = new Map();
+const _retainedSessions = new Map();
+const _allStagedSessions = [_stagedSessions, _retainedSessions];
 let _stagedRoot = null;
 let _sweepTimer = null;
 
@@ -57,11 +59,12 @@ function _logCapabilityDenial(reason) {
       outcome: 'rejected',
       reason,
     });
-  } catch {
-  }
+  } catch {}
 }
 
-function _now() { return Date.now(); }
+function _now() {
+  return Date.now();
+}
 
 function _getStagedRoot() {
   if (_stagedRoot) return _stagedRoot;
@@ -76,7 +79,10 @@ function _ensureSweep() {
 }
 
 function _cleanupSweep() {
-  if (_sweepTimer) { clearInterval(_sweepTimer); _sweepTimer = null; }
+  if (_sweepTimer) {
+    clearInterval(_sweepTimer);
+    _sweepTimer = null;
+  }
 }
 
 function _newToken(prefix) {
@@ -138,7 +144,10 @@ function resolveCapability(token, expectedMode, webContentsId) {
   if (typeof token !== 'string' || !token) throw new Error('invalid token');
   const entry = _capabilities.get(token);
   if (!entry) throw new Error('capability not found or expired');
-  if (_isExpired(entry)) { _capabilities.delete(token); throw new Error('capability expired'); }
+  if (_isExpired(entry)) {
+    _capabilities.delete(token);
+    throw new Error('capability expired');
+  }
   if (expectedMode && entry.mode !== expectedMode) {
     _logCapabilityDenial('capability_mode_mismatch');
     throw new Error('capability mode mismatch');
@@ -179,18 +188,19 @@ function sweepExpired() {
   for (const [k, v] of _capabilities) {
     if (v.expiresAt <= now) _capabilities.delete(k);
   }
-  for (const [k, v] of _stagedSessions) {
-    if (v.expiresAt <= now || now - v.createdAt >= MAX_STAGED_AGE_MS) {
-      if (v.readToken) _capabilities.delete(v.readToken);
-      if (v.tmpPath) fsp.rm(v.tmpPath, { force: true }).catch(() => {});
-      _stagedSessions.delete(k);
+  for (const sessions of _allStagedSessions) {
+    for (const [k, v] of sessions) {
+      if (v.expiresAt <= now || now - v.createdAt >= MAX_STAGED_AGE_MS) {
+        if (v.readToken) _capabilities.delete(v.readToken);
+        if (v.tmpPath) fsp.rm(v.tmpPath, { force: true }).catch(() => {});
+        sessions.delete(k);
+      }
     }
   }
   try {
     const { sweepIpcTempDirs } = require('./ipc-temp-cleanup');
     void sweepIpcTempDirs(now);
-  } catch {
-  }
+  } catch {}
 }
 
 async function _ensureStagedRoot() {
@@ -199,16 +209,37 @@ async function _ensureStagedRoot() {
   return root;
 }
 
+function _findStaged(token) {
+  return _stagedSessions.get(token) || _retainedSessions.get(token);
+}
+
+function _deleteStaged(token) {
+  for (const sessions of _allStagedSessions) sessions.delete(token);
+}
+
+function _sumStagedBytes() {
+  let sum = 0;
+  for (const sessions of _allStagedSessions) {
+    for (const session of sessions.values()) sum += session.bytesWritten;
+  }
+  return sum;
+}
+
 function createStagedSession({ name, size, webContentsId }) {
   if (typeof name !== 'string' || !name.trim()) throw new Error('name required');
-  const safeName = path.basename(name).replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').slice(0, 120) || 'upload';
+  const safeName =
+    path
+      .basename(name)
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+      .slice(0, 120) || 'upload';
   if (typeof size === 'number' && size > MAX_STAGED_FILE_BYTES) throw new Error('staged file too large');
-  const perWindow = webContentsId == null ? 0
-    : [..._stagedSessions.values()].filter((s) => s.webContentsId === webContentsId).length;
+  const perWindow =
+    webContentsId == null ? 0 : [..._stagedSessions.values()].filter((s) => s.webContentsId === webContentsId).length;
   if (perWindow >= MAX_STAGED_SESSIONS_PER_WINDOW) throw new Error('staged session limit reached for this window');
   if (_stagedSessions.size >= MAX_STAGED_SESSIONS_TOTAL) throw new Error('staged session limit reached');
-  const stagedBytes = [..._stagedSessions.values()].reduce((sum, s) => sum + s.bytesWritten, 0);
-  if (stagedBytes >= MAX_STAGED_TOTAL_BYTES) throw new Error('staged upload budget exhausted; wait for pending uploads');
+  const stagedBytes = _sumStagedBytes();
+  if (stagedBytes >= MAX_STAGED_TOTAL_BYTES)
+    throw new Error('staged upload budget exhausted; wait for pending uploads');
   const token = _newToken('antares-staged');
   const root = _getStagedRoot();
   const tmpPath = path.join(root, `${token}_${safeName}`);
@@ -221,7 +252,6 @@ function createStagedSession({ name, size, webContentsId }) {
     webContentsId: webContentsId ?? null,
     createdAt: _now(),
     expiresAt: _now() + TOKEN_TTL_MS,
-    completed: false,
     completing: false,
     pendingWrite: Promise.resolve(),
   };
@@ -243,43 +273,57 @@ function _chunkToBuffer(chunk) {
 }
 
 async function appendStagedChunk(token, chunk, webContentsId) {
-  const session = _stagedSessions.get(token);
+  const session = _findStaged(token);
   if (!session) throw new Error('staged session not found');
-  if (_isExpired(session)) { _stagedSessions.delete(token); throw new Error('staged session expired'); }
-  if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId) throw new Error('staged session window mismatch');
-  if (session.completed || session.completing) throw new Error('staged session already completed');
+  if (_isExpired(session)) {
+    _deleteStaged(token);
+    throw new Error('staged session expired');
+  }
+  if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId)
+    throw new Error('staged session window mismatch');
+  if (_retainedSessions.has(token) || session.completing) throw new Error('staged session already completed');
   if (_now() - session.createdAt >= MAX_STAGED_AGE_MS) {
-    _stagedSessions.delete(token);
+    _deleteStaged(token);
     throw new Error('staged session lifetime exceeded');
   }
   const buf = _chunkToBuffer(chunk);
   if (buf.length === 0) throw new Error('empty chunk');
   if (buf.length > MAX_CHUNK_BYTES) throw new Error('chunk too large');
-  const stagedBytes = [..._stagedSessions.values()].reduce((sum, s) => sum + s.bytesWritten, 0);
+  const stagedBytes = _sumStagedBytes();
   if (stagedBytes + buf.length > MAX_STAGED_TOTAL_BYTES) throw new Error('staged uploads exceed global budget');
-  const write = session.pendingWrite.catch(() => {}).then(async () => {
-    if (session.bytesWritten + buf.length > MAX_STAGED_FILE_BYTES) throw new Error('staged file exceeds 1 GiB');
-    await _ensureStagedRoot();
-    await fsp.appendFile(session.tmpPath, buf);
-    session.bytesWritten += buf.length;
-    session.expiresAt = _now() + TOKEN_TTL_MS;
-    return { bytesWritten: session.bytesWritten };
-  });
+  const write = session.pendingWrite
+    .catch(() => {})
+    .then(async () => {
+      if (session.bytesWritten + buf.length > MAX_STAGED_FILE_BYTES) throw new Error('staged file exceeds 1 GiB');
+      await _ensureStagedRoot();
+      await fsp.appendFile(session.tmpPath, buf);
+      session.bytesWritten += buf.length;
+      session.expiresAt = _now() + TOKEN_TTL_MS;
+      return { bytesWritten: session.bytesWritten };
+    });
   session.pendingWrite = write;
   return write;
 }
 
 async function completeStagedSession(token, webContentsId) {
-  const session = _stagedSessions.get(token);
+  const session = _findStaged(token);
   if (!session) throw new Error('staged session not found');
-  if (_isExpired(session)) { _stagedSessions.delete(token); throw new Error('staged session expired'); }
-  if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId) throw new Error('staged session window mismatch');
-  if (session.completed || session.completing) throw new Error('already completed');
+  if (_isExpired(session)) {
+    _deleteStaged(token);
+    throw new Error('staged session expired');
+  }
+  if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId)
+    throw new Error('staged session window mismatch');
+  if (_retainedSessions.has(token) || session.completing) throw new Error('already completed');
   session.completing = true;
   try {
     await session.pendingWrite;
     let stat;
-    try { stat = await fsp.stat(session.tmpPath); } catch { throw new Error('staged file missing'); }
+    try {
+      stat = await fsp.stat(session.tmpPath);
+    } catch {
+      throw new Error('staged file missing');
+    }
     if (!stat.isFile()) throw new Error('not a file');
     if (stat.size > MAX_STAGED_FILE_BYTES) throw new Error('staged file too large');
     const cap = createFileCapability({
@@ -291,8 +335,9 @@ async function completeStagedSession(token, webContentsId) {
     });
     cap.staged = true;
     cap.stagedSessionToken = token;
-    session.completed = true;
     session.readToken = cap.token;
+    _stagedSessions.delete(token);
+    _retainedSessions.set(token, session);
     return cap;
   } finally {
     session.completing = false;
@@ -300,21 +345,24 @@ async function completeStagedSession(token, webContentsId) {
 }
 
 async function abortStagedSession(token, webContentsId = null) {
-  const session = _stagedSessions.get(token);
+  const session = _findStaged(token);
   if (!session) return;
-  if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId) throw new Error('staged session window mismatch');
-  _stagedSessions.delete(token);
+  if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId)
+    throw new Error('staged session window mismatch');
+  _deleteStaged(token);
   if (session.readToken) _capabilities.delete(session.readToken);
   if (session.tmpPath) await fsp.rm(session.tmpPath, { force: true }).catch(() => {});
 }
 
 async function cleanupAllStaged() {
   _cleanupSweep();
-  for (const v of _stagedSessions.values()) {
-    if (v.tmpPath) await fsp.rm(v.tmpPath, { force: true }).catch(() => {});
-    if (v.readToken) _capabilities.delete(v.readToken);
+  for (const sessions of _allStagedSessions) {
+    for (const v of sessions.values()) {
+      if (v.tmpPath) await fsp.rm(v.tmpPath, { force: true }).catch(() => {});
+      if (v.readToken) _capabilities.delete(v.readToken);
+    }
+    sessions.clear();
   }
-  _stagedSessions.clear();
   if (_stagedRoot) await fsp.rm(_stagedRoot, { recursive: true, force: true }).catch(() => {});
   for (const [k, v] of _capabilities) {
     if (v.staged && v.path && v.path.includes(STAGED_DIR_PREFIX)) {
@@ -326,12 +374,12 @@ async function cleanupAllStaged() {
 
 function _assertNoRawAbsolutePaths(params, options = {}) {
   const allowRegisteredReadPaths = options.allowRegisteredReadPaths === true;
-  const allowRawAbsolutePathKeys = options.allowRawAbsolutePathKeys instanceof Set
-    ? options.allowRawAbsolutePathKeys
-    : EMPTY_PATH_KEY_SET;
-  const writePathKeys = options.writePathKeys instanceof Set
-    ? new Set([...options.writePathKeys].map((k) => String(k).toLowerCase()))
-    : EMPTY_PATH_KEY_SET;
+  const allowRawAbsolutePathKeys =
+    options.allowRawAbsolutePathKeys instanceof Set ? options.allowRawAbsolutePathKeys : EMPTY_PATH_KEY_SET;
+  const writePathKeys =
+    options.writePathKeys instanceof Set
+      ? new Set([...options.writePathKeys].map((k) => String(k).toLowerCase()))
+      : EMPTY_PATH_KEY_SET;
 
   const visit = (value, keyPath, inheritedKey = '') => {
     if (typeof value === 'string') {
@@ -348,17 +396,18 @@ function _assertNoRawAbsolutePaths(params, options = {}) {
       }
       const last = keyPath[keyPath.length - 1];
       const inheritedLower = String(inheritedKey).toLowerCase();
-      const key = PATH_CONTAINER_KEYS.has(inheritedLower)
-        || /^\d+$/.test(String(last || ''))
-        ? inheritedKey
-        : (last || inheritedKey);
+      const key =
+        PATH_CONTAINER_KEYS.has(inheritedLower) || /^\d+$/.test(String(last || ''))
+          ? inheritedKey
+          : last || inheritedKey;
       const normalizedKey = String(key).toLowerCase();
       const isWriteKey = WRITE_PATH_KEYS.has(normalizedKey) || writePathKeys.has(normalizedKey);
-      const isPathKey = SUSPICIOUS_PATH_KEYS.has(normalizedKey)
-        || normalizedKey.includes('path')
-        || normalizedKey.includes('folder')
-        || PATH_CONTAINER_KEYS.has(normalizedKey)
-        || isWriteKey;
+      const isPathKey =
+        SUSPICIOUS_PATH_KEYS.has(normalizedKey) ||
+        normalizedKey.includes('path') ||
+        normalizedKey.includes('folder') ||
+        PATH_CONTAINER_KEYS.has(normalizedKey) ||
+        isWriteKey;
       if (!isPathKey) return;
       if (value.includes('\0')) throw new Error(`invalid path param: ${keyPath.join('.')}`);
 
@@ -369,15 +418,13 @@ function _assertNoRawAbsolutePaths(params, options = {}) {
           try {
             assertAllowedReadPath(value);
             isRegisteredReadPath = true;
-          } catch {
-          }
+          } catch {}
         }
         if (!isExplicitlyAllowed && !isRegisteredReadPath) {
           throw new Error(`raw absolute paths not allowed for ${keyPath.join('.')}; use file token`);
         }
       }
       if (/^[a-zA-Z]:/.test(value) && !/^[a-zA-Z]:[\\/]/.test(value)) {
-        // «C:foo» es relativa a la unidad actual para path.isAbsolute: esquivaba el gate.
         throw new Error(`drive-relative paths not allowed for ${keyPath.join('.')}; use a file token`);
       }
       if (value.includes('..') && (value.includes('/') || value.includes('\\'))) {
@@ -388,20 +435,22 @@ function _assertNoRawAbsolutePaths(params, options = {}) {
     }
     if (Array.isArray(value)) {
       value.forEach((child, index) => {
-        const childInherited = PATH_CONTAINER_KEYS.has(String(inheritedKey).toLowerCase())
-          && (typeof child === 'string' || Array.isArray(child))
-          ? inheritedKey
-          : '';
+        const childInherited =
+          PATH_CONTAINER_KEYS.has(String(inheritedKey).toLowerCase()) &&
+          (typeof child === 'string' || Array.isArray(child))
+            ? inheritedKey
+            : '';
         visit(child, [...keyPath, String(index)], childInherited);
       });
       return;
     }
     if (!value || typeof value !== 'object') return;
     for (const [key, child] of Object.entries(value)) {
-      const nextInherited = PATH_CONTAINER_KEYS.has(String(inheritedKey).toLowerCase())
-        && (typeof child === 'string' || Array.isArray(child))
-        ? inheritedKey
-        : key;
+      const nextInherited =
+        PATH_CONTAINER_KEYS.has(String(inheritedKey).toLowerCase()) &&
+        (typeof child === 'string' || Array.isArray(child))
+          ? inheritedKey
+          : key;
       visit(child, [...keyPath, key], nextInherited);
     }
   };

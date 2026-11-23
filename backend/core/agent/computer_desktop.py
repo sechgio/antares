@@ -255,8 +255,6 @@ def _elements(window: JsonObject) -> list[JsonObject]:
         return []
     root = raw["root"]
     scale = _scale()
-    # UI Automation devuelve coordenadas lógicas cuando PowerShell no declara DPI;
-    # el rectángulo de la ventana en ambos sistemas da la conversión a la captura.
     ratio = window["width"] * scale / max(1, int(root.get("w") or 0)) if root.get("w") else 1.0
     origin_x, origin_y = int(root.get("x") or 0), int(root.get("y") or 0)
     elements: list[JsonObject] = []

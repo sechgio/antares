@@ -5,8 +5,6 @@ import { api } from '../../api';
 import PreviewPanelView from './PreviewPanelView';
 import Toast from '../ui/Toast';
 
-// Imports dinámicos que otro archivo deja en vuelo pueden ejecutar la fábrica async
-// más de una vez; todas deben devolver el mismo `api` que el test configura.
 const mockedApi = vi.hoisted(() => ({ current: null as unknown }));
 
 vi.mock('../../api', async (importOriginal) => {
@@ -97,9 +95,6 @@ describe('PreviewPanelView column mapping', () => {
   });
 
   afterEach(async () => {
-    // Vacia el parseo en vuelo del archivo anterior antes del mockReset
-    // del test siguiente: una continuación tardía se comería el
-    // mockResolvedValueOnce y el load real devolvería undefined.
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });

@@ -302,7 +302,6 @@ def test_http_secret_headers_not_sent_on_redirect(mcp_root):
 def test_agent_tool_name_roundtrip(mcp_root):
     mcp_servers.add_server("github", "stdio", command="x")
     name = mcp_servers.agent_tool_name("github", "repos.get")
-    # el punto no es válido como function name de OpenAI/Anthropic
     assert name.startswith(mcp_servers.agent_tool_name("github", "") + "repos-get-")
     assert mcp_servers.parse_agent_tool(name) == ("github", name[len(mcp_servers.agent_tool_name("github", "")):])
     assert mcp_servers.parse_agent_tool("flows_list") is None

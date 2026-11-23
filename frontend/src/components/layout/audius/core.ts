@@ -58,8 +58,6 @@ async function resolveHost(signal?: AbortSignal): Promise<string> {
       try {
         const payload = (await fetchJson(`https://api.audius.co`, undefined)) as { data?: unknown };
         const first = Array.isArray(payload?.data) ? payload.data[0] : null;
-        // `httpsUrl` devuelve `href`, que trae `/` final: concatenarlo con `/v1/...`
-        // produce `//v1/...` y Audius responde 404 en /v1/tracks/search.
         const resolved = typeof first === 'string' ? httpsUrl(first) : null;
         resolvedHost = resolved ? resolved.replace(/\/$/, '') : HOST_FALLBACK;
         return resolvedHost;
@@ -103,9 +101,7 @@ export function streamUrl(track: AudiusTrack): string {
 export async function fetchTrending(signal?: AbortSignal): Promise<AudiusTrack[]> {
   if (trendingCache && Date.now() - trendingCache.at < TRENDING_TTL_MS) return trendingCache.tracks;
   const host = await resolveHost(signal);
-  const tracks = toTracks(
-    await fetchJson(`${host}/v1/tracks/trending?app_name=${APP_NAME}&limit=20`, signal),
-  );
+  const tracks = toTracks(await fetchJson(`${host}/v1/tracks/trending?app_name=${APP_NAME}&limit=20`, signal));
   trendingCache = { at: Date.now(), tracks };
   return tracks;
 }

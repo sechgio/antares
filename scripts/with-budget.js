@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// Runs a command and fails the step when it exceeds a hard wall-clock budget.
-// Usage: node scripts/with-budget.js <seconds> -- <command> [args...]
 
 const { spawnSync } = require('node:child_process');
 

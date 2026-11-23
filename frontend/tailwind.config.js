@@ -1,11 +1,3 @@
-// Un color declarado como `var(--x)` en texto plano no admite el modificador de
-// alfa de Tailwind: `bg-mc-ink/50` no genera ninguna regla y la utilidad queda
-// muerta en silencio. Devolver una función con `color-mix` es el camino que
-// soporta `withAlphaValue` y además respeta el valor del token en el tema claro
-// y en el oscuro.
-// Sin modificador, Tailwind pasa `var(--tw-*-opacity, 1)` como `opacityValue`:
-// no es un número, así que se devuelve el token intacto para no cambiar el
-// comportamiento de las ~2800 clases de color que ya funcionan.
 const alpha =
   (cssVar) =>
   ({ opacityValue }) => {
@@ -15,10 +7,7 @@ const alpha =
   };
 
 export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       colors: {
@@ -72,40 +61,40 @@ export default {
         mark: ['Sofia Sans', 'Inter', 'Arial', 'sans-serif'],
       },
       borderRadius: {
-        'pill': '999px',
-        'btn': '12px',
-        'card': '16px',
-        'chip': '24px',
-        'sm': '6px',
+        pill: '999px',
+        btn: '12px',
+        card: '16px',
+        chip: '24px',
+        sm: '6px',
       },
       boxShadow: {
-        'nav': 'color-mix(in srgb, var(--bg-base) 32%, transparent) 0px 4px 24px 0px',
-        'card': 'color-mix(in srgb, var(--bg-base) 40%, transparent) 0px 24px 48px 0px',
-        'elevated': 'color-mix(in srgb, var(--bg-base) 62%, transparent) 0px 70px 110px 0px',
-        'glow': '0 0 20px var(--accent-primary-glow)',
+        nav: 'color-mix(in srgb, var(--bg-base) 32%, transparent) 0px 4px 24px 0px',
+        card: 'color-mix(in srgb, var(--bg-base) 40%, transparent) 0px 24px 48px 0px',
+        elevated: 'color-mix(in srgb, var(--bg-base) 62%, transparent) 0px 70px 110px 0px',
+        glow: '0 0 20px var(--accent-primary-glow)',
         'glow-sm': '0 0 8px var(--accent-primary-glow)',
         'glow-md': '0 0 24px var(--accent-primary-glow)',
-        'glass': '0 8px 32px color-mix(in srgb, var(--bg-base) 48%, transparent)',
+        glass: '0 8px 32px color-mix(in srgb, var(--bg-base) 48%, transparent)',
       },
       letterSpacing: {
-        'display': '-0.02em',
-        'tight': '-0.03em',
-        'eyebrow': '0.04em',
-        'widest': '0.08em',
+        display: '-0.02em',
+        tight: '-0.03em',
+        eyebrow: '0.04em',
+        widest: '0.08em',
       },
       lineHeight: {
-        'display': '1',
-        'tight': '1.2',
-        'body': '1.4',
+        display: '1',
+        tight: '1.2',
+        body: '1.4',
       },
       transitionTimingFunction: {
-        'spring': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
-        'smooth': 'cubic-bezier(0.4, 0, 0.2, 1)',
-        'out': 'cubic-bezier(0.23, 1, 0.32, 1)',
-        'inout': 'cubic-bezier(0.77, 0, 0.175, 1)',
-        'drawer': 'cubic-bezier(0.32, 0.72, 0, 1)',
-      }
+        spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+        smooth: 'cubic-bezier(0.4, 0, 0.2, 1)',
+        out: 'cubic-bezier(0.23, 1, 0.32, 1)',
+        inout: 'cubic-bezier(0.77, 0, 0.175, 1)',
+        drawer: 'cubic-bezier(0.32, 0.72, 0, 1)',
+      },
     },
   },
   plugins: [],
-}
+};

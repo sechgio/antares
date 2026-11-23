@@ -34,10 +34,15 @@ const cases = {
   },
   'stepsOf empareja llamadas con resultados y numera pasos': () => {
     const messages = [
-      { role: 'assistant', content: '', ts: NOW, tool_calls: [
-        { id: 'c1', name: 'fs_list', status: 'done' },
-        { id: 'c2', name: 'fs_read' },
-      ] },
+      {
+        role: 'assistant',
+        content: '',
+        ts: NOW,
+        tool_calls: [
+          { id: 'c1', name: 'fs_list', status: 'done' },
+          { id: 'c2', name: 'fs_read' },
+        ],
+      },
       { role: 'tool_result', tool_use_id: 'c1', content: 'listado', ts: NOW + 1_200 },
     ];
     assert.deepEqual(stepsOf(messages), [
@@ -48,7 +53,12 @@ const cases = {
   'usageOf normaliza la contabilidad y tolera ausencias': () => {
     assert.equal(usageOf(null), null);
     assert.deepEqual(usageOf({ input: '12', output: 5, cost: '0.5' }), {
-      input: 12, output: 5, cached: 0, context: 0, cost: 0.5, compactions: 0,
+      input: 12,
+      output: 5,
+      cached: 0,
+      context: 0,
+      cost: 0.5,
+      compactions: 0,
     });
   },
   'traceOf marca éxito solo cuando el turno completó con respuesta': () => {
@@ -66,7 +76,11 @@ const cases = {
   },
   'traceOf recorta la respuesta a un máximo razonable': () => {
     const trace = traceOf(TASKS[0], {
-      startedAt: NOW, elapsedMs: 1, status: 'completed', usage: null, lastError: null,
+      startedAt: NOW,
+      elapsedMs: 1,
+      status: 'completed',
+      usage: null,
+      lastError: null,
       messages: [assistantMsg('x'.repeat(5_000), NOW + 1_000)],
     });
     assert(trace.answer.length <= 4_000 && trace.answer.length > 3_500, 'la respuesta de la traza debe acotarse');
@@ -80,7 +94,6 @@ const cases = {
     assert.throws(() => parseArgs(['--no-existe']), /--no-existe/);
   },
   'sin proveedor ni env, la evaluación no arranca ni adivina el proveedor': () => {
-    // Era un default mágico a «openai» en silencio; ahora es un error antes de arrancar el backend.
     const { spawnSync } = require('node:child_process');
     const result = spawnSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'agent-eval.js')], {
       encoding: 'utf8',
@@ -95,8 +108,13 @@ const cases = {
 async function main() {
   let failed = false;
   for (const [name, run] of Object.entries(cases)) {
-    try { await run(); console.log(`[PASS] ${name}`); }
-    catch (error) { failed = true; console.error(`[FAIL] ${name}`, error); }
+    try {
+      await run();
+      console.log(`[PASS] ${name}`);
+    } catch (error) {
+      failed = true;
+      console.error(`[FAIL] ${name}`, error);
+    }
   }
   if (failed) process.exitCode = 1;
 }

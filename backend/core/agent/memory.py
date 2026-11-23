@@ -102,7 +102,6 @@ def _clean(value: object, label: str, limit: int) -> str:
     return text
 
 
-# Deben coincidir con las cabeceras que escribe electron/agent-shared.js.
 _GENUINE_MARKERS = ("[Contexto de Antares]", "[Comprobación de Antares]")
 
 
@@ -394,8 +393,6 @@ class MemoryStore:
                 self._profiles[session_id] = profile_id
             else:
                 self._profiles.pop(session_id, None)
-            # «shared-read» (por defecto) lee lo propio y lo global; «own» solo lo
-            # propio y «none» nada. Solo se guarda el alcance distinto del defecto.
             if profile_id and memory_scope in ("own", "none"):
                 self._scopes[session_id] = memory_scope
             else:
