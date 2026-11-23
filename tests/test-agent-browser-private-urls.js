@@ -103,9 +103,11 @@ function throwsPrivate(url) {
 
     const src = fs.readFileSync(path.resolve(__dirname, '..', 'electron', 'agent-browser.js'), 'utf8');
     assert(
-      src.includes(
-        "ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*', 'file:///*'] }",
-      ),
+      src
+        .replace(/\s+/g, '')
+        .includes(
+          "ses.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*','ws://*/*','wss://*/*','file:///*']}",
+        ),
       'la sesión de navegación verifica la resolución de cada petición, incluidas redirecciones y subrecursos',
     );
 

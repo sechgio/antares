@@ -34,7 +34,9 @@ it('separa mirada y parpadeo con un desfase estable por semilla', () => {
   const { container, rerender } = render(<AgentAvatar seed="s1" />);
   const delay = container.querySelector('svg')?.style.getPropertyValue('--agent-avatar-delay');
   expect(delay).toMatch(/^-\d+(\.\d)?s$/);
-  expect(container.querySelector('.agent-avatar-eyes .agent-avatar-look .agent-avatar-blink')?.querySelectorAll('rect')).toHaveLength(2);
+  expect(
+    container.querySelector('.agent-avatar-eyes .agent-avatar-look .agent-avatar-blink')?.querySelectorAll('rect'),
+  ).toHaveLength(2);
   rerender(<AgentAvatar seed="s1" />);
   expect(container.querySelector('svg')?.style.getPropertyValue('--agent-avatar-delay')).toBe(delay);
 });
@@ -47,5 +49,5 @@ it('desactiva con reducir movimiento las animaciones de los avatares de la barra
   expect(sidebar).toContain('.agent-sidebar .agent-avatar.agent-avatar-active,');
   expect(sidebar).toContain('.agent-sidebar .group:hover .agent-avatar,');
   expect(sidebar).toContain('.agent-sidebar .agent-avatar-look,');
-  expect(sidebar).toContain('.agent-sidebar .agent-avatar-blink { animation: none;');
+  expect(sidebar.replace(/\s+/g, ' ')).toContain('.agent-sidebar .agent-avatar-blink { animation: none;');
 });
