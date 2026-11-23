@@ -14,10 +14,11 @@ import { FileCard } from './ContextChips';
 import { FilePreviewContext } from './filePreviewContext';
 import MessageMarkdown from './MessageMarkdown';
 import PanelRenderer, { type PanelRespond } from './PanelRenderer';
-import Reasoning from './Reasoning';
+import Reasoning, { ThinkingStatus } from './Reasoning';
 import SubagentTrace from './SubagentTrace';
 import { channelLabel } from './channels';
 import { METHOD_LABELS, mcpServer, methodLabel } from './methodLabels';
+import { activityText, thinkingPhrase, workingPhrase } from './statusPhrase';
 
 export type TranscriptView = 'normal' | 'thinking' | 'verbose';
 
@@ -485,17 +486,18 @@ export function stepsSummary(calls: AgentToolCall[]): string {
 function liveActivity(entries: ActivityEntry[]): string {
   const calls = entries.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []));
   const running = [...calls].reverse().find((call) => call.status === 'running');
-  if (running) {
-    if (running.name === 'shell_run' && typeof running.params.command === 'string') return `Ejecutando ${running.params.command}`;
-    return METHOD_LABELS[running.name] ?? running.name;
-  }
+  if (running) return activityText(running.name);
   if (calls.some((call) => call.status === 'pending')) return 'Esperando tu aprobación';
-  if (entries.some((entry) => entry.kind === 'reasoning' && entry.streaming)) return 'Pensando…';
-  return 'Trabajando…';
+  const thought = [...entries].reverse().find((entry) => entry.kind === 'reasoning' && entry.streaming);
+  if (thought?.kind === 'reasoning') return thinkingPhrase(thought.key);
+  return workingPhrase('working');
 }
 
 function ActivityItem({ entry, onUndo, view }: { entry: StepEntry; onUndo?: (callId: string) => Promise<void>; view: TranscriptView }) {
-  if (entry.kind === 'reasoning') return <Reasoning text={entry.text} streaming={entry.streaming} ms={entry.ms} defaultOpen={view !== 'normal'} />;
+  if (entry.kind === 'reasoning') {
+    if (view === 'normal') return null;
+    return <Reasoning text={entry.text} streaming={entry.streaming} ms={entry.ms} defaultOpen />;
+  }
   if (entry.kind === 'note') {
     return (
       <div className="agent-activity-note py-1 text-[14px] leading-[23px] text-[var(--text-secondary)]">
@@ -728,7 +730,9 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
         {answer && !answer.partial && <CopyButton text={answer.content} />}
       </div>
       {thought
-        ? <Reasoning text={thought.text} streaming={thought.streaming} ms={thought.ms} defaultOpen={view !== 'normal'} />
+        ? (view === 'normal'
+          ? (thought.streaming ? <ThinkingStatus seed={thought.key} /> : null)
+          : <Reasoning text={thought.text} streaming={thought.streaming} ms={thought.ms} defaultOpen />)
         : steps.length > 0 && <Activity entries={steps} working={working} answering={!!answer} duration={duration} onUndo={onUndo} view={view} />}
       {sessionId && onPanelRespond && panelEntries.map((panel) => <PanelRenderer key={panel.id} panel={panel} sessionId={sessionId} onRespond={onPanelRespond} />)}
       {answer && (

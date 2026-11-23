@@ -201,6 +201,10 @@ function run() {
     'The pre-push check formats and lints changed files and typechecks with bun check under a 9s cap',
   );
   assert(
+    !prePushCheck.includes("['scripts/check-format.js', ...files]"),
+    'pre-push does not pass modified files to oxfmt, because oxfmt checks the whole file',
+  );
+  assert(
     frontendPackageJson.scripts.build.startsWith('bun check && ') &&
       frontendPackageJson.scripts.build.includes('node scripts/canvas-appear-budget.mjs') &&
       frontendPackageJson.scripts.build.includes('node scripts/shell-preload-budget.mjs'),
@@ -489,6 +493,11 @@ function run() {
       runner.includes('ANTARES_NODE_TEST_CONCURRENCY') &&
       runner.includes('await runNodeTestsParallel(ELECTRON_TESTS)'),
     'The electron suite runs as a bounded, overridable pool of parallel Node workers',
+  );
+  assert(
+    runner.includes('function ensureElectronBinary()') &&
+      runner.indexOf('ensureElectronBinary();') < runner.indexOf('await runNodeTestsParallel(ELECTRON_TESTS)'),
+    'The electron suite installs the binary once before the parallel pool',
   );
   assert(runner.includes('runNodeTests(CONTRACT_TESTS)'), 'The contract suite stays serial');
   assert(runner.includes('node tests failed:'), 'The Node test pool fails closed naming every failed test file');

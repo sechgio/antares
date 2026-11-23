@@ -59,7 +59,10 @@ const files = changedFiles();
 const jsFiles = files.filter((file) => JS_EXT.has(path.extname(file)) && LINT_DIRS.test(file));
 
 console.log(`[pre-push] checking ${files.length} changed file(s)`);
-if (files.length > 0) run('format', process.execPath, ['scripts/check-format.js', ...files]);
+// oxfmt valida el archivo completo. Pasarle los modificados obliga a reformatear
+// líneas que ya estaban en main. Sin argumentos, check-format.js solo revisa
+// archivos nuevos, igual que CI.
+run('format', process.execPath, ['scripts/check-format.js']);
 if (jsFiles.length > 0) run('oxlint', bun(), ['x', 'oxlint', '-c', '.oxlintrc.json', ...jsFiles]);
 run('typecheck (bun check)', bun(), ['check'], path.join(ROOT, 'frontend'));
 
