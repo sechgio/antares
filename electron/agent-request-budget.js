@@ -20,7 +20,10 @@ function requestBudget(contextWindow, maxTokens) {
 function textOf(content) {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
-  return content.filter((block) => block && block.type === 'text').map((block) => block.text || '').join('\n');
+  return content
+    .filter((block) => block && block.type === 'text')
+    .map((block) => block.text || '')
+    .join('\n');
 }
 
 function contentChars(content) {
@@ -36,7 +39,9 @@ function contentChars(content) {
 }
 
 function excerpt(text, max) {
-  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  const clean = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return clean.length <= max ? clean : `${clean.slice(0, max)}…`;
 }
 
@@ -107,7 +112,12 @@ function pruneOldToolResults(messages, cut) {
     changed = true;
     return {
       ...message,
-      content: [{ type: 'text', text: `[Resultado de ${message.toolName || 'herramienta'} omitido para ahorrar contexto: ${chars} caracteres]` }],
+      content: [
+        {
+          type: 'text',
+          text: `[Resultado de ${message.toolName || 'herramienta'} omitido para ahorrar contexto: ${chars} caracteres]`,
+        },
+      ],
     };
   });
   return changed ? next : null;
@@ -118,9 +128,14 @@ function trimOldMessages(messages, cutoff) {
   let changed = false;
   const next = messages.map((message, index) => {
     if (index >= cutoff || message.role === 'system') return message;
-    const trimmed = message.role === 'user' ? trimUser(message, OLD_TEXT_CHARS)
-      : message.role === 'assistant' ? trimAssistant(message, OLD_TEXT_CHARS)
-        : message.role === 'toolResult' ? trimToolResult(message, OLD_TEXT_CHARS) : null;
+    const trimmed =
+      message.role === 'user'
+        ? trimUser(message, OLD_TEXT_CHARS)
+        : message.role === 'assistant'
+          ? trimAssistant(message, OLD_TEXT_CHARS)
+          : message.role === 'toolResult'
+            ? trimToolResult(message, OLD_TEXT_CHARS)
+            : null;
     if (!trimmed) return message;
     changed = true;
     return trimmed;
@@ -201,9 +216,14 @@ function hardTrim(messages) {
   let changed = false;
   const next = messages.map((message, index) => {
     if (index >= cutoff || message.role === 'system') return message;
-    const trimmed = message.role === 'toolResult' ? trimToolResult(message, HARD_TEXT_CHARS)
-      : message.role === 'user' ? trimUser(message, HARD_TEXT_CHARS)
-        : message.role === 'assistant' ? trimAssistant(message, HARD_TEXT_CHARS) : null;
+    const trimmed =
+      message.role === 'toolResult'
+        ? trimToolResult(message, HARD_TEXT_CHARS)
+        : message.role === 'user'
+          ? trimUser(message, HARD_TEXT_CHARS)
+          : message.role === 'assistant'
+            ? trimAssistant(message, HARD_TEXT_CHARS)
+            : null;
     if (!trimmed) return message;
     changed = true;
     return trimmed;

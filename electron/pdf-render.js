@@ -7,17 +7,9 @@ const { pathToFileURL } = require('url');
 const { sanitizeHtmlForPdf } = require('../shared/html-sanitizer');
 const { raceTimeout, sleep } = require('./async-utils');
 const { isAllowedReadPath } = require('./path-allowlist');
-const {
-  resolveCapability,
-  createFileCapability,
-  cleanupStagedCapability,
-} = require('./file-capabilities');
+const { resolveCapability, createFileCapability, cleanupStagedCapability } = require('./file-capabilities');
 const { embedCanvasManifest } = require('./canvas-pdf-manifest');
-const {
-  _sanitizeFilename,
-  _sanitizePdfOutputPath,
-  _assertSafePdfOutputPath,
-} = require('./write-roots');
+const { _sanitizeFilename, _sanitizePdfOutputPath, _assertSafePdfOutputPath } = require('./write-roots');
 
 function _localImageEntries(rawPaths, webContentsId = null) {
   if (!rawPaths || typeof rawPaths !== 'object' || Array.isArray(rawPaths)) return [];
@@ -45,8 +37,14 @@ function _localImageEntries(rawPaths, webContentsId = null) {
 }
 
 const IMAGE_MIME_BY_EXT = new Map([
-  ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.png', 'image/png'], ['.webp', 'image/webp'],
-  ['.bmp', 'image/bmp'], ['.gif', 'image/gif'], ['.tif', 'image/tiff'], ['.tiff', 'image/tiff'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.png', 'image/png'],
+  ['.webp', 'image/webp'],
+  ['.bmp', 'image/bmp'],
+  ['.gif', 'image/gif'],
+  ['.tif', 'image/tiff'],
+  ['.tiff', 'image/tiff'],
   ['.ico', 'image/x-icon'],
 ]);
 const MAX_LOCAL_IMAGE_DATA_BYTES = 20 * 1024 * 1024;
@@ -66,9 +64,7 @@ async function _localImageDataUrl(entry) {
 async function _cleanupStagedImageCapabilities(rawPaths, webContentsId = null) {
   if (!rawPaths || typeof rawPaths !== 'object' || Array.isArray(rawPaths)) return;
   const tokens = new Set(
-    Object.values(rawPaths).filter(
-      (value) => typeof value === 'string' && value.startsWith('antares-read_'),
-    ),
+    Object.values(rawPaths).filter((value) => typeof value === 'string' && value.startsWith('antares-read_')),
   );
   await Promise.all([...tokens].map((token) => cleanupStagedCapability(token, webContentsId)));
 }
@@ -95,10 +91,7 @@ function _nextPdfSlot() {
 }
 
 function _reserveQueuedPdfRender(htmlBytes) {
-  if (
-    queuedPdfRenderCount >= MAX_QUEUED_PDF_RENDERS
-    || queuedPdfHtmlBytes + htmlBytes > MAX_QUEUED_PDF_HTML_BYTES
-  ) {
+  if (queuedPdfRenderCount >= MAX_QUEUED_PDF_RENDERS || queuedPdfHtmlBytes + htmlBytes > MAX_QUEUED_PDF_HTML_BYTES) {
     return null;
   }
 
@@ -143,7 +136,10 @@ function renderHtmlToPdf(params = {}, electronModules = {}, webContentsId = null
     }
   };
   const result = slot.queue.then(render, render);
-  slot.queue = result.then(() => undefined, () => undefined);
+  slot.queue = result.then(
+    () => undefined,
+    () => undefined,
+  );
   return result;
 }
 
@@ -175,19 +171,22 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
   }
   const sanitizedHtml = sanitizeHtmlForPdf(html);
   const dataUrlByToken = new Map();
-  await Promise.all(localImages.map(async (entry) => {
-    try {
-      dataUrlByToken.set(entry.token, await _localImageDataUrl(entry));
-    } catch {
-      dataUrlByToken.set(entry.token, '');
-    }
-  }));
-  const htmlWithLocalImages = localImages.length === 0
-    ? sanitizedHtml
-    : sanitizedHtml.replace(
-        new RegExp(localImages.map(entry => entry.token).join('|'), 'g'),
-        match => dataUrlByToken.get(match) || '',
-      );
+  await Promise.all(
+    localImages.map(async (entry) => {
+      try {
+        dataUrlByToken.set(entry.token, await _localImageDataUrl(entry));
+      } catch {
+        dataUrlByToken.set(entry.token, '');
+      }
+    }),
+  );
+  const htmlWithLocalImages =
+    localImages.length === 0
+      ? sanitizedHtml
+      : sanitizedHtml.replace(
+          new RegExp(localImages.map((entry) => entry.token).join('|'), 'g'),
+          (match) => dataUrlByToken.get(match) || '',
+        );
 
   const { BrowserWindow, session } = electronModules;
   if (!BrowserWindow) {
@@ -239,18 +238,17 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
         if (targetSession && targetSession.webRequest) {
           targetSession.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, null);
         }
-      } catch {
-      }
+      } catch {}
     };
 
     if (pdfWindow.webContents.session && pdfWindow.webContents.session.webRequest) {
       const filter = (details, callback) => {
         const url = details.url || '';
         if (
-          url.startsWith('data:')
-          || allowedFileUrls.has(url)
-          || url.startsWith('https://fonts.googleapis.com/')
-          || url.startsWith('https://fonts.gstatic.com/')
+          url.startsWith('data:') ||
+          allowedFileUrls.has(url) ||
+          url.startsWith('https://fonts.googleapis.com/') ||
+          url.startsWith('https://fonts.gstatic.com/')
         ) {
           callback({ cancel: false });
         } else {
@@ -290,8 +288,7 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
         1500,
         () => {},
       );
-    } catch {
-    }
+    } catch {}
 
     let pdfBuffer = await pdfWindow.webContents.printToPDF({
       printBackground: true,
@@ -372,7 +369,11 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
       }
     }
     if (timedOut || renderFailed) {
-      await raceTimeout(bodyPromise.catch(() => {}), 5_000, () => {});
+      await raceTimeout(
+        bodyPromise.catch(() => {}),
+        5_000,
+        () => {},
+      );
     }
     if (tempDir) {
       let attempts = 0;
@@ -388,7 +389,7 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
           }
         }
       };
-      await tryRm().catch(err => {
+      await tryRm().catch((err) => {
         console.warn('[pdf-render] Failed to clean temp dir after retries:', err.message);
       });
     }

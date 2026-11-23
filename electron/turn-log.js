@@ -180,9 +180,7 @@ function listLogFiles(logPath) {
     return [];
   }
   const stem = base.replace(/\.jsonl$/i, '');
-  const related = names.filter(
-    (name) => name === base || (name.startsWith(`${stem}-`) && name.endsWith('.jsonl')),
-  );
+  const related = names.filter((name) => name === base || (name.startsWith(`${stem}-`) && name.endsWith('.jsonl')));
   return related.sort().map((name) => path.join(dir, name));
 }
 
@@ -237,7 +235,7 @@ async function listTurns(filters = {}, overrides = {}) {
         matches.push(entry);
         if (limit != null && matches.length >= limit) break;
       }
-    } catch { }
+    } catch {}
   }
   return matches;
 }

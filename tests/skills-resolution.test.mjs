@@ -48,8 +48,12 @@ print(json.dumps({'catalog': catalog, 'contents': contents, 'scans': catalog_sca
 `;
 
 let root;
-beforeEach(() => { root = realpathSync.native(mkdtempSync(path.join(os.tmpdir(), 'antares-skills-'))); });
-afterEach(() => { rmSync(root, { recursive: true, force: true }); });
+beforeEach(() => {
+  root = realpathSync.native(mkdtempSync(path.join(os.tmpdir(), 'antares-skills-')));
+});
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true });
+});
 
 function install(relative, body = 'Instrucciones', header = true) {
   const folder = path.join(root, relative);
@@ -62,16 +66,25 @@ function install(relative, body = 'Instrucciones', header = true) {
 }
 
 function runProbe(options, env = {}) {
-  return JSON.parse(execFileSync('uv', ['run', '--project', repo, '--locked', '--extra', 'dev', 'python', '-c', probe], {
-    cwd: repo,
-    input: JSON.stringify({ root, ...options }),
-    encoding: 'utf8',
-    env: { ...process.env, PYTHONPATH: repo, PYTHONUTF8: '1', SKILLS_HOME: '', ORBS_SHARED_HOME: '',
-      SKILLS_EXTERNAL_HOMES: path.join(root, 'external-skills'), ...env },
-    timeout: 30000,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: true,
-  }));
+  return JSON.parse(
+    execFileSync('uv', ['run', '--project', repo, '--locked', '--extra', 'dev', 'python', '-c', probe], {
+      cwd: repo,
+      input: JSON.stringify({ root, ...options }),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PYTHONPATH: repo,
+        PYTHONUTF8: '1',
+        SKILLS_HOME: '',
+        ORBS_SHARED_HOME: '',
+        SKILLS_EXTERNAL_HOMES: path.join(root, 'external-skills'),
+        ...env,
+      },
+      timeout: 30000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+    }),
+  );
 }
 
 function load(agent = 'reader', env = {}) {
@@ -86,7 +99,7 @@ it('prioriza la propia y nunca abre la compartida reemplazada', () => {
   const shared = install('skills/_shared/review', 'Compartida');
   const own = install('skills/reader/review', 'Propia');
   const result = load();
-  expect(result.catalog.skills.map(skill => skill.location)).toEqual([own]);
+  expect(result.catalog.skills.map((skill) => skill.location)).toEqual([own]);
   expect(result.contents.review).toContain('Propia');
   expect(result.opened).not.toContain(shared);
 });
@@ -105,14 +118,14 @@ it('hace visible una skill solo compartida para cualquier agente y sin perfil', 
   const target = install('skills/_shared/review');
   for (const agent of ['reader', 'writer', null]) {
     const { catalog } = load(agent);
-    expect(catalog.skills.map(skill => skill.location)).toEqual([target]);
+    expect(catalog.skills.map((skill) => skill.location)).toEqual([target]);
     expect(catalog.warnings).toEqual([]);
   }
 });
 
 it('carga una skill solo propia y la oculta a otros agentes', () => {
   const target = install('skills/reader/review');
-  expect(load().catalog.skills.map(skill => skill.location)).toEqual([target]);
+  expect(load().catalog.skills.map((skill) => skill.location)).toEqual([target]);
   expect(load('writer').catalog.skills).toEqual([]);
 });
 
@@ -131,7 +144,7 @@ it('descarta SKILL.md sin frontmatter y sigue cargando las demás', () => {
   install('skills/_shared/broken', 'Sin encabezado', false);
   install('skills/_shared/valid');
   const { catalog } = load();
-  expect(catalog.skills.map(skill => skill.name)).toEqual(['valid']);
+  expect(catalog.skills.map((skill) => skill.name)).toEqual(['valid']);
   expect(catalog.warnings).toEqual([expect.stringMatching(/broken:.*frontmatter.*name.*description/)]);
 });
 
@@ -140,7 +153,7 @@ it('exige name y description sin interrumpir el catálogo', () => {
   install('skills/reader/no-description', '---\nname: no-description\n---\nTexto', false);
   install('skills/_shared/valid');
   const { catalog } = load();
-  expect(catalog.skills.map(skill => skill.name)).toEqual(['valid']);
+  expect(catalog.skills.map((skill) => skill.name)).toEqual(['valid']);
   expect(catalog.warnings).toHaveLength(2);
 });
 
@@ -151,17 +164,21 @@ it('respeta ambas variables y recorre cada nivel una sola vez por carga', () => 
   const shared = path.join(root, 'alternative');
   const own = path.join(root, 'configured/reader');
   const result = load('reader', { SKILLS_HOME: './configured', ORBS_SHARED_HOME: shared });
-  expect(result.catalog.skills.map(skill => skill.name)).toEqual(['own', 'shared']);
-  expect(result.scans.filter(folder => folder === own)).toHaveLength(1);
-  expect(result.scans.filter(folder => folder === shared)).toHaveLength(1);
+  expect(result.catalog.skills.map((skill) => skill.name)).toEqual(['own', 'shared']);
+  expect(result.scans.filter((folder) => folder === own)).toHaveLength(1);
+  expect(result.scans.filter((folder) => folder === shared)).toHaveLength(1);
   for (const scans of result.read_scans) {
-    expect(scans.filter(folder => folder === own)).toHaveLength(1);
-    expect(scans.filter(folder => folder === shared)).toHaveLength(1);
+    expect(scans.filter((folder) => folder === own)).toHaveLength(1);
+    expect(scans.filter((folder) => folder === shared)).toHaveLength(1);
   }
 });
 
 it('lee instrucciones sin ejecutar scripts ni interpretar allowed-tools como permisos', () => {
-  const target = install('skills/_shared/review', '---\nname: review\ndescription: Revisión\nallowed-tools: shell_run\n---\nEjecuta scripts/check.py', false);
+  const target = install(
+    'skills/_shared/review',
+    '---\nname: review\ndescription: Revisión\nallowed-tools: shell_run\n---\nEjecuta scripts/check.py',
+    false,
+  );
   mkdirSync(path.join(path.dirname(target), 'scripts'));
   writeFileSync(path.join(path.dirname(target), 'scripts/check.py'), "raise RuntimeError('No ejecutar')");
   const result = load();
@@ -172,7 +189,9 @@ it('lee instrucciones sin ejecutar scripts ni interpretar allowed-tools como per
 it('usa el entorno Python seleccionado mediante UV_PROJECT_ENVIRONMENT', () => {
   const environment = path.resolve(repo, process.env.UV_PROJECT_ENVIRONMENT || '.venv');
   const result = load('reader', { UV_PROJECT_ENVIRONMENT: environment });
-  expect(path.normalize(result.python)).toBe(path.join(environment, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'));
+  expect(path.normalize(result.python)).toBe(
+    path.join(environment, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'),
+  );
 });
 
 it('crea una skill en la biblioteca sin sobrescribir la existente', () => {
@@ -187,8 +206,9 @@ it('crea una skill en la biblioteca sin sobrescribir la existente', () => {
   const original = readFileSync(target, 'utf8');
   expect(original).toContain('name: weekly-report');
   expect(original).toContain('1. Revisa los datos.');
-  expect(load().catalog.skills.find(skill => skill.name === 'weekly-report').description)
-    .toBe('Prepara: informe semanal');
+  expect(load().catalog.skills.find((skill) => skill.name === 'weekly-report').description).toBe(
+    'Prepara: informe semanal',
+  );
   const repeated = create({ name: 'weekly-report', description: 'Otra', content: 'Otra' });
   expect(repeated.error).toMatch(/existe/);
   expect(readFileSync(target, 'utf8')).toBe(original);

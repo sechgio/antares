@@ -23,8 +23,11 @@ function prefixSegments(payload) {
     system.push(...(Array.isArray(payload.system) ? payload.system : [payload.system]));
   }
   let index = 0;
-  while (index < messages.length && messages[index]
-    && (messages[index].role === 'system' || messages[index].role === 'developer')) {
+  while (
+    index < messages.length &&
+    messages[index] &&
+    (messages[index].role === 'system' || messages[index].role === 'developer')
+  ) {
     system.push(messages[index]);
     index += 1;
   }
@@ -43,8 +46,12 @@ function prefixSegments(payload) {
 function comparePrefixes(previous, current) {
   if (!previous) return { break: 'initial', historyIndex: null, previousMessages: null };
   let historyIndex = 0;
-  while (historyIndex < previous.historyHashes.length && historyIndex < current.historyHashes.length
-    && previous.historyHashes[historyIndex] === current.historyHashes[historyIndex]) historyIndex += 1;
+  while (
+    historyIndex < previous.historyHashes.length &&
+    historyIndex < current.historyHashes.length &&
+    previous.historyHashes[historyIndex] === current.historyHashes[historyIndex]
+  )
+    historyIndex += 1;
   const previousMessages = previous.historyHashes.length;
   if (previous.systemHash !== current.systemHash) return { break: 'system', historyIndex: null, previousMessages };
   if (previous.toolsHash !== current.toolsHash) return { break: 'tools', historyIndex: null, previousMessages };
@@ -55,7 +62,7 @@ function comparePrefixes(previous, current) {
 function emit(event, fields) {
   try {
     appLog.appendLogEvent('INFO', event, fields);
-  } catch { }
+  } catch {}
 }
 
 function recordRequest(sessionId, payload) {
@@ -115,7 +122,11 @@ function withCacheTelemetry(api) {
       onPayload: async (payload, target) => {
         const next = options && options.onPayload ? await options.onPayload(payload, target) : undefined;
         const observed = next === undefined ? payload : next;
-        try { request = recordRequest(sessionId, observed); } catch { request = null; }
+        try {
+          request = recordRequest(sessionId, observed);
+        } catch {
+          request = null;
+        }
         return observed;
       },
     });
@@ -127,11 +138,13 @@ function withCacheTelemetry(api) {
         const message = await result();
         if (!reported) {
           reported = true;
-          try { recordUsage(request, message); } catch { }
+          try {
+            recordUsage(request, message);
+          } catch {}
         }
         return message;
       };
-    } catch { }
+    } catch {}
     return streamed;
   };
   return { ...api, stream: wrap(api.stream), streamSimple: wrap(api.streamSimple) };

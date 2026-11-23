@@ -7,8 +7,7 @@ function resolveAllowedMethods() {
   if (arg) {
     try {
       return new Set(JSON.parse(arg.slice(prefix.length)));
-    } catch {
-    }
+    } catch {}
   }
   try {
     const { METHOD_NAMES: ALLOWED_RENDERER_METHODS } = require('../shared/ipc-method-catalog');
@@ -32,8 +31,7 @@ const FILE_INPUT_NONCE = resolveFileInputNonce();
 function reportRendererError(payload) {
   try {
     ipcRenderer.send('renderer-error', payload);
-  } catch {
-  }
+  } catch {}
 }
 
 function registerFileInputPath(filePath) {
@@ -49,8 +47,7 @@ function registerFileInputPath(filePath) {
 function reportRendererEvent(event, fields, level) {
   try {
     ipcRenderer.send('renderer-event', { event, fields, level });
-  } catch {
-  }
+  } catch {}
 }
 
 function resolveIsPackaged() {
@@ -60,8 +57,7 @@ function resolveIsPackaged() {
   if (arg) return arg.slice(prefix.length) === '1';
   try {
     if (typeof __dirname !== 'undefined' && /[\\/]app\.asar[\\/]/.test(__dirname)) return true;
-  } catch {
-  }
+  } catch {}
   return process.env?.NODE_ENV === 'production';
 }
 

@@ -1,6 +1,5 @@
 'use strict';
 
-
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -34,19 +33,31 @@ const FORM = [
 async function rawTools() {
   const exe = path.join(__dirname, '..', 'cua-driver', 'cua-driver.exe');
   const listed = await new Promise((resolve, reject) => {
-    const child = spawn(exe, ['list-tools'], { windowsHide: true,
-      env: { ...process.env, CUA_DRIVER_RS_TELEMETRY_ENABLED: '0', CUA_DRIVER_RS_UPDATE_CHECK: '0' } });
+    const child = spawn(exe, ['list-tools'], {
+      windowsHide: true,
+      env: { ...process.env, CUA_DRIVER_RS_TELEMETRY_ENABLED: '0', CUA_DRIVER_RS_UPDATE_CHECK: '0' },
+    });
     let out = '';
-    child.stdout.on('data', (chunk) => { out += chunk; });
+    child.stdout.on('data', (chunk) => {
+      out += chunk;
+    });
     child.on('error', reject);
     child.on('exit', () => resolve(out));
   });
-  return new Set(listed.split(/\r?\n/).map((line) => line.split(':')[0].trim()).filter(Boolean));
+  return new Set(
+    listed
+      .split(/\r?\n/)
+      .map((line) => line.split(':')[0].trim())
+      .filter(Boolean),
+  );
 }
 
 async function main() {
   const available = await rawTools();
-  assert(catalog.tools.every((tool) => available.has(tool.tool)), 'cada herramienta del catálogo existe en el binario instalado');
+  assert(
+    catalog.tools.every((tool) => available.has(tool.tool)),
+    'cada herramienta del catálogo existe en el binario instalado',
+  );
 
   const form = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', FORM], { windowsHide: false });
   try {
@@ -57,16 +68,27 @@ async function main() {
       win = (listed.windows || []).find((item) => item.title === token);
     }
     assert(win && win.pid === form.pid, 'la ventana propia de la prueba aparece en cua_list_windows');
-    const state = await cua.run('cua_window_state', { pid: win.pid, window_id: win.window_id, query: 'Campo', include_screenshot: false },
-      { sessionId: 'prueba' });
+    const state = await cua.run(
+      'cua_window_state',
+      { pid: win.pid, window_id: win.window_id, query: 'Campo', include_screenshot: false },
+      { sessionId: 'prueba' },
+    );
     const field = (state.elements || []).find((element) => /edit/i.test(String(element.role)));
     assert(field && field.element_token, 'cua_window_state encuentra el campo con query y devuelve su element_token');
-    const typed = await cua.run('cua_type_text', { pid: win.pid, window_id: win.window_id, element_token: field.element_token, text: 'hola desde cua' },
-      { sessionId: 'prueba' });
-    assert(['confirmed', 'applied'].includes(typed.effect) && typed.delivery && typed.delivery.mode === 'background',
-      `cua_type_text escribe en segundo plano y confirma el efecto (${typed.effect})`);
-    const after = await cua.run('cua_window_state', { pid: win.pid, window_id: win.window_id, query: 'Campo', include_screenshot: false },
-      { sessionId: 'prueba' });
+    const typed = await cua.run(
+      'cua_type_text',
+      { pid: win.pid, window_id: win.window_id, element_token: field.element_token, text: 'hola desde cua' },
+      { sessionId: 'prueba' },
+    );
+    assert(
+      ['confirmed', 'applied'].includes(typed.effect) && typed.delivery && typed.delivery.mode === 'background',
+      `cua_type_text escribe en segundo plano y confirma el efecto (${typed.effect})`,
+    );
+    const after = await cua.run(
+      'cua_window_state',
+      { pid: win.pid, window_id: win.window_id, query: 'Campo', include_screenshot: false },
+      { sessionId: 'prueba' },
+    );
     const value = ((after.elements || []).find((element) => /edit/i.test(String(element.role))) || {}).value;
     assert(value === 'hola desde cua', 'el valor del campo comprueba lo escrito');
   } finally {
@@ -76,4 +98,10 @@ async function main() {
   }
 }
 
-main().then(() => finish(), (err) => { console.error('[FAIL]', err); process.exit(1); });
+main().then(
+  () => finish(),
+  (err) => {
+    console.error('[FAIL]', err);
+    process.exit(1);
+  },
+);

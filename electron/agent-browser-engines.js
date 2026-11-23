@@ -5,20 +5,41 @@ const path = require('node:path');
 const { createCdpContents } = require('./agent-browser-cdp');
 const { createBidiContents, bidiTransport } = require('./agent-browser-bidi');
 
-
 const ENGINES = [
-  { id: 'chrome', label: 'Google Chrome', roots: ['PROGRAMFILES', 'PROGRAMFILES(X86)', 'LOCALAPPDATA'], file: 'Google\\Chrome\\Application\\chrome.exe' },
-  { id: 'edge', label: 'Microsoft Edge', roots: ['PROGRAMFILES(X86)', 'PROGRAMFILES', 'LOCALAPPDATA'], file: 'Microsoft\\Edge\\Application\\msedge.exe' },
-  { id: 'brave', label: 'Brave', roots: ['PROGRAMFILES', 'PROGRAMFILES(X86)', 'LOCALAPPDATA'], file: 'BraveSoftware\\Brave-Browser\\Application\\brave.exe' },
+  {
+    id: 'chrome',
+    label: 'Google Chrome',
+    roots: ['PROGRAMFILES', 'PROGRAMFILES(X86)', 'LOCALAPPDATA'],
+    file: 'Google\\Chrome\\Application\\chrome.exe',
+  },
+  {
+    id: 'edge',
+    label: 'Microsoft Edge',
+    roots: ['PROGRAMFILES(X86)', 'PROGRAMFILES', 'LOCALAPPDATA'],
+    file: 'Microsoft\\Edge\\Application\\msedge.exe',
+  },
+  {
+    id: 'brave',
+    label: 'Brave',
+    roots: ['PROGRAMFILES', 'PROGRAMFILES(X86)', 'LOCALAPPDATA'],
+    file: 'BraveSoftware\\Brave-Browser\\Application\\brave.exe',
+  },
   { id: 'opera', label: 'Opera', roots: ['LOCALAPPDATA'], file: 'Programs\\Opera\\opera.exe', versioned: true },
-  { id: 'firefox', label: 'Mozilla Firefox', roots: ['PROGRAMFILES', 'PROGRAMFILES(X86)', 'LOCALAPPDATA'], file: 'Mozilla Firefox\\firefox.exe', protocol: 'bidi' },
+  {
+    id: 'firefox',
+    label: 'Mozilla Firefox',
+    roots: ['PROGRAMFILES', 'PROGRAMFILES(X86)', 'LOCALAPPDATA'],
+    file: 'Mozilla Firefox\\firefox.exe',
+    protocol: 'bidi',
+  },
 ];
 const SESSION_ENGINE = { id: 'chrome-session', label: 'Mi sesión de Chrome', session: true };
 const DENIED_PERMISSIONS = ['geolocation', 'notifications', 'camera', 'microphone', 'midi', 'clipboard-read'];
 const CLOSE_GRACE_MS = 3_000;
 const SESSION_ACCEPT_MS = 60_000;
 const ENABLE_HINT = 'Activa la depuración remota de Chrome en chrome://inspect/#remote-debugging y vuelve a intentarlo';
-const DOWNLOAD_TYPES = /^application\/(?:octet-stream|zip|x-zip-compressed|x-msdownload|x-msi|x-7z-compressed|x-rar-compressed|vnd\.microsoft\.portable-executable)\b/i;
+const DOWNLOAD_TYPES =
+  /^application\/(?:octet-stream|zip|x-zip-compressed|x-msdownload|x-msi|x-7z-compressed|x-rar-compressed|vnd\.microsoft\.portable-executable)\b/i;
 
 function label(id) {
   if (id === SESSION_ENGINE.id) return SESSION_ENGINE.label;
@@ -33,9 +54,13 @@ function isSession(id) {
 function versionedOpera(file, { exists, readdir }) {
   const dir = path.win32.dirname(file);
   let versions = [];
-  try { versions = readdir(dir).filter((name) => /^\d+(\.\d+)+$/.test(name)); } catch { }
+  try {
+    versions = readdir(dir).filter((name) => /^\d+(\.\d+)+$/.test(name));
+  } catch {}
   versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-  const found = versions.map((version) => path.win32.join(dir, version, 'opera.exe')).find((candidate) => exists(candidate));
+  const found = versions
+    .map((version) => path.win32.join(dir, version, 'opera.exe'))
+    .find((candidate) => exists(candidate));
   return found || null;
 }
 
@@ -45,8 +70,16 @@ function detect({ env = process.env, exists = fs.existsSync, readdir = fs.readdi
     for (const root of engine.roots) {
       if (!env[root]) continue;
       const file = path.win32.join(env[root], engine.file);
-      const exe = engine.versioned ? versionedOpera(file, { exists, readdir }) : (exists(file) ? file : null);
-      if (exe) { out.push({ id: engine.id, label: engine.label, path: exe, ...(engine.protocol ? { protocol: engine.protocol } : {}) }); break; }
+      const exe = engine.versioned ? versionedOpera(file, { exists, readdir }) : exists(file) ? file : null;
+      if (exe) {
+        out.push({
+          id: engine.id,
+          label: engine.label,
+          path: exe,
+          ...(engine.protocol ? { protocol: engine.protocol } : {}),
+        });
+        break;
+      }
     }
   }
   if (out.some((engine) => engine.id === 'chrome') && env.LOCALAPPDATA) {
@@ -60,15 +93,22 @@ function transportCore(write) {
   const listeners = new Set();
   let seq = 0;
   let closed = null;
-  const emit = (message) => { for (const listener of [...listeners]) listener(message); };
+  const emit = (message) => {
+    for (const listener of [...listeners]) listener(message);
+  };
   return {
     receive(raw) {
       let message;
-      try { message = JSON.parse(raw); } catch { return; }
+      try {
+        message = JSON.parse(raw);
+      } catch {
+        return;
+      }
       const call = message.id !== undefined ? pending.get(message.id) : null;
       if (call) {
         pending.delete(message.id);
-        if (message.error) call.reject(Object.assign(new Error(String(message.error.message || 'Error de CDP')), { code: 'CDP_ERROR' }));
+        if (message.error)
+          call.reject(Object.assign(new Error(String(message.error.message || 'Error de CDP')), { code: 'CDP_ERROR' }));
         else call.resolve(message.result || {});
       } else if (message.method) {
         emit(message);
@@ -82,7 +122,10 @@ function transportCore(write) {
         write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
       });
     },
-    on(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+    on(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
     emit,
     close(error) {
       if (closed) return;
@@ -114,7 +157,13 @@ function socketTransport(socket) {
 }
 
 function launchArgs(profileDir) {
-  return ['--remote-debugging-pipe', `--user-data-dir=${profileDir}`, '--no-first-run', '--no-default-browser-check', 'about:blank'];
+  return [
+    '--remote-debugging-pipe',
+    `--user-data-dir=${profileDir}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    'about:blank',
+  ];
 }
 
 function defaultProfileRoot() {
@@ -134,21 +183,34 @@ function controller(transport, engine, { session, shutdown }) {
   const end = () => {
     if (ended) return;
     ended = true;
-    transport.close(Object.assign(new Error(`${engine.label} se cerró o cortó la conexión`), { code: 'ENGINE_CLOSED' }));
+    transport.close(
+      Object.assign(new Error(`${engine.label} se cerró o cortó la conexión`), { code: 'ENGINE_CLOSED' }),
+    );
     for (const targetId of targets) transport.emit({ method: 'Target.targetDestroyed', params: { targetId } });
     for (const handler of exitHandlers) handler();
   };
-  const patterns = [{ urlPattern: '*', requestStage: 'Request' },
-    ...(session ? ['Document', 'Other'].map((resourceType) => ({ urlPattern: '*', resourceType, requestStage: 'Response' })) : [])];
+  const patterns = [
+    { urlPattern: '*', requestStage: 'Request' },
+    ...(session
+      ? ['Document', 'Other'].map((resourceType) => ({ urlPattern: '*', resourceType, requestStage: 'Response' }))
+      : []),
+  ];
   const guard = async (sessionId, tab) => {
     guarded.set(sessionId, tab);
     await transport.send('Fetch.enable', { patterns }, sessionId);
-    await transport.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }, sessionId);
+    await transport.send(
+      'Target.setAutoAttach',
+      { autoAttach: true, waitForDebuggerOnStart: true, flatten: true },
+      sessionId,
+    );
   };
   const decide = (params, tab) => {
-    if (params.responseStatusCode !== undefined || params.responseErrorReason !== undefined) return !attachment(params.responseHeaders);
+    if (params.responseStatusCode !== undefined || params.responseErrorReason !== undefined)
+      return !attachment(params.responseHeaders);
     const mainFrame = params.resourceType === 'Document' && params.frameId === tab.targetId;
-    return Promise.resolve(tab.allow(String((params.request || {}).url || ''), tab.pageUrl(), mainFrame)).catch(() => false);
+    return Promise.resolve(tab.allow(String((params.request || {}).url || ''), tab.pageUrl(), mainFrame)).catch(
+      () => false,
+    );
   };
   transport.on(({ method, params = {}, sessionId }) => {
     const tab = guarded.get(sessionId);
@@ -156,19 +218,25 @@ function controller(transport, engine, { session, shutdown }) {
     if (method === 'Fetch.requestPaused') {
       const response = params.responseStatusCode !== undefined || params.responseErrorReason !== undefined;
       Promise.resolve(decide(params, tab))
-        .then((allowed) => transport.send(!allowed ? 'Fetch.failRequest' : response ? 'Fetch.continueResponse' : 'Fetch.continueRequest',
-          allowed ? { requestId: params.requestId } : { requestId: params.requestId, errorReason: 'BlockedByClient' }, sessionId))
-        .catch(() => { });
+        .then((allowed) =>
+          transport.send(
+            !allowed ? 'Fetch.failRequest' : response ? 'Fetch.continueResponse' : 'Fetch.continueRequest',
+            allowed ? { requestId: params.requestId } : { requestId: params.requestId, errorReason: 'BlockedByClient' },
+            sessionId,
+          ),
+        )
+        .catch(() => {});
     } else if (method === 'Target.attachedToTarget') {
       const info = params.targetInfo || {};
       const child = params.sessionId;
       if (info.type === 'page') {
-        transport.send('Target.closeTarget', { targetId: info.targetId }).catch(() => { });
+        transport.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {});
         if (info.url && info.url !== 'about:blank') tab.onPopup(info.url);
         return;
       }
-      guard(child, tab).catch(() => { })
-        .finally(() => transport.send('Runtime.runIfWaitingForDebugger', {}, child).catch(() => { }));
+      guard(child, tab)
+        .catch(() => {})
+        .finally(() => transport.send('Runtime.runIfWaitingForDebugger', {}, child).catch(() => {}));
     } else if (method === 'Target.detachedFromTarget') {
       guarded.delete(params.sessionId);
     }
@@ -179,7 +247,9 @@ function controller(transport, engine, { session, shutdown }) {
       id: engine.id,
       label: engine.label,
       session: !!session,
-      onExit(handler) { exitHandlers.add(handler); },
+      onExit(handler) {
+        exitHandlers.add(handler);
+      },
       async openTab({ allow, onPopup }) {
         const { targetId } = await transport.send('Target.createTarget', { url: 'about:blank' });
         targets.add(targetId);
@@ -204,41 +274,61 @@ function controller(transport, engine, { session, shutdown }) {
 async function launchDedicated(engine, { profileRoot, spawn }) {
   const profileDir = path.join(profileRoot || defaultProfileRoot(), engine.id);
   fs.mkdirSync(profileDir, { recursive: true });
-  const child = spawn(engine.path, launchArgs(profileDir), { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'], windowsHide: false });
+  const child = spawn(engine.path, launchArgs(profileDir), {
+    stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'],
+    windowsHide: false,
+  });
   const transport = pipeTransport(child.stdio[3], child.stdio[4]);
   let exited = false;
   const { end, link } = controller(transport, engine, {
     session: false,
     shutdown() {
-      transport.send('Browser.close').catch(() => { });
-      const timer = setTimeout(() => { if (!exited) child.kill(); }, CLOSE_GRACE_MS);
+      transport.send('Browser.close').catch(() => {});
+      const timer = setTimeout(() => {
+        if (!exited) child.kill();
+      }, CLOSE_GRACE_MS);
       if (timer.unref) timer.unref();
     },
   });
-  const onExit = () => { exited = true; end(); };
+  const onExit = () => {
+    exited = true;
+    end();
+  };
   child.on('exit', onExit);
   child.on('error', onExit);
-  child.stdio[3].on('error', () => { });
+  child.stdio[3].on('error', () => {});
   try {
     await transport.send('Target.setDiscoverTargets', { discover: true });
     await transport.send('Browser.setDownloadBehavior', { behavior: 'deny' });
     for (const name of DENIED_PERMISSIONS) {
-      await transport.send('Browser.setPermission', { permission: { name }, setting: 'denied' }).catch(() => { });
+      await transport.send('Browser.setPermission', { permission: { name }, setting: 'denied' }).catch(() => {});
     }
   } catch (error) {
     child.kill();
-    throw Object.assign(new Error(`No se pudo abrir ${engine.label}; si ya está abierto con el perfil del agente, ciérralo y vuelve a intentarlo`),
-      { code: 'ENGINE_START', cause: error });
+    throw Object.assign(
+      new Error(
+        `No se pudo abrir ${engine.label}; si ya está abierto con el perfil del agente, ciérralo y vuelve a intentarlo`,
+      ),
+      { code: 'ENGINE_START', cause: error },
+    );
   }
   return link;
 }
 
 function sessionEndpoint(userDataDir, readFile) {
   let text;
-  try { text = readFile(path.win32.join(userDataDir, 'DevToolsActivePort'), 'utf8'); } catch { text = ''; }
-  const [port, wsPath] = String(text).split(/\r?\n/).map((line) => line.trim());
+  try {
+    text = readFile(path.win32.join(userDataDir, 'DevToolsActivePort'), 'utf8');
+  } catch {
+    text = '';
+  }
+  const [port, wsPath] = String(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim());
   if (!/^\d+$/.test(port || '') || !String(wsPath || '').startsWith('/devtools/browser/')) {
-    throw Object.assign(new Error(`Chrome no tiene activa la depuración remota. ${ENABLE_HINT}`), { code: 'ENGINE_NOT_ENABLED' });
+    throw Object.assign(new Error(`Chrome no tiene activa la depuración remota. ${ENABLE_HINT}`), {
+      code: 'ENGINE_NOT_ENABLED',
+    });
   }
   return `ws://127.0.0.1:${port}${wsPath}`;
 }
@@ -251,12 +341,25 @@ function openSocket(url, WebSocketImpl, timeoutMs) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      try { socket.close(); } catch { }
-      reject(Object.assign(new Error(`Chrome no aceptó la conexión. Acepta el aviso de Chrome o ${ENABLE_HINT.charAt(0).toLowerCase()}${ENABLE_HINT.slice(1)}`),
-        { code: 'ENGINE_DENIED' }));
+      try {
+        socket.close();
+      } catch {}
+      reject(
+        Object.assign(
+          new Error(
+            `Chrome no aceptó la conexión. Acepta el aviso de Chrome o ${ENABLE_HINT.charAt(0).toLowerCase()}${ENABLE_HINT.slice(1)}`,
+          ),
+          { code: 'ENGINE_DENIED' },
+        ),
+      );
     };
     const timer = setTimeout(fail, timeoutMs);
-    socket.addEventListener('open', () => { if (settled) return; settled = true; clearTimeout(timer); resolve(socket); });
+    socket.addEventListener('open', () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(socket);
+    });
     socket.addEventListener('error', fail);
     socket.addEventListener('close', fail);
   });
@@ -268,8 +371,11 @@ async function connectSession(engine, { readFile, WebSocketImpl, acceptMs }) {
   const { end, link } = controller(transport, engine, {
     session: true,
     shutdown(targets) {
-      Promise.allSettled(targets.map((targetId) => transport.send('Target.closeTarget', { targetId })))
-        .finally(() => { try { socket.close(); } catch { } });
+      Promise.allSettled(targets.map((targetId) => transport.send('Target.closeTarget', { targetId }))).finally(() => {
+        try {
+          socket.close();
+        } catch {}
+      });
     },
   });
   socket.addEventListener('close', end);
@@ -278,7 +384,10 @@ async function connectSession(engine, { readFile, WebSocketImpl, acceptMs }) {
     await transport.send('Target.setDiscoverTargets', { discover: true });
   } catch (error) {
     socket.close();
-    throw Object.assign(new Error(`No se pudo usar tu sesión de Chrome. ${ENABLE_HINT}`), { code: 'ENGINE_START', cause: error });
+    throw Object.assign(new Error(`No se pudo usar tu sesión de Chrome. ${ENABLE_HINT}`), {
+      code: 'ENGINE_START',
+      cause: error,
+    });
   }
   return link;
 }
@@ -307,7 +416,9 @@ function firefoxArgs(profileDir) {
 }
 
 function writeFirefoxPrefs(profileDir) {
-  const lines = Object.entries(FIREFOX_PREFS).map(([name, value]) => `user_pref(${JSON.stringify(name)}, ${JSON.stringify(value)});`);
+  const lines = Object.entries(FIREFOX_PREFS).map(
+    ([name, value]) => `user_pref(${JSON.stringify(name)}, ${JSON.stringify(value)});`,
+  );
   fs.writeFileSync(path.join(profileDir, 'user.js'), `${lines.join('\n')}\n`);
 }
 
@@ -322,7 +433,10 @@ function bidiEndpoint(child, timeoutMs) {
       if (error) reject(Object.assign(new Error(error), { code: 'ENGINE_START' }));
       else resolve(value);
     };
-    const timer = setTimeout(() => finish('Firefox no abrió WebDriver BiDi a tiempo; ciérralo si ya estaba abierto con el perfil del agente'), timeoutMs);
+    const timer = setTimeout(
+      () => finish('Firefox no abrió WebDriver BiDi a tiempo; ciérralo si ya estaba abierto con el perfil del agente'),
+      timeoutMs,
+    );
     const read = (chunk) => {
       output = `${output}${chunk}`.slice(-4_000);
       const found = output.match(/WebDriver BiDi listening on (ws:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):\d+)/);
@@ -333,7 +447,11 @@ function bidiEndpoint(child, timeoutMs) {
       stream.setEncoding('utf8');
       stream.on('data', read);
     }
-    child.once('exit', () => finish('Firefox se cerró al arrancar; si ya está abierto con el perfil del agente, ciérralo y vuelve a intentarlo'));
+    child.once('exit', () =>
+      finish(
+        'Firefox se cerró al arrancar; si ya está abierto con el perfil del agente, ciérralo y vuelve a intentarlo',
+      ),
+    );
   });
 }
 
@@ -352,11 +470,18 @@ async function launchFirefox(engine, { profileRoot, spawn, WebSocketImpl, startM
     await transport.send('session.subscribe', { events: ['browsingContext', 'log.entryAdded', 'network'] });
     await transport.send('network.addIntercept', { phases: ['beforeRequestSent', 'responseStarted'] });
   } catch (error) {
-    try { if (socket) socket.close(); } catch { }
+    try {
+      if (socket) socket.close();
+    } catch {}
     child.kill();
-    throw error.code === 'ENGINE_START' ? error
-      : Object.assign(new Error('No se pudo controlar Firefox; ciérralo si ya está abierto con el perfil del agente y vuelve a intentarlo'),
-        { code: 'ENGINE_START', cause: error });
+    throw error.code === 'ENGINE_START'
+      ? error
+      : Object.assign(
+          new Error(
+            'No se pudo controlar Firefox; ciérralo si ya está abierto con el perfil del agente y vuelve a intentarlo',
+          ),
+          { code: 'ENGINE_START', cause: error },
+        );
   }
 
   const exitHandlers = new Set();
@@ -375,7 +500,7 @@ async function launchFirefox(engine, { profileRoot, spawn, WebSocketImpl, startM
   child.on('exit', end);
   child.on('error', end);
   socket.addEventListener('close', end);
-  const answer = (method, request) => transport.send(method, { request }).catch(() => { });
+  const answer = (method, request) => transport.send(method, { request }).catch(() => {});
   transport.on(({ method, params = {} }) => {
     if (method === 'browsingContext.contextCreated') {
       const owner = owners.get(params.parent || params.originalOpener);
@@ -390,18 +515,21 @@ async function launchFirefox(engine, { profileRoot, spawn, WebSocketImpl, startM
       if (popup && params.navigation) {
         popups.delete(params.context);
         answer('network.failRequest', request.request);
-        transport.send('browsingContext.close', { context: params.context }).catch(() => { });
+        transport.send('browsingContext.close', { context: params.context }).catch(() => {});
         popup.onPopup(String(request.url || ''));
         return;
       }
       const tab = owners.get(params.context);
       const allow = tab ? tab.allow : policy;
       const mainFrame = !!tab && !!params.navigation && params.context === tab.context;
-      Promise.resolve(allow ? allow(String(request.url || ''), tab ? tab.pageUrl() : '', mainFrame) : true).catch(() => false)
+      Promise.resolve(allow ? allow(String(request.url || ''), tab ? tab.pageUrl() : '', mainFrame) : true)
+        .catch(() => false)
         .then((ok) => answer(ok ? 'network.continueRequest' : 'network.failRequest', request.request));
     } else if (method === 'network.responseStarted' && params.isBlocked) {
-      const headers = ((params.response || {}).headers || [])
-        .map((item) => ({ name: item.name, value: item.value && typeof item.value === 'object' ? item.value.value : item.value }));
+      const headers = ((params.response || {}).headers || []).map((item) => ({
+        name: item.name,
+        value: item.value && typeof item.value === 'object' ? item.value.value : item.value,
+      }));
       answer(attachment(headers) ? 'network.failRequest' : 'network.continueResponse', (params.request || {}).request);
     }
   });
@@ -410,7 +538,9 @@ async function launchFirefox(engine, { profileRoot, spawn, WebSocketImpl, startM
     id: engine.id,
     label: engine.label,
     session: false,
-    onExit(handler) { exitHandlers.add(handler); },
+    onExit(handler) {
+      exitHandlers.add(handler);
+    },
     async openTab({ allow, onPopup }) {
       policy = policy || allow;
       const { context } = await transport.send('browsingContext.create', { type: 'tab' });
@@ -419,22 +549,35 @@ async function launchFirefox(engine, { profileRoot, spawn, WebSocketImpl, startM
       const tab = { context, allow, onPopup, pageUrl: () => (contents ? contents.getURL() : '') };
       owners.set(context, tab);
       contents = await createBidiContents(transport, { context });
-      contents.once('destroyed', () => { opened.delete(context); owners.delete(context); });
+      contents.once('destroyed', () => {
+        opened.delete(context);
+        owners.delete(context);
+      });
       return contents;
     },
     close() {
       if (ended) return;
-      transport.send('browser.close').catch(() => { });
-      const timer = setTimeout(() => { if (!ended) child.kill(); }, CLOSE_GRACE_MS);
+      transport.send('browser.close').catch(() => {});
+      const timer = setTimeout(() => {
+        if (!ended) child.kill();
+      }, CLOSE_GRACE_MS);
       if (timer.unref) timer.unref();
     },
   };
 }
 
-async function launch(id, {
-  profileRoot, spawn = require('node:child_process').spawn, engines = detect(),
-  readFile = fs.readFileSync, WebSocketImpl = globalThis.WebSocket, acceptMs = SESSION_ACCEPT_MS, startMs = FIREFOX_START_MS,
-} = {}) {
+async function launch(
+  id,
+  {
+    profileRoot,
+    spawn = require('node:child_process').spawn,
+    engines = detect(),
+    readFile = fs.readFileSync,
+    WebSocketImpl = globalThis.WebSocket,
+    acceptMs = SESSION_ACCEPT_MS,
+    startMs = FIREFOX_START_MS,
+  } = {},
+) {
   const engine = engines.find((item) => item.id === id);
   if (!engine) throw Object.assign(new Error('Ese navegador no está instalado'), { code: 'ENGINE_MISSING' });
   if (engine.session) return connectSession(engine, { readFile, WebSocketImpl, acceptMs });
@@ -442,4 +585,16 @@ async function launch(id, {
   return launchDedicated(engine, { profileRoot, spawn });
 }
 
-module.exports = { ENGINES, FIREFOX_PREFS, label, isSession, detect, launch, launchArgs, firefoxArgs, pipeTransport, socketTransport, attachment };
+module.exports = {
+  ENGINES,
+  FIREFOX_PREFS,
+  label,
+  isSession,
+  detect,
+  launch,
+  launchArgs,
+  firefoxArgs,
+  pipeTransport,
+  socketTransport,
+  attachment,
+};

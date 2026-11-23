@@ -25,7 +25,14 @@ const projection = require('./agent-projection');
 const { validateRules } = require('./agent-channels');
 const compactionPolicy = require('./agent-compaction');
 const { loadAgentProfile, resolvePortableProfile } = require('./agent-profiles');
-const { SKILLS_GUIDE, SYSTEM_PROMPT, legacyNotes, migrateInstructions, splitMemorySnapshot, withMemorySnapshot } = require('./agent-prompts');
+const {
+  SKILLS_GUIDE,
+  SYSTEM_PROMPT,
+  legacyNotes,
+  migrateInstructions,
+  splitMemorySnapshot,
+  withMemorySnapshot,
+} = require('./agent-prompts');
 
 const MAX_MESSAGE_CHARS = 12_000;
 const MAX_REQUEST_ID_CHARS = 100;
@@ -34,7 +41,13 @@ const MAX_ATTACHMENTS = 20;
 const MAX_PASTED_BYTES = 20 * 1024 * 1024;
 const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_INDEXED_SKILLS = 40;
-const IMAGE_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+const IMAGE_MIME = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+};
 const CANCELLED_NOTE =
   '⏹ Turno detenido por el usuario. Una herramienta ya iniciada puede seguir ejecutándose; ' +
   'comprueba su resultado antes de repetirla.';
@@ -73,9 +86,11 @@ async function _open(options = {}) {
     const { pi } = shared.deps;
     const dir = options.dir || _agentDir();
     fs.mkdirSync(dir, { recursive: true });
-    const storage = options.storage
-      || await (await import('@earendil-works/pi-durable/storage/sqlite/node'))
-        .openNodeSqliteStorage(options.dbPath || _dbPath());
+    const storage =
+      options.storage ||
+      (await (
+        await import('@earendil-works/pi-durable/storage/sqlite/node')
+      ).openNodeSqliteStorage(options.dbPath || _dbPath()));
     const models = (await import('@earendil-works/pi-ai')).createModels();
     const SessionsDoc = pi.defineDoc({
       kind: 'antares.agent.sessions',
@@ -90,29 +105,47 @@ async function _open(options = {}) {
       initial: () => ({ profiles: {} }),
     });
     const TasksDoc = pi.defineDoc({
-      kind: 'antares.agent.scheduled-tasks', version: 1, scope: 'session',
+      kind: 'antares.agent.scheduled-tasks',
+      version: 1,
+      scope: 'session',
       initial: () => ({ tasks: {}, queues: {}, next_queue_seq: 1 }),
     });
     const PolicyDoc = pi.defineDoc({
-      kind: 'antares.agent.policy', version: 1, scope: 'session', initial: () => ({ rules: {}, audit: [] }),
+      kind: 'antares.agent.policy',
+      version: 1,
+      scope: 'session',
+      initial: () => ({ rules: {}, audit: [] }),
     });
     const WaitsDoc = pi.defineDoc({
-      kind: 'antares.agent.waits', version: 1, scope: 'session', initial: () => ({ waits: {} }),
+      kind: 'antares.agent.waits',
+      version: 1,
+      scope: 'session',
+      initial: () => ({ waits: {} }),
     });
     const BudgetDoc = pi.defineDoc({
-      kind: 'antares.agent.budget', version: 1, scope: 'conversation', initial: () => ({ rounds: 0 }),
+      kind: 'antares.agent.budget',
+      version: 1,
+      scope: 'conversation',
+      initial: () => ({ rounds: 0 }),
     });
     const RoomsDoc = pi.defineDoc({
-      kind: 'antares.agent.rooms', version: 1, scope: 'session', initial: () => ({ rooms: {} }),
+      kind: 'antares.agent.rooms',
+      version: 1,
+      scope: 'session',
+      initial: () => ({ rooms: {} }),
     });
     const PlanDoc = pi.defineDoc({
-      kind: 'antares.agent.plans', version: 1, scope: 'session', initial: () => ({ plans: {} }),
+      kind: 'antares.agent.plans',
+      version: 1,
+      scope: 'session',
+      initial: () => ({ plans: {} }),
     });
     const registry = pi.createRegistry();
     const settings = {
       ...(options.settings || {}),
       stream: { cacheRetention: 'long', ...(options.settings && options.settings.stream) },
-      compaction: options.compaction || (options.settings && options.settings.compaction) || compactionPolicy.loadPolicy(dir),
+      compaction:
+        options.compaction || (options.settings && options.settings.compaction) || compactionPolicy.loadPolicy(dir),
       ...(options.retry ? { retry: options.retry } : {}),
     };
     const harness = await pi.Harness.open(storage, { models, registry, settings }, ctx());
@@ -193,7 +226,9 @@ function toPublicSession(current) {
   }
   rest.reasoning_levels = rest.reasoning_levels
     ? [...rest.reasoning_levels]
-    : (execution.supportsReasoning(style, rest.model) ? LEGACY_REASONING : []);
+    : execution.supportsReasoning(style, rest.model)
+      ? LEGACY_REASONING
+      : [];
   return JSON.parse(JSON.stringify(rest));
 }
 
@@ -203,7 +238,13 @@ async function _syncListedReasoning() {
     if (session.deleted) continue;
     const key = JSON.stringify([session.provider, session.model]);
     if (!ready.has(key)) {
-      ready.set(key, await execution.ensureProvider(session.provider, session.model).then(() => true, () => false));
+      ready.set(
+        key,
+        await execution.ensureProvider(session.provider, session.model).then(
+          () => true,
+          () => false,
+        ),
+      );
     }
     if (ready.get(key)) await _syncReasoning(session).catch(() => {});
   }
@@ -218,7 +259,11 @@ async function sessionsList() {
       if (rest.approval_rules && typeof rest.approval_rules === 'object') {
         rest.approval_rules = { ...rest.approval_rules };
       }
-      return { ...rest, reasoning_levels: rest.reasoning_levels ?? (execution.supportsReasoning(style, rest.model) ? LEGACY_REASONING : []) };
+      return {
+        ...rest,
+        reasoning_levels:
+          rest.reasoning_levels ?? (execution.supportsReasoning(style, rest.model) ? LEGACY_REASONING : []),
+      };
     });
   return { sessions: result };
 }
@@ -228,7 +273,8 @@ const PROFILE_ROLES = new Set(['explorer', 'reviewer', 'worker']);
 const MEMORY_SCOPES = new Set(['shared-read', 'own', 'none']);
 const MIN_DAILY_TOKENS = 1000;
 const MAX_DAILY_TOKENS = 100_000_000;
-const SECRET_RE = /(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|bearer\s+[A-Za-z0-9._~+/-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:password|contraseña|api[_ -]?key|token|secret)\s*[:=]\s*\S+)/i;
+const SECRET_RE =
+  /(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|bearer\s+[A-Za-z0-9._~+/-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:password|contraseña|api[_ -]?key|token|secret)\s*[:=]\s*\S+)/i;
 
 function _text(value, label, max, required = false) {
   const text = String(value ?? '').trim();
@@ -244,30 +290,44 @@ async function profilesList() {
 }
 
 async function profileSave(params = {}) {
-  if (params.color !== undefined && (typeof params.color !== 'string' || !/^(?:#[0-9a-fA-F]{6})?(?![\s\S])/.test(params.color))) {
+  if (
+    params.color !== undefined &&
+    (typeof params.color !== 'string' || !/^(?:#[0-9a-fA-F]{6})?(?![\s\S])/.test(params.color))
+  ) {
     throw validation('El color debe ser hexadecimal o automático');
   }
   const tools = params.tools;
-  if (tools !== null && tools !== undefined && (!Array.isArray(tools) || tools.some((name) => typeof name !== 'string'))) {
+  if (
+    tools !== null &&
+    tools !== undefined &&
+    (!Array.isArray(tools) || tools.some((name) => typeof name !== 'string'))
+  ) {
     throw validation('Las herramientas deben ser una lista o «todas»');
   }
   const existing = params.id ? (await _profiles())[String(params.id)] : null;
   if (params.id && !existing) throw notFound('El agente ya no existe');
-  const deny = params.tools_deny === undefined ? (existing?.tools_deny || []) : params.tools_deny;
+  const deny = params.tools_deny === undefined ? existing?.tools_deny || [] : params.tools_deny;
   if (!Array.isArray(deny) || deny.some((name) => typeof name !== 'string')) {
     throw validation('Las herramientas bloqueadas deben ser una lista');
   }
   if (Array.isArray(tools) || deny.length) {
     const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
-    if ([...(tools || []), ...deny].some((name) => !available.has(name))) throw validation('La selección contiene herramientas no disponibles');
+    if ([...(tools || []), ...deny].some((name) => !available.has(name)))
+      throw validation('La selección contiene herramientas no disponibles');
   }
-  const role = params.role === undefined ? (existing?.role || 'explorer') : String(params.role);
+  const role = params.role === undefined ? existing?.role || 'explorer' : String(params.role);
   if (!PROFILE_ROLES.has(role)) throw validation('Rol de agente no válido: usa explorer, reviewer o worker');
-  const memoryScope = params.memory_scope === undefined ? (existing?.memory_scope || 'shared-read') : String(params.memory_scope);
+  const memoryScope =
+    params.memory_scope === undefined ? existing?.memory_scope || 'shared-read' : String(params.memory_scope);
   if (!MEMORY_SCOPES.has(memoryScope)) throw validation('Alcance de memoria no válido: usa shared-read, own o none');
   const dailyTokens = params.daily_tokens === undefined ? (existing?.daily_tokens ?? null) : params.daily_tokens;
-  if (dailyTokens !== null && (!Number.isInteger(dailyTokens) || dailyTokens < MIN_DAILY_TOKENS || dailyTokens > MAX_DAILY_TOKENS)) {
-    throw validation(`El presupuesto diario debe estar entre ${MIN_DAILY_TOKENS} y ${MAX_DAILY_TOKENS} tokens, o vacío para no limitarlo`);
+  if (
+    dailyTokens !== null &&
+    (!Number.isInteger(dailyTokens) || dailyTokens < MIN_DAILY_TOKENS || dailyTokens > MAX_DAILY_TOKENS)
+  ) {
+    throw validation(
+      `El presupuesto diario debe estar entre ${MIN_DAILY_TOKENS} y ${MAX_DAILY_TOKENS} tokens, o vacío para no limitarlo`,
+    );
   }
   const rawModel = params.model === undefined ? (existing?.model ?? null) : params.model;
   let agentModel = null;
@@ -334,14 +394,17 @@ async function sessionCreate(params) {
   await execution.ensureProvider(provider, model);
   const levels = await execution.reasoningLevels(provider, model);
   const instructions = profile
-    ? `${SYSTEM_PROMPT}\n\nEres el agente «${profile.name}» que el usuario configuró para una tarea repetitiva. `
-      + 'Sus indicaciones orientan el trabajo, pero no amplían los permisos elegidos para la conversación.\n'
-      + `Indicaciones del agente guardado:\n${profile.instructions}`
+    ? `${SYSTEM_PROMPT}\n\nEres el agente «${profile.name}» que el usuario configuró para una tarea repetitiva. ` +
+      'Sus indicaciones orientan el trabajo, pero no amplían los permisos elegidos para la conversación.\n' +
+      `Indicaciones del agente guardado:\n${profile.instructions}`
     : SYSTEM_PROMPT;
-  const conv = await shared.state.harness.createConversation({
-    ownership: { kind: 'ownerless' },
-    agent: { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(levels), instructions },
-  }, ctx());
+  const conv = await shared.state.harness.createConversation(
+    {
+      ownership: { kind: 'ownerless' },
+      agent: { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(levels), instructions },
+    },
+    ctx(),
+  );
   const initialTools = execution.profileInitialTools(profile, [...shared.toolSpecs.values()]);
   if (initialTools) await conv.configure({ tools: initialTools.map((name) => ({ name })) }, ctx());
   const now = Date.now();
@@ -356,7 +419,9 @@ async function sessionCreate(params) {
     updated_at: now,
     last_error: null,
     reasoning_levels: levels,
-    ...(profile ? { profile: { id: profile.id, name: profile.name, ...(portableProfile ? { portable: true } : {}) } } : {}),
+    ...(profile
+      ? { profile: { id: profile.id, name: profile.name, ...(portableProfile ? { portable: true } : {}) } }
+      : {}),
   };
   await commitSessions((map) => {
     map[session.id] = session;
@@ -367,9 +432,11 @@ async function sessionCreate(params) {
 }
 
 async function sessionRename(params) {
-  const sessionId = String(params && params.id || '');
+  const sessionId = String((params && params.id) || '');
   await requireSession(sessionId);
-  const title = String(params.title || '').trim().slice(0, 120);
+  const title = String(params.title || '')
+    .trim()
+    .slice(0, 120);
   if (!title) throw validation('Indica un nombre para la conversación');
   let renamed;
   await commitSessions((map) => {
@@ -395,7 +462,10 @@ async function sessionModelSet(params) {
     const doc = await tx.doc(shared.state.SessionsDoc);
     const current = doc.sessions[sessionId];
     if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
-    await pi.configure(tx, session.conversationId, { model: { provider, modelId: model }, thinkingLevel: execution.thinkingLevelFor(levels, current.reasoning_effort) });
+    await pi.configure(tx, session.conversationId, {
+      model: { provider, modelId: model },
+      thinkingLevel: execution.thinkingLevelFor(levels, current.reasoning_effort),
+    });
     current.provider = provider;
     current.model = model;
     current.style = info.style || 'openai_chat';
@@ -455,7 +525,12 @@ function auditRules(audit, before, after, scope, sessionId) {
     const to = after && after[channel] ? after[channel] : null;
     if (from === to) continue;
     list.push({
-      id: crypto.randomUUID(), at: Date.now(), scope, channel, from, to,
+      id: crypto.randomUUID(),
+      at: Date.now(),
+      scope,
+      channel,
+      from,
+      to,
       ...(sessionId ? { session_id: sessionId } : {}),
     });
   }
@@ -558,23 +633,29 @@ async function _syncReasoning(session) {
   await shared.state.harness.commit(async (tx) => {
     const current = (await tx.doc(shared.state.SessionsDoc)).sessions[session.id];
     if (!current || current.deleted) return;
-    await pi.configure(tx, session.conversationId, { thinkingLevel: execution.thinkingLevelFor(levels, current.reasoning_effort) });
+    await pi.configure(tx, session.conversationId, {
+      thinkingLevel: execution.thinkingLevelFor(levels, current.reasoning_effort),
+    });
     current.reasoning_levels = levels;
   }, ctx());
 }
 
 async function sessionDelete(params) {
-  const sessionId = String(params && params.id || '');
+  const sessionId = String((params && params.id) || '');
   const session = await requireSession(sessionId);
   const conv = await conversation(sessionId);
   await Promise.all([
-    require('./agent-tasks').cancelDelegations(sessionId).then(() => conv.abort(ctx(), { background: true }).catch(() => {})),
+    require('./agent-tasks')
+      .cancelDelegations(sessionId)
+      .then(() => conv.abort(ctx(), { background: true }).catch(() => {})),
     conv.abort(ctx(), { background: true }).catch(() => {}),
   ]);
   await bridge('agent_internal_approvals_deny_session', { session_id: sessionId }).catch(() => {});
   await bridge('agent_internal_grants_revoke', { session_id: sessionId }).catch(() => {});
   await bridge('agent_internal_shell_jobs_cancel_session', { session_id: sessionId }).catch(() => {});
-  await require('./agent-events').cancelSession(sessionId).catch(() => {});
+  await require('./agent-events')
+    .cancelSession(sessionId)
+    .catch(() => {});
   await deleteSessionAndPlan(sessionId);
   const watcher = shared.watchers.get(session.conversationId);
   if (watcher) {
@@ -588,7 +669,7 @@ async function sessionDelete(params) {
 }
 
 async function messagesList(params) {
-  const sessionId = String(params && params.session_id || '');
+  const sessionId = String((params && params.session_id) || '');
   const session = await requireSession(sessionId);
   const conv = await conversation(sessionId);
   await projection.ensureWatcher(session);
@@ -618,16 +699,26 @@ async function messagesList(params) {
     running,
     delegations,
     plan,
-    resumable: !running && pending.length === 0 && (!!session.continuation || stopped || !!(plan && plan.steps.some((step) => step.status !== 'done'))),
+    resumable:
+      !running &&
+      pending.length === 0 &&
+      (!!session.continuation || stopped || !!(plan && plan.steps.some((step) => step.status !== 'done'))),
     pending_approvals: pending,
     artifacts,
     questions,
     panels: panels || [],
-    context: { modules: session.modules || [], files: (context && context.files) || [], accounts: (context && context.accounts) || [],
-      workspace: (context && context.workspace) || null },
+    context: {
+      modules: session.modules || [],
+      files: (context && context.files) || [],
+      accounts: (context && context.accounts) || [],
+      workspace: (context && context.workspace) || null,
+    },
     usage: usage || null,
     context_window: contextWindow,
-    compaction_thresholds: compactionPolicy.thresholdsFor(shared.state.compaction, execution.compactionWindowFor(session)),
+    compaction_thresholds: compactionPolicy.thresholdsFor(
+      shared.state.compaction,
+      execution.compactionWindowFor(session),
+    ),
     compacting: (projection.liveFor(session.conversationId).compactions || []).length > 0,
     ...(budget ? { token_budget: { limit: budget.limit, used: budget.used } } : {}),
   };
@@ -676,7 +767,7 @@ async function browserAction(params) {
 }
 
 async function contextRemoveFile(params) {
-  const sessionId = String(params && params.session_id || '');
+  const sessionId = String((params && params.session_id) || '');
   await requireSession(sessionId);
   const filePath = String(params.path || '');
   if (!filePath) throw validation('Indica el archivo que quieres retirar');
@@ -684,10 +775,11 @@ async function contextRemoveFile(params) {
 }
 
 async function workspaceSet(params) {
-  const sessionId = String(params && params.session_id || '');
+  const sessionId = String((params && params.session_id) || '');
   const session = await requireSession(sessionId);
   if (params.select === true) {
-    if (projection.isRunning(session.conversationId)) throw validation('Espera a que termine el turno para cambiar la carpeta de trabajo');
+    if (projection.isRunning(session.conversationId))
+      throw validation('Espera a que termine el turno para cambiar la carpeta de trabajo');
     const dialog = shared.dialog || require('electron').dialog;
     const win = shared.dialog ? undefined : require('./window-manager').getMainWindow();
     const response = await dialog.showOpenDialog(win || undefined, {
@@ -698,8 +790,13 @@ async function workspaceSet(params) {
       const { context } = await bridge('agent_internal_artifacts', { session_id: sessionId });
       return { workspace: context?.workspace || null };
     }
-    if (projection.isRunning((await requireSession(sessionId)).conversationId)) throw validation('Espera a que termine el turno para cambiar la carpeta de trabajo');
-    const result = await bridge('agent_internal_grants_add', { session_id: sessionId, paths: [], folders: [response.filePaths[0]] });
+    if (projection.isRunning((await requireSession(sessionId)).conversationId))
+      throw validation('Espera a que termine el turno para cambiar la carpeta de trabajo');
+    const result = await bridge('agent_internal_grants_add', {
+      session_id: sessionId,
+      paths: [],
+      folders: [response.filePaths[0]],
+    });
     if (!result.workspace) throw validation(result.rejected?.[0]?.reason || 'No se pudo activar la carpeta de trabajo');
     return { workspace: result.workspace };
   }
@@ -708,15 +805,18 @@ async function workspaceSet(params) {
 }
 
 async function messageSend(params) {
-  const sessionId = String(params && params.session_id || '');
+  const sessionId = String((params && params.session_id) || '');
   const session = await requireSession(sessionId);
-  const content = String(params.content || '').trim().slice(0, MAX_MESSAGE_CHARS);
+  const content = String(params.content || '')
+    .trim()
+    .slice(0, MAX_MESSAGE_CHARS);
   if (!content) throw validation('El mensaje está vacío');
-  const requestId = typeof params.request_id === 'string' && params.request_id
-    ? params.request_id.slice(0, MAX_REQUEST_ID_CHARS)
-    : undefined;
+  const requestId =
+    typeof params.request_id === 'string' && params.request_id
+      ? params.request_id.slice(0, MAX_REQUEST_ID_CHARS)
+      : undefined;
   const correction = params.correction === true;
-  const admitted = requestId && await _admittedRequest(session, requestId);
+  const admitted = requestId && (await _admittedRequest(session, requestId));
   if (admitted) {
     if (correction && admitted.status === 'queued') {
       const { denied } = await bridge('agent_internal_approvals_deny_session', { session_id: sessionId });
@@ -726,10 +826,13 @@ async function messageSend(params) {
   }
   resolvePortableProfile(shared.state.portableProfiles, session.conversationId);
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: sessionId })).approvals;
-  if (pending.length && !correction) throw validation('Resuelve primero las aprobaciones pendientes de esta conversación');
+  if (pending.length && !correction)
+    throw validation('Resuelve primero las aprobaciones pendientes de esta conversación');
   const budget = await execution.profileBudget(await execution.sessionProfile(session));
   if (budget && budget.exhausted) {
-    throw validation('Este agente agotó su presupuesto diario de tokens; podrás seguir mañana o al ampliar su presupuesto');
+    throw validation(
+      'Este agente agotó su presupuesto diario de tokens; podrás seguir mañana o al ampliar su presupuesto',
+    );
   }
   await execution.refreshTools();
   await execution.ensureProvider(session.provider, session.model);
@@ -737,47 +840,80 @@ async function messageSend(params) {
   const conv = await conversation(sessionId);
   const saved = Object.values(await _profiles());
   const mentionedBots = new Map();
-  const normalizeMention = (value) => value.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().trim().replace(/[\s_]+/g, '-');
-  const moduleAliases = new Set(Object.entries(require('../shared/agent-modules.json').modules)
-    .flatMap(([id, spec]) => [id, spec.label, ...(spec.aliases || [])]).map(normalizeMention));
-  const mentionText = content.replace(/```[\s\S]*?(?:```|$)|`[^`\n]*(?:`|$)|(?<![\p{L}\p{N}_@/])@(?:"([^"\r\n]+)"|bot:([a-zA-Z0-9_-]+)|([\p{L}\p{N}_-]+))/gu,
+  const normalizeMention = (value) =>
+    value
+      .normalize('NFKD')
+      .replace(/\p{M}/gu, '')
+      .toLowerCase()
+      .trim()
+      .replace(/[\s_]+/g, '-');
+  const moduleAliases = new Set(
+    Object.entries(require('../shared/agent-modules.json').modules)
+      .flatMap(([id, spec]) => [id, spec.label, ...(spec.aliases || [])])
+      .map(normalizeMention),
+  );
+  const mentionText = content.replace(
+    /```[\s\S]*?(?:```|$)|`[^`\n]*(?:`|$)|(?<![\p{L}\p{N}_@/])@(?:"([^"\r\n]+)"|bot:([a-zA-Z0-9_-]+)|([\p{L}\p{N}_-]+))/gu,
     (match, quoted, id, plain) => {
       if (match.startsWith('`')) return match;
       if (plain && moduleAliases.has(normalizeMention(plain))) return match;
-      const found = saved.filter((profile) => id ? profile.id === id : normalizeMention(profile.name) === normalizeMention(quoted || plain));
-      if (found.length > 1) throw validation(`@${quoted || plain} identifica varios bots; selecciónalo en las sugerencias de @ para usar su identificador`);
+      const found = saved.filter((profile) =>
+        id ? profile.id === id : normalizeMention(profile.name) === normalizeMention(quoted || plain),
+      );
+      if (found.length > 1)
+        throw validation(
+          `@${quoted || plain} identifica varios bots; selecciónalo en las sugerencias de @ para usar su identificador`,
+        );
       if (!found.length) {
         if (quoted || id) throw validation(`El bot mencionado ya no existe: ${quoted || id}`);
         return match;
       }
       mentionedBots.set(found[0].id, { id: found[0].id, name: found[0].name });
       return ' '.repeat(match.length);
-    });
-  const delegationTool = (await conv.agent(ctx())).tools.some((tool) => tool.name === 'agent_delegate') ? 'agent_delegate' : 'subagent_run';
+    },
+  );
+  const delegationTool = (await conv.agent(ctx())).tools.some((tool) => tool.name === 'agent_delegate')
+    ? 'agent_delegate'
+    : 'subagent_run';
   if (mentionedBots.size && !(await conv.agent(ctx())).tools.some((tool) => tool.name === delegationTool)) {
-    throw validation('Activa agent_delegate o subagent_run en Herramientas del agente para delegar en un bot; mencionar no habilita herramientas');
+    throw validation(
+      'Activa agent_delegate o subagent_run en Herramientas del agente para delegar en un bot; mencionar no habilita herramientas',
+    );
   }
   await projection.ensureWatcher(session);
   let skill = null;
   if (params.skill_id !== undefined) {
-    if (projection.isRunning(session.conversationId)) throw validation('Espera a que termine el turno en curso para invocar una skill');
+    if (projection.isRunning(session.conversationId))
+      throw validation('Espera a que termine el turno en curso para invocar una skill');
     if (!(await conv.agent(ctx())).tools.some((tool) => tool.name === 'skills_read')) {
-      throw validation('Activa skills_read en Herramientas del agente para invocar una skill; elegir una skill no habilita herramientas');
+      throw validation(
+        'Activa skills_read en Herramientas del agente para invocar una skill; elegir una skill no habilita herramientas',
+      );
     }
     ({ skill } = await bridge('agent_internal_skill_resolve', {
-      session_id: sessionId, skill_id: String(params.skill_id), profile_id: session.profile?.id || null,
+      session_id: sessionId,
+      skill_id: String(params.skill_id),
+      profile_id: session.profile?.id || null,
     }));
   }
   const attached = _takeAttachments(params.attachments);
   const paths = attached.filter((a) => a.kind === 'files').map((a) => a.path);
   const folders = attached.filter((a) => a.kind === 'folder').map((a) => a.path);
-  const files = paths.length || folders.length
-    ? await bridge('agent_internal_grants_add', { session_id: sessionId, request_id: requestId || null, paths, folders })
-    : { granted: [], rejected: [] };
+  const files =
+    paths.length || folders.length
+      ? await bridge('agent_internal_grants_add', {
+          session_id: sessionId,
+          request_id: requestId || null,
+          paths,
+          folders,
+        })
+      : { granted: [], rejected: [] };
   const nativeNames = [...shared.toolSpecs.values()].filter((t) => t.kind === 'native').map((t) => t.name);
   const mentions = await bridge('agent_internal_mentions', { text: mentionText, native_tools: nativeNames });
-  const mentionedTools = [...execution.moduleToolNames(mentions.modules || []),
-    ...(mentions.mcp_tools || []).filter((name) => shared.toolSpecs.has(name))];
+  const mentionedTools = [
+    ...execution.moduleToolNames(mentions.modules || []),
+    ...(mentions.mcp_tools || []).filter((name) => shared.toolSpecs.has(name)),
+  ];
   if (mentionedTools.length) {
     const current = (await conv.agent(ctx())).tools.map((tool) => tool.name);
     const allows = await execution.profileToolFilter(session);
@@ -793,11 +929,13 @@ async function messageSend(params) {
       ? `Archivos adjuntos por el usuario:\n${attached.map((a) => `- ${a.path} (${a.kind === 'folder' ? 'carpeta' : 'archivo'})`).join('\n')}`
       : '',
     workspace
-      ? `Espacio de trabajo activo: ${workspace}. Esta es la carpeta de trabajo de la conversación, no un adjunto de solo lectura. `
-        + 'Usa fs_* para leer, crear y editar archivos ahí; shell_run y shell_job_start sin cwd arrancan en esa carpeta. '
-        + 'Conserva los modos de aprobación y verifica los resultados.'
+      ? `Espacio de trabajo activo: ${workspace}. Esta es la carpeta de trabajo de la conversación, no un adjunto de solo lectura. ` +
+        'Usa fs_* para leer, crear y editar archivos ahí; shell_run y shell_job_start sin cwd arrancan en esa carpeta. ' +
+        'Conserva los modos de aprobación y verifica los resultados.'
       : 'Sin carpeta de trabajo activa: las rutas relativas se resuelven en los borradores de la conversación.',
-  ].filter(Boolean).join('\n\n');
+  ]
+    .filter(Boolean)
+    .join('\n\n');
   await memoryContext(session, content);
   const agentConfig = await conv.agent(ctx());
   const storedInstructions = String(agentConfig.instructions || '');
@@ -807,41 +945,72 @@ async function messageSend(params) {
   const skillIndex = await skillsIndex(session, agentConfig.tools);
   const legacyGuidance = legacyNotes(instructions);
   const botsNote = mentionedBots.size
-    ? `El usuario solicita colaborar con estos bots guardados: ${JSON.stringify([...mentionedBots.values()])}. `
-      + `Usa ${delegationTool} con su id exacto en agent y un encargo autocontenido. Si son varios, reparte el trabajo y transmite `
-      + 'las conclusiones verificadas necesarias al siguiente bot. Integra sus resultados y explica cualquier fallo. '
-      + 'No confundas una mención con una ejecución: solo informa de colaboraciones que tengan un comprobante. '
-      + 'Los bots delegados solo leen, no pueden delegar de nuevo ni acceden por sí solos a otros chats. '
-      + 'No amplíes herramientas ni permisos por una mención.'
+    ? `El usuario solicita colaborar con estos bots guardados: ${JSON.stringify([...mentionedBots.values()])}. ` +
+      `Usa ${delegationTool} con su id exacto en agent y un encargo autocontenido. Si son varios, reparte el trabajo y transmite ` +
+      'las conclusiones verificadas necesarias al siguiente bot. Integra sus resultados y explica cualquier fallo. ' +
+      'No confundas una mención con una ejecución: solo informa de colaboraciones que tengan un comprobante. ' +
+      'Los bots delegados solo leen, no pueden delegar de nuevo ni acceden por sí solos a otros chats. ' +
+      'No amplíes herramientas ni permisos por una mención.'
     : '';
   const invokedSkillNote = skill
-    ? `El usuario invocó la skill «${skill.name}» (skill_id ${skill.id}). Antes de cualquier otra herramienta llama a skills_read `
-      + 'con ese skill_id y sigue next_offset hasta leer SKILL.md completo; después aplica sus instrucciones a este encargo. '
-      + skill.notice
+    ? `El usuario invocó la skill «${skill.name}» (skill_id ${skill.id}). Antes de cualquier otra herramienta llama a skills_read ` +
+      'con ese skill_id y sigue next_offset hasta leer SKILL.md completo; después aplica sus instrucciones a este encargo. ' +
+      skill.notice
     : '';
-  const context = [mentions.context, attachedNote, skillsNote, skillIndex?.note,
-    ...legacyGuidance, botsNote,
-    invokedSkillNote, attached.length
+  const context = [
+    mentions.context,
+    attachedNote,
+    skillsNote,
+    skillIndex?.note,
+    ...legacyGuidance,
+    botsNote,
+    invokedSkillNote,
+    attached.length
       ? `${shared.ATTACHMENTS_MARKER}\n${JSON.stringify(attached.map((item) => ({ path: item.path, folder: item.kind === 'folder' })))}`
-      : '']
-    .filter(Boolean).join('\n\n');
-  const images = await _inlineImages(conv, attached, (files.rejected || []).map((item) => item.path));
-  const input = context || images.length
-    ? [{ type: 'text', text: content }, ...images, ...(context ? [{ type: 'text', text: `${shared.CONTEXT_MARKER}\n${context}` }] : [])]
-    : content;
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+  const images = await _inlineImages(
+    conv,
+    attached,
+    (files.rejected || []).map((item) => item.path),
+  );
+  const input =
+    context || images.length
+      ? [
+          { type: 'text', text: content },
+          ...images,
+          ...(context ? [{ type: 'text', text: `${shared.CONTEXT_MARKER}\n${context}` }] : []),
+        ]
+      : content;
   if (!projection.isRunning(session.conversationId)) {
     shared.rounds.delete(session.conversationId);
     shared.turns.delete(session.conversationId);
     execution.requireSkill(session.conversationId, null);
   }
   if (skill && skill.warning) {
-    await conv.submit({ type: 'write', ...(requestId ? { requestId: `${requestId}:skill` } : {}),
-      entry: { kind: shared.NOTICE_KIND, data: { text: skill.warning } } }, ctx());
+    await conv.submit(
+      {
+        type: 'write',
+        ...(requestId ? { requestId: `${requestId}:skill` } : {}),
+        entry: { kind: shared.NOTICE_KIND, data: { text: skill.warning } },
+      },
+      ctx(),
+    );
   }
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       if (skill) execution.requireSkill(session.conversationId, skill.id);
-      await conv.submit({ type: 'input', content: input, whenBusy: correction ? 'steer' : 'followUp', ...(requestId ? { requestId } : {}) }, ctx());
+      await conv.submit(
+        {
+          type: 'input',
+          content: input,
+          whenBusy: correction ? 'steer' : 'followUp',
+          ...(requestId ? { requestId } : {}),
+        },
+        ctx(),
+      );
       if (skillIndex) shared.skillIndexes.set(session.conversationId, skillIndex.index);
       break;
     } catch (err) {
@@ -852,7 +1021,9 @@ async function messageSend(params) {
     }
   }
   if (correction) shared.turns.get(session.conversationId)?.calls.clear();
-  try { require('./agent-browser').resetUserActivity(); } catch { }
+  try {
+    require('./agent-browser').resetUserActivity();
+  } catch {}
   if (pending.length) {
     const { denied } = await bridge('agent_internal_approvals_deny_session', { session_id: sessionId });
     for (const id of denied || []) execution.notifyDecision(id);
@@ -861,7 +1032,8 @@ async function messageSend(params) {
     const s = map[sessionId];
     if (s) {
       const known = new Map((s.modules || []).map((m) => [m.id, m]));
-      for (const id of mentions.modules || []) known.set(id, { id, label: (mentions.labels && mentions.labels[id]) || id });
+      for (const id of mentions.modules || [])
+        known.set(id, { id, label: (mentions.labels && mentions.labels[id]) || id });
       s.modules = [...known.values()].slice(-12);
       s.updated_at = Date.now();
       if (s.title === 'Conversación') s.title = content.trim().slice(0, 60) || 'Conversación';
@@ -881,8 +1053,12 @@ async function filePreview(params) {
   const { resource, attachment_id: attachmentId, page = 0, sheet = 0 } = params;
   const hasResource = typeof resource === 'string' && !!resource;
   const hasAttachment = typeof attachmentId === 'string' && !!attachmentId;
-  if (![page, sheet].every((value) => Number.isSafeInteger(value) && value >= 0)
-    || hasResource === hasAttachment || (resource !== undefined && !hasResource) || (attachmentId !== undefined && !hasAttachment)) {
+  if (
+    ![page, sheet].every((value) => Number.isSafeInteger(value) && value >= 0) ||
+    hasResource === hasAttachment ||
+    (resource !== undefined && !hasResource) ||
+    (attachmentId !== undefined && !hasAttachment)
+  ) {
     throw validation('Indica un archivo y una página u hoja válidos');
   }
   if (hasAttachment) {
@@ -897,7 +1073,7 @@ async function attach(params) {
   const kind = params && params.kind === 'folder' ? 'folder' : 'files';
   let filePaths;
   if (Array.isArray(params && params.paths) || Array.isArray(params && params.data)) {
-    filePaths = [...await _droppedPaths(params.paths), ...await _pastedFiles(params.data)];
+    filePaths = [...(await _droppedPaths(params.paths)), ...(await _pastedFiles(params.data))];
   } else {
     const dialog = shared.dialog || require('electron').dialog;
     const win = shared.dialog ? undefined : require('./window-manager').getMainWindow();
@@ -939,8 +1115,13 @@ async function _pastedFiles(data) {
   const out = [];
   for (const item of items) {
     const bytes = Buffer.from(typeof item?.data === 'string' ? item.data : '', 'base64');
-    if (!bytes.length || bytes.length > MAX_PASTED_BYTES) throw validation('El archivo pegado está vacío o supera 20 MB');
-    const name = path.basename(String(item.name || '')).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80) || 'pegado';
+    if (!bytes.length || bytes.length > MAX_PASTED_BYTES)
+      throw validation('El archivo pegado está vacío o supera 20 MB');
+    const name =
+      path
+        .basename(String(item.name || ''))
+        .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
+        .slice(0, 80) || 'pegado';
     const target = path.join(dir, `${crypto.randomBytes(6).toString('hex')}-${name}`);
     await fs.promises.writeFile(target, bytes);
     out.push(target);
@@ -949,8 +1130,9 @@ async function _pastedFiles(data) {
 }
 
 async function _inlineImages(conv, attached, rejected) {
-  const candidates = attached.filter((a) => a.kind === 'files' && !rejected.includes(a.path)
-    && IMAGE_MIME[path.extname(a.path).toLowerCase()]);
+  const candidates = attached.filter(
+    (a) => a.kind === 'files' && !rejected.includes(a.path) && IMAGE_MIME[path.extname(a.path).toLowerCase()],
+  );
   if (!candidates.length) return [];
   const ref = (await conv.agent(ctx())).model;
   const model = ref && shared.state.models.getModel(ref.provider, ref.modelId);
@@ -959,8 +1141,11 @@ async function _inlineImages(conv, attached, rejected) {
   for (const item of candidates) {
     const stat = await fs.promises.stat(item.path).catch(() => null);
     if (!stat || !stat.isFile() || stat.size > MAX_INLINE_IMAGE_BYTES) continue;
-    images.push({ type: 'image', data: (await fs.promises.readFile(item.path)).toString('base64'),
-      mimeType: IMAGE_MIME[path.extname(item.path).toLowerCase()] });
+    images.push({
+      type: 'image',
+      data: (await fs.promises.readFile(item.path)).toString('base64'),
+      mimeType: IMAGE_MIME[path.extname(item.path).toLowerCase()],
+    });
   }
   return images;
 }
@@ -986,29 +1171,36 @@ function _accounts() {
       const account = connections.loadTokens(provider)?.account;
       if (account) accounts[provider] = String(account);
     }
-  } catch { }
+  } catch {}
   try {
     const email = require('./autoimg-user-scope').getActiveEmail();
     if (email) accounts.autoimg = String(email);
-  } catch { }
+  } catch {}
   return accounts;
 }
 
 function _toolVersion(spec) {
   const shape = { description: spec.description || '', inputSchema: spec.inputSchema || null, gated: !!spec.gated };
-  return { name: spec.name, version: crypto.createHash('sha256').update(JSON.stringify(shape)).digest('hex').slice(0, 16) };
+  return {
+    name: spec.name,
+    version: crypto.createHash('sha256').update(JSON.stringify(shape)).digest('hex').slice(0, 16),
+  };
 }
 
 async function skillsIndex(session, tools) {
   if (!tools.some((tool) => tool.name === 'skills_read')) return null;
   const { skills } = await bridge('agent_skills_list', {}).catch(() => ({ skills: [] }));
-  const index = (skills || []).slice(0, MAX_INDEXED_SKILLS)
-    .map((skill) => `- ${skill.name} (skill_id ${skill.id}): ${String(skill.description || '').slice(0, 160)}`).join('\n');
+  const index = (skills || [])
+    .slice(0, MAX_INDEXED_SKILLS)
+    .map((skill) => `- ${skill.name} (skill_id ${skill.id}): ${String(skill.description || '').slice(0, 160)}`)
+    .join('\n');
   if (!index || shared.skillIndexes.get(session.conversationId) === index) return null;
   return {
     index,
-    note: 'Skills disponibles. Si alguna encaja con el encargo, aunque sea en parte, cárgala con skills_read antes de actuar '
-      + 'y sigue sus instrucciones; skills_list encuentra además las de carpetas adjuntas y del perfil.\n' + index,
+    note:
+      'Skills disponibles. Si alguna encaja con el encargo, aunque sea en parte, cárgala con skills_read antes de actuar ' +
+      'y sigue sus instrucciones; skills_list encuentra además las de carpetas adjuntas y del perfil.\n' +
+      index,
   };
 }
 
@@ -1030,11 +1222,16 @@ async function _writeMemorySnapshot(session, initialText, conv, stored) {
   let context = '';
   try {
     ({ context } = await bridge('agent_internal_memory_context', {
-      session_id: session.id, text: initialText, tools: [...shared.toolSpecs.values()].map(_toolVersion),
-      accounts: _accounts(), profile_id: session.profile?.id || null,
+      session_id: session.id,
+      text: initialText,
+      tools: [...shared.toolSpecs.values()].map(_toolVersion),
+      accounts: _accounts(),
+      profile_id: session.profile?.id || null,
       memory_scope: profile?.memory_scope || null,
     }));
-  } catch { context = ''; }
+  } catch {
+    context = '';
+  }
   const instructions = withMemorySnapshot(stored, context);
   if (instructions !== stored) await conv.configure({ instructions }, ctx());
 }
@@ -1071,34 +1268,40 @@ async function toolsList(params = {}) {
   tools = tools.filter((tool) => tool.name !== 'agent_wake_parent' || !!session?.delegation);
   return {
     tools: tools.map((t) => ({
-      name: t.name, gated: !!t.gated, kind: ['mcp', 'native'].includes(t.kind) ? t.kind : 'backend', module: t.module || null,
+      name: t.name,
+      gated: !!t.gated,
+      kind: ['mcp', 'native'].includes(t.kind) ? t.kind : 'backend',
+      module: t.module || null,
       ...(enabled ? { enabled: enabled.has(t.name) } : {}),
     })),
   };
 }
 
 async function toolsSet(params) {
-  const conv = await conversation(String(params && params.session_id || ''));
+  const conv = await conversation(String((params && params.session_id) || ''));
   const names = params.names;
   if (names !== null && (!Array.isArray(names) || names.some((name) => typeof name !== 'string'))) {
     throw validation('Selecciona una lista de herramientas o restablece la selección');
   }
   const available = new Set((await execution.allToolSpecs()).map((tool) => tool.name));
-  if (names && names.some((name) => !available.has(name))) throw validation('La selección contiene herramientas no disponibles');
+  if (names && names.some((name) => !available.has(name)))
+    throw validation('La selección contiene herramientas no disponibles');
   const session = await requireSession(String(params.session_id || ''));
   const allows = await execution.profileToolFilter(session);
   if (allows && names && names.some((name) => !allows(name))) {
     throw validation('El agente guardado de esta conversación no permite alguna de esas herramientas');
   }
   await execution.refreshTools();
-  const selected = names !== null ? [...new Set(names)]
-    : execution.profileInitialTools(await execution.sessionProfile(session), [...shared.toolSpecs.values()]);
+  const selected =
+    names !== null
+      ? [...new Set(names)]
+      : execution.profileInitialTools(await execution.sessionProfile(session), [...shared.toolSpecs.values()]);
   await conv.configure({ tools: selected && selected.map((name) => ({ name })) }, ctx());
   return toolsList(params);
 }
 
 async function turnStatus(params) {
-  const sessionId = String(params && params.session_id || '');
+  const sessionId = String((params && params.session_id) || '');
   const session = await requireSession(sessionId);
   await projection.ensureWatcher(session);
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: sessionId })).approvals;
@@ -1111,7 +1314,7 @@ async function turnStatus(params) {
 }
 
 async function turnCancel(params) {
-  const sessionId = String(params && params.session_id || '');
+  const sessionId = String((params && params.session_id) || '');
   const session = await requireSession(sessionId);
   await projection.ensureWatcher(session);
   const live = projection.liveFor(session.conversationId);
@@ -1119,20 +1322,30 @@ async function turnCancel(params) {
   const busy = !!live.run || (live.inbox || []).length > 0;
   const conv = await conversation(sessionId);
   const [children] = await Promise.all([
-    require('./agent-tasks').cancelDelegations(sessionId).then(async (count) => { await conv.abort(ctx()); return count; }),
+    require('./agent-tasks')
+      .cancelDelegations(sessionId)
+      .then(async (count) => {
+        await conv.abort(ctx());
+        return count;
+      }),
     conv.abort(ctx()),
   ]);
   if (!busy && pending.length === 0 && !children) return { cancelled: false };
   if (pending.length) await bridge('agent_internal_approvals_deny_session', { session_id: sessionId });
-  await conv.submit({
-    type: 'write',
-    entry: { kind: NOTICE_KIND, data: { text: CANCELLED_NOTE } },
-  }, ctx()).catch(() => {});
+  await conv
+    .submit(
+      {
+        type: 'write',
+        entry: { kind: NOTICE_KIND, data: { text: CANCELLED_NOTE } },
+      },
+      ctx(),
+    )
+    .catch(() => {});
   return { cancelled: true };
 }
 
 async function approve(params, approved) {
-  const approvalId = String(params && params.approval_id || '');
+  const approvalId = String((params && params.approval_id) || '');
   const channel = typeof params.channel === 'string' ? params.channel : '';
   const rule = params.rule === 'allow' || params.rule === 'deny' ? params.rule : null;
   if ((channel && !rule) || (rule && !channel)) throw validation('Indica el canal y la regla juntos');
@@ -1140,21 +1353,29 @@ async function approve(params, approved) {
     if (rule !== (approved ? 'allow' : 'deny')) throw validation('La regla no coincide con la decisión');
     const { approval: current } = await bridge('agent_internal_approval_status', { approval_id: approvalId });
     if (!current || current.status !== 'pending') {
-      throw validation(current && current.status === 'expired'
-        ? 'La aprobación expiró; vuelve a pedírselo al agente'
-        : 'La aprobación ya no está pendiente');
+      throw validation(
+        current && current.status === 'expired'
+          ? 'La aprobación expiró; vuelve a pedírselo al agente'
+          : 'La aprobación ya no está pendiente',
+      );
     }
     await saveSessionRule(String(current.session_id), channel, rule);
   }
   const { approval } = await bridge('agent_internal_approval_decide', {
-    approval_id: approvalId, approve: !!approved, source: 'manual',
+    approval_id: approvalId,
+    approve: !!approved,
+    source: 'manual',
     ...(params.grant_app ? { grant_app: true } : {}),
     ...(approved && params.remember === true ? { remember: true } : {}),
   });
-  const remembered = approved && params.remember === true && approval && approval.status === 'approved'
-    ? String(approval.method || '') : null;
+  const remembered =
+    approved && params.remember === true && approval && approval.status === 'approved'
+      ? String(approval.method || '')
+      : null;
   if (remembered !== null && !remembered.startsWith('web_') && !remembered.startsWith('cua_') && approval.channel) {
-    try { await saveSessionRule(String(approval.session_id), String(approval.channel), 'allow'); } catch { }
+    try {
+      await saveSessionRule(String(approval.session_id), String(approval.channel), 'allow');
+    } catch {}
   }
   execution.notifyDecision(approvalId);
   if (remembered !== null && remembered.startsWith('web_')) {
@@ -1162,17 +1383,18 @@ async function approve(params, approved) {
       const policy = require('./agent-browser-policy');
       const domain = policy.hostOf(approval.context && approval.context.page_url);
       if (domain && !policy.isBlocked(domain)) policy.addAlwaysAllowed(domain);
-    } catch { }
+    } catch {}
   }
   const approvalCall = approval && execution.callKey(String(approval.session_id), String(approval.call_id));
   const approvalSession = approval && (await sessions())[String(approval.session_id)];
   const approvalLive = approvalSession && shared.live.get(approvalSession.conversationId);
-  const liveWait = approval && (
-    shared.liveApprovals.has(approval.id)
-    || shared.approvalsByCall.has(approvalCall)
-    || ((approvalLive && approvalLive.tools) || []).some(
-      (t) => t.callId === providerCallId(approval.call_id) && t.status !== 'done')
-  );
+  const liveWait =
+    approval &&
+    (shared.liveApprovals.has(approval.id) ||
+      shared.approvalsByCall.has(approvalCall) ||
+      ((approvalLive && approvalLive.tools) || []).some(
+        (t) => t.callId === providerCallId(approval.call_id) && t.status !== 'done',
+      ));
   if (approval && !liveWait) {
     await new Promise((r) => setTimeout(r, 150));
     const stillLive = shared.liveApprovals.has(approval.id) || shared.approvalsByCall.has(approvalCall);
@@ -1189,11 +1411,22 @@ async function effectUndo(params) {
   try {
     const conv = await conversation(sessionId);
     const name = path.basename(String((result && result.path) || '')) || 'el archivo';
-    await conv.submit({ type: 'write', requestId: `undo:${callId}`, entry: {
-      kind: NOTICE_KIND, data: { text: `El usuario deshizo la acción sobre «${name}». `
-        + 'No asumas que el archivo conserva el contenido escrito: vuelve a leerlo antes de usarlo o de repetir la acción.' },
-    } }, ctx());
-  } catch { }
+    await conv.submit(
+      {
+        type: 'write',
+        requestId: `undo:${callId}`,
+        entry: {
+          kind: NOTICE_KIND,
+          data: {
+            text:
+              `El usuario deshizo la acción sobre «${name}». ` +
+              'No asumas que el archivo conserva el contenido escrito: vuelve a leerlo antes de usarlo o de repetir la acción.',
+          },
+        },
+      },
+      ctx(),
+    );
+  } catch {}
   return result;
 }
 
@@ -1215,30 +1448,39 @@ async function _settleRecoveredApproval(approval) {
   if (approval.status === 'approved') {
     try {
       text = await execution.dispatchApproved(approval, ctx());
-      try { isError = !!JSON.parse(text).error; } catch {}
+      try {
+        isError = !!JSON.parse(text).error;
+      } catch {}
     } finally {
-      try { require('./agent-browser').release(sessionId); } catch { }
+      try {
+        require('./agent-browser').release(sessionId);
+      } catch {}
     }
   } else {
     text = JSON.stringify({ error: 'El usuario rechazó esta acción' });
     isError = true;
     diagnostics = [{ severity: 'info', message: 'denied', code: 'blocked' }];
   }
-  await conv.submit({
-    type: 'write',
-    entry: {
-      kind: 'pi.tool-result',
-      model: [{
-        role: 'toolResult',
-        toolCallId: callId,
-        toolName: method,
-        content: [{ type: 'text', text }],
-        isError,
-        timestamp: Date.now(),
-      }],
-      ...(diagnostics ? { data: { diagnostics } } : {}),
+  await conv.submit(
+    {
+      type: 'write',
+      entry: {
+        kind: 'pi.tool-result',
+        model: [
+          {
+            role: 'toolResult',
+            toolCallId: callId,
+            toolName: method,
+            content: [{ type: 'text', text }],
+            isError,
+            timestamp: Date.now(),
+          },
+        ],
+        ...(diagnostics ? { data: { diagnostics } } : {}),
+      },
     },
-  }, ctx());
+    ctx(),
+  );
 }
 
 function tasksList(params) {
@@ -1263,16 +1505,27 @@ function tasksQueue(params) {
 
 async function _resultEntryFor(conv, callId) {
   const entries = await projection.allEntries(conv);
-  const owner = entries.findLastIndex((entry) => entry.kind === 'pi.assistant' && entry.model && entry.model[0]
-    && (entry.model[0].content || []).some((block) => block && block.type === 'toolCall' && block.id === callId));
-  return entries.slice(owner + 1).some((entry) => entry.kind === 'pi.tool-result'
-    && entry.model && entry.model[0] && entry.model[0].toolCallId === callId);
+  const owner = entries.findLastIndex(
+    (entry) =>
+      entry.kind === 'pi.assistant' &&
+      entry.model &&
+      entry.model[0] &&
+      (entry.model[0].content || []).some((block) => block && block.type === 'toolCall' && block.id === callId),
+  );
+  return entries
+    .slice(owner + 1)
+    .some(
+      (entry) =>
+        entry.kind === 'pi.tool-result' && entry.model && entry.model[0] && entry.model[0].toolCallId === callId,
+    );
 }
 
 async function shutdown() {
   await require('./agent-tasks').stop();
   for (const stream of shared.watchers.values()) {
-    try { await stream.stop(); } catch {}
+    try {
+      await stream.stop();
+    } catch {}
   }
   shared.watchers.clear();
   shared.live.clear();
@@ -1282,7 +1535,9 @@ async function shutdown() {
   if (shared.state) {
     const harness = shared.state.harness;
     shared.state = null;
-    try { await harness.close(ctx()); } catch {}
+    try {
+      await harness.close(ctx());
+    } catch {}
   }
 }
 
@@ -1294,17 +1549,37 @@ module.exports = {
     if (!shared.state) return [];
     const { attention = {} } = await bridge('agent_internal_activity', {});
     const waitsDoc = await shared.state.harness.snapshot(shared.state.WaitsDoc, ctx());
-    const activeWaits = new Set(Object.values((waitsDoc && waitsDoc.waits) || {})
-      .filter((wait) => wait.status === 'waiting' && (wait.active_boot || wait.boot) === shared.boot && wait.deadline > Date.now())
-      .map((wait) => wait.session_id));
-    return Object.values(await sessions()).filter((session) => !session.deleted).map((session) => ({
-      id: session.id, title: session.title || 'Conversación',
-      status: attention[session.id] || (shared.waitingInput.has(session.id) ? 'waiting_input'
-        : [...shared.approvalsByCall].some(([key, id]) => key.startsWith(`${session.id}:`) && shared.liveApprovals.has(id)) ? 'waiting_approval'
-          : activeWaits.has(session.id) ? 'waiting_event'
-            : projection.isRunning(session.conversationId) ? 'running' : session.continuation ? 'waiting_input'
-              : session.last_error ? 'failed' : 'completed'),
-    }));
+    const activeWaits = new Set(
+      Object.values((waitsDoc && waitsDoc.waits) || {})
+        .filter(
+          (wait) =>
+            wait.status === 'waiting' && (wait.active_boot || wait.boot) === shared.boot && wait.deadline > Date.now(),
+        )
+        .map((wait) => wait.session_id),
+    );
+    return Object.values(await sessions())
+      .filter((session) => !session.deleted)
+      .map((session) => ({
+        id: session.id,
+        title: session.title || 'Conversación',
+        status:
+          attention[session.id] ||
+          (shared.waitingInput.has(session.id)
+            ? 'waiting_input'
+            : [...shared.approvalsByCall].some(
+                  ([key, id]) => key.startsWith(`${session.id}:`) && shared.liveApprovals.has(id),
+                )
+              ? 'waiting_approval'
+              : activeWaits.has(session.id)
+                ? 'waiting_event'
+                : projection.isRunning(session.conversationId)
+                  ? 'running'
+                  : session.continuation
+                    ? 'waiting_input'
+                    : session.last_error
+                      ? 'failed'
+                      : 'completed'),
+      }));
   },
   open: _open,
   shutdown,

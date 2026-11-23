@@ -140,7 +140,11 @@ async function runSuite(name, shard = null) {
       runNodeTests(CONTRACT_TESTS);
       return;
     case 'backend':
-      run('uv', ['run', '--project', ROOT, '--locked', '--extra', 'dev', 'pytest', '../tests', '-v'], path.join(ROOT, 'backend'));
+      run(
+        'uv',
+        ['run', '--project', ROOT, '--locked', '--extra', 'dev', 'pytest', '../tests', '-v'],
+        path.join(ROOT, 'backend'),
+      );
       return;
     case 'electron':
       await runNodeTestsParallel(ELECTRON_TESTS);

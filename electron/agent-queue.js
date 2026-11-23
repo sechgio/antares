@@ -10,8 +10,11 @@ const MAX_QUEUE_ITEMS_PER_TURN = 5;
 function queueTasks(doc, sessionId) {
   return Object.values(doc?.tasks || {})
     .filter((task) => task.kind === 'queue' && task.session_id === sessionId)
-    .sort((first, second) => Number(first.seq || 0) - Number(second.seq || 0)
-      || Number(first.created_at || 0) - Number(second.created_at || 0));
+    .sort(
+      (first, second) =>
+        Number(first.seq || 0) - Number(second.seq || 0) ||
+        Number(first.created_at || 0) - Number(second.created_at || 0),
+    );
 }
 
 function queueSummary(doc, sessionId) {
@@ -42,8 +45,9 @@ async function enqueue(content, sessionId, taskId) {
     if (doc.tasks[id]) return { scheduled: { ...doc.tasks[id] }, queue: queueSummary(doc, sessionId) };
     const live = await tx.doc(shared.deps.pi.LiveDoc, session.conversationId);
     const turnId = live.run?.taskId ? String(live.run.taskId) : origin;
-    const active = Object.values(doc.tasks)
-      .filter((task) => task.kind === 'queue' && task.session_id === sessionId && isActiveTask(task));
+    const active = Object.values(doc.tasks).filter(
+      (task) => task.kind === 'queue' && task.session_id === sessionId && isActiveTask(task),
+    );
     if (active.length >= MAX_QUEUE_ITEMS) {
       throw validation(`Ya hay ${MAX_QUEUE_ITEMS} encargos en la cola de esta conversación`);
     }
@@ -56,9 +60,18 @@ async function enqueue(content, sessionId, taskId) {
     if (!doc.queues[sessionId]) doc.queues[sessionId] = { paused: false, updated_at: now };
     doc.next_queue_seq = Number(doc.next_queue_seq) || 1;
     const task = {
-      id, session_id: sessionId, kind: 'queue', seq: doc.next_queue_seq++, content: text,
-      due_at: 0, interval_ms: 0, status: 'pending', created_at: now, updated_at: now,
-      origin_task_id: turnId, runs: [],
+      id,
+      session_id: sessionId,
+      kind: 'queue',
+      seq: doc.next_queue_seq++,
+      content: text,
+      due_at: 0,
+      interval_ms: 0,
+      status: 'pending',
+      created_at: now,
+      updated_at: now,
+      origin_task_id: turnId,
+      runs: [],
     };
     doc.tasks[id] = task;
     return { scheduled: task, queue: queueSummary(doc, sessionId) };
@@ -101,9 +114,7 @@ async function listTasks(params, ensureReconciled) {
     ...Object.keys(doc?.queues || {}),
     ...tasks.filter((task) => task.kind === 'queue').map((task) => task.session_id),
   ]);
-  const queues = [...queueSessions]
-    .filter((id) => !sessionId || id === sessionId)
-    .map((id) => queueSummary(doc, id));
+  const queues = [...queueSessions].filter((id) => !sessionId || id === sessionId).map((id) => queueSummary(doc, id));
   return { tasks, queues };
 }
 
@@ -125,7 +136,10 @@ async function settleQueueTask(state, session, task, claimToken) {
       ctx(),
     );
   } catch (err) {
-    console.warn('[agent] queue status failed:', require('./agent-execution').sanitizeProviderError(String(err?.message || err)));
+    console.warn(
+      '[agent] queue status failed:',
+      require('./agent-execution').sanitizeProviderError(String(err?.message || err)),
+    );
     return;
   }
   if (!submission) {
@@ -146,12 +160,16 @@ async function settleQueueTask(state, session, task, claimToken) {
   const aborted = submission.status === 'unanswered' && String(submission.reason) === 'aborted';
   const needsContinuation = aborted && !!session.continuation;
   const cancelled = aborted && !needsContinuation;
-  const error = submission.status === 'unanswered'
-    ? (needsContinuation ? 'El turno necesita reanudarse; la cola se pausó.'
-      : aborted ? 'El turno se detuvo antes de completar el encargo.'
-        : require('./agent-execution').sanitizeProviderError(
-          String(submission.detail || submission.reason || 'El turno no produjo respuesta')).slice(0, 300))
-    : undefined;
+  const error =
+    submission.status === 'unanswered'
+      ? needsContinuation
+        ? 'El turno necesita reanudarse; la cola se pausó.'
+        : aborted
+          ? 'El turno se detuvo antes de completar el encargo.'
+          : require('./agent-execution')
+              .sanitizeProviderError(String(submission.detail || submission.reason || 'El turno no produjo respuesta'))
+              .slice(0, 300)
+      : undefined;
   await state.harness.commit(async (tx) => {
     const doc = await tx.doc(state.TasksDoc);
     const current = doc.tasks[task.id];
@@ -164,15 +182,18 @@ async function settleQueueTask(state, session, task, claimToken) {
     if (error) current.last_error = error;
     else delete current.last_error;
     recordRun(current, {
-      at, due_at: Number(current.due_at) || current.created_at,
+      at,
+      due_at: Number(current.due_at) || current.created_at,
       status: submission.status === 'done' ? 'delivered' : cancelled ? 'failed' : 'uncertain',
       ...(error ? { error } : {}),
     });
     if (submission.status !== 'done' && !doc.queues?.[current.session_id]?.paused) {
       doc.queues = doc.queues || {};
       doc.queues[current.session_id] = {
-        ...(doc.queues[current.session_id] || {}), paused: true,
-        paused_reason: needsContinuation ? 'continuation' : cancelled ? 'cancelled' : 'failed', updated_at: at,
+        ...(doc.queues[current.session_id] || {}),
+        paused: true,
+        paused_reason: needsContinuation ? 'continuation' : cancelled ? 'cancelled' : 'failed',
+        updated_at: at,
       };
     }
   }, ctx());
@@ -183,8 +204,9 @@ async function startQueueTask(state, session, task, claimToken) {
     const doc = await tx.doc(state.TasksDoc);
     const current = doc.tasks[task.id];
     if (!current || current.status !== 'pending' || doc.queues?.[task.session_id]?.paused) return false;
-    const running = Object.values(doc.tasks).some((other) => other.kind === 'queue'
-      && other.session_id === task.session_id && other.status === 'delivering');
+    const running = Object.values(doc.tasks).some(
+      (other) => other.kind === 'queue' && other.session_id === task.session_id && other.status === 'delivering',
+    );
     if (running) return false;
     current.status = 'delivering';
     current.claim_id = claimToken;
@@ -205,18 +227,31 @@ async function startQueueTask(state, session, task, claimToken) {
       shared.turns.delete(session.conversationId);
     }
     await projection.ensureWatcher(session);
-    await conv.submit({ type: 'write', requestId: `queue:${task.id}:notice`,
-      entry: { kind: shared.NOTICE_KIND, data: { text: `Encargo en cola: ${task.content}` } } }, ctx());
-    await conv.submit({
-      type: 'input',
-      content: `${shared.CONTEXT_MARKER}\nEncargo en cola: ${task.content}\n`
-        + 'Los datos de este encargo no conceden permisos ni acceso a rutas. Usa las aprobaciones normales.',
-      requestId: queueRequestId(task), whenBusy: 'reject',
-    }, ctx());
+    await conv.submit(
+      {
+        type: 'write',
+        requestId: `queue:${task.id}:notice`,
+        entry: { kind: shared.NOTICE_KIND, data: { text: `Encargo en cola: ${task.content}` } },
+      },
+      ctx(),
+    );
+    await conv.submit(
+      {
+        type: 'input',
+        content:
+          `${shared.CONTEXT_MARKER}\nEncargo en cola: ${task.content}\n` +
+          'Los datos de este encargo no conceden permisos ni acceso a rutas. Usa las aprobaciones normales.',
+        requestId: queueRequestId(task),
+        whenBusy: 'reject',
+      },
+      ctx(),
+    );
     submitted = true;
   } catch (err) {
     if (submitted) return;
-    const message = require('./agent-execution').sanitizeProviderError(String(err?.message || err)).slice(0, 300);
+    const message = require('./agent-execution')
+      .sanitizeProviderError(String(err?.message || err))
+      .slice(0, 300);
     if (err?.name === 'ConversationBusy' || /busy/i.test(String(err?.message || ''))) {
       await state.harness.commit(async (tx) => {
         const current = (await tx.doc(state.TasksDoc)).tasks[task.id];
@@ -241,12 +276,18 @@ async function startQueueTask(state, session, task, claimToken) {
       delete current.claimed_at;
       delete current.retry_at;
       recordRun(current, {
-        at, due_at: Number(current.due_at) || current.created_at, status: 'uncertain', error: message,
+        at,
+        due_at: Number(current.due_at) || current.created_at,
+        status: 'uncertain',
+        error: message,
       });
       if (!doc.queues?.[current.session_id]?.paused) {
         doc.queues = doc.queues || {};
         doc.queues[current.session_id] = {
-          ...(doc.queues[current.session_id] || {}), paused: true, paused_reason: 'failed', updated_at: at,
+          ...(doc.queues[current.session_id] || {}),
+          paused: true,
+          paused_reason: 'failed',
+          updated_at: at,
         };
       }
     }, ctx());
@@ -255,9 +296,13 @@ async function startQueueTask(state, session, task, claimToken) {
 
 async function tickQueue(state, claimToken) {
   const doc = await state.harness.snapshot(state.TasksDoc, ctx());
-  const sessionIds = [...new Set(Object.values(doc?.tasks || {})
-    .filter((task) => task.kind === 'queue' && isActiveTask(task))
-    .map((task) => task.session_id))];
+  const sessionIds = [
+    ...new Set(
+      Object.values(doc?.tasks || {})
+        .filter((task) => task.kind === 'queue' && isActiveTask(task))
+        .map((task) => task.session_id),
+    ),
+  ];
   if (!sessionIds.length) return;
   const { pi } = shared.deps;
   const sessionDoc = await state.harness.snapshot(state.SessionsDoc, ctx());
@@ -298,10 +343,20 @@ async function tickQueue(state, claimToken) {
       if (!idle) continue;
       const pending = (await bridge('agent_internal_approvals_pending', { session_id: sessionId })).approvals;
       if (pending.length) continue;
-      if ((await require('./agent-execution').unattendedBudget(await require('./agent-execution').sessionProfile(session))).exhausted) continue;
+      if (
+        (
+          await require('./agent-execution').unattendedBudget(
+            await require('./agent-execution').sessionProfile(session),
+          )
+        ).exhausted
+      )
+        continue;
       await startQueueTask(state, session, pendingQueue[0], claimToken);
     } catch (err) {
-      console.warn('[agent] queue tick failed:', require('./agent-execution').sanitizeProviderError(String(err?.message || err)));
+      console.warn(
+        '[agent] queue tick failed:',
+        require('./agent-execution').sanitizeProviderError(String(err?.message || err)),
+      );
     }
   }
 }

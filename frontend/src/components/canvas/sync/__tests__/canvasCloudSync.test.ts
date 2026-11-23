@@ -14,11 +14,7 @@ vi.mock('../../../../utils/observability', () => ({
   reportFrontendError: vi.fn(),
 }));
 
-import {
-  listRemoteCanvasMeta,
-  markRemoteCanvasDeleted,
-  pushCanvasDocumentResult,
-} from '../canvasCloudSync';
+import { listRemoteCanvasMeta, markRemoteCanvasDeleted, pushCanvasDocumentResult } from '../canvasCloudSync';
 
 const doc = (overrides: Partial<CanvasDocument> = {}): CanvasDocument =>
   ({
@@ -69,15 +65,11 @@ function makeSupabase(opts: FakeSupabaseOpts) {
   const from = vi.fn(() => ({
     select: selectChain,
     upsert: vi.fn(() => ({
-      select: vi.fn(
-        async () => opts.upsert ?? { data: [{ id: 'doc-1' }], error: null },
-      ),
+      select: vi.fn(async () => opts.upsert ?? { data: [{ id: 'doc-1' }], error: null }),
     })),
     update: vi.fn(() => ({
       eq: vi.fn(() => ({
-        select: vi.fn(
-          async () => opts.update ?? { data: [{ id: 'x' }], error: null },
-        ),
+        select: vi.fn(async () => opts.update ?? { data: [{ id: 'x' }], error: null }),
       })),
     })),
   }));
@@ -85,8 +77,7 @@ function makeSupabase(opts: FakeSupabaseOpts) {
     auth: {
       getSession: vi.fn(async () => ({
         data: {
-          session:
-            opts.userId === null ? null : { user: { id: opts.userId ?? 'u1' } },
+          session: opts.userId === null ? null : { user: { id: opts.userId ?? 'u1' } },
         },
       })),
     },
@@ -106,15 +97,9 @@ describe('listRemoteCanvasMeta', () => {
   });
 
   it('devuelve filas y propaga error', async () => {
-    getSupabaseClient.mockResolvedValue(
-      makeSupabase({ list: { data: [{ id: 'a', updated_at: 'x' }] } }),
-    );
-    expect(await listRemoteCanvasMeta()).toEqual([
-      { id: 'a', updated_at: 'x' },
-    ]);
-    getSupabaseClient.mockResolvedValue(
-      makeSupabase({ list: { error: { message: 'boom' } } }),
-    );
+    getSupabaseClient.mockResolvedValue(makeSupabase({ list: { data: [{ id: 'a', updated_at: 'x' }] } }));
+    expect(await listRemoteCanvasMeta()).toEqual([{ id: 'a', updated_at: 'x' }]);
+    getSupabaseClient.mockResolvedValue(makeSupabase({ list: { error: { message: 'boom' } } }));
     await expect(listRemoteCanvasMeta()).rejects.toThrow('boom');
   });
 });
@@ -155,10 +140,7 @@ describe('pushCanvasDocumentResult', () => {
     );
     const res = await pushCanvasDocumentResult(doc(), { forceResurrect: true });
     expect(res.accepted).toBe(false);
-    expect(rpc).toHaveBeenCalledWith(
-      'canvas_append_document_version',
-      expect.anything(),
-    );
+    expect(rpc).toHaveBeenCalledWith('canvas_append_document_version', expect.anything());
   });
 
   it('error de select propaga', async () => {
@@ -168,9 +150,7 @@ describe('pushCanvasDocumentResult', () => {
         select: { data: null, error: { message: 'sel fail' } },
       }),
     );
-    await expect(
-      pushCanvasDocumentResult(doc(), { forceResurrect: true }),
-    ).rejects.toThrow('sel fail');
+    await expect(pushCanvasDocumentResult(doc(), { forceResurrect: true })).rejects.toThrow('sel fail');
   });
 });
 

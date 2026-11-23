@@ -161,9 +161,7 @@ function requireGhAuth() {
 function requireOriginRepo() {
   const remoteUrl = trySh('git remote get-url origin');
   if (!remoteUrl || !remoteUrl.includes(`${REPO_OWNER}/${REPO_NAME}`)) {
-    throw new Error(
-      `Remote origin debe apuntar a ${REPO_OWNER}/${REPO_NAME}, actual: ${remoteUrl || '(sin remote)'}`,
-    );
+    throw new Error(`Remote origin debe apuntar a ${REPO_OWNER}/${REPO_NAME}, actual: ${remoteUrl || '(sin remote)'}`);
   }
 }
 

@@ -18,11 +18,7 @@ import {
   updateTarea,
 } from '../api/espaciosApi';
 import { pickDefaultColor } from '../utils/colors';
-import {
-  subscribeEspaciosSync,
-  unsubscribeEspaciosSync,
-  type RealtimeStatus,
-} from '../api/realtime';
+import { subscribeEspaciosSync, unsubscribeEspaciosSync, type RealtimeStatus } from '../api/realtime';
 import type { BoardColumn, BoardColumnInput, Espacio, Proyecto, Tarea, TareaInput } from '../types';
 import { emitDueNotificationsInvalidate } from '../utils/dueNotificationsBus';
 import { readEspaciosPrefs, writeEspaciosPrefs } from '../utils/sessionPrefs';
@@ -63,39 +59,39 @@ function reportEspaciosSyncError(op: string, err: unknown, fallback: string): st
 
 function isEspacioRow(row: unknown): row is Espacio {
   return (
-    typeof row === 'object'
-    && row !== null
-    && typeof (row as Espacio).id === 'string'
-    && typeof (row as Espacio).name === 'string'
+    typeof row === 'object' &&
+    row !== null &&
+    typeof (row as Espacio).id === 'string' &&
+    typeof (row as Espacio).name === 'string'
   );
 }
 
 function isProyectoRow(row: unknown): row is Proyecto {
   return (
-    typeof row === 'object'
-    && row !== null
-    && typeof (row as Proyecto).id === 'string'
-    && typeof (row as Proyecto).espacio_id === 'string'
+    typeof row === 'object' &&
+    row !== null &&
+    typeof (row as Proyecto).id === 'string' &&
+    typeof (row as Proyecto).espacio_id === 'string'
   );
 }
 
 function isTareaRow(row: unknown): row is Tarea {
   return (
-    typeof row === 'object'
-    && row !== null
-    && typeof (row as Tarea).id === 'string'
-    && typeof (row as Tarea).proyecto_id === 'string'
-    && typeof (row as Tarea).status === 'string'
+    typeof row === 'object' &&
+    row !== null &&
+    typeof (row as Tarea).id === 'string' &&
+    typeof (row as Tarea).proyecto_id === 'string' &&
+    typeof (row as Tarea).status === 'string'
   );
 }
 
 function isBoardColumnRow(row: unknown): row is BoardColumn {
   return (
-    typeof row === 'object'
-    && row !== null
-    && typeof (row as BoardColumn).id === 'string'
-    && typeof (row as BoardColumn).proyecto_id === 'string'
-    && typeof (row as BoardColumn).key === 'string'
+    typeof row === 'object' &&
+    row !== null &&
+    typeof (row as BoardColumn).id === 'string' &&
+    typeof (row as BoardColumn).proyecto_id === 'string' &&
+    typeof (row as BoardColumn).key === 'string'
   );
 }
 
@@ -166,34 +162,37 @@ export function useEspaciosSync(userId: string | undefined) {
     return data;
   }, []);
 
-  const loadProyectos = useCallback(async (espacioId: string) => {
-    const guard = nextRequest(proyectosRequestRef);
-    setProyectosLoading(true);
-    try {
-      const data = await fetchProyectos(espacioId);
-      if (!guard.isCurrent() || activeEspacioIdRef.current !== espacioId) return data;
-      setProyectos(data);
-      setProyectosError(null);
-      setWarning(null);
-      if (data.length > 0) {
-        const preferred = prefs.current.activeProyectoId;
-        setActiveProyectoId((prev) => pickActiveId(data, prev, preferred));
-      } else {
-        setActiveProyectoId(null);
-        resetTareasState();
+  const loadProyectos = useCallback(
+    async (espacioId: string) => {
+      const guard = nextRequest(proyectosRequestRef);
+      setProyectosLoading(true);
+      try {
+        const data = await fetchProyectos(espacioId);
+        if (!guard.isCurrent() || activeEspacioIdRef.current !== espacioId) return data;
+        setProyectos(data);
+        setProyectosError(null);
+        setWarning(null);
+        if (data.length > 0) {
+          const preferred = prefs.current.activeProyectoId;
+          setActiveProyectoId((prev) => pickActiveId(data, prev, preferred));
+        } else {
+          setActiveProyectoId(null);
+          resetTareasState();
+        }
+        return data;
+      } catch (err) {
+        if (guard.isCurrent() && activeEspacioIdRef.current === espacioId) {
+          setProyectosError(errorMessage(err, 'Error al cargar proyectos'));
+        } else {
+          return [];
+        }
+        throw err;
+      } finally {
+        if (guard.isCurrent() && activeEspacioIdRef.current === espacioId) setProyectosLoading(false);
       }
-      return data;
-    } catch (err) {
-      if (guard.isCurrent() && activeEspacioIdRef.current === espacioId) {
-        setProyectosError(errorMessage(err, 'Error al cargar proyectos'));
-      } else {
-        return [];
-      }
-      throw err;
-    } finally {
-      if (guard.isCurrent() && activeEspacioIdRef.current === espacioId) setProyectosLoading(false);
-    }
-  }, [resetTareasState]);
+    },
+    [resetTareasState],
+  );
 
   const loadTareas = useCallback(async (proyectoId: string) => {
     const guard = nextRequest(tareasRequestRef);
@@ -236,81 +235,97 @@ export function useEspaciosSync(userId: string | undefined) {
     }
   }, []);
 
-  const reloadAll = useCallback(async (background = false) => {
-    const guard = nextRequest(reloadAllRequestRef);
-    const initialEspacioId = activeEspacioIdRef.current;
-    const initialProyectoId = activeProyectoIdRef.current;
-    setLoading(!background);
-    setRefreshing(background);
-    try {
-      const espaciosData = await fetchEspacios();
-      if (!guard.isCurrent() || activeEspacioIdRef.current !== initialEspacioId
-        || activeProyectoIdRef.current !== initialProyectoId) return;
-      setEspacios(espaciosData);
-      setError(null);
-      setEspaciosError(null);
-      const espacioId = pickActiveId(espaciosData, activeEspacioIdRef.current);
-      activeEspacioIdRef.current = espacioId;
-      setActiveEspacioId(espacioId);
-
-      if (!espacioId) {
-        resetProyectoState();
-        return;
-      }
-
-      const proyectosGuard = nextRequest(proyectosRequestRef);
-      setProyectosLoading(true);
-      let proyectosData: Proyecto[];
+  const reloadAll = useCallback(
+    async (background = false) => {
+      const guard = nextRequest(reloadAllRequestRef);
+      const initialEspacioId = activeEspacioIdRef.current;
+      const initialProyectoId = activeProyectoIdRef.current;
+      setLoading(!background);
+      setRefreshing(background);
       try {
-        proyectosData = await fetchProyectos(espacioId);
-      } catch (err) {
-        if (guard.isCurrent() && proyectosGuard.isCurrent() && activeEspacioIdRef.current === espacioId) {
-          setProyectosError(reportEspaciosSyncError('loadProyectos', err, 'Error al cargar proyectos'));
+        const espaciosData = await fetchEspacios();
+        if (
+          !guard.isCurrent() ||
+          activeEspacioIdRef.current !== initialEspacioId ||
+          activeProyectoIdRef.current !== initialProyectoId
+        )
+          return;
+        setEspacios(espaciosData);
+        setError(null);
+        setEspaciosError(null);
+        const espacioId = pickActiveId(espaciosData, activeEspacioIdRef.current);
+        activeEspacioIdRef.current = espacioId;
+        setActiveEspacioId(espacioId);
+
+        if (!espacioId) {
+          resetProyectoState();
+          return;
         }
-        return;
-      } finally {
-        if (proyectosGuard.isCurrent()) setProyectosLoading(false);
-      }
-      if (!guard.isCurrent() || !proyectosGuard.isCurrent() || activeEspacioIdRef.current !== espacioId
-        || activeProyectoIdRef.current !== initialProyectoId) return;
-      setProyectos(proyectosData);
-      setProyectosError(null);
-      const proyectoId = pickActiveId(proyectosData, activeProyectoIdRef.current);
-      activeProyectoIdRef.current = proyectoId;
-      setActiveProyectoId(proyectoId);
 
-      if (!proyectoId) {
-        resetTareasState();
-        return;
-      }
-
-      const results = await Promise.allSettled([
-        loadTareas(proyectoId),
-        loadBoardColumns(proyectoId),
-      ]);
-      if (guard.isCurrent() && activeProyectoIdRef.current === proyectoId) {
-        results.forEach((result, index) => {
-          if (result.status === 'rejected') {
-            setWarning(reportEspaciosSyncError(
-              index === 0 ? 'loadTareas' : 'loadBoardColumns', result.reason,
-              index === 0 ? 'Error al cargar tareas' : 'Error al cargar columnas del tablero',
-            ));
+        const proyectosGuard = nextRequest(proyectosRequestRef);
+        setProyectosLoading(true);
+        let proyectosData: Proyecto[];
+        try {
+          proyectosData = await fetchProyectos(espacioId);
+        } catch (err) {
+          if (guard.isCurrent() && proyectosGuard.isCurrent() && activeEspacioIdRef.current === espacioId) {
+            setProyectosError(reportEspaciosSyncError('loadProyectos', err, 'Error al cargar proyectos'));
           }
-        });
+          return;
+        } finally {
+          if (proyectosGuard.isCurrent()) setProyectosLoading(false);
+        }
+        if (
+          !guard.isCurrent() ||
+          !proyectosGuard.isCurrent() ||
+          activeEspacioIdRef.current !== espacioId ||
+          activeProyectoIdRef.current !== initialProyectoId
+        )
+          return;
+        setProyectos(proyectosData);
+        setProyectosError(null);
+        const proyectoId = pickActiveId(proyectosData, activeProyectoIdRef.current);
+        activeProyectoIdRef.current = proyectoId;
+        setActiveProyectoId(proyectoId);
+
+        if (!proyectoId) {
+          resetTareasState();
+          return;
+        }
+
+        const results = await Promise.allSettled([loadTareas(proyectoId), loadBoardColumns(proyectoId)]);
+        if (guard.isCurrent() && activeProyectoIdRef.current === proyectoId) {
+          results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+              setWarning(
+                reportEspaciosSyncError(
+                  index === 0 ? 'loadTareas' : 'loadBoardColumns',
+                  result.reason,
+                  index === 0 ? 'Error al cargar tareas' : 'Error al cargar columnas del tablero',
+                ),
+              );
+            }
+          });
+        }
+      } catch (err) {
+        if (
+          !guard.isCurrent() ||
+          activeEspacioIdRef.current !== initialEspacioId ||
+          activeProyectoIdRef.current !== initialProyectoId
+        )
+          return;
+        const message = errorMessage(err, 'Error al cargar ESPACIOS');
+        if (background) setEspaciosError(message);
+        else setError(message);
+      } finally {
+        if (guard.isCurrent()) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
-    } catch (err) {
-      if (!guard.isCurrent() || activeEspacioIdRef.current !== initialEspacioId
-        || activeProyectoIdRef.current !== initialProyectoId) return;
-      const message = errorMessage(err, 'Error al cargar ESPACIOS');
-      if (background) setEspaciosError(message);
-      else setError(message);
-    } finally {
-      if (guard.isCurrent()) {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    }
-  }, [resetProyectoState, resetTareasState, loadTareas, loadBoardColumns]);
+    },
+    [resetProyectoState, resetTareasState, loadTareas, loadBoardColumns],
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -458,26 +473,29 @@ export function useEspaciosSync(userId: string | undefined) {
     [userId, espacios.length],
   );
 
-  const addProyecto = useCallback(async (name: string) => {
-    if (!activeEspacioId) {
-      throw new Error('Selecciona un espacio antes de crear un proyecto');
-    }
-    const color = pickDefaultColor(proyectos.length + 2);
-    const proyecto = await createProyecto(activeEspacioId, name, color);
-    if (!proyecto?.id) {
-      throw new Error('No se pudo crear el proyecto (respuesta vacía de Supabase)');
-    }
-    setProyectos((prev) => {
-      if (prev.some((p) => p.id === proyecto.id)) {
-        return [...prev].sort((a, b) => a.name.localeCompare(b.name));
+  const addProyecto = useCallback(
+    async (name: string) => {
+      if (!activeEspacioId) {
+        throw new Error('Selecciona un espacio antes de crear un proyecto');
       }
-      return [...prev, proyecto].sort((a, b) => a.name.localeCompare(b.name));
-    });
-    setActiveProyectoId(proyecto.id);
-    void loadProyectos(activeEspacioId).catch((err) => {
-      reportEspaciosSyncError('reconcileProyectos', err, 'Error al cargar proyectos');
-    });
-  }, [activeEspacioId, proyectos.length, loadProyectos]);
+      const color = pickDefaultColor(proyectos.length + 2);
+      const proyecto = await createProyecto(activeEspacioId, name, color);
+      if (!proyecto?.id) {
+        throw new Error('No se pudo crear el proyecto (respuesta vacía de Supabase)');
+      }
+      setProyectos((prev) => {
+        if (prev.some((p) => p.id === proyecto.id)) {
+          return [...prev].sort((a, b) => a.name.localeCompare(b.name));
+        }
+        return [...prev, proyecto].sort((a, b) => a.name.localeCompare(b.name));
+      });
+      setActiveProyectoId(proyecto.id);
+      void loadProyectos(activeEspacioId).catch((err) => {
+        reportEspaciosSyncError('reconcileProyectos', err, 'Error al cargar proyectos');
+      });
+    },
+    [activeEspacioId, proyectos.length, loadProyectos],
+  );
 
   const addTarea = useCallback(
     async (input: TareaInput, targetProyectoId?: string) => {
@@ -509,46 +527,51 @@ export function useEspaciosSync(userId: string | undefined) {
     [activeProyectoId],
   );
 
-  const patchTarea = useCallback(async (
-    id: string,
-    patch: Partial<TareaInput & Pick<Tarea, 'status'>>,
-    expectedUpdatedAt?: string,
-  ) => {
-    const requestId = (tareaPatchRequestRef.current.get(id) ?? 0) + 1;
-    tareaPatchRequestRef.current.set(id, requestId);
-    const previous = tareas.find((t) => t.id === id);
-    setTareas((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
-    try {
-      const saved = await updateTarea(id, patch, expectedUpdatedAt);
-      if (saved && saved.proyecto_id === activeProyectoIdRef.current
-        && tareaPatchRequestRef.current.get(id) === requestId) {
-        setTareas((prev) => prev.map((t) => t.id === id ? saved : t));
-      }
-      emitDueNotificationsInvalidate();
-    } catch (err) {
-      if (tareaPatchRequestRef.current.get(id) !== requestId) throw err;
-      if (previous && previous.proyecto_id === activeProyectoIdRef.current) {
-        setTareas((prev) => prev.map((t) => t.id === id ? previous : t));
-      }
+  const patchTarea = useCallback(
+    async (id: string, patch: Partial<TareaInput & Pick<Tarea, 'status'>>, expectedUpdatedAt?: string) => {
+      const requestId = (tareaPatchRequestRef.current.get(id) ?? 0) + 1;
+      tareaPatchRequestRef.current.set(id, requestId);
+      const previous = tareas.find((t) => t.id === id);
+      setTareas((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
       try {
-        if (activeProyectoIdRef.current === activeProyectoId) await reloadActiveProyecto(loadTareas);
-      } catch (reloadErr) {
-        reportEspaciosSyncError('reconcileTareas', reloadErr, 'Error al cargar tareas');
+        const saved = await updateTarea(id, patch, expectedUpdatedAt);
+        if (
+          saved &&
+          saved.proyecto_id === activeProyectoIdRef.current &&
+          tareaPatchRequestRef.current.get(id) === requestId
+        ) {
+          setTareas((prev) => prev.map((t) => (t.id === id ? saved : t)));
+        }
+        emitDueNotificationsInvalidate();
+      } catch (err) {
+        if (tareaPatchRequestRef.current.get(id) !== requestId) throw err;
+        if (previous && previous.proyecto_id === activeProyectoIdRef.current) {
+          setTareas((prev) => prev.map((t) => (t.id === id ? previous : t)));
+        }
+        try {
+          if (activeProyectoIdRef.current === activeProyectoId) await reloadActiveProyecto(loadTareas);
+        } catch (reloadErr) {
+          reportEspaciosSyncError('reconcileTareas', reloadErr, 'Error al cargar tareas');
+        }
+        throw err;
       }
-      throw err;
-    }
-  }, [reloadActiveProyecto, loadTareas, tareas, activeProyectoId]);
+    },
+    [reloadActiveProyecto, loadTareas, tareas, activeProyectoId],
+  );
 
-  const removeTarea = useCallback(async (id: string) => {
-    setTareas((prev) => prev.filter((t) => t.id !== id));
-    try {
-      await deleteTarea(id);
-      emitDueNotificationsInvalidate();
-    } catch (err) {
-      await reloadActiveProyecto(loadTareas);
-      throw err;
-    }
-  }, [reloadActiveProyecto, loadTareas]);
+  const removeTarea = useCallback(
+    async (id: string) => {
+      setTareas((prev) => prev.filter((t) => t.id !== id));
+      try {
+        await deleteTarea(id);
+        emitDueNotificationsInvalidate();
+      } catch (err) {
+        await reloadActiveProyecto(loadTareas);
+        throw err;
+      }
+    },
+    [reloadActiveProyecto, loadTareas],
+  );
 
   const softRemoveTarea = useCallback((id: string) => {
     pendingDeleteIdsRef.current.add(id);
@@ -568,17 +591,20 @@ export function useEspaciosSync(userId: string | undefined) {
     emitDueNotificationsInvalidate();
   }, []);
 
-  const commitDeleteTarea = useCallback(async (id: string) => {
-    try {
-      await deleteTarea(id);
-      pendingDeleteIdsRef.current.delete(id);
-      emitDueNotificationsInvalidate();
-    } catch (err) {
-      pendingDeleteIdsRef.current.delete(id);
-      await reloadActiveProyecto(loadTareas);
-      throw err;
-    }
-  }, [reloadActiveProyecto, loadTareas]);
+  const commitDeleteTarea = useCallback(
+    async (id: string) => {
+      try {
+        await deleteTarea(id);
+        pendingDeleteIdsRef.current.delete(id);
+        emitDueNotificationsInvalidate();
+      } catch (err) {
+        pendingDeleteIdsRef.current.delete(id);
+        await reloadActiveProyecto(loadTareas);
+        throw err;
+      }
+    },
+    [reloadActiveProyecto, loadTareas],
+  );
 
   const addBoardColumn = useCallback(
     async (input: BoardColumnInput) => {
@@ -607,9 +633,7 @@ export function useEspaciosSync(userId: string | undefined) {
   const patchBoardColumn = useCallback(
     async (id: string, patch: Partial<Pick<BoardColumn, 'name' | 'color' | 'is_done'>>) => {
       setBoardColumns((prev) =>
-        prev
-          .map((c) => (c.id === id ? { ...c, ...patch } : c))
-          .sort((a, b) => a.sort_order - b.sort_order),
+        prev.map((c) => (c.id === id ? { ...c, ...patch } : c)).sort((a, b) => a.sort_order - b.sort_order),
       );
       try {
         await updateBoardColumn(id, patch);
@@ -687,112 +711,121 @@ export function useEspaciosSync(userId: string | undefined) {
     [proyectos, activeProyectoId, activeEspacioId, loadProyectos],
   );
 
-  const patchEspacio = useCallback(async (id: string, patch: Partial<Pick<Espacio, 'name' | 'color'>>) => {
-    setEspacios((prev) => {
-      const next = prev.map((e) => (e.id === id ? { ...e, ...patch } : e));
-      return patch.name !== undefined ? [...next].sort((a, b) => a.name.localeCompare(b.name)) : next;
-    });
-    try {
-      await updateEspacio(id, patch);
-    } catch (err) {
-      await loadEspacios();
-      throw err;
-    }
-  }, [loadEspacios]);
+  const patchEspacio = useCallback(
+    async (id: string, patch: Partial<Pick<Espacio, 'name' | 'color'>>) => {
+      setEspacios((prev) => {
+        const next = prev.map((e) => (e.id === id ? { ...e, ...patch } : e));
+        return patch.name !== undefined ? [...next].sort((a, b) => a.name.localeCompare(b.name)) : next;
+      });
+      try {
+        await updateEspacio(id, patch);
+      } catch (err) {
+        await loadEspacios();
+        throw err;
+      }
+    },
+    [loadEspacios],
+  );
 
-  const patchProyecto = useCallback(async (id: string, patch: Partial<Pick<Proyecto, 'name' | 'color' | 'is_favorite'>>) => {
-    setProyectos((prev) => {
-      const next = prev.map((p) => (p.id === id ? { ...p, ...patch } : p));
-      return patch.name !== undefined ? [...next].sort((a, b) => a.name.localeCompare(b.name)) : next;
-    });
-    try {
-      await updateProyecto(id, patch);
-    } catch (err) {
-      if (activeEspacioId) await loadProyectos(activeEspacioId);
-      throw err;
-    }
-  }, [activeEspacioId, loadProyectos]);
+  const patchProyecto = useCallback(
+    async (id: string, patch: Partial<Pick<Proyecto, 'name' | 'color' | 'is_favorite'>>) => {
+      setProyectos((prev) => {
+        const next = prev.map((p) => (p.id === id ? { ...p, ...patch } : p));
+        return patch.name !== undefined ? [...next].sort((a, b) => a.name.localeCompare(b.name)) : next;
+      });
+      try {
+        await updateProyecto(id, patch);
+      } catch (err) {
+        if (activeEspacioId) await loadProyectos(activeEspacioId);
+        throw err;
+      }
+    },
+    [activeEspacioId, loadProyectos],
+  );
 
   const activeEspacio = espacios.find((e) => e.id === activeEspacioId) ?? null;
   const activeProyecto = proyectos.find((p) => p.id === activeProyectoId) ?? null;
 
-  return useMemo(() => ({
-    espacios,
-    proyectos,
-    tareas,
-    boardColumns,
-    activeEspacio,
-    activeProyecto,
-    activeEspacioId,
-    activeProyectoId,
-    setActiveEspacioId,
-    setActiveProyectoId,
-    loading,
-    refreshing,
-    proyectosLoading,
-    tareasLoading,
-    error,
-    espaciosError,
-    proyectosError,
-    tareasError,
-    columnsError,
-    warning,
-    clearWarning,
-    realtimeStatus,
-    reloadAll,
-    addEspacio,
-    addProyecto,
-    addTarea,
-    addBoardColumn,
-    patchBoardColumn,
-    removeBoardColumn,
-    patchTarea,
-    removeTarea,
-    softRemoveTarea,
-    restoreTarea,
-    commitDeleteTarea,
-    patchEspacio,
-    patchProyecto,
-    removeEspacio,
-    removeProyecto,
-  }), [
-    espacios,
-    proyectos,
-    tareas,
-    boardColumns,
-    activeEspacio,
-    activeProyecto,
-    activeEspacioId,
-    activeProyectoId,
-    setActiveEspacioId,
-    setActiveProyectoId,
-    loading,
-    refreshing,
-    proyectosLoading,
-    tareasLoading,
-    error,
-    espaciosError,
-    proyectosError,
-    tareasError,
-    columnsError,
-    warning,
-    clearWarning,
-    realtimeStatus,
-    reloadAll,
-    addEspacio,
-    addProyecto,
-    addTarea,
-    addBoardColumn,
-    patchBoardColumn,
-    removeBoardColumn,
-    patchTarea,
-    removeTarea,
-    softRemoveTarea,
-    restoreTarea,
-    commitDeleteTarea,
-    patchEspacio,
-    patchProyecto,
-    removeEspacio,
-    removeProyecto,
-  ]);
+  return useMemo(
+    () => ({
+      espacios,
+      proyectos,
+      tareas,
+      boardColumns,
+      activeEspacio,
+      activeProyecto,
+      activeEspacioId,
+      activeProyectoId,
+      setActiveEspacioId,
+      setActiveProyectoId,
+      loading,
+      refreshing,
+      proyectosLoading,
+      tareasLoading,
+      error,
+      espaciosError,
+      proyectosError,
+      tareasError,
+      columnsError,
+      warning,
+      clearWarning,
+      realtimeStatus,
+      reloadAll,
+      addEspacio,
+      addProyecto,
+      addTarea,
+      addBoardColumn,
+      patchBoardColumn,
+      removeBoardColumn,
+      patchTarea,
+      removeTarea,
+      softRemoveTarea,
+      restoreTarea,
+      commitDeleteTarea,
+      patchEspacio,
+      patchProyecto,
+      removeEspacio,
+      removeProyecto,
+    }),
+    [
+      espacios,
+      proyectos,
+      tareas,
+      boardColumns,
+      activeEspacio,
+      activeProyecto,
+      activeEspacioId,
+      activeProyectoId,
+      setActiveEspacioId,
+      setActiveProyectoId,
+      loading,
+      refreshing,
+      proyectosLoading,
+      tareasLoading,
+      error,
+      espaciosError,
+      proyectosError,
+      tareasError,
+      columnsError,
+      warning,
+      clearWarning,
+      realtimeStatus,
+      reloadAll,
+      addEspacio,
+      addProyecto,
+      addTarea,
+      addBoardColumn,
+      patchBoardColumn,
+      removeBoardColumn,
+      patchTarea,
+      removeTarea,
+      softRemoveTarea,
+      restoreTarea,
+      commitDeleteTarea,
+      patchEspacio,
+      patchProyecto,
+      removeEspacio,
+      removeProyecto,
+    ],
+  );
 }

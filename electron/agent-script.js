@@ -4,9 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
-const {
-  SYNC_TIMEOUT_MS, MAX_RESULT_JSON_CHARS, WORKER_FLAG,
-} = require('./agent-script-worker');
+const { SYNC_TIMEOUT_MS, MAX_RESULT_JSON_CHARS, WORKER_FLAG } = require('./agent-script-worker');
 
 const SCRIPT_MAX_CHARS = 20_000;
 const DEFAULT_MAX_OUTPUT_CHARS = 4_000;
@@ -24,26 +22,57 @@ let chordContext = null;
 const loadChordContext = () => (chordContext ||= import('@earendil-works/chord/context'));
 
 function workerEntry() {
-  return require.resolve('./agent-script-worker')
-    .replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
+  return require.resolve('./agent-script-worker').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
 }
 
 const READ_ONLY_NATIVE_TOOLS = new Set([
-  'autoimg_status', 'autoimg_operation_status', 'autoimg_drive_status',
-  'autoimg_sheets_auth_status', 'autoimg_sheets_get_config', 'autoimg_sheets_read_range',
-  'autoimg_folders_list', 'autoimg_drive_list_folder', 'autoimg_drive_verify_folder',
-  'autoimg_drive_folder_preview', 'autoimg_drive_scan_nis', 'autoimg_arrastre_list',
-  'autoimg_logs_list', 'autoimg_rename_dest_config',
-  'espacios_list', 'espacios_projects', 'espacios_tasks', 'espacios_task_get',
-  'espacios_task_comments', 'espacios_task_activity', 'espacios_members',
-  'espacios_my_tasks', 'espacios_my_task_origins',
-  'web_read', 'web_text', 'web_console', 'web_network', 'web_screenshot',
-  'cua_list_windows', 'cua_list_apps', 'cua_screen_size',
-  'gdrive_search', 'gdrive_get', 'gsheets_metadata', 'gsheets_read',
-  'onedrive_search', 'onedrive_get', 'excel_worksheets', 'excel_read_range',
-  'gmail_search', 'gmail_get', 'outlook_search', 'outlook_get',
-  'github_workflow_runs', 'github_run_get',
-  'padron_describe', 'volantes_describe',
+  'autoimg_status',
+  'autoimg_operation_status',
+  'autoimg_drive_status',
+  'autoimg_sheets_auth_status',
+  'autoimg_sheets_get_config',
+  'autoimg_sheets_read_range',
+  'autoimg_folders_list',
+  'autoimg_drive_list_folder',
+  'autoimg_drive_verify_folder',
+  'autoimg_drive_folder_preview',
+  'autoimg_drive_scan_nis',
+  'autoimg_arrastre_list',
+  'autoimg_logs_list',
+  'autoimg_rename_dest_config',
+  'espacios_list',
+  'espacios_projects',
+  'espacios_tasks',
+  'espacios_task_get',
+  'espacios_task_comments',
+  'espacios_task_activity',
+  'espacios_members',
+  'espacios_my_tasks',
+  'espacios_my_task_origins',
+  'web_read',
+  'web_text',
+  'web_console',
+  'web_network',
+  'web_screenshot',
+  'cua_list_windows',
+  'cua_list_apps',
+  'cua_screen_size',
+  'gdrive_search',
+  'gdrive_get',
+  'gsheets_metadata',
+  'gsheets_read',
+  'onedrive_search',
+  'onedrive_get',
+  'excel_worksheets',
+  'excel_read_range',
+  'gmail_search',
+  'gmail_get',
+  'outlook_search',
+  'outlook_get',
+  'github_workflow_runs',
+  'github_run_get',
+  'padron_describe',
+  'volantes_describe',
 ]);
 
 function isReadOnlyTool(spec) {
@@ -75,7 +104,16 @@ function boundedOutput(text, limit) {
 }
 
 async function writeResultFile({
-  dir, output, outputTotalChars, resultJson, error, timedOut, calls, durationMs, resultTruncated, outputTruncated,
+  dir,
+  output,
+  outputTotalChars,
+  resultJson,
+  error,
+  timedOut,
+  calls,
+  durationMs,
+  resultTruncated,
+  outputTruncated,
 }) {
   const folder = path.resolve(String(dir));
   await fs.promises.mkdir(folder, { recursive: true });
@@ -84,7 +122,11 @@ async function writeResultFile({
   const target = path.join(folder, filename);
   let result = null;
   if (typeof resultJson === 'string' && resultJson) {
-    try { result = JSON.parse(resultJson); } catch { result = resultJson; }
+    try {
+      result = JSON.parse(resultJson);
+    } catch {
+      result = resultJson;
+    }
   }
   const payload = {
     kind: 'antares.agent.script',
@@ -133,7 +175,9 @@ function toolResultText(result) {
     ? result.content.filter((part) => part && part.type === 'text').map((part) => String(part.text || ''))
     : [String(result.content || '')];
   for (const text of parts) {
-    try { return { text, parsed: JSON.parse(text) }; } catch { }
+    try {
+      return { text, parsed: JSON.parse(text) };
+    } catch {}
   }
   return { text: parts.join(' ').trim(), parsed: null };
 }
@@ -157,10 +201,12 @@ async function runScriptedTool(toolSpec, args, api, context, options = {}) {
   const { text, parsed } = toolResultText(result);
   const failed = result.isError || toolFailure(parsed);
   if (failed) {
-    const detail = parsed && typeof parsed === 'object'
-      ? (parsed.error && typeof parsed.error === 'object' ? parsed.error.message : parsed.error)
-        || parsed.message || text
-      : text;
+    const detail =
+      parsed && typeof parsed === 'object'
+        ? (parsed.error && typeof parsed.error === 'object' ? parsed.error.message : parsed.error) ||
+          parsed.message ||
+          text
+        : text;
     throw new Error(String(detail || 'La herramienta falló').slice(0, 500));
   }
   return parsed !== null ? parsed : text;
@@ -172,8 +218,10 @@ async function dispatchScript(args, sessionId, api, context, host = {}) {
   const enabled = new Set((await conv.agent(context || {})).tools.map((tool) => tool.name));
   const allows = await profileToolFilter(await requireSession(sessionId));
   const tools = [...toolSpecs.values()]
-    .filter((tool) => tool.name !== SCRIPT_TOOL && enabled.has(tool.name)
-      && (!allows || allows(tool.name)) && isReadOnlyTool(tool))
+    .filter(
+      (tool) =>
+        tool.name !== SCRIPT_TOOL && enabled.has(tool.name) && (!allows || allows(tool.name)) && isReadOnlyTool(tool),
+    )
     .map((tool) => ({
       name: tool.name,
       module: tool.module || null,
@@ -181,10 +229,8 @@ async function dispatchScript(args, sessionId, api, context, host = {}) {
     }));
   let sequence = 0;
   const callBase = api.callId || `script-${crypto.randomUUID().slice(0, 8)}`;
-  const callTool = (name, callArgs, { signal } = {}) => runTool(
-    toolSpecs.get(name), callArgs, api, context,
-    { callId: `${callBase}#script-${++sequence}`, signal },
-  );
+  const callTool = (name, callArgs, { signal } = {}) =>
+    runTool(toolSpecs.get(name), callArgs, api, context, { callId: `${callBase}#script-${++sequence}`, signal });
   const result = await runScript({
     dir: draftsDir(sessionId),
     code: (args || {}).script,
@@ -204,10 +250,19 @@ async function runScript(options = {}) {
 
   const requestedOutput = Number(options.maxOutputChars) || DEFAULT_MAX_OUTPUT_CHARS;
   const maxOutputChars = Math.max(100, Math.min(MAX_OUTPUT_CHARS, Math.floor(requestedOutput)));
-  const maxStoredChars = Math.max(maxOutputChars, Math.min(MAX_STORED_CHARS, Math.floor(Number(options.maxStoredChars) || MAX_STORED_CHARS)));
+  const maxStoredChars = Math.max(
+    maxOutputChars,
+    Math.min(MAX_STORED_CHARS, Math.floor(Number(options.maxStoredChars) || MAX_STORED_CHARS)),
+  );
   const maxCalls = Math.max(1, Math.min(MAX_CALLS, Math.floor(Number(options.maxCalls) || MAX_CALLS)));
-  const maxConcurrent = Math.max(1, Math.min(MAX_CONCURRENT_CALLS, Math.floor(Number(options.maxConcurrentCalls) || MAX_CONCURRENT_CALLS)));
-  const timeoutMs = Math.max(500, Math.min(15 * 60 * 1000, Math.floor(Number(options.timeoutMs) || DEFAULT_TIMEOUT_MS)));
+  const maxConcurrent = Math.max(
+    1,
+    Math.min(MAX_CONCURRENT_CALLS, Math.floor(Number(options.maxConcurrentCalls) || MAX_CONCURRENT_CALLS)),
+  );
+  const timeoutMs = Math.max(
+    500,
+    Math.min(15 * 60 * 1000, Math.floor(Number(options.timeoutMs) || DEFAULT_TIMEOUT_MS)),
+  );
   const dir = options.dir;
   if (!dir) throw new Error('script_run necesita el directorio de borradores de la conversación');
   const catalog = (Array.isArray(options.tools) ? options.tools : [])
@@ -256,7 +311,9 @@ async function runScript(options = {}) {
 
     const respond = (id, ok, text) => {
       if (settled || !worker) return;
-      try { worker.postMessage({ type: 'result', id, ok, text }); } catch { }
+      try {
+        worker.postMessage({ type: 'result', id, ok, text });
+      } catch {}
     };
 
     const runCall = async (job) => {
@@ -265,11 +322,20 @@ async function runScript(options = {}) {
         const value = await options.callTool(job.name, job.args, { signal: controller.signal });
         const text = jsonText(value);
         if (text === null) throw new Error('La herramienta devolvió un resultado no serializable');
-        respond(job.id, true, text.length > MAX_TOOL_RESULT_CHARS
-          ? JSON.stringify({ truncated: true, total_chars: text.length, preview: text.slice(0, MAX_TOOL_RESULT_CHARS) })
-          : text);
+        respond(
+          job.id,
+          true,
+          text.length > MAX_TOOL_RESULT_CHARS
+            ? JSON.stringify({
+                truncated: true,
+                total_chars: text.length,
+                preview: text.slice(0, MAX_TOOL_RESULT_CHARS),
+              })
+            : text,
+        );
       } catch (failure) {
-        const message = failure && failure.message ? String(failure.message) : String(failure || 'La herramienta falló');
+        const message =
+          failure && failure.message ? String(failure.message) : String(failure || 'La herramienta falló');
         respond(job.id, false, message.slice(0, 1_000));
       }
     };
@@ -291,14 +357,26 @@ async function runScript(options = {}) {
       clearTimeout(timer);
       if (parentSignal) parentSignal.removeEventListener('abort', onAbort);
       controller.abort();
-      try { worker.removeAllListeners(); } catch { }
-      try { await worker.terminate(); } catch { }
+      try {
+        worker.removeAllListeners();
+      } catch {}
+      try {
+        await worker.terminate();
+      } catch {}
       const durationMs = Date.now() - startedAt;
       let saved = { saved_path: null, filename: null, file_truncated: false, saved_error: null };
       try {
         saved = await writeResultFile({
-          dir, output, outputTotalChars: outputTotal, resultJson, error, timedOut, calls, durationMs,
-          resultTruncated, outputTruncated,
+          dir,
+          output,
+          outputTotalChars: outputTotal,
+          resultJson,
+          error,
+          timedOut,
+          calls,
+          durationMs,
+          resultTruncated,
+          outputTruncated,
         });
       } catch (failure) {
         saved.saved_error = errorMessage(failure, 300);
@@ -307,7 +385,11 @@ async function runScript(options = {}) {
       let resultPreview;
       if (typeof resultJson === 'string' && resultJson) {
         if (resultJson.length <= 2_000) {
-          try { result = JSON.parse(resultJson); } catch { result = resultJson; }
+          try {
+            result = JSON.parse(resultJson);
+          } catch {
+            result = resultJson;
+          }
         } else {
           resultPreview = resultJson.slice(0, 2_000);
         }
@@ -372,7 +454,9 @@ async function runScript(options = {}) {
           return;
         }
         let args;
-        try { args = JSON.parse(String(message.args_json || '{}')); } catch {
+        try {
+          args = JSON.parse(String(message.args_json || '{}'));
+        } catch {
           respond(id, false, 'Los argumentos de la herramienta no son válidos');
           return;
         }
@@ -382,7 +466,9 @@ async function runScript(options = {}) {
       }
       if (message.type === 'done') {
         let payload = null;
-        try { payload = JSON.parse(String(message.payload_json || '{}')); } catch { }
+        try {
+          payload = JSON.parse(String(message.payload_json || '{}'));
+        } catch {}
         if (!payload || typeof payload !== 'object') {
           error = 'El sandbox devolvió un resultado no válido';
         } else {

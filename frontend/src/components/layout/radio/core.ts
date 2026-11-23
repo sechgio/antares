@@ -15,21 +15,126 @@ export type MeterMode = 'levels' | 'activity';
 export const NIGHTRIDE = 'https://stream.nightride.fm/';
 const SOMAFM = 'https://ice6.somafm.com';
 export const PRESETS: Station[] = [
-  { id: 'chillsynth', name: 'Chillsynth', description: 'Enfoque suave · sintes cálidos', provider: 'Nightride FM', url: `${NIGHTRIDE}chillsynth.mp3`, homepage: 'https://nightride.fm/?station=chillsynth' },
-  { id: 'nightride', name: 'Nightride', description: 'Synthwave · madrugada', provider: 'Nightride FM', url: `${NIGHTRIDE}nightride.mp3`, homepage: 'https://nightride.fm/' },
-  { id: 'darksynth', name: 'Darksynth', description: 'Electrónica oscura · alta energía', provider: 'Nightride FM', url: `${NIGHTRIDE}darksynth.mp3`, homepage: 'https://nightride.fm/?station=darksynth' },
-  { id: 'spacesynth', name: 'Spacesynth', description: 'Sintes cósmicos · futuros retro', provider: 'Nightride FM', url: `${NIGHTRIDE}spacesynth.mp3`, homepage: 'https://nightride.fm/?station=spacesynth' },
-  { id: 'paradise-main', name: 'Main Mix', description: 'Ecléctico · selección humana', provider: 'Radio Paradise', url: 'https://stream.radioparadise.com/aac-128', homepage: 'https://radioparadise.com/' },
-  { id: 'paradise-mellow', name: 'Mellow Mix', description: 'Un ritmo más calmado', provider: 'Radio Paradise', url: 'https://stream.radioparadise.com/mellow-flac', homepage: 'https://radioparadise.com/' },
-  { id: 'eve-radio', name: 'EVE Radio', description: 'GamingNow · radio de la comunidad EVE', provider: 'GamingNow', url: 'https://media01.gamingnow.net:8010/erweb.mp3', homepage: 'https://gamingnow.net/eve-radio/' },
-  { id: 'somafm-groovesalad', name: 'Groove Salad', description: 'Ambient · downtempo', provider: 'SomaFM', url: `${SOMAFM}/groovesalad-128-mp3`, homepage: 'https://somafm.com/groovesalad/' },
-  { id: 'somafm-dronezone', name: 'Drone Zone', description: 'Ambient atmosférico', provider: 'SomaFM', url: `${SOMAFM}/dronezone-128-mp3`, homepage: 'https://somafm.com/dronezone/' },
-  { id: 'somafm-secretagent', name: 'Secret Agent', description: 'Lounge · banda sonora', provider: 'SomaFM', url: `${SOMAFM}/secretagent-128-mp3`, homepage: 'https://somafm.com/secretagent/' },
-  { id: 'somafm-fluid', name: 'Fluid', description: 'Hip-hop instrumental', provider: 'SomaFM', url: `${SOMAFM}/fluid-128-mp3`, homepage: 'https://somafm.com/fluid/' },
-  { id: 'somafm-lush', name: 'Lush', description: 'Vocal · chillout', provider: 'SomaFM', url: `${SOMAFM}/lush-128-mp3`, homepage: 'https://somafm.com/lush/' },
-  { id: 'somafm-sonicuniverse', name: 'Sonic Universe', description: 'Jazz · vanguardia', provider: 'SomaFM', url: `${SOMAFM}/sonicuniverse-128-mp3`, homepage: 'https://somafm.com/sonicuniverse/' },
-  { id: 'somafm-defcon', name: 'DEF CON Radio', description: 'Electrónica · hacking', provider: 'SomaFM', url: `${SOMAFM}/defcon-128-mp3`, homepage: 'https://somafm.com/defcon/' },
-  { id: 'somafm-cliqhop', name: 'Cliqhop idm', description: 'IDM · blipsnbeats', provider: 'SomaFM', url: `${SOMAFM}/cliqhop-128-mp3`, homepage: 'https://somafm.com/cliqhop/' },
+  {
+    id: 'chillsynth',
+    name: 'Chillsynth',
+    description: 'Enfoque suave · sintes cálidos',
+    provider: 'Nightride FM',
+    url: `${NIGHTRIDE}chillsynth.mp3`,
+    homepage: 'https://nightride.fm/?station=chillsynth',
+  },
+  {
+    id: 'nightride',
+    name: 'Nightride',
+    description: 'Synthwave · madrugada',
+    provider: 'Nightride FM',
+    url: `${NIGHTRIDE}nightride.mp3`,
+    homepage: 'https://nightride.fm/',
+  },
+  {
+    id: 'darksynth',
+    name: 'Darksynth',
+    description: 'Electrónica oscura · alta energía',
+    provider: 'Nightride FM',
+    url: `${NIGHTRIDE}darksynth.mp3`,
+    homepage: 'https://nightride.fm/?station=darksynth',
+  },
+  {
+    id: 'spacesynth',
+    name: 'Spacesynth',
+    description: 'Sintes cósmicos · futuros retro',
+    provider: 'Nightride FM',
+    url: `${NIGHTRIDE}spacesynth.mp3`,
+    homepage: 'https://nightride.fm/?station=spacesynth',
+  },
+  {
+    id: 'paradise-main',
+    name: 'Main Mix',
+    description: 'Ecléctico · selección humana',
+    provider: 'Radio Paradise',
+    url: 'https://stream.radioparadise.com/aac-128',
+    homepage: 'https://radioparadise.com/',
+  },
+  {
+    id: 'paradise-mellow',
+    name: 'Mellow Mix',
+    description: 'Un ritmo más calmado',
+    provider: 'Radio Paradise',
+    url: 'https://stream.radioparadise.com/mellow-flac',
+    homepage: 'https://radioparadise.com/',
+  },
+  {
+    id: 'eve-radio',
+    name: 'EVE Radio',
+    description: 'GamingNow · radio de la comunidad EVE',
+    provider: 'GamingNow',
+    url: 'https://media01.gamingnow.net:8010/erweb.mp3',
+    homepage: 'https://gamingnow.net/eve-radio/',
+  },
+  {
+    id: 'somafm-groovesalad',
+    name: 'Groove Salad',
+    description: 'Ambient · downtempo',
+    provider: 'SomaFM',
+    url: `${SOMAFM}/groovesalad-128-mp3`,
+    homepage: 'https://somafm.com/groovesalad/',
+  },
+  {
+    id: 'somafm-dronezone',
+    name: 'Drone Zone',
+    description: 'Ambient atmosférico',
+    provider: 'SomaFM',
+    url: `${SOMAFM}/dronezone-128-mp3`,
+    homepage: 'https://somafm.com/dronezone/',
+  },
+  {
+    id: 'somafm-secretagent',
+    name: 'Secret Agent',
+    description: 'Lounge · banda sonora',
+    provider: 'SomaFM',
+    url: `${SOMAFM}/secretagent-128-mp3`,
+    homepage: 'https://somafm.com/secretagent/',
+  },
+  {
+    id: 'somafm-fluid',
+    name: 'Fluid',
+    description: 'Hip-hop instrumental',
+    provider: 'SomaFM',
+    url: `${SOMAFM}/fluid-128-mp3`,
+    homepage: 'https://somafm.com/fluid/',
+  },
+  {
+    id: 'somafm-lush',
+    name: 'Lush',
+    description: 'Vocal · chillout',
+    provider: 'SomaFM',
+    url: `${SOMAFM}/lush-128-mp3`,
+    homepage: 'https://somafm.com/lush/',
+  },
+  {
+    id: 'somafm-sonicuniverse',
+    name: 'Sonic Universe',
+    description: 'Jazz · vanguardia',
+    provider: 'SomaFM',
+    url: `${SOMAFM}/sonicuniverse-128-mp3`,
+    homepage: 'https://somafm.com/sonicuniverse/',
+  },
+  {
+    id: 'somafm-defcon',
+    name: 'DEF CON Radio',
+    description: 'Electrónica · hacking',
+    provider: 'SomaFM',
+    url: `${SOMAFM}/defcon-128-mp3`,
+    homepage: 'https://somafm.com/defcon/',
+  },
+  {
+    id: 'somafm-cliqhop',
+    name: 'Cliqhop idm',
+    description: 'IDM · blipsnbeats',
+    provider: 'SomaFM',
+    url: `${SOMAFM}/cliqhop-128-mp3`,
+    homepage: 'https://somafm.com/cliqhop/',
+  },
 ];
 
 export const T = {
@@ -87,10 +192,7 @@ export function useValue<T>(store: Atom<T>): T {
   return useSyncExternalStore(store.subscribe, store.get, store.get);
 }
 
-export function createBudgetedLoop(
-  tick: () => void,
-  { fps, idleWhen }: { fps: number; idleWhen?: () => boolean },
-) {
+export function createBudgetedLoop(tick: () => void, { fps, idleWhen }: { fps: number; idleWhen?: () => boolean }) {
   let id: number | undefined;
   const idle = () => idleWhen?.() === true;
   const stop = () => {
@@ -136,10 +238,7 @@ export function openExternal(url: string) {
 
 export function timeoutSignal(parent: AbortSignal | undefined, ms: number): AbortSignal {
   const ctrl = new AbortController();
-  const timer = window.setTimeout(
-    () => ctrl.abort(new DOMException('Timed out', 'TimeoutError')),
-    ms,
-  );
+  const timer = window.setTimeout(() => ctrl.abort(new DOMException('Timed out', 'TimeoutError')), ms);
   const onAbort = () => {
     window.clearTimeout(timer);
     ctrl.abort(parent?.reason);
@@ -167,11 +266,7 @@ export function httpsUrl(value: string | null | undefined): string | null {
 export function validStation(value: unknown): value is Station {
   if (typeof value !== 'object' || value === null) return false;
   const candidate = value as Partial<Station>;
-  return (
-    typeof candidate.id === 'string' &&
-    typeof candidate.name === 'string' &&
-    httpsUrl(candidate.url) !== null
-  );
+  return typeof candidate.id === 'string' && typeof candidate.name === 'string' && httpsUrl(candidate.url) !== null;
 }
 
 export async function fetchJson(url: string, signal?: AbortSignal): Promise<unknown> {
@@ -198,23 +293,18 @@ let directoryDiscovered = false;
 export async function searchStations(text: string, signal?: AbortSignal): Promise<Station[]> {
   if (!directoryDiscovered) {
     try {
-      const servers = (await fetchJson(
-        `${directoryServers[0]}/json/servers`,
-        signal,
-      )) as Array<{ name?: string }>;
+      const servers = (await fetchJson(`${directoryServers[0]}/json/servers`, signal)) as Array<{ name?: string }>;
       const hosts = [
         ...new Set(
           servers
             .map((server) => server.name)
-            .filter((name): name is string =>
-              typeof name === 'string' && /^[a-z0-9-]+\.api\.radio-browser\.info$/.test(name),
+            .filter(
+              (name): name is string => typeof name === 'string' && /^[a-z0-9-]+\.api\.radio-browser\.info$/.test(name),
             ),
         ),
       ];
       if (hosts.length) {
-        directoryServers = hosts
-          .map((name) => `https://${name}`)
-          .sort(() => Math.random() - 0.5);
+        directoryServers = hosts.map((name) => `https://${name}`).sort(() => Math.random() - 0.5);
       }
       directoryDiscovered = true;
     } catch (error) {
@@ -230,10 +320,7 @@ export async function searchStations(text: string, signal?: AbortSignal): Promis
   });
   for (const server of directoryServers.slice(0, 3)) {
     try {
-      const rows = (await fetchJson(
-        `${server}/json/stations/search?${params}`,
-        signal,
-      )) as RadioBrowserStation[];
+      const rows = (await fetchJson(`${server}/json/stations/search?${params}`, signal)) as RadioBrowserStation[];
       const seen = new Set<string>();
       return rows.flatMap((row) => {
         const url = httpsUrl(row.url_resolved);

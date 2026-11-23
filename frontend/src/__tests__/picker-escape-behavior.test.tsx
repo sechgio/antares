@@ -43,14 +43,7 @@ const CASES: EscapeCase[] = [
     name: 'SelectPicker',
     role: 'listbox',
     mountAndOpen: () => {
-      render(
-        <SelectPicker
-          value="all"
-          options={SELECT_OPTIONS}
-          onChange={vi.fn()}
-          aria-label="Estado"
-        />,
-      );
+      render(<SelectPicker value="all" options={SELECT_OPTIONS} onChange={vi.fn()} aria-label="Estado" />);
       fireEvent.click(screen.getByRole('button', { name: /Estado/i }));
     },
   },
@@ -60,12 +53,7 @@ const CASES: EscapeCase[] = [
     stopEscapePropagation: true,
     mountAndOpen: () => {
       render(
-        <TemplatePicker
-          value=""
-          options={TEMPLATE_OPTIONS}
-          onChange={vi.fn()}
-          placeholder="-- Elegir Plantilla --"
-        />,
+        <TemplatePicker value="" options={TEMPLATE_OPTIONS} onChange={vi.fn()} placeholder="-- Elegir Plantilla --" />,
       );
       fireEvent.click(screen.getByRole('button', { name: /Elegir plantilla/i }));
     },
@@ -91,40 +79,30 @@ const CASES: EscapeCase[] = [
     role: 'listbox',
     stopEscapePropagation: true,
     mountAndOpen: () => {
-      render(
-        <FolioMenuSelect
-          value="all"
-          options={FOLIO_OPTIONS}
-          onChange={vi.fn()}
-          aria-label="Orden de folios"
-        />,
-      );
+      render(<FolioMenuSelect value="all" options={FOLIO_OPTIONS} onChange={vi.fn()} aria-label="Orden de folios" />);
       fireEvent.click(screen.getByRole('button', { name: /Orden de folios/i }));
     },
   },
 ];
 
 describe('picker popovers close on Escape', () => {
-  it.each(CASES)(
-    '$name closes on Escape',
-    ({ role, stopEscapePropagation, mountAndOpen }) => {
-      mountAndOpen();
-      expect(screen.getByRole(role)).toBeInTheDocument();
+  it.each(CASES)('$name closes on Escape', ({ role, stopEscapePropagation, mountAndOpen }) => {
+    mountAndOpen();
+    expect(screen.getByRole(role)).toBeInTheDocument();
 
-      const onOuterKeyDown = vi.fn();
-      document.addEventListener('keydown', onOuterKeyDown);
-      try {
-        fireEvent.keyDown(document, { key: 'Escape' });
-      } finally {
-        document.removeEventListener('keydown', onOuterKeyDown);
-      }
+    const onOuterKeyDown = vi.fn();
+    document.addEventListener('keydown', onOuterKeyDown);
+    try {
+      fireEvent.keyDown(document, { key: 'Escape' });
+    } finally {
+      document.removeEventListener('keydown', onOuterKeyDown);
+    }
 
-      expect(screen.queryByRole(role)).not.toBeInTheDocument();
-      if (stopEscapePropagation) {
-        expect(onOuterKeyDown).not.toHaveBeenCalled();
-      } else {
-        expect(onOuterKeyDown).toHaveBeenCalledTimes(1);
-      }
-    },
-  );
+    expect(screen.queryByRole(role)).not.toBeInTheDocument();
+    if (stopEscapePropagation) {
+      expect(onOuterKeyDown).not.toHaveBeenCalled();
+    } else {
+      expect(onOuterKeyDown).toHaveBeenCalledTimes(1);
+    }
+  });
 });

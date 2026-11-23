@@ -1,6 +1,5 @@
 'use strict';
 
-
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -15,8 +14,9 @@ const SHOT_DIMENSION = 1280;
 const DEFAULT_MAX_ELEMENTS = 300;
 const KEEP_SCREENS = 12;
 const TOOLS = new Map(CATALOG.tools.map((tool) => [tool.name, tool]));
-const MISSING_DRIVER = 'El driver de computer use no está instalado. Descarga el zip de cua-driver/manifest.json '
-  + 'e instálalo con node scripts/prepare-cua-driver.js install <zip>';
+const MISSING_DRIVER =
+  'El driver de computer use no está instalado. Descarga el zip de cua-driver/manifest.json ' +
+  'e instálalo con node scripts/prepare-cua-driver.js install <zip>';
 
 let runtime = null;
 let starting = null;
@@ -69,7 +69,8 @@ function policyFile() {
   const body = `allow:\n  tools: [${[...TOOLS.values()].map((tool) => tool.tool).join(', ')}]\n`;
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, body);
-  if (fs.readFileSync(file, 'utf8') !== body) throw new Error('No se pudo preparar la política del driver de computer use');
+  if (fs.readFileSync(file, 'utf8') !== body)
+    throw new Error('No se pudo preparar la política del driver de computer use');
   return file;
 }
 
@@ -92,7 +93,9 @@ function stop() {
   }
   current.pending.clear();
   for (const child of [current.proxy, current.daemon]) {
-    try { child.kill(); } catch {}
+    try {
+      child.kill();
+    } catch {}
   }
 }
 
@@ -112,22 +115,39 @@ async function start() {
   const exe = verifiedExecutable();
   const env = driverEnv();
   const pipe = `\\\\.\\pipe\\antares-cua-${crypto.randomUUID()}`;
-  const daemon = spawn(exe, ['serve', '--socket', pipe, '--no-overlay'], { env, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+  const daemon = spawn(exe, ['serve', '--socket', pipe, '--no-overlay'], {
+    env,
+    windowsHide: true,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('El driver de computer use no arrancó')), START_TIMEOUT_MS);
     let log = '';
     daemon.stderr.on('data', (chunk) => {
       log += String(chunk);
-      if (log.includes('listening')) { clearTimeout(timer); resolve(); }
+      if (log.includes('listening')) {
+        clearTimeout(timer);
+        resolve();
+      }
     });
-    daemon.once('exit', () => { clearTimeout(timer); reject(new Error('El driver de computer use terminó al arrancar')); });
-    daemon.once('error', (err) => { clearTimeout(timer); reject(err); });
+    daemon.once('exit', () => {
+      clearTimeout(timer);
+      reject(new Error('El driver de computer use terminó al arrancar'));
+    });
+    daemon.once('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
   });
   const proxy = spawn(exe, ['mcp', '--socket', pipe], { env, windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
   const current = { daemon, proxy, pending: new Map(), next: 1 };
   readline.createInterface({ input: proxy.stdout }).on('line', (line) => {
     let message;
-    try { message = JSON.parse(line); } catch { return; }
+    try {
+      message = JSON.parse(line);
+    } catch {
+      return;
+    }
     const waiter = current.pending.get(message.id);
     if (!waiter) return;
     current.pending.delete(message.id);
@@ -135,10 +155,20 @@ async function start() {
     if (message.error) waiter.reject(new Error(String(message.error.message || 'Error del driver de computer use')));
     else waiter.resolve(message.result);
   });
-  for (const child of [daemon, proxy]) child.once('exit', () => { if (runtime === current) stop(); });
-  await request(current, 'initialize', {
-    protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'antares', version: CATALOG.driverVersion },
-  }, START_TIMEOUT_MS);
+  for (const child of [daemon, proxy])
+    child.once('exit', () => {
+      if (runtime === current) stop();
+    });
+  await request(
+    current,
+    'initialize',
+    {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'antares', version: CATALOG.driverVersion },
+    },
+    START_TIMEOUT_MS,
+  );
   proxy.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
   return current;
 }
@@ -146,7 +176,14 @@ async function start() {
 async function ensureRuntime() {
   if (runtime) return runtime;
   if (!starting) {
-    starting = start().then((current) => { runtime = current; return current; }).finally(() => { starting = null; });
+    starting = start()
+      .then((current) => {
+        runtime = current;
+        return current;
+      })
+      .finally(() => {
+        starting = null;
+      });
   }
   return starting;
 }
@@ -160,10 +197,15 @@ function remember(tool, args, structured, sessionId) {
   }
   if (tool === 'get_window_state' && structured.window_id !== undefined) {
     if (store.windows.size >= MAX_WINDOWS_PER_SESSION) store.windows.delete(store.windows.keys().next().value);
-    store.windows.set(String(structured.window_id), { pid: structured.pid, app: structured.app_name,
-      title: structured.window_title, bounds: structured.window_bounds });
+    store.windows.set(String(structured.window_id), {
+      pid: structured.pid,
+      app: structured.app_name,
+      title: structured.window_title,
+      bounds: structured.window_bounds,
+    });
     for (const element of structured.elements || []) {
-      if (element.element_token) store.elements.set(element.element_token, { role: element.role, label: element.label });
+      if (element.element_token)
+        store.elements.set(element.element_token, { role: element.role, label: element.label });
     }
   }
   if (store.elements.size > MAX_ELEMENTS_PER_SESSION) store.elements.clear();
@@ -204,16 +246,24 @@ function saveShot(item, dir) {
   fs.mkdirSync(dir, { recursive: true });
   const target = path.join(dir, `cua-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.jpg`);
   fs.writeFileSync(target, image.toJPEG(70));
-  const old = fs.readdirSync(dir).filter((file) => file.startsWith('cua-')).sort().slice(0, -KEEP_SCREENS);
+  const old = fs
+    .readdirSync(dir)
+    .filter((file) => file.startsWith('cua-'))
+    .sort()
+    .slice(0, -KEEP_SCREENS);
   for (const file of old) fs.rmSync(path.join(dir, file), { force: true });
   const { width, height } = image.getSize();
   return { path: target, mime: 'image/jpeg', width, height };
 }
 
 function shape(tool, result, dir) {
-  const structured = result.structuredContent && typeof result.structuredContent === 'object'
-    ? { ...result.structuredContent } : null;
-  const text = (result.content || []).filter((item) => item.type === 'text').map((item) => item.text).join('\n').trim();
+  const structured =
+    result.structuredContent && typeof result.structuredContent === 'object' ? { ...result.structuredContent } : null;
+  const text = (result.content || [])
+    .filter((item) => item.type === 'text')
+    .map((item) => item.text)
+    .join('\n')
+    .trim();
   if (result.isError) {
     const code = structured && structured.code ? ` (${structured.code})` : '';
     throw new Error(`${text || 'El driver rechazó la acción'}${code}`);
@@ -246,7 +296,10 @@ async function run(name, params = {}, { sessionId, dir } = {}) {
     if (args.max_elements === undefined) args.max_elements = DEFAULT_MAX_ELEMENTS;
     args.max_image_dimension = SHOT_DIMENSION;
   }
-  if (sessionId) args.session = `antares-${String(sessionId).replace(/[^a-z0-9]/gi, '').slice(0, 24)}`;
+  if (sessionId)
+    args.session = `antares-${String(sessionId)
+      .replace(/[^a-z0-9]/gi, '')
+      .slice(0, 24)}`;
   const current = await ensureRuntime();
   const result = await request(current, 'tools/call', { name: spec.tool, arguments: args });
   const out = shape(spec.tool, result || {}, dir);

@@ -1,4 +1,3 @@
-
 import schema from '../../../../shared/canvas-schema.json';
 
 export const DOCUMENT_VERSION = schema.documentVersion as unknown as 2;
@@ -326,13 +325,20 @@ function normalizeGuides(raw: unknown, lastPage: number): CanvasGuide[] {
 
 function findParentCycleBreaks(layers: CanvasLayer[]): Set<string> {
   const parentOf = new Map(layers.map((l) => [l.id, l.parentId] as const));
-  const visited = new Set<string>(), cycleNodes = new Set<string>();
+  const visited = new Set<string>(),
+    cycleNodes = new Set<string>();
   for (const layer of layers) {
-    if (visited.has(layer.id) || !layer.parentId) { visited.add(layer.id); continue; }
+    if (visited.has(layer.id) || !layer.parentId) {
+      visited.add(layer.id);
+      continue;
+    }
     const path = new Set<string>();
     let cursor: string | undefined = layer.id;
     while (cursor && parentOf.has(cursor) && !visited.has(cursor)) {
-      if (path.has(cursor)) { cycleNodes.add(cursor); break; }
+      if (path.has(cursor)) {
+        cycleNodes.add(cursor);
+        break;
+      }
       path.add(cursor);
       cursor = parentOf.get(cursor);
     }
@@ -353,22 +359,15 @@ export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
 
   if (!needsUpgrade && !needsRepair) {
     const lastPage = Math.max(0, (doc.pages?.length ?? 1) - 1);
-    const clampNeeded = doc.layers.some(
-      (layer) => (layer.pageIndex ?? 0) > lastPage || (layer.pageIndex ?? 0) < 0,
-    );
+    const clampNeeded = doc.layers.some((layer) => (layer.pageIndex ?? 0) > lastPage || (layer.pageIndex ?? 0) < 0);
     const layerIds = new Set(doc.layers.map((layer) => layer.id));
     const treeNeedsRepair = doc.layers.some(
       (layer) => layer.parentId && (layer.parentId === layer.id || !layerIds.has(layer.parentId)),
     );
-    const opsNeedRepair = doc.layers.some(
-      (layer) =>
-        layer.meta?.ops?.some(
-          (entry) =>
-            !entry ||
-            typeof entry !== 'object' ||
-            entry.layerId === layer.id ||
-            !layerIds.has(entry.layerId),
-        ),
+    const opsNeedRepair = doc.layers.some((layer) =>
+      layer.meta?.ops?.some(
+        (entry) => !entry || typeof entry !== 'object' || entry.layerId === layer.id || !layerIds.has(entry.layerId),
+      ),
     );
     if (!clampNeeded && !treeNeedsRepair && !opsNeedRepair && !parentCycleNodes.size) {
       return {
@@ -417,20 +416,14 @@ export function normalizeDocument(doc: CanvasDocument): CanvasDocument {
   });
 
   if (parentCycleNodes.size) {
-    layers = layers.map((layer) =>
-      parentCycleNodes.has(layer.id) ? { ...layer, parentId: undefined } : layer,
-    );
+    layers = layers.map((layer) => (parentCycleNodes.has(layer.id) ? { ...layer, parentId: undefined } : layer));
   }
 
   layers = layers.map((layer) => {
     const ops = layer.meta?.ops;
     if (!ops?.length) return layer;
     const kept = ops.filter(
-      (entry) =>
-        !!entry &&
-        typeof entry === 'object' &&
-        entry.layerId !== layer.id &&
-        validIds.has(entry.layerId),
+      (entry) => !!entry && typeof entry === 'object' && entry.layerId !== layer.id && validIds.has(entry.layerId),
     );
     if (kept.length === ops.length) return layer;
     const meta = { ...layer.meta };
@@ -483,9 +476,13 @@ export function createEmptyDocument(name = 'Sin título'): CanvasDocument {
 
 export function parseMm(value: string | undefined, fallback = 0): number {
   if (!value) return fallback;
-  const match = String(value).trim().match(/^(-?[\d.]+)\s*mm$/i);
+  const match = String(value)
+    .trim()
+    .match(/^(-?[\d.]+)\s*mm$/i);
   if (match) return Number(match[1]);
-  const px = String(value).trim().match(/^(-?[\d.]+)\s*px$/i);
+  const px = String(value)
+    .trim()
+    .match(/^(-?[\d.]+)\s*px$/i);
   if (px) return (Number(px[1]) * 25.4) / 96;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;

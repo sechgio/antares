@@ -30,16 +30,54 @@ const LOAD_TIMEOUT_MS = 30_000;
 const SETTLE_MS = 700;
 const READY_GRACE_MS = 1_500;
 const KEY_CODES = {
-  enter: 'Enter', return: 'Enter', tab: 'Tab', esc: 'Escape', escape: 'Escape', space: 'Space', backspace: 'Backspace',
-  delete: 'Delete', up: 'Up', down: 'Down', left: 'Left', right: 'Right', home: 'Home', end: 'End',
-  pageup: 'PageUp', pagedown: 'PageDown',
+  enter: 'Enter',
+  return: 'Enter',
+  tab: 'Tab',
+  esc: 'Escape',
+  escape: 'Escape',
+  space: 'Space',
+  backspace: 'Backspace',
+  delete: 'Delete',
+  up: 'Up',
+  down: 'Down',
+  left: 'Left',
+  right: 'Right',
+  home: 'Home',
+  end: 'End',
+  pageup: 'PageUp',
+  pagedown: 'PageDown',
 };
 const MODIFIERS = { ctrl: 'control', control: 'control', shift: 'shift', alt: 'alt', meta: 'meta', cmd: 'meta' };
-const VIRTUAL_KEYS = { Enter: 13, Tab: 9, Escape: 27, Space: 32, Backspace: 8, Delete: 46,
-  Up: 38, Down: 40, Left: 37, Right: 39, Home: 36, End: 35, PageUp: 33, PageDown: 34,
-  ';': 186, '=': 187, ',': 188, '-': 189, '.': 190, '/': 191, '`': 192, '[': 219, '\\': 220, ']': 221, "'": 222 };
+const VIRTUAL_KEYS = {
+  Enter: 13,
+  Tab: 9,
+  Escape: 27,
+  Space: 32,
+  Backspace: 8,
+  Delete: 46,
+  Up: 38,
+  Down: 40,
+  Left: 37,
+  Right: 39,
+  Home: 36,
+  End: 35,
+  PageUp: 33,
+  PageDown: 34,
+  ';': 186,
+  '=': 187,
+  ',': 188,
+  '-': 189,
+  '.': 190,
+  '/': 191,
+  '`': 192,
+  '[': 219,
+  '\\': 220,
+  ']': 221,
+  "'": 222,
+};
 
-const URL_SECRET_KEY_RE = /([?&])(token|access_token|refresh_token|code|key|secret|password|passwd|sig|signature|session|sessionid|sid|auth|authorization|credential|api_key|apikey|jwt|nonce)=[^&#]*/gi;
+const URL_SECRET_KEY_RE =
+  /([?&])(token|access_token|refresh_token|code|key|secret|password|passwd|sig|signature|session|sessionid|sid|auth|authorization|credential|api_key|apikey|jwt|nonce)=[^&#]*/gi;
 const { redactText } = require('./app-log');
 
 function redactUrlSecrets(url) {
@@ -48,123 +86,250 @@ function redactUrlSecrets(url) {
 
 const REF = { type: 'string', description: 'Referencia «ref» de un elemento devuelto por web_read' };
 const TOOLS = {
-  web_open: ['Abrir una página web en el navegador del agente', {
-    type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s), búsqueda o ruta de un archivo local previsualizable '
-      + '(.html, .pdf o imagen) del espacio de trabajo (o file://) para verlo en vista previa con recarga en vivo; para leer otro archivo local usa fs_read' } }, required: ['url'],
-  }, false],
-  web_read: ['Leer el texto y los elementos interactivos de la página actual: primero los visibles, con su estado; '
-    + 'incluye marcos del mismo sitio y componentes con shadow DOM', {
-    type: 'object', properties: { offset: { type: 'integer', minimum: 0, description: 'Carácter inicial del texto' } },
-  }, false],
-  web_screenshot: ['Capturar la página actual del navegador del agente', {
-    type: 'object',
-    properties: { full_page: { type: 'boolean', description: 'Capturar toda la página, incluido lo que no se ve' } },
-  }, false],
+  web_open: [
+    'Abrir una página web en el navegador del agente',
+    {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description:
+            'Dirección http(s), búsqueda o ruta de un archivo local previsualizable ' +
+            '(.html, .pdf o imagen) del espacio de trabajo (o file://) para verlo en vista previa con recarga en vivo; para leer otro archivo local usa fs_read',
+        },
+      },
+      required: ['url'],
+    },
+    false,
+  ],
+  web_read: [
+    'Leer el texto y los elementos interactivos de la página actual: primero los visibles, con su estado; ' +
+      'incluye marcos del mismo sitio y componentes con shadow DOM',
+    {
+      type: 'object',
+      properties: { offset: { type: 'integer', minimum: 0, description: 'Carácter inicial del texto' } },
+    },
+    false,
+  ],
+  web_screenshot: [
+    'Capturar la página actual del navegador del agente',
+    {
+      type: 'object',
+      properties: { full_page: { type: 'boolean', description: 'Capturar toda la página, incluido lo que no se ve' } },
+    },
+    false,
+  ],
   web_back: ['Volver a la página anterior', { type: 'object', properties: {} }, false],
   web_forward: ['Avanzar a la página siguiente', { type: 'object', properties: {} }, false],
   web_reload: ['Recargar la página actual', { type: 'object', properties: {} }, false],
-  web_handover: ['Ceder el control manual del navegador al usuario hasta que lo devuelva', { type: 'object', properties: {} }, false],
-  web_text: ['Leer el texto completo de la página actual, sin la lista de elementos', {
-    type: 'object', properties: { offset: { type: 'integer', minimum: 0, description: 'Carácter inicial del texto' } },
-  }, false],
+  web_handover: [
+    'Ceder el control manual del navegador al usuario hasta que lo devuelva',
+    { type: 'object', properties: {} },
+    false,
+  ],
+  web_text: [
+    'Leer el texto completo de la página actual, sin la lista de elementos',
+    {
+      type: 'object',
+      properties: { offset: { type: 'integer', minimum: 0, description: 'Carácter inicial del texto' } },
+    },
+    false,
+  ],
   web_console: ['Leer los mensajes recientes de la consola del navegador', { type: 'object', properties: {} }, false],
   web_network: ['Leer las peticiones de red recientes de la página actual', { type: 'object', properties: {} }, false],
-  web_scroll: ['Desplazar la página, o un contenedor con desplazamiento propio, y leer lo que aparece', {
-    type: 'object',
-    properties: {
-      direction: { type: 'string', enum: ['down', 'up'], description: 'Hacia dónde desplazar (por defecto down)' },
-      pages: { type: 'number', minimum: 0.25, maximum: 10, description: 'Pantallas a desplazar (por defecto 1)' },
-      ref: { ...REF, description: 'Contenedor con desplazamiento propio; sin ref se desplaza la página' },
-    },
-  }, false],
-  web_hover: ['Pasar el puntero sobre un elemento para abrir su menú o su ayuda', {
-    type: 'object', properties: { ref: REF }, required: ['ref'],
-  }, false],
-  web_wait: ['Esperar a que la página muestre un texto, deje de mostrarlo o cambie de dirección, y leerla', {
-    type: 'object',
-    properties: {
-      text: { type: 'string', description: 'Texto que debe aparecer' },
-      gone: { type: 'string', description: 'Texto que debe desaparecer, p. ej. «Cargando»' },
-      url: { type: 'string', description: 'Fragmento que debe contener la dirección' },
-      timeout_ms: { type: 'integer', minimum: WAIT_STEP_MS, maximum: WAIT_MAX_MS, description: 'Espera máxima (por defecto 8000)' },
-    },
-  }, false],
-  web_find: ['Buscar en toda la página, incluidos marcos y shadow DOM, los elementos visibles por su texto, etiqueta, '
-    + 'placeholder o rol, y obtener sus refs aunque web_read no los liste', {
-    type: 'object',
-    properties: {
-      text: { type: 'string', description: 'Texto visible, etiqueta accesible, placeholder o título (sin distinguir mayúsculas)' },
-      role: { type: 'string', description: 'Rol ARIA o implícito: button, link, textbox, checkbox, combobox, heading, img…' },
-      exact: { type: 'boolean', description: 'Exigir el texto exacto, distinguiendo mayúsculas' },
-    },
-  }, false],
-  web_click: ['Hacer clic en un elemento de la página', {
-    type: 'object',
-    properties: { ref: REF, double: { type: 'boolean', description: 'Doble clic: abrir, editar en línea o seleccionar una palabra' } },
-    required: ['ref'],
-  }, true],
-  web_drag: ['Arrastrar un elemento y soltarlo sobre otro (tarjetas, listas ordenables, deslizadores); ambos deben verse a la vez', {
-    type: 'object',
-    properties: { ref: { ...REF, description: 'Elemento que se arrastra' }, to: { ...REF, description: 'Elemento sobre el que se suelta' } },
-    required: ['ref', 'to'],
-  }, true],
-  web_select: ['Elegir opciones de un desplegable nativo (select) por su valor o su texto', {
-    type: 'object',
-    properties: {
-      ref: REF,
-      values: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 50, description: 'Valores o textos de las opciones' },
-    },
-    required: ['ref', 'values'],
-  }, true],
-  web_check: ['Marcar o desmarcar una casilla, un interruptor o una opción de radio', {
-    type: 'object', properties: { ref: REF, checked: { type: 'boolean' } }, required: ['ref', 'checked'],
-  }, true],
-  web_fill: ['Rellenar de una vez varios campos de texto leídos en el mismo web_read; no envía el formulario', {
-    type: 'object',
-    properties: {
-      fields: {
-        type: 'array', minItems: 1, maxItems: MAX_FILL_FIELDS,
-        items: { type: 'object', properties: { ref: REF, text: { type: 'string' } }, required: ['ref', 'text'] },
+  web_scroll: [
+    'Desplazar la página, o un contenedor con desplazamiento propio, y leer lo que aparece',
+    {
+      type: 'object',
+      properties: {
+        direction: { type: 'string', enum: ['down', 'up'], description: 'Hacia dónde desplazar (por defecto down)' },
+        pages: { type: 'number', minimum: 0.25, maximum: 10, description: 'Pantallas a desplazar (por defecto 1)' },
+        ref: { ...REF, description: 'Contenedor con desplazamiento propio; sin ref se desplaza la página' },
       },
     },
-    required: ['fields'],
-  }, true],
-  web_type: ['Escribir en un campo de la página', {
-    type: 'object',
-    properties: {
-      ref: REF, text: { type: 'string' },
-      clear: { type: 'boolean', description: 'Vaciar el campo antes de escribir' },
-      submit: { type: 'boolean', description: 'Pulsar Enter al terminar' },
+    false,
+  ],
+  web_hover: [
+    'Pasar el puntero sobre un elemento para abrir su menú o su ayuda',
+    {
+      type: 'object',
+      properties: { ref: REF },
+      required: ['ref'],
     },
-    required: ['ref', 'text'],
-  }, true],
-  web_key: ['Pulsar teclas en la página (p. ej. «enter», «ctrl+a»)', {
-    type: 'object', properties: { keys: { type: 'string' } }, required: ['keys'],
-  }, true],
-  web_download: ['Descargar un archivo de la web a los borradores de la conversación', {
-    type: 'object', properties: { url: { type: 'string', description: 'Dirección http(s) del archivo' } }, required: ['url'],
-  }, true],
-  web_upload: ['Subir un archivo autorizado de esta conversación a un campo de la página', {
-    type: 'object',
-    properties: {
-      ref: REF,
-      path: { type: 'string', description: 'Ruta del archivo autorizado en esta conversación' },
+    false,
+  ],
+  web_wait: [
+    'Esperar a que la página muestre un texto, deje de mostrarlo o cambie de dirección, y leerla',
+    {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'Texto que debe aparecer' },
+        gone: { type: 'string', description: 'Texto que debe desaparecer, p. ej. «Cargando»' },
+        url: { type: 'string', description: 'Fragmento que debe contener la dirección' },
+        timeout_ms: {
+          type: 'integer',
+          minimum: WAIT_STEP_MS,
+          maximum: WAIT_MAX_MS,
+          description: 'Espera máxima (por defecto 8000)',
+        },
+      },
     },
-    required: ['ref', 'path'],
-  }, true],
+    false,
+  ],
+  web_find: [
+    'Buscar en toda la página, incluidos marcos y shadow DOM, los elementos visibles por su texto, etiqueta, ' +
+      'placeholder o rol, y obtener sus refs aunque web_read no los liste',
+    {
+      type: 'object',
+      properties: {
+        text: {
+          type: 'string',
+          description: 'Texto visible, etiqueta accesible, placeholder o título (sin distinguir mayúsculas)',
+        },
+        role: {
+          type: 'string',
+          description: 'Rol ARIA o implícito: button, link, textbox, checkbox, combobox, heading, img…',
+        },
+        exact: { type: 'boolean', description: 'Exigir el texto exacto, distinguiendo mayúsculas' },
+      },
+    },
+    false,
+  ],
+  web_click: [
+    'Hacer clic en un elemento de la página',
+    {
+      type: 'object',
+      properties: {
+        ref: REF,
+        double: { type: 'boolean', description: 'Doble clic: abrir, editar en línea o seleccionar una palabra' },
+      },
+      required: ['ref'],
+    },
+    true,
+  ],
+  web_drag: [
+    'Arrastrar un elemento y soltarlo sobre otro (tarjetas, listas ordenables, deslizadores); ambos deben verse a la vez',
+    {
+      type: 'object',
+      properties: {
+        ref: { ...REF, description: 'Elemento que se arrastra' },
+        to: { ...REF, description: 'Elemento sobre el que se suelta' },
+      },
+      required: ['ref', 'to'],
+    },
+    true,
+  ],
+  web_select: [
+    'Elegir opciones de un desplegable nativo (select) por su valor o su texto',
+    {
+      type: 'object',
+      properties: {
+        ref: REF,
+        values: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+          maxItems: 50,
+          description: 'Valores o textos de las opciones',
+        },
+      },
+      required: ['ref', 'values'],
+    },
+    true,
+  ],
+  web_check: [
+    'Marcar o desmarcar una casilla, un interruptor o una opción de radio',
+    {
+      type: 'object',
+      properties: { ref: REF, checked: { type: 'boolean' } },
+      required: ['ref', 'checked'],
+    },
+    true,
+  ],
+  web_fill: [
+    'Rellenar de una vez varios campos de texto leídos en el mismo web_read; no envía el formulario',
+    {
+      type: 'object',
+      properties: {
+        fields: {
+          type: 'array',
+          minItems: 1,
+          maxItems: MAX_FILL_FIELDS,
+          items: { type: 'object', properties: { ref: REF, text: { type: 'string' } }, required: ['ref', 'text'] },
+        },
+      },
+      required: ['fields'],
+    },
+    true,
+  ],
+  web_type: [
+    'Escribir en un campo de la página',
+    {
+      type: 'object',
+      properties: {
+        ref: REF,
+        text: { type: 'string' },
+        clear: { type: 'boolean', description: 'Vaciar el campo antes de escribir' },
+        submit: { type: 'boolean', description: 'Pulsar Enter al terminar' },
+      },
+      required: ['ref', 'text'],
+    },
+    true,
+  ],
+  web_key: [
+    'Pulsar teclas en la página (p. ej. «enter», «ctrl+a»)',
+    {
+      type: 'object',
+      properties: { keys: { type: 'string' } },
+      required: ['keys'],
+    },
+    true,
+  ],
+  web_download: [
+    'Descargar un archivo de la web a los borradores de la conversación',
+    {
+      type: 'object',
+      properties: { url: { type: 'string', description: 'Dirección http(s) del archivo' } },
+      required: ['url'],
+    },
+    true,
+  ],
+  web_upload: [
+    'Subir un archivo autorizado de esta conversación a un campo de la página',
+    {
+      type: 'object',
+      properties: {
+        ref: REF,
+        path: { type: 'string', description: 'Ruta del archivo autorizado en esta conversación' },
+      },
+      required: ['ref', 'path'],
+    },
+    true,
+  ],
 };
 
 const HOST_SIZE = { width: 1280, height: 860 };
-const USER_CONTROL_ERROR = 'El usuario tiene el control del navegador ahora mismo; espera a que te lo devuelva o pídeselo';
-const USER_BUSY_ERROR = 'El usuario está usando el navegador en este momento; espera unos segundos antes de volver a actuar en la página';
-const SECRET_FIELD_ERROR = 'El campo pide una contraseña, un código o datos de tarjeta: el agente no escribe en él. '
-  + 'Cede el control con web_handover para que lo complete el usuario';
+const USER_CONTROL_ERROR =
+  'El usuario tiene el control del navegador ahora mismo; espera a que te lo devuelva o pídeselo';
+const USER_BUSY_ERROR =
+  'El usuario está usando el navegador en este momento; espera unos segundos antes de volver a actuar en la página';
+const SECRET_FIELD_ERROR =
+  'El campo pide una contraseña, un código o datos de tarjeta: el agente no escribe en él. ' +
+  'Cede el control con web_handover para que lo complete el usuario';
 const refDocuments = new WeakMap();
 const SECRET_FIELD_JS = `(el) => el.type === 'password' || String(el.getAttribute('autocomplete') || '').toLowerCase().split(/\\s+/)
   .some((token) => ['one-time-code', 'current-password', 'new-password'].includes(token) || token.startsWith('cc-'))`;
 const USER_INPUT_GRACE_MS = 5_000;
 const USER_WAIT_MAX_MS = 10_000;
-const READ_TOOLS = new Set(['web_read', 'web_find', 'web_screenshot', 'web_text', 'web_console', 'web_network', 'web_wait']);
+const READ_TOOLS = new Set([
+  'web_read',
+  'web_find',
+  'web_screenshot',
+  'web_text',
+  'web_console',
+  'web_network',
+  'web_wait',
+]);
 const NAVIGATION_TOOLS = new Set(['web_open', 'web_back', 'web_forward', 'web_reload']);
 const AGENT_TAB = 'agent';
 const USER_TAB = 'user';
@@ -220,12 +385,15 @@ function acquireAgent(sessionId) {
     agentOwner = { sessionId, at: now };
     return;
   }
-  throw browserError('Otra conversación está usando el navegador del agente; espera a que termine o pide al usuario que cierre esa tarea',
-    'BROWSER_BUSY', {
+  throw browserError(
+    'Otra conversación está usando el navegador del agente; espera a que termine o pide al usuario que cierre esa tarea',
+    'BROWSER_BUSY',
+    {
       retryable: false,
       recoverable: true,
       retryAfterMs: Math.max(0, AGENT_LEASE_MS - (now - agentOwner.at)),
-    });
+    },
+  );
 }
 
 function release(sessionId) {
@@ -236,8 +404,11 @@ function release(sessionId) {
 function assertAgentTarget(raw) {
   const value = String(raw || '').trim();
   if (!LOCAL_DOCUMENT.test(value)) return;
-  throw browserError(`«${value}» parece un archivo local; usa fs_read con la ruta o escribe https:// si querías abrir una web`,
-    'LOCAL_FILE', { recoverable: false });
+  throw browserError(
+    `«${value}» parece un archivo local; usa fs_read con la ruta o escribe https:// si querías abrir una web`,
+    'LOCAL_FILE',
+    { recoverable: false },
+  );
 }
 
 function isWeb(url) {
@@ -260,7 +431,9 @@ function isPrivateIpv4(ip) {
 }
 
 function isPrivateHostname(hostname) {
-  const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  const host = String(hostname || '')
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '');
   if (host === 'localhost' || host.endsWith('.localhost')) return true;
   if (host.includes(':')) {
     if (host === '::' || host === '::1' || host.startsWith('::ffff:')) return true;
@@ -289,7 +462,11 @@ function publicWebUrl(url) {
 
 async function isPublicResolution(url) {
   let host;
-  try { host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, ''); } catch { return false; }
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  } catch {
+    return false;
+  }
   if (isPrivateHostname(host)) return false;
   if (host.includes(':') || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return true;
   let addresses;
@@ -305,12 +482,21 @@ const PREVIEWABLE_LOCAL = /\.(?:html?|pdf|png|jpe?g|gif|webp|avif|ico|bmp|svg|mp
 function localTarget(raw) {
   const value = String(raw || '').trim();
   if (/^file:/i.test(value)) {
-    try { return fileURLToPath(value); } catch { throw new Error('La dirección file:// no es válida'); }
+    try {
+      return fileURLToPath(value);
+    } catch {
+      throw new Error('La dirección file:// no es válida');
+    }
   }
   if (isWeb(value) || !PREVIEWABLE_LOCAL.test(value)) return null;
   const first = value.split(/[\\/]/)[0];
-  return /^[a-z]:[\\/]/i.test(value) || value.includes('\\') || value.startsWith('.') || !value.includes('/') || !first.includes('.')
-    ? value : null;
+  return /^[a-z]:[\\/]/i.test(value) ||
+    value.includes('\\') ||
+    value.startsWith('.') ||
+    !value.includes('/') ||
+    !first.includes('.')
+    ? value
+    : null;
 }
 
 function permitted(url) {
@@ -321,7 +507,8 @@ function normalizeUrl(raw) {
   const value = String(raw || '').trim();
   if (!value) throw new Error('Indica la dirección o la búsqueda');
   if (isWeb(value)) return publicWebUrl(value);
-  if (/^[a-z][a-z0-9+.-]*:/i.test(value) && !/^[\w.-]+:\d+/.test(value)) throw new Error('Solo se admiten direcciones http y https');
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value) && !/^[\w.-]+:\d+/.test(value))
+    throw new Error('Solo se admiten direcciones http y https');
   if (/^[\w-]+(\.[\w-]+)+(:\d+)?(\/\S*)?$/.test(value)) return publicWebUrl(`https://${value}`);
   return `https://www.bing.com/search?q=${encodeURIComponent(value)}`;
 }
@@ -346,27 +533,46 @@ function prepareSession(electron, partition = PARTITION) {
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
   ses.setUserAgent(siteUserAgent(ses.getUserAgent()));
-  ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*', 'file:///*'] }, (details, callback) => {
-    const pageTab = [...tabs.values()].find((tab) => tab.view?.webContents.id === details.webContentsId);
-    const decision = requestAllowed(details.url, pageTab ? pageTab.view.webContents.getURL() : '', details.resourceType === 'mainFrame');
-    if (typeof decision === 'boolean') return callback({ cancel: !decision });
-    decision.then((allowed) => callback({ cancel: !allowed }));
-  });
+  ses.webRequest.onBeforeRequest(
+    { urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*', 'file:///*'] },
+    (details, callback) => {
+      const pageTab = [...tabs.values()].find((tab) => tab.view?.webContents.id === details.webContentsId);
+      const decision = requestAllowed(
+        details.url,
+        pageTab ? pageTab.view.webContents.getURL() : '',
+        details.resourceType === 'mainFrame',
+      );
+      if (typeof decision === 'boolean') return callback({ cancel: !decision });
+      decision.then((allowed) => callback({ cancel: !allowed }));
+    },
+  );
   ses.on('will-download', (event, item) => {
     const slot = downloadSlot;
-    if (!slot || item.getURLChain()[0] !== slot.url) { event.preventDefault(); item.cancel(); return; }
+    if (!slot || item.getURLChain()[0] !== slot.url) {
+      event.preventDefault();
+      item.cancel();
+      return;
+    }
     downloadSlot = null;
     const name = downloadName(item.getFilename());
     const target = path.join(slot.dir, `${require('node:crypto').randomUUID().slice(0, 8)}-${name}`);
     item.setSavePath(target);
     const tooLarge = () => Math.max(item.getTotalBytes(), item.getReceivedBytes()) > MAX_DOWNLOAD_BYTES;
-    item.on('updated', () => { if (tooLarge()) item.cancel(); });
+    item.on('updated', () => {
+      if (tooLarge()) item.cancel();
+    });
     item.once('done', (_event, state) => {
       const completed = state === 'completed' && !tooLarge();
-      slot.settle(completed ? null : new Error(tooLarge()
-        ? `El archivo excede el límite de ${Math.round(MAX_DOWNLOAD_BYTES / (1024 * 1024))} MB`
-        : 'La descarga no se completó'),
-      completed ? { saved_path: target, filename: name, bytes: item.getReceivedBytes() } : null);
+      slot.settle(
+        completed
+          ? null
+          : new Error(
+              tooLarge()
+                ? `El archivo excede el límite de ${Math.round(MAX_DOWNLOAD_BYTES / (1024 * 1024))} MB`
+                : 'La descarga no se completó',
+            ),
+        completed ? { saved_path: target, filename: name, bytes: item.getReceivedBytes() } : null,
+      );
     });
   });
   sessionCache.set(partition, ses);
@@ -375,7 +581,10 @@ function prepareSession(electron, partition = PARTITION) {
 }
 
 function downloadName(value) {
-  const name = String(value || '').trim().slice(0, 120).replace(/[<>:"/\\|?*\x00]/g, '_');
+  const name = String(value || '')
+    .trim()
+    .slice(0, 120)
+    .replace(/[<>:"/\\|?*\x00]/g, '_');
   return name && name !== '.' && name !== '..' ? name : 'archivo';
 }
 
@@ -488,7 +697,7 @@ function notify(reason) {
   try {
     const win = require('./window-manager').getMainWindow();
     if (alive(win)) win.webContents.send('ipc-notify', 'agent.browser', { ...state(), reason });
-  } catch { }
+  } catch {}
 }
 
 function noteUserInput(tab) {
@@ -517,11 +726,17 @@ function observe(id, contents) {
       if (consoleLog.length > CONSOLE_KEEP) consoleLog.shift();
     });
     contents.debugger.on('message', (_event, method, params) => noteNetwork(method, params));
-    ensureDebugger(contents).catch(() => { });
+    ensureDebugger(contents).catch(() => {});
   }
   contents.on('did-start-loading', () => domReadyAt.delete(contents));
   contents.on('dom-ready', () => domReadyAt.set(contents, Date.now()));
-  for (const event of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) {
+  for (const event of [
+    'did-navigate',
+    'did-navigate-in-page',
+    'page-title-updated',
+    'did-start-loading',
+    'did-stop-loading',
+  ]) {
     contents.on(event, () => notify('page'));
   }
 }
@@ -557,16 +772,26 @@ function ensureTab(id) {
   });
   const userInput = (_event, input) => {
     if (input.type === 'mouseDown') {
-      const own = [...pendingMouseInputs].find((pending) => pending.contents === contents
-        && Math.round(pending.x) === Math.round(input.x) && Math.round(pending.y) === Math.round(input.y)
-        && pending.button === input.button && pending.clickCount === input.clickCount);
-      if (own) { pendingMouseInputs.delete(own); return; }
+      const own = [...pendingMouseInputs].find(
+        (pending) =>
+          pending.contents === contents &&
+          Math.round(pending.x) === Math.round(input.x) &&
+          Math.round(pending.y) === Math.round(input.y) &&
+          pending.button === input.button &&
+          pending.clickCount === input.clickCount,
+      );
+      if (own) {
+        pendingMouseInputs.delete(own);
+        return;
+      }
     }
     if (['mouseDown', 'mouseWheel', 'keyDown', 'rawKeyDown'].includes(input.type)) noteUserInput(tab);
   };
   contents.on('before-input-event', userInput);
   contents.on('before-mouse-event', userInput);
-  contents.on('input-event', (event, input) => { if (input.type === 'mouseWheel') userInput(event, input); });
+  contents.on('input-event', (event, input) => {
+    if (input.type === 'mouseWheel') userInput(event, input);
+  });
   observe(id, contents);
   contents.once('destroyed', () => {
     for (const pending of [...pendingMouseInputs]) {
@@ -594,12 +819,23 @@ function recordNet(id, entry) {
 function noteNetwork(method, params = {}) {
   if (method === 'Network.requestWillBeSent') {
     const request = params.request || {};
-    recordNet(params.requestId, { method: request.method || '', url: String(request.url || ''), type: params.type || '', status: null,
-      seq: ++netSeq });
+    recordNet(params.requestId, {
+      method: request.method || '',
+      url: String(request.url || ''),
+      type: params.type || '',
+      status: null,
+      seq: ++netSeq,
+    });
   } else if (method === 'Network.responseReceived') {
     const existing = netLog.get(params.requestId);
     const response = params.response || {};
-    const entry = existing || { method: '', url: String(response.url || ''), type: params.type || '', status: null, seq: ++netSeq };
+    const entry = existing || {
+      method: '',
+      url: String(response.url || ''),
+      type: params.type || '',
+      status: null,
+      seq: ++netSeq,
+    };
     entry.status = response.status ?? entry.status;
     if (!existing) recordNet(params.requestId, entry);
   } else if (method === 'Network.loadingFailed') {
@@ -638,8 +874,11 @@ function mount(electron) {
 }
 
 function dock(bounds) {
-  const valid = bounds && ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(Number(bounds[key])))
-    && Number(bounds.width) > 0 && Number(bounds.height) > 0;
+  const valid =
+    bounds &&
+    ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(Number(bounds[key]))) &&
+    Number(bounds.width) > 0 &&
+    Number(bounds.height) > 0;
   docked = valid ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null;
   mount(require('electron'));
   return state();
@@ -695,7 +934,9 @@ function activateTab(id) {
 }
 
 function engines() {
-  const available = require('./agent-browser-engines').detect().map(({ id, label }) => ({ id, label }));
+  const available = require('./agent-browser-engines')
+    .detect()
+    .map(({ id, label }) => ({ id, label }));
   return { engine: engineChoice, available };
 }
 
@@ -703,27 +944,39 @@ function confirmSessionAttach() {
   const { dialog } = require('electron');
   if (!dialog || typeof dialog.showMessageBox !== 'function') return Promise.resolve(true);
   const win = require('./window-manager').getMainWindow();
-  return dialog.showMessageBox(win && !win.isDestroyed() ? win : undefined, {
-    type: 'question',
-    buttons: ['Adjuntar mi sesión', 'Cancelar'],
-    defaultId: 1,
-    cancelId: 1,
-    title: 'Mi sesión de Chrome',
-    message: '¿Quieres que el agente navegue con tu sesión de Chrome?',
-    detail: 'El agente usará tus cookies y sesión activa de Chrome. Abrir un dominio que no esté en '
-      + '«Permitir siempre» pedirá tu aprobación en cada caso. Puedes volver al navegador integrado cuando quieras.',
-  }).then((response) => response && response.response === 0);
+  return dialog
+    .showMessageBox(win && !win.isDestroyed() ? win : undefined, {
+      type: 'question',
+      buttons: ['Adjuntar mi sesión', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Mi sesión de Chrome',
+      message: '¿Quieres que el agente navegue con tu sesión de Chrome?',
+      detail:
+        'El agente usará tus cookies y sesión activa de Chrome. Abrir un dominio que no esté en ' +
+        '«Permitir siempre» pedirá tu aprobación en cada caso. Puedes volver al navegador integrado cuando quieras.',
+    })
+    .then((response) => response && response.response === 0);
 }
 
 function setEngine(id) {
   const next = !id || id === 'integrado' ? null : String(id);
-  if (next && !require('./agent-browser-engines').detect().some((engine) => engine.id === next)) {
+  if (
+    next &&
+    !require('./agent-browser-engines')
+      .detect()
+      .some((engine) => engine.id === next)
+  ) {
     throw browserError('Ese navegador no está instalado en este equipo', 'ENGINE_MISSING');
   }
   if (next === engineChoice) return state();
   if (next && require('./agent-browser-engines').isSession(next)) {
     return confirmSessionAttach().then((confirmed) => {
-      if (!confirmed) throw browserError('No se adjuntó la sesión de Chrome: el agente sigue en su navegador', 'SESSION_CONFIRM_DENIED');
+      if (!confirmed)
+        throw browserError(
+          'No se adjuntó la sesión de Chrome: el agente sigue en su navegador',
+          'SESSION_CONFIRM_DENIED',
+        );
       return applyEngine(next);
     });
   }
@@ -735,7 +988,11 @@ function applyEngine(next) {
   const tab = tabs.get(AGENT_TAB);
   if (tab && alive(tab.external)) tab.external.close();
   if (tab) tab.external = null;
-  if (engineLink) engineLink.then((link) => link.close(), () => { });
+  if (engineLink)
+    engineLink.then(
+      (link) => link.close(),
+      () => {},
+    );
   engineLink = null;
   engineChoice = next;
   if (next && tab && tab.view && alive(tab.view.webContents)) tab.view.webContents.close();
@@ -749,7 +1006,9 @@ function sessionOpenContext(params = {}) {
   try {
     if (localTarget(params.url) !== null) return null;
     url = normalizeUrl(params.url);
-  } catch { return null; }
+  } catch {
+    return null;
+  }
   const policy = require('./agent-browser-policy');
   const domain = policy.hostOf(url);
   if (domain && policy.isAlwaysAllowed(domain)) return null;
@@ -760,7 +1019,10 @@ async function agentTab() {
   if (!engineChoice) return ensureTab(AGENT_TAB);
   const tab = tabEntry(AGENT_TAB);
   if (alive(tab.external)) return tab;
-  if (!tab.opening) tab.opening = openExternal(tab).finally(() => { tab.opening = null; });
+  if (!tab.opening)
+    tab.opening = openExternal(tab).finally(() => {
+      tab.opening = null;
+    });
   return tab.opening;
 }
 
@@ -768,19 +1030,29 @@ async function openExternal(tab) {
   const choice = engineChoice;
   if (!engineLink) {
     engineLink = require('./agent-browser-engines').launch(choice);
-    engineLink.then((link) => link.onExit(() => {
-      if (engineChoice === choice && engineLink) engineLink = null;
-    }), () => { if (engineChoice === choice) engineLink = null; });
+    engineLink.then(
+      (link) =>
+        link.onExit(() => {
+          if (engineChoice === choice && engineLink) engineLink = null;
+        }),
+      () => {
+        if (engineChoice === choice) engineLink = null;
+      },
+    );
   }
   const link = await engineLink;
   let contents = null;
   const opened = await link.openTab({
     allow: requestAllowed,
-    onPopup: (url) => { if (contents && permitted(url)) contents.loadURL(url).catch(() => { }); },
+    onPopup: (url) => {
+      if (contents && permitted(url)) contents.loadURL(url).catch(() => {});
+    },
   });
   if (engineChoice !== choice) {
     opened.close();
-    throw browserError('El navegador del agente cambió mientras se abría; vuelve a intentarlo', 'ENGINE_CHANGED', { recoverable: true });
+    throw browserError('El navegador del agente cambió mientras se abría; vuelve a intentarlo', 'ENGINE_CHANGED', {
+      recoverable: true,
+    });
   }
   contents = opened;
   tab.external = contents;
@@ -888,7 +1160,7 @@ async function load(contents, url) {
     if (!/ERR_ABORTED/.test(String(err && err.message))) throw err;
   });
   const settled = settle(contents);
-  loading.catch(() => { });
+  loading.catch(() => {});
   await Promise.race([loading, settled]);
   await settled;
 }
@@ -1029,7 +1301,9 @@ const SNAPSHOT = `(() => {
 function fit(result, budget = RESULT_BUDGET) {
   const size = (value) => JSON.stringify(value).length;
   while (size(result) > budget) {
-    const keys = Object.keys(result).filter((key) => (typeof result[key] === 'string' || Array.isArray(result[key])) && result[key].length);
+    const keys = Object.keys(result).filter(
+      (key) => (typeof result[key] === 'string' || Array.isArray(result[key])) && result[key].length,
+    );
     if (!keys.length) break;
     const key = keys.reduce((a, b) => (size(result[a]) >= size(result[b]) ? a : b));
     result[key] = result[key].slice(0, Math.floor(result[key].length / 2));
@@ -1039,11 +1313,13 @@ function fit(result, budget = RESULT_BUDGET) {
 }
 
 function describe(item) {
-  return `${item.ref} ${item.tag}${item.type ? `[${item.type}]` : ''} «${item.label}»`
-    + `${item.states && item.states.length ? ` (${item.states.join(', ')})` : ''}`
-    + `${item.value ? ` = ${item.value}` : ''}${item.href ? ` → ${item.href.slice(0, 90)}` : ''}`
-    + `${item.options && item.options.length ? ` opciones: ${item.options.join(' | ')}` : ''}`
-    + `${item.frame ? ' [marco]' : ''}${item.off ? ' [fuera de vista]' : ''}`;
+  return (
+    `${item.ref} ${item.tag}${item.type ? `[${item.type}]` : ''} «${item.label}»` +
+    `${item.states && item.states.length ? ` (${item.states.join(', ')})` : ''}` +
+    `${item.value ? ` = ${item.value}` : ''}${item.href ? ` → ${item.href.slice(0, 90)}` : ''}` +
+    `${item.options && item.options.length ? ` opciones: ${item.options.join(' | ')}` : ''}` +
+    `${item.frame ? ' [marco]' : ''}${item.off ? ' [fuera de vista]' : ''}`
+  );
 }
 
 async function snapshot(contents, offset = 0, budget = RESULT_BUDGET) {
@@ -1051,16 +1327,29 @@ async function snapshot(contents, offset = 0, budget = RESULT_BUDGET) {
   refDocuments.set(contents, page.time_origin);
   const start = Math.max(0, Number(offset) || 0);
   const text = String(page.text || '');
-  const result = fit({
-    url: redactUrlSecrets(page.url),
-    title: page.title,
-    text: text.slice(start, start + MAX_TEXT),
-    elements: page.elements.map(describe),
-  }, budget);
+  const result = fit(
+    {
+      url: redactUrlSecrets(page.url),
+      title: page.title,
+      text: text.slice(start, start + MAX_TEXT),
+      elements: page.elements.map(describe),
+    },
+    budget,
+  );
   const end = start + result.text.length;
   const more = Number(page.elements_total || 0) - result.elements.length;
-  return { ...result, text_offset: start, text_total: text.length, ...(end < text.length ? { next_offset: end } : {}),
-    ...(more > 0 ? { elements_more: more, elements_note: 'Hay más elementos interactivos: desplázate con web_scroll y vuelve a leer' } : {}) };
+  return {
+    ...result,
+    text_offset: start,
+    text_total: text.length,
+    ...(end < text.length ? { next_offset: end } : {}),
+    ...(more > 0
+      ? {
+          elements_more: more,
+          elements_note: 'Hay más elementos interactivos: desplázate con web_scroll y vuelve a leer',
+        }
+      : {}),
+  };
 }
 
 const FIND = (query) => `(() => {
@@ -1107,7 +1396,9 @@ const FIND = (query) => `(() => {
 
 async function findElements(contents, params) {
   const text = String(params.text || '').trim();
-  const role = String(params.role || '').trim().toLowerCase();
+  const role = String(params.role || '')
+    .trim()
+    .toLowerCase();
   if (!text && !role) throw new Error('Indica text, role o ambos');
   const page = await contents.executeJavaScript(FIND({ text, role, exact: params.exact === true }), true);
   refDocuments.set(contents, page.time_origin);
@@ -1115,20 +1406,35 @@ async function findElements(contents, params) {
   return fit({
     url: redactUrlSecrets(page.url),
     matches: page.matches.map(describe),
-    ...(page.total === 0 ? { note: 'Ningún elemento visible coincide; prueba con otro texto, sin role o desplázate con web_scroll' } : {}),
+    ...(page.total === 0
+      ? { note: 'Ningún elemento visible coincide; prueba con otro texto, sin role o desplázate con web_scroll' }
+      : {}),
     ...(more > 0 ? { matches_more: more, note: 'Hay más coincidencias: afina el texto o añade role' } : {}),
   });
 }
 
 function pageReported(mark) {
-  const errors = consoleLog.filter((entry) => entry.seq > mark.console && entry.level === 'error')
-    .slice(-HEALTH_KEEP).map((entry) => redactText(entry.text.slice(0, 200)));
-  const failed = [...netLog.values()]
-    .filter((entry) => entry.seq > mark.net && ((entry.status ?? 0) >= 400 || (entry.error && !/ERR_ABORTED/.test(entry.error))))
+  const errors = consoleLog
+    .filter((entry) => entry.seq > mark.console && entry.level === 'error')
     .slice(-HEALTH_KEEP)
-    .map((entry) => `${entry.error ? 'falló' : entry.status} ${entry.method || '·'} ${redactUrlSecrets(entry.url).slice(0, 160)}${entry.error ? ` (${entry.error})` : ''}`);
+    .map((entry) => redactText(entry.text.slice(0, 200)));
+  const failed = [...netLog.values()]
+    .filter(
+      (entry) =>
+        entry.seq > mark.net && ((entry.status ?? 0) >= 400 || (entry.error && !/ERR_ABORTED/.test(entry.error))),
+    )
+    .slice(-HEALTH_KEEP)
+    .map(
+      (entry) =>
+        `${entry.error ? 'falló' : entry.status} ${entry.method || '·'} ${redactUrlSecrets(entry.url).slice(0, 160)}${entry.error ? ` (${entry.error})` : ''}`,
+    );
   if (!errors.length && !failed.length) return {};
-  return { page_reported: { ...(errors.length ? { console_errors: errors } : {}), ...(failed.length ? { failed_requests: failed } : {}) } };
+  return {
+    page_reported: {
+      ...(errors.length ? { console_errors: errors } : {}),
+      ...(failed.length ? { failed_requests: failed } : {}),
+    },
+  };
 }
 
 function refId(ref) {
@@ -1137,9 +1443,12 @@ function refId(ref) {
 
 function current(id = AGENT_TAB) {
   const contents = tabContents(tabs.get(id));
-  if (!contents) throw new Error(id === AGENT_TAB
-    ? 'El navegador del agente no tiene ninguna página abierta; usa web_open'
-    : 'Esta pestaña no tiene ninguna página abierta');
+  if (!contents)
+    throw new Error(
+      id === AGENT_TAB
+        ? 'El navegador del agente no tiene ninguna página abierta; usa web_open'
+        : 'Esta pestaña no tiene ninguna página abierta',
+    );
   return contents;
 }
 
@@ -1153,15 +1462,25 @@ async function pageText(contents, offset = 0) {
   const page = await contents.executeJavaScript(PAGE_TEXT, true);
   const start = Math.max(0, Number(offset) || 0);
   const text = String(page.text || '');
-  const result = fit({ url: redactUrlSecrets(page.url), title: page.title, text: text.slice(start, start + MAX_PAGE_TEXT) });
+  const result = fit({
+    url: redactUrlSecrets(page.url),
+    title: page.title,
+    text: text.slice(start, start + MAX_PAGE_TEXT),
+  });
   const end = start + result.text.length;
   return { ...result, text_offset: start, text_total: text.length, ...(end < text.length ? { next_offset: end } : {}) };
 }
 
 async function approvalContext(contents = current()) {
-  const page = await contents.executeJavaScriptInIsolatedWorld(1001, [{
-    code: '({ url: location.href, time_origin: performance.timeOrigin })',
-  }], true);
+  const page = await contents.executeJavaScriptInIsolatedWorld(
+    1001,
+    [
+      {
+        code: '({ url: location.href, time_origin: performance.timeOrigin })',
+      },
+    ],
+    true,
+  );
   return { page_url: page.url, page_time_origin: page.time_origin };
 }
 
@@ -1171,20 +1490,26 @@ function refGuard(contents) {
 
 function assertSameDocument(result) {
   if (result && result.stale) {
-    throw browserError('La página cambió desde que la leíste; vuelve a leerla con web_read para obtener referencias nuevas',
-      'PAGE_CHANGED', { recoverable: true });
+    throw browserError(
+      'La página cambió desde que la leíste; vuelve a leerla con web_read para obtener referencias nuevas',
+      'PAGE_CHANGED',
+      { recoverable: true },
+    );
   }
 }
 
 async function inRef(contents, ref, body) {
   const id = refId(ref);
-  const result = await contents.executeJavaScript(`(() => {
+  const result = await contents.executeJavaScript(
+    `(() => {
     ${refGuard(contents)}
     ${DEEP_JS}
     let found = byRef('${id}');
     if (!found) return null;
     ${body(id)}
-  })()`, true);
+  })()`,
+    true,
+  );
   assertSameDocument(result);
   if (!result) throw new Error('El elemento ya no está en la página; vuelve a leerla con web_read');
   return result;
@@ -1193,7 +1518,10 @@ async function inRef(contents, ref, body) {
 async function locate(contents, ref, { scroll = true } = {}) {
   const id = String(ref || '').replace(/[^0-9]/g, '');
   if (!id) throw new Error('Indica la referencia del elemento (web_read)');
-  const rect = await inRef(contents, id, () => `
+  const rect = await inRef(
+    contents,
+    id,
+    () => `
     if (${scroll}) found.el.scrollIntoView({ block: 'center', inline: 'center' });
     found = byRef('${id}') || found;
     const el = found.el;
@@ -1227,10 +1555,14 @@ async function locate(contents, ref, { scroll = true } = {}) {
       ...(outside ? { outside } : {}),
       ...(!covered ? {} : { covered: covered.localName + ' «' + String(covered.innerText || covered.getAttribute('aria-label') || '')
         .trim().replace(/\\s+/g, ' ').slice(0, 60) + '»' }) };
-  `);
+  `,
+  );
   if (rect.covered) {
-    throw browserError(`Otro elemento tapa la referencia ${id}: ${rect.covered}. Ciérralo (un aviso de cookies, un diálogo o `
-      + 'un menú) o desplaza la página con web_scroll y vuelve a leerla', 'COVERED');
+    throw browserError(
+      `Otro elemento tapa la referencia ${id}: ${rect.covered}. Ciérralo (un aviso de cookies, un diálogo o ` +
+        'un menú) o desplaza la página con web_scroll y vuelve a leerla',
+      'COVERED',
+    );
   }
   await delay(120);
   return rect;
@@ -1241,16 +1573,23 @@ async function assertInteraction(input) {
   let samePage = false;
   try {
     const page = await approvalContext(input.contents);
-    samePage = tabContents(agent) === input.contents && page.page_url === input.expected.page_url
-      && page.page_time_origin === input.expected.page_time_origin;
+    samePage =
+      tabContents(agent) === input.contents &&
+      page.page_url === input.expected.page_url &&
+      page.page_time_origin === input.expected.page_time_origin;
   } catch {}
   const control = !!(agent && agent.userControl);
   const remaining = control ? 0 : busyRemaining(agent);
   if (samePage && !control && remaining === 0) return;
   const error = !samePage
-    ? browserError('La página cambió o ya no se puede comprobar; vuelve a leerla con web_read y solicita una nueva aprobación',
-      'PAGE_CHANGED', { recoverable: true })
-    : control ? userControlError() : userBusyError(remaining);
+    ? browserError(
+        'La página cambió o ya no se puede comprobar; vuelve a leerla con web_read y solicita una nueva aprobación',
+        'PAGE_CHANGED',
+        { recoverable: true },
+      )
+    : control
+      ? userControlError()
+      : userBusyError(remaining);
   if (input.sent) error.uncertain = true;
   throw error;
 }
@@ -1272,7 +1611,13 @@ async function send(input, method, event) {
     if (await ensureDebugger(target)) await assertInteraction(input);
     if (method === 'Input.dispatchMouseEvent' && event.type === 'mousePressed') {
       const zoom = target.getZoomFactor();
-      mouseInput = { contents: target, x: event.x * zoom, y: event.y * zoom, button: event.button, clickCount: event.clickCount };
+      mouseInput = {
+        contents: target,
+        x: event.x * zoom,
+        y: event.y * zoom,
+        button: event.button,
+        clickCount: event.clickCount,
+      };
       pendingMouseInputs.add(mouseInput);
     }
     input.sent = true;
@@ -1303,17 +1648,24 @@ async function dragTo(input, params) {
   const from = await locate(input.contents, params.ref);
   const to = await locate(input.contents, params.to, { scroll: false });
   if (to.outside) {
-    throw browserError('El destino no se ve junto al elemento que arrastras; desplaza la página con web_scroll hasta que '
-      + 'ambos se vean y vuelve a leerla', 'OUT_OF_VIEW');
+    throw browserError(
+      'El destino no se ve junto al elemento que arrastras; desplaza la página con web_scroll hasta que ' +
+        'ambos se vean y vuelve a leerla',
+      'OUT_OF_VIEW',
+    );
   }
-  const mouse = (type, x, y, extra = {}) => send(input, 'Input.dispatchMouseEvent',
-    { type, x: Math.round(x), y: Math.round(y), button: 'left', ...extra });
+  const mouse = (type, x, y, extra = {}) =>
+    send(input, 'Input.dispatchMouseEvent', { type, x: Math.round(x), y: Math.round(y), button: 'left', ...extra });
   await mouse('mouseMoved', from.x, from.y);
   await mouse('mousePressed', from.x, from.y, { buttons: 1, clickCount: 1 });
   for (let step = 1; step <= DRAG_STEPS; step += 1) {
     await delay(16);
-    await mouse('mouseMoved', from.x + ((to.x - from.x) * step) / DRAG_STEPS, from.y + ((to.y - from.y) * step) / DRAG_STEPS,
-      { buttons: 1 });
+    await mouse(
+      'mouseMoved',
+      from.x + ((to.x - from.x) * step) / DRAG_STEPS,
+      from.y + ((to.y - from.y) * step) / DRAG_STEPS,
+      { buttons: 1 },
+    );
   }
   await delay(50);
   await mouse('mouseReleased', to.x, to.y, { buttons: 0, clickCount: 1 });
@@ -1322,15 +1674,28 @@ async function dragTo(input, params) {
 
 async function pressCombo(input, combo) {
   const parts = combo.split('+').filter(Boolean);
-  const modifiers = parts.slice(0, -1).map((part) => MODIFIERS[part.toLowerCase()]).filter(Boolean);
+  const modifiers = parts
+    .slice(0, -1)
+    .map((part) => MODIFIERS[part.toLowerCase()])
+    .filter(Boolean);
   const last = parts[parts.length - 1] || '';
   const keyCode = KEY_CODES[last.toLowerCase()] || (last.length === 1 ? last : null);
   if (!keyCode || modifiers.length !== parts.length - 1) throw new Error(`Tecla desconocida: ${combo}`);
   const mask = modifiers.reduce((value, modifier) => value | { alt: 1, control: 2, meta: 4, shift: 8 }[modifier], 0);
-  const key = keyCode === 'Space' ? ' ' : ['Up', 'Down', 'Left', 'Right'].includes(keyCode) ? `Arrow${keyCode}`
-    : keyCode.length === 1 && modifiers.includes('shift') ? keyCode.toUpperCase() : keyCode;
-  const event = { key, modifiers: mask, windowsVirtualKeyCode: VIRTUAL_KEYS[keyCode] || keyCode.toUpperCase().charCodeAt(0) };
-  const text = keyCode === 'Enter' ? '\r' : (key.length === 1 && !(mask & 7) ? key : '');
+  const key =
+    keyCode === 'Space'
+      ? ' '
+      : ['Up', 'Down', 'Left', 'Right'].includes(keyCode)
+        ? `Arrow${keyCode}`
+        : keyCode.length === 1 && modifiers.includes('shift')
+          ? keyCode.toUpperCase()
+          : keyCode;
+  const event = {
+    key,
+    modifiers: mask,
+    windowsVirtualKeyCode: VIRTUAL_KEYS[keyCode] || keyCode.toUpperCase().charCodeAt(0),
+  };
+  const text = keyCode === 'Enter' ? '\r' : key.length === 1 && !(mask & 7) ? key : '';
   await send(input, 'Input.dispatchKeyEvent', { type: 'keyDown', ...event, ...(text ? { text } : {}) });
   await send(input, 'Input.dispatchKeyEvent', { type: 'keyUp', ...event });
 }
@@ -1340,8 +1705,11 @@ async function screenshot(contents, dir, fullPage = false) {
   let image;
   if (fullPage) {
     await ensureDebugger(contents);
-    const shot = await contents.debugger.sendCommand('Page.captureScreenshot',
-      { format: 'jpeg', quality: 70, captureBeyondViewport: true });
+    const shot = await contents.debugger.sendCommand('Page.captureScreenshot', {
+      format: 'jpeg',
+      quality: 70,
+      captureBeyondViewport: true,
+    });
     image = require('electron').nativeImage.createFromBuffer(Buffer.from(shot.data, 'base64'));
   } else {
     image = await contents.capturePage();
@@ -1351,11 +1719,19 @@ async function screenshot(contents, dir, fullPage = false) {
   await fs.promises.mkdir(dir, { recursive: true });
   const target = path.join(dir, `web-${Date.now()}.jpg`);
   await fs.promises.writeFile(target, image.toJPEG(70));
-  const old = (await fs.promises.readdir(dir)).filter((name) => name.startsWith('web-')).sort().slice(0, -KEEP_SCREENS);
+  const old = (await fs.promises.readdir(dir))
+    .filter((name) => name.startsWith('web-'))
+    .sort()
+    .slice(0, -KEEP_SCREENS);
   await Promise.all(old.map((name) => fs.promises.rm(path.join(dir, name), { force: true })));
   const size = image.getSize();
-  return { url: redactUrlSecrets(contents.getURL()), title: contents.getTitle(), width: size.width, height: size.height,
-    image: { path: target, mime: 'image/jpeg' } };
+  return {
+    url: redactUrlSecrets(contents.getURL()),
+    title: contents.getTitle(),
+    width: size.width,
+    height: size.height,
+    image: { path: target, mime: 'image/jpeg' },
+  };
 }
 
 async function capture(id = activeTab) {
@@ -1373,7 +1749,13 @@ async function capture(id = activeTab) {
   }
   const { width, height } = image.getSize();
   if (!width || !height) throw browserError('No se pudo capturar la página para anotar', 'CAPTURE_FAILED');
-  return { png_base64: image.toPNG().toString('base64'), width, height, url: redactUrlSecrets(contents.getURL()), title: contents.getTitle() };
+  return {
+    png_base64: image.toPNG().toString('base64'),
+    width,
+    height,
+    url: redactUrlSecrets(contents.getURL()),
+    title: contents.getTitle(),
+  };
 }
 
 const INSPECT = (x, y) => `(() => {
@@ -1427,7 +1809,8 @@ async function previewUrl(file, resolvePath) {
     throw new Error(`No existe el archivo ${file}; créalo con fs_write antes de abrirlo en vista previa`);
   }
   const folder = await resolvePath(path.dirname(status.path));
-  if (!folder || folder.type !== 'folder') throw new Error('La carpeta del archivo no está autorizada; adjúntala en el mensaje');
+  if (!folder || folder.type !== 'folder')
+    throw new Error('La carpeta del archivo no está autorizada; adjúntala en el mensaje');
   return (await preview.open(status.path, { onReload: reloadPreview })).url;
 }
 
@@ -1446,7 +1829,11 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
     }
   }
   if (name === 'web_open' && file !== null && engineChoice) {
-    throw browserError('La vista previa de archivos locales se muestra en el navegador integrado: elige «Integrado» en el menú del navegador del agente y vuelve a pedirla', 'PREVIEW_EXTERNAL', { recoverable: true });
+    throw browserError(
+      'La vista previa de archivos locales se muestra en el navegador integrado: elige «Integrado» en el menú del navegador del agente y vuelve a pedirla',
+      'PREVIEW_EXTERNAL',
+      { recoverable: true },
+    );
   }
   acquireAgent(sessionId);
   const mark = { console: consoleSeq, net: netSeq };
@@ -1489,33 +1876,48 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
   }
   if (name === 'web_text') return pageText(contents, params.offset);
   if (name === 'web_console') {
-    return fit({ url: redactUrlSecrets(contents.getURL()), messages: consoleLog.map((item) => `[${item.level}] ${redactText(item.text)}`) });
+    return fit({
+      url: redactUrlSecrets(contents.getURL()),
+      messages: consoleLog.map((item) => `[${item.level}] ${redactText(item.text)}`),
+    });
   }
   if (name === 'web_network') {
     await ensureDebugger(contents);
     return fit({
       url: redactUrlSecrets(contents.getURL()),
-      requests: [...netLog.values()].map((item) => `${item.status ?? '·'} ${item.method || '·'}${item.type ? ` ${item.type}` : ''} ${redactUrlSecrets(item.url)}${item.error ? ` (falló: ${item.error})` : ''}`),
+      requests: [...netLog.values()].map(
+        (item) =>
+          `${item.status ?? '·'} ${item.method || '·'}${item.type ? ` ${item.type}` : ''} ${redactUrlSecrets(item.url)}${item.error ? ` (falló: ${item.error})` : ''}`,
+      ),
     });
   }
   if (name === 'web_wait') return waitFor(contents, params);
   if (name === 'web_scroll') return scrollPage(contents, params);
   if (name === 'web_find') return findElements(contents, params);
-  const input = { contents, expected: approvedContext || await approvalContext(contents), sent: false };
+  const input = { contents, expected: approvedContext || (await approvalContext(contents)), sent: false };
   if (name === 'web_hover') {
     const point = await locate(contents, params.ref);
-    await send(input, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(point.x), y: Math.round(point.y) });
+    await send(input, 'Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: Math.round(point.x),
+      y: Math.round(point.y),
+    });
     return { hovered: String(params.ref), page: await observeAfter(contents) };
   }
   if (name === 'web_click') {
     await clickAt(input, await locate(contents, params.ref), params.double === true ? 2 : 1);
-    return { clicked: String(params.ref), ...(params.double === true ? { double: true } : {}), page: await observeAfter(contents),
-      ...pageReported(mark) };
+    return {
+      clicked: String(params.ref),
+      ...(params.double === true ? { double: true } : {}),
+      page: await observeAfter(contents),
+      ...pageReported(mark),
+    };
   }
-  if (name === 'web_drag') return { ...await dragTo(input, params), page: await observeAfter(contents), ...pageReported(mark) };
-  if (name === 'web_select') return { ...await selectOptions(input, params), ...pageReported(mark) };
-  if (name === 'web_check') return { ...await setChecked(input, params), ...pageReported(mark) };
-  if (name === 'web_fill') return { ...await fillFields(input, params), ...pageReported(mark) };
+  if (name === 'web_drag')
+    return { ...(await dragTo(input, params)), page: await observeAfter(contents), ...pageReported(mark) };
+  if (name === 'web_select') return { ...(await selectOptions(input, params)), ...pageReported(mark) };
+  if (name === 'web_check') return { ...(await setChecked(input, params)), ...pageReported(mark) };
+  if (name === 'web_fill') return { ...(await fillFields(input, params)), ...pageReported(mark) };
   if (name === 'web_type') {
     const text = String(params.text ?? '');
     if (text.length > 5000) throw new Error('El texto excede 5000 caracteres');
@@ -1536,11 +1938,18 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
     const writes = keys.split(/\s+/).some((combo) => {
       const parts = combo.split('+').filter(Boolean);
       const last = parts[parts.length - 1] || '';
-      return (last.length === 1 || last.toLowerCase() === 'space')
-        && !parts.slice(0, -1).some((part) => ['ctrl', 'control', 'alt', 'meta', 'cmd'].includes(part.toLowerCase()));
+      return (
+        (last.length === 1 || last.toLowerCase() === 'space') &&
+        !parts.slice(0, -1).some((part) => ['ctrl', 'control', 'alt', 'meta', 'cmd'].includes(part.toLowerCase()))
+      );
     });
-    if (writes && await contents.executeJavaScript(
-      `(() => { const el = document.activeElement; return !!el && (${SECRET_FIELD_JS})(el); })()`, true)) {
+    if (
+      writes &&
+      (await contents.executeJavaScript(
+        `(() => { const el = document.activeElement; return !!el && (${SECRET_FIELD_JS})(el); })()`,
+        true,
+      ))
+    ) {
       throw browserError(SECRET_FIELD_ERROR, 'SECRET_FIELD');
     }
     for (const combo of keys.split(/\s+/)) {
@@ -1549,7 +1958,8 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
     }
     return { pressed: keys, page: await observeAfter(contents), ...pageReported(mark) };
   }
-  if (name === 'web_upload') return { ...await uploadFile(input, params.ref, String(params.path || '').trim()), ...pageReported(mark) };
+  if (name === 'web_upload')
+    return { ...(await uploadFile(input, params.ref, String(params.path || '').trim())), ...pageReported(mark) };
   throw new Error(`Herramienta nativa no disponible: ${name}`);
 }
 
@@ -1584,8 +1994,12 @@ async function waitFor(contents, params) {
     await delay(WAIT_STEP_MS);
     waited += WAIT_STEP_MS;
   }
-  return { met, waited_ms: waited, ...(met ? {} : { note: `La condición no se cumplió en ${timeout} ms; no la des por hecha` }),
-    page: await observeAfter(contents) };
+  return {
+    met,
+    waited_ms: waited,
+    ...(met ? {} : { note: `La condición no se cumplió en ${timeout} ms; no la des por hecha` }),
+    page: await observeAfter(contents),
+  };
 }
 
 async function scrollPage(contents, params) {
@@ -1597,11 +2011,18 @@ async function scrollPage(contents, params) {
     box.scrollBy({ top: Math.round((found ? box.clientHeight : innerHeight) * ${pages}), behavior: 'instant' });
     return { moved: Math.round(box.scrollTop - before), at_end: Math.ceil(box.scrollTop + box.clientHeight) >= box.scrollHeight,
       at_start: box.scrollTop <= 0 };`;
-  const moved = id ? await inRef(contents, id, () => scroll)
+  const moved = id
+    ? await inRef(contents, id, () => scroll)
     : await contents.executeJavaScript(`(() => { const found = null; ${scroll} })()`, true);
-  return { scrolled: moved.moved, at_end: moved.at_end, at_start: moved.at_start,
-    ...(moved.moved === 0 ? { note: 'No se desplazó: ya estás en el borde o el contenedor no tiene desplazamiento propio' } : {}),
-    page: await observeAfter(contents) };
+  return {
+    scrolled: moved.moved,
+    at_end: moved.at_end,
+    at_start: moved.at_start,
+    ...(moved.moved === 0
+      ? { note: 'No se desplazó: ya estás en el borde o el contenedor no tiene desplazamiento propio' }
+      : {}),
+    page: await observeAfter(contents),
+  };
 }
 
 async function selectOptions(input, params) {
@@ -1611,7 +2032,10 @@ async function selectOptions(input, params) {
   await locate(input.contents, params.ref);
   await assertInteraction(input);
   input.sent = true;
-  const picked = await inRef(input.contents, id, () => `
+  const picked = await inRef(
+    input.contents,
+    id,
+    () => `
     const el = found.el;
     if (el.localName !== 'select') return { error: 'not_select' };
     const wanted = ${JSON.stringify(values)}.map((value) => value.trim().toLowerCase());
@@ -1626,12 +2050,16 @@ async function selectOptions(input, params) {
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
     return { selected: options.filter((option) => option.selected).map((option) => option.text.trim()) };
-  `);
-  if (picked.error === 'not_select') throw new Error('El elemento no es un desplegable nativo; ábrelo con web_click y elige la opción');
+  `,
+  );
+  if (picked.error === 'not_select')
+    throw new Error('El elemento no es un desplegable nativo; ábrelo con web_click y elige la opción');
   if (picked.error === 'disabled') throw new Error('El desplegable está deshabilitado');
   if (picked.error) {
-    throw new Error(`${picked.error === 'single' ? 'El desplegable admite una sola opción' : 'Ninguna opción coincide'}; `
-      + `opciones disponibles: ${picked.available.join(' | ')}`);
+    throw new Error(
+      `${picked.error === 'single' ? 'El desplegable admite una sola opción' : 'Ninguna opción coincide'}; ` +
+        `opciones disponibles: ${picked.available.join(' | ')}`,
+    );
   }
   return { ref: id, selected: picked.selected, page: await observeAfter(input.contents) };
 }
@@ -1645,23 +2073,31 @@ async function setChecked(input, params) {
   if (target.checked !== want) await clickAt(input, target);
   await settle(input.contents);
   let after = null;
-  try { after = await locate(input.contents, params.ref); } catch {}
+  try {
+    after = await locate(input.contents, params.ref);
+  } catch {}
   const checked = after ? after.checked : null;
-  return { ref: refId(params.ref), checked, changed: checked !== null && checked !== target.checked,
+  return {
+    ref: refId(params.ref),
+    checked,
+    changed: checked !== null && checked !== target.checked,
     ...(checked === want ? {} : { note: 'El estado no quedó como pediste; vuelve a leer la página antes de seguir' }),
-    page: await snapshot(input.contents, 0, RESULT_BUDGET - 400) };
+    page: await snapshot(input.contents, 0, RESULT_BUDGET - 400),
+  };
 }
 
 async function fillFields(input, params) {
   const fields = Array.isArray(params.fields) ? params.fields : [];
   if (!fields.length || fields.length > MAX_FILL_FIELDS) throw new Error(`Indica entre 1 y ${MAX_FILL_FIELDS} campos`);
   const ids = fields.map((field) => refId(field && field.ref));
-  if (ids.some((id) => !id) || new Set(ids).size !== ids.length) throw new Error('Cada campo necesita una ref distinta de web_read');
+  if (ids.some((id) => !id) || new Set(ids).size !== ids.length)
+    throw new Error('Cada campo necesita una ref distinta de web_read');
   const texts = fields.map((field) => String(field.text ?? ''));
   if (texts.reduce((total, text) => total + text.length, 0) > MAX_FILL_TEXT) {
     throw new Error(`El texto de los campos excede ${MAX_FILL_TEXT} caracteres`);
   }
-  const kinds = await input.contents.executeJavaScript(`(() => {
+  const kinds = await input.contents.executeJavaScript(
+    `(() => {
     ${refGuard(input.contents)}
     ${DEEP_JS}
     const secret = ${SECRET_FIELD_JS};
@@ -1675,15 +2111,21 @@ async function fillFields(input, params) {
         || (el.localName === 'input' && ['text', 'search', 'email', 'tel', 'url', 'number', ''].includes(el.type));
       return text ? 'text' : 'other';
     });
-  })()`, true);
+  })()`,
+    true,
+  );
   assertSameDocument(kinds);
   const problem = kinds.findIndex((kind) => kind !== 'text');
   if (problem >= 0) {
     const ref = ids[problem];
     if (kinds[problem] === 'secret') throw browserError(SECRET_FIELD_ERROR, 'SECRET_FIELD');
-    throw new Error(kinds[problem] === 'missing' ? `El campo ${ref} ya no está en la página; vuelve a leerla con web_read`
-      : kinds[problem] === 'readonly' ? `El campo ${ref} está deshabilitado o es de solo lectura`
-        : `La referencia ${ref} no es un campo de texto; usa web_select o web_check`);
+    throw new Error(
+      kinds[problem] === 'missing'
+        ? `El campo ${ref} ya no está en la página; vuelve a leerla con web_read`
+        : kinds[problem] === 'readonly'
+          ? `El campo ${ref} está deshabilitado o es de solo lectura`
+          : `La referencia ${ref} no es un campo de texto; usa web_select o web_check`,
+    );
   }
   let written = 0;
   try {
@@ -1695,39 +2137,54 @@ async function fillFields(input, params) {
       written += 1;
     }
   } catch (error) {
-    if (written) error.message += ` (ya se escribieron ${written} de ${ids.length} campos; vuelve a leer la página antes de seguir)`;
+    if (written)
+      error.message += ` (ya se escribieron ${written} de ${ids.length} campos; vuelve a leer la página antes de seguir)`;
     throw error;
   }
-  const filledValues = await input.contents.executeJavaScript(`(() => {
+  const filledValues = await input.contents.executeJavaScript(
+    `(() => {
     ${DEEP_JS}
     return ${JSON.stringify(ids)}.map((id) => {
       const found = byRef(id);
       if (!found) return null;
       return found.el.isContentEditable ? found.el.innerText : found.el.value;
     });
-  })()`, true);
+  })()`,
+    true,
+  );
   const confirmed = [];
   const unconfirmed = [];
   ids.forEach((id, index) => {
     const value = Array.isArray(filledValues) ? filledValues[index] : null;
     (typeof value === 'string' && value.trim() === texts[index].trim() ? confirmed : unconfirmed).push(id);
   });
-  return { filled: written, confirmed, ...(unconfirmed.length ? { unconfirmed,
-    note: 'Estos campos no muestran el texto escrito (la página pudo darle formato o rechazarlo); revísalos con web_read' } : {}),
-  page: await observeAfter(input.contents) };
+  return {
+    filled: written,
+    confirmed,
+    ...(unconfirmed.length
+      ? {
+          unconfirmed,
+          note: 'Estos campos no muestran el texto escrito (la página pudo darle formato o rechazarlo); revísalos con web_read',
+        }
+      : {}),
+    page: await observeAfter(input.contents),
+  };
 }
 
 async function uploadFile(input, ref, filePath) {
   const id = String(ref || '').replace(/[^0-9]/g, '');
   if (!id) throw new Error('Indica la referencia del campo (web_read)');
   if (!filePath) throw new Error('Indica la ruta del archivo');
-  const field = await input.contents.executeJavaScript(`(() => {
+  const field = await input.contents.executeJavaScript(
+    `(() => {
     ${refGuard(input.contents)}
     const el = document.querySelector('[data-antares-ref="${id}"]');
     if (!el) return null;
     el.scrollIntoView({ block: 'center', inline: 'center' });
     return { tag: el.tagName.toLowerCase(), type: el.type || '' };
-  })()`, true);
+  })()`,
+    true,
+  );
   assertSameDocument(field);
   if (!field) throw new Error('El elemento ya no está en la página; vuelve a leerla con web_read');
   if (field.tag !== 'input' || field.type !== 'file') throw new Error('El elemento no es un campo de archivo');
@@ -1735,8 +2192,10 @@ async function uploadFile(input, ref, filePath) {
   await assertInteraction(input);
   await ensureDebugger(input.contents);
   const doc = await input.contents.debugger.sendCommand('DOM.getDocument', {});
-  const node = await input.contents.debugger.sendCommand('DOM.querySelector',
-    { nodeId: doc.root.nodeId, selector: `[data-antares-ref="${id}"]` });
+  const node = await input.contents.debugger.sendCommand('DOM.querySelector', {
+    nodeId: doc.root.nodeId,
+    selector: `[data-antares-ref="${id}"]`,
+  });
   if (!node.nodeId) throw new Error('El campo de archivo ya no está en la página; vuelve a leerla con web_read');
   await input.contents.debugger.sendCommand('DOM.setFileInputFiles', { files: [filePath], nodeId: node.nodeId });
   return { uploaded: filePath, ref: id, page: await observeAfter(input.contents) };
@@ -1746,7 +2205,11 @@ function close() {
   for (const tab of tabs.values()) {
     if (tab.view && alive(tab.view.webContents)) tab.view.webContents.close();
   }
-  if (engineLink) engineLink.then((link) => link.close(), () => { });
+  if (engineLink)
+    engineLink.then(
+      (link) => link.close(),
+      () => {},
+    );
   engineLink = null;
   engineChoice = null;
   if (alive(host)) host.destroy();
@@ -1761,4 +2224,38 @@ function close() {
   preview.close();
 }
 
-module.exports = { engines, setEngine, sessionOpenContext, TOOLS, PARTITION, USER_CONTROL_ERROR, USER_BUSY_ERROR, AGENT_TAB, USER_TAB, run, close, release, normalizeUrl, redactUrlSecrets, isWeb, isPrivateHostname, isAllowedWebUrl, isPublicResolution, state, dock, capture, inspect, navigate, openPage, setUserControl, allowAgent, resetUserActivity, activateTab, newTab, closeTab, clampBounds, siteUserAgent, approvalContext };
+module.exports = {
+  engines,
+  setEngine,
+  sessionOpenContext,
+  TOOLS,
+  PARTITION,
+  USER_CONTROL_ERROR,
+  USER_BUSY_ERROR,
+  AGENT_TAB,
+  USER_TAB,
+  run,
+  close,
+  release,
+  normalizeUrl,
+  redactUrlSecrets,
+  isWeb,
+  isPrivateHostname,
+  isAllowedWebUrl,
+  isPublicResolution,
+  state,
+  dock,
+  capture,
+  inspect,
+  navigate,
+  openPage,
+  setUserControl,
+  allowAgent,
+  resetUserActivity,
+  activateTab,
+  newTab,
+  closeTab,
+  clampBounds,
+  siteUserAgent,
+  approvalContext,
+};

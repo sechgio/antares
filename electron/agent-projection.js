@@ -1,13 +1,6 @@
 'use strict';
 
-const {
-  shared,
-  bridge,
-  ctx,
-  commitSessions,
-  conversation,
-  providerCallId,
-} = require('./agent-shared');
+const { shared, bridge, ctx, commitSessions, conversation, providerCallId } = require('./agent-shared');
 
 const timing = require('./agent-reasoning-timing');
 
@@ -31,16 +24,19 @@ function emitChanged(sessionId) {
   try {
     const win = require('./window-manager').getMainWindow();
     if (win && !win.isDestroyed()) win.webContents.send('ipc-notify', 'agent.changed', { session_id: sessionId });
-  } catch { }
+  } catch {}
 }
 
 function notifyChanged(convId) {
   if (notifyTimers.has(convId)) return;
-  notifyTimers.set(convId, setTimeout(() => {
-    notifyTimers.delete(convId);
-    const sessionId = shared.convToSession.get(convId);
-    if (sessionId) emitChanged(sessionId);
-  }, NOTIFY_MS));
+  notifyTimers.set(
+    convId,
+    setTimeout(() => {
+      notifyTimers.delete(convId);
+      const sessionId = shared.convToSession.get(convId);
+      if (sessionId) emitChanged(sessionId);
+    }, NOTIFY_MS),
+  );
 }
 
 async function ensureWatcher(session, context) {
@@ -101,11 +97,17 @@ function applyEvent(convId, event) {
           live.generation.message = change.message;
           break;
         }
-        if (change.type === 'text_start' || change.type === 'thinking_start' || change.type === 'toolcall_start' || change.type === 'block') {
+        if (
+          change.type === 'text_start' ||
+          change.type === 'thinking_start' ||
+          change.type === 'toolcall_start' ||
+          change.type === 'block'
+        ) {
           next.content[change.contentIndex] = change.block;
         } else if (change.type === 'text_delta' || change.type === 'thinking_delta') {
           const block = next.content[change.contentIndex];
-          if (block) next.content[change.contentIndex] = { ...block, text: (block.text || block.thinking || '') + change.delta };
+          if (block)
+            next.content[change.contentIndex] = { ...block, text: (block.text || block.thinking || '') + change.delta };
         }
       }
       live.generation.message = next;
@@ -118,9 +120,10 @@ function applyEvent(convId, event) {
     case 'tool_execution_update':
       if (event.output) {
         const slot = (live.tools || []).find((s) => s.callId === event.toolCallId) || {};
-        const output = 'set' in event.output
-          ? event.output.set
-          : String(slot.output || '').slice(event.output.trimStart || 0) + (event.output.append || '');
+        const output =
+          'set' in event.output
+            ? event.output.set
+            : String(slot.output || '').slice(event.output.trimStart || 0) + (event.output.append || '');
         live.tools = upsertSlot(live.tools, event, { status: 'running', output });
       }
       break;
@@ -141,15 +144,30 @@ function applyEvent(convId, event) {
       if (sessionId) {
         commitSessions((sessions) => {
           const session = sessions[sessionId];
-          if (session) session.last_error = require('./agent-execution').sanitizeProviderError(event.message).slice(0, 300) || session.last_error;
+          if (session)
+            session.last_error =
+              require('./agent-execution').sanitizeProviderError(event.message).slice(0, 300) || session.last_error;
         }).catch(() => {});
         if (event.kind === 'pi.compaction') {
-          conversation(sessionId).then((conv) => conv.submit({
-            type: 'write',
-            requestId: `compaction-failed:${event.taskId}`,
-            entry: { kind: NOTICE_KIND, data: { text: `⚠ La compactación del contexto falló: ${event.message}. `
-              + 'El turno se detuvo para no continuar con un contexto incompleto; al reanudar se volverá a intentar.' } },
-          }, ctx())).catch(() => {});
+          conversation(sessionId)
+            .then((conv) =>
+              conv.submit(
+                {
+                  type: 'write',
+                  requestId: `compaction-failed:${event.taskId}`,
+                  entry: {
+                    kind: NOTICE_KIND,
+                    data: {
+                      text:
+                        `⚠ La compactación del contexto falló: ${event.message}. ` +
+                        'El turno se detuvo para no continuar con un contexto incompleto; al reanudar se volverá a intentar.',
+                    },
+                  },
+                },
+                ctx(),
+              ),
+            )
+            .catch(() => {});
         }
       }
       break;
@@ -165,7 +183,7 @@ function upsertSlot(tools, event, change) {
   if (!slots.some((slot) => slot.callId === event.toolCallId)) {
     return [...slots, { callId: event.toolCallId, name: event.toolName, ...change }];
   }
-  return slots.map((slot) => slot.callId === event.toolCallId ? { ...slot, ...change } : slot);
+  return slots.map((slot) => (slot.callId === event.toolCallId ? { ...slot, ...change } : slot));
 }
 
 function liveFor(convId) {
@@ -211,16 +229,22 @@ function userTextOf(message) {
 
 function userAttachmentsOf(message) {
   if (!message || !Array.isArray(message.content)) return [];
-  const context = message.content.findLast((block) => block && block.type === 'text'
-    && String(block.text || '').startsWith(shared.CONTEXT_MARKER));
+  const context = message.content.findLast(
+    (block) => block && block.type === 'text' && String(block.text || '').startsWith(shared.CONTEXT_MARKER),
+  );
   const marker = `\n${shared.ATTACHMENTS_MARKER}\n`;
   const start = context?.text.lastIndexOf(marker) ?? -1;
   if (start < 0) return [];
   try {
     const items = JSON.parse(context.text.slice(start + marker.length));
-    return Array.isArray(items) ? items.filter((item) => item && typeof item.path === 'string'
-      && typeof item.folder === 'boolean').map((item) => ({ path: item.path, folder: item.folder })) : [];
-  } catch { return []; }
+    return Array.isArray(items)
+      ? items
+          .filter((item) => item && typeof item.path === 'string' && typeof item.folder === 'boolean')
+          .map((item) => ({ path: item.path, folder: item.folder }))
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 function entryTs(entry, message) {
@@ -241,8 +265,7 @@ async function allEntries(conv) {
 }
 
 function contextTokens(usage) {
-  return ['input', 'output', 'cacheRead', 'cacheWrite']
-    .reduce((sum, key) => sum + (Number(usage[key]) || 0), 0);
+  return ['input', 'output', 'cacheRead', 'cacheWrite'].reduce((sum, key) => sum + (Number(usage[key]) || 0), 0);
 }
 
 async function conversationSpend(convId) {
@@ -266,7 +289,7 @@ async function projectMessages(conv, session) {
   let effects = [];
   try {
     effects = (await bridge('agent_internal_effects', { session_id: session.id })).dispatches || [];
-  } catch { }
+  } catch {}
   const effectByCall = new Map();
   const ambiguousEffects = new Set();
   for (const effect of effects) {
@@ -314,23 +337,34 @@ async function projectMessages(conv, session) {
       if (textOf(msg).startsWith(shared.CHECK_MARKER)) continue;
       const content = userTextOf(msg);
       const attachments = userAttachmentsOf(msg);
-      if (content || attachments.length) messages.push({ role: 'user', content,
-        ...(attachments.length ? { attachments } : {}), ts: entryTs(entry, msg) });
+      if (content || attachments.length)
+        messages.push({
+          role: 'user',
+          content,
+          ...(attachments.length ? { attachments } : {}),
+          ts: entryTs(entry, msg),
+        });
       continue;
     }
     if (entry.kind === NOTICE_KIND) {
-      messages.push({ role: 'assistant', content: String((entry.data && entry.data.text) || ''), notice: true, ts: entryTs(entry, msg) });
+      messages.push({
+        role: 'assistant',
+        content: String((entry.data && entry.data.text) || ''),
+        notice: true,
+        ts: entryTs(entry, msg),
+      });
       continue;
     }
     if (entry.kind === 'pi.compaction') {
       const { unwrapCompactionSummary, isEmergencySummary } = require('./agent-compaction');
       const raw = textOf(msg);
       if (isEmergencySummary(unwrapCompactionSummary(raw) || raw.trim())) {
-        const reason = COMPACTION_REASONS[(entry.data && entry.data.reason)] || 'contexto comprimido';
+        const reason = COMPACTION_REASONS[entry.data && entry.data.reason] || 'contexto comprimido';
         messages.push({
           role: 'assistant',
-          content: `⚠ Contexto compactado con un resumen de emergencia — ${reason}. `
-            + 'El modelo no pudo resumir y se conservó un extracto mecánico; puede faltar detalle de lo anterior.',
+          content:
+            `⚠ Contexto compactado con un resumen de emergencia — ${reason}. ` +
+            'El modelo no pudo resumir y se conservó un extracto mecánico; puede faltar detalle de lo anterior.',
           notice: true,
           ts: entryTs(entry, msg),
         });
@@ -349,7 +383,9 @@ async function projectMessages(conv, session) {
     }
     if (entry.kind === 'pi.assistant' && msg) {
       const calls = (msg.content || []).filter((block) => block && block.type === 'toolCall');
-      const tool_calls = calls.map((call) => projectCall(call, resultByCall, slotByCall, pendingByCall, effectByCall, entry, entry.id === liveRound));
+      const tool_calls = calls.map((call) =>
+        projectCall(call, resultByCall, slotByCall, pendingByCall, effectByCall, entry, entry.id === liveRound),
+      );
       const legacy = Array.isArray(entry.data && entry.data.tool_calls) ? entry.data.tool_calls : null;
       const reasoning = timing.reasoningOf(msg);
       const reasoningMs = timing.partialReasoningMs(convId, reasoning);
@@ -400,13 +436,23 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, effectByCall
   const pending = pendingByCall.get(call.id);
   const result = resultByCall.get(`${assistantEntry.id}:${call.id}`);
   const candidate = effectByCall.get(call.id);
-  const recovered = !!(candidate && candidate.recovered === true
-    && candidate.status === 'succeeded' && /interrump|inciert/i.test(result ? textOf(result.msg) : ''));
-  const effect = result && candidate && candidate.method === call.name && (recovered
-    ? true
-    : result.msg.isError
-      ? candidate.status === 'failed' || candidate.status === 'uncertain'
-      : candidate.status === 'succeeded' || candidate.status === 'submitted') ? candidate : null;
+  const recovered = !!(
+    candidate &&
+    candidate.recovered === true &&
+    candidate.status === 'succeeded' &&
+    /interrump|inciert/i.test(result ? textOf(result.msg) : '')
+  );
+  const effect =
+    result &&
+    candidate &&
+    candidate.method === call.name &&
+    (recovered
+      ? true
+      : result.msg.isError
+        ? candidate.status === 'failed' || candidate.status === 'uncertain'
+        : candidate.status === 'succeeded' || candidate.status === 'submitted')
+      ? candidate
+      : null;
   const undo = sanitizeUndo(effect && effect.undo);
   const base = {
     id: call.id,
@@ -415,8 +461,8 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, effectByCall
     gated: !!(spec && spec.gated),
     dispatch_id: (effect && effect.call_id) || null,
     channel: (pending && pending.channel) || (effect && effect.channel) || (spec && spec.channel) || null,
-    approval_source: effect && effect.approval_source && effect.approval_source !== 'none'
-      ? effect.approval_source : null,
+    approval_source:
+      effect && effect.approval_source && effect.approval_source !== 'none' ? effect.approval_source : null,
     ...(effect && effect.recovered ? { recovered: true } : {}),
     ...(undo ? { undo } : {}),
     result: null,
@@ -435,7 +481,8 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, effectByCall
     }
     base.result = textOf(result.msg);
     const diagnostics = (result.entry.data && result.entry.data.diagnostics) || [];
-    const blocked = result.msg.isError && diagnostics.some((d) => d && (d.code === 'blocked' || d.code === 'tool_unavailable'));
+    const blocked =
+      result.msg.isError && diagnostics.some((d) => d && (d.code === 'blocked' || d.code === 'tool_unavailable'));
     const aborted = result.msg.isError && diagnostics.some((d) => d && d.code === 'aborted');
     if (aborted) base.result = base.result.replace(/\n?<harness>\n[\s\S]*?\n<\/harness>\s*$/, '') || INTERRUPTED_RESULT;
     base.status = !result.msg.isError ? 'done' : blocked ? 'denied' : aborted ? 'interrupted' : 'failed';
@@ -443,7 +490,7 @@ function projectCall(call, resultByCall, slotByCall, pendingByCall, effectByCall
       const receipt = JSON.parse(base.result);
       if (receipt.queued === true || receipt.submitted === true) base.status = 'submitted';
       else if (receipt.uncertain === true || receipt.interrupted === true) base.status = 'interrupted';
-    } catch { }
+    } catch {}
     return base;
   }
   if (pending) {

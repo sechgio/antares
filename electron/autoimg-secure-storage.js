@@ -14,8 +14,11 @@ try {
 
 function _safeStorageAvailable() {
   try {
-    return !!(safeStorage && typeof safeStorage.isEncryptionAvailable === 'function'
-      && safeStorage.isEncryptionAvailable());
+    return !!(
+      safeStorage &&
+      typeof safeStorage.isEncryptionAvailable === 'function' &&
+      safeStorage.isEncryptionAvailable()
+    );
   } catch {
     return false;
   }
@@ -23,9 +26,8 @@ function _safeStorageAvailable() {
 
 function _deriveKey(namespace) {
   const appName = app && typeof app.getName === 'function' ? app.getName() : 'antares';
-  const base = app && typeof app.getPath === 'function'
-    ? app.getPath('userData')
-    : path.join(os.tmpdir(), 'antares-autoimg');
+  const base =
+    app && typeof app.getPath === 'function' ? app.getPath('userData') : path.join(os.tmpdir(), 'antares-autoimg');
   const seed = `${appName}:${base}:autoimg:${namespace}`;
   return crypto.createHash('sha256').update(seed).digest();
 }
@@ -69,9 +71,8 @@ function decryptPayload(namespace, encoded, version = 1) {
 }
 
 function userDataPath(filename) {
-  const base = app && typeof app.getPath === 'function'
-    ? app.getPath('userData')
-    : path.join(os.tmpdir(), 'antares-autoimg');
+  const base =
+    app && typeof app.getPath === 'function' ? app.getPath('userData') : path.join(os.tmpdir(), 'antares-autoimg');
   return path.join(base, filename);
 }
 
@@ -92,8 +93,7 @@ function readSecureJson(filename, namespace) {
               outcome: 'failed',
               message: err && err.message ? err.message : String(err),
             });
-          } catch {
-          }
+          } catch {}
         }
       }
       return payload;
@@ -105,8 +105,7 @@ function readSecureJson(filename, namespace) {
         outcome: 'failed',
         message: err && err.message ? err.message : String(err),
       });
-    } catch {
-    }
+    } catch {}
     return null;
   }
 }
@@ -123,8 +122,7 @@ function writeSecureJson(filename, namespace, payload) {
   } catch (err) {
     try {
       if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-    } catch {
-    }
+    } catch {}
     throw err;
   }
 }

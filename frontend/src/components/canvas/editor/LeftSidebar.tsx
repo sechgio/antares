@@ -9,17 +9,7 @@ import {
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import {
-  FileText,
-  Group,
-  Minus,
-  Plus,
-  Trash2,
-  Ungroup,
-  PanelLeftClose,
-  Search,
-  LayoutTemplate,
-} from 'lucide-react';
+import { FileText, Group, Minus, Plus, Trash2, Ungroup, PanelLeftClose, Search, LayoutTemplate } from 'lucide-react';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import {
   ancestorIds,
@@ -65,11 +55,7 @@ interface LeftSidebarProps {
   onDuplicatePage: (index: number) => void;
   onRenamePage: (index: number, name: string) => void;
   onReorderPage?: (fromIndex: number, toIndex: number) => void;
-  onMoveLayer: (
-    draggedId: string,
-    targetId: string,
-    position: 'before' | 'after' | 'inside',
-  ) => void;
+  onMoveLayer: (draggedId: string, targetId: string, position: 'before' | 'after' | 'inside') => void;
   onGroupSelected: () => void;
   onUngroupSelected: () => void;
   onToggleVisible: (id: string, visible: boolean) => void;
@@ -83,8 +69,6 @@ interface LeftSidebarProps {
   width?: number;
   onWidthChange?: (width: number) => void;
 }
-
-
 
 export default memo(function LeftSidebar({
   documentName,
@@ -122,10 +106,7 @@ export default memo(function LeftSidebar({
 }: LeftSidebarProps) {
   const tree = useMemo(() => buildLayerTree(layers), [layers]);
   const layersById = useMemo(() => new Map(layers.map((layer) => [layer.id, layer])), [layers]);
-  const containerIds = useMemo(
-    () => layers.filter((l) => isLayerContainer(l)).map((l) => l.id),
-    [layers],
-  );
+  const containerIds = useMemo(() => layers.filter((l) => isLayerContainer(l)).map((l) => l.id), [layers]);
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const canGroupSelected = useMemo(() => {
     let n = 0;
@@ -186,11 +167,7 @@ export default memo(function LeftSidebar({
       if (layerListRef.current) layerListRef.current.scrollTop = 0;
     }
     setExpandedIds((prev) => {
-      const { expanded, known } = reconcileExpandedContainers(
-        prev,
-        knownContainerIdsRef.current,
-        containerIds,
-      );
+      const { expanded, known } = reconcileExpandedContainers(prev, knownContainerIdsRef.current, containerIds);
       knownContainerIdsRef.current = known;
       if (expanded.size === prev.size) {
         let same = true;
@@ -205,8 +182,6 @@ export default memo(function LeftSidebar({
       return expanded;
     });
   }, [containerIds, documentId]);
-
-
 
   useEffect(() => {
     if (renamingIndex === null) return;
@@ -376,10 +351,11 @@ export default memo(function LeftSidebar({
       return;
     }
     if (
-      selectionKey === lastRevealedKeyRef.current
-      && lastRevealedRowsRef.current === rows
-      && !pendingRevealIdRef.current
-    ) return;
+      selectionKey === lastRevealedKeyRef.current &&
+      lastRevealedRowsRef.current === rows &&
+      !pendingRevealIdRef.current
+    )
+      return;
 
     const nextExpanded = expandAncestorsForSelection(expandedIds, layersRef.current, selectedIds);
     if (nextExpanded !== expandedIds) {
@@ -395,7 +371,7 @@ export default memo(function LeftSidebar({
     }
 
     const el = layerListRef.current;
-    const listHeight = (el?.clientHeight && el.clientHeight > 0 ? el.clientHeight : layerListHeight);
+    const listHeight = el?.clientHeight && el.clientHeight > 0 ? el.clientHeight : layerListHeight;
     const current = el?.scrollTop ?? layerScrollTop;
     const nextScroll = scrollTopToRevealIndex(index, LAYER_ROW_H, listHeight, current);
     pendingRevealIdRef.current = null;
@@ -406,7 +382,12 @@ export default memo(function LeftSidebar({
   }, [selectedIds, rows, expandedIds, layerListHeight, layerScrollTop]);
 
   const onLayerListKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+    if (
+      event.key !== 'ArrowDown' &&
+      event.key !== 'ArrowUp' &&
+      event.key !== 'ArrowLeft' &&
+      event.key !== 'ArrowRight'
+    ) {
       return;
     }
     event.preventDefault();
@@ -445,13 +426,21 @@ export default memo(function LeftSidebar({
           <span className="canvas-section-title">Archivos</span>
           <div className="flex gap-0.5">
             <WithHoverTooltip label="Nuevo" placement="bottom" variant="dark">
-              <Button variant="none" size="none" className="canvas-icon-btn !h-6 !w-6" onClick={onNew} aria-label="Nuevo">
+              <Button
+                variant="none"
+                size="none"
+                className="canvas-icon-btn !h-6 !w-6"
+                onClick={onNew}
+                aria-label="Nuevo"
+              >
                 <Plus className="h-3 w-3" />
               </Button>
             </WithHoverTooltip>
             {onOpenTemplates && (
               <WithHoverTooltip label="Plantillas" placement="bottom" variant="dark">
-                <Button variant="none" size="none"
+                <Button
+                  variant="none"
+                  size="none"
                   className="canvas-icon-btn !h-6 !w-6"
                   onClick={onOpenTemplates}
                   aria-label="Plantillas"
@@ -462,7 +451,9 @@ export default memo(function LeftSidebar({
               </WithHoverTooltip>
             )}
             <WithHoverTooltip label="Eliminar" placement="bottom" variant="dark">
-              <Button variant="none" size="none"
+              <Button
+                variant="none"
+                size="none"
                 className="canvas-icon-btn !h-6 !w-6"
                 onClick={onDeleteDoc}
                 aria-label="Eliminar documento"
@@ -472,7 +463,9 @@ export default memo(function LeftSidebar({
             </WithHoverTooltip>
             {onHidePanel && (
               <WithHoverTooltip label="Ocultar panel izquierdo" placement="bottom" variant="dark">
-                <Button variant="none" size="none"
+                <Button
+                  variant="none"
+                  size="none"
                   className="canvas-icon-btn !h-6 !w-6"
                   data-testid="canvas-toggle-left-panel"
                   disabled={hidePanelDisabled}
@@ -502,20 +495,26 @@ export default memo(function LeftSidebar({
 
       <div className="canvas-left-pages canvas-section">
         <div className="canvas-section-header canvas-sidebar-heading">
-          <span className="canvas-section-title">
-            Páginas
-          </span>
+          <span className="canvas-section-title">Páginas</span>
           <span className="canvas-section-count" data-testid="canvas-pages-count" aria-label={`${pageCount} páginas`}>
             {pageCount}
           </span>
           <div className="flex gap-0.5">
             <WithHoverTooltip label="Añadir página" placement="bottom" variant="dark">
-              <Button variant="none" size="none" className="canvas-icon-btn !h-6 !w-6" onClick={onAddPage} aria-label="Añadir página">
+              <Button
+                variant="none"
+                size="none"
+                className="canvas-icon-btn !h-6 !w-6"
+                onClick={onAddPage}
+                aria-label="Añadir página"
+              >
                 <Plus className="h-3 w-3" />
               </Button>
             </WithHoverTooltip>
             <WithHoverTooltip label="Quitar página" placement="bottom" variant="dark">
-              <Button variant="none" size="none"
+              <Button
+                variant="none"
+                size="none"
                 className="canvas-icon-btn !h-6 !w-6"
                 onClick={() => onRemovePage(pageIndex)}
                 aria-label="Quitar página"
@@ -527,7 +526,7 @@ export default memo(function LeftSidebar({
           </div>
         </div>
         <div className="canvas-page-list">
-          {Array.from({ length: pageCount }, (_, i) => (
+          {Array.from({ length: pageCount }, (_, i) =>
             renamingIndex === i ? (
               <input
                 key={pages?.[i]?.id ?? i}
@@ -549,7 +548,9 @@ export default memo(function LeftSidebar({
                 }}
               />
             ) : (
-              <Button variant="none" size="none"
+              <Button
+                variant="none"
+                size="none"
                 key={pages?.[i]?.id ?? i}
                 onClick={() => onPageChange(i)}
                 onContextMenu={(e) => {
@@ -598,8 +599,8 @@ export default memo(function LeftSidebar({
                 <span className="min-w-0 flex-1 truncate">{pageLabel(i)}</span>
                 <span className="canvas-page-format">A4</span>
               </Button>
-            )
-          ))}
+            ),
+          )}
         </div>
         {pageMenu && (
           <PageContextMenu
@@ -630,7 +631,9 @@ export default memo(function LeftSidebar({
             {rows.length}
           </span>
           <WithHoverTooltip label="Agrupar (Ctrl+G)" placement="bottom" variant="dark">
-            <Button variant="none" size="none"
+            <Button
+              variant="none"
+              size="none"
               className="canvas-icon-btn !h-6 !w-6"
               aria-label="Agrupar"
               disabled={!canGroupSelected}
@@ -640,7 +643,9 @@ export default memo(function LeftSidebar({
             </Button>
           </WithHoverTooltip>
           <WithHoverTooltip label="Desagrupar (Ctrl+Shift+G)" placement="bottom" variant="dark">
-            <Button variant="none" size="none"
+            <Button
+              variant="none"
+              size="none"
               className="canvas-icon-btn !h-6 !w-6"
               aria-label="Desagrupar"
               disabled={!canUngroupSelected}
@@ -675,9 +680,7 @@ export default memo(function LeftSidebar({
             setLayerScrollTop((prev) => (prev === next ? prev : next));
           }}
         >
-          {layerWindow.padTop > 0 && (
-            <li aria-hidden style={{ height: layerWindow.padTop, listStyle: 'none' }} />
-          )}
+          {layerWindow.padTop > 0 && <li aria-hidden style={{ height: layerWindow.padTop, listStyle: 'none' }} />}
           {visibleRows.map((row) => {
             const { layer, depth, hasChildren } = row;
             return (
@@ -705,9 +708,7 @@ export default memo(function LeftSidebar({
               />
             );
           })}
-          {layerWindow.padBottom > 0 && (
-            <li aria-hidden style={{ height: layerWindow.padBottom, listStyle: 'none' }} />
-          )}
+          {layerWindow.padBottom > 0 && <li aria-hidden style={{ height: layerWindow.padBottom, listStyle: 'none' }} />}
           {rows.length === 0 && (
             <li className="canvas-empty-hint">
               {layerQuery.trim() ? (

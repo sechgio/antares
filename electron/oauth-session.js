@@ -7,11 +7,7 @@ const {
   generateCodeVerifier,
   generateCodeChallenge,
 } = require('./autoimg-oauth-flow');
-const {
-  browserOAuthCallbackHandlers,
-  wireOAuthCallbackServer,
-} = require('./cloud-connector-common');
-
+const { browserOAuthCallbackHandlers, wireOAuthCallbackServer } = require('./cloud-connector-common');
 
 function createPendingFlow() {
   let callbackFlow = null;
@@ -30,7 +26,9 @@ function createPendingFlow() {
     callbackFlow = flow;
     return {
       isCurrent: () => callbackFlow === flow,
-      setStop: (stop) => { flow.stop = stop; },
+      setStop: (stop) => {
+        flow.stop = stop;
+      },
     };
   }
 
@@ -59,14 +57,7 @@ function wireBrowserCallbackServer({
   );
 }
 
-async function beginBrowserOAuthFlow(pending, {
-  resolveTarget,
-  buildAuthUrl,
-  connect,
-  label,
-  onComplete,
-  onError,
-}) {
+async function beginBrowserOAuthFlow(pending, { resolveTarget, buildAuthUrl, connect, label, onComplete, onError }) {
   pending.cancel();
 
   const target = await resolveTarget();

@@ -24,7 +24,11 @@ function scriptBootstrap(hostCall, hostPrint, hostDone, catalogJson, maxResultCh
       const text = JSON.stringify(value);
       return typeof text === 'string' ? text : String(value);
     } catch {
-      try { return String(value); } catch { return '[valor no serializable]'; }
+      try {
+        return String(value);
+      } catch {
+        return '[valor no serializable]';
+      }
     }
   };
 
@@ -45,35 +49,36 @@ function scriptBootstrap(hostCall, hostPrint, hostDone, catalogJson, maxResultCh
       const parsed = JSON.parse(catalogJson);
       return Array.isArray(parsed) ? parsed : [];
     },
-    call: (name, args) => new Promise((resolve, reject) => {
-      if (finished) {
-        reject(new Error('El script ya terminó'));
-        return;
-      }
-      let payload;
-      try {
-        payload = JSON.stringify(args === undefined ? {} : args);
-      } catch {
-        reject(new Error('Los argumentos de la herramienta no son serializables'));
-        return;
-      }
-      if (typeof payload !== 'string') {
-        reject(new Error('Los argumentos de la herramienta no son serializables'));
-        return;
-      }
-      if (payload.length > 100000) {
-        reject(new Error('Los argumentos de la herramienta exceden el límite'));
-        return;
-      }
-      const id = ++sequence;
-      pending.set(id, { resolve, reject });
-      try {
-        hostCall(id, String(name), payload);
-      } catch (error) {
-        pending.delete(id);
-        reject(error);
-      }
-    }),
+    call: (name, args) =>
+      new Promise((resolve, reject) => {
+        if (finished) {
+          reject(new Error('El script ya terminó'));
+          return;
+        }
+        let payload;
+        try {
+          payload = JSON.stringify(args === undefined ? {} : args);
+        } catch {
+          reject(new Error('Los argumentos de la herramienta no son serializables'));
+          return;
+        }
+        if (typeof payload !== 'string') {
+          reject(new Error('Los argumentos de la herramienta no son serializables'));
+          return;
+        }
+        if (payload.length > 100000) {
+          reject(new Error('Los argumentos de la herramienta exceden el límite'));
+          return;
+        }
+        const id = ++sequence;
+        pending.set(id, { resolve, reject });
+        try {
+          hostCall(id, String(name), payload);
+        } catch (error) {
+          pending.delete(id);
+          reject(error);
+        }
+      }),
   };
 
   const settle = (id, ok, text) => {
@@ -111,12 +116,14 @@ function scriptBootstrap(hostCall, hostPrint, hostDone, catalogJson, maxResultCh
       resultJson = JSON.stringify({ error: 'El resultado no es serializable' });
       resultTruncated = true;
     }
-    hostDone(JSON.stringify({
-      ok: !error,
-      error: error ? String((error && (error.stack || error.message)) || error).slice(0, 4000) : null,
-      result_json: resultJson,
-      result_truncated: resultTruncated,
-    }));
+    hostDone(
+      JSON.stringify({
+        ok: !error,
+        error: error ? String((error && (error.stack || error.message)) || error).slice(0, 4000) : null,
+        result_json: resultJson,
+        result_truncated: resultTruncated,
+      }),
+    );
   };
 
   return { tools, print, console, settle, finish };
@@ -149,9 +156,9 @@ function startWorker(data) {
     name: 'antares-script',
     codeGeneration: { strings: false, wasm: false },
   });
-  bridge = new vm.Script(BOOTSTRAP_SOURCE, { filename: 'antares-script-bootstrap.js' })
-    .runInContext(context, { timeout: syncTimeout })(hostCall, hostPrint, hostDone, catalogJson, maxResultChars,
-      PRINT_CHUNK_CHARS);
+  bridge = new vm.Script(BOOTSTRAP_SOURCE, { filename: 'antares-script-bootstrap.js' }).runInContext(context, {
+    timeout: syncTimeout,
+  })(hostCall, hostPrint, hostDone, catalogJson, maxResultChars, PRINT_CHUNK_CHARS);
   context.tools = bridge.tools;
   context.print = bridge.print;
   context.console = bridge.console;
@@ -166,12 +173,17 @@ ${String(data.code || '')}
 })()`;
   let result;
   try {
-    result = new vm.Script(runner, { filename: 'antares-script-user.js' }).runInContext(context, { timeout: syncTimeout });
+    result = new vm.Script(runner, { filename: 'antares-script-user.js' }).runInContext(context, {
+      timeout: syncTimeout,
+    });
   } catch (error) {
     bridge.finish(null, error);
     return;
   }
-  Promise.resolve(result).then((value) => bridge.finish(value, null), (error) => bridge.finish(null, error));
+  Promise.resolve(result).then(
+    (value) => bridge.finish(value, null),
+    (error) => bridge.finish(null, error),
+  );
 }
 
 if (!isMainThread && workerData && workerData[WORKER_FLAG]) {

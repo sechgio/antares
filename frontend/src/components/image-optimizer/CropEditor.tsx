@@ -31,7 +31,13 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
 
   const cropInfo = useMemo(() => {
     if (!image.sourceWidth || !image.sourceHeight) return null;
-    return getCropRectangle(image.sourceWidth, image.sourceHeight, aspectRatio, image.overrides.customCropOffset, cropOrigin);
+    return getCropRectangle(
+      image.sourceWidth,
+      image.sourceHeight,
+      aspectRatio,
+      image.overrides.customCropOffset,
+      cropOrigin,
+    );
   }, [aspectRatio, image, cropOrigin]);
 
   const [offset, setOffset] = useState<CropOffset>(() => {
@@ -66,29 +72,32 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
     setIsDragging(true);
   }, []);
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging || !containerRef.current || !cropInfo || cropInfo.cropType === 'none') return;
-    const imgElement = containerRef.current.querySelector('img');
-    if (!imgElement || !image.sourceWidth || !image.sourceHeight) return;
-    const imgRect = imgElement.getBoundingClientRect();
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isDragging || !containerRef.current || !cropInfo || cropInfo.cropType === 'none') return;
+      const imgElement = containerRef.current.querySelector('img');
+      if (!imgElement || !image.sourceWidth || !image.sourceHeight) return;
+      const imgRect = imgElement.getBoundingClientRect();
 
-    if (cropInfo.cropType === 'vertical') {
-      const relativeX = e.clientX - imgRect.left;
-      const cropWidthPercent = cropInfo.width / image.sourceWidth;
-      const maxOffset = 1 - cropWidthPercent;
-      let nextOffset = relativeX / imgRect.width - cropWidthPercent / 2;
+      if (cropInfo.cropType === 'vertical') {
+        const relativeX = e.clientX - imgRect.left;
+        const cropWidthPercent = cropInfo.width / image.sourceWidth;
+        const maxOffset = 1 - cropWidthPercent;
+        let nextOffset = relativeX / imgRect.width - cropWidthPercent / 2;
+        nextOffset = Math.max(0, Math.min(maxOffset, nextOffset));
+        setOffset((prev) => ({ ...prev, x: maxOffset > 0 ? nextOffset / maxOffset : 0.5 }));
+        return;
+      }
+
+      const relativeY = e.clientY - imgRect.top;
+      const cropHeightPercent = cropInfo.height / image.sourceHeight;
+      const maxOffset = 1 - cropHeightPercent;
+      let nextOffset = relativeY / imgRect.height - cropHeightPercent / 2;
       nextOffset = Math.max(0, Math.min(maxOffset, nextOffset));
-      setOffset((prev) => ({ ...prev, x: maxOffset > 0 ? nextOffset / maxOffset : 0.5 }));
-      return;
-    }
-
-    const relativeY = e.clientY - imgRect.top;
-    const cropHeightPercent = cropInfo.height / image.sourceHeight;
-    const maxOffset = 1 - cropHeightPercent;
-    let nextOffset = relativeY / imgRect.height - cropHeightPercent / 2;
-    nextOffset = Math.max(0, Math.min(maxOffset, nextOffset));
-    setOffset((prev) => ({ ...prev, y: maxOffset > 0 ? nextOffset / maxOffset : 1 }));
-  }, [cropInfo, image.sourceHeight, image.sourceWidth, isDragging]);
+      setOffset((prev) => ({ ...prev, y: maxOffset > 0 ? nextOffset / maxOffset : 1 }));
+    },
+    [cropInfo, image.sourceHeight, image.sourceWidth, isDragging],
+  );
 
   const handleMouseUp = useCallback(() => setIsDragging(false), []);
 
@@ -109,13 +118,25 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
     });
   }, []);
 
-  const handleCropBoxKeyDown = useCallback((e: React.KeyboardEvent) => {
-    const step = e.shiftKey ? 0.25 : 0.05;
-    if (e.key === 'ArrowLeft') { e.preventDefault(); nudgeOffset('x', -step); }
-    else if (e.key === 'ArrowRight') { e.preventDefault(); nudgeOffset('x', step); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); nudgeOffset('y', -step); }
-    else if (e.key === 'ArrowDown') { e.preventDefault(); nudgeOffset('y', step); }
-  }, [nudgeOffset]);
+  const handleCropBoxKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const step = e.shiftKey ? 0.25 : 0.05;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        nudgeOffset('x', -step);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        nudgeOffset('x', step);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        nudgeOffset('y', -step);
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        nudgeOffset('y', step);
+      }
+    },
+    [nudgeOffset],
+  );
 
   if (!cropInfo || cropInfo.cropType === 'none') {
     return null;
@@ -139,18 +160,33 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
         <div className="mb-4 flex items-center justify-between rounded-xl border border-[var(--border-medium)] bg-[var(--bg-base)] px-5 py-4 shadow-sm">
           <div className="flex items-center gap-3">
             <Crop size={16} className="text-[var(--text-primary)]" />
-            <h3 id="crop-editor-title" className="font-mono text-[11px] uppercase tracking-widest text-[var(--text-primary)]">Ajustar Recorte</h3>
-            <span className="rounded bg-[var(--bg-surface)] px-2 py-0.5 text-[10px] font-mono text-[var(--text-muted)] border border-[var(--border-medium)]">{aspectRatio}</span>
+            <h3
+              id="crop-editor-title"
+              className="font-mono text-[11px] uppercase tracking-widest text-[var(--text-primary)]"
+            >
+              Ajustar Recorte
+            </h3>
+            <span className="rounded bg-[var(--bg-surface)] px-2 py-0.5 text-[10px] font-mono text-[var(--text-muted)] border border-[var(--border-medium)]">
+              {aspectRatio}
+            </span>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="none" size="none"
+            <Button
+              variant="none"
+              size="none"
               onClick={handleReset}
               className="flex items-center gap-1.5 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-3 py-1.5 text-[10px] font-mono uppercase tracking-widest text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]"
             >
               <RotateCw size={12} />
               Resetear
             </Button>
-            <Button variant="none" size="none" onClick={onClose} aria-label="Cerrar recorte" className="rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]">
+            <Button
+              variant="none"
+              size="none"
+              onClick={onClose}
+              aria-label="Cerrar recorte"
+              className="rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]"
+            >
               <X size={16} />
             </Button>
           </div>
@@ -162,14 +198,26 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
           style={{ cursor: isDragging ? 'grabbing' : 'default' }}
         >
           <div className="relative inline-block">
-            <img src={image.preview} alt={image.originalName} className="max-h-[64vh] w-auto select-none" draggable={false} />
-            <div className="pointer-events-none absolute inset-0" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 70%, transparent)' }} />
+            <img
+              src={image.preview}
+              alt={image.originalName}
+              className="max-h-[64vh] w-auto select-none"
+              draggable={false}
+            />
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 70%, transparent)' }}
+            />
             <div
               role="button"
               tabIndex={0}
               aria-label="Mover recorte (flechas para ajustar)"
               className="absolute cursor-grab border-[3px] border-[var(--accent-primary)] active:cursor-grabbing"
-              style={{ ...cropBoxStyle, boxShadow: '0 0 0 9999px color-mix(in srgb, var(--bg-base) 70%, transparent), 0 0 20px var(--accent-primary-glow)' }}
+              style={{
+                ...cropBoxStyle,
+                boxShadow:
+                  '0 0 0 9999px color-mix(in srgb, var(--bg-base) 70%, transparent), 0 0 20px var(--accent-primary-glow)',
+              }}
               onMouseDown={handleMouseDown}
               onKeyDown={handleCropBoxKeyDown}
             >
@@ -178,11 +226,14 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
                 style={{
                   backgroundImage: `url(${image.preview})`,
                   backgroundSize: `${(image.sourceWidth! / currentCrop!.width) * 100}% ${(image.sourceHeight! / currentCrop!.height) * 100}%`,
-                  backgroundPosition: `${currentCrop!.maxOffsetX > 0 ? (currentCrop!.offsetX / currentCrop!.maxOffsetX) * 100 : 50}% ${currentCrop!.maxOffsetY > 0 ? (currentCrop!.offsetY / currentCrop!.maxOffsetY) * 100 : 50}%`
+                  backgroundPosition: `${currentCrop!.maxOffsetX > 0 ? (currentCrop!.offsetX / currentCrop!.maxOffsetX) * 100 : 50}% ${currentCrop!.maxOffsetY > 0 ? (currentCrop!.offsetY / currentCrop!.maxOffsetY) * 100 : 50}%`,
                 }}
               />
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="rounded-full p-2.5 shadow-lg backdrop-blur-sm" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 60%, transparent)' }}>
+                <div
+                  className="rounded-full p-2.5 shadow-lg backdrop-blur-sm"
+                  style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 60%, transparent)' }}
+                >
                   <Move size={20} className="text-[var(--text-primary)]" />
                 </div>
               </div>
@@ -198,18 +249,39 @@ export default function CropEditor({ image, aspectRatio, cropOrigin, onClose, on
 
         <div className="mt-4 flex flex-col gap-5 rounded-xl border border-[var(--border-medium)] bg-[var(--bg-base)] p-4 shadow-sm md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap gap-5 text-[10px] uppercase font-mono tracking-widest text-[var(--text-muted)]">
-            <span className="flex items-center gap-2">Original <span className="text-[var(--text-primary)] border border-[var(--border-medium)] bg-[var(--bg-surface)] px-1.5 py-0.5 rounded">{image.sourceWidth}x{image.sourceHeight}</span></span>
-            <span className="flex items-center gap-2">Resultado <span className="text-[var(--accent-primary)] border border-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-primary)_5%,transparent)] px-1.5 py-0.5 rounded">{currentCrop?.width}x{currentCrop?.height}</span></span>
-            <span className="flex items-center gap-2">Offset <span className="text-amber-400 border border-amber-500/10 bg-amber-500/5 px-1.5 py-0.5 rounded">{cropInfo.cropType === 'vertical' ? `X ${Math.round(offset.x * 100)}%` : `Y ${Math.round(offset.y * 100)}%`}</span></span>
+            <span className="flex items-center gap-2">
+              Original{' '}
+              <span className="text-[var(--text-primary)] border border-[var(--border-medium)] bg-[var(--bg-surface)] px-1.5 py-0.5 rounded">
+                {image.sourceWidth}x{image.sourceHeight}
+              </span>
+            </span>
+            <span className="flex items-center gap-2">
+              Resultado{' '}
+              <span className="text-[var(--accent-primary)] border border-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-primary)_5%,transparent)] px-1.5 py-0.5 rounded">
+                {currentCrop?.width}x{currentCrop?.height}
+              </span>
+            </span>
+            <span className="flex items-center gap-2">
+              Offset{' '}
+              <span className="text-amber-400 border border-amber-500/10 bg-amber-500/5 px-1.5 py-0.5 rounded">
+                {cropInfo.cropType === 'vertical'
+                  ? `X ${Math.round(offset.x * 100)}%`
+                  : `Y ${Math.round(offset.y * 100)}%`}
+              </span>
+            </span>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="none" size="none"
+            <Button
+              variant="none"
+              size="none"
               onClick={onClose}
               className="rounded-lg border border-[var(--border-medium)] bg-[var(--bg-base)] px-4 py-2 text-[11px] font-mono uppercase tracking-widest text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)]"
             >
               Cancelar
             </Button>
-            <Button variant="none" size="none"
+            <Button
+              variant="none"
+              size="none"
               onClick={handleSave}
               className="inline-flex items-center gap-2 rounded-lg bg-[var(--text-primary)] px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-[var(--bg-base)] transition-colors hover:opacity-90"
             >

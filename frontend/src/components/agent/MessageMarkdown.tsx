@@ -8,18 +8,28 @@ const VISUAL_LABELS: Record<string, string> = { chart: 'gráfico', svg: 'ilustra
 
 function VisualPlaceholder({ lang }: { lang: string }) {
   return (
-    <div role="status" className="w-full overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
-      <p className="border-b border-[var(--border-subtle)] px-3 py-2 text-[12.5px] text-[var(--text-muted)]">Generando {VISUAL_LABELS[lang]}…</p>
+    <div
+      role="status"
+      className="w-full overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]"
+    >
+      <p className="border-b border-[var(--border-subtle)] px-3 py-2 text-[12.5px] text-[var(--text-muted)]">
+        Generando {VISUAL_LABELS[lang]}…
+      </p>
       <div className="flex h-[150px] items-end gap-2 p-3 motion-safe:animate-pulse" aria-hidden="true">
         {[45, 70, 55, 85, 40, 65].map((height, i) => (
-          <span key={i} className="flex-1 rounded-t bg-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)]" style={{ height: `${height}%` }} />
+          <span
+            key={i}
+            className="flex-1 rounded-t bg-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)]"
+            style={{ height: `${height}%` }}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|(?<![\p{L}\p{N}_])__[^_\n]+__(?![\p{L}\p{N}_])|\*[^*\n]+\*|(?<![\p{L}\p{N}_])_[^_\n]+_(?![\p{L}\p{N}_])|\[[^\]\n]+\]\((?:<[^>\n]+>|[^)\s]+)\))/gu;
+const INLINE =
+  /(`[^`\n]+`|\*\*[^*\n]+\*\*|(?<![\p{L}\p{N}_])__[^_\n]+__(?![\p{L}\p{N}_])|\*[^*\n]+\*|(?<![\p{L}\p{N}_])_[^_\n]+_(?![\p{L}\p{N}_])|\[[^\]\n]+\]\((?:<[^>\n]+>|[^)\s]+)\))/gu;
 
 function inline(text: string, keyPrefix: string, onPreview: ((resource: string) => void) | null): ReactNode[] {
   const out: ReactNode[] = [];
@@ -33,17 +43,56 @@ function inline(text: string, keyPrefix: string, onPreview: ((resource: string) 
     if (token.startsWith('`')) {
       const value = token.slice(1, -1);
       const resource = localPreviewResource(value);
-      const code = <code className="rounded-md bg-[color:color-mix(in_srgb,var(--text-primary)_8%,transparent)] px-1 py-px font-mono text-[12.5px]">{value}</code>;
-      out.push(resource && onPreview ? <Button key={key} variant="none" size="none" className="max-w-full text-left" aria-label={`Previsualizar ${value}`} onClick={() => onPreview(resource)}>{code}</Button> : <span key={key}>{code}</span>);
+      const code = (
+        <code className="rounded-md bg-[color:color-mix(in_srgb,var(--text-primary)_8%,transparent)] px-1 py-px font-mono text-[12.5px]">
+          {value}
+        </code>
+      );
+      out.push(
+        resource && onPreview ? (
+          <Button
+            key={key}
+            variant="none"
+            size="none"
+            className="max-w-full text-left"
+            aria-label={`Previsualizar ${value}`}
+            onClick={() => onPreview(resource)}
+          >
+            {code}
+          </Button>
+        ) : (
+          <span key={key}>{code}</span>
+        ),
+      );
     } else if (token.startsWith('**') || token.startsWith('__')) {
-      out.push(<strong key={key} className="font-semibold">{token.slice(2, -2)}</strong>);
+      out.push(
+        <strong key={key} className="font-semibold">
+          {token.slice(2, -2)}
+        </strong>,
+      );
     } else if (token.startsWith('[')) {
       const label = token.slice(1, token.indexOf(']'));
       const href = token.slice(token.indexOf('(') + 1, -1);
       const resource = localPreviewResource(href);
-      out.push(resource && onPreview
-        ? <Button key={key} variant="none" size="none" className="max-w-full text-left underline decoration-dotted underline-offset-2" title={href} aria-label={`Previsualizar ${label}`} onClick={() => onPreview(resource)}>{label}</Button>
-        : <span key={key} className="underline decoration-dotted underline-offset-2" title={href}>{label}</span>);
+      out.push(
+        resource && onPreview ? (
+          <Button
+            key={key}
+            variant="none"
+            size="none"
+            className="max-w-full text-left underline decoration-dotted underline-offset-2"
+            title={href}
+            aria-label={`Previsualizar ${label}`}
+            onClick={() => onPreview(resource)}
+          >
+            {label}
+          </Button>
+        ) : (
+          <span key={key} className="underline decoration-dotted underline-offset-2" title={href}>
+            {label}
+          </span>
+        ),
+      );
     } else {
       out.push(<em key={key}>{token.slice(1, -1)}</em>);
     }
@@ -62,13 +111,18 @@ type Block =
   | { kind: 'quote'; text: string };
 
 function tableCells(line: string): string[] {
-  const text = line.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '');
+  const text = line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/(?<!\\)\|$/, '');
   const cells: string[] = [];
   let cell = '';
   let fence = '';
   for (let i = 0; i < text.length; i += 1) {
-    if (text[i] === '\\' && text[i + 1] === '|') { cell += '|'; i += 1; }
-    else if (text[i] === '`') {
+    if (text[i] === '\\' && text[i + 1] === '|') {
+      cell += '|';
+      i += 1;
+    } else if (text[i] === '`') {
       let end = i + 1;
       while (text[end] === '`') end += 1;
       const run = text.slice(i, end);
@@ -76,8 +130,10 @@ function tableCells(line: string): string[] {
       else if (run === fence) fence = '';
       cell += run;
       i += run.length - 1;
-    } else if (text[i] === '|' && !fence) { cells.push(cell.trim()); cell = ''; }
-    else cell += text[i];
+    } else if (text[i] === '|' && !fence) {
+      cells.push(cell.trim());
+      cell = '';
+    } else cell += text[i];
   }
   return [...cells, cell.trim()];
 }
@@ -101,7 +157,12 @@ export function parseBlocks(source: string): Block[] {
         i += 2;
         while (i < lines.length && lines[i].trim() && lines[i].includes('|')) rows.push(tableCells(lines[i++]));
         i -= 1;
-        blocks.push({ kind: 'table', headers, rows, align: separators.map((cell) => cell.endsWith(':') ? cell.startsWith(':') ? 'center' : 'right' : 'left') });
+        blocks.push({
+          kind: 'table',
+          headers,
+          rows,
+          align: separators.map((cell) => (cell.endsWith(':') ? (cell.startsWith(':') ? 'center' : 'right') : 'left')),
+        });
         continue;
       }
     }
@@ -111,7 +172,12 @@ export function parseBlocks(source: string): Block[] {
       const code: string[] = [];
       i += 1;
       while (i < lines.length && !lines[i].trim().startsWith('```')) code.push(lines[i++]);
-      blocks.push({ kind: 'code', text: code.join('\n'), ...(lang ? { lang } : {}), ...(i >= lines.length ? { open: true as const } : {}) });
+      blocks.push({
+        kind: 'code',
+        text: code.join('\n'),
+        ...(lang ? { lang } : {}),
+        ...(i >= lines.length ? { open: true as const } : {}),
+      });
       continue;
     }
     const heading = /^(#{1,4})\s+(.+)$/.exec(line);
@@ -148,21 +214,50 @@ export default function MessageMarkdown({ text, streaming = false }: { text: str
     <div className="agent-markdown min-w-0">
       {blocks.map((block, index) => {
         const key = `b${index}`;
-        const cursor = streaming && index === blocks.length - 1
-          ? <span className="ml-0.5 animate-pulse text-[var(--text-muted)]">▍</span> : null;
+        const cursor =
+          streaming && index === blocks.length - 1 ? (
+            <span className="ml-0.5 animate-pulse text-[var(--text-muted)]">▍</span>
+          ) : null;
         switch (block.kind) {
           case 'h': {
             const Heading = block.level <= 2 ? 'h3' : 'h4';
-            return <Heading key={key} className="font-semibold">{renderInline(block.text, key)}{cursor}</Heading>;
+            return (
+              <Heading key={key} className="font-semibold">
+                {renderInline(block.text, key)}
+                {cursor}
+              </Heading>
+            );
           }
           case 'table':
             return (
-              <div key={key} role="region" aria-label="Tabla de la respuesta" tabIndex={0} className="agent-markdown-table overflow-x-auto">
+              <div
+                key={key}
+                role="region"
+                aria-label="Tabla de la respuesta"
+                tabIndex={0}
+                className="agent-markdown-table overflow-x-auto"
+              >
                 <table className="w-full border-collapse text-left text-[13px] leading-[21px]">
                   <thead>
-                    <tr>{block.headers.map((cell, n) => <th key={n} scope="col" style={{ textAlign: block.align[n] }}>{renderInline(cell, `${key}-h${n}`)}</th>)}</tr>
+                    <tr>
+                      {block.headers.map((cell, n) => (
+                        <th key={n} scope="col" style={{ textAlign: block.align[n] }}>
+                          {renderInline(cell, `${key}-h${n}`)}
+                        </th>
+                      ))}
+                    </tr>
                   </thead>
-                  <tbody>{block.rows.map((row, r) => <tr key={r}>{block.headers.map((_, n) => <td key={n} style={{ textAlign: block.align[n] }}>{renderInline(row[n] ?? '', `${key}-${r}-${n}`)}</td>)}</tr>)}</tbody>
+                  <tbody>
+                    {block.rows.map((row, r) => (
+                      <tr key={r}>
+                        {block.headers.map((_, n) => (
+                          <td key={n} style={{ textAlign: block.align[n] }}>
+                            {renderInline(row[n] ?? '', `${key}-${r}-${n}`)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
                 </table>
                 {cursor}
               </div>
@@ -172,7 +267,9 @@ export default function MessageMarkdown({ text, streaming = false }: { text: str
             const List = block.kind;
             return (
               <List key={key} className={`space-y-1 pl-5 ${block.kind === 'ul' ? 'list-disc' : 'list-decimal'}`}>
-                {block.items.map((item, n) => <li key={n}>{renderInline(item, `${key}-${n}`)}</li>)}
+                {block.items.map((item, n) => (
+                  <li key={n}>{renderInline(item, `${key}-${n}`)}</li>
+                ))}
                 {cursor}
               </List>
             );
@@ -180,16 +277,25 @@ export default function MessageMarkdown({ text, streaming = false }: { text: str
           case 'code': {
             const framed = !block.lang || !VISUAL_LABELS[block.lang];
             const pre = (
-              <pre key={key} className={`overflow-x-auto whitespace-pre p-2.5 font-mono text-[12.5px] leading-[18px] ${framed ? '' : 'rounded-xl bg-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)]'}`}>
-                {block.text}{cursor}
+              <pre
+                key={key}
+                className={`overflow-x-auto whitespace-pre p-2.5 font-mono text-[12.5px] leading-[18px] ${framed ? '' : 'rounded-xl bg-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)]'}`}
+              >
+                {block.text}
+                {cursor}
               </pre>
             );
             if (!block.lang || !VISUAL_LABELS[block.lang]) {
               return (
-                <div key={key} className="group/code overflow-hidden rounded-xl bg-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)]">
+                <div
+                  key={key}
+                  className="group/code overflow-hidden rounded-xl bg-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)]"
+                >
                   <div className="flex h-7 items-center justify-between border-b border-[var(--border-subtle)] pl-2.5 pr-1.5 font-mono text-[11px] text-[var(--text-muted)]">
                     {block.lang || 'código'}
-                    {!block.open && <CopyButton text={block.text} label="Copiar código" className="group-hover/code:opacity-100" />}
+                    {!block.open && (
+                      <CopyButton text={block.text} label="Copiar código" className="group-hover/code:opacity-100" />
+                    )}
                   </div>
                   {pre}
                 </div>
@@ -203,9 +309,19 @@ export default function MessageMarkdown({ text, streaming = false }: { text: str
             );
           }
           case 'quote':
-            return <p key={key} className="border-l-2 border-[var(--border-medium)] pl-2.5 text-[var(--text-secondary)]">{renderInline(block.text, key)}{cursor}</p>;
+            return (
+              <p key={key} className="border-l-2 border-[var(--border-medium)] pl-2.5 text-[var(--text-secondary)]">
+                {renderInline(block.text, key)}
+                {cursor}
+              </p>
+            );
           default:
-            return <p key={key} className="whitespace-pre-wrap break-words">{renderInline(block.text, key)}{cursor}</p>;
+            return (
+              <p key={key} className="whitespace-pre-wrap break-words">
+                {renderInline(block.text, key)}
+                {cursor}
+              </p>
+            );
         }
       })}
     </div>

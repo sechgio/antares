@@ -1,6 +1,5 @@
 'use strict';
 
-
 const NUMERIC_CELL_RE = /^[+-]?\d+(?:[.,]\d+)?(?:e[+-]?\d+)?%?$/i;
 const UNSAFE_FIRST_RE = /^[=+@\-\t\r\n\u000b\u000c]/;
 

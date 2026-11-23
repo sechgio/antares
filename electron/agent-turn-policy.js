@@ -3,8 +3,9 @@
 const MAX_CALLS_PER_SIGNATURE = 10;
 const MAX_SILENT_TURNS = 5;
 const BLOCKED_DIAGNOSTIC = 'blocked';
-const SILENT_TURN_NOTE = `El agente encadenó ${MAX_SILENT_TURNS} turnos seguidos sin salida visible. `
-  + 'Detuve el turno para evitar un bucle; intenta enviar el encargo de nuevo.';
+const SILENT_TURN_NOTE =
+  `El agente encadenó ${MAX_SILENT_TURNS} turnos seguidos sin salida visible. ` +
+  'Detuve el turno para evitar un bucle; intenta enviar el encargo de nuevo.';
 
 async function trackSilentToolRound(turn, results, api, context) {
   if (!turn.pendingSilent) return;

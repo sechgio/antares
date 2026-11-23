@@ -12,9 +12,8 @@ async function basePromptEstimate(specs, { defaultToolNames, reminderTexts }) {
   const definitions = selected.map((spec) => ({
     name: spec.name,
     description: String(spec.description || spec.name),
-    parameters: spec.inputSchema && typeof spec.inputSchema === 'object'
-      ? spec.inputSchema
-      : { type: 'object', properties: {} },
+    parameters:
+      spec.inputSchema && typeof spec.inputSchema === 'object' ? spec.inputSchema : { type: 'object', properties: {} },
   }));
   const system = estimateTextTokens(SYSTEM_PROMPT);
   const tools = estimateTextTokens(JSON.stringify(definitions));

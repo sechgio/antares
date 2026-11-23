@@ -1,4 +1,3 @@
-
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
@@ -41,7 +40,11 @@ function main() {
 
   const throwsSecret = (fn, label) => {
     let threw = null;
-    try { fn(); } catch (error) { threw = error; }
+    try {
+      fn();
+    } catch (error) {
+      threw = error;
+    }
     assert(threw !== null, label);
   };
   throwsSecret(() => assertNoSecretInObject({ Authorization: 'Bearer abc' }), 'clave Authorization bloqueada');

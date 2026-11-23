@@ -77,8 +77,16 @@ function install(zipPath) {
   const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-cua-'));
   const quote = (value) => `'${String(value).replace(/'/g, "''")}'`;
   try {
-    execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-      `Expand-Archive -LiteralPath ${quote(zipPath)} -DestinationPath ${quote(staging)} -Force`], { stdio: 'inherit' });
+    execFileSync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `Expand-Archive -LiteralPath ${quote(zipPath)} -DestinationPath ${quote(staging)} -Force`,
+      ],
+      { stdio: 'inherit' },
+    );
     for (const bin of manifest.binaries) {
       const src = path.join(staging, bin.path);
       const digest = fs.existsSync(src) ? sha256(src) : 'ausente';

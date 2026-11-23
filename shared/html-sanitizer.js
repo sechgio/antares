@@ -1,7 +1,7 @@
 const GOOGLE_FONT_HOST_RE = /^https:\/\/fonts\.(googleapis|gstatic)\.com\//i;
 
 const CSP_META =
-  "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; img-src data:; font-src data: https://fonts.gstatic.com;\">";
+  '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\' https://fonts.googleapis.com; img-src data:; font-src data: https://fonts.gstatic.com;">';
 
 const PREVIEW_CSP_META =
   "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data: blob:; media-src data: blob:; connect-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'\">";
@@ -30,8 +30,17 @@ function isAllowedGoogleFontUrl(url) {
 
 const _URL_ENTITY_RE = /&(?:#(x[0-9a-fA-F]+|\d+);?|([a-zA-Z][a-zA-Z0-9]*);)/g;
 const _NAMED_URL_ENTITIES = {
-  colon: ':', tab: '\t', newline: '\n', sol: '/', bsol: '\\',
-  period: '.', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+  colon: ':',
+  tab: '\t',
+  newline: '\n',
+  sol: '/',
+  bsol: '\\',
+  period: '.',
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
 };
 
 function _decodeUrlEntities(value) {
@@ -45,11 +54,13 @@ function _decodeUrlEntities(value) {
   });
 }
 
-const URL_ATTR_RE = /(href|src|xlink:href|srcset|poster|action|formaction|background|cite|ping|longdesc)\s*=\s*(['"]?)\s*([^"'>]+)\2/gi;
+const URL_ATTR_RE =
+  /(href|src|xlink:href|srcset|poster|action|formaction|background|cite|ping|longdesc)\s*=\s*(['"]?)\s*([^"'>]+)\2/gi;
 
 const _URL_NOISE_RE = /[\s\x00-\x1f\x7f]+/g;
 
-const DANGEROUS_DECODED_ATTR_NAMES = /^(?:on[a-z]+|href|src|xlink:href|srcset|poster|action|formaction|background|cite|ping|longdesc)$/i;
+const DANGEROUS_DECODED_ATTR_NAMES =
+  /^(?:on[a-z]+|href|src|xlink:href|srcset|poster|action|formaction|background|cite|ping|longdesc)$/i;
 const _ATTR_NAME_TOKEN_RE = /([\s/])([^\s"'>=]+)(\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*))?/g;
 const _TAG_OPEN_RE = /<[a-zA-Z](?:"[^"]*"|'[^']*'|[^"'>])*>/g;
 
@@ -101,7 +112,13 @@ function neutralizeSrcsetAttr(match, attr, quote, urlValue) {
     }
     const schemeMatch = cleaned.match(/^([a-z][a-z0-9+.-]*):/);
     const scheme = schemeMatch ? schemeMatch[1] : '';
-    if (scheme === 'javascript' || scheme === 'vbscript' || scheme === 'http' || scheme === 'https' || scheme === 'file') {
+    if (
+      scheme === 'javascript' ||
+      scheme === 'vbscript' ||
+      scheme === 'http' ||
+      scheme === 'https' ||
+      scheme === 'file'
+    ) {
       return `${attr}=${quote}${quote}`;
     }
     if (cleaned.startsWith('//')) {
@@ -126,8 +143,7 @@ function neutralizeImportStatement(match, quote, urlValue) {
 }
 
 function stripOrKeepLink(fullTag) {
-  const hrefMatch = fullTag.match(/\bhref\s*=\s*(['"])([^'"]+)\1/i)
-    || fullTag.match(/\bhref\s*=\s*([^\s>]+)/i);
+  const hrefMatch = fullTag.match(/\bhref\s*=\s*(['"])([^'"]+)\1/i) || fullTag.match(/\bhref\s*=\s*([^\s>]+)/i);
   if (!hrefMatch) return '';
   const href = hrefMatch[2] || hrefMatch[1];
   return isAllowedGoogleFontUrl(href) ? fullTag : '';
@@ -252,4 +268,13 @@ function sanitizeHtmlForCanvasPreview(html) {
   return sanitizeGoogleFontHtml(html, CANVAS_PREVIEW_CSP_META, true);
 }
 
-module.exports = { sanitizeHtmlForPdf, sanitizeHtmlForPreview, sanitizeHtmlForCanvasPreview, CSP_META, PREVIEW_CSP_META, CANVAS_PREVIEW_CSP_META, isSafeDataUrl, isAllowedGoogleFontUrl };
+module.exports = {
+  sanitizeHtmlForPdf,
+  sanitizeHtmlForPreview,
+  sanitizeHtmlForCanvasPreview,
+  CSP_META,
+  PREVIEW_CSP_META,
+  CANVAS_PREVIEW_CSP_META,
+  isSafeDataUrl,
+  isAllowedGoogleFontUrl,
+};

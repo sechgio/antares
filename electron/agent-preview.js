@@ -9,14 +9,36 @@ const { pathToFileURL, fileURLToPath } = require('node:url');
 const HOST = '127.0.0.1';
 const RELOAD_DEBOUNCE_MS = 150;
 const TYPES = {
-  '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
-  '.txt': 'text/plain; charset=utf-8', '.md': 'text/plain; charset=utf-8', '.csv': 'text/plain; charset=utf-8',
-  '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
-  '.webp': 'image/webp', '.avif': 'image/avif', '.ico': 'image/x-icon', '.bmp': 'image/bmp',
-  '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf',
-  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
-  '.pdf': 'application/pdf', '.wasm': 'application/wasm', '.xml': 'application/xml; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.htm': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/plain; charset=utf-8',
+  '.csv': 'text/plain; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.ico': 'image/x-icon',
+  '.bmp': 'image/bmp',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.pdf': 'application/pdf',
+  '.wasm': 'application/wasm',
+  '.xml': 'application/xml; charset=utf-8',
 };
 
 let server = null;
@@ -30,9 +52,10 @@ let reloadTimer = null;
 let onChange = null;
 const pages = new Map();
 
-const LOCAL_PREVIEW_CSP = "default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; "
-  + "img-src 'self' data: blob:; media-src 'self'; font-src 'self' data:; connect-src 'none'; frame-src 'none'; "
-  + "object-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'";
+const LOCAL_PREVIEW_CSP =
+  "default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; " +
+  "img-src 'self' data: blob:; media-src 'self'; font-src 'self' data:; connect-src 'none'; frame-src 'none'; " +
+  "object-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'";
 const PREVIEW_PERMISSIONS_POLICY = 'camera=(), microphone=(), geolocation=(), clipboard-read=(), clipboard-write=()';
 
 function key(value) {
@@ -52,21 +75,33 @@ function hosts() {
 }
 
 async function handle(req, res) {
-  const deny = (status) => { res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end(String(status)); };
+  const deny = (status) => {
+    res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end(String(status));
+  };
   if (req.method !== 'GET' && req.method !== 'HEAD') return deny(405);
   if (!hosts().has(String(req.headers.host || '').toLowerCase())) return deny(403);
   const page = pages.get(String(req.url || '').split(/[?#]/)[0]);
   if (page) {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': page.csp,
-      'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store',
-      'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), clipboard-read=(), clipboard-write=()' });
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Content-Security-Policy': page.csp,
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'no-store',
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), clipboard-read=(), clipboard-write=()',
+    });
     return res.end(req.method === 'HEAD' ? undefined : page.html);
   }
   const prefix = `/${token}/`;
   const pathname = String(req.url || '').split(/[?#]/)[0];
   if (!root || !pathname.startsWith(prefix)) return deny(404);
   let rel;
-  try { rel = decodeURIComponent(pathname.slice(prefix.length)); } catch { return deny(400); }
+  try {
+    rel = decodeURIComponent(pathname.slice(prefix.length));
+  } catch {
+    return deny(400);
+  }
   if (rel.includes('\0')) return deny(400);
   let target = path.resolve(root, rel || '.');
   if (!inside(target, root)) return deny(404);
@@ -92,7 +127,9 @@ async function handle(req, res) {
       'Permissions-Policy': PREVIEW_PERMISSIONS_POLICY,
     });
     if (req.method === 'HEAD') return res.end();
-    fs.createReadStream(real).on('error', () => res.destroy()).pipe(res);
+    fs.createReadStream(real)
+      .on('error', () => res.destroy())
+      .pipe(res);
   } catch {
     deny(404);
   }
@@ -101,7 +138,9 @@ async function handle(req, res) {
 function listen() {
   if (server) return Promise.resolve();
   if (starting) return starting;
-  const created = http.createServer((req, res) => { handle(req, res).catch(() => res.destroy()); });
+  const created = http.createServer((req, res) => {
+    handle(req, res).catch(() => res.destroy());
+  });
   starting = new Promise((resolve, reject) => {
     created.once('error', reject);
     created.listen(0, HOST, () => {
@@ -111,14 +150,20 @@ function listen() {
       origin = `http://${HOST}:${created.address().port}`;
       resolve();
     });
-  }).finally(() => { starting = null; });
+  }).finally(() => {
+    starting = null;
+  });
   return starting;
 }
 
 function stopWatching() {
   clearTimeout(reloadTimer);
   reloadTimer = null;
-  if (watcher) { try { watcher.close(); } catch { } }
+  if (watcher) {
+    try {
+      watcher.close();
+    } catch {}
+  }
   watcher = null;
 }
 
@@ -127,7 +172,10 @@ function watch(dir) {
   try {
     watcher = fs.watch(dir, { recursive: true }, () => {
       clearTimeout(reloadTimer);
-      reloadTimer = setTimeout(() => { reloadTimer = null; if (onChange) onChange(); }, RELOAD_DEBOUNCE_MS);
+      reloadTimer = setTimeout(() => {
+        reloadTimer = null;
+        if (onChange) onChange();
+      }, RELOAD_DEBOUNCE_MS);
     });
     watcher.on('error', stopWatching);
   } catch {
@@ -163,10 +211,18 @@ async function open(file, { onReload } = {}) {
 
 function owns(url) {
   let parsed;
-  try { parsed = new URL(url); } catch { return false; }
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
   if (parsed.protocol === 'file:') {
     if (!fileRoot) return false;
-    try { return inside(fileURLToPath(parsed), fileRoot); } catch { return false; }
+    try {
+      return inside(fileURLToPath(parsed), fileRoot);
+    } catch {
+      return false;
+    }
   }
   return isPage(url) || (!!server && !!root && parsed.origin === origin && parsed.pathname.startsWith(`/${token}/`));
 }
@@ -196,7 +252,9 @@ function isPage(url) {
   try {
     const parsed = new URL(url);
     return !!server && parsed.origin === origin && pages.has(parsed.pathname);
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 function releasePage(url) {

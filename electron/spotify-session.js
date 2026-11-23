@@ -1,16 +1,9 @@
-const {
-  readSecureJson,
-  writeSecureJson,
-  clearSecureJson,
-} = require('./autoimg-secure-storage');
+const { readSecureJson, writeSecureJson, clearSecureJson } = require('./autoimg-secure-storage');
 const { fetchWithRetry } = require('./autoimg-google-fetch');
 const { maskClientId } = require('./autoimg-security');
 const { findAvailablePort } = require('./autoimg-oauth-flow');
 const { exchangeBrowserOAuthCode } = require('./cloud-connector-common');
-const {
-  beginBrowserOAuthFlow: startBrowserOAuthFlow,
-  createPendingFlow,
-} = require('./oauth-session');
+const { beginBrowserOAuthFlow: startBrowserOAuthFlow, createPendingFlow } = require('./oauth-session');
 
 const OAUTH_CONFIG_FILE = 'spotify-oauth-config.json';
 const OAUTH_CONFIG_NS = 'spotify:oauth';
@@ -73,9 +66,7 @@ function saveOAuthConfig(clientId, redirectUri) {
   }
   const uri = String(redirectUri || '').trim();
   if (uri && !LOOPBACK_REDIRECT_RE.test(uri)) {
-    throw new Error(
-      'Redirect URI inválida. Debe ser loopback HTTP con puerto: http://127.0.0.1:43830/callback.',
-    );
+    throw new Error('Redirect URI inválida. Debe ser loopback HTTP con puerto: http://127.0.0.1:43830/callback.');
   }
   const previous = loadOAuthConfig();
   if (previous.clientId && previous.clientId !== id) {
@@ -261,7 +252,8 @@ async function exchangeCode(code, redirectUri) {
     invalidGrant: _isInvalidGrant,
     reauthMessage: REAUTH_REQUIRED_MESSAGE,
     oauthError: (errBody) => `Error OAuth de Spotify: ${errBody}`,
-    noRefreshTokenMessage: 'Spotify no devolvió un refresh token. Revoca el acceso en spotify.com/account/apps y vuelve a conectar.',
+    noRefreshTokenMessage:
+      'Spotify no devolvió un refresh token. Revoca el acceso en spotify.com/account/apps y vuelve a conectar.',
   });
   const tokens = {
     access_token: data.access_token,

@@ -37,7 +37,9 @@ export default function ContextMenuList<TId extends string, TArg extends string 
           {item.sepBefore ? <div className="canvas-context-sep" role="separator" /> : null}
           {item.children?.length ? (
             <div className="canvas-context-subwrap" data-testid={`canvas-context-sub-${item.id}`}>
-              <Button variant="none" size="none"
+              <Button
+                variant="none"
+                size="none"
                 role="menuitem"
                 aria-haspopup="menu"
                 className="canvas-context-item"
@@ -50,7 +52,9 @@ export default function ContextMenuList<TId extends string, TArg extends string 
               </Button>
               <div className="canvas-context-sub" role="menu">
                 {item.children.map((child) => (
-                  <Button variant="none" size="none"
+                  <Button
+                    variant="none"
+                    size="none"
                     key={`${item.id}:${String(child.arg)}`}
                     role="menuitem"
                     className="canvas-context-item"
@@ -67,7 +71,9 @@ export default function ContextMenuList<TId extends string, TArg extends string 
               </div>
             </div>
           ) : (
-            <Button variant="none" size="none"
+            <Button
+              variant="none"
+              size="none"
               role="menuitem"
               className="canvas-context-item"
               data-danger={item.danger || undefined}

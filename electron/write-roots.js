@@ -32,8 +32,7 @@ function _persistWriteRoots() {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify([..._allowedWriteRoots], null, 2), 'utf8');
-  } catch {
-  }
+  } catch {}
 }
 
 function _loadPersistedWriteRoots() {
@@ -58,12 +57,10 @@ function _loadPersistedWriteRoots() {
           }
         }
         _addWriteRoot(canonical);
-      } catch {
-      }
+      } catch {}
     }
     if (_allowedWriteRoots.size >= MAX_ALLOWED_WRITE_ROOTS) _persistWriteRoots();
-  } catch {
-  }
+  } catch {}
 }
 
 function _registerWriteRootFromPath(rawPath, persist = true) {
@@ -97,8 +94,7 @@ function _isUnderStandardUserDir(dir) {
         if (stdRoot && isPathInside(stdRoot, resolvedDir)) return true;
       }
     }
-  } catch {
-  }
+  } catch {}
   return false;
 }
 
@@ -154,8 +150,8 @@ function _assertSafePdfOutputPath(outputPath) {
     }
     const realFile = fs.realpathSync(resolved);
     if (
-      path.normalize(realFile).toLowerCase() !== path.normalize(resolved).toLowerCase()
-      || !isPathInside(realDir, realFile)
+      path.normalize(realFile).toLowerCase() !== path.normalize(resolved).toLowerCase() ||
+      !isPathInside(realDir, realFile)
     ) {
       throw new Error('La ruta de salida del PDF no está permitida: symlink no permitido en ruta de salida');
     }

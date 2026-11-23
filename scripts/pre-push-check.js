@@ -28,15 +28,13 @@ function changedFiles() {
   try {
     const upstream = git(['rev-parse', '--abbrev-ref', '@{upstream}'])[0];
     if (upstream) base = git(['merge-base', upstream, 'HEAD'])[0];
-  } catch {
-  }
+  } catch {}
   if (!base) {
     for (const ref of ['origin/main', 'HEAD~1']) {
       try {
         base = git(['merge-base', ref, 'HEAD'])[0];
         if (base) break;
-      } catch {
-      }
+      } catch {}
     }
   }
   const committed = base ? git(['diff', '--name-only', '--diff-filter=ACMR', `${base}...HEAD`]) : [];

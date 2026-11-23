@@ -5,13 +5,9 @@ export interface WidgetVolumeState {
   lastVolumeRef: { current: number };
 }
 
-export function storedVolumeState(store: {
-  get<T>(key: string, fallback: T): T;
-}): WidgetVolumeState {
+export function storedVolumeState(store: { get<T>(key: string, fallback: T): T }): WidgetVolumeState {
   const storedVolume = store.get<number>('volume', 25);
-  const volume = atom<number>(
-    Number.isFinite(storedVolume) ? Math.max(0, Math.min(100, storedVolume)) : 25,
-  );
+  const volume = atom<number>(Number.isFinite(storedVolume) ? Math.max(0, Math.min(100, storedVolume)) : 25);
   return { volume, lastVolumeRef: { current: volume.get() || 25 } };
 }
 

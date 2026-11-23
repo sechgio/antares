@@ -1,4 +1,3 @@
-
 const fs = require('fs');
 const Module = require('module');
 const os = require('os');
@@ -31,9 +30,15 @@ const {
   scopedNamespace,
 } = require('../electron/autoimg-user-scope');
 const {
-  saveTokens, loadTokens, clearTokens,
-  saveSheetConfig, loadSheetConfig, clearSheetConfig,
-  saveLocalFolders, loadLocalFolders, clearLocalPrefs,
+  saveTokens,
+  loadTokens,
+  clearTokens,
+  saveSheetConfig,
+  loadSheetConfig,
+  clearSheetConfig,
+  saveLocalFolders,
+  loadLocalFolders,
+  clearLocalPrefs,
 } = require('../electron/autoimg-user-store');
 const { assertNoSecretInObject } = require('../electron/autoimg-security');
 
@@ -120,9 +125,15 @@ assert(engineSrc.includes('clearSessionCaches'), 'engine expone clearSessionCach
 assert(engineSrc.includes('onActiveUserChange'), 'engine limpia caché al cambiar usuario');
 assert(scanSyncSrc.includes('fuera_padron'), 'scan summary usa fuera_padron');
 
-const { onActiveUserChange, setActiveUser: setUser, clearActiveUser: clearUser } = require('../electron/autoimg-user-scope');
+const {
+  onActiveUserChange,
+  setActiveUser: setUser,
+  clearActiveUser: clearUser,
+} = require('../electron/autoimg-user-scope');
 let notified = 0;
-const unsub = onActiveUserChange(() => { notified += 1; });
+const unsub = onActiveUserChange(() => {
+  notified += 1;
+});
 clearUser();
 setUser('notify-a@example.com');
 setUser('notify-b@example.com');

@@ -1,4 +1,3 @@
-
 const fs = require('fs');
 const path = require('path');
 
@@ -8,8 +7,7 @@ const EXTRA = [path.join(ROOT, 'frontend', 'index.html')];
 const EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.html']);
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage']);
 
-const DEAD_ALPHA_RE =
-  /[a-zA-Z0-9:_-]*-\[[^\]{}]*var\(--[^\)]*\)[^\]{}]*\][/]([0-9]{1,3}|[[][0-9a-fA-F]+[]])/g;
+const DEAD_ALPHA_RE = /[a-zA-Z0-9:_-]*-\[[^\]{}]*var\(--[^\)]*\)[^\]{}]*\][/]([0-9]{1,3}|[[][0-9a-fA-F]+[]])/g;
 const INVALID_SHADOW_RE = /shadow-\[[^\]{}]*var\(--[^\)]*\)[/][0-9]+[^\]{}]*\]/g;
 
 function* sourceFiles(dir) {

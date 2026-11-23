@@ -3,11 +3,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const {
-  readSecureJson,
-  writeSecureJson,
-  clearSecureJson,
-} = require('./autoimg-secure-storage');
+const { readSecureJson, writeSecureJson, clearSecureJson } = require('./autoimg-secure-storage');
 const { fetchWithRetry } = require('./autoimg-google-fetch');
 const { maskClientId } = require('./autoimg-security');
 const {
@@ -37,9 +33,7 @@ function _tokensNs(providerId) {
 }
 
 function _enqueueMirror(provider, task, onError) {
-  const pending = (_mirrorPromises.get(provider) || Promise.resolve())
-    .then(task)
-    .catch(onError);
+  const pending = (_mirrorPromises.get(provider) || Promise.resolve()).then(task).catch(onError);
   _mirrorPromises.set(provider, pending);
   pending.finally(() => {
     if (_mirrorPromises.get(provider) === pending) _mirrorPromises.delete(provider);
@@ -48,31 +42,42 @@ function _enqueueMirror(provider, task, onError) {
 
 function _mirrorToBackend(provider, tokens, cfg) {
   if (!tokens || !tokens.access_token) return;
-  _enqueueMirror(provider, () => require('./ipc-router')._callBackend('connections_token_put', {
+  _enqueueMirror(
     provider,
-    tokens: {
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      expiry_date: tokens.expiry_date,
-      scope: tokens.scope,
-      account: tokens.account,
-      client_id: cfg ? cfg.clientId : undefined,
-      client_secret: cfg ? cfg.clientSecret : undefined,
+    () =>
+      require('./ipc-router')._callBackend('connections_token_put', {
+        provider,
+        tokens: {
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          expiry_date: tokens.expiry_date,
+          scope: tokens.scope,
+          account: tokens.account,
+          client_id: cfg ? cfg.clientId : undefined,
+          client_secret: cfg ? cfg.clientSecret : undefined,
+        },
+      }),
+    (err) => {
+      require('./app-log').appendLogEvent('WARN', 'connections.mirror_failed', {
+        provider,
+        reason: String((err && err.message) || err).slice(0, 200),
+      });
     },
-  }), (err) => {
-    require('./app-log').appendLogEvent('WARN', 'connections.mirror_failed', {
-      provider,
-      reason: String((err && err.message) || err).slice(0, 200),
-    });
-  });
+  );
 }
 
 function _mirrorDelete(provider) {
-  _enqueueMirror(provider, () => require('./ipc-router')._callBackend('connections_token_delete', { provider }), () => {});
+  _enqueueMirror(
+    provider,
+    () => require('./ipc-router')._callBackend('connections_token_delete', { provider }),
+    () => {},
+  );
 }
 
 function publicOAuthConfig(provider) {
-  const key = String(provider).toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  const key = String(provider)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '_');
   let data = {
     client_id: process.env[`ANTARES_${key}_OAUTH_CLIENT_ID`],
     client_secret: process.env[`ANTARES_${key}_OAUTH_CLIENT_SECRET`],
@@ -149,9 +154,7 @@ function requireOAuthConfig(provider) {
   const spec = getProvider(provider);
   const cfg = loadOAuthConfig(provider);
   if (!cfg.clientId) {
-    throw new Error(
-      `Credenciales de ${spec.label} no configuradas. En Conexiones guarda el Client ID de tu app.`,
-    );
+    throw new Error(`Credenciales de ${spec.label} no configuradas. En Conexiones guarda el Client ID de tu app.`);
   }
   return cfg;
 }
@@ -307,7 +310,9 @@ async function beginConnect(provider, onComplete, onError) {
     onError,
     cancel: () => cancelConnect(provider),
     isCurrent: () => _pending.get(provider) === entry,
-    setStop: (stop) => { entry.stop = stop; },
+    setStop: (stop) => {
+      entry.stop = stop;
+    },
   });
 
   return { url, redirect_uri: redirectUri };
@@ -319,9 +324,10 @@ async function _exchangeCode(provider, code) {
   const pending = _pending.get(provider) || {};
   const uri = pending.redirectUri;
   if (!uri) throw new Error('Flujo OAuth no iniciado');
-  const basic = spec.auth.token_auth === 'basic' && cfg.clientSecret
-    ? { clientId: cfg.clientId, clientSecret: cfg.clientSecret }
-    : null;
+  const basic =
+    spec.auth.token_auth === 'basic' && cfg.clientSecret
+      ? { clientId: cfg.clientId, clientSecret: cfg.clientSecret }
+      : null;
   const fields = {
     code,
     client_id: cfg.clientId,
@@ -348,11 +354,7 @@ async function probeAccount(provider) {
   const headers = { Accept: 'application/json', ...spec.status.headers };
   headers.Authorization = `Bearer ${tokens.access_token}`;
   try {
-    const res = await fetchWithRetry(
-      spec.status.url,
-      { headers },
-      { retries: 0, provider: `connections:${provider}` },
-    );
+    const res = await fetchWithRetry(spec.status.url, { headers }, { retries: 0, provider: `connections:${provider}` });
     if (!res.ok) return null;
     const body = await res.json();
     const account = spec.status.account_field ? body[spec.status.account_field] : undefined;
@@ -375,8 +377,9 @@ const SCOPE_ALIASES = {
 
 function scopeGranted(granted, scope) {
   if (scope === 'offline_access') return true;
-  return granted.some((value) => value === scope || value.endsWith(`/${scope}`)
-    || (SCOPE_ALIASES[scope] || []).includes(value));
+  return granted.some(
+    (value) => value === scope || value.endsWith(`/${scope}`) || (SCOPE_ALIASES[scope] || []).includes(value),
+  );
 }
 
 async function getStatus(provider) {
@@ -385,17 +388,34 @@ async function getStatus(provider) {
   let tokens = loadTokens(provider);
   const expired = !!tokens?.expiry_date && tokens.expiry_date <= Date.now();
   if (expired && tokens.refresh_token) tokens = await getValidTokens(provider);
-  const granted = String(tokens?.scope || '').split(/[\s,]+/).filter(Boolean);
+  const granted = String(tokens?.scope || '')
+    .split(/[\s,]+/)
+    .filter(Boolean);
   const missingScopes = (spec.auth.scopes || []).filter((scope) => !scopeGranted(granted, scope));
   const current = !!tokens?.access_token && (!tokens.expiry_date || tokens.expiry_date > Date.now());
-  const state = _pending.has(provider) ? 'connecting' : !cfg.configured ? 'unconfigured'
-    : expired && !tokens ? 'unavailable' : !tokens?.access_token ? 'disconnected'
-      : !current ? 'reauth_required' : missingScopes.length ? 'missing_scopes' : 'connected';
+  const state = _pending.has(provider)
+    ? 'connecting'
+    : !cfg.configured
+      ? 'unconfigured'
+      : expired && !tokens
+        ? 'unavailable'
+        : !tokens?.access_token
+          ? 'disconnected'
+          : !current
+            ? 'reauth_required'
+            : missingScopes.length
+              ? 'missing_scopes'
+              : 'connected';
   const connected = state === 'connected';
-  const messages = { connecting: 'Completa la autorización en el navegador', unconfigured: 'Falta registrar y configurar una aplicación OAuth',
+  const messages = {
+    connecting: 'Completa la autorización en el navegador',
+    unconfigured: 'Falta registrar y configurar una aplicación OAuth',
     unavailable: 'No se pudo renovar la autorización; comprueba la conexión y vuelve a conectar si continúa',
-    disconnected: 'Cuenta desconectada', reauth_required: 'La autorización venció; vuelve a conectar la cuenta',
-    missing_scopes: 'Faltan permisos; vuelve a autorizar la cuenta', connected: 'Autorización vigente' };
+    disconnected: 'Cuenta desconectada',
+    reauth_required: 'La autorización venció; vuelve a conectar la cuenta',
+    missing_scopes: 'Faltan permisos; vuelve a autorizar la cuenta',
+    connected: 'Autorización vigente',
+  };
   return {
     provider,
     configured: cfg.configured,

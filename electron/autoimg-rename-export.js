@@ -6,11 +6,7 @@ const { buildNisMetaMap, buildRenameJobs, uniqueDestinos } = require('./autoimg-
 const { saveRenameDest } = require('./autoimg-user-store');
 const { emit } = require('./autoimg-notify');
 const { operationState, throwIfCancelled, runLocked } = require('./autoimg-operations');
-const {
-  RENAME_DEST_CONFIG_KEY,
-  tryUpsertConfigValues,
-  ensureSheetId,
-} = require('./autoimg-sheet-config');
+const { RENAME_DEST_CONFIG_KEY, tryUpsertConfigValues, ensureSheetId } = require('./autoimg-sheet-config');
 const { scanAllCore, nowStamp } = require('./autoimg-scan-sync');
 
 const RENAME_COPY_CONCURRENCY_MIN = 2;
@@ -24,10 +20,7 @@ function resolveRenameCopyConcurrency(jobCount) {
   if (n >= 40) base = 6;
   else if (n >= 15) base = 4;
   const bias = Math.max(0, Math.min(4, _renameConcurrencyBias));
-  return Math.max(
-    RENAME_COPY_CONCURRENCY_MIN,
-    Math.min(RENAME_COPY_CONCURRENCY_MAX, base - bias),
-  );
+  return Math.max(RENAME_COPY_CONCURRENCY_MIN, Math.min(RENAME_COPY_CONCURRENCY_MAX, base - bias));
 }
 
 function _noteRenameRateLimit() {
@@ -79,10 +72,7 @@ async function _renameExportCore({ dest_folder_id, only_completos = true } = {})
   for (const name of destinoNames) {
     throwIfCancelled();
     const folderId = destinoFolderIds.get(name);
-    destinoExisting.set(
-      name,
-      foldersCreated.includes(name) ? new Set() : await drive.listFileNames(folderId),
-    );
+    destinoExisting.set(name, foldersCreated.includes(name) ? new Set() : await drive.listFileNames(folderId));
   }
 
   const jobs = [];

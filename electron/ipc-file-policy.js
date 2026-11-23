@@ -69,12 +69,7 @@ function collectSchemaValues(value, segments, values) {
   }
 }
 
-function resolveReadPathValue(
-  value,
-  label,
-  webContentsId,
-  { allowLogical = false, allowRegistered = false } = {},
-) {
+function resolveReadPathValue(value, label, webContentsId, { allowLogical = false, allowRegistered = false } = {}) {
   if (value === undefined || value === null || value === '') return value;
   if (typeof value !== 'string') throw new Error(`file token required for ${label}`);
   if (READ_TOKEN_RE.test(value)) {
@@ -85,8 +80,8 @@ function resolveReadPathValue(
     }
   }
   if (
-    allowLogical
-    && (value.startsWith('canvas-asset:') || value.startsWith('data:') || value.startsWith('antares-local-image:'))
+    allowLogical &&
+    (value.startsWith('canvas-asset:') || value.startsWith('data:') || value.startsWith('antares-local-image:'))
   ) {
     return value;
   }
@@ -112,9 +107,7 @@ function maybeResolveFileTokens(params, win, method) {
     delete params._resolved_file_token_name;
   }
   const { _assertNoRawAbsolutePaths } = require('./file-capabilities');
-  const allowRawAbsolutePathKeys = RAW_OUTPUT_PATH_METHODS.has(method)
-    ? RAW_OUTPUT_PATH_KEYS
-    : undefined;
+  const allowRawAbsolutePathKeys = RAW_OUTPUT_PATH_METHODS.has(method) ? RAW_OUTPUT_PATH_KEYS : undefined;
   _assertNoRawAbsolutePaths(params, {
     allowRegisteredReadPaths: true,
     allowRawAbsolutePathKeys,
@@ -142,15 +135,8 @@ function maybeResolveFileTokens(params, win, method) {
   let next = params;
   for (const schema of schemas) {
     const allowLogical = schema[0] === 'localImagePaths' || schema[0] === 'images' || schema[0] === 'images_by_id';
-    next = schemaTransform(
-      next,
-      schema,
-      (value, keyPath) => resolveReadPathValue(
-        value,
-        keyPath.join('.'),
-        webContentsId,
-        { allowLogical, allowRegistered: true },
-      ),
+    next = schemaTransform(next, schema, (value, keyPath) =>
+      resolveReadPathValue(value, keyPath.join('.'), webContentsId, { allowLogical, allowRegistered: true }),
     );
   }
 
@@ -191,7 +177,10 @@ function maybeResolveFileTokens(params, win, method) {
     if (typeof value !== 'string' || !READ_TOKEN_RE.test(value)) continue;
     try {
       const cap = resolveReadToken(value, webContentsId);
-      if (!legacyMutated) { next = { ...next }; legacyMutated = true; }
+      if (!legacyMutated) {
+        next = { ...next };
+        legacyMutated = true;
+      }
       next[key] = cap.path;
     } catch (err) {
       throw new Error(`invalid file token for ${key}: ${err.message}`);
@@ -213,7 +202,10 @@ function maybeResolveFileTokens(params, win, method) {
       }
     }
     if (tokensMutated) {
-      if (!legacyMutated) { next = { ...next }; legacyMutated = true; }
+      if (!legacyMutated) {
+        next = { ...next };
+        legacyMutated = true;
+      }
       next.file_tokens = resolvedTokens;
     }
   }
@@ -254,10 +246,40 @@ async function cleanupStagedTokens(tokens, webContentsId = null) {
 }
 
 const FORBIDDEN_FALLBACK_EXTENSIONS = new Set([
-  '.bat', '.cmd', '.chm', '.com', '.cpl', '.dll', '.exe', '.gadget', '.hta',
-  '.jar', '.js', '.jse', '.lnk', '.msc', '.msi', '.msp', '.ocx', '.pif',
-  '.ps1', '.psm1', '.py', '.pyw', '.pyz', '.pyzw', '.reg', '.scr', '.sys',
-  '.url', '.vbe', '.vbs', '.wsf', '.wsh', '.xlsm', '.docm',
+  '.bat',
+  '.cmd',
+  '.chm',
+  '.com',
+  '.cpl',
+  '.dll',
+  '.exe',
+  '.gadget',
+  '.hta',
+  '.jar',
+  '.js',
+  '.jse',
+  '.lnk',
+  '.msc',
+  '.msi',
+  '.msp',
+  '.ocx',
+  '.pif',
+  '.ps1',
+  '.psm1',
+  '.py',
+  '.pyw',
+  '.pyz',
+  '.pyzw',
+  '.reg',
+  '.scr',
+  '.sys',
+  '.url',
+  '.vbe',
+  '.vbs',
+  '.wsf',
+  '.wsh',
+  '.xlsm',
+  '.docm',
 ]);
 
 const READ_ONLY_OVERWRITE_TTL_MS = 10 * 60 * 1000;
@@ -291,11 +313,11 @@ function _confirmReadOnlyOverwrite(resolvedPath) {
     cancelId: 1,
     title: 'Sobrescribir archivo existente',
     message: `«${path.basename(resolvedPath)}» ya existe en una carpeta registrada solo para lectura.`,
-    detail: 'Antares solo escribe sobre un archivo existente de esa carpeta con tu confirmación. Para escribir sin preguntas, elige el destino con el diálogo de guardado.',
+    detail:
+      'Antares solo escribe sobre un archivo existente de esa carpeta con tu confirmación. Para escribir sin preguntas, elige el destino con el diálogo de guardado.',
   };
-  const response = owner && !owner.isDestroyed()
-    ? dialog.showMessageBoxSync(owner, options)
-    : dialog.showMessageBoxSync(options);
+  const response =
+    owner && !owner.isDestroyed() ? dialog.showMessageBoxSync(owner, options) : dialog.showMessageBoxSync(options);
   if (response !== 0) {
     throw new Error('Sobrescritura cancelada por el usuario');
   }
@@ -314,7 +336,9 @@ function _assertAllowedRawOutputPath(outRaw) {
       throw new Error('symlink no permitido en ruta de salida');
     }
     const dir = fs.existsSync(resolved)
-      ? (fs.lstatSync(resolved).isDirectory() ? resolved : path.dirname(resolved))
+      ? fs.lstatSync(resolved).isDirectory()
+        ? resolved
+        : path.dirname(resolved)
       : path.dirname(resolved);
     const { isUnderAllowedWriteRoot } = require('./dialog-handlers');
     if (!isUnderAllowedWriteRoot(dir) && !isAllowedReadPath(resolved) && !isAllowedReadPath(dir)) {
@@ -332,10 +356,10 @@ function _assertAllowedRawOutputPath(outRaw) {
     }
   } catch (e) {
     if (
-      e.message.includes('no está permitida')
-      || e.message.includes('no permitido')
-      || e.message.includes('symlink')
-      || e.message.includes('cancelada')
+      e.message.includes('no está permitida') ||
+      e.message.includes('no permitido') ||
+      e.message.includes('symlink') ||
+      e.message.includes('cancelada')
     ) {
       throw e;
     }

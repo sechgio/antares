@@ -80,8 +80,16 @@ function pct(part, total, digits = 1) {
 function computeMetrics(prs) {
   const list = Array.isArray(prs) ? prs : [];
   const n = list.length;
-  const metric = (id, label, value, unit, target, op, ok, detail) =>
-    ({ id, label, value, unit, target, op, ok, detail });
+  const metric = (id, label, value, unit, target, op, ok, detail) => ({
+    id,
+    label,
+    value,
+    unit,
+    target,
+    op,
+    ok,
+    detail,
+  });
 
   const medianSize = median(list.map((pr) => effectiveChangedLines(pr).effective));
   const drafts = list.filter((pr) => pr.isDraft).length;
@@ -89,12 +97,13 @@ function computeMetrics(prs) {
   const medianFirst = median(firstReview);
   const covered = list.filter(hasThirdPartyApproval).length;
   const coverage = pct(covered, n);
-  const stamps = list.filter((pr) =>
-    !pr.isDraft &&
-    nonAuthorApprovals(pr).some((r) => {
-      const delta = hoursBetween(pr.createdAt, r.submittedAt);
-      return delta !== null && delta * 3600 < RUBBER_STAMP_SECONDS;
-    }),
+  const stamps = list.filter(
+    (pr) =>
+      !pr.isDraft &&
+      nonAuthorApprovals(pr).some((r) => {
+        const delta = hoursBetween(pr.createdAt, r.submittedAt);
+        return delta !== null && delta * 3600 < RUBBER_STAMP_SECONDS;
+      }),
   ).length;
   const stampRate = pct(stamps, n);
   const reworked = list.filter((pr) => reworkRounds(pr) > REWORK_ROUNDS).length;
@@ -115,30 +124,80 @@ function computeMetrics(prs) {
   const concentration = pct(topCount, n);
 
   return [
-    metric('size', 'Tamaño mediano de PR', medianSize, 'líneas', TARGETS.size, '<',
-      medianSize !== null && medianSize < TARGETS.size, `${n} PRs analizados`),
-    metric('firstReviewHours', 'Tiempo hasta la primera revisión',
-      medianFirst === null ? null : Number(medianFirst.toFixed(2)), 'horas', TARGETS.firstReviewHours, '<',
+    metric(
+      'size',
+      'Tamaño mediano de PR',
+      medianSize,
+      'líneas',
+      TARGETS.size,
+      '<',
+      medianSize !== null && medianSize < TARGETS.size,
+      `${n} PRs analizados`,
+    ),
+    metric(
+      'firstReviewHours',
+      'Tiempo hasta la primera revisión',
+      medianFirst === null ? null : Number(medianFirst.toFixed(2)),
+      'horas',
+      TARGETS.firstReviewHours,
+      '<',
       medianFirst !== null && medianFirst < TARGETS.firstReviewHours,
       firstReview.length === 0
-        ? (drafts > 0 ? `${drafts} en borrador excluidos` : 'sin señales de revisión')
-        : `${firstReview.length} PRs con señal${drafts > 0 ? ` · ${drafts} en borrador excluidos` : ''}`),
-    metric('reviewCoverage', 'Cobertura de revisión', coverage, '%', TARGETS.reviewCoverage, '>=',
+        ? drafts > 0
+          ? `${drafts} en borrador excluidos`
+          : 'sin señales de revisión'
+        : `${firstReview.length} PRs con señal${drafts > 0 ? ` · ${drafts} en borrador excluidos` : ''}`,
+    ),
+    metric(
+      'reviewCoverage',
+      'Cobertura de revisión',
+      coverage,
+      '%',
+      TARGETS.reviewCoverage,
+      '>=',
       coverage !== null && coverage >= TARGETS.reviewCoverage,
-      `${covered}/${n} PRs con aprobación de un tercero`),
-    metric('rubberStamp', 'Tasa de rubber-stamp', stampRate, '%', TARGETS.rubberStamp, '<',
+      `${covered}/${n} PRs con aprobación de un tercero`,
+    ),
+    metric(
+      'rubberStamp',
+      'Tasa de rubber-stamp',
+      stampRate,
+      '%',
+      TARGETS.rubberStamp,
+      '<',
       stampRate !== null && stampRate < TARGETS.rubberStamp,
-      `${stamps} PRs aprobados en <${RUBBER_STAMP_SECONDS}s`),
-    metric('rework', 'Tasa de retrabajo', reworkRate, '%', TARGETS.rework, '<',
+      `${stamps} PRs aprobados en <${RUBBER_STAMP_SECONDS}s`,
+    ),
+    metric(
+      'rework',
+      'Tasa de retrabajo',
+      reworkRate,
+      '%',
+      TARGETS.rework,
+      '<',
       reworkRate !== null && reworkRate < TARGETS.rework,
-      `${reworked} PRs con >${REWORK_ROUNDS} rondas de cambios`),
-    metric('taxonomy', 'Cumplimiento de taxonomía', taxonomy, '%', TARGETS.taxonomy, '>=',
+      `${reworked} PRs con >${REWORK_ROUNDS} rondas de cambios`,
+    ),
+    metric(
+      'taxonomy',
+      'Cumplimiento de taxonomía',
+      taxonomy,
+      '%',
+      TARGETS.taxonomy,
+      '>=',
       taxonomy === null || taxonomy >= TARGETS.taxonomy,
-      taxAcc.total === 0 ? 'sin comentarios' : `${taxAcc.prefixed}/${taxAcc.total} con prefijo`),
-    metric('authorConcentration', 'Concentración de autor (bus factor)', concentration, '%',
-      TARGETS.authorConcentration, '<',
+      taxAcc.total === 0 ? 'sin comentarios' : `${taxAcc.prefixed}/${taxAcc.total} con prefijo`,
+    ),
+    metric(
+      'authorConcentration',
+      'Concentración de autor (bus factor)',
+      concentration,
+      '%',
+      TARGETS.authorConcentration,
+      '<',
       concentration !== null && concentration < TARGETS.authorConcentration,
-      `${byAuthor.size} autor(es); el principal concentró ${topCount}/${n}`),
+      `${byAuthor.size} autor(es); el principal concentró ${topCount}/${n}`,
+    ),
   ];
 }
 
@@ -157,8 +216,10 @@ function renderMarkdown(metrics, days) {
     '',
     '| Métrica | Valor | Objetivo | Estado | Detalle |',
     '| --- | --- | --- | --- | --- |',
-    ...metrics.map((m) =>
-      `| ${m.label} | ${formatValue(m.value, m.unit)} | ${renderTarget(m)} | ${m.ok ? '✅' : '⚠️'} | ${m.detail} |`),
+    ...metrics.map(
+      (m) =>
+        `| ${m.label} | ${formatValue(m.value, m.unit)} | ${renderTarget(m)} | ${m.ok ? '✅' : '⚠️'} | ${m.detail} |`,
+    ),
     '',
     `> Objetivos: ${metrics.map((m) => `${m.label.toLowerCase()} ${renderTarget(m)}`).join(' · ')}.`,
   ].join('\n');
@@ -181,9 +242,18 @@ function fetchMergedPrs(repo, days) {
   const since = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
   const out = gh(
     [
-      'pr', 'list', '--repo', repo, '--state', 'merged',
-      '--search', `merged:>=${since}`, '--limit', '200',
-      '--json', 'number,title,author,createdAt,mergedAt,additions,deletions,reviews,comments',
+      'pr',
+      'list',
+      '--repo',
+      repo,
+      '--state',
+      'merged',
+      '--search',
+      `merged:>=${since}`,
+      '--limit',
+      '200',
+      '--json',
+      'number,title,author,createdAt,mergedAt,additions,deletions,reviews,comments',
     ],
     { timeout: 60000, maxBuffer: 40 * 1024 * 1024 },
   );
@@ -199,7 +269,7 @@ function withEffectiveSizes(repo, prs) {
         timeout: 30000,
         maxBuffer: 24 * 1024 * 1024,
       });
-      files = ((JSON.parse(out || '{}').files) || []).map((f) => ({
+      files = (JSON.parse(out || '{}').files || []).map((f) => ({
         path: f.path,
         additions: f.additions,
         deletions: f.deletions,

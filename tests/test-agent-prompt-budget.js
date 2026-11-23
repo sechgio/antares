@@ -19,11 +19,18 @@ const TOOL = (name, module, description, gated = false) => ({
 
 function fixtureSpecs({ extraCore = [] } = {}) {
   const core = [
-    TOOL('fs_list', 'computer'), TOOL('fs_read', 'computer'), TOOL('document_generate', 'documents'),
-    TOOL('drafts_list', 'drafts'), TOOL('task_plan', 'plan'), TOOL('memory_search', 'agent'),
-    TOOL('tools_load', 'agent'), TOOL('task_schedule', 'agenda'),
+    TOOL('fs_list', 'computer'),
+    TOOL('fs_read', 'computer'),
+    TOOL('document_generate', 'documents'),
+    TOOL('drafts_list', 'drafts'),
+    TOOL('task_plan', 'plan'),
+    TOOL('memory_search', 'agent'),
+    TOOL('tools_load', 'agent'),
+    TOOL('task_schedule', 'agenda'),
   ];
-  const filler = Array.from({ length: 105 }, (_, index) => TOOL(`otra_${index}`, 'otros', `Herramienta ajena al núcleo ${index}`));
+  const filler = Array.from({ length: 105 }, (_, index) =>
+    TOOL(`otra_${index}`, 'otros', `Herramienta ajena al núcleo ${index}`),
+  );
   return [...core, ...filler, ...extraCore];
 }
 
@@ -39,7 +46,8 @@ const cases = {
     assert(names && names.length < specs.length, 'con más de MAX_DEFAULT_TOOLS herramientas debe filtrar');
     const allowed = new Set(['subagent_run', 'tools_load', 'task_schedule']);
     for (const spec of specs) {
-      const inCore = ['computer', 'documents', 'drafts', 'agent', 'plan'].includes(spec.module) || allowed.has(spec.name);
+      const inCore =
+        ['computer', 'documents', 'drafts', 'agent', 'plan'].includes(spec.module) || allowed.has(spec.name);
       assert.equal(names.includes(spec.name), inCore, `selección inesperada para ${spec.name}`);
     }
   },
@@ -53,32 +61,44 @@ const cases = {
     assert(first.reminders > 100, 'los avisos fijos son parte del total');
     assert.equal(first.toolSelection, 'default');
     assert.equal(first.toolCount, execution.defaultToolNames(specs).length, 'usa la selección de conversación nueva');
-    const grown = await basePromptEstimate(fixtureSpecs({
-      extraCore: [TOOL('otro_nucleo', 'computer', 'x'.repeat(4_000))],
-    }), DEPS);
+    const grown = await basePromptEstimate(
+      fixtureSpecs({
+        extraCore: [TOOL('otro_nucleo', 'computer', 'x'.repeat(4_000))],
+      }),
+      DEPS,
+    );
     assert(grown.tokens > first.tokens, 'una herramienta del núcleo más grande sube la estimación');
   },
   'los avisos medidos son los que publican budgetWarning y planReminder': () => {
     const rounds = 33;
-    const warned = execution.budgetWarning([
-      { role: 'user', content: [] },
-      { role: 'toolResult', toolName: 'fs_list', content: [{ type: 'text', text: 'listado' }] },
-    ], rounds);
+    const warned = execution.budgetWarning(
+      [
+        { role: 'user', content: [] },
+        { role: 'toolResult', toolName: 'fs_list', content: [{ type: 'text', text: 'listado' }] },
+      ],
+      rounds,
+    );
     assert.equal(warned[1].content.at(-1).text, execution.budgetWarningText(rounds));
 
     const turn = { remaining: ['paso'], sincePlan: 10, planReminderAt: 0, planNext: 'revisar planta' };
-    const reminded = execution.planReminder([
-      { role: 'user', content: [] },
-      { role: 'toolResult', toolName: 'fs_list', content: [{ type: 'text', text: 'listado' }] },
-    ], turn, 0);
+    const reminded = execution.planReminder(
+      [
+        { role: 'user', content: [] },
+        { role: 'toolResult', toolName: 'fs_list', content: [{ type: 'text', text: 'listado' }] },
+      ],
+      turn,
+      0,
+    );
     assert.equal(reminded[1].content.at(-1).text, execution.planReminderText(10, 'revisar planta'));
     for (const text of execution.reminderTexts()) {
       assert(!text.includes('{steps}') && !text.includes('{next}'), 'los avisos medidos no deben conservar plantillas');
     }
   },
   'allToolSpecs compone el catálogo real del puente más las herramientas locales': async () => {
-    shared.deps = { bridge: async () => ({ tools: [TOOL('backend_lectura', 'conversion', 'Lectura del backend')] }),
-      chord: { BACKGROUND_CONTEXT: {} } };
+    shared.deps = {
+      bridge: async () => ({ tools: [TOOL('backend_lectura', 'conversion', 'Lectura del backend')] }),
+      chord: { BACKGROUND_CONTEXT: {} },
+    };
     shared.state = { harness: { snapshot: async () => ({}) } };
     try {
       const specs = await execution.allToolSpecs();
@@ -100,8 +120,13 @@ const cases = {
 async function main() {
   let failed = false;
   for (const [name, run] of Object.entries(cases)) {
-    try { await run(); console.log(`[PASS] ${name}`); }
-    catch (error) { failed = true; console.error(`[FAIL] ${name}`, error); }
+    try {
+      await run();
+      console.log(`[PASS] ${name}`);
+    } catch (error) {
+      failed = true;
+      console.error(`[FAIL] ${name}`, error);
+    }
   }
   if (failed) process.exitCode = 1;
 }

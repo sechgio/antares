@@ -14,7 +14,9 @@ const AUTO_SYNC_CONFIG_KEY = 'AUTO_SYNC';
 const RENAME_DEST_CONFIG_KEY = 'RENAME_DEST_FOLDER_ID';
 
 function parseAutoSyncConfig(value) {
-  const v = String(value || '').trim().toLowerCase();
+  const v = String(value || '')
+    .trim()
+    .toLowerCase();
   return v === 'true' || v === '1' || v === 'si' || v === 'yes';
 }
 
@@ -35,7 +37,11 @@ async function upsertConfigValues(entries) {
   for (const [key, value] of updates) {
     let found = false;
     for (let i = start; i < rows.length; i++) {
-      if (String(rows[i][0] || '').trim().toUpperCase() === key.toUpperCase()) {
+      if (
+        String(rows[i][0] || '')
+          .trim()
+          .toUpperCase() === key.toUpperCase()
+      ) {
         rows[i][1] = value;
         found = true;
         break;
@@ -111,8 +117,7 @@ async function getRenameDestConfig() {
   if (folderId && folderId !== local.folder_id) {
     try {
       saveRenameDest(folderId, local.name || '');
-    } catch {
-    }
+    } catch {}
   }
   return { folder_id: folderId, name: local.name || '' };
 }

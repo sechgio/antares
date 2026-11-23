@@ -118,10 +118,7 @@ function resolveAppDataDir() {
   if (process.platform === 'darwin') {
     return path.join(os.homedir(), 'Library', 'Application Support', APP_NAME);
   }
-  return path.join(
-    process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'),
-    APP_NAME
-  );
+  return path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), APP_NAME);
 }
 
 function getLogsDir() {
@@ -131,16 +128,16 @@ function getLogsDir() {
 
 function getSessionId() {
   if (!_sessionId) {
-    _sessionId = typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : crypto.randomBytes(16).toString('hex');
+    _sessionId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
   }
   return _sessionId;
 }
 
 function _safeContextValue(value, maxLength = 80) {
   if (value === null || value === undefined) return null;
-  const safe = String(value).replace(/[^a-zA-Z0-9_.:-]/g, '_').slice(0, maxLength);
+  const safe = String(value)
+    .replace(/[^a-zA-Z0-9_.:-]/g, '_')
+    .slice(0, maxLength);
   return safe || null;
 }
 
@@ -192,7 +189,7 @@ function _redactText(text) {
   let safeText = String(text);
   for (const pattern of SENSITIVE_TEXT_RE) {
     safeText = safeText.replace(pattern, (...matches) =>
-      typeof matches[1] === 'string' ? `${matches[1]}[REDACTED]` : '[REDACTED]'
+      typeof matches[1] === 'string' ? `${matches[1]}[REDACTED]` : '[REDACTED]',
     );
   }
   return safeText.replace(/[\r\n]+/g, ' ').slice(0, 4000);
@@ -207,7 +204,9 @@ function _normaliseLevel(level) {
 
 function _normaliseSafeToken(value) {
   if (value === null || value === undefined) return null;
-  const safe = String(value).replace(/[^a-zA-Z0-9_.:-]/g, '_').slice(0, 160);
+  const safe = String(value)
+    .replace(/[^a-zA-Z0-9_.:-]/g, '_')
+    .slice(0, 160);
   return SAFE_VALUE_RE.test(safe) ? safe : null;
 }
 
@@ -216,7 +215,9 @@ function _normaliseEventField(key, value) {
   if (key === 'message') return _redactText(value);
   if (key === 'outcome') return OUTCOMES.has(value) ? value : undefined;
   if (key === 'rum_name') {
-    const text = String(value ?? '').trim().toUpperCase();
+    const text = String(value ?? '')
+      .trim()
+      .toUpperCase();
     return RUM_METRIC_NAMES.has(text) ? text : undefined;
   }
   if (key === 'rum_value') {
@@ -224,7 +225,9 @@ function _normaliseEventField(key, value) {
     return Math.round(value * 10000) / 10000;
   }
   if (key === 'rum_rating') {
-    const text = String(value ?? '').trim().toLowerCase();
+    const text = String(value ?? '')
+      .trim()
+      .toLowerCase();
     return RUM_RATINGS.has(text) ? text : undefined;
   }
   if (key === 'rum_id') {
@@ -233,7 +236,9 @@ function _normaliseEventField(key, value) {
     return text.length <= 30 && RUM_ID_RE.test(text) ? text : '-';
   }
   if (key === 'rum_navigation_type') {
-    const text = String(value ?? '').trim().toLowerCase();
+    const text = String(value ?? '')
+      .trim()
+      .toLowerCase();
     return RUM_NAV_TYPES.has(text) ? text : undefined;
   }
   if (key === 'history_index') {
@@ -246,11 +251,28 @@ function _normaliseEventField(key, value) {
       ? Math.round(value * 10) / 10
       : undefined;
   }
-  if ([
-    'pid', 'backend_pid', 'bytes', 'attempt', 'count', 'dropped_events', 'ok_count', 'err_count', 'timeout_ms',
-    'prompt', 'cache_read', 'cache_write', 'output', 'messages', 'previous_messages', 'system_blocks',
-    'system_json_chars', 'tools',
-  ].includes(key)) {
+  if (
+    [
+      'pid',
+      'backend_pid',
+      'bytes',
+      'attempt',
+      'count',
+      'dropped_events',
+      'ok_count',
+      'err_count',
+      'timeout_ms',
+      'prompt',
+      'cache_read',
+      'cache_write',
+      'output',
+      'messages',
+      'previous_messages',
+      'system_blocks',
+      'system_json_chars',
+      'tools',
+    ].includes(key)
+  ) {
     return Number.isInteger(value) && value >= 0 ? value : undefined;
   }
   if (key === 'duration_ms') {
@@ -261,9 +283,7 @@ function _normaliseEventField(key, value) {
 
 function _maxLogFileBytes() {
   const configured = Number(process.env.ANTARES_OBSERVABILITY_MAX_FILE_BYTES);
-  return Number.isFinite(configured) && configured >= 128
-    ? Math.floor(configured)
-    : DEFAULT_MAX_LOG_FILE_BYTES;
+  return Number.isFinite(configured) && configured >= 128 ? Math.floor(configured) : DEFAULT_MAX_LOG_FILE_BYTES;
 }
 
 function _markDroppedEvent() {
@@ -373,7 +393,9 @@ function logInfo(...args) {
 function installConsoleLogTee() {
   if (_consoleTeeInstalled) return;
   _consoleTeeInstalled = true;
-  const raw = String(process.env.ANTARES_IPC_TELEMETRY || '').trim().toLowerCase();
+  const raw = String(process.env.ANTARES_IPC_TELEMETRY || '')
+    .trim()
+    .toLowerCase();
   const teeLog = raw === '1' || raw === 'true' || raw === 'yes';
   console.warn = (...args) => {
     _originalConsole.warn(...args);

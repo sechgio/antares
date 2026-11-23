@@ -4,9 +4,7 @@ import TableView from '../TableView';
 import ListView from '../ListView';
 import type { Tarea, TeamMember } from '../../../types';
 
-const mockMembers: TeamMember[] = [
-  { user_id: 'user-1', display_name: 'Alice' },
-];
+const mockMembers: TeamMember[] = [{ user_id: 'user-1', display_name: 'Alice' }];
 
 function createMockTareas(count: number): Tarea[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -33,7 +31,7 @@ describe('Virtualized TableView & ListView Components', () => {
           onStatusChange={vi.fn()}
           onComplete={vi.fn()}
           onDelete={vi.fn()}
-        />
+        />,
       );
 
       expect(screen.getByText('Tarea 1')).toBeInTheDocument();
@@ -50,7 +48,7 @@ describe('Virtualized TableView & ListView Components', () => {
           onStatusChange={vi.fn()}
           onComplete={vi.fn()}
           onDelete={vi.fn()}
-        />
+        />,
       );
 
       expect(container.querySelector('[data-virtualized-table="true"]')).toBeTruthy();
@@ -58,19 +56,17 @@ describe('Virtualized TableView & ListView Components', () => {
     });
 
     it('exposes list semantics in virtualized rows', () => {
-      const rectSpy = vi
-        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-        .mockReturnValue({
-          x: 0,
-          y: 0,
-          width: 800,
-          height: 600,
-          top: 0,
-          left: 0,
-          bottom: 600,
-          right: 800,
-          toJSON: () => {},
-        });
+      const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+        x: 0,
+        y: 0,
+        width: 800,
+        height: 600,
+        top: 0,
+        left: 0,
+        bottom: 600,
+        right: 800,
+        toJSON: () => {},
+      });
       try {
         const tareas = createMockTareas(55);
         render(
@@ -80,7 +76,7 @@ describe('Virtualized TableView & ListView Components', () => {
             onStatusChange={vi.fn()}
             onComplete={vi.fn()}
             onDelete={vi.fn()}
-          />
+          />,
         );
 
         expect(screen.getByRole('list', { name: 'Tareas' })).toBeInTheDocument();
@@ -103,7 +99,7 @@ describe('Virtualized TableView & ListView Components', () => {
           onStatusChange={vi.fn()}
           onComplete={vi.fn()}
           onDelete={vi.fn()}
-        />
+        />,
       );
 
       const checkbox = screen.getByLabelText('Seleccionar Tarea 1');
@@ -116,14 +112,7 @@ describe('Virtualized TableView & ListView Components', () => {
   describe('ListView', () => {
     it('renders list items for <= 50 items', () => {
       const tareas = createMockTareas(10);
-      render(
-        <ListView
-          tareas={tareas}
-          members={mockMembers}
-          onStatusChange={vi.fn()}
-          onDelete={vi.fn()}
-        />
-      );
+      render(<ListView tareas={tareas} members={mockMembers} onStatusChange={vi.fn()} onDelete={vi.fn()} />);
 
       expect(screen.getByText('Tarea 1')).toBeInTheDocument();
       expect(screen.getByText('Tarea 10')).toBeInTheDocument();
@@ -132,41 +121,27 @@ describe('Virtualized TableView & ListView Components', () => {
     it('uses virtualized list shell for >= 50 items', () => {
       const tareas = createMockTareas(60);
       const { container } = render(
-        <ListView
-          tareas={tareas}
-          members={mockMembers}
-          onStatusChange={vi.fn()}
-          onDelete={vi.fn()}
-        />
+        <ListView tareas={tareas} members={mockMembers} onStatusChange={vi.fn()} onDelete={vi.fn()} />,
       );
 
       expect(container.querySelector('[data-virtualized-list]')).toBeTruthy();
     });
 
     it('exposes list semantics in virtualized rows', () => {
-      const rectSpy = vi
-        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-        .mockReturnValue({
-          x: 0,
-          y: 0,
-          width: 800,
-          height: 600,
-          top: 0,
-          left: 0,
-          bottom: 600,
-          right: 800,
-          toJSON: () => {},
-        });
+      const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+        x: 0,
+        y: 0,
+        width: 800,
+        height: 600,
+        top: 0,
+        left: 0,
+        bottom: 600,
+        right: 800,
+        toJSON: () => {},
+      });
       try {
         const tareas = createMockTareas(60);
-        render(
-          <ListView
-            tareas={tareas}
-            members={mockMembers}
-            onStatusChange={vi.fn()}
-            onDelete={vi.fn()}
-          />
-        );
+        render(<ListView tareas={tareas} members={mockMembers} onStatusChange={vi.fn()} onDelete={vi.fn()} />);
 
         expect(screen.getByRole('list', { name: 'Tareas' })).toBeInTheDocument();
         expect(screen.getAllByRole('listitem').length).toBeGreaterThan(0);
@@ -179,14 +154,7 @@ describe('Virtualized TableView & ListView Components', () => {
       const tareas = createMockTareas(3);
       const onDelete = vi.fn();
 
-      render(
-        <ListView
-          tareas={tareas}
-          members={mockMembers}
-          onStatusChange={vi.fn()}
-          onDelete={onDelete}
-        />
-      );
+      render(<ListView tareas={tareas} members={mockMembers} onStatusChange={vi.fn()} onDelete={onDelete} />);
 
       const deleteBtn = screen.getByLabelText('Eliminar Tarea 1');
       fireEvent.click(deleteBtn);

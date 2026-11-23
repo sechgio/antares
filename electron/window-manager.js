@@ -16,8 +16,7 @@ function _resolvePinnedSupabaseHost() {
     if (url.protocol === 'https:' && /(^|\.)supabase\.co$/i.test(host)) {
       return host;
     }
-  } catch {
-  }
+  } catch {}
   return null;
 }
 
@@ -34,12 +33,19 @@ function createWindow(isDev) {
   const fileInputNonceArg = `--file-input-nonce=${_fileInputNonce}`;
 
   mainWindow = new BrowserWindow({
-    width, height, show: false, frame: false,
+    width,
+    height,
+    show: false,
+    frame: false,
     backgroundColor: '#0f172a',
-    titleBarStyle: 'hidden', autoHideMenuBar: true, icon: iconPath,
+    titleBarStyle: 'hidden',
+    autoHideMenuBar: true,
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true, nodeIntegration: false, sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
       additionalArguments: [allowedMethodsArg, isPackagedArg, fileInputNonceArg],
     },
   });
@@ -62,19 +68,18 @@ function createWindow(isDev) {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           isDev
-            ? buildCsp(`default-src 'self' http://localhost:5173; frame-src 'self' http://localhost:5173 ${previewFrameSrc}; script-src 'self' http://localhost:5173 'unsafe-inline'; style-src 'self' 'unsafe-inline' http://localhost:5173 https://fonts.googleapis.com; img-src 'self' data: blob: http://localhost:5173 https://assets.petdex.dev; font-src 'self' http://localhost:5173 https://fonts.gstatic.com; media-src https:; connect-src 'self' http://localhost:5173 ws://localhost:5173 wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev https://*.api.radio-browser.info https://*.audius.co https://stream.nightride.fm https://media01.gamingnow.net:8010 https://itunes.apple.com https://musicbrainz.org https://api.jamendo.com https://archive.org https://ice6.somafm.com`)
-            : buildCsp(`default-src 'self'; frame-src 'self' ${previewFrameSrc}; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://assets.petdex.dev; font-src 'self' https://fonts.gstatic.com; media-src https:; connect-src 'self' wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev https://*.api.radio-browser.info https://*.audius.co https://stream.nightride.fm https://media01.gamingnow.net:8010 https://itunes.apple.com https://musicbrainz.org https://api.jamendo.com https://archive.org https://ice6.somafm.com`)
-        ]
-      }
+            ? buildCsp(
+                `default-src 'self' http://localhost:5173; frame-src 'self' http://localhost:5173 ${previewFrameSrc}; script-src 'self' http://localhost:5173 'unsafe-inline'; style-src 'self' 'unsafe-inline' http://localhost:5173 https://fonts.googleapis.com; img-src 'self' data: blob: http://localhost:5173 https://assets.petdex.dev; font-src 'self' http://localhost:5173 https://fonts.gstatic.com; media-src https:; connect-src 'self' http://localhost:5173 ws://localhost:5173 wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev https://*.api.radio-browser.info https://*.audius.co https://stream.nightride.fm https://media01.gamingnow.net:8010 https://itunes.apple.com https://musicbrainz.org https://api.jamendo.com https://archive.org https://ice6.somafm.com`,
+              )
+            : buildCsp(
+                `default-src 'self'; frame-src 'self' ${previewFrameSrc}; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://assets.petdex.dev; font-src 'self' https://fonts.gstatic.com; media-src https:; connect-src 'self' wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev https://*.api.radio-browser.info https://*.audius.co https://stream.nightride.fm https://media01.gamingnow.net:8010 https://itunes.apple.com https://musicbrainz.org https://api.jamendo.com https://archive.org https://ice6.somafm.com`,
+              ),
+        ],
+      },
     });
   });
 
-  const allowedPermissions = new Set([
-    'media',
-    'display-capture',
-    'clipboard-read',
-    'clipboard-sanitized-write',
-  ]);
+  const allowedPermissions = new Set(['media', 'display-capture', 'clipboard-read', 'clipboard-sanitized-write']);
   const { isTrustedRendererUrl } = require('./renderer-trust');
   const isTrustedMainFrame = (webContents) => {
     if (!webContents || webContents.isDestroyed?.()) return false;
@@ -109,13 +114,12 @@ function createWindow(isDev) {
   let loadFailureRecoveryAttempts = 0;
   const loadMainWindowContent = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return Promise.resolve();
-    return isDev
-      ? mainWindow.loadURL('http://localhost:5173')
-      : mainWindow.loadFile(htmlPath);
+    return isDev ? mainWindow.loadURL('http://localhost:5173') : mainWindow.loadFile(htmlPath);
   };
   const showLoadFailurePage = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    const html = '<!doctype html><meta charset="utf-8"><title>Antares</title>' +
+    const html =
+      '<!doctype html><meta charset="utf-8"><title>Antares</title>' +
       '<style>body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;display:grid;place-items:center;height:100vh;margin:0;text-align:center}main{max-width:34rem;padding:2rem}h1{font-size:1.35rem}p{color:#94a3b8}</style>' +
       '<main><h1>Antares no pudo cargar la aplicación</h1><p>Pulsa Ctrl+R para reintentar o reinicia Antares.</p></main>';
     void mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => {});
@@ -184,7 +188,9 @@ function createWindow(isDev) {
       return { action: 'deny' };
     }
     if (parsed.protocol === 'https:') {
-      require('electron').shell.openExternal(url).catch(() => {});
+      require('electron')
+        .shell.openExternal(url)
+        .catch(() => {});
     } else {
       appendLogEvent('WARN', 'security.rejected', {
         component: 'window',
@@ -199,9 +205,10 @@ function createWindow(isDev) {
   const { pathToFileURL } = require('url');
   const distFileUrlPrefix = pathToFileURL(path.dirname(htmlPath) + path.sep).toString();
 
-  const isAllowedMainFrameUrl = (url) => (isDev
-    ? (url.startsWith('http://localhost:5173') || url.startsWith('http://127.0.0.1:5173'))
-    : url.startsWith(distFileUrlPrefix));
+  const isAllowedMainFrameUrl = (url) =>
+    isDev
+      ? url.startsWith('http://localhost:5173') || url.startsWith('http://127.0.0.1:5173')
+      : url.startsWith(distFileUrlPrefix);
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (!isAllowedMainFrameUrl(url)) event.preventDefault();
@@ -252,11 +259,19 @@ function createWindow(isDev) {
     mainWindow.show();
   });
 
-  mainWindow.on('closed', () => { mainWindow = null; });
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 }
 
-function getMainWindow() { return mainWindow; }
-function getIsDev() { return _isDev; }
-function getFileInputNonce() { return _fileInputNonce; }
+function getMainWindow() {
+  return mainWindow;
+}
+function getIsDev() {
+  return _isDev;
+}
+function getFileInputNonce() {
+  return _fileInputNonce;
+}
 
 module.exports = { createWindow, getMainWindow, getIsDev, getFileInputNonce };

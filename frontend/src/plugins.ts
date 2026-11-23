@@ -58,14 +58,9 @@ export function getPluginOrder(): TitleBarPluginId[] {
   let stored: unknown = sessionOrder;
   try {
     stored = JSON.parse(localStorage.getItem(ORDER_STORAGE_KEY) ?? 'null') ?? sessionOrder;
-  } catch {
-  }
+  } catch {}
   const next = normalizeOrder(Array.isArray(stored) ? stored : []);
-  if (
-    !orderSnapshot ||
-    orderSnapshot.length !== next.length ||
-    orderSnapshot.some((id, i) => id !== next[i])
-  ) {
+  if (!orderSnapshot || orderSnapshot.length !== next.length || orderSnapshot.some((id, i) => id !== next[i])) {
     orderSnapshot = next;
   }
   return orderSnapshot;
