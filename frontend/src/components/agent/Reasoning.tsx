@@ -21,17 +21,7 @@ export function ThinkingStatus({ seed }: { seed: string }) {
   );
 }
 
-export default function Reasoning({
-  text,
-  streaming,
-  ms,
-  defaultOpen = false,
-}: {
-  text: string;
-  streaming: boolean;
-  ms?: number;
-  defaultOpen?: boolean;
-}) {
+export default function Reasoning({ text, streaming, ms, defaultOpen = false }: { text: string; streaming: boolean; ms?: number; defaultOpen?: boolean }) {
   const [openOverride, setOpenOverride] = useState<boolean | null>(null);
   const bodyId = useId();
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -40,8 +30,7 @@ export default function Reasoning({
 
   useEffect(() => {
     const body = bodyRef.current;
-    if (streaming && open && body && body.scrollHeight - body.scrollTop - body.clientHeight < 48)
-      body.scrollTop = body.scrollHeight;
+    if (streaming && open && body && body.scrollHeight - body.scrollTop - body.clientHeight < 48) body.scrollTop = body.scrollHeight;
   }, [text, streaming, open]);
 
   return (
@@ -54,12 +43,9 @@ export default function Reasoning({
         aria-controls={bodyId}
       >
         <Brain size={14} aria-hidden="true" className={`shrink-0 ${streaming ? 'text-[var(--text-secondary)]' : ''}`} />
-        {streaming ? (
-          <span className="agent-shimmer shrink-0">Pensando…</span>
-        ) : (
+        {streaming ? <span className="agent-shimmer shrink-0">Pensando…</span> : (
           <span className="shrink-0 tabular-nums">
-            <span className="text-[var(--text-secondary)]">{verb}</span>
-            {duration}
+            <span className="text-[var(--text-secondary)]">{verb}</span>{duration}
           </span>
         )}
         <ChevronRight

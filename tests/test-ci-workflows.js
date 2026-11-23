@@ -201,6 +201,10 @@ function run() {
     'The pre-push check formats and lints changed files and typechecks with bun check under a 9s cap',
   );
   assert(
+    !prePushCheck.includes("['scripts/check-format.js', ...files]"),
+    'pre-push does not pass modified files to oxfmt, because oxfmt checks the whole file',
+  );
+  assert(
     frontendPackageJson.scripts.build.startsWith('bun check && ') &&
       frontendPackageJson.scripts.build.includes('node scripts/canvas-appear-budget.mjs') &&
       frontendPackageJson.scripts.build.includes('node scripts/shell-preload-budget.mjs'),
