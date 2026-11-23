@@ -62,6 +62,15 @@ function runNodeTests(testNames) {
   }
 }
 
+// require('electron') downloads and extracts the zip when dist is missing.
+// Parallel workers on Windows then fail creating electron.exe or dxcompiler.dll
+// with access denied. install.js returns immediately once the binary is present.
+function ensureElectronBinary() {
+  const installScript = path.join(ROOT, 'node_modules', 'electron', 'install.js');
+  if (!fs.existsSync(installScript)) return;
+  run(process.execPath, [installScript]);
+}
+
 const PARALLEL_NODE_CONCURRENCY = readParallelConcurrency();
 
 function readParallelConcurrency() {
@@ -145,6 +154,7 @@ async function runSuite(name, shard = null) {
       run('uv', ['run', '--project', ROOT, '--locked', '--extra', 'dev', 'pytest', '../tests', '-v'], path.join(ROOT, 'backend'));
       return;
     case 'electron':
+      ensureElectronBinary();
       await runNodeTestsParallel(ELECTRON_TESTS);
       return;
     case 'turns':

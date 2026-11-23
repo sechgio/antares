@@ -492,6 +492,11 @@ function run() {
       runner.includes('await runNodeTestsParallel(ELECTRON_TESTS)'),
     'The electron suite runs as a bounded, overridable pool of parallel Node workers',
   );
+  assert(
+    runner.includes('function ensureElectronBinary()') &&
+      runner.indexOf('ensureElectronBinary();') < runner.indexOf('await runNodeTestsParallel(ELECTRON_TESTS)'),
+    'The electron suite installs the binary once before the parallel pool',
+  );
   assert(runner.includes('runNodeTests(CONTRACT_TESTS)'), 'The contract suite stays serial');
   assert(runner.includes('node tests failed:'), 'The Node test pool fails closed naming every failed test file');
   assert(runner.includes("'test-quality-ratchet.js'"), 'test runner treats quality-ratchet as a contract test');
