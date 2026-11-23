@@ -1,4 +1,4 @@
-const { app, Menu, ipcMain, Tray, Notification } = require('electron');
+const { app, Menu, ipcMain, Tray } = require('electron');
 const { createWindow } = require('./window-manager');
 const { raceTimeout } = require('./async-utils');
 const { startPythonBackend, killPython } = require('./backend-spawner');
@@ -64,33 +64,6 @@ const isDev = !app.isPackaged;
 const ownsRuntime = app.requestSingleInstanceLock();
 if (!ownsRuntime) app.quit();
 let _tray = null;
-const _trayStates = new Map();
-let _trayPolling = false;
-
-async function _notifyAgentActivity() {
-  if (!_tray || _trayPolling || _shutdownStarted) return;
-  _trayPolling = true;
-  try {
-    const win = require('./window-manager').getMainWindow();
-    const states = await require('./agent-runtime').activitySnapshot();
-    for (const item of states) {
-      const previous = _trayStates.get(item.id);
-      _trayStates.set(item.id, item.status);
-      if (previous === item.status || win?.isVisible() || !Notification.isSupported()) continue;
-      const needsInput = item.status === 'waiting_input' || item.status === 'waiting_approval';
-      const ended = ['running', 'waiting_input', 'waiting_approval', 'waiting_event'].includes(previous)
-        && ['completed', 'failed', 'uncertain'].includes(item.status);
-      const needsReview = item.status === 'uncertain';
-      if (!needsInput && !ended && !needsReview) continue;
-      const body = item.status === 'waiting_approval' ? 'Necesita tu aprobación' : item.status === 'waiting_input' ? 'Necesita datos para continuar'
-        : item.status === 'failed' || needsReview ? 'El encargo requiere revisión' : 'El encargo terminó';
-      const notification = new Notification({ title: item.title, body });
-      notification.on('click', _showMainWindow);
-      notification.show();
-    }
-  } catch (err) { console.warn('[main] agent tray status failed:', err?.message); }
-  finally { _trayPolling = false; }
-}
 
 function _showMainWindow() {
   let win = require('./window-manager').getMainWindow();
@@ -142,21 +115,23 @@ app.whenReady().then(async () => {
     console.warn('[main] log/temp init failed:', err && err.message);
   }
   Menu.setApplicationMenu(null);
-  startPythonBackend(isDev).then(() => require('./agent-runtime').open()).catch((err) => {
-    console.error('[main] startPythonBackend threw:', err);
-  });
+  startPythonBackend(isDev)
+    .then(() => require('./agent-runtime').open())
+    .catch((err) => {
+      console.error('[main] startPythonBackend threw:', err);
+    });
   createWindow(isDev);
   _installWindowCloseGuard();
   _tray = new Tray(require('node:path').join(__dirname, '..', 'assets', 'icon.ico'));
   _tray.setToolTip('Antares');
-  _tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Mostrar Antares', click: _showMainWindow },
-    { type: 'separator' },
-    { label: 'Salir', click: () => app.quit() },
-  ]));
+  _tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Mostrar Antares', click: _showMainWindow },
+      { type: 'separator' },
+      { label: 'Salir', click: () => app.quit() },
+    ]),
+  );
   _tray.on('double-click', _showMainWindow);
-  const agentTrayTimer = setInterval(_notifyAgentActivity, 2000);
-  agentTrayTimer.unref?.();
   const canvasAssetGcInitialTimer = setTimeout(runCanvasAssetGc, CANVAS_ASSET_GC_INITIAL_DELAY_MS);
   canvasAssetGcInitialTimer.unref?.();
   const canvasAssetGcTimer = setInterval(runCanvasAssetGc, CANVAS_ASSET_GC_INTERVAL_MS);
@@ -177,7 +152,10 @@ function _shutdownOnce() {
   if (_shutdownStarted) return;
   _shutdownStarted = true;
   if (!ownsRuntime) return;
-  if (_tray) { _tray.destroy(); _tray = null; }
+  if (_tray) {
+    _tray.destroy();
+    _tray = null;
+  }
   appendLogLine('INFO', '[main] app quit');
   appendLogEvent('INFO', 'app.shutdown', { component: 'electron' });
   try {
@@ -193,7 +171,9 @@ function _shutdownOnce() {
     console.warn('[main] cleanupAutoUpdater threw during shutdown:', err && err.message);
   }
   try {
-    require('./agent-runtime').shutdown().catch(() => {});
+    require('./agent-runtime')
+      .shutdown()
+      .catch(() => {});
   } catch (err) {
     console.warn('[main] agent runtime shutdown threw:', err && err.message);
   }
@@ -332,7 +312,7 @@ async function _flushCanvasBeforeQuit(win) {
 
 async function _flushCanvasAndQuit(win) {
   try {
-    if (win && !win.isDestroyed() && await _flushCanvasBeforeQuit(win) === 'save_failed') {
+    if (win && !win.isDestroyed() && (await _flushCanvasBeforeQuit(win)) === 'save_failed') {
       _isQuittingDeferred = false;
       appendLogEvent('WARN', 'app.flush-aborted', { component: 'electron', reason: 'editor_save_failed' });
       return;
@@ -345,13 +325,18 @@ async function _flushCanvasAndQuit(win) {
   await raceTimeout(flushLogQueue(), 5_000, () => {});
   _allowQuit = true;
   if (win && !win.isDestroyed()) {
-    try { win.destroy(); } catch {}
+    try {
+      win.destroy();
+    } catch {}
   }
   app.quit();
 }
 
 app.on('before-quit', (event) => {
-  if (!ownsRuntime) { _allowQuit = true; return; }
+  if (!ownsRuntime) {
+    _allowQuit = true;
+    return;
+  }
   if (_allowQuit) return;
   if (_isQuittingDeferred) {
     event.preventDefault();
@@ -372,8 +357,14 @@ app.on('before-quit', (event) => {
 });
 app.on('will-quit', _shutdownOnce);
 process.on('exit', _shutdownOnce);
-process.on('SIGINT', () => { _shutdownOnce(); process.exit(0); });
-process.on('SIGTERM', () => { _shutdownOnce(); process.exit(0); });
+process.on('SIGINT', () => {
+  _shutdownOnce();
+  process.exit(0);
+});
+process.on('SIGTERM', () => {
+  _shutdownOnce();
+  process.exit(0);
+});
 
 app.on('window-all-closed', () => {
   if (!_tray && process.platform !== 'darwin') app.quit();
