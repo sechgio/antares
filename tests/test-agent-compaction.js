@@ -397,11 +397,9 @@ const toolResult = (id, name, text, ts = 3) => ({
 const toolCall = (id, name) => ({ type: 'toolCall', id, name, arguments: {} });
 
 async function main() {
-  {
-    assert(requestBudget(8192, 2048) === 5735, 'una ventana de 8 k reserva sitio para la respuesta y el prompt');
-    assert(requestBudget(128000, 8192) > 100000, 'una ventana grande conserva la mayor parte del historial');
-    assert(requestBudget(0) === 0 && requestBudget(undefined) === 0, 'sin ventana no se compacta');
-  }
+  assert(requestBudget(8192, 2048) === 5735, 'una ventana de 8 k reserva sitio para la respuesta y el prompt');
+  assert(requestBudget(128000, 8192) > 100000, 'una ventana grande conserva la mayor parte del historial');
+  assert(requestBudget(0) === 0 && requestBudget(undefined) === 0, 'sin ventana no se compacta');
 
   {
     const messages = [system('sys'), user('hola')];
