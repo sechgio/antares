@@ -39,6 +39,7 @@ import { useAgentProgress } from './useAgentProgress';
 import { METHOD_LABELS } from './methodLabels';
 import { useComposerAutocomplete, type ComposerSuggestion } from './useComposerAutocomplete';
 import { ApprovalCard, AssistantTurn, DaySeparator, MessageRow, ThinkingRow, ToolGroup, dayLabel, groupTurns, placeArtifacts, placePanels, type TranscriptView } from './AgentTimeline';
+import { activityText } from './statusPhrase';
 import { PlanCard } from './AgentPlanCard';
 
 const AgentFilePreview = lazy(() => import('./AgentFilePreview'));
@@ -95,14 +96,6 @@ type ConversationAttention = { key: string; text: string } & (
   | { kind: 'item'; target: string; action: string }
 );
 
-function activityText(tool?: string): string {
-  if (tool?.startsWith('fs_')) return 'Estoy trabajando con tus archivos.';
-  if (tool?.startsWith('web_')) return 'Estoy trabajando en la página.';
-  if (tool?.startsWith('desktop_')) return 'Estoy trabajando con la aplicación.';
-  if (tool === 'shell_run') return 'Estoy ejecutando la tarea.';
-  if (tool === 'subagent_run') return 'Estoy consultando a otro agente.';
-  return 'El agente está trabajando';
-}
 
 function newRequestId(): string {
   return crypto.randomUUID();

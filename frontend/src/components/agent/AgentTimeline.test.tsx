@@ -4,8 +4,8 @@ import contract from '../../../../shared/agent-plan.json';
 import { agentApi, type AgentMessage, type AgentPanel } from '../../api/agentApi';
 import { AGENT_PLAN_STATUSES } from '../../api/agentPlan';
 import { ApprovalCard, AssistantTurn, MessageRow, ThinkingRow, groupTurns, placeArtifacts, placePanels, stepsSummary } from './AgentTimeline';
+import { thinkingPhrase } from './statusPhrase';
 import { PlanCard } from './AgentPlanCard';
-import { reasoningRecap } from './Reasoning';
 import { FilePreviewContext } from './filePreviewContext';
 
 it('conserva los archivos junto al mensaje y abre su vista previa sin mostrar rutas internas', () => {
@@ -169,7 +169,7 @@ it('conserva la apertura elegida por el usuario cuando terminan las herramientas
   const message = (status: 'running' | 'done' | 'failed') => ({ role: 'assistant' as const, content: '', ts: 1,
     tool_calls: ['a', 'b', 'c'].map((id) => ({ id, name: 'canvas_list', params: {}, status: id === 'c' ? status : 'done' as const, gated: false })) });
   const { rerender } = render(<MessageRow msg={message('running')} />);
-  const summary = screen.getByRole('button', { expanded: true, name: 'Listar documentos de Canvas' });
+  const summary = screen.getByRole('button', { expanded: true, name: 'Trabajando en ello' });
   fireEvent.click(summary);
   fireEvent.click(summary);
   rerender(<MessageRow msg={message('done')} />);
@@ -262,10 +262,14 @@ it.each([
   ['normal', false, false, true],
   ['thinking', true, false, true],
   ['verbose', true, true, false],
-] as const)('la vista %s abre el razonamiento (%s), los pasos (%s) y pliega los anteriores (%s)', (view, thinking, steps, folds) => {
+] as const)('la vista %s muestra la cadena (%s), los pasos (%s) y pliega los anteriores (%s)', (view, thinking, steps, folds) => {
   const call = (id: string, status: 'done' | 'running') => ({ id, name: 'fs_read', params: { path: `${id}.txt` }, status, gated: false, result: `{"text":"contenido ${id}"}` });
   const { rerender } = render(<AssistantTurn view={view} messages={[{ role: 'assistant', content: 'Listo', reasoning: 'Comparo', ts: 1 }]} />);
-  expect(screen.getByRole('button', { name: /Pensó/ })).toHaveAttribute('aria-expanded', String(thinking));
+  if (thinking) expect(screen.getByRole('button', { name: /Pensó/ })).toHaveAttribute('aria-expanded', 'true');
+  else {
+    expect(screen.queryByRole('button', { name: /Pensó/ })).toBeNull();
+    expect(screen.queryByText('Comparo')).toBeNull();
+  }
   rerender(<AssistantTurn view={view} messages={[{ role: 'assistant', content: '', ts: 2, tool_calls: [call('a', 'done'), call('b', 'done')] }]} />);
   expect(screen.getByText('a.txt').closest('details')?.open).toBe(steps);
   rerender(<AssistantTurn view={view} messages={[{ role: 'assistant', content: '', ts: 3, partial: true,
@@ -338,20 +342,19 @@ it('copia el mensaje del usuario', () => {
   expect(writeText).toHaveBeenCalledWith('Revisa el informe');
 });
 
-it.each([
-  ['\n\n## Plan\nDespués', 'Plan'],
-  ['- Reviso **los** [archivos](C:/a) `uno`', 'Reviso los archivos uno'],
-  ['```ts\ncodigo', 'codigo'],
-  ['   ', ''],
-])('resume el razonamiento en su primera línea: %j', (text, recap) => {
-  expect(reasoningRecap(text)).toBe(recap);
+it('deja el chat en la respuesta y no adelanta la cadena', () => {
+  render(<MessageRow msg={{ role: 'assistant', content: 'Listo', reasoning: 'Comparo las plantillas\nY luego elijo', reasoning_ms: 2_000, ts: 1 }} />);
+  expect(screen.getByText('Listo')).toBeVisible();
+  expect(screen.queryByText(/Comparo/)).toBeNull();
+  expect(screen.queryByRole('button', { name: /Pensó/ })).toBeNull();
 });
 
-it('muestra la primera línea del razonamiento con el bloque cerrado', () => {
-  render(<MessageRow msg={{ role: 'assistant', content: 'Listo', reasoning: 'Comparo las plantillas\nY luego elijo', reasoning_ms: 2_000, ts: 1 }} />);
-  expect(screen.getByRole('button', { name: 'Pensó durante 2 s' })).toHaveTextContent('· Comparo las plantillas');
-  fireEvent.click(screen.getByRole('button', { name: 'Pensó durante 2 s' }));
-  expect(screen.getByRole('button', { name: 'Pensó durante 2 s' })).not.toHaveTextContent('Comparo');
+it('en la vista de pensamiento la fila cerrada no copia la cadena', () => {
+  render(<AssistantTurn view="thinking" messages={[{ role: 'assistant', content: 'Listo', reasoning: 'Comparo las plantillas\nY luego elijo', reasoning_ms: 2_000, ts: 1 }]} />);
+  const toggle = screen.getByRole('button', { name: 'Pensó durante 2 s' });
+  fireEvent.click(toggle);
+  expect(toggle).not.toHaveTextContent('Comparo');
+  expect(screen.getByText(/Comparo/).closest('[aria-hidden="true"]')).not.toBeNull();
 });
 
 it('pinta los avisos del sistema aparte sin quitar la respuesta ni mezclarse con el trabajo', () => {
@@ -455,6 +458,19 @@ it('muestra el comando completo antes de aprobarlo aunque supere los 400 caracte
     params: { command },
   }} />);
   expect(screen.getByText(command, { exact: true })).toBeVisible();
+});
+
+it('resume el trabajo en curso sin pegar el comando en la fila', () => {
+  const command = 'Remove-Item -Recurse -Force C:\\datos\\viejo';
+  const call = (id: string, status: 'done' | 'running', name = 'fs_read') => ({
+    id, name, params: name === 'shell_run' ? { command } : { path: `${id}.txt` }, status, gated: false,
+  });
+  render(<MessageRow msg={{ role: 'assistant', content: '', partial: true, ts: 1, tool_calls: [
+    call('a', 'done'), call('b', 'done'), call('c', 'done'), call('d', 'running', 'shell_run'),
+  ] }} />);
+  expect(screen.getByRole('button', { name: 'Ejecutando algunos comandos' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Ejecutando algunos comandos' })).not.toHaveTextContent(command);
+  expect(screen.getByRole('button', { name: /Ejecutando Remove-Item/ })).toBeVisible();
 });
 
 it('muestra los comandos como terminal: abierta y animada mientras corre, con su salida al terminar', () => {
@@ -603,31 +619,36 @@ it('anima al agente solo durante la respuesta y mantiene un estado textual de tr
   expect(screen.getByRole('img', { name: 'Antares' }).querySelector('path')).toHaveAttribute('stroke', agent.color);
 });
 
-it('muestra el razonamiento abierto mientras piensa y lo pliega al responder sin pisar la elección del usuario', () => {
+it('mientras piensa solo muestra el estado y, al responder, deja la cadena fuera del chat', () => {
   const reasoning = 'Comparo las dos plantillas';
   const { rerender } = render(<MessageRow msg={{ role: 'assistant', content: '', reasoning, partial: true, ts: 1 }} />);
-  const toggle = screen.getByRole('button', { name: /Pensando/ });
-  expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  expect(screen.getByText(reasoning).closest('[aria-hidden="true"]')).toBeNull();
+  expect(screen.getByRole('status')).toHaveTextContent(thinkingPhrase('reasoning-0'));
+  expect(screen.queryByText(reasoning)).not.toBeInTheDocument();
 
-  rerender(<MessageRow msg={{ role: 'assistant', content: 'Usa la B', reasoning, partial: true, ts: 1 }} />);
+  rerender(<MessageRow msg={{ role: 'assistant', content: 'Usa la B', reasoning, ts: 1 }} />);
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  expect(screen.queryByText(reasoning)).not.toBeInTheDocument();
+  expect(screen.getByText('Usa la B')).toBeVisible();
+});
+
+it('en la vista de pensamiento mantiene abierta la cadena que el usuario no cerró', () => {
+  const reasoning = 'Comparo las dos plantillas';
+  const { rerender } = render(<AssistantTurn view="thinking" messages={[{ role: 'assistant', content: '', reasoning, partial: true, ts: 1 }]} />);
+  expect(screen.getByRole('button', { name: /Pensando/ })).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByText(reasoning)).toBeVisible();
+
+  fireEvent.click(screen.getByRole('button', { name: /Pensando/ }));
+  rerender(<AssistantTurn view="thinking" messages={[{ role: 'assistant', content: 'Usa la B', reasoning, ts: 1 }]} />);
   expect(screen.getByRole('button', { name: /Pensó/ })).toHaveAttribute('aria-expanded', 'false');
   expect(screen.getByText(reasoning).closest('[aria-hidden="true"]')).not.toBeNull();
-
-  fireEvent.click(screen.getByRole('button', { name: /Pensó/ }));
-  rerender(<MessageRow msg={{ role: 'assistant', content: 'Usa la B', reasoning, ts: 1 }} />);
-  expect(screen.getByRole('button', { name: /Pensó/ })).toHaveAttribute('aria-expanded', 'true');
-  expect(screen.getByText(reasoning).closest('[aria-hidden="true"]')).toBeNull();
 });
 
 it('da por terminado el pensamiento cuando la ronda pasa a una acción, como pi-durable', () => {
   render(<MessageRow msg={{ role: 'assistant', content: '', reasoning: 'Leo el **Excel** primero', reasoning_ms: 3_000, partial: true, ts: 1,
     tool_calls: [{ id: 'r', name: 'fs_read', params: { path: 'a.xlsx' }, status: 'running', gated: false }] }} />);
   expect(screen.queryByText('Pensando…')).not.toBeInTheDocument();
-  const toggle = screen.getByRole('button', { name: 'Pensó durante 3 s' });
-  expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  fireEvent.click(toggle);
-  expect(screen.getByText('Excel').tagName).toBe('STRONG');
+  expect(screen.queryByText('Excel')).not.toBeInTheDocument();
+  expect(screen.getByText('a.xlsx')).toBeVisible();
 });
 
 it('no dibuja bloque de razonamiento cuando el modelo no lo expone', () => {
@@ -635,12 +656,13 @@ it('no dibuja bloque de razonamiento cuando el modelo no lo expone', () => {
   expect(screen.queryByRole('button', { name: /Pens/ })).toBeNull();
 });
 
-it('indica cuánto tardó en pensar', () => {
-  const { rerender } = render(<MessageRow msg={{ role: 'assistant', content: 'Listo', reasoning: 'Analizo', reasoning_ms: 12_400, ts: 1 }} />);
+it('indica cuánto tardó en pensar en la vista de pensamiento', () => {
+  const message = (reasoning_ms?: number) => ({ role: 'assistant' as const, content: 'Listo', reasoning: 'Analizo', reasoning_ms, ts: 1 });
+  const { rerender } = render(<AssistantTurn view="thinking" messages={[message(12_400)]} />);
   expect(screen.getByRole('button', { name: 'Pensó durante 12 s' })).toBeInTheDocument();
-  rerender(<MessageRow msg={{ role: 'assistant', content: 'Listo', reasoning: 'Analizo', reasoning_ms: 75_000, ts: 1 }} />);
+  rerender(<AssistantTurn view="thinking" messages={[message(75_000)]} />);
   expect(screen.getByRole('button', { name: 'Pensó durante 1 min 15 s' })).toBeInTheDocument();
-  rerender(<MessageRow msg={{ role: 'assistant', content: 'Listo', reasoning: 'Analizo', ts: 1 }} />);
+  rerender(<AssistantTurn view="thinking" messages={[message()]} />);
   expect(screen.getByRole('button', { name: 'Pensó' })).toBeInTheDocument();
 });
 

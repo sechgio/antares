@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Brain, ChevronRight } from 'lucide-react';
 import MessageMarkdown from './MessageMarkdown';
+import { thinkingPhrase } from './statusPhrase';
 
 function thoughtLabel(ms?: number): [string, string] {
   if (ms === undefined) return ['Pensó', ''];
@@ -10,13 +11,14 @@ function thoughtLabel(ms?: number): [string, string] {
   return ['Pensó', ` durante ${Math.floor(seconds / 60)} min ${seconds % 60} s`];
 }
 
-export function reasoningRecap(text: string): string {
-  for (const raw of text.split('\n')) {
-    const line = raw.trim().replace(/^```[\w-]*$/, '').replace(/^#{1,6}\s+/, '').replace(/^(?:[-*+]|\d{1,3}\.)\s+/, '')
-      .replace(/^>\s*/, '').replace(/\[([^\]]*)\]\([^)\s]*\)/g, '$1').replace(/[`*]+/g, '').trim();
-    if (line) return line.length > 200 ? `${line.slice(0, 200)}…` : line;
-  }
-  return '';
+export function ThinkingStatus({ seed }: { seed: string }) {
+  const label = thinkingPhrase(seed);
+  return (
+    <p className="flex min-h-6 items-center gap-2 py-0.5 text-[13px] leading-5 text-[var(--text-muted)]" role="status">
+      <Brain size={14} aria-hidden="true" className="shrink-0 text-[var(--text-secondary)]" />
+      <span className="agent-shimmer">{label}</span>
+    </p>
+  );
 }
 
 export default function Reasoning({ text, streaming, ms, defaultOpen = false }: { text: string; streaming: boolean; ms?: number; defaultOpen?: boolean }) {
@@ -24,7 +26,6 @@ export default function Reasoning({ text, streaming, ms, defaultOpen = false }: 
   const bodyId = useId();
   const bodyRef = useRef<HTMLDivElement>(null);
   const open = openOverride ?? (streaming || defaultOpen);
-  const recap = !open && !streaming ? reasoningRecap(text) : '';
   const [verb, duration] = thoughtLabel(ms);
 
   useEffect(() => {
@@ -47,7 +48,6 @@ export default function Reasoning({ text, streaming, ms, defaultOpen = false }: 
             <span className="text-[var(--text-secondary)]">{verb}</span>{duration}
           </span>
         )}
-        {recap && <span aria-hidden="true" title={recap} className="min-w-0 truncate">· {recap}</span>}
         <ChevronRight
           size={14}
           aria-hidden="true"
