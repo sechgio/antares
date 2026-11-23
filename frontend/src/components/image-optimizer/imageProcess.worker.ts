@@ -1,3 +1,4 @@
+/// <reference lib="webworker" />
 import type { BatchSettings, CropOffset } from './types';
 import { computeResizeDimensions, getCropRectangle, getOutputMimeType } from './utils';
 import { errorMessage } from '@/utils/errors';
