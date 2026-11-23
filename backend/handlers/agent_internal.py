@@ -61,10 +61,6 @@ _NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_exp
 _APP_SCOPED_PREFIXES = ("cua_",)
 _CLOUD_UPLOADS = frozenset({"gdrive_upload", "onedrive_upload"})
 _META_METHODS = frozenset({"task_schedule"})
-# Métodos que el guard PUEDE auto-aprobar cuando el comando es lectura pura.
-# Deliberadamente vacío: la política vigente exige que los comandos de shell los
-# decida siempre el humano. El guard solo etiqueta el riesgo. Ampliar este
-# conjunto es una decisión de política explícita, no un efecto de la heurística.
 _GUARD_AUTOAPPROVE_METHODS: frozenset[str] = frozenset()
 
 
@@ -154,9 +150,6 @@ def _provider(params: JsonObject) -> JsonObject:
     if auth.get("type") == "api_key" and not (isinstance(api_key, str) and api_key):
         raise ValidationError("Configura la clave del proveedor en Proveedores IA")
     base = config.get("base_url") or spec.get("base_url")
-    # pi-ai usa los SDK oficiales: añaden "/chat/completions" (openai) o
-    # "/v1/messages" (anthropic) al baseUrl. El wire base es el endpoint del
-    # catálogo menos ese sufijo (p. ej. Ollama sirve "/v1/chat/completions").
     style = str(chat_spec.get("style") or "")
     endpoint = ""
     if isinstance(base, str) and base:
@@ -303,7 +296,6 @@ def _file_preview(params: JsonObject) -> JsonObject:
     session_id = str(params["session_id"])
     try:
         if params.get("selected_file"):
-            # Solo el puente nativo proporciona un adjunto seleccionado pendiente.
             target = Path(str(resource_grants.grant_record(params["selected_file"], None)["path"]))
         else:
             value = params.get("resource")

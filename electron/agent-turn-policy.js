@@ -1,15 +1,12 @@
 'use strict';
 
-// Techo absoluto por firma: el polling con resultados nuevos no puede superarlo.
 const MAX_CALLS_PER_SIGNATURE = 10;
 const MAX_SILENT_TURNS = 5;
-// Código con el que pi-durable marca una llamada bloqueada por `beforeTool`.
 const BLOCKED_DIAGNOSTIC = 'blocked';
-const SILENT_TURN_NOTE = `El agente encadenó ${MAX_SILENT_TURNS} turnos seguidos sin salida visible. `
-  + 'Detuve el turno para evitar un bucle; intenta enviar el encargo de nuevo.';
+const SILENT_TURN_NOTE =
+  `El agente encadenó ${MAX_SILENT_TURNS} turnos seguidos sin salida visible. ` +
+  'Detuve el turno para evitar un bucle; intenta enviar el encargo de nuevo.';
 
-// Una ronda de herramientas reinicia el silencio solo si avanzó: un resultado
-// nuevo o un error que no fue un bloqueo del propio motor.
 async function trackSilentToolRound(turn, results, api, context) {
   if (!turn.pendingSilent) return;
   turn.pendingSilent = false;
@@ -29,8 +26,6 @@ async function trackSilentToolRound(turn, results, api, context) {
   turn.roundProgress = false;
 }
 
-// `visible` lo calcula agent-execution.js con el mismo criterio que usa para
-// decidir si una respuesta llegó vacía.
 function trackSilentTurn(message, turn, visible) {
   if (visible) {
     turn.silentTurns = 0;
@@ -44,8 +39,6 @@ function trackSilentTurn(message, turn, visible) {
   } else {
     turn.silentTurns += 1;
   }
-  // El corte se evalúa al recibir la respuesta, así que una respuesta con texto
-  // visible siempre reinicia el contador antes de cerrar el turno por silencio.
   if (turn.silentTurns >= MAX_SILENT_TURNS) {
     message.stopReason = 'error';
     message.errorMessage = SILENT_TURN_NOTE;

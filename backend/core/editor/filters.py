@@ -14,8 +14,6 @@ def _num(value: Any) -> str:
 def trim_video(source_in_us: int, source_out_us: int) -> str:
     start = _us_to_seconds(source_in_us)
     end = _us_to_seconds(source_out_us)
-    # trim es semiabierto en el sentido de descartar >= end; se usa un
-    # epsilon de un microsegundo para incluir el último cuadro.
     end_adj = end + 1e-6
     return f"trim=start={_num(start)}:end={_num(end_adj)},setpts=PTS-STARTPTS"
 
@@ -142,9 +140,6 @@ def delogo_rects(rects: list[dict[str, Any]], width_px: int, height_px: int) -> 
             raise ValueError(
                 "la máscara delogo excede el fotograma; acércala a la región visible"
             )
-        # El filtro delogo del build rechaza rectángulos que toquen el
-        # borde exacto ("Logo area is outside of the frame" cuando y+h o
-        # x+w igualan la dimensión): se exige un píxel de margen.
         if x + w >= width_px or y + h >= height_px:
             raise ValueError(
                 "la máscara delogo toca el borde del fotograma; deja al menos un píxel de margen"

@@ -139,9 +139,6 @@ def test_offline_baseline_executes_all_named_scenarios_with_representative_fixtu
 
 
 def test_serialized_payload_stays_bounded_without_the_full_baseline_run() -> None:
-    # Contrato barato extraído del baseline 10x: serialize_result nunca
-    # embute el corpus completo; el límite se comprueba con los fixtures
-    # 10x y un resultado representativo, sin ejecutar el baseline completo.
     collector = MetricCollector("images", "10x")
     collector.observe(duration_ms=1.0, ipc_bytes=0, request_count=1)
     result = serialize_result(

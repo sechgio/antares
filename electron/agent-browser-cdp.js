@@ -2,11 +2,6 @@
 
 const { EventEmitter } = require('node:events');
 
-// Adaptador PageContents (ADR 0005): presenta una pestaña de un Chromium externo,
-// controlada por CDP, con el subconjunto de WebContents que usan las herramientas web_*.
-// El transporte se inyecta: { send(method, params, sessionId) → Promise, on(listener) → unsubscribe }.
-// Quien lo abre activa Target.setDiscoverTargets en el navegador: de ahí salen el título y el cierre.
-
 const FORBIDDEN_PAGE = new Set(['Page.setDownloadBehavior']);
 const ALLOWED_EXACT = new Set(['Runtime.evaluate', 'Network.enable', 'Emulation.setFocusEmulationEnabled']);
 const CONSOLE_LEVELS = { error: 'error', assert: 'error', warning: 'warning', debug: 'debug' };
@@ -19,7 +14,9 @@ function allowed(method) {
 }
 
 function forbidden(method) {
-  return Object.assign(new Error(`El navegador del agente no permite la orden CDP ${method}`), { code: 'CDP_FORBIDDEN' });
+  return Object.assign(new Error(`El navegador del agente no permite la orden CDP ${method}`), {
+    code: 'CDP_FORBIDDEN',
+  });
 }
 
 function evaluationError(details) {
@@ -28,7 +25,9 @@ function evaluationError(details) {
 }
 
 function consoleText(args = []) {
-  return args.map((arg) => (arg.value !== undefined ? String(arg.value) : String(arg.description || arg.type || ''))).join(' ');
+  return args
+    .map((arg) => (arg.value !== undefined ? String(arg.value) : String(arg.description || arg.type || '')))
+    .join(' ');
 }
 
 function defaultImage(buffer) {
@@ -38,7 +37,14 @@ function defaultImage(buffer) {
 async function createCdpContents(transport, { targetId, sessionId, imageFromBuffer = defaultImage }) {
   const contents = new EventEmitter();
   const debuggerEvents = new EventEmitter();
-  const page = { url: '', title: '', loading: false, destroyed: false, history: { index: 0, entries: [] }, frameId: null };
+  const page = {
+    url: '',
+    title: '',
+    loading: false,
+    destroyed: false,
+    history: { index: 0, entries: [] },
+    frameId: null,
+  };
   const loads = new Set();
   let attached = false;
   const call = (method, params = {}) => transport.send(method, params, sessionId);
@@ -48,10 +54,14 @@ async function createCdpContents(transport, { targetId, sessionId, imageFromBuff
     try {
       const history = await call('Page.getNavigationHistory');
       page.history = { index: history.currentIndex, entries: history.entries || [] };
-    } catch { }
+    } catch {}
   };
   const settleLoads = (error) => {
-    for (const load of [...loads]) { loads.delete(load); if (error) load.reject(error); else load.resolve(); }
+    for (const load of [...loads]) {
+      loads.delete(load);
+      if (error) load.reject(error);
+      else load.resolve();
+    }
   };
   const destroy = () => {
     if (page.destroyed) return;
@@ -82,7 +92,10 @@ async function createCdpContents(transport, { targetId, sessionId, imageFromBuff
       page.url = String(params.url || '');
       refreshHistory().then(() => contents.emit('did-navigate-in-page', {}, page.url));
     } else if (method === 'Runtime.consoleAPICalled') {
-      contents.emit('console-message', { level: CONSOLE_LEVELS[params.type] || 'info', message: consoleText(params.args) });
+      contents.emit('console-message', {
+        level: CONSOLE_LEVELS[params.type] || 'info',
+        message: consoleText(params.args),
+      });
     }
   };
 
@@ -95,8 +108,11 @@ async function createCdpContents(transport, { targetId, sessionId, imageFromBuff
       page.title = String(params.targetInfo.title || '');
       if (params.targetInfo.url) page.url = String(params.targetInfo.url);
       if (titleChanged) contents.emit('page-title-updated', {}, page.title);
-    } else if (!from && ((method === 'Target.targetDestroyed' && params.targetId === targetId)
-      || (method === 'Target.detachedFromTarget' && params.sessionId === sessionId))) {
+    } else if (
+      !from &&
+      ((method === 'Target.targetDestroyed' && params.targetId === targetId) ||
+        (method === 'Target.detachedFromTarget' && params.sessionId === sessionId))
+    ) {
       destroy();
     }
   });
@@ -109,19 +125,30 @@ async function createCdpContents(transport, { targetId, sessionId, imageFromBuff
     getZoomFactor: () => 1,
     setZoomFactor: () => {},
     async executeJavaScript(code, userGesture = false) {
-      const { result = {}, exceptionDetails } = await call('Runtime.evaluate',
-        { expression: String(code), returnByValue: true, awaitPromise: true, userGesture: !!userGesture });
+      const { result = {}, exceptionDetails } = await call('Runtime.evaluate', {
+        expression: String(code),
+        returnByValue: true,
+        awaitPromise: true,
+        userGesture: !!userGesture,
+      });
       if (exceptionDetails) throw evaluationError(exceptionDetails);
       return result.value;
     },
-    // Mundo aislado recién creado en cada llamada: un contexto de una navegación anterior ya no existe.
     async executeJavaScriptInIsolatedWorld(worldId, scripts, userGesture = false) {
-      const { executionContextId } = await call('Page.createIsolatedWorld',
-        { frameId: page.frameId, worldName: `antares-${worldId}`, grantUniveralAccess: false });
+      const { executionContextId } = await call('Page.createIsolatedWorld', {
+        frameId: page.frameId,
+        worldName: `antares-${worldId}`,
+        grantUniveralAccess: false,
+      });
       let value;
       for (const script of scripts) {
-        const { result = {}, exceptionDetails } = await call('Runtime.evaluate', { expression: String(script.code),
-          contextId: executionContextId, returnByValue: true, awaitPromise: true, userGesture: !!userGesture });
+        const { result = {}, exceptionDetails } = await call('Runtime.evaluate', {
+          expression: String(script.code),
+          contextId: executionContextId,
+          returnByValue: true,
+          awaitPromise: true,
+          userGesture: !!userGesture,
+        });
         if (exceptionDetails) throw evaluationError(exceptionDetails);
         value = result.value;
       }
@@ -129,7 +156,7 @@ async function createCdpContents(transport, { targetId, sessionId, imageFromBuff
     },
     async loadURL(url) {
       const done = new Promise((resolve, reject) => loads.add({ resolve, reject }));
-      done.catch(() => { });
+      done.catch(() => {});
       const result = await call('Page.navigate', { url: String(url) });
       if (result.errorText) {
         settleLoads(new Error(`${result.errorText} cargando ${url}`));
@@ -138,28 +165,36 @@ async function createCdpContents(transport, { targetId, sessionId, imageFromBuff
       if (!result.loaderId) settleLoads();
       return done;
     },
-    reload() { call('Page.reload').catch(() => { }); },
+    reload() {
+      call('Page.reload').catch(() => {});
+    },
     navigationHistory: {
       canGoBack: () => page.history.index > 0,
       canGoForward: () => page.history.index < page.history.entries.length - 1,
       goBack() {
         const entry = page.history.entries[page.history.index - 1];
-        if (entry) call('Page.navigateToHistoryEntry', { entryId: entry.id }).catch(() => { });
+        if (entry) call('Page.navigateToHistoryEntry', { entryId: entry.id }).catch(() => {});
       },
       goForward() {
         const entry = page.history.entries[page.history.index + 1];
-        if (entry) call('Page.navigateToHistoryEntry', { entryId: entry.id }).catch(() => { });
+        if (entry) call('Page.navigateToHistoryEntry', { entryId: entry.id }).catch(() => {});
       },
     },
     async capturePage() {
       const shot = await call('Page.captureScreenshot', { format: 'png' });
       return imageFromBuffer(Buffer.from(String(shot.data || ''), 'base64'));
     },
-    close() { browserCall('Target.closeTarget', { targetId }).catch(() => { }); },
+    close() {
+      browserCall('Target.closeTarget', { targetId }).catch(() => {});
+    },
     debugger: Object.assign(debuggerEvents, {
       isAttached: () => attached,
-      attach: () => { attached = true; },
-      detach: () => { attached = false; },
+      attach: () => {
+        attached = true;
+      },
+      detach: () => {
+        attached = false;
+      },
       async sendCommand(method, params = {}) {
         if (!allowed(method)) throw forbidden(method);
         return call(method, params);

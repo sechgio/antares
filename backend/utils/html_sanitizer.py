@@ -19,9 +19,6 @@ SAFE_DATA_URI_PREFIXES = (
 )
 
 
-# Numeric refs decode in browsers without the trailing semicolon; named refs
-# keep it required (the no-semicolon legacy named set is not decoded inside
-# attributes when followed by alnum/'=', so requiring ';' matches that).
 _URL_ENTITY_RE = re.compile(r"&(?:#(x[0-9a-fA-F]+|\d+);?|([a-zA-Z][a-zA-Z0-9]*);)")
 _NAMED_URL_ENTITIES = {
     "colon": ":", "tab": "\t", "newline": "\n", "sol": "/", "bsol": "\\",
@@ -77,7 +74,6 @@ def _neutralize_url_attr(match: re.Match[str]) -> str:
         return match.group(0)
     if scheme in ("javascript", "vbscript") or cleaned.startswith(("javascript:", "vbscript:")):
         return f"{attr}={quote}{quote}"
-    # Protocol-relative (//host/path) hereda http(s) del documento: neutralizar.
     if cleaned.startswith("//"):
         return f"{attr}={quote}{quote}"
     if scheme in ("http", "https", "file"):

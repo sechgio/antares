@@ -474,7 +474,9 @@ function run() {
   );
   assert(packageJson.scripts.test === 'node scripts/run-test-suites.js', 'full suite delegates to run-test-suites.js');
   assert(
-    runner.includes("run('uv', ['run', '--project', ROOT, '--locked', '--extra', 'dev', 'pytest', '../tests', '-v']"),
+    runner
+      .replace(/\s+/g, '')
+      .includes("run('uv',['run','--project',ROOT,'--locked','--extra','dev','pytest','../tests','-v']"),
     'test runner runs pytest through the locked Python environment',
   );
   assert(

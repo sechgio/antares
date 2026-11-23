@@ -1,10 +1,6 @@
 const http = require('http');
 const { assertOrExit: assert } = require('./helpers/harness');
-const {
-  beginBrowserOAuthFlow,
-  createPendingFlow,
-  wireBrowserCallbackServer,
-} = require('../electron/oauth-session');
+const { beginBrowserOAuthFlow, createPendingFlow, wireBrowserCallbackServer } = require('../electron/oauth-session');
 const { findAvailablePort } = require('../electron/autoimg-oauth-flow');
 
 const probe = (p, path = '/') =>
@@ -18,8 +14,6 @@ const probe = (p, path = '/') =>
   });
 
 async function main() {
-  // Guardia del flujo vigente: cancel detiene el servidor activo y limpia los
-  // slots del intento pendiente.
   {
     const pending = createPendingFlow();
     pending.slots.redirectUri = 'http://127.0.0.1:1';
@@ -28,20 +22,17 @@ async function main() {
     let stopped = false;
     const guard = pending.start();
     assert(guard.isCurrent(), 'start marca el flujo como vigente');
-    guard.setStop(() => { stopped = true; });
+    guard.setStop(() => {
+      stopped = true;
+    });
     pending.cancel();
     assert(stopped, 'cancel detiene el servidor del flujo vigente');
     assert(
-      pending.slots.redirectUri === null
-      && pending.slots.codeVerifier === null
-      && pending.slots.state === null,
+      pending.slots.redirectUri === null && pending.slots.codeVerifier === null && pending.slots.state === null,
       'cancel limpia redirect_uri, verifier y state pendientes',
     );
   }
 
-  // Orquestación completa sobre servidores reales: un segundo begin cierra el
-  // servidor del intento anterior y el callback vigente entrega code + target
-  // a connect y el estado final a onComplete.
   {
     const pending = createPendingFlow();
     const portA = await findAvailablePort();
@@ -53,7 +44,9 @@ async function main() {
     let next = 0;
     const seen = [];
     let resolveComplete;
-    const completed = new Promise((resolve) => { resolveComplete = resolve; });
+    const completed = new Promise((resolve) => {
+      resolveComplete = resolve;
+    });
     const options = {
       label: 'Test',
       resolveTarget: async () => targets[next++],
@@ -63,16 +56,23 @@ async function main() {
         seen.push(`connect:${code}`, `target:${target.port}`, `verifier:${pending.slots.codeVerifier}`);
         return { authenticated: true, port: target.port };
       },
-      onComplete: (status) => { resolveComplete(status); },
-      onError: () => { resolveComplete(null); },
+      onComplete: (status) => {
+        resolveComplete(status);
+      },
+      onError: () => {
+        resolveComplete(null);
+      },
     };
 
     const first = await beginBrowserOAuthFlow(pending, options);
     assert(first.redirect_uri === targets[0].redirectUri, 'begin devuelve el redirect_uri del primer intento');
-    assert(await probe(portA, '/ruta-desconocida') === 404, 'el primer intento deja su servidor vivo');
+    assert((await probe(portA, '/ruta-desconocida')) === 404, 'el primer intento deja su servidor vivo');
 
     const { url, redirect_uri: redirectUri } = await beginBrowserOAuthFlow(pending, options);
-    assert(url.includes(`redirect_uri=${encodeURIComponent(targets[1].redirectUri)}`), 'begin construye la URL del proveedor con el redirect vigente');
+    assert(
+      url.includes(`redirect_uri=${encodeURIComponent(targets[1].redirectUri)}`),
+      'begin construye la URL del proveedor con el redirect vigente',
+    );
     assert(url.includes('code_challenge=') && url.includes('state='), 'begin incluye PKCE y state en la URL');
     assert(redirectUri === targets[1].redirectUri, 'begin devuelve el redirect_uri del intento vigente');
     assert(pending.slots.redirectUri === redirectUri, 'begin guarda el redirect_uri pendiente');
@@ -95,8 +95,14 @@ async function main() {
       seen[0] === `connect:${code}` && seen[1] === `target:${portB}`,
       'connect recibe el callback code y el target del intento vigente',
     );
-    assert(seen[2].startsWith('verifier:') && seen[2] !== 'verifier:null', 'connect ve el verifier antes de la cancelación');
-    assert(status !== null && status.authenticated === true && status.port === portB, 'onComplete recibe el estado devuelto por connect');
+    assert(
+      seen[2].startsWith('verifier:') && seen[2] !== 'verifier:null',
+      'connect ve el verifier antes de la cancelación',
+    );
+    assert(
+      status !== null && status.authenticated === true && status.port === portB,
+      'onComplete recibe el estado devuelto por connect',
+    );
     assert(
       pending.slots.redirectUri === null && pending.slots.codeVerifier === null && pending.slots.state === null,
       'el flujo completado limpia los slots pendientes',
@@ -110,7 +116,6 @@ async function main() {
     assert(closedAfterFinish === 'refused', 'el servidor se cierra al completar el flujo');
   }
 
-  // State incorrecto: onDenied invalid_state, sin connect ni onComplete.
   {
     const pending = createPendingFlow();
     const port = await findAvailablePort();
@@ -118,11 +123,16 @@ async function main() {
     await beginBrowserOAuthFlow(pending, {
       label: 'Test',
       resolveTarget: async () => ({ port, redirectUri: `http://127.0.0.1:${port}` }),
-      buildAuthUrl: (redirectTarget, codeChallenge, state) =>
-        `https://auth.example/authorize?state=${state}`,
-      connect: async () => { throw new Error('connect no debe ejecutarse'); },
-      onComplete: () => { errors.push('onComplete'); },
-      onError: (err) => { errors.push(err instanceof Error ? err.message : String(err)); },
+      buildAuthUrl: (redirectTarget, codeChallenge, state) => `https://auth.example/authorize?state=${state}`,
+      connect: async () => {
+        throw new Error('connect no debe ejecutarse');
+      },
+      onComplete: () => {
+        errors.push('onComplete');
+      },
+      onError: (err) => {
+        errors.push(err instanceof Error ? err.message : String(err));
+      },
     });
     const statuses = await probe(port, '/?code=CODE&state=falso');
     assert(statuses === 400, 'un state inválido responde 400');
@@ -134,14 +144,15 @@ async function main() {
     );
   }
 
-  // callbackPath: el armado respeta el path del proveedor y rechaza el resto.
   {
     const pending = createPendingFlow();
     const port = await findAvailablePort();
     const state = 'estado-pendiente';
     const seen = [];
     let resolveComplete;
-    const completed = new Promise((resolve) => { resolveComplete = resolve; });
+    const completed = new Promise((resolve) => {
+      resolveComplete = resolve;
+    });
     const guard = pending.start();
     wireBrowserCallbackServer({
       port,
@@ -152,8 +163,12 @@ async function main() {
         seen.push(`${code}@${port}`);
         return { ok: true };
       },
-      onComplete: (status) => { resolveComplete(status); },
-      onError: () => { resolveComplete(null); },
+      onComplete: (status) => {
+        resolveComplete(status);
+      },
+      onError: () => {
+        resolveComplete(null);
+      },
       cancel: pending.cancel,
       isCurrent: guard.isCurrent,
       setStop: guard.setStop,

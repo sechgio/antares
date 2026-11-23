@@ -63,7 +63,6 @@ def _spill_payload(doc_id: str, payload: dict[str, Any], suffix: str = ".json") 
         spill_dir.mkdir(parents=True, exist_ok=True)
         tmp = final.with_name(f"{final.name}.{uuid.uuid4().hex}.tmp")
         tmp.write_bytes(encoded)
-        # Windows cannot reliably replace the same path from concurrent callbacks.
         with _spill_replace_lock:
             tmp.replace(final)
         return str(final)

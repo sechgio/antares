@@ -36,11 +36,7 @@ async function main() {
 
     const docsDir = path.join(fakeHome, 'Antares', 'canvas', 'documents');
     await fsp.mkdir(docsDir, { recursive: true });
-    await fsp.writeFile(
-      path.join(docsDir, 'doc1.json'),
-      JSON.stringify({ layers: [{ value: kept.ref }] }),
-      'utf8',
-    );
+    await fsp.writeFile(path.join(docsDir, 'doc1.json'), JSON.stringify({ layers: [{ value: kept.ref }] }), 'utf8');
 
     const pendingAsset = await putCanvasAsset(Buffer.from('pending-asset-eeeeeeee'));
     const pendingAssetPath = path.join(assetsDir(), pendingAsset.asset_id);
@@ -128,7 +124,10 @@ async function main() {
     const reusable = await putCanvasAsset(reusableBytes);
     const reusablePath = path.join(assetsDir(), reusable.asset_id);
     fs.utimesSync(reusablePath, old, old);
-    await fsp.writeFile(pendingFile, JSON.stringify([{ id: reusable.asset_id, at: Date.now() - 8 * 24 * 60 * 60 * 1000 }]));
+    await fsp.writeFile(
+      pendingFile,
+      JSON.stringify([{ id: reusable.asset_id, at: Date.now() - 8 * 24 * 60 * 60 * 1000 }]),
+    );
     const realReadFile = fsp.readFile;
     const realCreateHash = crypto.createHash;
     let assetReads = 0;
@@ -144,7 +143,9 @@ async function main() {
     try {
       for (let i = 0; i < 3; i += 1) {
         assert.deepStrictEqual(await getCanvasAssetInfo(reusable.ref), {
-          ref: reusable.ref, asset_id: reusable.asset_id, bytes: reusableBytes.length,
+          ref: reusable.ref,
+          asset_id: reusable.asset_id,
+          bytes: reusableBytes.length,
         });
       }
       assert.strictEqual(assetReads, 1, 'unchanged asset info reads and verifies the bytes only once');
@@ -171,8 +172,12 @@ async function main() {
     await fsp.writeFile(pendingFile, '[]');
     let releaseGc;
     let signalGc;
-    const gcPaused = new Promise((resolve) => { signalGc = resolve; });
-    const gcGate = new Promise((resolve) => { releaseGc = resolve; });
+    const gcPaused = new Promise((resolve) => {
+      signalGc = resolve;
+    });
+    const gcGate = new Promise((resolve) => {
+      releaseGc = resolve;
+    });
     let pauseNextRead = true;
     const realStat = fsp.stat;
     let validationStarted = false;
@@ -191,7 +196,10 @@ async function main() {
     try {
       const collecting = gcOrphanCanvasAssets({ graceMs: GC_GRACE_MS });
       await gcPaused;
-      const checked = getCanvasAssetInfo(racing.ref).then(() => null, (error) => error);
+      const checked = getCanvasAssetInfo(racing.ref).then(
+        () => null,
+        (error) => error,
+      );
       await Promise.resolve();
       assert.strictEqual(validationStarted, false, 'reference validation waits until GC releases the write lock');
       releaseGc();
@@ -207,7 +215,6 @@ async function main() {
       fsp.stat = realStat;
     }
 
-    // storage-006: las marcas corren en la misma cadena de escritura que el GC.
     const concurrentIds = [];
     for (let i = 0; i < 6; i++) {
       const a = await putCanvasAsset(Buffer.from(`concurrent-mark-${i}-${'z'.repeat(16)}`));

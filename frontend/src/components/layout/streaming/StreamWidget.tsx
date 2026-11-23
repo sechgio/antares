@@ -1,15 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ComponentType, type ReactNode } from 'react';
 import {
-  ExternalLink,
-  LoaderCircle,
-  Pause,
-  Play,
-  Search,
-  SkipBack,
-  SkipForward,
-  Volume2,
-  VolumeX,
-} from 'lucide-react';
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ComponentType,
+  type ReactNode,
+} from 'react';
+import { ExternalLink, LoaderCircle, Pause, Play, Search, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import type { PopoverPosition } from '@/hooks/useAnchoredPopover';
@@ -89,7 +87,16 @@ interface StreamActionProps {
   p: string;
 }
 
-export function StreamAction({ label, icon: Icon, onClick, busy = false, className, wrapClassName, pressed, p }: StreamActionProps) {
+export function StreamAction({
+  label,
+  icon: Icon,
+  onClick,
+  busy = false,
+  className,
+  wrapClassName,
+  pressed,
+  p,
+}: StreamActionProps) {
   return (
     <WithHoverTooltip label={label} placement="bottom" className={wrapClassName}>
       <Button
@@ -182,12 +189,7 @@ export function StreamSearchBox({
   const controls = (
     <>
       <Search size={12} aria-hidden={true} />
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={label}
-        aria-label={label}
-      />
+      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={label} aria-label={label} />
       {pending ? (
         <span className={`${p}-search-loader`}>
           <LoaderCircle size={12} className="animate-spin" aria-label={pendingLabel} />
@@ -196,10 +198,7 @@ export function StreamSearchBox({
     </>
   );
   return (
-    <div
-      className={`${p}-search`}
-      {...(dataFilled ? { 'data-filled': Boolean(value) } : {})}
-    >
+    <div className={`${p}-search`} {...(dataFilled ? { 'data-filled': Boolean(value) } : {})}>
       {fieldWrap ? <div className={`${p}-search-field`}>{controls}</div> : controls}
     </div>
   );
@@ -295,11 +294,7 @@ export function StreamItemList<I extends StreamItem, T extends StreamItem = Stre
         fieldWrap={fieldWrap}
       />
       {listLabel && <div className={`${p}-list-label`}>{text ? t.results : t.trending}</div>}
-      <div
-        ref={listRef}
-        className={`${p}-list`}
-        aria-label={text ? (listSearchLabel ?? t.results) : t.trending}
-      >
+      <div ref={listRef} className={`${p}-list`} aria-label={text ? (listSearchLabel ?? t.results) : t.trending}>
         {result.data.map((item, index) => (
           <Row
             key={item.id}
@@ -327,10 +322,6 @@ export function StreamItemList<I extends StreamItem, T extends StreamItem = Stre
   );
 }
 
-/**
- * "Now playing" row shared by the stream widgets: current track with the live
- * marker (Audius swaps it for its equalizer), open-in-service link and error.
- */
 export function NowPlayingRow({
   p,
   track,
@@ -381,7 +372,6 @@ export function NowPlayingRow({
   );
 }
 
-/** Transport controls row (previous / play / next / mute / volume) of the panel footer. */
 export function StreamControlsRow({
   player,
   p,
@@ -410,12 +400,7 @@ export function StreamControlsRow({
       />
       <StreamAction p={p} label={t.next} icon={SkipForward} onClick={player.next} />
       <span className={`${p}-transport-space`} />
-      <StreamAction
-        p={p}
-        label={volume ? t.mute : t.unmute}
-        icon={volume ? Volume2 : VolumeX}
-        onClick={player.mute}
-      />
+      <StreamAction p={p} label={volume ? t.mute : t.unmute} icon={volume ? Volume2 : VolumeX} onClick={player.mute} />
       <input
         type="range"
         min={0}
@@ -429,7 +414,6 @@ export function StreamControlsRow({
   );
 }
 
-/** Play/next pair shown on the widget bar, outside the popover panel. */
 export function StreamBarActions({
   p,
   status,

@@ -37,8 +37,6 @@ function formatFolderErrorScan(message) {
   return msg.startsWith('ERROR:') ? msg : `ERROR: ${msg}`;
 }
 
-// Las escrituras van con USER_ENTERED: un valor externo (nombre de carpeta de
-// Drive) que empiece por =, +, - o @ se interpretaría como fórmula en el Sheet.
 function _sheetSafeText(value) {
   const s = String(value ?? '');
   return /^[=+\-@]/.test(s) ? `'${s}` : s;
@@ -63,9 +61,7 @@ async function markFolderErrorsInSheet(folderSummary) {
       }
     }
     if (fValues.length) await sheets.writeRange('FOLDERS!A:E', fValues);
-  } catch {
-    // Los errores ya viajan en el resumen del escaneo; fallar el marcado no debe abortarlo.
-  }
+  } catch {}
 }
 
 function applyFolderSummaryToSheetRows(fValues, summary, timestamp) {
@@ -86,7 +82,7 @@ async function listFolders({ force = false } = {}) {
   if (!force && isCacheFresh(['folders'])) {
     return { folders: sheetCache.folders, cached: true };
   }
-  if (!force && await canServeUnchangedRevision(['folders'])) {
+  if (!force && (await canServeUnchangedRevision(['folders']))) {
     touchCache(['folders']);
     return { folders: sheetCache.folders, cached: true, revision_match: true };
   }
@@ -146,25 +142,17 @@ async function removeFolder({ folder_id }) {
   await ensureSheetId();
   const { values } = await sheets.readRange('FOLDERS!A:E');
   const start = _foldersStart(values);
-  const filtered = start === 1
-    ? [values[0]]
-    : [];
+  const filtered = start === 1 ? [values[0]] : [];
   for (let i = start; i < values.length; i++) {
     if (values[i][1] !== folder_id) filtered.push(values[i]);
   }
   if (!filtered.length) filtered.push(['NOMBRE', 'FOLDER_ID', 'ACTIVO', 'ULTIMO_SCAN', 'CANT_ARCHIVOS']);
   await sheets.writeRange('FOLDERS!A:E', filtered);
-  // values.update solo reemplaza las filas enviadas: sin limpiar el remanente,
-  // la última carpeta queda duplicada en la hoja y reaparece al volver a leer.
   if (values.length > filtered.length) {
-    const emptyTail = Array.from(
-      { length: values.length - filtered.length },
-      () => new Array(AUTOIMG_SHEET_TABS.FOLDERS.length).fill(''),
+    const emptyTail = Array.from({ length: values.length - filtered.length }, () =>
+      new Array(AUTOIMG_SHEET_TABS.FOLDERS.length).fill(''),
     );
-    await sheets.writeRange(
-      `FOLDERS!A${filtered.length + 1}:E${values.length}`,
-      emptyTail,
-    );
+    await sheets.writeRange(`FOLDERS!A${filtered.length + 1}:E${values.length}`, emptyTail);
   }
   const folders = parseFoldersFromValues(filtered);
   persistFoldersLocal(folders);

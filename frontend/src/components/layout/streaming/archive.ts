@@ -32,8 +32,7 @@ export function toItem(raw: RawDoc | null | undefined): StreamItem | null {
 }
 
 const AUDIO_FORMAT = (format: string | undefined): boolean =>
-  typeof format === 'string' &&
-  (format === 'VBR MP3' || format === 'Ogg Vorbis' || /^(\d+Kbps )?MP3$/.test(format));
+  typeof format === 'string' && (format === 'VBR MP3' || format === 'Ogg Vorbis' || /^(\d+Kbps )?MP3$/.test(format));
 
 export function parseLength(value: number | string | undefined): number {
   if (typeof value === 'number') return Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
@@ -53,8 +52,6 @@ export function parseLength(value: number | string | undefined): number {
   return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
 }
 
-/* IA publica cada tema en varios formatos (VBR MP3 + Ogg Vorbis): agrupar por
-   número/título de pista y quedarse con la variante MP3 evita duplicar la cola. */
 function fileKey(file: RawFile): string {
   if (file.track !== undefined && file.track !== '') return `t:${file.track}`;
   const base = file.title ?? file.name ?? '';
@@ -101,17 +98,13 @@ export async function fetchItems(query: string, signal?: AbortSignal): Promise<S
   return (payload.response?.docs ?? []).map(toItem).filter((i): i is StreamItem => i !== null);
 }
 
-export async function fetchItemTracks(
-  item: StreamItem,
-  signal?: AbortSignal,
-): Promise<StreamTrack[]> {
+export async function fetchItemTracks(item: StreamItem, signal?: AbortSignal): Promise<StreamTrack[]> {
   const payload = (await fetchJson(`${API}/metadata/${encodeURIComponent(item.id)}`, signal)) as {
     files?: RawFile[];
   };
   return toTracks(item, payload.files);
 }
 
-/* Lucene: el texto libre del usuario no puede llevar operadores sin cerrar. */
 const sanitize = (text: string): string =>
   text
     .replace(/[+\-!(){}[\]^"~*?:\\/|&]/g, ' ')

@@ -119,7 +119,6 @@ async function fetchPrMeta(repo, number) {
     headRefOid: (meta.head && meta.head.sha) || '',
     baseRefName: (meta.base && meta.base.ref) || '',
     headRefName: (meta.head && meta.head.ref) || '',
-    // `null` significa "GitHub no calculó el diff": se conserva para no confundirlo con 0 líneas.
     additions: meta.additions == null ? null : Number(meta.additions) || 0,
     deletions: meta.deletions == null ? null : Number(meta.deletions) || 0,
     changedFiles: Number(meta.changed_files) || 0,
@@ -195,7 +194,6 @@ async function currentBranchPr(repo) {
   }
 }
 
-// `execFile` asíncrono pierde el stdin ante `gh` en Windows, así que el cuerpo viaja por archivo.
 async function sendBody(method, endpoint, body) {
   const file = path.join(os.tmpdir(), `antares-pr-audit-${process.pid}-${Date.now()}.json`);
   fs.writeFileSync(file, JSON.stringify({ body }));

@@ -2,10 +2,6 @@ import { atom } from '../layout/radio/core';
 
 export { useValue as useAtomValue } from '../layout/radio/core';
 
-/**
- * Port del plugin de Hermes Desktop (VGFreakXBL/hermes-sticky-notes, MIT).
- */
-
 export type Anchor = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 export type StickyTint = 'classic' | 'soft' | 'ghost';
 type StickySurface = 'stack' | 'breakout';
@@ -85,10 +81,7 @@ function migrateNote(raw: unknown): StickyNote | null {
     rotation: typeof n.rotation === 'number' ? n.rotation : 0,
     open: n.open !== false,
     surface,
-    pileId:
-      surface === 'breakout' && typeof n.pileId === 'string' && n.pileId
-        ? n.pileId
-        : null,
+    pileId: surface === 'breakout' && typeof n.pileId === 'string' && n.pileId ? n.pileId : null,
     zRank: typeof n.zRank === 'number' ? n.zRank : 0,
     anchor:
       n.anchor === 'top-left' || n.anchor === 'top-right' || n.anchor === 'bottom-left' || n.anchor === 'bottom-right'
@@ -124,9 +117,7 @@ export function loadNotes(): void {
   const list = [...byId.values()];
   $notes.set(list);
   updateNotes((l) =>
-    l.map((n) =>
-      n.open && n.surface !== 'breakout' ? { ...n, surface: 'stack' as const, rotation: 0 } : n,
-    ),
+    l.map((n) => (n.open && n.surface !== 'breakout' ? { ...n, surface: 'stack' as const, rotation: 0 } : n)),
   );
   $ready.set(true);
   const stacked = $notes.get().filter((n) => n.open && n.surface === 'stack');
@@ -149,8 +140,7 @@ export function resetStickyNotesForTests(): void {
 function persistNow(list: StickyNote[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-  } catch {
-  }
+  } catch {}
 }
 
 function schedulePersist(): void {
@@ -211,9 +201,7 @@ export function uniquePileIds(): string[] {
 }
 
 export function pileTopNote(pileId: string): StickyNote | null {
-  const members = notesInPile(pileId).sort(
-    (a, b) => (b.zRank || 0) - (a.zRank || 0) || b.updatedAt - a.updatedAt,
-  );
+  const members = notesInPile(pileId).sort((a, b) => (b.zRank || 0) - (a.zRank || 0) || b.updatedAt - a.updatedAt);
   if (!members.length) return null;
   const activeId = $activePileNote.get()[pileId];
   const active = activeId ? members.find((m) => m.id === activeId) : undefined;
@@ -223,11 +211,7 @@ export function pileTopNote(pileId: string): StickyNote | null {
 function nextZRank(scopePileId: string | null): number {
   const pool = $notes
     .get()
-    .filter(
-      (n) =>
-        n.surface === 'breakout' &&
-        (scopePileId ? n.pileId === scopePileId : !n.pileId),
-    );
+    .filter((n) => n.surface === 'breakout' && (scopePileId ? n.pileId === scopePileId : !n.pileId));
   let max = 0;
   for (const n of pool) max = Math.max(max, n.zRank || 0);
   return max + 1;
@@ -393,11 +377,7 @@ function dissolvePileIfSingleton(pileId: string): void {
   const members = notesInPile(pileId);
   if (members.length !== 1) return;
   const only = members[0];
-  $notes.set(
-    $notes.get().map((n) =>
-      n.id === only.id ? { ...n, pileId: null, zRank: nextZRank(null) } : n,
-    ),
-  );
+  $notes.set($notes.get().map((n) => (n.id === only.id ? { ...n, pileId: null, zRank: nextZRank(null) } : n)));
   const ap = { ...$activePileNote.get() };
   delete ap[pileId];
   $activePileNote.set(ap);
@@ -487,9 +467,7 @@ function maybePromoteTitle(id: string, body: string): void {
   const line = oneLine(body);
   if (!line) return;
   const title = line.length > 48 ? `${line.slice(0, 47)}…` : line;
-  $notes.set(
-    $notes.get().map((x) => (x.id === id ? { ...x, title, body, updatedAt: Date.now() } : x)),
-  );
+  $notes.set($notes.get().map((x) => (x.id === id ? { ...x, title, body, updatedAt: Date.now() } : x)));
   schedulePersist();
 }
 
@@ -543,9 +521,7 @@ export function createNote(): StickyNote {
 }
 
 export function patchNote(id: string, patch: Partial<StickyNote>): void {
-  updateNotes((list) =>
-    list.map((n) => (n.id === id ? { ...n, ...patch, updatedAt: Date.now() } : n)),
-  );
+  updateNotes((list) => list.map((n) => (n.id === id ? { ...n, ...patch, updatedAt: Date.now() } : n)));
 }
 
 export function saveNoteBody(id: string, body: string): void {
@@ -572,9 +548,7 @@ export function clearAll(): void {
 export function stackAll(): void {
   updateNotes((list) =>
     list.map((n) =>
-      n.open
-        ? { ...n, surface: 'stack' as const, pileId: null, rotation: 0, updatedAt: Date.now() }
-        : n,
+      n.open ? { ...n, surface: 'stack' as const, pileId: null, rotation: 0, updatedAt: Date.now() } : n,
     ),
   );
   $activePileNote.set({});
@@ -587,9 +561,7 @@ export function stackPile(pileId: string): void {
   if (!pileId) return;
   updateNotes((list) =>
     list.map((n) =>
-      n.pileId === pileId
-        ? { ...n, surface: 'stack' as const, pileId: null, rotation: 0, updatedAt: Date.now() }
-        : n,
+      n.pileId === pileId ? { ...n, surface: 'stack' as const, pileId: null, rotation: 0, updatedAt: Date.now() } : n,
     ),
   );
   const ap = { ...$activePileNote.get() };
@@ -646,17 +618,13 @@ export function returnToStack(id: string): void {
 
   updateNotes((list) =>
     list.map((x) =>
-      x.id === id
-        ? { ...x, surface: 'stack' as const, pileId: null, rotation: 0, updatedAt: Date.now() }
-        : x,
+      x.id === id ? { ...x, surface: 'stack' as const, pileId: null, rotation: 0, updatedAt: Date.now() } : x,
     ),
   );
   $activeStackId.set(id);
 
   if (pileId) {
-    const left = $notes
-      .get()
-      .filter((x) => x.open && x.surface === 'breakout' && x.pileId === pileId);
+    const left = $notes.get().filter((x) => x.open && x.surface === 'breakout' && x.pileId === pileId);
     if (left.length === 1) {
       dissolvePileIfSingleton(pileId);
     } else if (left.length === 0) {

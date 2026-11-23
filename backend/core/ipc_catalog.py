@@ -83,8 +83,6 @@ def _schema_validator_for(method: str) -> Any:
     schema = entry.get("inputSchema") if entry else None
     if not isinstance(schema, dict) or not schema:
         return None
-    # Import tardío: el arranque frío del backend es stdlib-only (boot sin
-    # dependencias del proyecto); jsonschema carga al validar el primer schema.
     from jsonschema import Draft202012Validator
     from jsonschema.exceptions import SchemaError
 

@@ -20,7 +20,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
   });
 }
 
-// sb-011: el preload siembra window.supabaseSessionSeed por sendSync ANTES de evaluar este módulo; en web no hay semilla.
 type SessionBlob = Record<string, string>;
 
 interface ElectronBridge {
@@ -28,15 +27,12 @@ interface ElectronBridge {
 }
 
 function electronBridge(): ElectronBridge | null {
-  const bridge = (globalThis as unknown as { window?: { electronAPI?: ElectronBridge } }).window
-    ?.electronAPI;
+  const bridge = (globalThis as unknown as { window?: { electronAPI?: ElectronBridge } }).window?.electronAPI;
   return bridge && typeof bridge.invoke === 'function' ? bridge : null;
 }
 
 function seedBlob(): SessionBlob | null {
-  const seed = (
-    globalThis as unknown as { window?: { supabaseSessionSeed?: unknown } }
-  ).window?.supabaseSessionSeed;
+  const seed = (globalThis as unknown as { window?: { supabaseSessionSeed?: unknown } }).window?.supabaseSessionSeed;
   return seed && typeof seed === 'object' && !Array.isArray(seed) ? (seed as SessionBlob) : null;
 }
 
@@ -50,9 +46,7 @@ export function createSecureSupabaseStorage(): {
   if (!seeded || !bridge) return null;
   const blob: SessionBlob = { ...seeded };
   const persist = () => {
-    void bridge.invoke('supabase_session_put', { blob: { ...blob } }).catch(() => {
-      // Sin cifrado en main la sesión queda solo en memoria: nunca texto claro en disco.
-    });
+    void bridge.invoke('supabase_session_put', { blob: { ...blob } }).catch(() => {});
   };
   return {
     getItem: (key) => (Object.prototype.hasOwnProperty.call(blob, key) ? blob[key] : null),
@@ -69,13 +63,14 @@ export function createSecureSupabaseStorage(): {
 
 const secureStorage = createSecureSupabaseStorage();
 
-export const supabase: SupabaseClient | null = supabaseUrl && supabaseAnonKey
-  ? createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: false,
-        ...(secureStorage ? { storage: secureStorage } : {}),
-      },
-    })
-  : null;
+export const supabase: SupabaseClient | null =
+  supabaseUrl && supabaseAnonKey
+    ? createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: false,
+          ...(secureStorage ? { storage: secureStorage } : {}),
+        },
+      })
+    : null;

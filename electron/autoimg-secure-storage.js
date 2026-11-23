@@ -14,8 +14,11 @@ try {
 
 function _safeStorageAvailable() {
   try {
-    return !!(safeStorage && typeof safeStorage.isEncryptionAvailable === 'function'
-      && safeStorage.isEncryptionAvailable());
+    return !!(
+      safeStorage &&
+      typeof safeStorage.isEncryptionAvailable === 'function' &&
+      safeStorage.isEncryptionAvailable()
+    );
   } catch {
     return false;
   }
@@ -23,9 +26,8 @@ function _safeStorageAvailable() {
 
 function _deriveKey(namespace) {
   const appName = app && typeof app.getName === 'function' ? app.getName() : 'antares';
-  const base = app && typeof app.getPath === 'function'
-    ? app.getPath('userData')
-    : path.join(os.tmpdir(), 'antares-autoimg');
+  const base =
+    app && typeof app.getPath === 'function' ? app.getPath('userData') : path.join(os.tmpdir(), 'antares-autoimg');
   const seed = `${appName}:${base}:autoimg:${namespace}`;
   return crypto.createHash('sha256').update(seed).digest();
 }
@@ -48,9 +50,6 @@ function encryptPayload(namespace, payload) {
     const buf = safeStorage.encryptString(json);
     return { v: 2, data: Buffer.from(buf).toString('base64') };
   }
-  // La clave derivada de rutas públicas (v1) solo sirve para LEER sobres
-  // legados; es ofuscación reversible, no cifrado. Escribir credenciales
-  // nuevas con ella escondía el problema: fallamos en voz alta.
   throw new Error(
     'El cifrado de credenciales (safeStorage/DPAPI) no está disponible: Antares no guardará los secretos sin cifrado confidencial. Reinicia la sesión de Windows e inténtalo de nuevo.',
   );
@@ -72,9 +71,8 @@ function decryptPayload(namespace, encoded, version = 1) {
 }
 
 function userDataPath(filename) {
-  const base = app && typeof app.getPath === 'function'
-    ? app.getPath('userData')
-    : path.join(os.tmpdir(), 'antares-autoimg');
+  const base =
+    app && typeof app.getPath === 'function' ? app.getPath('userData') : path.join(os.tmpdir(), 'antares-autoimg');
   return path.join(base, filename);
 }
 
@@ -95,8 +93,7 @@ function readSecureJson(filename, namespace) {
               outcome: 'failed',
               message: err && err.message ? err.message : String(err),
             });
-          } catch {
-          }
+          } catch {}
         }
       }
       return payload;
@@ -108,8 +105,7 @@ function readSecureJson(filename, namespace) {
         outcome: 'failed',
         message: err && err.message ? err.message : String(err),
       });
-    } catch {
-    }
+    } catch {}
     return null;
   }
 }
@@ -126,8 +122,7 @@ function writeSecureJson(filename, namespace, payload) {
   } catch (err) {
     try {
       if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-    } catch {
-    }
+    } catch {}
     throw err;
   }
 }

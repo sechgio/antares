@@ -89,7 +89,6 @@ function loadSkills(directory, root) {
   return skills;
 }
 
-// Hooks declarativos: solo contexto y registro, nunca comandos ni permisos.
 function loadHooks(directory, root) {
   const file = path.join(directory, 'hooks.json');
   if (!fs.existsSync(file)) return [];
@@ -124,8 +123,12 @@ function loadHooks(directory, root) {
     if (total > MAX_HOOK_TOTAL) throw new Error(`${file}: el texto de los hooks excede ${MAX_HOOK_TOTAL} caracteres`);
     if (raw.tools === undefined) return { event: raw.event, context };
     if (!HOOK_TOOL_EVENTS.has(raw.event)) throw new Error(`${label}: tools solo se admite en preToolUse y postToolUse`);
-    if (!Array.isArray(raw.tools) || raw.tools.length === 0 || raw.tools.length > 32
-      || raw.tools.some((tool) => typeof tool !== 'string' || !/^[a-z0-9_]+$/.test(tool))) {
+    if (
+      !Array.isArray(raw.tools) ||
+      raw.tools.length === 0 ||
+      raw.tools.length > 32 ||
+      raw.tools.some((tool) => typeof tool !== 'string' || !/^[a-z0-9_]+$/.test(tool))
+    ) {
       throw new Error(`${label}: tools debe ser una lista de nombres de herramienta`);
     }
     return { event: raw.event, context, tools: [...new Set(raw.tools)] };
@@ -157,9 +160,13 @@ function loadAgentProfile(slug, baseInstructions = '') {
   for (const [name, skill] of loadSkills(path.join(directory, 'skills'), directory)) skills.set(name, skill);
   if (skills.size > MAX_SKILLS) throw new Error(`${directory}: supera el máximo de 256 skills`);
   return {
-    name: metadata.name, slug, model: metadata.model, description: metadata.description,
+    name: metadata.name,
+    slug,
+    model: metadata.model,
+    description: metadata.description,
     instructions: [baseInstructions, instructions].filter(Boolean).join('\n\n'),
-    skills, hooks: loadHooks(directory, directory),
+    skills,
+    hooks: loadHooks(directory, directory),
   };
 }
 

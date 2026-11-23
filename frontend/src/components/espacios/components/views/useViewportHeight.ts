@@ -1,9 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 
-/**
- * Mide el alto del viewport de virtualización: fija el alto inicial al activarse
- * y lo mantiene al día con un ResizeObserver mientras la medición siga activa.
- */
 export function useViewportHeight(enabled: boolean) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(0);

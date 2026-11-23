@@ -53,8 +53,12 @@ async function readPendingAssets() {
     const parsed = JSON.parse(await fsp.readFile(pendingAssetsPath(), 'utf8'));
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
-      (e) => e && typeof e.id === 'string' && /^[a-f0-9]{32,128}$/i.test(e.id)
-        && typeof e.at === 'number' && Number.isFinite(e.at),
+      (e) =>
+        e &&
+        typeof e.id === 'string' &&
+        /^[a-f0-9]{32,128}$/i.test(e.id) &&
+        typeof e.at === 'number' &&
+        Number.isFinite(e.at),
     );
   } catch {
     return [];
@@ -78,8 +82,7 @@ async function _markAssetPendingUnlocked(assetId) {
     const entries = (await readPendingAssets()).filter((e) => e.id !== assetId);
     entries.push({ id: assetId, at: Date.now() });
     await writePendingAssets(entries.slice(-MAX_PENDING_ASSET_MARKERS));
-  } catch {
-  }
+  } catch {}
 }
 
 function markAssetPending(assetId) {
@@ -116,8 +119,7 @@ async function canvasAssetUsageBytes() {
     if (!ent.isFile() || !/^[a-f0-9]{32,128}$/i.test(ent.name)) continue;
     try {
       total += (await fsp.stat(path.join(assetsDir(), ent.name))).size;
-    } catch {
-    }
+    } catch {}
   }
   return total;
 }
@@ -197,9 +199,7 @@ async function putCanvasAsset(bytes) {
     const currentBytes = await readAssetUsageBytes();
     const projectedBytes = currentBytes - replacedBytes + buf.length;
     if (projectedBytes > MAX_CANVAS_ASSET_TOTAL_BYTES) {
-      throw new Error(
-        `canvas asset storage limit exceeded (${projectedBytes} > ${MAX_CANVAS_ASSET_TOTAL_BYTES})`,
-      );
+      throw new Error(`canvas asset storage limit exceeded (${projectedBytes} > ${MAX_CANVAS_ASSET_TOTAL_BYTES})`);
     }
 
     if (replacedBytes > 0) {
@@ -274,7 +274,6 @@ async function getCanvasAssetInfo(assetIdOrRef) {
   if (verifiedAssetStatKeys.get(id.toLowerCase()) !== assetStatKey(stat)) {
     await getCanvasAsset(id);
   }
-  // Re-tomar el write-lock aquí sería esperar sobre sí mismo (getCanvasAssetInfo ya lo toma).
   await _markAssetPendingUnlocked(id.toLowerCase());
   return { asset_id: id, ref: toAssetRef(id), bytes: stat.size };
 }
@@ -352,8 +351,7 @@ async function gcOrphanCanvasAssets({ nowMs = Date.now(), graceMs = GC_GRACE_MS 
       await fsp.rm(full, { force: true });
       if (!isTemp) invalidateVerifiedAsset(id);
       removed += 1;
-    } catch {
-    }
+    } catch {}
   }
 
   await reconcileAssetUsageBytes();

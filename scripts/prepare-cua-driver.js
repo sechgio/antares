@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-// Instala y verifica el driver de computer use (cua-driver) contra cua-driver/manifest.json.
-// Uso:
-//   node scripts/prepare-cua-driver.js verify
-//   node scripts/prepare-cua-driver.js install <ruta del zip oficial>
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -81,8 +77,16 @@ function install(zipPath) {
   const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-cua-'));
   const quote = (value) => `'${String(value).replace(/'/g, "''")}'`;
   try {
-    execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-      `Expand-Archive -LiteralPath ${quote(zipPath)} -DestinationPath ${quote(staging)} -Force`], { stdio: 'inherit' });
+    execFileSync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `Expand-Archive -LiteralPath ${quote(zipPath)} -DestinationPath ${quote(staging)} -Force`,
+      ],
+      { stdio: 'inherit' },
+    );
     for (const bin of manifest.binaries) {
       const src = path.join(staging, bin.path);
       const digest = fs.existsSync(src) ? sha256(src) : 'ausente';

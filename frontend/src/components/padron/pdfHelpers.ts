@@ -1,6 +1,8 @@
-import { base64ToBytes } from '../../utils/bytesToBase64';
 import { chunkArray as chunkToPages } from '../../utils/chunk';
+import { canvasToJpegBytes } from '../../utils/htmlToPdf';
 import type { Orientation, PadronItem } from './data';
+
+export { canvasToJpegBytes };
 
 const _imageBase64Cache = new Map<string, Promise<string>>();
 
@@ -64,49 +66,15 @@ const LURIGANCHO_FOLLOWUP_PAGE_ROWS = {
   portrait: 50,
 } as const satisfies Record<Orientation, number>;
 
-export function paginateLuriganchoItems(
-  items: PadronItem[],
-  orientation: Orientation,
-): PadronItem[][] {
+export function paginateLuriganchoItems(items: PadronItem[], orientation: Orientation): PadronItem[][] {
   const firstPageRows = LURIGANCHO_FIRST_PAGE_ROWS[orientation];
   const followupRows = LURIGANCHO_FOLLOWUP_PAGE_ROWS[orientation];
   const firstPage = items.slice(0, firstPageRows);
   const remaining = items.slice(firstPageRows);
 
-  return [
-    firstPage,
-    ...chunkArray(remaining, followupRows).filter((page) => page.length > 0),
-  ];
-}
-
-export function canvasToJpegBytes(canvas: HTMLCanvasElement, quality: number): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    if (canvas.toBlob) {
-      canvas.toBlob(async (blob) => {
-        if (!blob) {
-          reject(new Error('No se pudo codificar la página PDF en JPEG.'));
-          return;
-        }
-        try {
-          resolve(new Uint8Array(await blob.arrayBuffer()));
-        } catch (error) {
-          reject(error);
-        }
-      }, 'image/jpeg', quality);
-      return;
-    }
-    try {
-      const dataUrl = canvas.toDataURL('image/jpeg', quality);
-      const base64 = dataUrl.split(',')[1] || '';
-      resolve(base64ToBytes(base64));
-    } catch (error) {
-      reject(error);
-    }
-  });
+  return [firstPage, ...chunkArray(remaining, followupRows).filter((page) => page.length > 0)];
 }
 
 export function getRenderableExportSheets(wrapper: HTMLElement): HTMLElement[] {
-  return Array.from(wrapper.querySelectorAll<HTMLElement>('.vpad-sheet')).filter(
-    (sheet) => sheet.offsetWidth > 0,
-  );
+  return Array.from(wrapper.querySelectorAll<HTMLElement>('.vpad-sheet')).filter((sheet) => sheet.offsetWidth > 0);
 }

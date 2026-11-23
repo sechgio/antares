@@ -19,10 +19,7 @@ const {
 const { getMainWindow } = require('./window-manager');
 const { appendLogEvent } = require('./app-log');
 const { isTrustedRendererFrame } = require('./renderer-trust');
-const {
-  _maybeResolveFileTokens,
-  _validateAndResolveWriteParams,
-} = require('./ipc-file-policy');
+const { _maybeResolveFileTokens, _validateAndResolveWriteParams } = require('./ipc-file-policy');
 
 const _pendingRequests = new Map();
 const _pendingMethodCounts = new Map();
@@ -51,8 +48,7 @@ function reloadIpcMethods() {
   for (const rel of modules) {
     try {
       delete require.cache[require.resolve(rel)];
-    } catch {
-    }
+    } catch {}
   }
   _ipcMethodsCache = null;
   return _loadIpcMethods();
@@ -81,10 +77,7 @@ function _positiveIntegerEnv(name, fallback) {
   return Math.min(raw, 256);
 }
 
-const MAX_PENDING_REQUESTS = _positiveIntegerEnv(
-  'ANTARES_IPC_MAX_PENDING_REQUESTS',
-  DEFAULT_MAX_PENDING_REQUESTS,
-);
+const MAX_PENDING_REQUESTS = _positiveIntegerEnv('ANTARES_IPC_MAX_PENDING_REQUESTS', DEFAULT_MAX_PENDING_REQUESTS);
 const MAX_PENDING_PER_METHOD = _positiveIntegerEnv(
   'ANTARES_IPC_MAX_PENDING_PER_METHOD',
   DEFAULT_MAX_PENDING_PER_METHOD,
@@ -185,7 +178,10 @@ function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
             let pos = 0;
             for (const b of bufs) {
               const nextPos = pos + b.length;
-              if (nextPos <= curPos) { pos = nextPos; continue; }
+              if (nextPos <= curPos) {
+                pos = nextPos;
+                continue;
+              }
               if (pos >= curPos + lineLen) break;
               const s = Math.max(0, curPos - pos);
               const e = Math.min(b.length, curPos + lineLen - pos);
@@ -211,7 +207,10 @@ function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
   let pos = 0;
   for (const b of bufs) {
     const nextPos = pos + b.length;
-    if (nextPos <= lineStartPos) { pos = nextPos; continue; }
+    if (nextPos <= lineStartPos) {
+      pos = nextPos;
+      continue;
+    }
     if (pos >= totalLen) break;
     const s = Math.max(0, lineStartPos - pos);
     tailParts.push(b.subarray(s));
@@ -253,14 +252,14 @@ function _ensureListeners() {
         const msg = JSON.parse(line);
         if (msg.method && msg.params !== undefined && msg.id === undefined) {
           if (
-            msg.method === 'process.progress'
-            || msg.method === 'process.heartbeat'
-            || (typeof msg.method === 'string' && /^job\..+\.(progress|heartbeat)$/.test(msg.method))
+            msg.method === 'process.progress' ||
+            msg.method === 'process.heartbeat' ||
+            (typeof msg.method === 'string' && /^job\..+\.(progress|heartbeat)$/.test(msg.method))
           ) {
             noteJobActivity();
           } else if (
-            msg.method === 'process.complete'
-            || (typeof msg.method === 'string' && /^job\..+\.complete$/.test(msg.method))
+            msg.method === 'process.complete' ||
+            (typeof msg.method === 'string' && /^job\..+\.complete$/.test(msg.method))
           ) {
             clearJobActivity();
           }
@@ -274,11 +273,11 @@ function _ensureListeners() {
           _pendingRequests.delete(String(msg.id));
           entry.releasePending();
           if (typeof entry.responseBytes !== 'number' || entry.responseBytes === 0) {
-
             entry.responseBytes = lineBuf.byteLength;
           }
           if (msg.error) {
-            const errMsg = typeof msg.error === 'object' ? (msg.error.message || JSON.stringify(msg.error)) : String(msg.error);
+            const errMsg =
+              typeof msg.error === 'object' ? msg.error.message || JSON.stringify(msg.error) : String(msg.error);
             const err = new Error(errMsg);
             if (typeof msg.error === 'object') {
               if (msg.error.code !== undefined) err.code = msg.error.code;
@@ -287,7 +286,6 @@ function _ensureListeners() {
             }
             entry.reject(err);
           } else {
-
             if (entry.method === 'process_start' && msg.result && msg.result.started) {
               noteJobActivity();
             }
@@ -346,7 +344,9 @@ function _reservePendingRequest(method) {
 }
 
 function _ipcTelemetryVerbose() {
-  const raw = String(process.env.ANTARES_IPC_TELEMETRY || '').trim().toLowerCase();
+  const raw = String(process.env.ANTARES_IPC_TELEMETRY || '')
+    .trim()
+    .toLowerCase();
   return raw === '1' || raw === 'true' || raw === 'yes';
 }
 
@@ -358,7 +358,8 @@ function _estimateStringJsonBytes(value) {
     for (; index < value.length; index += 1) {
       const code = value.charCodeAt(index);
       if (code === 0x22 || code === 0x5c) bytes += 1;
-      else if (code < 0x20) bytes += code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d ? 1 : 5;
+      else if (code < 0x20)
+        bytes += code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d ? 1 : 5;
       else break;
     }
     escapes.lastIndex = index;
@@ -373,7 +374,8 @@ function _estimatePayloadBytes(value) {
     if (typeof entry === 'string') return _estimateStringJsonBytes(entry);
     if (typeof entry === 'number') return Number.isFinite(entry) ? Buffer.byteLength(String(entry), 'utf8') : 4;
     if (typeof entry === 'boolean') return entry ? 4 : 5;
-    if (typeof entry === 'undefined' || typeof entry === 'function' || typeof entry === 'symbol') return inArray ? 4 : 0;
+    if (typeof entry === 'undefined' || typeof entry === 'function' || typeof entry === 'symbol')
+      return inArray ? 4 : 0;
     if (typeof entry === 'bigint') throw new TypeError('BigInt is not JSON serializable');
     if (Buffer.isBuffer(entry) || ArrayBuffer.isView(entry)) return entry.byteLength;
     if (entry instanceof ArrayBuffer) return entry.byteLength;
@@ -440,14 +442,27 @@ function _logIpcTelemetry({
   const slow = elapsedMs >= IPC_TELEMETRY_SLOW_MS;
   const large = requestBytes >= IPC_TELEMETRY_LARGE_BYTES || responseBytes >= IPC_TELEMETRY_LARGE_BYTES;
   const normalizedOutcome = outcome === 'ok' ? 'success' : outcome === 'error' ? 'failed' : outcome;
-  const baselineSample = normalizedOutcome === 'success'
-    && ((elapsedMs ^ Math.imul(requestBytes + responseBytes, 2654435761)) >>> 0) % 100 === 0;
-  if (normalizedOutcome === 'success' && !_ipcTelemetryVerbose() && !slow && !large && !waitedForDrain && !baselineSample) return;
+  const baselineSample =
+    normalizedOutcome === 'success' &&
+    ((elapsedMs ^ Math.imul(requestBytes + responseBytes, 2654435761)) >>> 0) % 100 === 0;
+  if (
+    normalizedOutcome === 'success' &&
+    !_ipcTelemetryVerbose() &&
+    !slow &&
+    !large &&
+    !waitedForDrain &&
+    !baselineSample
+  )
+    return;
 
-  const safeRequestId = requestId === null || requestId === undefined
-    ? ''
-    : String(requestId).replace(/[^a-zA-Z0-9_.:@-]/g, '_').slice(0, 160);
-  const line = `[ipc-router] method=${method} elapsed_ms=${Math.round(elapsedMs)} ` +
+  const safeRequestId =
+    requestId === null || requestId === undefined
+      ? ''
+      : String(requestId)
+          .replace(/[^a-zA-Z0-9_.:@-]/g, '_')
+          .slice(0, 160);
+  const line =
+    `[ipc-router] method=${method} elapsed_ms=${Math.round(elapsedMs)} ` +
     `request_id=${safeRequestId || '-'} request_bytes=${requestBytes} ` +
     `response_bytes=${responseBytes} outcome=${normalizedOutcome}` +
     (waitedForDrain ? ' backpressure=1' : '');
@@ -576,7 +591,9 @@ function _sendRequest(method, params) {
   }
   if (admissionError) {
     if (reservation.release) reservation.release();
-    try { admissionError.ipc_request_id = id; } catch {}
+    try {
+      admissionError.ipc_request_id = id;
+    } catch {}
     _logIpcTelemetry({
       method,
       requestId: id,
@@ -626,9 +643,7 @@ function _sendRequest(method, params) {
         decrementPendingRequests();
       },
       resolve: (result) => {
-        const outcome = result && typeof result === 'object' && result.started === false
-          ? 'rejected'
-          : 'success';
+        const outcome = result && typeof result === 'object' && result.started === false ? 'rejected' : 'success';
         _logIpcTelemetry({
           method,
           requestId: id,
@@ -644,7 +659,9 @@ function _sendRequest(method, params) {
       reject: (err) => {
         const outcome = err && err.message && /timeout/i.test(err.message) ? 'timeout' : 'error';
         if (err && typeof err === 'object') {
-          try { err.ipc_request_id = id; } catch {}
+          try {
+            err.ipc_request_id = id;
+          } catch {}
         }
         _logIpcTelemetry({
           method,
@@ -668,17 +685,20 @@ function _sendRequest(method, params) {
 
     _pendingRequests.set(id, entry);
 
-    _writeStdinWithBackpressure(proc, line).then((writeResult) => {
-      entry.waitedForDrain = !!(writeResult && writeResult.waitedForDrain);
-    }).catch((err) => {
-      clearTimeout(entry.timeout);
-      _pendingRequests.delete(id);
-      entry.releasePending();
-      entry.reject(new Error(`Backend stdin write failed: ${err.message}`));
-    }).finally(() => {
-      writeFinished = true;
-      releaseBytes();
-    });
+    _writeStdinWithBackpressure(proc, line)
+      .then((writeResult) => {
+        entry.waitedForDrain = !!(writeResult && writeResult.waitedForDrain);
+      })
+      .catch((err) => {
+        clearTimeout(entry.timeout);
+        _pendingRequests.delete(id);
+        entry.releasePending();
+        entry.reject(new Error(`Backend stdin write failed: ${err.message}`));
+      })
+      .finally(() => {
+        writeFinished = true;
+        releaseBytes();
+      });
   });
 }
 
@@ -712,9 +732,11 @@ function _buildUnavailableError() {
 
 function _isTransientBackendError(err) {
   const msg = err.message || '';
-  return msg.includes('Backend process exited')
-    || msg.includes('Backend process not available')
-    || msg.includes('stdin write failed');
+  return (
+    msg.includes('Backend process exited') ||
+    msg.includes('Backend process not available') ||
+    msg.includes('stdin write failed')
+  );
 }
 
 const DB_CLEAR_MIN_INTERVAL_MS = 5000;
@@ -741,40 +763,42 @@ async function _maybeConfirmDbClear(method) {
 }
 
 async function _callBackend(method, params) {
-    await _maybeConfirmDbClear(method);
-    if (!isReady()) {
-      if (getState() === STATE.FATAL) throw _buildUnavailableError();
+  await _maybeConfirmDbClear(method);
+  if (!isReady()) {
+    if (getState() === STATE.FATAL) throw _buildUnavailableError();
+    const ready = await waitForReady(STARTUP_WAIT_MS);
+    if (!ready) throw _buildUnavailableError();
+  }
+
+  let lastErr = null;
+  for (let attempt = 0; attempt <= MID_FLIGHT_RETRIES; attempt++) {
+    try {
+      _ensureListeners();
+      return await _sendRequest(method, params);
+    } catch (err) {
+      lastErr = err;
+      if (!_isTransientBackendError(err) || !_isIdempotentMethod(method) || attempt === MID_FLIGHT_RETRIES) {
+        throw err;
+      }
+      const msg = err.message || '';
+
+      appendLogEvent('WARN', 'ipc.retry', {
+        component: 'electron',
+        method,
+        attempt: attempt + 1,
+        reason: 'transient_error',
+        outcome: 'degraded',
+        request_id: err && err.ipc_request_id ? err.ipc_request_id : undefined,
+        error_code: _ipcErrorCode(err),
+      });
+      console.warn(
+        `[ipc-router] "${method}" transient failure (attempt ${attempt + 1}/${MID_FLIGHT_RETRIES + 1}): ${msg}. Waiting for backend...`,
+      );
       const ready = await waitForReady(STARTUP_WAIT_MS);
       if (!ready) throw _buildUnavailableError();
     }
-
-    let lastErr = null;
-    for (let attempt = 0; attempt <= MID_FLIGHT_RETRIES; attempt++) {
-      try {
-        _ensureListeners();
-        return await _sendRequest(method, params);
-      } catch (err) {
-        lastErr = err;
-        if (!_isTransientBackendError(err) || !_isIdempotentMethod(method) || attempt === MID_FLIGHT_RETRIES) {
-          throw err;
-        }
-        const msg = err.message || '';
-
-        appendLogEvent('WARN', 'ipc.retry', {
-          component: 'electron',
-          method,
-          attempt: attempt + 1,
-          reason: 'transient_error',
-          outcome: 'degraded',
-          request_id: err && err.ipc_request_id ? err.ipc_request_id : undefined,
-          error_code: _ipcErrorCode(err),
-        });
-        console.warn(`[ipc-router] "${method}" transient failure (attempt ${attempt + 1}/${MID_FLIGHT_RETRIES + 1}): ${msg}. Waiting for backend...`);
-        const ready = await waitForReady(STARTUP_WAIT_MS);
-        if (!ready) throw _buildUnavailableError();
-      }
-    }
-    throw lastErr || _buildUnavailableError();
+  }
+  throw lastErr || _buildUnavailableError();
 }
 
 function _maybeTokenizeResultPaths(method, result, win) {
@@ -782,11 +806,12 @@ function _maybeTokenizeResultPaths(method, result, win) {
   if (typeof result.result_path !== 'string') return result;
   const { createFileCapability } = require('./file-capabilities');
   const webContentsId = win && win.webContents ? win.webContents.id : null;
-  const defaultName = typeof result.filename === 'string' && result.filename.trim()
-    ? result.filename.trim()
-    : method === 'spreadsheet_parse'
-      ? 'spreadsheet-result.json'
-      : 'result-file';
+  const defaultName =
+    typeof result.filename === 'string' && result.filename.trim()
+      ? result.filename.trim()
+      : method === 'spreadsheet_parse'
+        ? 'spreadsheet-result.json'
+        : 'result-file';
   const cap = createFileCapability({
     filePath: result.result_path,
     mode: 'read',
@@ -886,9 +911,7 @@ function registerIpcHandlers() {
           const catalog = _ipcCatalog();
           _assertNoRawAbsolutePaths(nativeParams, {
             allowRegisteredReadPaths: true,
-            allowRawAbsolutePathKeys: catalog.RAW_OUTPUT_PATH_METHODS.has(method)
-              ? new Set(['path'])
-              : undefined,
+            allowRawAbsolutePathKeys: catalog.RAW_OUTPUT_PATH_METHODS.has(method) ? new Set(['path']) : undefined,
             writePathKeys: catalog.METHOD_OUTPUT_PATH_KEYS.get(method),
           });
           nativeParams = _validateAndResolveWriteParams(nativeParams, win, method);
@@ -939,7 +962,13 @@ function registerIpcHandlers() {
       backendParams = _validateAndResolveWriteParams(backendParams, win, method);
     } catch (err) {
       _tagValidationError(err, method);
-      _logIpcTelemetry({ method, elapsedMs: 0, requestBytes: _estimatePayloadBytes(params), outcome: 'rejected', errorCode: _ipcErrorCode(err) });
+      _logIpcTelemetry({
+        method,
+        elapsedMs: 0,
+        requestBytes: _estimatePayloadBytes(params),
+        outcome: 'rejected',
+        errorCode: _ipcErrorCode(err),
+      });
       throw _toRendererIpcError(err);
     }
 
@@ -957,7 +986,6 @@ function registerIpcHandlers() {
     }
   });
 
-  // sendSync ANTES de que la página cargue; sin sender confiable no se sirve nada.
   ipcMain.on('supabase-session-get', (event) => {
     try {
       _requireTrustedSender(event, 'supabase-session-get');
@@ -1010,9 +1038,18 @@ function registerIpcHandlers() {
     _requireTrustedSender(event, 'window-control');
     const win = getMainWindow();
     if (!win || win.isDestroyed()) return { handled: false };
-    if (action === 'minimize') { win.minimize(); return { handled: true }; }
-    if (action === 'maximize') { win.isMaximized() ? win.unmaximize() : win.maximize(); return { handled: true, maximized: win.isMaximized() }; }
-    if (action === 'close') { win.close(); return { handled: true }; }
+    if (action === 'minimize') {
+      win.minimize();
+      return { handled: true };
+    }
+    if (action === 'maximize') {
+      win.isMaximized() ? win.unmaximize() : win.maximize();
+      return { handled: true, maximized: win.isMaximized() };
+    }
+    if (action === 'close') {
+      win.close();
+      return { handled: true };
+    }
     return { handled: false };
   });
 }

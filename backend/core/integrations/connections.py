@@ -146,7 +146,6 @@ def fresh_tokens(provider: str) -> JsonObject:
         if not tokens or not isinstance(tokens.get("access_token"), str) or not tokens["access_token"]:
             raise ValueError(f"Sin conexión activa para {provider}; conéctalo desde Conexiones")
         expiry = tokens.get("expiry_date")
-        # Sin expiry declarada (tokens OAuth no caducables, p. ej. GitHub) el token se usa tal cual.
         expired = isinstance(expiry, (int, float)) and expiry < time.time() * 1000 + _TOKEN_EXPIRY_SKEW_MS
         if expired:
             try:

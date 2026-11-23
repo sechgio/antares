@@ -16,10 +16,7 @@ const MAX_LOCAL_IMAGE_BYTES = 12 * 1024 * 1024;
 const MAX_THUMBNAIL_SOURCE_BYTES = 256 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 150 * 1000 * 1000;
 const _JPEG_MAX_SEGMENTS = 512;
-const _JPEG_SOF_MARKERS = new Set([
-  0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
-  0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF,
-]);
+const _JPEG_SOF_MARKERS = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
 
 const EXT_MIME = {
   '.jpg': 'image/jpeg',
@@ -46,8 +43,7 @@ function getThumbnailCacheDir() {
     if (app && typeof app.getPath === 'function') {
       return path.join(app.getPath('userData'), 'thumb-cache');
     }
-  } catch {
-  }
+  } catch {}
   return path.join(os.tmpdir(), 'antares-thumb-cache');
 }
 
@@ -83,10 +79,7 @@ function clampMaxEdge(maxEdge) {
 }
 
 function _cacheKey(resolved, fileSignature, edge) {
-  return crypto
-    .createHash('sha1')
-    .update(`${resolved}|${fileSignature}|${edge}`)
-    .digest('hex');
+  return crypto.createHash('sha1').update(`${resolved}|${fileSignature}|${edge}`).digest('hex');
 }
 
 async function _readDiskCache(cachePath) {
@@ -96,8 +89,7 @@ async function _readDiskCache(cachePath) {
     try {
       const now = new Date();
       await fsp.utimes(cachePath, now, now);
-    } catch {
-    }
+    } catch {}
     _scheduleTrim(path.dirname(cachePath));
     return `data:image/jpeg;base64,${buf.toString('base64')}`;
   } catch (err) {
@@ -116,15 +108,17 @@ function _scheduleTrim(cacheDir, afterWrite = false) {
   _nextReadTrimAt = Date.now() + DISK_CACHE_TRIM_INTERVAL_MS;
   setImmediate(() => {
     _trimAfterWrite = false;
-    _trimDiskCache(cacheDir).catch((err) => {
-      console.warn('[local-thumbnail] trim de cache falló:', err && err.message ? err.message : err);
-    }).finally(() => {
-      _trimScheduled = false;
-      if (_trimAfterWrite) {
-        _trimAfterWrite = false;
-        _scheduleTrim(cacheDir, true);
-      }
-    });
+    _trimDiskCache(cacheDir)
+      .catch((err) => {
+        console.warn('[local-thumbnail] trim de cache falló:', err && err.message ? err.message : err);
+      })
+      .finally(() => {
+        _trimScheduled = false;
+        if (_trimAfterWrite) {
+          _trimAfterWrite = false;
+          _scheduleTrim(cacheDir, true);
+        }
+      });
   });
 }
 
@@ -161,8 +155,8 @@ async function _trimDiskCache(cacheDir, { maxFiles = DISK_CACHE_MAX_FILES, maxBy
     let totalBytes = entries.reduce((sum, entry) => sum + entry.size, 0);
     const staleEntries = [];
     while (
-      (entries.length - staleEntries.length > maxFiles || totalBytes > maxBytes)
-      && staleEntries.length < entries.length
+      (entries.length - staleEntries.length > maxFiles || totalBytes > maxBytes) &&
+      staleEntries.length < entries.length
     ) {
       const stale = entries[staleEntries.length];
       staleEntries.push(stale);
@@ -174,19 +168,25 @@ async function _trimDiskCache(cacheDir, { maxFiles = DISK_CACHE_MAX_FILES, maxBy
       staleEntries.map(async (entry) => {
         try {
           await fsp.unlink(entry.full);
-        } catch {
-        }
+        } catch {}
       }),
     );
-  } catch {
-  }
+  } catch {}
 }
 
 function _isPngHeader(head) {
-  return head.length >= 24
-    && head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4E && head[3] === 0x47
-    && head[4] === 0x0D && head[5] === 0x0A && head[6] === 0x1A && head[7] === 0x0A
-    && head.toString('latin1', 12, 16) === 'IHDR';
+  return (
+    head.length >= 24 &&
+    head[0] === 0x89 &&
+    head[1] === 0x50 &&
+    head[2] === 0x4e &&
+    head[3] === 0x47 &&
+    head[4] === 0x0d &&
+    head[5] === 0x0a &&
+    head[6] === 0x1a &&
+    head[7] === 0x0a &&
+    head.toString('latin1', 12, 16) === 'IHDR'
+  );
 }
 
 function _webpDimensions(head) {
@@ -194,13 +194,12 @@ function _webpDimensions(head) {
   if (kind === 'VP8X' && head.length >= 30) {
     return { width: 1 + head.readUIntLE(24, 3), height: 1 + head.readUIntLE(27, 3) };
   }
-  if (kind === 'VP8 ' && head.length >= 30
-      && head[23] === 0x9D && head[24] === 0x01 && head[25] === 0x2A) {
-    return { width: head.readUInt16LE(26) & 0x3FFF, height: head.readUInt16LE(28) & 0x3FFF };
+  if (kind === 'VP8 ' && head.length >= 30 && head[23] === 0x9d && head[24] === 0x01 && head[25] === 0x2a) {
+    return { width: head.readUInt16LE(26) & 0x3fff, height: head.readUInt16LE(28) & 0x3fff };
   }
-  if (kind === 'VP8L' && head.length >= 25 && head[20] === 0x2F) {
+  if (kind === 'VP8L' && head.length >= 25 && head[20] === 0x2f) {
     const bits = head.readUInt32LE(21);
-    return { width: (bits & 0x3FFF) + 1, height: ((bits >> 14) & 0x3FFF) + 1 };
+    return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 };
   }
   return null;
 }
@@ -211,14 +210,17 @@ async function _jpegDimensions(read) {
     let marker = -1;
     for (;;) {
       const bytes = await read(pos, 2);
-      if (!bytes || bytes.length < 2 || bytes[0] !== 0xFF) return null;
-      if (bytes[1] === 0xFF) { pos += 1; continue; }
+      if (!bytes || bytes.length < 2 || bytes[0] !== 0xff) return null;
+      if (bytes[1] === 0xff) {
+        pos += 1;
+        continue;
+      }
       marker = bytes[1];
       pos += 2;
       break;
     }
-    if (marker === 0xDA) return null; // SOS: entropy-coded data follows
-    if (marker === 0x01 || marker === 0xD8 || marker === 0xD9 || (marker >= 0xD0 && marker <= 0xD7)) continue;
+    if (marker === 0xda) return null;
+    if (marker === 0x01 || marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) continue;
     const lenBuf = await read(pos, 2);
     if (!lenBuf || lenBuf.length < 2) return null;
     const segLen = lenBuf.readUInt16BE(0);
@@ -243,7 +245,7 @@ async function _probeImageDimensions(read) {
   if (magic6 === 'GIF87a' || magic6 === 'GIF89a') {
     return { width: head.readUInt16LE(6), height: head.readUInt16LE(8) };
   }
-  if (head[0] === 0x42 && head[1] === 0x4D && head.length >= 26) {
+  if (head[0] === 0x42 && head[1] === 0x4d && head.length >= 26) {
     const dibSize = head.readUInt32LE(14);
     if (dibSize === 12) return { width: head.readUInt16LE(18), height: head.readUInt16LE(20) };
     if (dibSize >= 40) {
@@ -255,7 +257,6 @@ async function _probeImageDimensions(read) {
     return _webpDimensions(head);
   }
   if (head.length >= 22 && head.readUInt16LE(0) === 0 && head.readUInt16LE(2) === 1) {
-    // ICO: first directory entry declares dims; PNG payloads carry their own header.
     if (head.readUInt16LE(4) < 1) return null;
     const inner = await read(head.readUInt32LE(18), 24);
     if (inner && _isPngHeader(inner)) {
@@ -263,7 +264,7 @@ async function _probeImageDimensions(read) {
     }
     return { width: head[6] || 256, height: head[7] || 256 };
   }
-  if (head[0] === 0xFF && head[1] === 0xD8) return _jpegDimensions(read);
+  if (head[0] === 0xff && head[1] === 0xd8) return _jpegDimensions(read);
   return null;
 }
 
@@ -293,7 +294,9 @@ async function _probeImageFileDimensions(filePath) {
     return null;
   } finally {
     if (handle) {
-      try { await handle.close(); } catch {}
+      try {
+        await handle.close();
+      } catch {}
     }
   }
 }

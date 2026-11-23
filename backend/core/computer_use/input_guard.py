@@ -8,10 +8,6 @@ from contextlib import suppress
 
 from backend.core.computer_use.policy import DriverRefused
 
-# Clasificación validada con spike de hooks (Temp/rea-audit/phase0/probe_fase3_hooks.py):
-# SendInput marca cada evento inyectado con el flag INJECTED (0x10 teclado, 0x1 ratón),
-# y el movimiento puro del ratón es actividad ambiental constante (~192 eventos en unos
-# segundos con el usuario delante), así que solo teclas, clics y rueda físicos rompen el lease.
 WH_KEYBOARD_LL = 13
 WH_MOUSE_LL = 14
 WM_KEYDOWN = 0x0100

@@ -2,9 +2,6 @@ import '@testing-library/jest-dom';
 import { cleanup, configure, getConfig } from '@testing-library/react';
 import { afterAll, afterEach, vi } from 'vitest';
 
-// findBy*/waitFor pueden resolver antes de que React corra los efectos pasivos que programó con
-// setImmediate; una vuelta más de setImmediate (FIFO) los aplica. El wrapper base se fija una vez
-// porque Testing Library persiste entre archivos con isolate: false.
 const testGlobals = globalThis as typeof globalThis & {
   __baseAsyncWrapper?: ReturnType<typeof getConfig>['asyncWrapper'];
   setImmediate?: (callback: () => void) => unknown;
@@ -37,7 +34,6 @@ afterEach(async () => {
   await resetI18nLanguage();
 });
 
-// Repone Storage en memoria si el localStorage experimental de Node oculta el de jsdom y falla.
 if (typeof window !== 'undefined') {
   const map = new Map<string, string>();
   const store: Storage = {
@@ -248,9 +244,6 @@ const baselineMatchMedia = typeof window !== 'undefined' ? window.matchMedia : u
 const baselineCreateObjectURL = URL.createObjectURL?.bind(URL);
 const baselineRevokeObjectURL = URL.revokeObjectURL?.bind(URL);
 
-// Baseline de props mutables en prototipos DOM: restaura descriptores originales
-// y elimina props propias filtradas (p. ej. stubs de getBoundingClientRect que
-// quedan como propiedad propia y tapan los stubs de Element.prototype).
 const DOM_PROTO_KEYS = [
   'getBoundingClientRect',
   'offsetHeight',

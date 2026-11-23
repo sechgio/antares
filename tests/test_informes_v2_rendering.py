@@ -196,7 +196,6 @@ def test_reservorios2_template_css_is_mirrored_in_the_preview() -> None:
     ).read_text(encoding="utf-8")
 
     template_rules = _css_rules(template)
-    # Un cierre de comentario sobrante impide que Chromium lea la siguiente regla.
     assert not [sel for sel in template_rules if "*/" in sel]
 
     preview_rules = _css_rules(f"<style>{preview}</style>")

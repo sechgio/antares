@@ -22,7 +22,6 @@ def test_normalize_tabular_key_uses_mapping_then_falls_back_to_snake_case() -> N
 
 
 def test_parse_csv_rows_lee_cp1252_antes_que_latin1() -> None:
-    # En cp1252 0x97 y 0x92 son raya y comilla tipográfica; latin-1 las lee como control.
     content = "Observacion;Detalle\nZona 2 \u2014 alta\u2019 ok;listo\n".encode("cp1252")
 
     rows = parse_csv_rows(content, column_mapping={}, normalize_key=lambda value: str(value))

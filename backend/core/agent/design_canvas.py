@@ -78,7 +78,6 @@ TOOL_SPECS: list[JsonObject] = [{
     }, "required": ["artifact_id"]},
 }]
 
-# Renderizador fijo del lienzo; corre en la página aislada de page_create y pinta cada artboard en su propio shadow root.
 _SCRIPT = r"""
 const canvas = AntaresPage.data.design_canvas;
 const root = document.querySelector('#design-canvas');

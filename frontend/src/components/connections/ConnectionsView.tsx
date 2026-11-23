@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Check, Plus, RefreshCw, Search } from 'lucide-react';
 import { onNotify } from '../../api';
-import {
-  connectionsApi,
-  type ConnectionCategory,
-  type ConnectionProviderSpec,
-} from '../../api/connectionsApi';
+import { connectionsApi, type ConnectionCategory, type ConnectionProviderSpec } from '../../api/connectionsApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import { useDialog } from '../../hooks/useDialog';
@@ -23,11 +19,26 @@ interface Props {
 
 function stateLabel(p: ConnectionProviderSpec): string {
   if (p.connected) return 'Conectada';
-  return p.state === 'missing_scopes' ? 'Faltan permisos' : p.state === 'reauth_required' ? 'Volver a conectar'
-    : p.state === 'unavailable' ? 'Sin verificar' : p.state === 'connecting' ? 'Conectando…' : 'Conectar';
+  return p.state === 'missing_scopes'
+    ? 'Faltan permisos'
+    : p.state === 'reauth_required'
+      ? 'Volver a conectar'
+      : p.state === 'unavailable'
+        ? 'Sin verificar'
+        : p.state === 'connecting'
+          ? 'Conectando…'
+          : 'Conectar';
 }
 
-function Row({ p, connecting, onOpen }: { p: ConnectionProviderSpec; connecting?: boolean; onOpen: (p: ConnectionProviderSpec) => void }) {
+function Row({
+  p,
+  connecting,
+  onOpen,
+}: {
+  p: ConnectionProviderSpec;
+  connecting?: boolean;
+  onOpen: (p: ConnectionProviderSpec) => void;
+}) {
   const attention = !p.connected && (p.state === 'missing_scopes' || p.state === 'reauth_required');
   const label = connecting && !p.connected ? 'Conectando…' : stateLabel(p);
   return (
@@ -51,7 +62,13 @@ function Row({ p, connecting, onOpen }: { p: ConnectionProviderSpec; connecting?
               : 'text-[var(--text-secondary)] group-hover:bg-[var(--bg-input)] group-hover:text-[var(--text-primary)]'
         }`}
       >
-        {p.connected ? <Check size={16} strokeWidth={2.25} /> : attention ? <AlertCircle size={16} /> : <Plus size={18} strokeWidth={1.75} />}
+        {p.connected ? (
+          <Check size={16} strokeWidth={2.25} />
+        ) : attention ? (
+          <AlertCircle size={16} />
+        ) : (
+          <Plus size={18} strokeWidth={1.75} />
+        )}
         <span className="sr-only">{label}</span>
       </span>
     </button>
@@ -107,10 +124,7 @@ export default function ConnectionsView({ detailId, onDetailChange, onProvidersC
     }
   };
 
-  const saveCreds = async (
-    p: ConnectionProviderSpec,
-    creds: { clientId: string; clientSecret: string },
-  ) => {
+  const saveCreds = async (p: ConnectionProviderSpec, creds: { clientId: string; clientSecret: string }) => {
     try {
       await connectionsApi.connectionsOauthConfigSave({
         provider: p.id,
@@ -129,8 +143,8 @@ export default function ConnectionsView({ detailId, onDetailChange, onProvidersC
     const ok = await confirm({
       title: `Autorizar ${p.label}`,
       description:
-        `Se abrirá tu navegador para iniciar sesión en ${p.label}.${permissions} `
-        + `Al completar el acceso volverás a Antares; los tokens se guardan cifrados en este equipo. `,
+        `Se abrirá tu navegador para iniciar sesión en ${p.label}.${permissions} ` +
+        `Al completar el acceso volverás a Antares; los tokens se guardan cifrados en este equipo. `,
       confirmLabel: 'Abrir navegador y autorizar',
       cancelLabel: 'Cancelar',
     });
@@ -172,7 +186,6 @@ export default function ConnectionsView({ detailId, onDetailChange, onProvidersC
     try {
       await connectionsApi.connectionsCancel(p.id);
     } catch {
-      // El flujo local termina solo; un fallo al cancelar no requiere acción.
     } finally {
       await refresh();
     }
@@ -280,7 +293,12 @@ export default function ConnectionsView({ detailId, onDetailChange, onProvidersC
               <h2 className="mb-2 px-3 text-[15px] font-medium text-[var(--text-primary)]">{g.label}</h2>
               <div className="grid grid-cols-1 gap-x-6 gap-y-0.5 lg:grid-cols-2">
                 {g.items.map((p) => (
-                  <Row key={p.id} p={p} connecting={connecting === p.id || awaitingId === p.id} onOpen={(prov) => onDetailChange(prov.id)} />
+                  <Row
+                    key={p.id}
+                    p={p}
+                    connecting={connecting === p.id || awaitingId === p.id}
+                    onOpen={(prov) => onDetailChange(prov.id)}
+                  />
                 ))}
               </div>
             </section>

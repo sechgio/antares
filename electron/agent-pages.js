@@ -2,10 +2,12 @@
 
 const { sanitizeHtmlForPreview, PREVIEW_CSP_META } = require('../shared/html-sanitizer');
 
-const CSP = "default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; img-src data: blob:; "
-  + "font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'none'; "
-  + "base-uri 'none'; form-action 'none'; sandbox allow-scripts";
-const SHELL_CSP = "default-src 'none'; style-src 'unsafe-inline'; frame-src 'self'; base-uri 'none'; form-action 'none'";
+const CSP =
+  "default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; img-src data: blob:; " +
+  "font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'none'; " +
+  "base-uri 'none'; form-action 'none'; sandbox allow-scripts";
+const SHELL_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; frame-src 'self'; base-uri 'none'; form-action 'none'";
 
 const PAGE_STYLES = `
 :root {
@@ -77,19 +79,34 @@ svg text { font-family: inherit; font-variant-numeric: tabular-nums; }
 `;
 
 function encoded(value) {
-  return JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
 }
 
 function documents(page, colorScheme) {
-  if (!page || page.version !== 1 || typeof page.html !== 'string' || typeof page.script !== 'string'
-    || typeof page.title !== 'string' || !Array.isArray(page.rows) || !Array.isArray(page.columns)
-    || !page.data || typeof page.data !== 'object' || Array.isArray(page.data)
-    || Buffer.byteLength(JSON.stringify(page)) > 5 * 1024 * 1024) {
+  if (
+    !page ||
+    page.version !== 1 ||
+    typeof page.html !== 'string' ||
+    typeof page.script !== 'string' ||
+    typeof page.title !== 'string' ||
+    !Array.isArray(page.rows) ||
+    !Array.isArray(page.columns) ||
+    !page.data ||
+    typeof page.data !== 'object' ||
+    Array.isArray(page.data) ||
+    Buffer.byteLength(JSON.stringify(page)) > 5 * 1024 * 1024
+  ) {
     throw new Error('La página interactiva no es válida');
   }
   const html = sanitizeHtmlForPreview(page.html).replace(PREVIEW_CSP_META, '');
   const appearance = colorScheme === 'light' || colorScheme === 'dark' ? ` style="color-scheme:${colorScheme}"` : '';
-  const title = page.title.replace(/[&<>"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[character]);
+  const title = page.title.replace(
+    /[&<>"]/g,
+    (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[character],
+  );
   const context = encoded(JSON.stringify({ data: page.data, rows: page.rows, columns: page.columns }));
   const script = `window.AntaresPage = Object.freeze(JSON.parse(${context}));
 window.addEventListener('error', () => { document.documentElement.dataset.pageError = 'true'; });
@@ -102,17 +119,19 @@ import(source).catch(() => {
   document.body.append(error);
 }).finally(() => URL.revokeObjectURL(source));`;
   return {
-    shell: `<!doctype html><html lang="es"${appearance}><meta charset="utf-8"><title>${title}</title>`
-      + '<style>html,body,iframe{margin:0;width:100%;height:100%;border:0;display:block}</style>'
-      + `<iframe title="${title}" sandbox="allow-scripts" referrerpolicy="no-referrer" src="content.html"></iframe></html>`,
-    content: `<!doctype html><html lang="es"${appearance}><head><meta charset="utf-8">`
-      + `<meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>`
-      + `<style>${PAGE_STYLES}</style></head><body>`
-      + html + `<script type="module">${script}</script></body></html>`,
+    shell:
+      `<!doctype html><html lang="es"${appearance}><meta charset="utf-8"><title>${title}</title>` +
+      '<style>html,body,iframe{margin:0;width:100%;height:100%;border:0;display:block}</style>' +
+      `<iframe title="${title}" sandbox="allow-scripts" referrerpolicy="no-referrer" src="content.html"></iframe></html>`,
+    content:
+      `<!doctype html><html lang="es"${appearance}><head><meta charset="utf-8">` +
+      `<meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>` +
+      `<style>${PAGE_STYLES}</style></head><body>` +
+      html +
+      `<script type="module">${script}</script></body></html>`,
   };
 }
 
-// En el chat la página adopta los colores de Antares que envía el padre; solo se aceptan estas variables y valores de color.
 const EMBED_SCRIPT = `<script>(() => {
   const report = () => parent.postMessage({ type: 'antares-page-height', height: document.body.getBoundingClientRect().height }, '*');
   new ResizeObserver(report).observe(document.body);
@@ -146,7 +165,8 @@ h2 { margin: 28px 0 14px; font-size: 17px; }
 </style>`;
 
 function embedded(page, colorScheme) {
-  return documents(page, colorScheme).content.replace('</head>', () => `${EMBED_STYLES}</head>`)
+  return documents(page, colorScheme)
+    .content.replace('</head>', () => `${EMBED_STYLES}</head>`)
     .replace(/<\/body><\/html>$/, () => `${EMBED_SCRIPT}</body></html>`);
 }
 

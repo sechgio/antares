@@ -85,9 +85,6 @@ def list_filters(toolchain: Toolchain) -> frozenset[str]:
 def list_encoders(toolchain: Toolchain) -> frozenset[str]:
     out = _run(toolchain.ffmpeg, ["-hide_banner", "-encoders"])
     names: set[str] = set()
-    # Formato de ffmpeg: flags de 6 caracteres + espacio + nombre.
-    # Algunos nombres llevan guion (libvpx-vp9), así que se toma el
-    # segundo token cuando el primero tiene forma de flags.
     for line in out.splitlines():
         tokens = line.split()
         if len(tokens) >= 2 and set(tokens[0]) <= set("VASDX.BEIFS"):

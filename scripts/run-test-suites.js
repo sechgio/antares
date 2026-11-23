@@ -69,8 +69,6 @@ function readParallelConcurrency() {
   return Number.isInteger(parsed) && parsed >= 1 ? parsed : 4;
 }
 
-// Runs plain-Node test files in a bounded worker pool: every file keeps running
-// even after another one fails, and the aggregate always fails closed.
 async function runNodeTestsParallel(testNames) {
   if (testNames.length === 0) return;
   const total = testNames.length;
@@ -142,7 +140,11 @@ async function runSuite(name, shard = null) {
       runNodeTests(CONTRACT_TESTS);
       return;
     case 'backend':
-      run('uv', ['run', '--project', ROOT, '--locked', '--extra', 'dev', 'pytest', '../tests', '-v'], path.join(ROOT, 'backend'));
+      run(
+        'uv',
+        ['run', '--project', ROOT, '--locked', '--extra', 'dev', 'pytest', '../tests', '-v'],
+        path.join(ROOT, 'backend'),
+      );
       return;
     case 'electron':
       await runNodeTestsParallel(ELECTRON_TESTS);

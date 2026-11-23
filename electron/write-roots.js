@@ -32,8 +32,7 @@ function _persistWriteRoots() {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify([..._allowedWriteRoots], null, 2), 'utf8');
-  } catch {
-  }
+  } catch {}
 }
 
 function _loadPersistedWriteRoots() {
@@ -58,12 +57,10 @@ function _loadPersistedWriteRoots() {
           }
         }
         _addWriteRoot(canonical);
-      } catch {
-      }
+      } catch {}
     }
     if (_allowedWriteRoots.size >= MAX_ALLOWED_WRITE_ROOTS) _persistWriteRoots();
-  } catch {
-  }
+  } catch {}
 }
 
 function _registerWriteRootFromPath(rawPath, persist = true) {
@@ -97,8 +94,7 @@ function _isUnderStandardUserDir(dir) {
         if (stdRoot && isPathInside(stdRoot, resolvedDir)) return true;
       }
     }
-  } catch {
-  }
+  } catch {}
   return false;
 }
 
@@ -106,13 +102,11 @@ function _isUnderAllowedPdfWriteDir(dir) {
   return _isUnderRegisteredWriteRoot(dir) || _isUnderStandardUserDir(dir);
 }
 
-// Windows reserva estos nombres aunque lleven extensión (CON.pdf escribe al dispositivo).
 const WINDOWS_RESERVED_STEM_RE = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
 
 function _sanitizeFilename(name) {
   if (typeof name !== 'string' || !name.trim()) return 'reporte.pdf';
   const base = path.basename(name);
-  // Windows ignora los puntos y espacios finales del nombre.
   const safe = base
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
     .replace(/\s+/g, ' ')
@@ -156,8 +150,8 @@ function _assertSafePdfOutputPath(outputPath) {
     }
     const realFile = fs.realpathSync(resolved);
     if (
-      path.normalize(realFile).toLowerCase() !== path.normalize(resolved).toLowerCase()
-      || !isPathInside(realDir, realFile)
+      path.normalize(realFile).toLowerCase() !== path.normalize(resolved).toLowerCase() ||
+      !isPathInside(realDir, realFile)
     ) {
       throw new Error('La ruta de salida del PDF no está permitida: symlink no permitido en ruta de salida');
     }

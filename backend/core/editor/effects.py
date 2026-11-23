@@ -54,9 +54,6 @@ def apply_stabilize(
     trf = Path(trf).resolve()
     trf.parent.mkdir(parents=True, exist_ok=True)
     detect, transform = stabilize_chains(shakiness)
-    # vidstabdetect escribe el .trf con la ruta tal cual: una ruta
-    # Windows absoluta rompe el parser de opciones, así que se ejecuta
-    # con cwd en el directorio del .trf y se pasa solo el nombre.
     trf_name = trf.name
     detect = detect.replace("vidstabdetect=", f"vidstabdetect=result={trf_name}:")
     transform = transform.replace("input=transforms.trf", f"input={trf_name}")

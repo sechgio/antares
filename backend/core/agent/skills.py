@@ -181,8 +181,6 @@ def create_target(name: object, library: Path) -> Path:
     if folder.is_symlink():
         raise ValueError("La ruta de la skill no puede ser un enlace simbólico")
     if folder.exists():
-        # Una carpeta vacía es resto de un intento interrumpido: se reutiliza
-        # en lugar de bloquear el reintento con un duplicado inexistente.
         try:
             empty = folder.is_dir() and not any(folder.iterdir())
         except OSError:
@@ -195,8 +193,6 @@ def create_target(name: object, library: Path) -> Path:
 
 
 def _publish(target: Path, data: bytes) -> None:
-    # Temporal con creación exclusiva y publicación por enlace: nunca
-    # sobrescribe un SKILL.md que otro proceso haya publicado antes.
     with atomic_output_file(target, extension=".md", write_token=True) as output:
         fd = os.open(output.tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "wb") as handle:
@@ -252,10 +248,6 @@ def _external_homes() -> tuple[Path, ...]:
     """
     home = Path(os.path.expanduser("~"))
     explicit = os.environ.get("SKILLS_EXTERNAL_HOMES")
-    # `.claude/skills` y `.codex/skills` suelen contener enlaces simbólicos,
-    # que el lector rechaza por seguridad; se prefiere el almacén real
-    # (`~/.agents/skills`), compartido por Claude Code y Codex, y se añaden
-    # las carpetas de cada herramienta como respaldo si no existe.
     roots = ([Path(os.path.abspath(item)) for item in explicit.split(os.pathsep) if item]
              if explicit else [home / ".agents" / "skills",
                                home / ".claude" / "skills",
@@ -305,9 +297,6 @@ def _candidates(grants: dict[str, JsonObject], workspace: Path, library: Path,
             if name in index:
                 if index[name] == candidate:
                     continue
-                # Dos almacenes externos (p. ej. `.agents` y `.claude`) repiten
-                # la misma skill: se conserva la primera y no se avisa, porque
-                # no es una sustitución deliberada del perfil del agente.
                 if folder in external and index[name].parent.parent in external:
                     continue
                 warning = f"{name}: la skill del agente ({index[name]}) sustituye a la compartida ({candidate})"
@@ -351,10 +340,6 @@ def _catalog(grants: dict[str, JsonObject], workspace: Path, library: Path,
 
 
 def library_catalog(library: Path) -> JsonObject:
-    # La biblioteca visible en la vista Habilidades es una raíz directa: se
-    # escanea tanto ella como su _shared, de modo que un SKILL.md colocado en
-    # la propia biblioteca (o en una subcarpeta suya) se reconozca sin exigir
-    # el nivel intermedio `_shared`.
     levels = tuple(dict.fromkeys((library, *_levels(None))))
     catalog, warnings, truncated = _catalog({}, library, library, levels)
     return {"skills": [{"id": skill.id, "name": skill.name, "description": skill.description} for skill in catalog],
@@ -433,7 +418,6 @@ def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace:
         offset = params.get("offset", 0)
         if not isinstance(skill_id, str) or not (re.fullmatch(r"[a-f0-9]{24}", skill_id) or skill_id.startswith("profile:")):
             raise ValueError("Indica el id devuelto por skills_list")
-        # isabs (3.13+) ya no ve '/x' como absoluta y pathlib la une reemplazando la base.
         if not isinstance(relative, str) or not relative or len(relative) > 240 or "\x00" in relative \
                 or ":" in relative or relative[0] in "\\/" or ntpath.isabs(relative) \
                 or ".." in relative.replace("\\", "/").split("/"):

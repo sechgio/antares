@@ -29,7 +29,6 @@ _DEFAULT_STREAM_SILENCE_S = 30.0
 _ALLOWED_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
 _MAX_IMAGES_PER_MESSAGE = 8
 _MAX_IMAGE_B64_CHARS = 4 * 1024 * 1024
-# Solo los 5xx que el proveedor puede resolver solo; 501, 505 y 511 son permanentes.
 _RETRYABLE_HTTP = frozenset({429, 500, 502, 503, 504, 529})
 _RETRY_DELAYS_S = (1.0, 4.0)
 _RETRY_AFTER_CAP_S = 30.0
@@ -100,8 +99,6 @@ _SYSTEM_PROMPT = (
 
 _TOOL_OUTPUT_TAG_RE = re.compile(r"<(\/?)\s*tool_output\b", re.IGNORECASE)
 _TOOL_OUTPUT_ORIGIN_RE = re.compile(r"[^A-Za-z0-9_.:-]+")
-# Resultados de control: su contenido sí son instrucciones de trabajo (skills,
-# memoria o la respuesta del usuario), así que no se envuelven como dato.
 _CONTROL_TOOL_RESULTS = frozenset(
     json.loads(resource_path("shared/agent-tool-output.json").read_text(encoding="utf-8"))["control_tool_results"]
 )
@@ -253,7 +250,6 @@ def _stream_silence_s() -> float:
 
 
 def _set_read_timeout(res: http.client.HTTPResponse, seconds: float) -> None:
-    # HTTPResponse no expone el socket; acotar su timeout limita cada lectura al umbral de silencio.
     sock = getattr(getattr(getattr(res, "fp", None), "raw", None), "_sock", None)
     if sock is not None:
         with contextlib.suppress(OSError):
@@ -373,7 +369,6 @@ def _post_json(
     url: str, headers: dict[str, str], payload: JsonObject, on_delta: Callable[[str], None] | None = None
 ) -> JsonObject:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    # Plazo total compartido por los reintentos de silencio: no se reinicia en cada intento.
     deadline = time.monotonic() + _CHAT_TIMEOUT_S
     for attempt in range(len(_RETRY_DELAYS_S) + 1):
         req = urllib.request.Request(
@@ -410,7 +405,6 @@ def _post_json(
             raise ValueError("El proveedor devolvió una respuesta inválida") from None
         except _StreamSilence as err:
             if attempt < len(_RETRY_DELAYS_S) and time.monotonic() + _retry_wait_s(attempt) < deadline:
-                # La respuesta parcial ya llegó a on_delta: vaciarla antes de empezar de nuevo.
                 if on_delta:
                     on_delta("")
                 time.sleep(_retry_wait_s(attempt))
@@ -513,7 +507,6 @@ def _openai_wire(messages: list[JsonObject], system: str | None) -> list[JsonObj
 
 
 def _log_cache_usage(style: str, prompt: int, cache_read: int, cache_write: int, output: int) -> None:
-    # La telemetría nunca debe cambiar el resultado de la petición.
     with contextlib.suppress(Exception):
         log_event(
             logger,

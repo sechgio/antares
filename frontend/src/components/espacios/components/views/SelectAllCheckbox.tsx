@@ -1,7 +1,3 @@
-/**
- * Checkbox maestro de selección de tareas, compartido por las cabeceras tabla y
- * virtualizadas de ListView y TableView.
- */
 export default function SelectAllCheckbox({
   allSelected,
   someSelected,

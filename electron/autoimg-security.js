@@ -1,9 +1,4 @@
-const SENSITIVE_PATTERNS = [
-  /client_secret/i,
-  /refresh_token/i,
-  /access_token/i,
-  /"private_key"/i,
-];
+const SENSITIVE_PATTERNS = [/client_secret/i, /refresh_token/i, /access_token/i, /"private_key"/i];
 
 function maskClientId(clientId) {
   const id = String(clientId || '');
@@ -48,20 +43,16 @@ function sanitizeError(err) {
   return safe;
 }
 
-// co-012: claves credenciales y firmas de tokens de terceros; «next_page_token» queda fuera a propósito.
 const CREDENTIAL_KEY_RE = /(secret|password|passwd|credential|authorization|api[-_]?key|bearer|cookie|jwt)/i;
 const TOKEN_KEY_RE = /(?:(?:access|refresh|id|auth|session|credential)[_-]?token$|^token$)/i;
-const SECRET_VALUE_RE = /(?:sk-(?:ant-)?[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{16,}|gho_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{10,}|xox[baprs]-[A-Za-z0-9-]{10,}|glpat-[A-Za-z0-9_-]{16,}|AIza[0-9A-Za-z_-]{30,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})/i;
+const SECRET_VALUE_RE =
+  /(?:sk-(?:ant-)?[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{16,}|gho_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{10,}|xox[baprs]-[A-Za-z0-9-]{10,}|glpat-[A-Za-z0-9_-]{16,}|AIza[0-9A-Za-z_-]{30,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})/i;
 
 function assertNoSecretInObject(obj, path = 'root') {
   if (!obj || typeof obj !== 'object') return;
   for (const [key, value] of Object.entries(obj)) {
     const keyLower = key.toLowerCase();
-    if (
-      CREDENTIAL_KEY_RE.test(keyLower)
-      || TOKEN_KEY_RE.test(keyLower)
-      || keyLower === 'private_key'
-    ) {
+    if (CREDENTIAL_KEY_RE.test(keyLower) || TOKEN_KEY_RE.test(keyLower) || keyLower === 'private_key') {
       throw new Error(`Respuesta IPC expone dato sensible en ${path}.${key}`);
     }
     if (typeof value === 'string' && value.length > 16) {

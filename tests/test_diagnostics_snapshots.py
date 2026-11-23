@@ -8,7 +8,6 @@ from backend.handlers import diagnostics
 
 
 def test_process_snapshot_sin_psutil_devuelve_nulls(monkeypatch) -> None:
-    # None en sys.modules provoca ImportError en `import psutil`
     monkeypatch.setitem(sys.modules, "psutil", None)
     snap = diagnostics._process_snapshot()
     assert snap["pid"] > 0

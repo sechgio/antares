@@ -35,7 +35,9 @@ const PreviewPanelView = React.lazy(() => import('./components/preview-panel/Pre
 const TechnicalReportsView = React.lazy(() => import('./components/technical-reports'));
 const InformesV2View = React.lazy(() => import('./components/informes-v2'));
 const PanelAvisoCorteView = React.lazy(() => import('./components/panel-aviso-corte'));
-const UbicacionesView = React.lazy(() => import('./components/UbicacionesView').then(m => ({ default: m.UbicacionesView })));
+const UbicacionesView = React.lazy(() =>
+  import('./components/UbicacionesView').then((m) => ({ default: m.UbicacionesView })),
+);
 const EvidenciaVolanteoView = React.lazy(() => import('./components/evidencia-volanteo'));
 const AutoIMGView = React.lazy(() => import('./components/autoimg'));
 const FichasTecnicasView = React.lazy(() => import('./components/fichas-tecnicas'));
@@ -109,8 +111,18 @@ function ElectronOnlyNotice() {
         </p>
         <div className="mt-6 rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] p-4 text-left text-xs font-mono">
           <div className="mb-2 font-sans font-semibold text-[var(--text-primary)]">Diagnóstico:</div>
-          <div>Es Electron: <span className={isElectron ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}>{isElectron ? 'Sí' : 'No'}</span></div>
-          <div>electronAPI: <span className={hasAPI ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}>{hasAPI ? 'Disponible' : 'No disponible'}</span></div>
+          <div>
+            Es Electron:{' '}
+            <span className={isElectron ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}>
+              {isElectron ? 'Sí' : 'No'}
+            </span>
+          </div>
+          <div>
+            electronAPI:{' '}
+            <span className={hasAPI ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}>
+              {hasAPI ? 'Disponible' : 'No disponible'}
+            </span>
+          </div>
           <div className="mt-2 text-[var(--text-muted)]">
             {isElectron && !hasAPI && 'El preload script no se ejecutó correctamente.'}
             {!isElectron && 'Abriendo desde navegador, no desde Electron.'}
@@ -155,20 +167,20 @@ function AppContent() {
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const openAppearanceSettings = useCallback(() => openSettings('appearance'), [openSettings]);
   const openProvidersSection = useCallback(() => openSettings('providers'), [openSettings]);
-  const openAgentModule = useCallback((module: string, id?: string) => {
-    const tab = module === 'conversion' ? 'convert' : module;
-    if (!TAB_DEFINITIONS.some((item) => item.id === tab)) return;
-    if (id) sessionStorage.setItem(`agent:open:${tab}`, id);
-    handleTabChange(tab as TabId);
-    window.dispatchEvent(new CustomEvent('agent:open-module', { detail: { module: tab, id } }));
-  }, [handleTabChange]);
+  const openAgentModule = useCallback(
+    (module: string, id?: string) => {
+      const tab = module === 'conversion' ? 'convert' : module;
+      if (!TAB_DEFINITIONS.some((item) => item.id === tab)) return;
+      if (id) sessionStorage.setItem(`agent:open:${tab}`, id);
+      handleTabChange(tab as TabId);
+      window.dispatchEvent(new CustomEvent('agent:open-module', { detail: { module: tab, id } }));
+    },
+    [handleTabChange],
+  );
 
   useEffect(() => {
-    // La vista nativa del navegador se pinta ENCIMA del DOM por coordenadas de
-    // pantalla: no la oculta display:none. Solo desaparece mandando bounds:null.
     const hideBrowser = () => {
       void agentApi.agentBrowser('bounds', { bounds: null }).catch((err) => {
-        // No silenciar: si falla, la vista nativa se queda flotando sobre otras pestañas.
         reportFrontendError({
           kind: 'api_error',
           view: 'app:agentBrowser.hide',
@@ -178,7 +190,9 @@ function AppContent() {
       });
     };
     if (activeTab !== 'agent') hideBrowser();
-    return () => { if (activeTab !== 'agent') hideBrowser(); };
+    return () => {
+      if (activeTab !== 'agent') hideBrowser();
+    };
   }, [activeTab]);
 
   useEffect(() => {
@@ -197,8 +211,14 @@ function AppContent() {
           const result = await executeRendererTool(request.method, (request.params || {}) as Record<string, unknown>);
           await agentApi.agentRendererResult(request.id, result);
         } catch (err) {
-          await agentApi.agentRendererResult(request.id, undefined, errorMessage(err, 'No se pudo ejecutar la función'),
-            err instanceof Error && err.name === 'AgentEffectUncertainError').catch(() => {});
+          await agentApi
+            .agentRendererResult(
+              request.id,
+              undefined,
+              errorMessage(err, 'No se pudo ejecutar la función'),
+              err instanceof Error && err.name === 'AgentEffectUncertainError',
+            )
+            .catch(() => {});
         }
         return;
       }
@@ -270,10 +290,18 @@ function AppContent() {
   useKeyboardShortcut('c', () => handleTabChange('canvas'), { ctrl: true, alt: true, preventDefault: true });
   useKeyboardShortcut('2', () => handleTabChange('panelAvisoCorte'), { ctrl: true, preventDefault: true });
   useKeyboardShortcut('u', () => handleTabChange('ubicaciones'), { ctrl: true, preventDefault: true });
-  useKeyboardShortcut('v', () => handleTabChange('evidenciaVolanteo'), { ctrl: true, shift: true, preventDefault: true });
+  useKeyboardShortcut('v', () => handleTabChange('evidenciaVolanteo'), {
+    ctrl: true,
+    shift: true,
+    preventDefault: true,
+  });
   useKeyboardShortcut('a', () => handleTabChange('autoimg'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('f', () => handleTabChange('fichasTecnicas'), { ctrl: true, shift: true, preventDefault: true });
-  useKeyboardShortcut('i', () => handleTabChange('technicalReports'), { ctrl: true, shift: true, preventDefault: true });
+  useKeyboardShortcut('i', () => handleTabChange('technicalReports'), {
+    ctrl: true,
+    shift: true,
+    preventDefault: true,
+  });
   useKeyboardShortcut('j', () => handleTabChange('informesV2'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('g', () => handleTabChange('design'), { ctrl: true, shift: true, preventDefault: true });
   useKeyboardShortcut('d', () => openSettings('petdex'), { ctrl: true, shift: true, preventDefault: true });
@@ -304,45 +332,51 @@ function AppContent() {
           }}
           onOpenSettings={openAppearanceSettings}
         >
-        <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          <main className="flex-1 overflow-hidden relative">
-            {cloudAuthBlocked ? (
-              authLoading ? (
-                <EspaciosAuthSkeleton />
+          <div className="flex-1 flex flex-col min-w-0 min-h-0">
+            <main className="flex-1 overflow-hidden relative">
+              {cloudAuthBlocked ? (
+                authLoading ? (
+                  <EspaciosAuthSkeleton />
+                ) : (
+                  <Suspense fallback={<EspaciosAuthSkeleton />}>
+                    <LoginScreen />
+                  </Suspense>
+                )
               ) : (
-                <Suspense fallback={<EspaciosAuthSkeleton />}>
-                  <LoginScreen />
+                <Suspense
+                  fallback={
+                    <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
+                      Cargando...
+                    </div>
+                  }
+                >
+                  {canvasMounted && (
+                    <div
+                      data-testid="canvas-keep-alive"
+                      className={`h-full min-h-0 overflow-hidden ${showCanvas ? '' : 'hidden'}`}
+                      aria-hidden={!showCanvas}
+                      inert={!showCanvas ? true : undefined}
+                    >
+                      <ErrorBoundary view="canvas">
+                        <CanvasKeepAlive active={showCanvas} />
+                      </ErrorBoundary>
+                    </div>
+                  )}
+                  {ActiveView && (
+                    <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
+                      <ErrorBoundary key={activeTab} view={activeTab}>
+                        {activeTab === 'agent' ? (
+                          <AgentView onConfigureProvider={openProvidersSection} onOpenModule={openAgentModule} />
+                        ) : (
+                          <ActiveView />
+                        )}
+                      </ErrorBoundary>
+                    </div>
+                  )}
                 </Suspense>
-              )
-            ) : (
-              <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">Cargando...</div>}>
-                {canvasMounted && (
-                  <div
-                    data-testid="canvas-keep-alive"
-                    className={`h-full min-h-0 overflow-hidden ${showCanvas ? '' : 'hidden'}`}
-                    aria-hidden={!showCanvas}
-                    inert={!showCanvas ? true : undefined}
-                  >
-                    <ErrorBoundary view="canvas">
-                      <CanvasKeepAlive active={showCanvas} />
-                    </ErrorBoundary>
-                  </div>
-                )}
-                {ActiveView && (
-                  <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
-                    <ErrorBoundary key={activeTab} view={activeTab}>
-                      {activeTab === 'agent' ? (
-                        <AgentView onConfigureProvider={openProvidersSection} onOpenModule={openAgentModule} />
-                      ) : (
-                        <ActiveView />
-                      )}
-                    </ErrorBoundary>
-                  </div>
-                )}
-              </Suspense>
-            )}
-          </main>
-        </div>
+              )}
+            </main>
+          </div>
         </Sidebar>
       </div>
       {settingsOpen && (

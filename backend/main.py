@@ -288,10 +288,6 @@ def _preload_pandas_for_worker(method_name: str, params: dict[str, Any]) -> None
 def _preload_numpy_before_ready() -> None:
     if sys.platform != "win32":
         return
-    # numpy carga OpenBLAS, cuya inicialización de DLL crea hilos bajo el loader
-    # lock de Windows; si _mupdf u otro módulo nativo está en DLL_THREAD_ATTACH
-    # cuando un worker dispara esa carga, ambos se bloquean de forma permanente.
-    # Importarlo en el hilo principal antes de `ready` fija el orden seguro.
     try:
         with serialized_import():
             importlib.import_module("numpy")
