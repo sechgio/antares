@@ -1,6 +1,13 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { agentApi, type AgentApproval, type AgentPanel, type AgentPermissionMode, type AgentReasoningEffort, type AgentSession } from '../../api/agentApi';
+import {
+  agentApi,
+  type AgentApproval,
+  type AgentPanel,
+  type AgentPermissionMode,
+  type AgentReasoningEffort,
+  type AgentSession,
+} from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { mcpApi } from '../../api/mcpApi';
 import AgentView from './AgentView';
@@ -14,7 +21,10 @@ type Snapshot = Awaited<ReturnType<typeof agentApi.agentMessagesList>>;
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
   return { promise, resolve, reject };
 }
 
@@ -22,7 +32,9 @@ function agentUpdates() {
   const listeners = new Set<(method: string, params: unknown) => void>();
   vi.spyOn(window.electronAPI, 'onNotify').mockImplementation((callback) => {
     listeners.add(callback);
-    return () => { listeners.delete(callback); };
+    return () => {
+      listeners.delete(callback);
+    };
   });
   return (method = 'agent.changed', params: unknown = { session_id: 's1' }) => {
     for (const listener of [...listeners]) listener(method, params);
@@ -30,39 +42,72 @@ function agentUpdates() {
 }
 
 const session: AgentSession = {
-  id: 's1', title: 'Primera', provider: 'local', model: 'prueba',
-  created_at: 1, updated_at: 1, last_error: null,
+  id: 's1',
+  title: 'Primera',
+  provider: 'local',
+  model: 'prueba',
+  created_at: 1,
+  updated_at: 1,
+  last_error: null,
 };
 const empty: Snapshot = { messages: [], running: false, pending_approvals: [] };
 
 it('abre adjuntos y referencias en el visor sin enviar mensajes al agente', async () => {
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+    ...empty,
     messages: [{ role: 'assistant', content: '[Notas](notas.txt)', ts: 1 }],
     context: { modules: [], accounts: [], files: [{ path: 'C:\\datos.xlsx', folder: false }] },
   });
-  vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({ attachments: [{ id: 'a1', name: 'informe.pdf', kind: 'files' }] });
-  const preview = vi.spyOn(agentApi, 'agentFilePreview').mockResolvedValue({ kind: 'text', name: 'notas.txt', size: 4, text: 'Vista local', truncated: false });
+  vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({
+    attachments: [{ id: 'a1', name: 'informe.pdf', kind: 'files' }],
+  });
+  const preview = vi
+    .spyOn(agentApi, 'agentFilePreview')
+    .mockResolvedValue({ kind: 'text', name: 'notas.txt', size: 4, text: 'Vista local', truncated: false });
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   fireEvent.click(await screen.findByRole('button', { name: 'Previsualizar Notas' }));
   expect(await screen.findByText('Vista local')).toBeInTheDocument();
   expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'resource', resource: 'notas.txt' }, 0, 0);
   expect(screen.queryByRole('button', { name: 'Previsualizar datos.xlsx' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Archivos y accesos' }));
-  fireEvent.click(within(screen.getByRole('dialog', { name: 'Archivos y accesos' })).getByRole('button', { name: 'Previsualizar datos.xlsx' }));
-  await waitFor(() => expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'resource', resource: 'C:\\datos.xlsx' }, 0, 0));
+  fireEvent.click(
+    within(screen.getByRole('dialog', { name: 'Archivos y accesos' })).getByRole('button', {
+      name: 'Previsualizar datos.xlsx',
+    }),
+  );
+  await waitFor(() =>
+    expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'resource', resource: 'C:\\datos.xlsx' }, 0, 0),
+  );
   fireEvent.click(screen.getByRole('button', { name: 'Cerrar archivos y accesos' }));
-  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Adjuntar archivos'));
+  });
   fireEvent.click(screen.getByRole('button', { name: 'Previsualizar informe.pdf' }));
-  await waitFor(() => expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'attachment', id: 'a1', name: 'informe.pdf' }, 0, 0));
+  await waitFor(() =>
+    expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'attachment', id: 'a1', name: 'informe.pdf' }, 0, 0),
+  );
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   fireEvent.click(screen.getByLabelText('Cerrar vista previa'));
   expect(screen.queryByLabelText('Vista previa de archivo')).toBeNull();
 });
 const suggestionProvider: AiProviderSpec = {
-  id: 'local', label: 'Local', description: '', docs: '', editable_base_url: false, default_base_url: '', default_model: 'prueba',
-  provider: 'openai', configured: true, has_key: true, key_masked: null, base_url: '', needs_key: false,
+  id: 'local',
+  label: 'Local',
+  description: '',
+  docs: '',
+  editable_base_url: false,
+  default_base_url: '',
+  default_model: 'prueba',
+  provider: 'openai',
+  configured: true,
+  has_key: true,
+  key_masked: null,
+  base_url: '',
+  needs_key: false,
 };
 const availableTools = [
   { name: 'flows_list', kind: 'backend' as const, gated: false, enabled: true },
@@ -88,7 +133,8 @@ afterEach(() => {
   vi.useRealTimers();
   if (scrollToDescriptor) Object.defineProperty(HTMLElement.prototype, 'scrollTo', scrollToDescriptor);
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo');
-  if (scrollIntoViewDescriptor) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', scrollIntoViewDescriptor);
+  if (scrollIntoViewDescriptor)
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', scrollIntoViewDescriptor);
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
 });
 
@@ -96,9 +142,21 @@ it('crea el agente y abre su conversación sin enviar mensajes ni duplicarla al 
   vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
   vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [] });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  const profile = { id: 'revisor', name: 'Revisor', color: '#0E7490', description: '', instructions: 'Revisa informes', starter: '', tools: null, created_at: 1, updated_at: 1 };
+  const profile = {
+    id: 'revisor',
+    name: 'Revisor',
+    color: '#0E7490',
+    description: '',
+    instructions: 'Revisa informes',
+    starter: '',
+    tools: null,
+    created_at: 1,
+    updated_at: 1,
+  };
   vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile });
-  const create = vi.spyOn(agentApi, 'agentSessionCreate').mockResolvedValue({ session: { ...session, profile: { id: profile.id, name: profile.name } } });
+  const create = vi
+    .spyOn(agentApi, 'agentSessionCreate')
+    .mockResolvedValue({ session: { ...session, profile: { id: profile.id, name: profile.name } } });
   render(<AgentView />);
   await act(async () => {});
   fireEvent.click(screen.getByRole('button', { name: 'Nuevo agente' }));
@@ -106,19 +164,32 @@ it('crea el agente y abre su conversación sin enviar mensajes ni duplicarla al 
   fireEvent.change(editor.getByLabelText('Nombre del agente'), { target: { value: profile.name } });
   fireEvent.change(editor.getByLabelText('Indicaciones del agente'), { target: { value: profile.instructions } });
   fireEvent.click(editor.getByRole('radio', { name: 'Color Verde' }));
-  await act(async () => { fireEvent.click(editor.getByRole('button', { name: 'Crear y chatear' })); });
+  await act(async () => {
+    fireEvent.click(editor.getByRole('button', { name: 'Crear y chatear' }));
+  });
   expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba', profile_id: profile.id });
   expect(screen.queryByRole('dialog', { name: 'Crear agente' })).not.toBeInTheDocument();
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Editar agente Revisor' }));
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  });
   expect(create).toHaveBeenCalledTimes(1);
 });
 
 it('guarda el agente sin proveedor y muestra el perfil sin intentar abrir un chat', async () => {
   vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [] });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  const profile = { id: 'revisor', name: 'Revisor', description: '', instructions: 'Revisa informes', starter: '', tools: null, created_at: 1, updated_at: 1 };
+  const profile = {
+    id: 'revisor',
+    name: 'Revisor',
+    description: '',
+    instructions: 'Revisa informes',
+    starter: '',
+    tools: null,
+    created_at: 1,
+    updated_at: 1,
+  };
   vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile });
   const create = vi.spyOn(agentApi, 'agentSessionCreate');
   render(<AgentView />);
@@ -127,7 +198,9 @@ it('guarda el agente sin proveedor y muestra el perfil sin intentar abrir un cha
   const editor = within(screen.getByRole('dialog', { name: 'Crear agente' }));
   fireEvent.change(editor.getByLabelText('Nombre del agente'), { target: { value: profile.name } });
   fireEvent.change(editor.getByLabelText('Indicaciones del agente'), { target: { value: profile.instructions } });
-  await act(async () => { fireEvent.click(editor.getByRole('button', { name: 'Crear agente' })); });
+  await act(async () => {
+    fireEvent.click(editor.getByRole('button', { name: 'Crear agente' }));
+  });
   expect(create).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: 'Editar agente Revisor' })).toBeInTheDocument();
   expect(addToast).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
@@ -140,7 +213,9 @@ it.each([
 ])('avisa del presupuesto diario del agente a partir del 80 %: $used', async ({ used, text }) => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [] });
-  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, token_budget: { limit: 200000, used } });
+  const list = vi
+    .spyOn(agentApi, 'agentMessagesList')
+    .mockResolvedValue({ ...empty, token_budget: { limit: 200000, used } });
   render(<AgentView />);
   await waitFor(() => expect(list).toHaveBeenCalled());
   await act(async () => {});
@@ -161,9 +236,18 @@ it.each([
 it('sugiere bots con @ y permite elegir con teclado sin enviar el mensaje', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: ['Revisor de PDFs', 'Redactor'].map((name, index) => ({
-    id: `bot-${index}`, name, description: 'Comprueba firmas', instructions: 'Revisa', starter: '', tools: null, created_at: 1, updated_at: 1,
-  })) });
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({
+    profiles: ['Revisor de PDFs', 'Redactor'].map((name, index) => ({
+      id: `bot-${index}`,
+      name,
+      description: 'Comprueba firmas',
+      instructions: 'Revisa',
+      starter: '',
+      tools: null,
+      created_at: 1,
+      updated_at: 1,
+    })),
+  });
   render(<AgentView />);
   await act(async () => {});
   const composer = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
@@ -188,14 +272,28 @@ it('sugiere bots con @ y permite elegir con teclado sin enviar el mensaje', asyn
 it('sugiere conectores y servidores MCP con @ e inserta la mención que habilita sus herramientas', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.spyOn(mcpApi, 'mcpServersList').mockResolvedValue({ servers: [{
-    id: 'srv', name: 'Mi Servidor', transport: 'http', url: 'https://mcp.example.com', command: '', args: [], secret_keys: [], tools_count: 3,
-  }] });
+  vi.spyOn(mcpApi, 'mcpServersList').mockResolvedValue({
+    servers: [
+      {
+        id: 'srv',
+        name: 'Mi Servidor',
+        transport: 'http',
+        url: 'https://mcp.example.com',
+        command: '',
+        args: [],
+        secret_keys: [],
+        tools_count: 3,
+      },
+    ],
+  });
   render(<AgentView />);
   await act(async () => {});
   const composer = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
   fireEvent.change(composer, { target: { value: 'Revisa @gma' } });
-  expect(screen.getByRole('option', { name: /Gmail\s*Buscar y leer correos/ })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByRole('option', { name: /Gmail\s*Buscar y leer correos/ })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
   fireEvent.keyDown(composer, { key: 'Enter' });
   expect(composer).toHaveValue('Revisa @gmail ');
   fireEvent.change(composer, { target: { value: 'Busca con @mi' } });
@@ -209,9 +307,18 @@ it('sugiere conectores y servidores MCP con @ e inserta la mención que habilita
 it('distingue bots con nombres repetidos y conserva el texto después del cursor', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: ['Revisor', 'Révisor'].map((name, index) => ({
-    id: `bot-${index}`, name, description: `Especialidad ${index}`, instructions: 'Revisa', starter: '', tools: null, created_at: 1, updated_at: 1,
-  })) });
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({
+    profiles: ['Revisor', 'Révisor'].map((name, index) => ({
+      id: `bot-${index}`,
+      name,
+      description: `Especialidad ${index}`,
+      instructions: 'Revisa',
+      starter: '',
+      tools: null,
+      created_at: 1,
+      updated_at: 1,
+    })),
+  });
   render(<AgentView />);
   await act(async () => {});
   const composer = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
@@ -224,43 +331,83 @@ it('distingue bots con nombres repetidos y conserva el texto después del cursor
 it('conserva el bot seleccionado en la cola restaurada aunque cambie su nombre', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
-  const original = { id: 'bot-original', name: 'Revisor', description: '', instructions: 'Revisa', starter: '', tools: null,
-    created_at: 1, updated_at: 1 };
+  const original = {
+    id: 'bot-original',
+    name: 'Revisor',
+    description: '',
+    instructions: 'Revisa',
+    starter: '',
+    tools: null,
+    created_at: 1,
+    updated_at: 1,
+  };
   const profiles = vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [original] });
   const view = render(<AgentView />);
   await act(async () => {});
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Consulta @Rev' } });
   fireEvent.click(screen.getByRole('option', { name: /Revisor/ }));
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' }));
+  });
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   view.unmount();
-  profiles.mockResolvedValue({ profiles: [{ ...original, name: 'Archivado' }, { ...original, id: 'bot-replacement' }] });
+  profiles.mockResolvedValue({
+    profiles: [
+      { ...original, name: 'Archivado' },
+      { ...original, id: 'bot-replacement' },
+    ],
+  });
   list.mockResolvedValue(empty);
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByTitle('Reintentar el envío pendiente')); });
-  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Consulta @bot:bot-original', expect.any(String), []);
+  await act(async () => {
+    fireEvent.click(screen.getByTitle('Reintentar el envío pendiente'));
+  });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(
+    session.id,
+    'Consulta @bot:bot-original',
+    expect.any(String),
+    [],
+  );
 });
 
 it('muestra agentes y conversaciones en una sola lista con un buscador común', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [{
-    id: 'revisor', name: 'Revisor de PDFs', description: 'Comprueba firmas', instructions: 'Revisa', starter: '', tools: null,
-    created_at: 1, updated_at: 1,
-  }] });
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({
+    profiles: [
+      {
+        id: 'revisor',
+        name: 'Revisor de PDFs',
+        description: 'Comprueba firmas',
+        instructions: 'Revisa',
+        starter: '',
+        tools: null,
+        created_at: 1,
+        updated_at: 1,
+      },
+    ],
+  });
   render(<AgentView />);
   await act(async () => {});
   const sidebar = within(screen.getByRole('complementary', { name: 'Agentes y conversaciones' }));
   expect(sidebar.queryByRole('group', { name: 'Vistas del agente' })).not.toBeInTheDocument();
-  expect(within(sidebar.getByRole('region', { name: 'Agentes' })).getByTitle('Nueva conversación con Revisor de PDFs')).toBeInTheDocument();
-  expect(within(sidebar.getByRole('region', { name: 'Conversaciones' })).getByRole('button', { name: 'Primera' })).toBeInTheDocument();
+  expect(
+    within(sidebar.getByRole('region', { name: 'Agentes' })).getByTitle('Nueva conversación con Revisor de PDFs'),
+  ).toBeInTheDocument();
+  expect(
+    within(sidebar.getByRole('region', { name: 'Conversaciones' })).getByRole('button', { name: 'Primera' }),
+  ).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador pendiente' } });
   fireEvent.click(sidebar.getByRole('button', { name: 'Buscar agentes y conversaciones' }));
-  fireEvent.change(sidebar.getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), { target: { value: 'firmas' } });
+  fireEvent.change(sidebar.getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), {
+    target: { value: 'firmas' },
+  });
   expect(sidebar.getByTitle('Nueva conversación con Revisor de PDFs')).toBeInTheDocument();
   expect(sidebar.queryByRole('button', { name: 'Primera' })).not.toBeInTheDocument();
-  fireEvent.change(sidebar.getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), { target: { value: 'Primera' } });
+  fireEvent.change(sidebar.getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), {
+    target: { value: 'Primera' },
+  });
   expect(sidebar.getByText(/Sin agentes para/)).toBeInTheDocument();
   expect(sidebar.getByRole('button', { name: 'Primera' })).toBeInTheDocument();
   fireEvent.click(sidebar.getByRole('button', { name: 'Cerrar búsqueda' }));
@@ -272,9 +419,9 @@ it('muestra agentes y conversaciones en una sola lista con un buscador común', 
 it('busca herramientas por etiqueta o nombre y abre solo los grupos con coincidencias', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.mocked(agentApi.agentToolsList).mockResolvedValue({ tools: [
-    ...availableTools, { name: 'shell_run', kind: 'backend', gated: true, enabled: false },
-  ] });
+  vi.mocked(agentApi.agentToolsList).mockResolvedValue({
+    tools: [...availableTools, { name: 'shell_run', kind: 'backend', gated: true, enabled: false }],
+  });
   const save = vi.spyOn(agentApi, 'agentToolsSet');
   render(<AgentView />);
   await act(async () => {});
@@ -282,7 +429,9 @@ it('busca herramientas por etiqueta o nombre y abre solo los grupos con coincide
   const panel = within(screen.getByRole('dialog', { name: 'Herramientas del agente' }));
   const search = panel.getByRole('textbox', { name: 'Buscar herramientas' });
   await waitFor(() => expect(search).toHaveFocus());
-  const transitions = getComputedStyle(search).transitionProperty.split(',').map((property) => property.trim());
+  const transitions = getComputedStyle(search)
+    .transitionProperty.split(',')
+    .map((property) => property.trim());
   expect(transitions).toContain('border-color');
   expect(transitions).not.toContain('all');
   expect(transitions).not.toContain('visibility');
@@ -302,12 +451,14 @@ it('busca herramientas por etiqueta o nombre y abre solo los grupos con coincide
 it('filtra skills y MCP sin instalar ni habilitar capacidades automáticamente', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.mocked(agentApi.agentToolsList).mockResolvedValue({ tools: [
-    ...availableTools,
-    { name: 'skills_list', kind: 'backend', module: 'agent', gated: false, enabled: false },
-    { name: 'skills_read', kind: 'backend', module: 'agent', gated: false, enabled: false },
-    { name: 'mcp_library', kind: 'mcp', gated: true, enabled: false },
-  ] });
+  vi.mocked(agentApi.agentToolsList).mockResolvedValue({
+    tools: [
+      ...availableTools,
+      { name: 'skills_list', kind: 'backend', module: 'agent', gated: false, enabled: false },
+      { name: 'skills_read', kind: 'backend', module: 'agent', gated: false, enabled: false },
+      { name: 'mcp_library', kind: 'mcp', gated: true, enabled: false },
+    ],
+  });
   const save = vi.spyOn(agentApi, 'agentToolsSet');
   render(<AgentView />);
   await act(async () => {});
@@ -324,7 +475,9 @@ it('filtra skills y MCP sin instalar ni habilitar capacidades automáticamente',
   expect(save).not.toHaveBeenCalled();
   fireEvent.click(filters.getByRole('button', { name: 'Skills' }));
   save.mockResolvedValueOnce({ tools: [] });
-  await act(async () => { fireEvent.click(panel.getByRole('switch', { name: 'Habilitar skills_list' })); });
+  await act(async () => {
+    fireEvent.click(panel.getByRole('switch', { name: 'Habilitar skills_list' }));
+  });
   expect(save).toHaveBeenLastCalledWith('s1', ['flows_list', 'db_clear', 'skills_list']);
   fireEvent.keyDown(window, { key: 'Escape' });
   expect(screen.queryByRole('dialog', { name: 'Herramientas del agente' })).not.toBeInTheDocument();
@@ -332,12 +485,23 @@ it('filtra skills y MCP sin instalar ni habilitar capacidades automáticamente',
 });
 
 it('muestra conversaciones de una sola línea y reserva los avatares de la barra lateral para los agentes', async () => {
-  const profile = { id: 'p1', name: 'Reportes', description: 'Prepara informes', instructions: '', starter: '', tools: null, created_at: 1, updated_at: 1 };
+  const profile = {
+    id: 'p1',
+    name: 'Reportes',
+    description: 'Prepara informes',
+    instructions: '',
+    starter: '',
+    tools: null,
+    created_at: 1,
+    updated_at: 1,
+  };
   vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [profile] });
-  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [
-    { ...session, profile: { id: profile.id, name: profile.name }, last_error: 'Proveedor sin conexión' },
-    { ...session, id: 's2', title: '' },
-  ] });
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({
+    sessions: [
+      { ...session, profile: { id: profile.id, name: profile.name }, last_error: 'Proveedor sin conexión' },
+      { ...session, id: 's2', title: '' },
+    ],
+  });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   localStorage.setItem('antares-agent-session', session.id);
   render(<AgentView />);
@@ -348,9 +512,13 @@ it('muestra conversaciones de una sola línea y reserva los avatares de la barra
   expect(within(within(sidebar).getByRole('region', { name: 'Conversaciones' })).queryAllByRole('img')).toHaveLength(0);
   expect(within(sidebar).queryByText(/prueba|local|hace|ahora/)).not.toBeInTheDocument();
   expect(within(sidebar).getByTitle('Proveedor sin conexión')).toBeInTheDocument();
-  expect(screen.getByRole('main', { name: 'Conversación del agente' }).querySelector('header svg[role="img"]')).toBeNull();
+  expect(
+    screen.getByRole('main', { name: 'Conversación del agente' }).querySelector('header svg[role="img"]'),
+  ).toBeNull();
   const second = within(sidebar).getByRole('button', { name: 'Conversación' });
-  await act(async () => { fireEvent.click(second); });
+  await act(async () => {
+    fireEvent.click(second);
+  });
   expect(second).toHaveAttribute('aria-current', 'page');
   expect(first).not.toHaveAttribute('aria-current');
   expect(agentApi.agentMessagesList).toHaveBeenLastCalledWith('s2');
@@ -360,58 +528,88 @@ it('muestra conversaciones de una sola línea y reserva los avatares de la barra
 
 it('conserva la búsqueda y el borrado desde las filas compactas', async () => {
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, { ...session, id: 's2', title: 'Segunda' }] });
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({
+    sessions: [session, { ...session, id: 's2', title: 'Segunda' }],
+  });
   confirm.mockResolvedValue(true);
   const remove = vi.spyOn(agentApi, 'agentSessionDelete').mockResolvedValue({ deleted: true, id: 's2' });
   render(<AgentView />);
   const sidebar = screen.getByRole('complementary', { name: 'Agentes y conversaciones' });
   await within(sidebar).findByRole('button', { name: 'Primera' });
   fireEvent.click(within(sidebar).getByRole('button', { name: 'Buscar agentes y conversaciones' }));
-  fireEvent.change(within(sidebar).getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), { target: { value: 'Segunda' } });
+  fireEvent.change(within(sidebar).getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), {
+    target: { value: 'Segunda' },
+  });
   expect(within(sidebar).queryByRole('button', { name: 'Primera' })).not.toBeInTheDocument();
   expect(within(sidebar).getByRole('button', { name: 'Segunda' })).toBeInTheDocument();
   vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session] });
   fireEvent.click(within(sidebar).getByRole('button', { name: 'Opciones de Segunda' }));
-  await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'Eliminar' })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Eliminar' }));
+  });
   expect(remove).toHaveBeenCalledExactlyOnceWith('s2');
   expect(within(sidebar).queryByRole('button', { name: 'Segunda' })).not.toBeInTheDocument();
 });
 
 it('fija, agrupa, oculta y renombra conversaciones desde el menú contextual', async () => {
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, { ...session, id: 's2', title: 'Segunda' }] });
-  const rename = vi.spyOn(agentApi, 'agentSessionRename').mockResolvedValue({ session: { ...session, id: 's2', title: 'Marzo' } });
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({
+    sessions: [session, { ...session, id: 's2', title: 'Segunda' }],
+  });
+  const rename = vi
+    .spyOn(agentApi, 'agentSessionRename')
+    .mockResolvedValue({ session: { ...session, id: 's2', title: 'Marzo' } });
   render(<AgentView />);
   const sidebar = screen.getByRole('complementary', { name: 'Agentes y conversaciones' });
   await within(sidebar).findByRole('button', { name: 'Segunda' });
 
   fireEvent.contextMenu(within(sidebar).getByRole('button', { name: 'Segunda' }));
   fireEvent.click(screen.getByRole('menuitem', { name: 'Fijar' }));
-  expect(within(within(sidebar).getByRole('region', { name: 'Fijados' })).getByRole('button', { name: 'Segunda' })).toBeInTheDocument();
+  expect(
+    within(within(sidebar).getByRole('region', { name: 'Fijados' })).getByRole('button', { name: 'Segunda' }),
+  ).toBeInTheDocument();
 
   fireEvent.click(within(sidebar).getByRole('button', { name: 'Opciones de Primera' }));
   fireEvent.click(screen.getByRole('menuitem', { name: 'Mover a nueva sección' }));
   fireEvent.change(screen.getByLabelText('Nombre de la sección'), { target: { value: 'Clientes' } });
   fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
-  expect(within(within(sidebar).getByRole('region', { name: 'Clientes' })).getByRole('button', { name: 'Primera' })).toBeInTheDocument();
+  expect(
+    within(within(sidebar).getByRole('region', { name: 'Clientes' })).getByRole('button', { name: 'Primera' }),
+  ).toBeInTheDocument();
 
   fireEvent.click(within(sidebar).getByRole('button', { name: 'Opciones de Primera' }));
   fireEvent.click(screen.getByRole('menuitem', { name: 'Ocultar de la barra lateral' }));
   expect(within(sidebar).queryByRole('button', { name: 'Primera' })).not.toBeInTheDocument();
   fireEvent.click(within(sidebar).getByRole('button', { name: 'Mostrar ocultos (1)' }));
   expect(within(sidebar).getByRole('button', { name: 'Primera' })).toBeInTheDocument();
-  expect(JSON.parse(localStorage.getItem('antares-agent-sidebar') ?? '{}')).toMatchObject({ pinned: ['s2'], hidden: ['s1'], sections: { s1: 'Clientes' } });
+  expect(JSON.parse(localStorage.getItem('antares-agent-sidebar') ?? '{}')).toMatchObject({
+    pinned: ['s2'],
+    hidden: ['s1'],
+    sections: { s1: 'Clientes' },
+  });
 
   fireEvent.click(within(sidebar).getByRole('button', { name: 'Opciones de Segunda' }));
   fireEvent.click(screen.getByRole('menuitem', { name: 'Cambiar nombre' }));
   fireEvent.change(screen.getByLabelText('Cambiar nombre'), { target: { value: '  Marzo ' } });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  });
   expect(rename).toHaveBeenCalledExactlyOnceWith('s2', 'Marzo');
 });
 
 it('marca como no leído y cambia el nombre del agente desde su menú', async () => {
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  const profile = { id: 'revisor', name: 'Revisor', color: '#0E7490', description: '', instructions: 'Revisa informes', starter: '', tools: null, created_at: 1, updated_at: 1 };
+  const profile = {
+    id: 'revisor',
+    name: 'Revisor',
+    color: '#0E7490',
+    description: '',
+    instructions: 'Revisa informes',
+    starter: '',
+    tools: null,
+    created_at: 1,
+    updated_at: 1,
+  };
   vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [profile] });
   const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: { ...profile, name: 'Auditor' } });
   render(<AgentView />);
@@ -422,8 +620,12 @@ it('marca como no leído y cambia el nombre del agente desde su menú', async ()
   expect(screen.getByRole('menuitem', { name: 'Marcar como leído' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('menuitem', { name: 'Cambiar nombre del agente' }));
   fireEvent.change(screen.getByLabelText('Cambiar nombre del agente'), { target: { value: 'Auditor' } });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
-  expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'revisor', name: 'Auditor', instructions: 'Revisa informes', tools: null }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+  });
+  expect(save).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ id: 'revisor', name: 'Auditor', instructions: 'Revisa informes', tools: null }),
+  );
   expect(within(sidebar).getByRole('button', { name: 'Opciones de Auditor' })).toBeInTheDocument();
 });
 
@@ -448,9 +650,18 @@ it('abre el buscador desde el encabezado de conversaciones sin barra superior', 
 
 it('muestra seis agentes y despliega el resto con Ver todos', async () => {
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: Array.from({ length: 8 }, (_, index) => ({
-    id: `a${index}`, name: `Agente ${index}`, description: '', instructions: 'x', starter: '', tools: null, created_at: 1, updated_at: 1,
-  })) });
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({
+    profiles: Array.from({ length: 8 }, (_, index) => ({
+      id: `a${index}`,
+      name: `Agente ${index}`,
+      description: '',
+      instructions: 'x',
+      starter: '',
+      tools: null,
+      created_at: 1,
+      updated_at: 1,
+    })),
+  });
   render(<AgentView />);
   const agents = within(await screen.findByRole('region', { name: 'Agentes' }));
   await agents.findByRole('img', { name: 'Agente 0' });
@@ -463,14 +674,17 @@ it('muestra seis agentes y despliega el resto con Ver todos', async () => {
   fireEvent.click(agents.getByRole('button', { name: 'Ver menos' }));
   expect(agents.getAllByRole('img')).toHaveLength(6);
   fireEvent.click(screen.getByRole('button', { name: 'Buscar agentes y conversaciones' }));
-  fireEvent.change(screen.getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), { target: { value: 'Agente 7' } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), {
+    target: { value: 'Agente 7' },
+  });
   expect(agents.getByRole('img', { name: 'Agente 7' })).toBeInTheDocument();
   expect(agents.queryByRole('button', { name: /Ver todos/ })).not.toBeInTheDocument();
 });
 
 it('oculta y muestra la barra lateral sin perder la conversación ni el borrador', async () => {
   localStorage.setItem('antares-agent-session', session.id);
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+    ...empty,
     messages: [{ role: 'assistant', content: 'Respuesta conservada', ts: 1 }],
   });
   render(<AgentView />);
@@ -508,40 +722,60 @@ it('regula el razonamiento con los niveles del modelo y lo guarda al soltar', as
   localStorage.setItem('antares-agent-session', session.id);
   const reasoning_levels = ['low', 'medium', 'high'] as const;
   const plain = { ...session, id: 's2', title: 'Segunda', reasoning_levels: [] };
-  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [{ ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'xhigh' }, plain] });
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({
+    sessions: [{ ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'xhigh' }, plain],
+  });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  const save = vi.spyOn(agentApi, 'agentSessionReasoningSet')
-    .mockResolvedValueOnce({ session: { ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'medium' } });
+  const save = vi
+    .spyOn(agentApi, 'agentSessionReasoningSet')
+    .mockResolvedValueOnce({
+      session: { ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'medium' },
+    });
   render(<AgentView />);
   await act(async () => {});
   fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Alto' }));
   expect(within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByText(session.model)).toBeVisible();
-  const slider = within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByRole('slider', { name: 'Nivel de razonamiento' });
+  const slider = within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByRole('slider', {
+    name: 'Nivel de razonamiento',
+  });
   expect(slider).toHaveAttribute('max', '2');
   fireEvent.change(slider, { target: { value: '1' } });
   expect(slider).toHaveAttribute('aria-valuetext', 'Medio');
   expect(save).not.toHaveBeenCalled();
-  await act(async () => { fireEvent.keyUp(slider, { key: 'ArrowLeft' }); });
+  await act(async () => {
+    fireEvent.keyUp(slider, { key: 'ArrowLeft' });
+  });
   expect(save).toHaveBeenCalledWith(session.id, 'medium');
   expect(screen.getByRole('button', { name: 'Razonamiento: Medio' })).toBeEnabled();
-  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Segunda'));
+  });
   expect(screen.queryByRole('button', { name: /^Razonamiento:/ })).not.toBeInTheDocument();
 });
 
 it('ofrece el nivel máximo cuando el modelo lo admite', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   const reasoning_levels = ['high', 'xhigh', 'max'] as const;
-  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [{ ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'high' }] });
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({
+    sessions: [{ ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'high' }],
+  });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  const save = vi.spyOn(agentApi, 'agentSessionReasoningSet')
-    .mockResolvedValueOnce({ session: { ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'max' } });
+  const save = vi
+    .spyOn(agentApi, 'agentSessionReasoningSet')
+    .mockResolvedValueOnce({
+      session: { ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'max' },
+    });
   render(<AgentView />);
   await act(async () => {});
   fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Alto' }));
-  const slider = within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByRole('slider', { name: 'Nivel de razonamiento' });
+  const slider = within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByRole('slider', {
+    name: 'Nivel de razonamiento',
+  });
   fireEvent.change(slider, { target: { value: '2' } });
   expect(slider).toHaveAttribute('aria-valuetext', 'Máximo');
-  await act(async () => { fireEvent.keyUp(slider, { key: 'ArrowRight' }); });
+  await act(async () => {
+    fireEvent.keyUp(slider, { key: 'ArrowRight' });
+  });
   expect(save).toHaveBeenCalledWith(session.id, 'max');
   expect(screen.getByRole('button', { name: 'Razonamiento: Máximo' })).toBeEnabled();
 });
@@ -550,7 +784,9 @@ it('bloquea ambos selectores mientras guarda el esfuerzo y conserva el valor si 
   localStorage.setItem('antares-agent-session', session.id);
   vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
   const reasoning_levels: AgentReasoningEffort[] = ['low', 'medium', 'high'];
-  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [{ ...session, reasoning_levels, reasoning_effort: 'low' }] });
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({
+    sessions: [{ ...session, reasoning_levels, reasoning_effort: 'low' }],
+  });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   const saving = deferred<{ session: AgentSession }>();
   const save = vi.spyOn(agentApi, 'agentSessionReasoningSet').mockReturnValueOnce(saving.promise);
@@ -564,8 +800,12 @@ it('bloquea ambos selectores mientras guarda el esfuerzo y conserva el valor si 
   expect(screen.getByRole('button', { name: 'Razonamiento: Bajo' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Elegir proveedor y modelo' })).toBeDisabled();
   expect(screen.queryByRole('dialog', { name: 'Nivel de razonamiento' })).not.toBeInTheDocument();
-  await act(async () => { saving.reject(new Error('No se pudo guardar el esfuerzo')); });
-  expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'No se pudo guardar el esfuerzo', type: 'error' }));
+  await act(async () => {
+    saving.reject(new Error('No se pudo guardar el esfuerzo'));
+  });
+  expect(addToast).toHaveBeenCalledWith(
+    expect.objectContaining({ message: 'No se pudo guardar el esfuerzo', type: 'error' }),
+  );
   expect(screen.getByRole('button', { name: 'Elegir proveedor y modelo' })).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Bajo' }));
   expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', 'Bajo');
@@ -577,7 +817,8 @@ it('cambia los permisos por conversación y conserva el modo si falla el guardad
   vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, second] });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   const saving = deferred<{ session: AgentSession }>();
-  const save = vi.spyOn(agentApi, 'agentSessionPermissionsSet')
+  const save = vi
+    .spyOn(agentApi, 'agentSessionPermissionsSet')
     .mockReturnValueOnce(saving.promise)
     .mockRejectedValueOnce(new Error('No se pudieron guardar los permisos'));
   render(<AgentView />);
@@ -585,20 +826,32 @@ it('cambia los permisos por conversación y conserva el modo si falla el guardad
   fireEvent.click(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' }));
   const menu = screen.getByRole('menu', { name: 'Permisos del agente' });
   expect(within(menu).getByRole('menuitemradio', { name: /Aprobar por mí/ })).toHaveAttribute('aria-checked', 'true');
-  expect(within(menu).getByRole('menuitemradio', { name: /Solicitar aprobación/ })).toHaveTextContent('Pregunta antes de acciones sensibles y webs');
+  expect(within(menu).getByRole('menuitemradio', { name: /Solicitar aprobación/ })).toHaveTextContent(
+    'Pregunta antes de acciones sensibles y webs',
+  );
   expect(within(menu).getByRole('menuitemradio', { name: /Aprobar por mí/ })).toHaveTextContent('la web va sola');
-  expect(within(menu).getByRole('menuitemradio', { name: /Acceso completo/ })).toHaveTextContent('Sin preguntar, salvo el terminal');
+  expect(within(menu).getByRole('menuitemradio', { name: /Acceso completo/ })).toHaveTextContent(
+    'Sin preguntar, salvo el terminal',
+  );
   expect(within(menu).queryByRole('combobox')).not.toBeInTheDocument();
   fireEvent.click(within(menu).getByRole('menuitemradio', { name: /Acceso completo/ }));
   expect(save).toHaveBeenLastCalledWith(session.id, 'full');
   expect(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' })).toBeDisabled();
-  await act(async () => { saving.resolve({ session: { ...session, permission_mode: 'full' } }); });
+  await act(async () => {
+    saving.resolve({ session: { ...session, permission_mode: 'full' } });
+  });
   expect(screen.getByRole('button', { name: 'Permisos: Acceso completo' })).toBeEnabled();
-  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Segunda'));
+  });
   expect(screen.getByRole('button', { name: 'Permisos: Solicitar aprobación' })).toBeEnabled();
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   fireEvent.click(screen.getByRole('button', { name: 'Permisos: Acceso completo' }));
-  await act(async () => { fireEvent.click(screen.getByRole('menuitemradio', { name: /^Solicitar aprobación/ })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /^Solicitar aprobación/ }));
+  });
   expect(screen.getByRole('button', { name: 'Permisos: Acceso completo' })).toBeEnabled();
   expect(addToast).toHaveBeenCalledWith({ message: 'No se pudieron guardar los permisos', type: 'error' });
 });
@@ -609,17 +862,26 @@ it.each([
 ] as const)('envía la regla rápida $rule junto con la decisión de la aprobación', async ({ rule, label, choice }) => {
   localStorage.setItem('antares-agent-session', session.id);
   const approval: AgentApproval = {
-    id: 'a1', session_id: session.id, call_id: 'c1', method: 'gdrive_upload', params: {},
-    status: 'pending', created_at: 1, decided_at: null, channel: 'cloud',
+    id: 'a1',
+    session_id: session.id,
+    call_id: 'c1',
+    method: 'gdrive_upload',
+    params: {},
+    status: 'pending',
+    created_at: 1,
+    decided_at: null,
+    channel: 'cloud',
   };
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, pending_approvals: [approval] });
-  const approve = vi.spyOn(agentApi, 'agentApprove')
+  const approve = vi
+    .spyOn(agentApi, 'agentApprove')
     .mockResolvedValue({ approval: { ...approval, status: 'approved' } });
-  const deny = vi.spyOn(agentApi, 'agentDeny')
-    .mockResolvedValue({ approval: { ...approval, status: 'denied' } });
+  const deny = vi.spyOn(agentApi, 'agentDeny').mockResolvedValue({ approval: { ...approval, status: 'denied' } });
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: label })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: label }));
+  });
   const decided = choice === 'allow' ? approve : deny;
   expect(decided).toHaveBeenCalledExactlyOnceWith('a1', { channel: 'cloud', rule });
   expect(choice === 'allow' ? deny : approve).not.toHaveBeenCalled();
@@ -629,15 +891,24 @@ it.each([
 it('no decide la aprobación si falla la decisión con regla rápida', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   const approval: AgentApproval = {
-    id: 'a1', session_id: session.id, call_id: 'c1', method: 'gdrive_upload', params: {},
-    status: 'pending', created_at: 1, decided_at: null, channel: 'cloud',
+    id: 'a1',
+    session_id: session.id,
+    call_id: 'c1',
+    method: 'gdrive_upload',
+    params: {},
+    status: 'pending',
+    created_at: 1,
+    decided_at: null,
+    channel: 'cloud',
   };
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, pending_approvals: [approval] });
   const approve = vi.spyOn(agentApi, 'agentApprove');
   const deny = vi.spyOn(agentApi, 'agentDeny').mockRejectedValue(new Error('Sin conexión'));
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Bloquear este canal en esta conversación' })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Bloquear este canal en esta conversación' }));
+  });
   expect(approve).not.toHaveBeenCalled();
   expect(deny).toHaveBeenCalledWith('a1', { channel: 'cloud', rule: 'deny' });
   expect(addToast).toHaveBeenCalledWith({ message: 'Sin conexión', type: 'error' });
@@ -646,13 +917,22 @@ it('no decide la aprobación si falla la decisión con regla rápida', async () 
 it('deshace una acción reversible y refresca su recibo', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   const call = {
-    id: 'c1', dispatch_id: 'c1@task:t1', name: 'fs_write', params: {}, gated: true, status: 'done' as const,
-    result: '{"saved_path":"a.txt"}', channel: 'files' as const, approval_source: 'manual' as const,
+    id: 'c1',
+    dispatch_id: 'c1@task:t1',
+    name: 'fs_write',
+    params: {},
+    gated: true,
+    status: 'done' as const,
+    result: '{"saved_path":"a.txt"}',
+    channel: 'files' as const,
+    approval_source: 'manual' as const,
     undo: { available: true, kind: 'delete' as const },
   };
-  const list = vi.spyOn(agentApi, 'agentMessagesList')
+  const list = vi
+    .spyOn(agentApi, 'agentMessagesList')
     .mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: '', ts: 1, tool_calls: [call] }] });
-  const undo = vi.spyOn(agentApi, 'agentEffectUndo')
+  const undo = vi
+    .spyOn(agentApi, 'agentEffectUndo')
     .mockResolvedValue({ undone: true, path: 'C:\\a.txt', call_id: call.dispatch_id });
   render(<AgentView />);
   await act(async () => {});
@@ -685,8 +965,23 @@ it('permite navegar los permisos con el teclado y cierra con Escape o un clic fu
 it.each(['running', 'approval'])('impide cambiar permisos durante un turno en %s', async (state) => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
-    ...empty, running: state === 'running',
-    pending_approvals: state === 'approval' ? [{ id: 'a1', session_id: session.id, call_id: 'c1', method: 'db_clear', params: {}, status: 'pending', created_at: 1, decided_at: null }] : [],
+    ...empty,
+    running: state === 'running',
+    pending_approvals:
+      state === 'approval'
+        ? [
+            {
+              id: 'a1',
+              session_id: session.id,
+              call_id: 'c1',
+              method: 'db_clear',
+              params: {},
+              status: 'pending',
+              created_at: 1,
+              decided_at: null,
+            },
+          ]
+        : [],
   });
   render(<AgentView />);
   await act(async () => {});
@@ -705,8 +1000,14 @@ it.each<{ mode: AgentPermissionMode; label: string }>([
   localStorage.setItem('antares-agent-session', session.id);
   vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [{ ...session, permission_mode: mode }] });
   const approval: AgentApproval = {
-    id: 'a1', session_id: session.id, call_id: 'c1', method: 'gdrive_upload',
-    params: { draft: 'resumen.pdf', folder_id: 'Informes' }, status: 'pending', created_at: 1, decided_at: null,
+    id: 'a1',
+    session_id: session.id,
+    call_id: 'c1',
+    method: 'gdrive_upload',
+    params: { draft: 'resumen.pdf', folder_id: 'Informes' },
+    status: 'pending',
+    created_at: 1,
+    decided_at: null,
     context: { account: 'ana@example.com' },
   };
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, pending_approvals: [approval] });
@@ -724,7 +1025,9 @@ it.each<{ mode: AgentPermissionMode; label: string }>([
   expect(approve).not.toHaveBeenCalled();
   expect(deny).not.toHaveBeenCalled();
   expect(saveMode).not.toHaveBeenCalled();
-  await act(async () => { fireEvent.click(card.getByRole('button', { name: 'Rechazar esta acción' })); });
+  await act(async () => {
+    fireEvent.click(card.getByRole('button', { name: 'Rechazar esta acción' }));
+  });
   expect(deny).toHaveBeenCalledExactlyOnceWith('a1');
   expect(approve).not.toHaveBeenCalled();
   expect(saveMode).not.toHaveBeenCalled();
@@ -733,23 +1036,32 @@ it.each<{ mode: AgentPermissionMode; label: string }>([
 it('guarda las herramientas de la conversación y conserva la selección si falla', async () => {
   vi.mocked(agentApi.agentToolsList).mockResolvedValue({ tools: availableTools });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  const set = vi.spyOn(agentApi, 'agentToolsSet')
+  const set = vi
+    .spyOn(agentApi, 'agentToolsSet')
     .mockResolvedValueOnce({ tools: availableTools.map((tool) => ({ ...tool, enabled: tool.name !== 'db_clear' })) })
     .mockRejectedValueOnce(new Error('No se pudo guardar'))
     .mockResolvedValueOnce({ tools: availableTools });
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   expect(agentApi.agentToolsList).toHaveBeenLastCalledWith('s1');
   fireEvent.click(screen.getByLabelText('Herramientas del agente'));
   fireEvent.click(screen.getByText('Acciones sensibles', { selector: 'summary' }));
-  await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Habilitar db_clear' })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('switch', { name: 'Habilitar db_clear' }));
+  });
   expect(set).toHaveBeenLastCalledWith('s1', ['flows_list']);
   expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).toHaveAttribute('aria-checked', 'false');
-  await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Habilitar db_clear' })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('switch', { name: 'Habilitar db_clear' }));
+  });
   expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', message: 'No se pudo guardar' }));
   expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).toHaveAttribute('aria-checked', 'false');
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Restablecer herramientas' })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Restablecer herramientas' }));
+  });
   expect(set).toHaveBeenLastCalledWith('s1', null);
   expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).toHaveAttribute('aria-checked', 'true');
 });
@@ -763,27 +1075,41 @@ it('descarta una selección guardada tarde al cambiar de conversación', async (
   vi.spyOn(agentApi, 'agentToolsSet').mockReturnValue(save.promise);
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   fireEvent.click(screen.getByLabelText('Herramientas del agente'));
   fireEvent.click(screen.getByText('Acciones sensibles', { selector: 'summary' }));
   fireEvent.click(screen.getByRole('switch', { name: 'Habilitar db_clear' }));
   expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).toBeDisabled();
-  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
-  await act(async () => { save.resolve({ tools: availableTools.map((tool) => ({ ...tool, enabled: false })) }); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Segunda'));
+  });
+  await act(async () => {
+    save.resolve({ tools: availableTools.map((tool) => ({ ...tool, enabled: false })) });
+  });
   expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).toHaveAttribute('aria-checked', 'true');
   expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).not.toBeDisabled();
 });
 
 it('descarta la carga de herramientas de una conversación anterior', async () => {
   const first = deferred<{ tools: typeof availableTools }>();
-  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, { ...session, id: 's2', title: 'Segunda' }] });
-  vi.mocked(agentApi.agentToolsList).mockImplementation((id) => id === 's1' ? first.promise : Promise.resolve({ tools: availableTools }));
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({
+    sessions: [session, { ...session, id: 's2', title: 'Segunda' }],
+  });
+  vi.mocked(agentApi.agentToolsList).mockImplementation((id) =>
+    id === 's1' ? first.promise : Promise.resolve({ tools: availableTools }),
+  );
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   render(<AgentView />);
   await act(async () => {});
   fireEvent.click(screen.getByText('Primera'));
-  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
-  await act(async () => { first.resolve({ tools: availableTools.map((tool) => ({ ...tool, enabled: false })) }); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Segunda'));
+  });
+  await act(async () => {
+    first.resolve({ tools: availableTools.map((tool) => ({ ...tool, enabled: false })) });
+  });
   fireEvent.click(screen.getByLabelText('Herramientas del agente'));
   fireEvent.click(screen.getByText('Acciones sensibles', { selector: 'summary' }));
   expect(screen.getByRole('switch', { name: 'Habilitar db_clear' })).toHaveAttribute('aria-checked', 'true');
@@ -792,8 +1118,10 @@ it('descarta la carga de herramientas de una conversación anterior', async () =
 it('descarta la lectura previa al envío y drena la actualización pendiente de la misma sesión', async () => {
   const initial = deferred<Snapshot>();
   const current = deferred<Snapshot>();
-  const list = vi.spyOn(agentApi, 'agentMessagesList')
-    .mockReturnValueOnce(initial.promise).mockReturnValueOnce(current.promise)
+  const list = vi
+    .spyOn(agentApi, 'agentMessagesList')
+    .mockReturnValueOnce(initial.promise)
+    .mockReturnValueOnce(current.promise)
     .mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta final', ts: 2 }] });
   render(<AgentView />);
   await act(async () => {});
@@ -801,72 +1129,121 @@ it('descarta la lectura previa al envío y drena la actualización pendiente de 
   expect(list).toHaveBeenCalledTimes(1);
   vi.useFakeTimers();
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Mensaje nuevo' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
   expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Mensaje nuevo', expect.any(String), []);
-  await act(async () => { initial.resolve(empty); });
+  await act(async () => {
+    initial.resolve(empty);
+  });
   expect(list).toHaveBeenCalledTimes(2);
-  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
+  expect(
+    within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Trabajando en ello'),
+  ).toBeInTheDocument();
   await act(async () => {
     current.resolve({ ...empty, running: true, messages: [{ role: 'user', content: 'Mensaje nuevo', ts: 1 }] });
   });
   expect(screen.getByText('Mensaje nuevo')).toBeInTheDocument();
-  await act(async () => { vi.advanceTimersByTime(1500); });
+  await act(async () => {
+    vi.advanceTimersByTime(1500);
+  });
   expect(list).toHaveBeenCalledTimes(3);
   expect(screen.getByText('Respuesta final')).toBeInTheDocument();
   expect(screen.queryByText('Trabajando en ello')).not.toBeInTheDocument();
 });
 
 it('no repite el estado de trabajo mientras una herramienta en curso ya lo muestra', async () => {
-  const call = (status: string) => ({ id: 'c', name: 'shell_run', params: { command: 'npm test' }, status, gated: true });
-  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true,
-    messages: [{ role: 'assistant', content: '', ts: 1, tool_calls: [call('running')] }] } as never);
+  const call = (status: string) => ({
+    id: 'c',
+    name: 'shell_run',
+    params: { command: 'npm test' },
+    status,
+    gated: true,
+  });
+  const list = vi
+    .spyOn(agentApi, 'agentMessagesList')
+    .mockResolvedValue({
+      ...empty,
+      running: true,
+      messages: [{ role: 'assistant', content: '', ts: 1, tool_calls: [call('running')] }],
+    } as never);
   const { unmount } = render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   expect(screen.getByRole('log', { name: 'Salida de npm test' })).toBeInTheDocument();
-  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Ejecutando algunos comandos')).toBeInTheDocument();
+  expect(
+    within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Ejecutando algunos comandos'),
+  ).toBeInTheDocument();
   expect(screen.queryByText('Trabajando en ello')).not.toBeInTheDocument();
   unmount();
-  list.mockResolvedValue({ ...empty, running: true,
-    messages: [{ role: 'assistant', content: '', ts: 1, tool_calls: [{ ...call('done'), result: '{"exit_code":0}' }] }] } as never);
+  list.mockResolvedValue({
+    ...empty,
+    running: true,
+    messages: [{ role: 'assistant', content: '', ts: 1, tool_calls: [{ ...call('done'), result: '{"exit_code":0}' }] }],
+  } as never);
   render(<AgentView />);
   await act(async () => {});
   expect(await screen.findByText(/Ejecutó/)).toBeInTheDocument();
-  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
+  expect(
+    within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Trabajando en ello'),
+  ).toBeInTheDocument();
 });
 
 it('no aplica running=false de una lectura antigua mientras el envío sigue pendiente', async () => {
   const initial = deferred<Snapshot>();
   const send = deferred<{ accepted: boolean }>();
-  vi.spyOn(agentApi, 'agentMessagesList').mockReturnValueOnce(initial.promise).mockResolvedValue({ ...empty, running: true });
+  vi.spyOn(agentApi, 'agentMessagesList')
+    .mockReturnValueOnce(initial.promise)
+    .mockResolvedValue({ ...empty, running: true });
   vi.mocked(agentApi.agentMessageSend).mockReturnValue(send.promise);
   render(<AgentView />);
   await act(async () => {});
   fireEvent.click(screen.getByText('Primera'));
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Mensaje nuevo' } });
   fireEvent.click(screen.getByLabelText('Enviar'));
-  await act(async () => { initial.resolve(empty); });
-  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
-  await act(async () => { send.resolve({ accepted: true }); });
+  await act(async () => {
+    initial.resolve(empty);
+  });
+  expect(
+    within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Trabajando en ello'),
+  ).toBeInTheDocument();
+  await act(async () => {
+    send.resolve({ accepted: true });
+  });
 });
 
 it('mantiene el turno activo cuando un sondeo termina antes de que se acepte el envío', async () => {
   const send = deferred<{ accepted: boolean }>();
   const poll = deferred<Snapshot>();
-  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValueOnce(empty)
-    .mockReturnValueOnce(poll.promise).mockResolvedValue({ ...empty, running: true });
+  const list = vi
+    .spyOn(agentApi, 'agentMessagesList')
+    .mockResolvedValueOnce(empty)
+    .mockReturnValueOnce(poll.promise)
+    .mockResolvedValue({ ...empty, running: true });
   vi.mocked(agentApi.agentMessageSend).mockReturnValue(send.promise);
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   vi.useFakeTimers();
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Mensaje nuevo' } });
   fireEvent.click(screen.getByLabelText('Enviar'));
-  await act(async () => { vi.advanceTimersByTime(1500); });
+  await act(async () => {
+    vi.advanceTimersByTime(1500);
+  });
   expect(list).toHaveBeenCalledTimes(2);
-  await act(async () => { poll.resolve(empty); });
-  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
-  await act(async () => { send.resolve({ accepted: true }); });
+  await act(async () => {
+    poll.resolve(empty);
+  });
+  expect(
+    within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Trabajando en ello'),
+  ).toBeInTheDocument();
+  await act(async () => {
+    send.resolve({ accepted: true });
+  });
 });
 
 it('un envío pendiente en otra sesión no descarta los mensajes de la sesión seleccionada', async () => {
@@ -874,16 +1251,22 @@ it('un envío pendiente en otra sesión no descarta los mensajes de la sesión s
   const send = deferred<{ accepted: boolean }>();
   const snapshot = deferred<Snapshot>();
   vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, second] });
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValueOnce(empty)
-    .mockReturnValueOnce(snapshot.promise).mockResolvedValue(empty);
+  vi.spyOn(agentApi, 'agentMessagesList')
+    .mockResolvedValueOnce(empty)
+    .mockReturnValueOnce(snapshot.promise)
+    .mockResolvedValue(empty);
   vi.mocked(agentApi.agentMessageSend).mockReturnValue(send.promise);
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Mensaje nuevo' } });
   fireEvent.click(screen.getByLabelText('Enviar'));
   fireEvent.click(screen.getByText('Segunda'));
-  await act(async () => { send.resolve({ accepted: true }); });
+  await act(async () => {
+    send.resolve({ accepted: true });
+  });
   await act(async () => {
     snapshot.resolve({ ...empty, messages: [{ role: 'assistant', content: 'Mensaje de segunda', ts: 1 }] });
   });
@@ -893,43 +1276,67 @@ it('un envío pendiente en otra sesión no descarta los mensajes de la sesión s
 it('activa la carpeta de trabajo antes de enviar y mantiene solo archivos en los adjuntos', async () => {
   const messages = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   const select = vi.spyOn(agentApi, 'agentWorkspaceSelect').mockImplementation(async () => {
-    messages.mockResolvedValue({ ...empty, context: { modules: [], accounts: [], files: [{ path: 'C:\\fotos', folder: true }], workspace: 'C:\\fotos' } });
+    messages.mockResolvedValue({
+      ...empty,
+      context: { modules: [], accounts: [], files: [{ path: 'C:\\fotos', folder: true }], workspace: 'C:\\fotos' },
+    });
     return { workspace: 'C:\\fotos' };
   });
-  const attach = vi.spyOn(agentApi, 'agentAttach')
+  const attach = vi
+    .spyOn(agentApi, 'agentAttach')
     .mockResolvedValueOnce({ attachments: [{ id: 'a1', name: 'clientes.xlsx', kind: 'files' }] });
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Adjuntar archivos'));
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo'));
+  });
   expect(select).toHaveBeenCalledExactlyOnceWith('s1');
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   expect(attach.mock.calls).toEqual([['files']]);
   expect(screen.getByText('clientes.xlsx')).toBeInTheDocument();
   expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('fotos');
   const tiles = within(screen.getByLabelText('Adjuntos'));
-  expect(tiles.getByRole('button', { name: 'Previsualizar clientes.xlsx' })).toHaveTextContent('clientes.xlsxHoja de cálculo');
+  expect(tiles.getByRole('button', { name: 'Previsualizar clientes.xlsx' })).toHaveTextContent(
+    'clientes.xlsxHoja de cálculo',
+  );
   expect(tiles.queryByText('Carpeta')).not.toBeInTheDocument();
   expect(tiles.getByRole('button', { name: 'Quitar clientes.xlsx' }).parentElement).toHaveClass('absolute');
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Genera el informe' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
   expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Genera el informe', expect.any(String), ['a1']);
   expect(screen.queryByText('clientes.xlsx')).not.toBeInTheDocument();
   expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('fotos');
 });
 
 it('conserva la carpeta y el borrador al cancelar o fallar su selección', async () => {
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
-    context: { modules: [], accounts: [], files: [{ path: 'C:\\proyecto', folder: true }], workspace: 'C:\\proyecto' } });
-  const select = vi.spyOn(agentApi, 'agentWorkspaceSelect').mockResolvedValueOnce({ workspace: 'C:\\proyecto' })
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+    ...empty,
+    context: { modules: [], accounts: [], files: [{ path: 'C:\\proyecto', folder: true }], workspace: 'C:\\proyecto' },
+  });
+  const select = vi
+    .spyOn(agentApi, 'agentWorkspaceSelect')
+    .mockResolvedValueOnce({ workspace: 'C:\\proyecto' })
     .mockRejectedValueOnce(new Error('Carpeta no disponible'));
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Revisa el proyecto' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo')); });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo'));
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo'));
+  });
   expect(select).toHaveBeenCalledTimes(2);
   expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('proyecto');
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Revisa el proyecto');
@@ -939,20 +1346,32 @@ it('conserva la carpeta y el borrador al cancelar o fallar su selección', async
 
 it('adjunta archivos soltados por ruta y capturas pegadas por contenido', async () => {
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  const attach = vi.spyOn(agentApi, 'agentAttach')
+  const attach = vi
+    .spyOn(agentApi, 'agentAttach')
     .mockResolvedValueOnce({ attachments: [{ id: 'a1', name: 'informe.pdf', kind: 'files' }] })
     .mockResolvedValueOnce({ attachments: [{ id: 'a2', name: 'x-captura.png', kind: 'files' }] });
   const previousApi = window.electronAPI;
-  window.electronAPI = { ...window.electronAPI!, getPathForFile: (file: File) => (file.name === 'informe.pdf' ? 'C:\\docs\\informe.pdf' : '') };
+  window.electronAPI = {
+    ...window.electronAPI!,
+    getPathForFile: (file: File) => (file.name === 'informe.pdf' ? 'C:\\docs\\informe.pdf' : ''),
+  };
   const createObjectURL = vi.fn(() => 'blob:captura');
   vi.stubGlobal('URL', Object.assign(URL, { createObjectURL }));
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   const pdf = new File(['%PDF'], 'informe.pdf', { type: 'application/pdf' });
-  await act(async () => { fireEvent.drop(screen.getByRole('group', { name: 'Redactar mensaje' }), { dataTransfer: { files: [pdf], types: ['Files'] } }); });
+  await act(async () => {
+    fireEvent.drop(screen.getByRole('group', { name: 'Redactar mensaje' }), {
+      dataTransfer: { files: [pdf], types: ['Files'] },
+    });
+  });
   const shot = new File(['png'], 'captura.png', { type: 'image/png' });
-  await act(async () => { fireEvent.paste(screen.getByLabelText('Mensaje para el agente'), { clipboardData: { files: [shot] } }); });
+  await act(async () => {
+    fireEvent.paste(screen.getByLabelText('Mensaje para el agente'), { clipboardData: { files: [shot] } });
+  });
   await waitFor(() => expect(screen.getByText('x-captura.png')).toBeInTheDocument());
   expect(attach.mock.calls).toEqual([
     ['files', { paths: ['C:\\docs\\informe.pdf'], data: [] }],
@@ -961,7 +1380,9 @@ it('adjunta archivos soltados por ruta y capturas pegadas por contenido', async 
   expect(screen.getByText('informe.pdf')).toBeInTheDocument();
   expect(createObjectURL).toHaveBeenCalledWith(shot);
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Revisa' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
   expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Revisa', expect.any(String), ['a1', 'a2']);
   window.electronAPI = previousApi;
   vi.unstubAllGlobals();
@@ -971,73 +1392,112 @@ it('avisa de las rutas escritas que no se autorizaron', async () => {
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   vi.mocked(agentApi.agentMessageSend).mockResolvedValue({
     accepted: true,
-    files: { granted: [], rejected: [{ path: 'C:\datos', reason: 'una carpeta requiere seleccionar los archivos concretos' }] },
+    files: {
+      granted: [],
+      rejected: [{ path: 'C:\datos', reason: 'una carpeta requiere seleccionar los archivos concretos' }],
+    },
   });
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa C:\datos' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
   expect(addToast).toHaveBeenCalledWith({
     message: 'No se autorizó C:\datos: una carpeta requiere seleccionar los archivos concretos',
     type: 'warning',
   });
 });
 
-it.each([false, true])('el reintento conserva la identidad solo con los mismos adjuntos: cambio=%s', async (changed) => {
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({ attachments: [{ id: 'a1', name: 'datos.xlsx', kind: 'files' }] });
-  vi.mocked(agentApi.agentMessageSend).mockRejectedValueOnce(new Error('Sin conexión')).mockResolvedValue({ accepted: true });
-  localStorage.setItem('antares-agent-session', 's1');
-  render(<AgentView />);
-  await act(async () => {});
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Revisa los datos' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Revisa los datos');
-  if (changed) await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
-  const [first, second] = vi.mocked(agentApi.agentMessageSend).mock.calls;
-  expect(second[3]).toEqual(changed ? ['a1'] : []);
-  if (changed) expect(second[2]).not.toBe(first[2]);
-  else expect(second[2]).toBe(first[2]);
-});
+it.each([false, true])(
+  'el reintento conserva la identidad solo con los mismos adjuntos: cambio=%s',
+  async (changed) => {
+    vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+    vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({
+      attachments: [{ id: 'a1', name: 'datos.xlsx', kind: 'files' }],
+    });
+    vi.mocked(agentApi.agentMessageSend)
+      .mockRejectedValueOnce(new Error('Sin conexión'))
+      .mockResolvedValue({ accepted: true });
+    localStorage.setItem('antares-agent-session', 's1');
+    render(<AgentView />);
+    await act(async () => {});
+    fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Revisa los datos' } });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Enviar'));
+    });
+    expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Revisa los datos');
+    if (changed)
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText('Adjuntar archivos'));
+      });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Enviar'));
+    });
+    const [first, second] = vi.mocked(agentApi.agentMessageSend).mock.calls;
+    expect(second[3]).toEqual(changed ? ['a1'] : []);
+    if (changed) expect(second[2]).not.toBe(first[2]);
+    else expect(second[2]).toBe(first[2]);
+  },
+);
 
 it('un envío fallido conserva el borrador y termina el indicador de ejecución', async () => {
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   vi.mocked(agentApi.agentMessageSend).mockRejectedValue(new Error('Sin conexión'));
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Reintentar' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Reintentar');
   expect(screen.queryByText('Trabajando en ello')).not.toBeInTheDocument();
   expect(addToast).toHaveBeenCalledWith({ message: 'Sin conexión', type: 'error' });
 
   vi.mocked(agentApi.agentMessageSend).mockResolvedValue({ accepted: true });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
   const [first, second] = vi.mocked(agentApi.agentMessageSend).mock.calls;
   expect(second[2]).toBe(first[2]);
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Otro mensaje' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
   expect(vi.mocked(agentApi.agentMessageSend).mock.calls[2][2]).not.toBe(first[2]);
 });
 
 it('presenta la cola en orden y permite quitar un pendiente sin perder el borrador ni sus adjuntos', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
-  vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({ attachments: [{ id: 'a1', name: 'informe.pdf', kind: 'files' }] });
+  vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({
+    attachments: [{ id: 'a1', name: 'informe.pdf', kind: 'files' }],
+  });
   render(<AgentView />);
   await act(async () => {});
   const composer = within(screen.getByRole('group', { name: 'Redactar mensaje' }));
   const input = composer.getByRole('textbox', { name: 'Mensaje para el agente' });
   fireEvent.change(input, { target: { value: 'Primero revisa las firmas' } });
-  await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Dejar para después' })); });
-  await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Adjuntar archivos' })); });
+  await act(async () => {
+    fireEvent.click(composer.getByRole('button', { name: 'Dejar para después' }));
+  });
+  await act(async () => {
+    fireEvent.click(composer.getByRole('button', { name: 'Adjuntar archivos' }));
+  });
   fireEvent.change(input, { target: { value: 'Después compara el informe' } });
-  await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Dejar para después' })); });
+  await act(async () => {
+    fireEvent.click(composer.getByRole('button', { name: 'Dejar para después' }));
+  });
   fireEvent.change(input, { target: { value: 'Borrador que sigo escribiendo' } });
-  await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Adjuntar archivos' })); });
+  await act(async () => {
+    fireEvent.click(composer.getByRole('button', { name: 'Adjuntar archivos' }));
+  });
   const queue = within(screen.getByRole('region', { name: 'Mensajes en cola' }));
   expect(queue.getByLabelText('2 mensajes pendientes')).toBeVisible();
   const items = within(queue.getByRole('list', { name: 'Orden de envío' })).getAllByRole('listitem');
@@ -1060,10 +1520,13 @@ it('permite desplegar un mensaje largo en cola sin enviarlo ni alterar el borrad
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
   render(<AgentView />);
   await act(async () => {});
-  const text = 'Revisa el informe completo, conserva los nombres de archivo y compara cada tabla con su versión anterior.\nIncluye también los anexos y las observaciones de la última página.';
+  const text =
+    'Revisa el informe completo, conserva los nombres de archivo y compara cada tabla con su versión anterior.\nIncluye también los anexos y las observaciones de la última página.';
   const input = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
   fireEvent.change(input, { target: { value: text } });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' }));
+  });
   fireEvent.change(input, { target: { value: 'Sigo escribiendo' } });
   const queue = within(screen.getByRole('region', { name: 'Mensajes en cola' }));
   const summary = queue.getByTitle('Ver mensaje completo');
@@ -1080,9 +1543,13 @@ it('permite desplegar un mensaje largo en cola sin enviarlo ni alterar el borrad
 
 it('restaura la conversación y la cola sin enviar tareas automáticamente tras reiniciar', async () => {
   localStorage.setItem('antares-agent-session', session.id);
-  localStorage.setItem('antares-agent-queue', JSON.stringify([{ session: session.id, text: 'Tarea pendiente', requestId: 'req-guardado' }]));
+  localStorage.setItem(
+    'antares-agent-queue',
+    JSON.stringify([{ session: session.id, text: 'Tarea pendiente', requestId: 'req-guardado' }]),
+  );
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
-    ...empty, messages: [{ role: 'assistant', content: 'Progreso recuperado', ts: 2 }],
+    ...empty,
+    messages: [{ role: 'assistant', content: 'Progreso recuperado', ts: 2 }],
   });
   render(<AgentView />);
   await act(async () => {});
@@ -1090,7 +1557,9 @@ it('restaura la conversación y la cola sin enviar tareas automáticamente tras 
   expect(screen.getByText('Tarea pendiente')).toHaveAttribute('title', 'Reintentar el envío pendiente');
   expect(screen.getByText('Revisar envío')).toBeVisible();
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
-  await act(async () => { fireEvent.click(screen.getByText('Tarea pendiente')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Tarea pendiente'));
+  });
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Tarea pendiente', 'req-guardado', []);
 });
 
@@ -1098,23 +1567,46 @@ it('muestra respuestas progresivas y estados de herramientas durante el sondeo',
   vi.useFakeTimers();
   localStorage.setItem('antares-agent-session', session.id);
   const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
-    ...empty, running: true, messages: [{ role: 'assistant', content: 'Progreso', partial: true, ts: 2 }],
+    ...empty,
+    running: true,
+    messages: [{ role: 'assistant', content: 'Progreso', partial: true, ts: 2 }],
   });
   render(<AgentView />);
   await act(async () => {});
   expect(screen.getByText('Progreso')).toBeInTheDocument();
-  list.mockResolvedValue({ ...empty, running: true, messages: [{
-    role: 'assistant', content: 'Progreso ampliado', ts: 2,
-    tool_calls: [{ id: 'c1', name: 'flows_run', params: {}, gated: true, status: 'running' }],
-  }] });
-  await act(async () => { vi.advanceTimersByTime(1500); });
+  list.mockResolvedValue({
+    ...empty,
+    running: true,
+    messages: [
+      {
+        role: 'assistant',
+        content: 'Progreso ampliado',
+        ts: 2,
+        tool_calls: [{ id: 'c1', name: 'flows_run', params: {}, gated: true, status: 'running' }],
+      },
+    ],
+  });
+  await act(async () => {
+    vi.advanceTimersByTime(1500);
+  });
   expect(screen.getByText('Progreso ampliado')).toBeInTheDocument();
   expect(screen.getByText('ejecutando')).toBeInTheDocument();
-  list.mockResolvedValue({ ...empty, messages: [{
-    role: 'assistant', content: 'Turno interrumpido', ts: 2,
-    tool_calls: [{ id: 'c1', name: 'flows_run', params: {}, gated: true, status: 'interrupted', result: 'Resultado incierto' }],
-  }] });
-  await act(async () => { vi.advanceTimersByTime(1500); });
+  list.mockResolvedValue({
+    ...empty,
+    messages: [
+      {
+        role: 'assistant',
+        content: 'Turno interrumpido',
+        ts: 2,
+        tool_calls: [
+          { id: 'c1', name: 'flows_run', params: {}, gated: true, status: 'interrupted', result: 'Resultado incierto' },
+        ],
+      },
+    ],
+  });
+  await act(async () => {
+    vi.advanceTimersByTime(1500);
+  });
   expect(screen.getByText('interrumpida · comprueba el resultado')).toBeInTheDocument();
   expect(screen.getByText('Resultado incierto')).toBeInTheDocument();
 });
@@ -1129,9 +1621,13 @@ it('detener pausa la cola y conserva las tareas pendientes para un envío explí
   render(<AgentView />);
   await act(async () => {});
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Siguiente tarea' } });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' }));
+  });
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
-  await act(async () => { fireEvent.click(screen.getByLabelText('Detener')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Detener'));
+  });
   expect(agentApi.agentTurnCancel).toHaveBeenCalledWith(session.id);
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([
@@ -1145,57 +1641,97 @@ it('muestra el progreso en vivo de subagentes y jobs y permite cancelarlos', asy
   const dispatchCancel = vi.spyOn(agentApi, 'agentDispatchCancel').mockResolvedValue({ cancelled: true });
   const jobId = 'a'.repeat(32);
   const jobCancel = vi.spyOn(agentApi, 'agentShellJobCancel').mockResolvedValue({
-    job_id: jobId, cancelled: true, status: 'cancelling',
+    job_id: jobId,
+    cancelled: true,
+    status: 'cancelling',
   });
   const update = agentUpdates();
   render(<AgentView />);
   await act(async () => {});
   await act(async () => {
     update('agent.progress', {
-      session_id: 's2', source: 'subagent', event: 'start', id: 'ajeno', name: 'Ajeno', cancellable: true,
+      session_id: 's2',
+      source: 'subagent',
+      event: 'start',
+      id: 'ajeno',
+      name: 'Ajeno',
+      cancellable: true,
     });
   });
   expect(screen.queryByRole('region', { name: 'Progreso en vivo' })).toBeNull();
   await act(async () => {
     update('agent.progress', {
-      session_id: session.id, source: 'subagent', event: 'start', id: 'call-1',
-      name: 'Investigador', status: 'running', task: 'Busca datos', cancellable: true,
+      session_id: session.id,
+      source: 'subagent',
+      event: 'start',
+      id: 'call-1',
+      name: 'Investigador',
+      status: 'running',
+      task: 'Busca datos',
+      cancellable: true,
     });
   });
   const panel = screen.getByRole('region', { name: 'Progreso en vivo' });
   expect(within(panel).getByText('Investigador')).toBeInTheDocument();
   expect(within(panel).getByText('inicio · Busca datos')).toBeInTheDocument();
-  await act(async () => { fireEvent.click(within(panel).getByRole('button', { name: 'Cancelar Investigador' })); });
+  await act(async () => {
+    fireEvent.click(within(panel).getByRole('button', { name: 'Cancelar Investigador' }));
+  });
   await waitFor(() => expect(dispatchCancel).toHaveBeenCalledWith(session.id, 'call-1'));
   await waitFor(() => expect(within(panel).getByText('fin · cancelado · Cancelado')).toBeInTheDocument());
   await act(async () => {
     update('agent.progress', {
-      session_id: session.id, source: 'shell_job', event: 'start', id: jobId,
-      name: 'npm run build', status: 'running', cancellable: true,
+      session_id: session.id,
+      source: 'shell_job',
+      event: 'start',
+      id: jobId,
+      name: 'npm run build',
+      status: 'running',
+      cancellable: true,
     });
   });
   expect(within(panel).getByText('npm run build')).toBeInTheDocument();
   await act(async () => {
     update('agent.progress', {
-      session_id: session.id, source: 'shell_job', event: 'step', id: jobId,
-      name: 'npm run build', status: 'running', stdout: 'Compilando…', cancellable: true,
+      session_id: session.id,
+      source: 'shell_job',
+      event: 'step',
+      id: jobId,
+      name: 'npm run build',
+      status: 'running',
+      stdout: 'Compilando…',
+      cancellable: true,
     });
   });
   expect(within(panel).getByText('Compilando…')).toBeInTheDocument();
-  await act(async () => { fireEvent.click(within(panel).getByRole('button', { name: 'Cancelar npm run build' })); });
+  await act(async () => {
+    fireEvent.click(within(panel).getByRole('button', { name: 'Cancelar npm run build' }));
+  });
   await waitFor(() => expect(jobCancel).toHaveBeenCalledWith(session.id, jobId));
   await act(async () => {
     update('agent.progress', {
-      session_id: session.id, source: 'shell_job', event: 'finish', id: jobId,
-      name: 'npm run build', status: 'exited', detail: 'terminado', cancellable: false,
+      session_id: session.id,
+      source: 'shell_job',
+      event: 'finish',
+      id: jobId,
+      name: 'npm run build',
+      status: 'exited',
+      detail: 'terminado',
+      cancellable: false,
     });
   });
   expect(within(panel).queryByRole('button', { name: 'Cancelar npm run build' })).toBeNull();
   expect(within(panel).getByText('fin · completado · terminado')).toBeInTheDocument();
   await act(async () => {
     update('agent.progress', {
-      session_id: session.id, source: 'subagent', event: 'step', id: 'call-3',
-      name: 'No cancelable', status: 'running', detail: 'trabajando', cancellable: false,
+      session_id: session.id,
+      source: 'subagent',
+      event: 'step',
+      id: 'call-3',
+      name: 'No cancelable',
+      status: 'running',
+      detail: 'trabajando',
+      cancellable: false,
     });
   });
   expect(within(panel).queryByRole('button', { name: 'Cancelar No cancelable' })).toBeNull();
@@ -1210,8 +1746,14 @@ it('marca el progreso como finalizado si la cancelación llega tarde', async () 
   await act(async () => {});
   await act(async () => {
     update('agent.progress', {
-      session_id: session.id, source: 'subagent', event: 'start', id: 'call-2',
-      name: 'Investigador', status: 'running', task: 'Busca datos', cancellable: true,
+      session_id: session.id,
+      source: 'subagent',
+      event: 'start',
+      id: 'call-2',
+      name: 'Investigador',
+      status: 'running',
+      task: 'Busca datos',
+      cancellable: true,
     });
   });
   await act(async () => {
@@ -1224,8 +1766,14 @@ it('marca el progreso como finalizado si la cancelación llega tarde', async () 
 it('recupera una aprobación pendiente sin aprobarla al montar y permite detenerla', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   const approval = {
-    id: 'a1', session_id: session.id, call_id: 'c1', method: 'flows_run', params: {},
-    status: 'pending' as const, created_at: 1, decided_at: null,
+    id: 'a1',
+    session_id: session.id,
+    call_id: 'c1',
+    method: 'flows_run',
+    params: {},
+    status: 'pending' as const,
+    created_at: 1,
+    decided_at: null,
   };
   const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, pending_approvals: [approval] });
   const approve = vi.spyOn(agentApi, 'agentApprove');
@@ -1239,17 +1787,28 @@ it('recupera una aprobación pendiente sin aprobarla al montar y permite detener
   expect(screen.getByRole('button', { name: 'Permitir esta acción' })).toBeInTheDocument();
   expect(approve).not.toHaveBeenCalled();
   expect(deny).not.toHaveBeenCalled();
-  await act(async () => { fireEvent.click(screen.getByLabelText('Detener')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Detener'));
+  });
   expect(screen.queryByRole('button', { name: 'Permitir esta acción' })).not.toBeInTheDocument();
   expect(approve).not.toHaveBeenCalled();
 });
 
 it.each([true, false])('muestra la decisión en curso y permite reintentar si falla: aprobar=%s', async (approved) => {
   localStorage.setItem('antares-agent-session', session.id);
-  const approval = { id: 'a1', session_id: session.id, call_id: 'c1', method: 'shell_run', params: { command: 'npm test' },
-    status: 'pending' as const, created_at: 1, decided_at: null };
-  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
-    pending_approvals: [approval, { ...approval, id: 'a2', call_id: 'c2' }] });
+  const approval = {
+    id: 'a1',
+    session_id: session.id,
+    call_id: 'c1',
+    method: 'shell_run',
+    params: { command: 'npm test' },
+    status: 'pending' as const,
+    created_at: 1,
+    decided_at: null,
+  };
+  const list = vi
+    .spyOn(agentApi, 'agentMessagesList')
+    .mockResolvedValue({ ...empty, pending_approvals: [approval, { ...approval, id: 'a2', call_id: 'c2' }] });
   const attempt = deferred<Awaited<ReturnType<typeof agentApi.agentApprove>>>();
   const approve = vi.spyOn(agentApi, 'agentApprove').mockReturnValue(attempt.promise);
   const deny = vi.spyOn(agentApi, 'agentDeny').mockReturnValue(attempt.promise);
@@ -1257,47 +1816,74 @@ it.each([true, false])('muestra la decisión en curso y permite reintentar si fa
   await act(async () => {});
   const [card, other] = screen.getAllByRole('group', { name: 'Confirmación de acción' });
   const action = within(card).getByRole('button', { name: approved ? 'Permitir esta acción' : 'Rechazar esta acción' });
-  await act(async () => { fireEvent.click(action); fireEvent.click(action); });
-  expect(screen.getByRole('status', { name: 'Estado de la aprobación' })).toHaveTextContent(approved ? 'Aprobando…' : 'Rechazando…');
+  await act(async () => {
+    fireEvent.click(action);
+    fireEvent.click(action);
+  });
+  expect(screen.getByRole('status', { name: 'Estado de la aprobación' })).toHaveTextContent(
+    approved ? 'Aprobando…' : 'Rechazando…',
+  );
   expect(approved ? approve : deny).toHaveBeenCalledTimes(1);
   expect(approved ? deny : approve).not.toHaveBeenCalled();
   expect(within(other).queryByRole('status')).not.toBeInTheDocument();
   expect(within(other).getByRole('button', { name: 'Permitir esta acción' })).toBeDisabled();
-  await act(async () => { attempt.reject(new Error('Sin conexión')); });
+  await act(async () => {
+    attempt.reject(new Error('Sin conexión'));
+  });
   expect(within(card).getByRole('button', { name: 'Permitir esta acción' })).toBeEnabled();
   expect(within(card).getByRole('button', { name: 'Rechazar esta acción' })).toBeEnabled();
   expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Sin conexión', type: 'error' }));
-  (approved ? approve : deny).mockResolvedValue({ approval: { ...approval, status: approved ? 'approved' : 'denied' } });
+  (approved ? approve : deny).mockResolvedValue({
+    approval: { ...approval, status: approved ? 'approved' : 'denied' },
+  });
   list.mockResolvedValue(empty);
-  await act(async () => { fireEvent.click(action); });
+  await act(async () => {
+    fireEvent.click(action);
+  });
   expect(approved ? approve : deny).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole('group', { name: 'Confirmación de acción' })).not.toBeInTheDocument();
 });
 
-it.each(['content', 'reasoning'] as const)('evita repetir el indicador general cuando ya transmite %s', async (field) => {
-  localStorage.setItem('antares-agent-session', session.id);
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true,
-    messages: [{ role: 'assistant', content: '', [field]: 'Preparando el informe', partial: true, ts: 1 }] });
-  render(<AgentView />);
-  await act(async () => {});
-  if (field === 'content') expect(screen.getByText('Preparando el informe')).toBeInTheDocument();
-  else {
-    expect(screen.queryByText('Preparando el informe')).not.toBeInTheDocument();
-    expect(screen.getByText(thinkingPhrase('reasoning-0'))).toBeInTheDocument();
-  }
-  expect(screen.queryByText('Trabajando en ello')).not.toBeInTheDocument();
-});
+it.each(['content', 'reasoning'] as const)(
+  'evita repetir el indicador general cuando ya transmite %s',
+  async (field) => {
+    localStorage.setItem('antares-agent-session', session.id);
+    vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+      ...empty,
+      running: true,
+      messages: [{ role: 'assistant', content: '', [field]: 'Preparando el informe', partial: true, ts: 1 }],
+    });
+    render(<AgentView />);
+    await act(async () => {});
+    if (field === 'content') expect(screen.getByText('Preparando el informe')).toBeInTheDocument();
+    else {
+      expect(screen.queryByText('Preparando el informe')).not.toBeInTheDocument();
+      expect(screen.getByText(thinkingPhrase('reasoning-0'))).toBeInTheDocument();
+    }
+    expect(screen.queryByText('Trabajando en ello')).not.toBeInTheDocument();
+  },
+);
 
 it('envía un mensaje en cola como corrección del encargo en curso', async () => {
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa la plantilla B' } });
   fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' }));
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar como corrección')); });
-  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Usa la plantilla B', expect.any(String), [], true);
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar como corrección'));
+  });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(
+    's1',
+    'Usa la plantilla B',
+    expect.any(String),
+    [],
+    true,
+  );
   expect(screen.queryByText('En cola')).not.toBeInTheDocument();
 });
 
@@ -1307,50 +1893,80 @@ it('admite una indicación inmediata una sola vez y confirma recepción después
   vi.mocked(agentApi.agentMessageSend).mockReturnValue(admitted.promise);
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa la plantilla B' } });
   const indicate = screen.getByRole('button', { name: 'Indicar ahora' });
   fireEvent.click(indicate);
   fireEvent.click(indicate);
-  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Usa la plantilla B', expect.any(String), [], true);
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(
+    's1',
+    'Usa la plantilla B',
+    expect.any(String),
+    [],
+    true,
+  );
   expect(screen.queryByText(/Indicación recibida/)).not.toBeInTheDocument();
-  await act(async () => { admitted.resolve({ accepted: true }); });
+  await act(async () => {
+    admitted.resolve({ accepted: true });
+  });
   expect(screen.getByText('Indicación recibida.')).toHaveAttribute('role', 'status');
   expect(screen.queryByText('En cola')).not.toBeInTheDocument();
 });
 
-it.each(['rechazo', 'sin aceptación'])('una indicación con %s conserva borrador, adjuntos e identidad y mantiene el turno anterior', async (failure) => {
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
-  vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({ attachments: [{ id: 'a1', name: 'plantilla.pdf', kind: 'files' }] });
-  if (failure === 'rechazo') vi.mocked(agentApi.agentMessageSend).mockRejectedValueOnce(new Error('No se pudo registrar la indicación'));
-  else vi.mocked(agentApi.agentMessageSend).mockResolvedValueOnce({ accepted: false });
-  render(<AgentView />);
-  await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa esta plantilla' } });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Indicar ahora' })); });
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Usa esta plantilla');
-  expect(screen.getByText('plantilla.pdf')).toBeInTheDocument();
-  expect(screen.getByLabelText('Detener')).toBeInTheDocument();
-  expect(screen.queryByText(/Indicación recibida/)).not.toBeInTheDocument();
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Indicar ahora' })); });
-  const [first, retry] = vi.mocked(agentApi.agentMessageSend).mock.calls;
-  expect(retry).toEqual(['s1', 'Usa esta plantilla', first[2], ['a1'], true]);
-  expect(screen.getByText('Indicación recibida.')).toHaveAttribute('role', 'status');
-});
+it.each(['rechazo', 'sin aceptación'])(
+  'una indicación con %s conserva borrador, adjuntos e identidad y mantiene el turno anterior',
+  async (failure) => {
+    vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
+    vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({
+      attachments: [{ id: 'a1', name: 'plantilla.pdf', kind: 'files' }],
+    });
+    if (failure === 'rechazo')
+      vi.mocked(agentApi.agentMessageSend).mockRejectedValueOnce(new Error('No se pudo registrar la indicación'));
+    else vi.mocked(agentApi.agentMessageSend).mockResolvedValueOnce({ accepted: false });
+    render(<AgentView />);
+    await act(async () => {});
+    await act(async () => {
+      fireEvent.click(screen.getByText('Primera'));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Adjuntar archivos'));
+    });
+    fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa esta plantilla' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Indicar ahora' }));
+    });
+    expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Usa esta plantilla');
+    expect(screen.getByText('plantilla.pdf')).toBeInTheDocument();
+    expect(screen.getByLabelText('Detener')).toBeInTheDocument();
+    expect(screen.queryByText(/Indicación recibida/)).not.toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Indicar ahora' }));
+    });
+    const [first, retry] = vi.mocked(agentApi.agentMessageSend).mock.calls;
+    expect(retry).toEqual(['s1', 'Usa esta plantilla', first[2], ['a1'], true]);
+    expect(screen.getByText('Indicación recibida.')).toHaveAttribute('role', 'status');
+  },
+);
 
 it('muestra el contexto de la conversación y permite retirar un archivo concedido', async () => {
   const withContext = {
     ...empty,
-    context: { modules: [{ id: 'sellador', label: 'Sellador' }], files: [{ path: 'C:\\docs\\informe.pdf', folder: false }], accounts: ['ana@example.com'] },
+    context: {
+      modules: [{ id: 'sellador', label: 'Sellador' }],
+      files: [{ path: 'C:\\docs\\informe.pdf', folder: false }],
+      accounts: ['ana@example.com'],
+    },
     usage: { input: 1500, output: 200 },
   };
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(withContext);
   const remove = vi.spyOn(agentApi, 'agentContextRemoveFile').mockResolvedValue({ removed: 1 });
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   expect(screen.queryByText('informe.pdf')).toBeNull();
   expect(screen.getByText('Sellador')).toBeInTheDocument();
   expect(screen.getByText('ana@example.com')).toBeInTheDocument();
@@ -1359,7 +1975,9 @@ it('muestra el contexto de la conversación y permite retirar un archivo concedi
   expect(screen.getByRole('tooltip')).toHaveTextContent('Entrada1,5 kSalida200');
   fireEvent.click(screen.getByRole('button', { name: 'Archivos y accesos' }));
   expect(screen.getByText('informe.pdf')).toBeInTheDocument();
-  await act(async () => { fireEvent.click(screen.getByLabelText('Retirar acceso a informe.pdf')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Retirar acceso a informe.pdf'));
+  });
   expect(remove).toHaveBeenCalledWith('s1', 'C:\\docs\\informe.pdf');
 });
 
@@ -1375,28 +1993,50 @@ it('permite quitar la carpeta de trabajo desde el compositor', async () => {
   });
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('proyecto');
-  await act(async () => { fireEvent.click(screen.getByLabelText('Quitar la carpeta de trabajo')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Quitar la carpeta de trabajo'));
+  });
   expect(remove).toHaveBeenCalledWith('s1', 'C:\\proyecto');
   expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('Carpeta de trabajo');
   expect(screen.queryByLabelText('Quitar la carpeta de trabajo')).toBeNull();
 });
 
 it('abre una conversación desde un agente guardado con su mensaje inicial', async () => {
-  vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [
-    { id: 'local', label: 'Local', configured: true, has_key: true, needs_key: false, default_model: 'prueba' },
-  ] } as never);
-  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [{
-    id: 'p1', name: 'Informe mensual', description: 'Cortes del mes', instructions: 'x', starter: 'Prepara el informe de este mes',
-    tools: null, created_at: 1, updated_at: 1,
-  }] });
+  vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({
+    providers: [
+      { id: 'local', label: 'Local', configured: true, has_key: true, needs_key: false, default_model: 'prueba' },
+    ],
+  } as never);
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({
+    profiles: [
+      {
+        id: 'p1',
+        name: 'Informe mensual',
+        description: 'Cortes del mes',
+        instructions: 'x',
+        starter: 'Prepara el informe de este mes',
+        tools: null,
+        created_at: 1,
+        updated_at: 1,
+      },
+    ],
+  });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [{ ...session, id: 's9', profile: { id: 'p1', name: 'Informe mensual' } }] });
-  const create = vi.spyOn(agentApi, 'agentSessionCreate').mockResolvedValue({ session: { ...session, id: 's9', profile: { id: 'p1', name: 'Informe mensual' } } });
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({
+    sessions: [{ ...session, id: 's9', profile: { id: 'p1', name: 'Informe mensual' } }],
+  });
+  const create = vi
+    .spyOn(agentApi, 'agentSessionCreate')
+    .mockResolvedValue({ session: { ...session, id: 's9', profile: { id: 'p1', name: 'Informe mensual' } } });
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByTitle('Nueva conversación con Informe mensual')); });
+  await act(async () => {
+    fireEvent.click(screen.getByTitle('Nueva conversación con Informe mensual'));
+  });
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ profile_id: 'p1' }));
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Prepara el informe de este mes');
 });
@@ -1417,7 +2057,9 @@ it('envía el primer texto una sola vez ante doble Enter y conserva lo escrito d
   expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba' });
   expect(input).toHaveValue('Mi primer encargo');
   fireEvent.change(input, { target: { value: 'El siguiente encargo' } });
-  await act(async () => { created.resolve({ session }); });
+  await act(async () => {
+    created.resolve({ session });
+  });
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Mi primer encargo', expect.any(String), []);
   expect(input).toHaveValue('El siguiente encargo');
 });
@@ -1432,9 +2074,15 @@ it('mantiene activo el primer turno mientras espera la aceptación del mensaje',
   render(<AgentView />);
   await act(async () => {});
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Primer encargo' } });
-  await act(async () => { fireEvent.keyDown(screen.getByLabelText('Mensaje para el agente'), { key: 'Enter' }); });
-  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
-  await act(async () => { send.resolve({ accepted: true }); });
+  await act(async () => {
+    fireEvent.keyDown(screen.getByLabelText('Mensaje para el agente'), { key: 'Enter' });
+  });
+  expect(
+    within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Trabajando en ello'),
+  ).toBeInTheDocument();
+  await act(async () => {
+    send.resolve({ accepted: true });
+  });
 });
 
 it('conserva el primer borrador sin proveedor y no crea ni envía una conversación', async () => {
@@ -1445,7 +2093,9 @@ it('conserva el primer borrador sin proveedor y no crea ni envía una conversaci
   fireEvent.change(input, { target: { value: 'Encargo pendiente' } });
   expect(input).toBeEnabled();
   expect(screen.getByLabelText('Enviar')).toBeDisabled();
-  await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }); });
+  await act(async () => {
+    fireEvent.keyDown(input, { key: 'Enter' });
+  });
   expect(input).toHaveValue('Encargo pendiente');
   expect(addToast).toHaveBeenCalledWith({ message: 'Elige un proveedor IA', type: 'error' });
   expect(create).not.toHaveBeenCalled();
@@ -1456,17 +2106,23 @@ it('conserva el primer borrador si falla la creación y permite volver a enviarl
   vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
   vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [] });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  const create = vi.spyOn(agentApi, 'agentSessionCreate')
-    .mockRejectedValueOnce(new Error('No se pudo crear')).mockResolvedValue({ session });
+  const create = vi
+    .spyOn(agentApi, 'agentSessionCreate')
+    .mockRejectedValueOnce(new Error('No se pudo crear'))
+    .mockResolvedValue({ session });
   render(<AgentView />);
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
   fireEvent.change(input, { target: { value: 'Primer encargo' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
   expect(input).toHaveValue('Primer encargo');
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   expect(addToast).toHaveBeenCalledWith({ message: 'No se pudo crear', type: 'error' });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
   expect(create).toHaveBeenCalledTimes(2);
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Primer encargo', expect.any(String), []);
   expect(input).toHaveValue('');
@@ -1491,28 +2147,43 @@ it('reintenta el texto con la misma identidad si se pierde la respuesta de acept
     fireEvent.change(input, { target: { value: 'Encargo aceptado' } });
     fireEvent.click(screen.getByLabelText('Enviar'));
   };
-  await act(async () => { submit(); });
-  await act(async () => { submit(); });
+  await act(async () => {
+    submit();
+  });
+  await act(async () => {
+    submit();
+  });
   expect(agentApi.agentMessageSend).toHaveBeenCalledTimes(2);
   expect(create).toHaveBeenCalledTimes(1);
   expect(accepted.size).toBe(1);
 });
 
 it('marca el estado desactualizado si falla el sondeo y lo recupera sin perder el historial', async () => {
-  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true,
-    messages: [{ role: 'assistant', content: 'Última respuesta recibida', ts: 1 }] });
+  const list = vi
+    .spyOn(agentApi, 'agentMessagesList')
+    .mockResolvedValue({
+      ...empty,
+      running: true,
+      messages: [{ role: 'assistant', content: 'Última respuesta recibida', ts: 1 }],
+    });
   localStorage.setItem('antares-agent-session', 's1');
   vi.useFakeTimers();
   render(<AgentView />);
   await act(async () => {});
   expect(screen.getByText('Última respuesta recibida')).toBeVisible();
   list.mockRejectedValueOnce(new Error('Sin conexión'));
-  await act(async () => { vi.advanceTimersByTime(1500); });
-  expect(screen.getByRole('region', { name: 'Atención del agente' })).toHaveTextContent(/El estado mostrado puede estar desactualizado/);
+  await act(async () => {
+    vi.advanceTimersByTime(1500);
+  });
+  expect(screen.getByRole('region', { name: 'Atención del agente' })).toHaveTextContent(
+    /El estado mostrado puede estar desactualizado/,
+  );
   expect(screen.getByText('Última respuesta recibida')).toBeVisible();
   expect(screen.queryByText('Trabajando en ello')).not.toBeInTheDocument();
   list.mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta confirmada', ts: 2 }] });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Reintentar actualización' })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar actualización' }));
+  });
   expect(screen.queryByText(/El estado mostrado puede estar desactualizado/)).not.toBeInTheDocument();
   expect(screen.getByText('Respuesta confirmada')).toBeVisible();
 });
@@ -1529,14 +2200,32 @@ it('muestra la bienvenida sin sugerencias de mensajes predefinidos', async () =>
 });
 
 it('crea la conversación con el modelo real elegido en el selector', async () => {
-  vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [
-    { id: 'local', label: 'Local', configured: true, has_key: true, needs_key: false, default_model: 'prueba' },
-  ] } as never);
-  vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue({ provider: {
-    id: 'local', label: 'Local', description: '', docs: '', editable_base_url: false, default_base_url: '', default_model: 'prueba',
-    provider: 'openai', configured: true, has_key: true, key_masked: null, base_url: '', needs_key: false,
-    reachable: true, models_count: 2, models: ['prueba', 'otro-modelo'], error: null,
-  } });
+  vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({
+    providers: [
+      { id: 'local', label: 'Local', configured: true, has_key: true, needs_key: false, default_model: 'prueba' },
+    ],
+  } as never);
+  vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue({
+    provider: {
+      id: 'local',
+      label: 'Local',
+      description: '',
+      docs: '',
+      editable_base_url: false,
+      default_base_url: '',
+      default_model: 'prueba',
+      provider: 'openai',
+      configured: true,
+      has_key: true,
+      key_masked: null,
+      base_url: '',
+      needs_key: false,
+      reachable: true,
+      models_count: 2,
+      models: ['prueba', 'otro-modelo'],
+      error: null,
+    },
+  });
   vi.spyOn(agentApi, 'agentSessionsList').mockResolvedValue({ sessions: [] });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   const create = vi.spyOn(agentApi, 'agentSessionCreate').mockResolvedValue({ session: { ...session, id: 's8' } });
@@ -1546,69 +2235,121 @@ it('crea la conversación con el modelo real elegido en el selector', async () =
   const dialog = await screen.findByRole('dialog', { name: 'Modelos disponibles' });
   await waitFor(() => expect(within(dialog).getByText('otro-modelo')).toBeInTheDocument());
   fireEvent.click(within(dialog).getByText('otro-modelo'));
-  const newChat = within(screen.getByRole('region', { name: 'Conversaciones' })).getByRole('button', { name: 'Nueva conversación' });
-  await act(async () => { fireEvent.click(newChat); });
+  const newChat = within(screen.getByRole('region', { name: 'Conversaciones' })).getByRole('button', {
+    name: 'Nueva conversación',
+  });
+  await act(async () => {
+    fireEvent.click(newChat);
+  });
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ provider: 'local', model: 'otro-modelo' }));
 });
 
 it('cambia el modelo del chat actual, conserva los mensajes y retiene el anterior si falla', async () => {
   const provider = {
-    id: 'local', label: 'Local', description: '', docs: '', editable_base_url: false, default_base_url: '', default_model: 'prueba',
-    provider: 'openai', configured: true, has_key: true, key_masked: null, base_url: '', needs_key: false,
+    id: 'local',
+    label: 'Local',
+    description: '',
+    docs: '',
+    editable_base_url: false,
+    default_base_url: '',
+    default_model: 'prueba',
+    provider: 'openai',
+    configured: true,
+    has_key: true,
+    key_masked: null,
+    base_url: '',
+    needs_key: false,
   };
   vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [provider] });
-  vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue({ provider: {
-    ...provider, reachable: true, models_count: 2, models: ['prueba', 'otro-modelo'], error: null,
-  } });
-  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
-    messages: [{ role: 'assistant', content: 'Respuesta anterior', ts: 1 }],
+  vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue({
+    provider: {
+      ...provider,
+      reachable: true,
+      models_count: 2,
+      models: ['prueba', 'otro-modelo'],
+      error: null,
+    },
   });
+  const list = vi
+    .spyOn(agentApi, 'agentMessagesList')
+    .mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta anterior', ts: 1 }] });
   const save = deferred<{ session: AgentSession }>();
-  const set = vi.spyOn(agentApi, 'agentSessionModelSet').mockReturnValueOnce(save.promise).mockRejectedValueOnce(new Error('Proveedor no disponible'));
+  const set = vi
+    .spyOn(agentApi, 'agentSessionModelSet')
+    .mockReturnValueOnce(save.promise)
+    .mockRejectedValueOnce(new Error('Proveedor no disponible'));
   const create = vi.spyOn(agentApi, 'agentSessionCreate');
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   const trigger = screen.getByLabelText('Elegir proveedor y modelo');
   fireEvent.click(trigger);
   fireEvent.click(await screen.findByRole('option', { name: /otro-modelo/ }));
   expect(set).toHaveBeenCalledWith('s1', 'local', 'otro-modelo');
   expect(trigger).toBeDisabled();
   expect(screen.getByText('Respuesta anterior')).toBeVisible();
-  await act(async () => { save.resolve({ session: { ...session, model: 'otro-modelo' } }); });
+  await act(async () => {
+    save.resolve({ session: { ...session, model: 'otro-modelo' } });
+  });
   expect(trigger).toHaveTextContent('otro-modelo');
   expect(create).not.toHaveBeenCalled();
   fireEvent.click(trigger);
   fireEvent.click(await screen.findByRole('option', { name: /prueba/ }));
-  await waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Proveedor no disponible' })));
+  await waitFor(() =>
+    expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Proveedor no disponible' })),
+  );
   expect(trigger).toHaveTextContent('otro-modelo');
   list.mockResolvedValue({ ...empty, running: true });
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Continúa' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
   expect(trigger).toBeDisabled();
   expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Continúa', expect.any(String), []);
 });
 
 it('recarga la conversación en cuanto el motor avisa de un cambio, sin esperar al sondeo', async () => {
   let notify: ((method: string, params: unknown) => void) | null = null;
-  vi.spyOn(window.electronAPI, 'onNotify').mockImplementation((cb) => { notify = cb; return () => { notify = null; }; });
+  vi.spyOn(window.electronAPI, 'onNotify').mockImplementation((cb) => {
+    notify = cb;
+    return () => {
+      notify = null;
+    };
+  });
   const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   localStorage.setItem('antares-agent-session', 's1');
   render(<AgentView />);
   await waitFor(() => expect(list).toHaveBeenCalled());
   const before = list.mock.calls.length;
-  await act(async () => { notify?.('agent.changed', { session_id: 'otra' }); });
+  await act(async () => {
+    notify?.('agent.changed', { session_id: 'otra' });
+  });
   expect(list.mock.calls.length).toBe(before);
   list.mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta en vivo', ts: 2 }] });
-  await act(async () => { notify?.('agent.changed', { session_id: 's1' }); });
+  await act(async () => {
+    notify?.('agent.changed', { session_id: 's1' });
+  });
   expect(await screen.findByText('Respuesta en vivo')).toBeInTheDocument();
 });
 
 it('prioriza la aprobación y la pregunta, y anuncia cada pregunta una sola vez', async () => {
   const update = agentUpdates();
   const question = { id: 'q1', session_id: 's1', questions: [{ id: 'name', prompt: '¿Qué nombre uso?' }] };
-  const approval = { id: 'a1', session_id: 's1', call_id: 'c1', method: 'fs_write', params: {}, status: 'pending' as const, created_at: 1, decided_at: null };
-  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, questions: [question], pending_approvals: [approval] });
+  const approval = {
+    id: 'a1',
+    session_id: 's1',
+    call_id: 'c1',
+    method: 'fs_write',
+    params: {},
+    status: 'pending' as const,
+    created_at: 1,
+    decided_at: null,
+  };
+  const list = vi
+    .spyOn(agentApi, 'agentMessagesList')
+    .mockResolvedValue({ ...empty, questions: [question], pending_approvals: [approval] });
   localStorage.setItem('antares-agent-session', 's1');
   render(<AgentView />);
   await act(async () => {});
@@ -1618,17 +2359,23 @@ it('prioriza la aprobación y la pregunta, y anuncia cada pregunta una sola vez'
   expect(screen.getByLabelText('Ver detalles de la acción')).toHaveFocus();
   expect(within(attention).queryByRole('button', { name: 'Responder' })).not.toBeInTheDocument();
   list.mockResolvedValue({ ...empty, questions: [question] });
-  await act(async () => { update(); });
+  await act(async () => {
+    update();
+  });
   expect(within(attention).getByRole('button', { name: 'Responder' })).toBeVisible();
   const announcement = screen.getByRole('status', { name: 'Avisos del agente' });
   expect(announcement).toHaveTextContent('El agente necesita tu respuesta para continuar.');
   const mutations = vi.fn();
   const observer = new MutationObserver(mutations);
   observer.observe(announcement, { childList: true, subtree: true, characterData: true });
-  await act(async () => { update(); });
+  await act(async () => {
+    update();
+  });
   expect(mutations).not.toHaveBeenCalled();
   list.mockResolvedValue({ ...empty, questions: [{ ...question, id: 'q2' }] });
-  await act(async () => { update(); });
+  await act(async () => {
+    update();
+  });
   expect(mutations).toHaveBeenCalledTimes(1);
   observer.disconnect();
 });
@@ -1641,40 +2388,80 @@ it('conserva el foco al llegar una pregunta y lo lleva a la respuesta solo al el
   await act(async () => {});
   const composer = screen.getByLabelText('Mensaje para el agente');
   composer.focus();
-  list.mockResolvedValue({ ...empty, questions: [{ id: 'q1', session_id: 's1', questions: [{ id: 'name', prompt: 'Nombre del informe' }] }] });
-  await act(async () => { update(); });
+  list.mockResolvedValue({
+    ...empty,
+    questions: [{ id: 'q1', session_id: 's1', questions: [{ id: 'name', prompt: 'Nombre del informe' }] }],
+  });
+  await act(async () => {
+    update();
+  });
   expect(composer).toHaveFocus();
-  fireEvent.click(within(screen.getByRole('region', { name: 'Atención del agente' })).getByRole('button', { name: 'Responder' }));
+  fireEvent.click(
+    within(screen.getByRole('region', { name: 'Atención del agente' })).getByRole('button', { name: 'Responder' }),
+  );
   expect(screen.getByLabelText('Nombre del informe')).toHaveFocus();
 });
 
-it.each([false, true])('muestra el resultado sin arrastrar el historial cuando se lee arriba: %s', async (readingAbove) => {
-  const update = agentUpdates();
-  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
-    messages: [{ role: 'assistant', content: 'Respuesta anterior', ts: 1 }] });
-  localStorage.setItem('antares-agent-session', 's1');
-  render(<AgentView />);
-  await act(async () => {});
-  const transcript = screen.getByRole('region', { name: 'Mensajes' });
-  Object.defineProperties(transcript, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 200 } });
-  transcript.scrollTop = readingAbove ? 0 : 800;
-  fireEvent.scroll(transcript);
-  vi.mocked(transcript.scrollTo).mockClear();
-  list.mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta anterior', ts: 1 }],
-    artifacts: [{ id: 'result', family: 'canvas', template_id: 'doc', template_revision: 'r1',
-      files: [{ name: 'informe.pdf', sha256: 'hash', pages: 1, mime: 'application/pdf', size: 20 }] }] });
-  await act(async () => { update(); });
-  expect(screen.getByRole('region', { name: 'Atención del agente' })).toHaveTextContent('Resultado disponible: informe.pdf');
-  if (readingAbove) {
-    expect(transcript.scrollTo).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /Ir al final/ })).toBeVisible();
-  } else expect(transcript.scrollTo).toHaveBeenCalledWith({ top: 1000 });
-  expect(screen.getByRole('region', { name: 'Documento informe.pdf' })).toBeInTheDocument();
-});
+it.each([false, true])(
+  'muestra el resultado sin arrastrar el historial cuando se lee arriba: %s',
+  async (readingAbove) => {
+    const update = agentUpdates();
+    const list = vi
+      .spyOn(agentApi, 'agentMessagesList')
+      .mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta anterior', ts: 1 }] });
+    localStorage.setItem('antares-agent-session', 's1');
+    render(<AgentView />);
+    await act(async () => {});
+    const transcript = screen.getByRole('region', { name: 'Mensajes' });
+    Object.defineProperties(transcript, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 200 },
+    });
+    transcript.scrollTop = readingAbove ? 0 : 800;
+    fireEvent.scroll(transcript);
+    vi.mocked(transcript.scrollTo).mockClear();
+    list.mockResolvedValue({
+      ...empty,
+      messages: [{ role: 'assistant', content: 'Respuesta anterior', ts: 1 }],
+      artifacts: [
+        {
+          id: 'result',
+          family: 'canvas',
+          template_id: 'doc',
+          template_revision: 'r1',
+          files: [{ name: 'informe.pdf', sha256: 'hash', pages: 1, mime: 'application/pdf', size: 20 }],
+        },
+      ],
+    });
+    await act(async () => {
+      update();
+    });
+    expect(screen.getByRole('region', { name: 'Atención del agente' })).toHaveTextContent(
+      'Resultado disponible: informe.pdf',
+    );
+    if (readingAbove) {
+      expect(transcript.scrollTo).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: /Ir al final/ })).toBeVisible();
+    } else expect(transcript.scrollTo).toHaveBeenCalledWith({ top: 1000 });
+    expect(screen.getByRole('region', { name: 'Documento informe.pdf' })).toBeInTheDocument();
+  },
+);
 
 it('explica la actividad sin anunciar de nuevo los segundos transcurridos', async () => {
-  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true,
-    messages: [{ role: 'assistant', content: '', ts: 1, tool_calls: [{ id: 'read', name: 'fs_read', params: {}, gated: false, status: 'running' }] }] });
+  const list = vi
+    .spyOn(agentApi, 'agentMessagesList')
+    .mockResolvedValue({
+      ...empty,
+      running: true,
+      messages: [
+        {
+          role: 'assistant',
+          content: '',
+          ts: 1,
+          tool_calls: [{ id: 'read', name: 'fs_read', params: {}, gated: false, status: 'running' }],
+        },
+      ],
+    });
   localStorage.setItem('antares-agent-session', 's1');
   vi.useFakeTimers();
   render(<AgentView />);
@@ -1684,7 +2471,9 @@ it('explica la actividad sin anunciar de nuevo los segundos transcurridos', asyn
   const mutations = vi.fn();
   const observer = new MutationObserver(mutations);
   observer.observe(announcement, { childList: true, subtree: true, characterData: true });
-  await act(async () => { vi.advanceTimersByTime(3000); });
+  await act(async () => {
+    vi.advanceTimersByTime(3000);
+  });
   expect(list).toHaveBeenCalled();
   expect(mutations).not.toHaveBeenCalled();
   observer.disconnect();
@@ -1692,58 +2481,98 @@ it('explica la actividad sin anunciar de nuevo los segundos transcurridos', asyn
 
 it('respeta movimiento reducido al ir al final del historial', async () => {
   vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
-    matches: query === '(prefers-reduced-motion: reduce)', media: query, onchange: null,
-    addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(),
+    matches: query === '(prefers-reduced-motion: reduce)',
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
   }));
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   localStorage.setItem('antares-agent-session', 's1');
   render(<AgentView />);
   await act(async () => {});
   const transcript = screen.getByRole('region', { name: 'Mensajes' });
-  Object.defineProperties(transcript, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 200 } });
+  Object.defineProperties(transcript, {
+    scrollHeight: { configurable: true, value: 1000 },
+    clientHeight: { configurable: true, value: 200 },
+  });
   fireEvent.scroll(transcript);
   vi.mocked(transcript.scrollTo).mockClear();
   fireEvent.click(screen.getByRole('button', { name: /Ir al final/ }));
   expect(transcript.scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: 'instant' });
 });
 
-it.each([false, true])('sigue el final cuando un turno crece sin mensajes nuevos salvo si se lee arriba: %s', async (readingAbove) => {
-  const resized: ResizeObserverCallback[] = [];
-  vi.stubGlobal('ResizeObserver', class {
-    constructor(callback: ResizeObserverCallback) { resized.push(callback); }
-    observe() {}
-    disconnect() {}
-  });
-  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { callback(0); return 1; });
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true,
-    messages: [{ role: 'assistant', content: 'Respuesta parcial', partial: true, ts: 1 }] });
-  localStorage.setItem('antares-agent-session', 's1');
-  render(<AgentView />);
-  await act(async () => {});
-  const transcript = screen.getByRole('region', { name: 'Mensajes' });
-  expect(transcript.querySelector('.agent-transcript-turn')).toHaveTextContent('Respuesta parcial');
-  Object.defineProperties(transcript, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 200 } });
-  transcript.scrollTop = readingAbove ? 0 : 800;
-  fireEvent.scroll(transcript);
-  vi.mocked(transcript.scrollTo).mockClear();
-  Object.defineProperty(transcript, 'scrollHeight', { configurable: true, value: 1400 });
-  act(() => { for (const callback of resized) callback([], {} as ResizeObserver); });
-  if (readingAbove) expect(transcript.scrollTo).not.toHaveBeenCalled();
-  else expect(transcript.scrollTo).toHaveBeenCalledWith({ top: 1400 });
-  vi.unstubAllGlobals();
-});
+it.each([false, true])(
+  'sigue el final cuando un turno crece sin mensajes nuevos salvo si se lee arriba: %s',
+  async (readingAbove) => {
+    const resized: ResizeObserverCallback[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          resized.push(callback);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
+    vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+      ...empty,
+      running: true,
+      messages: [{ role: 'assistant', content: 'Respuesta parcial', partial: true, ts: 1 }],
+    });
+    localStorage.setItem('antares-agent-session', 's1');
+    render(<AgentView />);
+    await act(async () => {});
+    const transcript = screen.getByRole('region', { name: 'Mensajes' });
+    expect(transcript.querySelector('.agent-transcript-turn')).toHaveTextContent('Respuesta parcial');
+    Object.defineProperties(transcript, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 200 },
+    });
+    transcript.scrollTop = readingAbove ? 0 : 800;
+    fireEvent.scroll(transcript);
+    vi.mocked(transcript.scrollTo).mockClear();
+    Object.defineProperty(transcript, 'scrollHeight', { configurable: true, value: 1400 });
+    act(() => {
+      for (const callback of resized) callback([], {} as ResizeObserver);
+    });
+    if (readingAbove) expect(transcript.scrollTo).not.toHaveBeenCalled();
+    else expect(transcript.scrollTo).toHaveBeenCalledWith({ top: 1400 });
+    vi.unstubAllGlobals();
+  },
+);
 
 it('deja la cadena fuera del chat cuando la respuesta progresiva termina', async () => {
   const update = agentUpdates();
-  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true,
-    messages: [{ role: 'assistant', content: 'Respuesta parcial', reasoning: 'Comparando documentos', partial: true, ts: 1 }] });
+  const list = vi
+    .spyOn(agentApi, 'agentMessagesList')
+    .mockResolvedValue({
+      ...empty,
+      running: true,
+      messages: [
+        { role: 'assistant', content: 'Respuesta parcial', reasoning: 'Comparando documentos', partial: true, ts: 1 },
+      ],
+    });
   localStorage.setItem('antares-agent-session', 's1');
   render(<AgentView />);
   await act(async () => {});
   expect(screen.queryByText('Comparando documentos')).not.toBeInTheDocument();
   expect(screen.getByText('Respuesta parcial')).toBeVisible();
-  list.mockResolvedValue({ ...empty, messages: [{ role: 'assistant', content: 'Respuesta final', reasoning: 'Comparando documentos', ts: 2 }] });
-  await act(async () => { update(); });
+  list.mockResolvedValue({
+    ...empty,
+    messages: [{ role: 'assistant', content: 'Respuesta final', reasoning: 'Comparando documentos', ts: 2 }],
+  });
+  await act(async () => {
+    update();
+  });
   expect(screen.queryByText('Comparando documentos')).not.toBeInTheDocument();
   expect(screen.getByText('Respuesta final')).toBeVisible();
 });
@@ -1752,9 +2581,14 @@ it('no anuncia una pregunta del chat anterior al cambiar de conversación', asyn
   const second = { ...session, id: 's2', title: 'Segunda' };
   const loading = deferred<Snapshot>();
   vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, second] });
-  vi.spyOn(agentApi, 'agentMessagesList').mockImplementation((id) => id === 's2' ? loading.promise : Promise.resolve({
-    ...empty, questions: [{ id: 'q1', session_id: 's1', questions: [{ id: 'name', prompt: 'Nombre' }] }],
-  }));
+  vi.spyOn(agentApi, 'agentMessagesList').mockImplementation((id) =>
+    id === 's2'
+      ? loading.promise
+      : Promise.resolve({
+          ...empty,
+          questions: [{ id: 'q1', session_id: 's1', questions: [{ id: 'name', prompt: 'Nombre' }] }],
+        }),
+  );
   localStorage.setItem('antares-agent-session', 's1');
   render(<AgentView />);
   await act(async () => {});
@@ -1763,11 +2597,15 @@ it('no anuncia una pregunta del chat anterior al cambiar de conversación', asyn
     for (const record of records) for (const node of record.addedNodes) announcements.push(node.textContent || '');
   });
   observer.observe(screen.getByRole('status', { name: 'Avisos del agente' }), { childList: true, subtree: true });
-  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Segunda'));
+  });
   expect(announcements).not.toContain('El agente necesita tu respuesta para continuar.');
   expect(screen.queryByRole('region', { name: 'Atención del agente' })).not.toBeInTheDocument();
   observer.disconnect();
-  await act(async () => { loading.resolve(empty); });
+  await act(async () => {
+    loading.resolve(empty);
+  });
 });
 
 it('confirma la recepción solo tras la admisión y conserva ese recibo si falla el refresco', async () => {
@@ -1778,15 +2616,23 @@ it('confirma la recepción solo tras la admisión y conserva ese recibo si falla
   render(<AgentView />);
   await act(async () => {});
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Prepara el informe' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
   const receipts = within(screen.getByRole('region', { name: 'Estado de los envíos' }));
   expect(receipts.getByText('Enviando mensaje…')).toBeVisible();
   expect(receipts.queryByText('Mensaje recibido.')).not.toBeInTheDocument();
   list.mockRejectedValue(new Error('No se pudo leer el historial'));
-  await act(async () => { admitted.resolve({ accepted: true }); });
+  await act(async () => {
+    admitted.resolve({ accepted: true });
+  });
   expect(receipts.getByText('Mensaje recibido.')).toBeVisible();
   expect(screen.getByRole('region', { name: 'Estado de los envíos' })).toHaveClass('sr-only');
-  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText(/El estado mostrado puede estar desactualizado/)).toBeVisible();
+  expect(
+    within(screen.getByRole('region', { name: 'Atención del agente' })).getByText(
+      /El estado mostrado puede estar desactualizado/,
+    ),
+  ).toBeVisible();
 });
 
 it('el composer muestra los permisos en su barra y sin pista de teclado', async () => {
@@ -1807,11 +2653,15 @@ it('un mensaje sin aceptación conserva su borrador y ofrece recuperar la misma 
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
   fireEvent.change(input, { target: { value: 'Ordena este informe' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
   expect(input).toHaveValue('Ordena este informe');
   expect(screen.getByText('Recepción sin confirmar.')).toBeVisible();
   const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Reintentar envío: Ordena este informe' })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar envío: Ordena este informe' }));
+  });
   expect(vi.mocked(agentApi.agentMessageSend).mock.calls[1]).toEqual(original);
   expect(input).toHaveValue('');
   expect(screen.getByText('Mensaje recibido.')).toBeVisible();
@@ -1832,41 +2682,60 @@ it('ignora Intro repetido y composición IME sin impedir Shift+Intro', async () 
   });
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   expect(input).toHaveValue('Un encargo');
-  await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }); });
+  await act(async () => {
+    fireEvent.keyDown(input, { key: 'Enter' });
+  });
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Un encargo', expect.any(String), []);
 });
 
-it.each(['texto nuevo', 'texto idéntico editado', 'adjunto nuevo', 'adjunto quitado'])('recupera el payload original y conserva un borrador con %s', async (change) => {
-  localStorage.setItem('antares-agent-session', session.id);
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.spyOn(agentApi, 'agentAttach')
-    .mockResolvedValueOnce({ attachments: [{ id: 'a1', name: 'original.pdf', kind: 'files' }] })
-    .mockResolvedValueOnce({ attachments: [{ id: 'a2', name: 'nuevo.pdf', kind: 'files' }] });
-  const admitted = deferred<{ accepted: boolean; duplicate: boolean }>();
-  vi.mocked(agentApi.agentMessageSend).mockRejectedValueOnce(new Error('Respuesta perdida')).mockReturnValueOnce(admitted.promise);
-  render(<AgentView />);
-  await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
-  const input = screen.getByLabelText('Mensaje para el agente');
-  fireEvent.change(input, { target: { value: 'Encargo original' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
-  expect(input).toHaveValue('Encargo original');
-  if (change === 'adjunto nuevo') await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
-  else if (change === 'adjunto quitado') fireEvent.click(screen.getByLabelText('Quitar original.pdf'));
-  else {
-    fireEvent.change(input, { target: { value: 'Borrador nuevo' } });
-    if (change === 'texto idéntico editado') fireEvent.change(input, { target: { value: 'Encargo original' } });
-  }
-  const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
-  const retry = screen.getByRole('button', { name: 'Reintentar envío: Encargo original' });
-  await act(async () => { fireEvent.click(retry); fireEvent.click(retry); });
-  expect(vi.mocked(agentApi.agentMessageSend).mock.calls).toEqual([original, original]);
-  expect(screen.getByText('Enviando mensaje…')).toBeVisible();
-  await act(async () => { admitted.resolve({ accepted: true, duplicate: true }); });
-  expect(input).toHaveValue(change === 'texto nuevo' ? 'Borrador nuevo' : 'Encargo original');
-  expect(screen.queryByText('original.pdf')).not.toBeInTheDocument();
-  if (change === 'adjunto nuevo') expect(screen.getByText('nuevo.pdf')).toBeVisible();
-});
+it.each(['texto nuevo', 'texto idéntico editado', 'adjunto nuevo', 'adjunto quitado'])(
+  'recupera el payload original y conserva un borrador con %s',
+  async (change) => {
+    localStorage.setItem('antares-agent-session', session.id);
+    vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+    vi.spyOn(agentApi, 'agentAttach')
+      .mockResolvedValueOnce({ attachments: [{ id: 'a1', name: 'original.pdf', kind: 'files' }] })
+      .mockResolvedValueOnce({ attachments: [{ id: 'a2', name: 'nuevo.pdf', kind: 'files' }] });
+    const admitted = deferred<{ accepted: boolean; duplicate: boolean }>();
+    vi.mocked(agentApi.agentMessageSend)
+      .mockRejectedValueOnce(new Error('Respuesta perdida'))
+      .mockReturnValueOnce(admitted.promise);
+    render(<AgentView />);
+    await act(async () => {});
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Adjuntar archivos'));
+    });
+    const input = screen.getByLabelText('Mensaje para el agente');
+    fireEvent.change(input, { target: { value: 'Encargo original' } });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Enviar'));
+    });
+    expect(input).toHaveValue('Encargo original');
+    if (change === 'adjunto nuevo')
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText('Adjuntar archivos'));
+      });
+    else if (change === 'adjunto quitado') fireEvent.click(screen.getByLabelText('Quitar original.pdf'));
+    else {
+      fireEvent.change(input, { target: { value: 'Borrador nuevo' } });
+      if (change === 'texto idéntico editado') fireEvent.change(input, { target: { value: 'Encargo original' } });
+    }
+    const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
+    const retry = screen.getByRole('button', { name: 'Reintentar envío: Encargo original' });
+    await act(async () => {
+      fireEvent.click(retry);
+      fireEvent.click(retry);
+    });
+    expect(vi.mocked(agentApi.agentMessageSend).mock.calls).toEqual([original, original]);
+    expect(screen.getByText('Enviando mensaje…')).toBeVisible();
+    await act(async () => {
+      admitted.resolve({ accepted: true, duplicate: true });
+    });
+    expect(input).toHaveValue(change === 'texto nuevo' ? 'Borrador nuevo' : 'Encargo original');
+    expect(screen.queryByText('original.pdf')).not.toBeInTheDocument();
+    if (change === 'adjunto nuevo') expect(screen.getByText('nuevo.pdf')).toBeVisible();
+  },
+);
 
 it.each(['aceptado', 'sin confirmar'])('conserva la edición y adjuntos hechos durante un envío %s', async (result) => {
   localStorage.setItem('antares-agent-session', session.id);
@@ -1878,13 +2747,21 @@ it.each(['aceptado', 'sin confirmar'])('conserva la edición y adjuntos hechos d
   vi.mocked(agentApi.agentMessageSend).mockReturnValue(admitted.promise);
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Adjuntar archivos'));
+  });
   const input = screen.getByLabelText('Mensaje para el agente');
   fireEvent.change(input, { target: { value: 'Primero' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
   fireEvent.change(input, { target: { value: 'Segundo' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
-  await act(async () => { admitted.resolve({ accepted: result === 'aceptado' }); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Adjuntar archivos'));
+  });
+  await act(async () => {
+    admitted.resolve({ accepted: result === 'aceptado' });
+  });
   expect(input).toHaveValue('Segundo');
   expect(screen.getByText('nuevo.pdf')).toBeVisible();
   expect(vi.mocked(agentApi.agentMessageSend).mock.calls[0]).toEqual(['s1', 'Primero', expect.any(String), ['a1']]);
@@ -1900,9 +2777,13 @@ it('captura el mensaje antes de esperar a que se cree el primer chat', async () 
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
   fireEvent.change(input, { target: { value: 'Primer encargo' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
   fireEvent.change(input, { target: { value: 'Encargo siguiente' } });
-  await act(async () => { creation.resolve({ session }); });
+  await act(async () => {
+    creation.resolve({ session });
+  });
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Primer encargo', expect.any(String), []);
   expect(input).toHaveValue('Encargo siguiente');
 });
@@ -1920,18 +2801,30 @@ it.each(['aceptado', 'sin confirmar'])('mantiene el recibo de un envío %s en su
   render(<AgentView />);
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
-  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Adjuntar archivos'));
+  });
   fireEvent.change(input, { target: { value: 'Encargo del primer chat' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
-  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Segunda'));
+  });
   fireEvent.change(input, { target: { value: 'Borrador del segundo chat' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
-  await act(async () => { admitted.resolve({ accepted: result === 'aceptado' }); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Adjuntar archivos'));
+  });
+  await act(async () => {
+    admitted.resolve({ accepted: result === 'aceptado' });
+  });
   expect(input).toHaveValue('Borrador del segundo chat');
   expect(screen.getByText('otro-chat.pdf')).toBeVisible();
   if (result === 'aceptado') expect(screen.queryByText('original.pdf')).not.toBeInTheDocument();
   expect(screen.queryByRole('region', { name: 'Estado de los envíos' })).not.toBeInTheDocument();
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   const receipts = screen.getByRole('region', { name: 'Estado de los envíos' });
   expect(receipts).toHaveTextContent('Encargo del primer chat');
   expect(receipts).toHaveTextContent(result === 'aceptado' ? 'Mensaje recibido.' : 'Recepción sin confirmar.');
@@ -1941,19 +2834,25 @@ it.each(['aceptado', 'sin confirmar'])('mantiene el recibo de un envío %s en su
 it('conserva varios envíos no confirmados y muestra la recepción del que se acaba de recuperar', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
-  vi.mocked(agentApi.agentMessageSend).mockRejectedValueOnce(new Error('Respuesta A perdida')).mockRejectedValueOnce(new Error('Respuesta B perdida'));
+  vi.mocked(agentApi.agentMessageSend)
+    .mockRejectedValueOnce(new Error('Respuesta A perdida'))
+    .mockRejectedValueOnce(new Error('Respuesta B perdida'));
   render(<AgentView />);
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
   for (const text of ['Encargo A', 'Encargo B']) {
     fireEvent.change(input, { target: { value: text } });
-    await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Enviar'));
+    });
   }
   const receipts = within(screen.getByRole('region', { name: 'Estado de los envíos' }));
   expect(receipts.getByRole('button', { name: 'Reintentar envío: Encargo A' })).toBeVisible();
   expect(receipts.getByRole('button', { name: 'Reintentar envío: Encargo B' })).toBeVisible();
   const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
-  await act(async () => { fireEvent.click(receipts.getByRole('button', { name: 'Reintentar envío: Encargo A' })); });
+  await act(async () => {
+    fireEvent.click(receipts.getByRole('button', { name: 'Reintentar envío: Encargo A' }));
+  });
   expect(vi.mocked(agentApi.agentMessageSend).mock.calls[2]).toEqual(original);
   expect(receipts.getByText('Mensaje recibido.')).toHaveTextContent('Encargo A');
   expect(receipts.getByRole('button', { name: 'Reintentar envío: Encargo B' })).toBeVisible();
@@ -1967,59 +2866,101 @@ it('conserva una indicación fallida de la cola y la recupera con su misma inten
   const first = render(<AgentView />);
   await act(async () => {});
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa la plantilla B' } });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' })); });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar como corrección')); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' }));
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar como corrección'));
+  });
   const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
   expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([
-    { session: 's1', text: 'Usa la plantilla B', requestId: original[2], attachments: [], failed: true, correction: true },
+    {
+      session: 's1',
+      text: 'Usa la plantilla B',
+      requestId: original[2],
+      attachments: [],
+      failed: true,
+      correction: true,
+    },
   ]);
   first.unmount();
   list.mockResolvedValue(empty);
   render(<AgentView />);
   await act(async () => {});
   expect(agentApi.agentMessageSend).toHaveBeenCalledTimes(1);
-  await act(async () => { fireEvent.click(screen.getByTitle('Reintentar el envío pendiente')); });
+  await act(async () => {
+    fireEvent.click(screen.getByTitle('Reintentar el envío pendiente'));
+  });
   expect(vi.mocked(agentApi.agentMessageSend).mock.calls[1]).toEqual(original);
   expect(screen.queryByText('En cola')).not.toBeInTheDocument();
   expect(screen.getByText('Indicación recibida.')).toBeVisible();
 });
 
 it.each([
-  { correction: false, pending: false }, { correction: true, pending: false },
-  { correction: false, pending: true }, { correction: true, pending: true },
-])('recupera un envío directo tras remontar con correction=$correction y pending=$pending', async ({ correction, pending }) => {
-  localStorage.setItem('antares-agent-session', session.id);
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: correction });
-  vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({ attachments: [{ id: 'a1', name: 'original.pdf', kind: 'files' }] });
-  const admitted = deferred<{ accepted: boolean }>();
-  vi.mocked(agentApi.agentMessageSend).mockReturnValueOnce(admitted.promise);
-  const first = render(<AgentView />);
-  await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Encargo original' } });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: correction ? 'Indicar ahora' : 'Enviar', exact: true })); });
-  const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
-  expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([
-    { session: 's1', text: 'Encargo original', requestId: original[2], attachments: ['a1'], failed: true, correction },
-  ]);
-  expect(screen.getByLabelText('Quitar de la cola')).toBeDisabled();
-  if (!pending) await act(async () => { admitted.resolve({ accepted: false }); });
-  first.unmount();
-  if (pending) await act(async () => { admitted.resolve({ accepted: false }); });
-  render(<AgentView />);
-  await act(async () => {});
-  expect(agentApi.agentMessageSend).toHaveBeenCalledTimes(1);
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador nuevo' } });
-  await act(async () => { fireEvent.click(screen.getByTitle('Reintentar el envío pendiente')); });
-  expect(vi.mocked(agentApi.agentMessageSend).mock.calls[1]).toEqual(original);
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador nuevo');
-  expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([]);
-  expect(screen.getByText(correction ? 'Indicación recibida.' : 'Mensaje recibido.')).toBeVisible();
-});
+  { correction: false, pending: false },
+  { correction: true, pending: false },
+  { correction: false, pending: true },
+  { correction: true, pending: true },
+])(
+  'recupera un envío directo tras remontar con correction=$correction y pending=$pending',
+  async ({ correction, pending }) => {
+    localStorage.setItem('antares-agent-session', session.id);
+    vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: correction });
+    vi.spyOn(agentApi, 'agentAttach').mockResolvedValue({
+      attachments: [{ id: 'a1', name: 'original.pdf', kind: 'files' }],
+    });
+    const admitted = deferred<{ accepted: boolean }>();
+    vi.mocked(agentApi.agentMessageSend).mockReturnValueOnce(admitted.promise);
+    const first = render(<AgentView />);
+    await act(async () => {});
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Adjuntar archivos'));
+    });
+    fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Encargo original' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: correction ? 'Indicar ahora' : 'Enviar', exact: true }));
+    });
+    const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
+    expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([
+      {
+        session: 's1',
+        text: 'Encargo original',
+        requestId: original[2],
+        attachments: ['a1'],
+        failed: true,
+        correction,
+      },
+    ]);
+    expect(screen.getByLabelText('Quitar de la cola')).toBeDisabled();
+    if (!pending)
+      await act(async () => {
+        admitted.resolve({ accepted: false });
+      });
+    first.unmount();
+    if (pending)
+      await act(async () => {
+        admitted.resolve({ accepted: false });
+      });
+    render(<AgentView />);
+    await act(async () => {});
+    expect(agentApi.agentMessageSend).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador nuevo' } });
+    await act(async () => {
+      fireEvent.click(screen.getByTitle('Reintentar el envío pendiente'));
+    });
+    expect(vi.mocked(agentApi.agentMessageSend).mock.calls[1]).toEqual(original);
+    expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador nuevo');
+    expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([]);
+    expect(screen.getByText(correction ? 'Indicación recibida.' : 'Mensaje recibido.')).toBeVisible();
+  },
+);
 
 it('no convierte un envío restaurado de intención desconocida en una indicación', async () => {
   localStorage.setItem('antares-agent-session', session.id);
-  localStorage.setItem('antares-agent-queue', JSON.stringify([{ session: 's1', text: 'Encargo anterior', requestId: 'previous' }]));
+  localStorage.setItem(
+    'antares-agent-queue',
+    JSON.stringify([{ session: 's1', text: 'Encargo anterior', requestId: 'previous' }]),
+  );
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
   render(<AgentView />);
   await act(async () => {});
@@ -2034,9 +2975,18 @@ it.each([
   ['web_click', 'Navegando por páginas'],
 ] as const)('muestra actividad web real durante %s', async (name, phrase) => {
   localStorage.setItem('antares-agent-session', session.id);
-  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true, messages: [{
-    role: 'assistant', content: '', ts: 1, tool_calls: [{ id: 'c', name, params: {}, gated: name === 'web_click', status: 'running' }],
-  }] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+    ...empty,
+    running: true,
+    messages: [
+      {
+        role: 'assistant',
+        content: '',
+        ts: 1,
+        tool_calls: [{ id: 'c', name, params: {}, gated: name === 'web_click', status: 'running' }],
+      },
+    ],
+  });
   render(<AgentView />);
   await act(async () => {});
   expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText(phrase)).toBeVisible();
@@ -2044,19 +2994,28 @@ it.each([
 
 it('un ACK anterior no sustituye el recibo de una indicación más reciente', async () => {
   localStorage.setItem('antares-agent-session', session.id);
-  localStorage.setItem('antares-agent-queue', JSON.stringify([{ session: 's1', text: 'Encargo A', requestId: 'queue-a' }]));
+  localStorage.setItem(
+    'antares-agent-queue',
+    JSON.stringify([{ session: 's1', text: 'Encargo A', requestId: 'queue-a' }]),
+  );
   const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   const first = deferred<{ accepted: boolean }>();
   vi.mocked(agentApi.agentMessageSend).mockReturnValueOnce(first.promise);
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByTitle('Reintentar el envío pendiente')); });
+  await act(async () => {
+    fireEvent.click(screen.getByTitle('Reintentar el envío pendiente'));
+  });
   expect(screen.getByText('Enviando mensaje…')).toBeVisible();
   list.mockResolvedValue({ ...empty, running: true });
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Indicación B' } });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Indicar ahora' })); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Indicar ahora' }));
+  });
   expect(screen.getByText('Indicación recibida.')).toBeVisible();
-  await act(async () => { first.resolve({ accepted: true }); });
+  await act(async () => {
+    first.resolve({ accepted: true });
+  });
   expect(screen.getByText('Indicación recibida.')).toHaveTextContent('Indicación B');
   expect(screen.queryByText('Mensaje recibido.')).not.toBeInTheDocument();
 });
@@ -2069,9 +3028,13 @@ it('el eco de un texto en el historial no confirma una respuesta de envío perdi
   render(<AgentView />);
   await act(async () => {});
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Texto repetido' } });
-  await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  await act(async () => {
+    fireEvent.click(screen.getByLabelText('Enviar'));
+  });
   list.mockResolvedValue({ ...empty, messages: [{ role: 'user', content: 'Texto repetido', ts: 1 }] });
-  await act(async () => { update(); });
+  await act(async () => {
+    update();
+  });
   expect(screen.getByRole('button', { name: 'Reintentar envío: Texto repetido' })).toBeVisible();
   expect(screen.getByText('Recepción sin confirmar.')).toBeVisible();
   expect(screen.queryByText('Mensaje recibido.')).not.toBeInTheDocument();
@@ -2081,11 +3044,16 @@ it('invoca una skill con «/»: filtra el catálogo, elige con el teclado y env�
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [] });
-  const catalog = vi.spyOn(agentApi, 'agentSkillsList').mockResolvedValue({ skills: [
-    { id: 'a'.repeat(24), name: 'pdf-review', description: 'Revisa PDFs' },
-    { id: 'b'.repeat(24), name: 'informe-tecnico', description: 'Redacta informes' },
-    { id: 'c'.repeat(24), name: 'firmas', description: 'Comprueba firmas' },
-  ], library: '', warnings: [], truncated: false });
+  const catalog = vi.spyOn(agentApi, 'agentSkillsList').mockResolvedValue({
+    skills: [
+      { id: 'a'.repeat(24), name: 'pdf-review', description: 'Revisa PDFs' },
+      { id: 'b'.repeat(24), name: 'informe-tecnico', description: 'Redacta informes' },
+      { id: 'c'.repeat(24), name: 'firmas', description: 'Comprueba firmas' },
+    ],
+    library: '',
+    warnings: [],
+    truncated: false,
+  });
   render(<AgentView />);
   await act(async () => {});
   const box = screen.getByLabelText('Mensaje para el agente');
@@ -2095,47 +3063,94 @@ it('invoca una skill con «/»: filtra el catálogo, elige con el teclado y env�
   fireEvent.change(box, { target: { value: 'Revisa /if' } });
   await act(async () => {});
   const listbox = screen.getByRole('listbox', { name: 'Skills disponibles' });
-  expect(within(listbox).getAllByRole('option').map((option) => option.textContent)).toEqual(['/informe-tecnicoRedacta informes']);
+  expect(
+    within(listbox)
+      .getAllByRole('option')
+      .map((option) => option.textContent),
+  ).toEqual(['/informe-tecnicoRedacta informes']);
   fireEvent.keyDown(box, { key: 'Escape' });
   expect(screen.queryByRole('listbox', { name: 'Skills disponibles' })).not.toBeInTheDocument();
   fireEvent.change(box, { target: { value: 'Revisa /f' } });
   await act(async () => {});
-  expect(within(screen.getByRole('listbox', { name: 'Skills disponibles' })).getAllByRole('option').map((option) => option.textContent?.split('/')[1]))
-    .toEqual(['firmasComprueba firmas', 'pdf-reviewRevisa PDFs', 'informe-tecnicoRedacta informes']);
+  expect(
+    within(screen.getByRole('listbox', { name: 'Skills disponibles' }))
+      .getAllByRole('option')
+      .map((option) => option.textContent?.split('/')[1]),
+  ).toEqual(['firmasComprueba firmas', 'pdf-reviewRevisa PDFs', 'informe-tecnicoRedacta informes']);
   fireEvent.keyDown(box, { key: 'ArrowDown' });
   expect(screen.getByRole('option', { name: /pdf-review/ })).toHaveAttribute('aria-selected', 'true');
   expect(screen.getByRole('option', { name: /pdf-review/ }).querySelector('kbd')).not.toBeNull();
   expect(screen.getByRole('option', { name: /firmas/ }).querySelector('kbd')).toBeNull();
-  expect(screen.getByRole('listbox', { name: 'Skills disponibles' }).closest('.agent-command-palette')).toHaveClass('absolute', 'bottom-full');
+  expect(screen.getByRole('listbox', { name: 'Skills disponibles' }).closest('.agent-command-palette')).toHaveClass(
+    'absolute',
+    'bottom-full',
+  );
   fireEvent.keyDown(box, { key: 'Enter' });
   expect(screen.queryByRole('listbox', { name: 'Skills disponibles' })).not.toBeInTheDocument();
   expect(box).toHaveValue('Revisa ');
   expect(within(screen.getByLabelText('Skill activa')).getByText('/pdf-review')).toBeVisible();
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   fireEvent.change(box, { target: { value: 'Revisa el contrato' } });
-  await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }); });
-  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Revisa el contrato', expect.any(String), [], false, 'a'.repeat(24));
+  await act(async () => {
+    fireEvent.keyDown(box, { key: 'Enter' });
+  });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(
+    session.id,
+    'Revisa el contrato',
+    expect.any(String),
+    [],
+    false,
+    'a'.repeat(24),
+  );
   expect(screen.queryByLabelText('Skill activa')).not.toBeInTheDocument();
 });
 
 it('responde un panel del chat como mensaje de usuario con referencia al panel', async () => {
-  const panel: AgentPanel = { id: 'p1', session_id: 's1', call_id: 'show', type: 'choice', props: { prompt: '¿Qué formato?', options: ['PDF', 'Excel'] },
-    status: 'open', response: null, created_at: 1 };
+  const panel: AgentPanel = {
+    id: 'p1',
+    session_id: 's1',
+    call_id: 'show',
+    type: 'choice',
+    props: { prompt: '¿Qué formato?', options: ['PDF', 'Excel'] },
+    status: 'open',
+    response: null,
+    created_at: 1,
+  };
   let saved: AgentPanel = panel;
-  vi.spyOn(agentApi, 'agentMessagesList').mockImplementation(async () => ({ ...empty, panels: [saved], messages: [
-    { role: 'user', content: 'Exporta el informe', ts: 1 },
-    { role: 'assistant', content: '', ts: 2, tool_calls: [{ id: 'show', name: 'panel_show', params: {}, gated: false, status: 'done' }] },
-  ] }));
+  vi.spyOn(agentApi, 'agentMessagesList').mockImplementation(async () => ({
+    ...empty,
+    panels: [saved],
+    messages: [
+      { role: 'user', content: 'Exporta el informe', ts: 1 },
+      {
+        role: 'assistant',
+        content: '',
+        ts: 2,
+        tool_calls: [{ id: 'show', name: 'panel_show', params: {}, gated: false, status: 'done' }],
+      },
+    ],
+  }));
   const respond = vi.spyOn(agentApi, 'agentPanelRespond').mockImplementation(async () => {
     saved = { ...panel, status: 'answered', response: { choice: 'Excel' } };
     return { panel: saved, message: '[panel:p1] Opción elegida: Excel' };
   });
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  await act(async () => {
+    fireEvent.click(screen.getByText('Primera'));
+  });
   const card = await screen.findByRole('region', { name: '¿Qué formato?' });
-  await act(async () => { fireEvent.click(within(card).getByRole('button', { name: 'Excel' })); });
+  await act(async () => {
+    fireEvent.click(within(card).getByRole('button', { name: 'Excel' }));
+  });
   expect(respond).toHaveBeenCalledExactlyOnceWith('s1', 'p1', { choice: 'Excel' });
-  await waitFor(() => expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', '[panel:p1] Opción elegida: Excel', expect.any(String), []));
+  await waitFor(() =>
+    expect(agentApi.agentMessageSend).toHaveBeenCalledWith(
+      's1',
+      '[panel:p1] Opción elegida: Excel',
+      expect.any(String),
+      [],
+    ),
+  );
   expect(screen.getByRole('region', { name: '¿Qué formato?' })).toHaveAttribute('data-panel-state', 'answered');
 });
