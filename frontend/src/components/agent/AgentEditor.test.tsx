@@ -75,15 +75,18 @@ it('elige el alcance de memoria del agente y conserva el guardado', async () => 
   expect(save.mock.calls[0][0]).toMatchObject({ id: saved.id, memory_scope: 'none' });
 });
 
-it('permite empezar con nombre e instrucción sin abrir las opciones avanzadas', async () => {
-  const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: saved });
+it('permite empezar solo con nombre y sin abrir las opciones avanzadas', async () => {
+  const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: { ...saved, instructions: '' } });
   await act(async () => { render(<AgentEditor profile={null} onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} />); });
   expect(screen.getByLabelText('Descripción del agente')).not.toBeVisible();
   expect(screen.getByRole('radio', { name: 'Color Automático' })).toBeChecked();
+  const create = screen.getByRole('button', { name: 'Crear y chatear' });
+  expect(create).toBeDisabled();
   fireEvent.change(screen.getByLabelText('Nombre del agente'), { target: { value: 'Revisor' } });
-  fireEvent.change(screen.getByLabelText('Indicaciones del agente'), { target: { value: 'Revisa mis informes' } });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Crear y chatear' })); });
-  expect(save).toHaveBeenCalledWith({ name: 'Revisor', color: '', role: 'explorer', instructions: 'Revisa mis informes', description: '', starter: '', tools: null, tools_deny: [], memory_scope: 'shared-read', daily_tokens: null, model: null });
+  expect(create).toBeEnabled();
+  expect(screen.getByLabelText('Indicaciones del agente')).not.toBeRequired();
+  await act(async () => { fireEvent.click(create); });
+  expect(save).toHaveBeenCalledWith({ name: 'Revisor', color: '', role: 'explorer', instructions: '', description: '', starter: '', tools: null, tools_deny: [], memory_scope: 'shared-read', daily_tokens: null, model: null });
 });
 
 it('conserva el color al editar y permite volver al automático', async () => {

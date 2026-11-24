@@ -28,6 +28,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 - En Complementos → Habilidades, «Nueva habilidad» crea una skill local con nombre normalizado, descripción e instrucciones opcionales; escribe el `SKILL.md` de forma atómica, rechaza duplicados y la deja disponible en el catálogo (`agent_skill_create`).
 - La vista previa local del navegador de Agent abre también PDF e imágenes, además de HTML, tanto con una ruta del espacio de trabajo como con `file://`.
 - La memoria del agente admite entradas de diario con fecha (hoy por defecto) y autoría por versión. No se inyectan en cada turno: solo se consultan con `memory_search`, que ordena las coincidencias por relevancia y después por la fecha del diario; las preferencias y los hechos conservan su comportamiento y las correcciones del usuario siguen prevaleciendo.
+- Los agentes pueden crearse solo con nombre. Si no tienen instrucciones, su primera conversación empieza con una presentación y una tarjeta de pregunta («¿Para qué te gustaría usar este agente principalmente?») cuya respuesta orienta solo esa conversación, sin guardarse como memoria ni instrucción permanente.
 
 ### Changed
 - Agent actualiza la memoria tras confirmar el checkpoint durable, separa las citas del usuario del resumen generado, cuenta los avisos y envoltorios en el presupuesto de contexto y distingue reconstrucciones esperadas de caché en el diagnóstico local.

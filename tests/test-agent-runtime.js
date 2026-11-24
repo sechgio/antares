@@ -1604,6 +1604,85 @@ async function main() {
   }
 
   {
+    const { bridge } = makeBridge();
+    let seen = '';
+    let requests = 0;
+    const onboardingBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools') {
+        result.tools.push({
+          name: 'ask_user',
+          kind: 'backend',
+          module: 'documents',
+          gated: false,
+          inputSchema: { type: 'object', properties: {} },
+        });
+      }
+      return result;
+    };
+    await openFaux(
+      [
+        (context) => {
+          requests += 1;
+          seen = JSON.stringify(context.messages);
+          return fauxAssistantMessage('¡Hola! Soy Revisor interactivo. ¿Para qué te gustaría usarme principalmente?');
+        },
+      ],
+      onboardingBridge,
+    );
+    const { profile } = await runtime.handlers.agent_profile_save({
+      name: 'Revisor interactivo',
+      instructions: '',
+      tools: null,
+    });
+    assert(profile.instructions === '', 'el agente se guarda sin instrucciones permanentes');
+    const { session } = await runtime.handlers.agent_session_create({
+      provider: 'faux',
+      model: 'faux-1',
+      profile_id: profile.id,
+    });
+    assert(await waitFor(() => seen), 'el agente sin instrucciones arranca solo');
+    assert(await waitIdle(session.id), 'la presentación inicial termina');
+    assert(
+      seen.includes('¿Para qué te gustaría usar este agente principalmente?') &&
+        seen.includes('Programar y desplegar proyectos') &&
+        seen.includes('Organizar archivos y documentos') &&
+        seen.includes('Investigar y resumir información') &&
+        seen.includes('Automatizar tareas repetitivas') &&
+        seen.includes('Otra cosa'),
+      'el onboarding pregunta el propósito con opciones interactivas',
+    );
+    assert(
+      seen.includes('ask_user') &&
+        seen.includes('usa sus respuestas solo en esta conversación') &&
+        seen.includes('ni guardes memoria'),
+      'el onboarding usa la tarjeta de preguntas y limita las respuestas a esta conversación',
+    );
+    const transcript = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(
+      !transcript.messages.some((message) => message.role === 'user'),
+      'el arranque automático no aparece como un mensaje escrito por el usuario',
+    );
+    assert(
+      transcript.messages.some(
+        (message) => message.role === 'assistant' && message.content.includes('Revisor interactivo'),
+      ),
+      'el agente se presenta en la conversación nueva',
+    );
+    assert(requests === 1, 'la primera conversación lanza una sola presentación');
+    await runtime.handlers.agent_session_create({
+      provider: 'faux',
+      model: 'faux-1',
+      profile_id: profile.id,
+    });
+    assert(
+      !(await waitFor(() => requests === 2, 600)),
+      'la segunda conversación del mismo agente empieza sin repetir el onboarding',
+    );
+    await runtime.shutdown();
+  }
+
+  {
     const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-permissions-'));
     const dbPath = path.join(dir, 'agent.sqlite');
@@ -3197,7 +3276,6 @@ async function main() {
     assert(profile.id && profile.tools.join() === 'canvas_list', 'el agente guarda instrucciones y herramientas');
     for (const bad of [
       { name: '', instructions: 'x' },
-      { name: 'X', instructions: '' },
       { name: 'X', instructions: 'token: abcdef123456' },
       { name: 'X', instructions: 'y', tools: ['desconocida'] },
       { id: 'nope', name: 'X', instructions: 'y' },
