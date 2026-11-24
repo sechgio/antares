@@ -1925,6 +1925,7 @@ export default function AgentView({
                         agent={agentIdentity}
                         onUndo={undoEffect}
                         view={transcriptView}
+                        hideReasoning={!!session?.profile}
                         panels={turnPanels.get(turn.key)}
                         sessionId={sessionId}
                         onPanelRespond={respondPanel}

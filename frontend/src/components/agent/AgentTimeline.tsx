@@ -493,8 +493,14 @@ function liveActivity(entries: ActivityEntry[]): string {
   return workingPhrase('working');
 }
 
-function ActivityItem({ entry, onUndo, view }: { entry: StepEntry; onUndo?: (callId: string) => Promise<void>; view: TranscriptView }) {
+function ActivityItem({ entry, onUndo, view, hideReasoning = false }: {
+  entry: StepEntry;
+  onUndo?: (callId: string) => Promise<void>;
+  view: TranscriptView;
+  hideReasoning?: boolean;
+}) {
   if (entry.kind === 'reasoning') {
+    if (hideReasoning) return entry.streaming ? <ThinkingStatus seed={entry.key} /> : null;
     if (view === 'normal') return null;
     return <Reasoning text={entry.text} streaming={entry.streaming} ms={entry.ms} defaultOpen />;
   }
@@ -513,13 +519,14 @@ function ActivityItem({ entry, onUndo, view }: { entry: StepEntry; onUndo?: (cal
   );
 }
 
-function Activity({ entries, working, answering, duration, onUndo, view }: {
+function Activity({ entries, working, answering, duration, onUndo, view, hideReasoning = false }: {
   entries: StepEntry[];
   working: boolean;
   answering: boolean;
   duration?: number;
   onUndo?: (callId: string) => Promise<void>;
   view: TranscriptView;
+  hideReasoning?: boolean;
 }) {
   const [expanded, setExpanded] = useState<boolean | null>(null);
   const [showEarlier, setShowEarlier] = useState(false);
@@ -533,7 +540,7 @@ function Activity({ entries, working, answering, duration, onUndo, view }: {
   if (entries.length <= 2) {
     return (
       <div className="w-full space-y-0.5">
-        {entries.map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} view={view} />)}
+        {entries.map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />)}
       </div>
     );
   }
@@ -565,7 +572,7 @@ function Activity({ entries, working, answering, duration, onUndo, view }: {
         {review > 0 && <span className="shrink-0 text-[var(--accent-red)]">· {review} por revisar</span>}
         <ChevronRight size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${open ? 'rotate-90' : ''}`} aria-hidden="true" />
       </button>
-      {latestNote && <ActivityItem entry={latestNote} onUndo={onUndo} view={view} />}
+      {latestNote && <ActivityItem entry={latestNote} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />}
       {open && (
         <div className={`${TASK_BODY} agent-activity-body mt-0.5 space-y-0.5`}>
           {earlier > 0 && (
@@ -575,7 +582,7 @@ function Activity({ entries, working, answering, duration, onUndo, view }: {
               {showEarlier ? 'Ocultar pasos anteriores' : count(earlier, 'paso anterior', 'pasos anteriores')}
             </button>
           )}
-          {(showEarlier ? entries : entries.slice(earlier)).map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} view={view} />)}
+          {(showEarlier ? entries : entries.slice(earlier)).map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />)}
         </div>
       )}
     </div>
@@ -687,7 +694,7 @@ function TurnChanges({ calls }: { calls: AgentToolCall[] }) {
   );
 }
 
-export function AssistantTurn({ messages, agent, onUndo, startedAt, results, view = 'normal', panels = [], sessionId, onPanelRespond }: {
+export function AssistantTurn({ messages, agent, onUndo, startedAt, results, view = 'normal', panels = [], sessionId, onPanelRespond, hideReasoning = false }: {
   messages: AgentMessage[];
   panels?: AgentPanel[];
   sessionId?: string;
@@ -697,6 +704,7 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
   onUndo?: (callId: string) => Promise<void>;
   startedAt?: number;
   results?: ReactNode;
+  hideReasoning?: boolean;
 }) {
   const last = messages[messages.length - 1];
   const answer = last?.content && !last.tool_calls?.length ? last : null;
@@ -730,10 +738,10 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
         {answer && !answer.partial && <CopyButton text={answer.content} />}
       </div>
       {thought
-        ? (view === 'normal'
+        ? (hideReasoning || view === 'normal'
           ? (thought.streaming ? <ThinkingStatus seed={thought.key} /> : null)
           : <Reasoning text={thought.text} streaming={thought.streaming} ms={thought.ms} defaultOpen />)
-        : steps.length > 0 && <Activity entries={steps} working={working} answering={!!answer} duration={duration} onUndo={onUndo} view={view} />}
+        : steps.length > 0 && <Activity entries={steps} working={working} answering={!!answer} duration={duration} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />}
       {sessionId && onPanelRespond && panelEntries.map((panel) => <PanelRenderer key={panel.id} panel={panel} sessionId={sessionId} onRespond={onPanelRespond} />)}
       {answer && (
         <div className="agent-message-answer min-w-0 max-w-full py-1 text-[15px] leading-[26px] text-[var(--text-primary)]">

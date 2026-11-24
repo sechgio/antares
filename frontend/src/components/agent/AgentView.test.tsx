@@ -92,6 +92,30 @@ afterEach(() => {
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
 });
 
+it.each([
+  { withProfile: true },
+  { withProfile: false },
+])('oculta la cadena solo cuando la conversación pertenece a un agente: $withProfile', async ({ withProfile }) => {
+  localStorage.setItem('antares-agent-session', session.id);
+  localStorage.setItem('antares-agent-transcript-view', 'thinking');
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [] });
+  vi.spyOn(agentApi, 'agentSessionsList').mockResolvedValue({
+    sessions: [withProfile ? { ...session, profile: { id: 'revisor', name: 'Revisor' } } : session],
+  });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
+    messages: [{ role: 'assistant', content: 'Listo', reasoning: 'Cadena interna', ts: 1 }],
+  });
+  render(<AgentView />);
+  expect(await screen.findByText('Listo')).toBeVisible();
+  if (withProfile) {
+    expect(screen.queryByText('Cadena interna')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Pensó/ })).toBeNull();
+  } else {
+    expect(screen.getByText('Cadena interna')).toBeVisible();
+    expect(screen.getByRole('button', { name: /Pensó/ })).toBeInTheDocument();
+  }
+});
+
 it('crea el agente y abre su conversación sin enviar mensajes ni duplicarla al editar', async () => {
   vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
   vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [] });
