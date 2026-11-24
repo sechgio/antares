@@ -1377,10 +1377,11 @@ async function beforeTool(call, api, context) {
   const reading = spec.name === 'task_schedule' && (call.arguments || {}).action === 'list';
   const sessionOpen = call.name === 'web_open' && !!require('./agent-browser').sessionOpenContext(call.arguments || {});
   const scopedRules = scopedRulesFor(session, api.conversationId);
+  const mcpIdentity = typeof spec.mcp_server === 'string' ? { mcp_server: spec.mcp_server, mcp_tool: spec.mcp_tool } : null;
   if (scopedRules.length) {
     const early = policyEngine.evaluateScoped(
       scopedRules,
-      policyEngine.extractTargets(call.name, call.arguments || {}),
+      policyEngine.extractTargets(call.name, call.arguments || {}, mcpIdentity || undefined),
     );
     if (early && early.decision === 'deny') return scopedDenyBlock(early);
   }
@@ -1422,7 +1423,7 @@ async function beforeTool(call, api, context) {
     const scoped = scopedRules.length
       ? policyEngine.evaluateScoped(
           scopedRules,
-          policyEngine.extractTargets(call.name, call.arguments || {}, approvedContext),
+          policyEngine.extractTargets(call.name, call.arguments || {}, { ...approvedContext, ...mcpIdentity }),
         )
       : null;
     if (scoped && scoped.decision === 'deny') return scopedDenyBlock(scoped);

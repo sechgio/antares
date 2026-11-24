@@ -267,6 +267,8 @@ class MemoryStore:
                 if old.get("status") != "active":
                     raise ValueError("El recuerdo que quieres reemplazar no está activo")
             existing = self._same(str(kind), title, session_id, journal_date)
+            if supersedes and existing is not None and str(existing["id"]) == str(supersedes).strip():
+                raise ValueError("El recuerdo reemplazado es el mismo que estás actualizando; quita supersedes y actualízalo directamente")
             if existing is not None and existing["versions"][-1]["source"]["kind"] == "user":
                 raise ValueError("El usuario corrigió este recuerdo; propón el cambio en el chat en lugar de reemplazarlo")
             if existing is None:

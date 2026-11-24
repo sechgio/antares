@@ -142,6 +142,26 @@ try {
   engine.clearTurnRules('conv1');
   assert(engine.turnRulesFor('conv1').length === 0, 'limpiar el turno elimina sus reglas');
 
+
+  // --- MCP mcp2: la identidad real del spec gana al alias con hashes ---
+  const realTargets = engine.extractTargets(
+    'mcp2__github-a1b2c3d4e5f6__create_issue-f6e5d4c3b2a1',
+    {},
+    { mcp_server: 'GitHub', mcp_tool: 'create_issue' },
+  );
+  assert(realTargets.mcp_server === 'github', 'la regla usa el nombre que el usuario ve en Conexiones');
+  assert(realTargets.mcp_tool === 'create_issue', 'y la herramienta real, no el alias con hash');
+  const mcp2Rule = engine.evaluateScoped([
+    { scope: 'mcp', value: 'github/create_issue', decision: 'allow' },
+  ], realTargets);
+  assert(mcp2Rule.decision === 'allow', 'una regla github/create_issue matchea herramientas mcp2 reales');
+  const mcp2Deny = engine.evaluateScoped([
+    { scope: 'mcp', value: 'github/delete_repo', decision: 'deny' },
+  ], realTargets);
+  assert(!mcp2Deny || mcp2Deny.decision !== 'deny', 'otra herramienta no hereda el deny');
+  const fallback = engine.extractTargets('mcp2__srv-0123456789ab__do-0123456789ab', {});
+  assert(fallback.mcp_server === 'srv-0123456789ab', 'sin contexto cae al parseo del nombre');
+
   finish();
 } catch (err) {
   console.error(err);

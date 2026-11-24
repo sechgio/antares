@@ -163,6 +163,8 @@ def tool_specs() -> list[JsonObject]:
                     "description": f"MCP {server['name']} · {tool['name']} — {tool['description'] or 'requiere aprobación del usuario'}",
                     "gated": True,
                     "inputSchema": tool["inputSchema"],
+                    "mcp_server": str(server["name"]),
+                    "mcp_tool": str(tool["name"]),
                 }
             )
     return specs

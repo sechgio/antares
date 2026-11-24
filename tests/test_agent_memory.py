@@ -450,3 +450,13 @@ def test_last_used_at_tracks_context_injection(store):
     view = {i["id"]: i for i in mem.items()}
     assert view[item["id"]]["last_used_at"] is not None
     assert view[item["id"]]["uses"] == 1
+
+
+def test_supersede_of_the_same_memory_is_rejected_loudly(store):
+    mem = memory.memory_for(store)
+    created = _remember(store, title="Precio único", content="100")
+    with pytest.raises(ValueError, match="mismo que estás actualizando"):
+        _remember(store, title="Precio único", content="200", supersedes=created["id"])
+    view = {i["id"]: i for i in mem.items()}
+    assert view[created["id"]]["status"] == "active"
+    assert len(view[created["id"]]["versions"]) == 1, "el rechazo no muta el recuerdo"

@@ -131,10 +131,17 @@ function extractTargets(name, args, context) {
   else if (typeof params.app === 'string' && params.app.trim()) targets.app = params.app.trim().toLowerCase();
   const mcpBody = tool.startsWith('mcp2__') ? tool.slice(6) : tool.startsWith('mcp__') ? tool.slice(5) : '';
   if (mcpBody) {
-    const sep = mcpBody.indexOf('__');
-    if (sep > 0) {
-      targets.mcp_server = mcpBody.slice(0, sep).toLowerCase();
-      targets.mcp_tool = mcpBody.slice(sep + 2).toLowerCase();
+    if (ctx && typeof ctx.mcp_server === 'string' && ctx.mcp_server.trim()) {
+      // Los alias mcp2 llevan hashes irreversibles; la identidad real del
+      // servidor y la herramienta llega en el spec anunciado por el backend.
+      targets.mcp_server = ctx.mcp_server.trim().toLowerCase();
+      if (typeof ctx.mcp_tool === 'string' && ctx.mcp_tool.trim()) targets.mcp_tool = ctx.mcp_tool.trim().toLowerCase();
+    } else {
+      const sep = mcpBody.indexOf('__');
+      if (sep > 0) {
+        targets.mcp_server = mcpBody.slice(0, sep).toLowerCase();
+        targets.mcp_tool = mcpBody.slice(sep + 2).toLowerCase();
+      }
     }
   }
   return targets;
