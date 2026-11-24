@@ -3,7 +3,8 @@ import { expect, it, vi } from 'vitest';
 
 vi.mock('html-to-image', () => ({ toBlob: vi.fn(async () => new Blob(['png'], { type: 'image/png' })) }));
 import MessageMarkdown, { cachedBlocks, parseBlocks, tableClipboard } from './MessageMarkdown';
-import { donutSlices, horizontal, mermaidTitle, niceTicks } from './ChatVisual';
+import { donutSlices, horizontal, niceTicks } from './ChatChart';
+import { mermaidTitle } from './ChatMermaid';
 import { FilePreviewContext, localPreviewResource } from './filePreviewContext';
 
 it('abre referencias locales con espacios y rechaza enlaces remotos o ejecutables', () => {
