@@ -48,7 +48,13 @@ _WRITE_OR_DANGER = frozenset({
     "format", "diskpart", "shutdown", "restart-computer", "stop-process",
 })
 
-_DYNAMIC_EXEC = ("iex", "invoke-expression", "&", "|", ";", "&&", "||", "$(", "`", ">", ">>")
+_DYNAMIC_EXEC = ("iex", "invoke-expression", "&", "$(", "`", ">", "<")
+
+_SEPARATORS = re.compile(r"&&|\|\||[;|]")
+
+_FIND_ACTIONS = frozenset({"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprintf", "-fls"})
+
+_RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
 
 
 def strip_comments(command: str) -> str:
@@ -77,8 +83,12 @@ def _comment_index(line: str) -> int:
 
 
 def normalize(command: str) -> str:
-    """Normaliza la ofuscación habitual para exponer las operaciones reales."""
-    text = strip_comments(command)
+    """Normaliza la ofuscación habitual para exponer las operaciones reales.
+
+    Cada salto de línea separa comandos, así que se convierte en ``;`` para que
+    la segunda línea no pase por argumento de la primera.
+    """
+    text = ";".join(strip_comments(command).splitlines())
     text = text.replace("$IFS", " ").replace("${IFS}", " ")
     text = re.sub(r"[`'\"^]", "", text)
     return re.sub(r"\s+", " ", text).strip().lower()
@@ -104,17 +114,33 @@ def classify(command: str) -> JsonObject:
         return _result("escalate", "high", "El comando excede el límite de análisis")
 
     text = normalize(command)
-    if not text:
+    segments = [part.strip() for part in _SEPARATORS.split(text) if part.strip()]
+    if not segments:
         return _result("escalate", "medium", "El comando no contiene operaciones legibles")
 
-    if any(token in text for token in _DYNAMIC_EXEC):
-        return _result("escalate", "high", "Ejecución dinámica o encadenamiento de comandos")
+    compound = len(segments) > 1
+    verdicts = [_classify_simple(segment, compound) for segment in segments]
+    escalations = [verdict for verdict in verdicts if verdict["decision"] != "approve"]
+    if escalations:
+        return max(escalations, key=lambda verdict: _RISK_ORDER[str(verdict["risk"])])
+    if not compound:
+        return verdicts[0]
+    reads = ", ".join(str(verdict["reason"]).removeprefix("Lectura pura: ") for verdict in verdicts)
+    return _result("approve", "low", f"Lectura pura en todas las partes: {reads}")
+
+
+def _classify_simple(text: str, compound: bool) -> JsonObject:
+    """Clasifica un único comando simple, ya normalizado y sin separadores."""
+    if any(token in text for token in _DYNAMIC_EXEC) or (compound and "{" in text):
+        return _result("escalate", "high", "Ejecución dinámica o redirección")
 
     tokens = text.split()
     if any(token in _WRITE_OR_DANGER for token in tokens):
         return _result("escalate", "high", "El comando escribe, instala o modifica el sistema")
 
     first = _first_token(text)
+    if first == "find" and any(token in _FIND_ACTIONS for token in tokens):
+        return _result("escalate", "high", "find puede ejecutar o borrar archivos")
     if first in _READ_ONLY_VERBS:
         return _result("approve", "low", f"Lectura pura: {first}")
     if first == "git":
