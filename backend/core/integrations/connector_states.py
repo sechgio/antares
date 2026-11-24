@@ -31,12 +31,3 @@ def normalize_mcp(status: str, *, failures: int = 0, backoff_active: bool = Fals
     if status == "disabled":
         return "disabled"
     return "unverified"
-
-
-def normalize_cloud(*, connected: bool, refresh_failed: bool = False) -> str:
-    """Mapea el estado del conector cloud al vocabulario unificado."""
-    if connected:
-        return "healthy"
-    if refresh_failed:
-        return "needs_auth"
-    return "disconnected"

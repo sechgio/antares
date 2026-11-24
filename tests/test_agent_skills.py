@@ -441,6 +441,8 @@ def test_manifest_validation_rejects_bad_version_and_requirements(store):
     result = run(store, "skills_list")
     names = [skill["name"] for skill in result["skills"]]
     assert "mala-version" not in names
+    assert "version-corta" not in names, "semver exige tres partes"
+    assert "modulo-inventado" not in names, "requires_modules se valida contra el catálogo real"
     assert "mal-requires" not in names
     assert "requerimientos-largos" not in names
     assert any("versión" in warning or "requires" in warning for warning in result["warnings"])
@@ -448,16 +450,16 @@ def test_manifest_validation_rejects_bad_version_and_requirements(store):
 
 def test_manifest_dedupes_requirements_and_trims_author(store):
     install_manifest(store.base_dir / "skills", "dedup",
-                     "description: x\nversion: '1.0'\nrequires_tools: [fs_read, fs_read]\nauthor: '  '")
+                     "description: x\nversion: '1.0.0'\nrequires_tools: [fs_read, fs_read]\nauthor: '  '")
     entry = run(store, "skills_list", query="dedup")["skills"][0]
-    assert entry["version"] == "1.0"
+    assert entry["version"] == "1.0.0"
     assert entry["requires_tools"] == ["fs_read"]
     assert "author" not in entry, "un autor vacío no se publica"
 
 
 def test_library_catalog_exposes_manifest(store):
-    install_manifest(store.base_dir / "skills", "versionada", "description: x\nversion: 2.0.1\nrequires_modules: [files]")
+    install_manifest(store.base_dir / "skills", "versionada", "description: x\nversion: 2.0.1\nrequires_modules: [documents]")
     catalog = skills.library_catalog(store.base_dir / "skills")
     entry = next(skill for skill in catalog["skills"] if skill["name"] == "versionada")
     assert entry["version"] == "2.0.1"
-    assert entry["requires_modules"] == ["files"]
+    assert entry["requires_modules"] == ["documents"]

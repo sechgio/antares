@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from backend.core.agent import computer_files
+from backend.core.agent import computer_files, modules
 from backend.core.integrations.types import JsonObject
 from backend.utils.atomic_write import atomic_output_file
 
@@ -73,7 +73,7 @@ class _Skill:
     author: str | None = None
 
 
-_VERSION_RE = re.compile(r"\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?")
+_VERSION_RE = re.compile(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?")
 _MAX_REQUIREMENTS = 20
 
 
@@ -89,14 +89,19 @@ def _str_list(value: object, label: str) -> tuple[str, ...]:
 def _manifest_fields(metadata: dict) -> dict:
     version = metadata.get("version")
     if version is not None and (not isinstance(version, str) or not _VERSION_RE.fullmatch(version) or len(version) > 24):
-        raise ValueError("La versión debe ser semver corto: 1.2 o 1.2.3")
+        raise ValueError("La versión debe ser semver: 1.2.3")
     author = metadata.get("author")
     if author is not None and (not isinstance(author, str) or len(author) > 100):
         raise ValueError("El autor admite hasta 100 caracteres")
+    requires_modules = _str_list(metadata.get("requires_modules"), "requires_modules")
+    known = modules.catalog()
+    unknown = [name for name in requires_modules if name not in known]
+    if unknown:
+        raise ValueError(f"Módulos requeridos no reconocidos: {', '.join(unknown)}")
     return {
         "version": version,
         "requires_tools": _str_list(metadata.get("requires_tools"), "requires_tools"),
-        "requires_modules": _str_list(metadata.get("requires_modules"), "requires_modules"),
+        "requires_modules": requires_modules,
         "author": author.strip() if isinstance(author, str) and author.strip() else None,
     }
 

@@ -8,7 +8,6 @@
 const GRAPH_STATES = new Set([
   'queued',
   'running',
-  'waiting_approval',
   'blocked',
   'done',
   'failed',

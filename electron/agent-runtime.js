@@ -585,6 +585,15 @@ async function runGraph() {
   return require('./agent-run-graph').buildRunGraph(all.map(toPublicSession), liveStates);
 }
 
+function parseScopedRules(params) {
+  if (params.scoped_rules === undefined) return null;
+  try {
+    return require('./agent-policy-engine').validateScopedRules(params.scoped_rules);
+  } catch (err) {
+    throw validation(String((err && err.message) || err));
+  }
+}
+
 async function policyRulesSet(params) {
   let rules = null;
   if (params.rules !== undefined) {
@@ -594,14 +603,7 @@ async function policyRulesSet(params) {
       throw validation(String((err && err.message) || err));
     }
   }
-  let scopedRules = null;
-  if (params.scoped_rules !== undefined) {
-    try {
-      scopedRules = require('./agent-policy-engine').validateScopedRules(params.scoped_rules);
-    } catch (err) {
-      throw validation(String((err && err.message) || err));
-    }
-  }
+  const scopedRules = parseScopedRules(params);
   if (rules === null && scopedRules === null) throw validation('Indica las reglas de canal o las reglas con alcance');
   if ([...shared.live.values()].some((live) => live.run || (live.inbox || []).length)) {
     throw validation('Espera a que terminen los turnos para cambiar las reglas globales');
@@ -662,14 +664,7 @@ async function sessionRulesSet(params) {
       throw validation(String((err && err.message) || err));
     }
   }
-  let scopedRules = null;
-  if (params.scoped_rules !== undefined) {
-    try {
-      scopedRules = require('./agent-policy-engine').validateScopedRules(params.scoped_rules);
-    } catch (err) {
-      throw validation(String((err && err.message) || err));
-    }
-  }
+  const scopedRules = parseScopedRules(params);
   if (rules === null && scopedRules === null) throw validation('Indica las reglas de canal o las reglas con alcance');
   const session = await requireSession(sessionId);
   const { pi } = shared.deps;

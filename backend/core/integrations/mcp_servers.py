@@ -264,7 +264,7 @@ def _http_with_401_retry(server: JsonObject, secrets: JsonObject, call: Callable
         return call(_http_headers(server, secrets, force_token=True))
 
 
-def approval_context(server_id: str, advertised_name: str, *, force: bool = True) -> JsonObject:
+def approval_context(server_id: str, advertised_name: str, *, force: bool = False) -> JsonObject:
     server = get_server(server_id)
     try:
         tools = list_tools(server_id, force=force)

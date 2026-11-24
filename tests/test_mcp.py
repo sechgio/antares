@@ -557,5 +557,3 @@ def test_backoff_seconds_are_capped():
     assert connector_states.normalize_mcp("ready") == "healthy"
     assert connector_states.normalize_mcp("unavailable", failures=2, backoff_active=True) == "degraded"
     assert connector_states.normalize_mcp("unavailable") == "disconnected"
-    assert connector_states.normalize_cloud(connected=True) == "healthy"
-    assert connector_states.normalize_cloud(connected=False, refresh_failed=True) == "needs_auth"
