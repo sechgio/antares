@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 
 vi.mock('html-to-image', () => ({ toBlob: vi.fn(async () => new Blob(['png'], { type: 'image/png' })) }));
 import MessageMarkdown, { cachedBlocks, parseBlocks, tableClipboard } from './MessageMarkdown';
-import { horizontal, niceTicks } from './ChatVisual';
+import { donutSlices, horizontal, niceTicks } from './ChatChart';
+import { mermaidTitle } from './ChatMermaid';
 import { FilePreviewContext, localPreviewResource } from './filePreviewContext';
 
 it('abre referencias locales con espacios y rechaza enlaces remotos o ejecutables', () => {
@@ -108,6 +109,70 @@ it('dibuja un chart pie como dona con total y porcentajes', async () => {
   expect(screen.getByText('75 %')).toBeInTheDocument();
 });
 
+it('amplía un gráfico en un diálogo y lo cierra', async () => {
+  render(<MessageMarkdown text={chart} />);
+  await screen.findByRole('img', { name: 'Ventas' });
+  fireEvent.click(screen.getByRole('button', { name: 'Ampliar' }));
+  const dialog = screen.getByRole('dialog', { name: 'Ventas' });
+  expect(within(dialog).getByRole('img', { name: 'Ventas' })).toBeInTheDocument();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cerrar vista ampliada' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Código' }));
+  expect(screen.queryByRole('button', { name: 'Ampliar' })).toBeNull();
+});
+
+it('dibuja un bloque mermaid como diagrama SVG sanitizado y explica los errores', async () => {
+  const diagram = '```mermaid\nflowchart LR\n  A[Inicio] --> B[Fin]\n  click A "javascript:alert(1)"\n```';
+  const { container, rerender } = render(<MessageMarkdown text={diagram} />);
+  expect(await screen.findByRole('region', { name: 'Diagrama de flujo' })).toBeInTheDocument();
+  await waitFor(() => expect(container.querySelector('[data-mermaid] svg')).not.toBeNull());
+  const svg = container.querySelector('[data-mermaid]')!.innerHTML;
+  expect(svg).toContain('Inicio');
+  expect(svg).not.toMatch(/<a\b|javascript:|<script|<style/);
+  rerender(<MessageMarkdown text={'```mermaid\nesto no es un diagrama\n```'} />);
+  expect(await screen.findByText(/No se pudo dibujar el diagrama/)).toBeInTheDocument();
+  expect(container.querySelector('pre')?.textContent).toBe('esto no es un diagrama');
+});
+
+it('titula un diagrama mermaid con su title o con su tipo', () => {
+  expect(mermaidTitle('pie title Uso del agua\n  "Riego" : 70')).toBe('Uso del agua');
+  expect(mermaidTitle('---\ntitle: "Flujo de aprobación"\n---\nflowchart LR\n  A --> B')).toBe('Flujo de aprobación');
+  expect(mermaidTitle('%% nota\nsequenceDiagram\n  A->>B: hola')).toBe('Diagrama de secuencia');
+  expect(mermaidTitle('quadrantChart\n  x-axis a --> b')).toBe('Diagrama');
+});
+
+it('mantiene visible la última etiqueta del eje cuando salta etiquetas', async () => {
+  const labels = Array.from({ length: 40 }, (_, i) => `D${i + 1}`);
+  const source = JSON.stringify({ type: 'line', title: 'Caudal', labels, series: [{ name: 'Q', data: labels.map((_, i) => i) }] });
+  const { container } = render(<MessageMarkdown text={'```chart\n' + source + '\n```'} />);
+  await screen.findByRole('img', { name: 'Caudal' });
+  const axis = [...container.querySelectorAll('svg text[text-anchor="middle"]')].map((text) => text.textContent);
+  expect(axis.length).toBeLessThan(labels.length);
+  expect(axis.at(-1)).toBe('D40');
+});
+
+it('ajusta el eje de una línea al rango de sus datos y el de barras al cero', async () => {
+  const axis = (container: HTMLElement) =>
+    [...container.querySelectorAll('svg text[text-anchor="end"]')].map((text) => text.textContent);
+  const line = render(<MessageMarkdown text={'```chart\n{"type":"line","title":"pH","labels":["a","b","c"],"series":[{"name":"pH","data":[7.12,6.98,7.21]}]}\n```'} />);
+  await screen.findByRole('img', { name: 'pH' });
+  expect(axis(line.container)[0]).not.toBe('0');
+  line.unmount();
+  const bars = render(<MessageMarkdown text={'```chart\n{"type":"bar","title":"pH","labels":["a","b","c"],"series":[{"name":"pH","data":[7.12,6.98,7.21]}]}\n```'} />);
+  await screen.findByRole('img', { name: 'pH' });
+  expect(axis(bars.container)[0]).toBe('0');
+});
+
+it('agrupa en "Otros" las porciones que repetirían color', () => {
+  const labels = Array.from({ length: 10 }, (_, i) => `C${i + 1}`);
+  const spec = { type: 'pie' as const, title: '', labels, series: [{ name: 'n', data: [30, 2, 20, 12, 9, 8, 7, 5, 4, 3] }] };
+  expect(donutSlices(spec)).toEqual({
+    labels: ['C1', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'Otros'],
+    data: [30, 20, 12, 9, 8, 7, 5, 9],
+  });
+  expect(donutSlices({ ...spec, labels: labels.slice(0, 3), series: [{ name: 'n', data: [1, 2, 3] }] }).labels).toEqual(['C1', 'C2', 'C3']);
+});
+
 it('redondea los ejes a pasos legibles', () => {
   expect(niceTicks(0, 48)).toEqual([0, 20, 40, 60]);
   expect(niceTicks(-3, 9)).toEqual([-5, 0, 5, 10]);
@@ -122,6 +187,7 @@ it('muestra un marcador mientras el bloque se transmite y el código si queda ab
   expect(container.querySelector('pre')?.textContent).toContain('"Ventas"');
   rerender(<MessageMarkdown text={'```chart\n{"type":"bar","labels":["a"],"series":[]}\n```'} />);
   await waitFor(() => expect(container.querySelector('pre')?.textContent).toContain('"series":[]'));
+  expect(screen.getByText('No se pudo dibujar el gráfico; se muestra su código.')).toBeInTheDocument();
   expect(screen.queryByRole('img')).toBeNull();
 });
 

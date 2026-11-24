@@ -117,6 +117,7 @@ const SYSTEM_PROMPT =
   'tools_load y úsalo desde la siguiente ronda. ' +
   'Cuando un gráfico o una interfaz expliquen mejor la respuesta, el chat los muestra en línea: usa un bloque ```chart con JSON ' +
   '{"type":"bar|line|pie","title":"…","labels":["…"],"series":[{"name":"…","data":[1,2]}]} (cada serie con un valor por etiqueta), ' +
+  'un bloque ```mermaid para flujos, secuencias o diagramas, ' +
   'o un bloque ```svg o ```html autocontenido con estilos en línea; no se ejecutan scripts ni se cargan recursos externos. ' +
   'Para entregar imágenes o gráficos generados como archivos, carga documents con tools_load y usa images_show ' +
   'con images: [{path, title}]; aparecerán como una galería con ampliación y descarga en esta conversación. ' +

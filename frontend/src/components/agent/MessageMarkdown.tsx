@@ -4,7 +4,7 @@ import Button from '../ui/Button';
 import { FilePreviewContext, localPreviewResource } from './filePreviewContext';
 
 const ChatVisual = lazy(() => import('./ChatVisual'));
-const VISUAL_LABELS: Record<string, string> = { chart: 'gráfico', svg: 'ilustración', html: 'interfaz' };
+const VISUAL_LABELS: Record<string, string> = { chart: 'gráfico', svg: 'ilustración', html: 'interfaz', mermaid: 'diagrama' };
 
 function VisualPlaceholder({ lang }: { lang: string }) {
   return (
@@ -12,10 +12,10 @@ function VisualPlaceholder({ lang }: { lang: string }) {
       role="status"
       className="w-full overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]"
     >
-      <p className="border-b border-[var(--border-subtle)] px-3 py-2 text-[12.5px] text-[var(--text-muted)]">
+      <p className="border-b border-[var(--border-subtle)] px-4 py-2.5 text-[12.5px] text-[var(--text-muted)]">
         Generando {VISUAL_LABELS[lang]}…
       </p>
-      <div className="flex h-[150px] items-end gap-2 p-3 motion-safe:animate-pulse" aria-hidden="true">
+      <div className="flex h-[188px] items-end gap-2 px-4 pb-4 pt-3.5 motion-safe:animate-pulse" aria-hidden="true">
         {[45, 70, 55, 85, 40, 65].map((height, i) => (
           <span
             key={i}
