@@ -136,6 +136,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- IPC con lotes grandes: los archivos elegidos desde el diálogo en unidades de red o mapeadas, o con una ruta cuya capitalización no coincide con la del disco (p. ej. `c:\`), ya no se rechazan como «path symlink escape». Validar miles de tokens de archivo en una llamada cuesta unas 14 veces menos en el proceso principal (5 000 tokens: de 680 ms a 48 ms), y separar en líneas respuestas grandes del backend ya no bloquea la ventana (60 MB: de 139 ms a 21 ms por fragmento). La vista previa de datos deja de pedir páginas de una hoja que ya no está seleccionada.
 - Animaciones y saltos de la interfaz: el panel lateral conserva su contenido mientras se cierra, cambiar de pestaña ya no muestra «Cargando...» mientras carga la vista nueva, la barra de scroll ya no desplaza el contenido y los toasts y el diálogo de confirmación tienen animación de salida. Las transiciones animan solo color, opacidad, sombra y `transform` (sin `transition-all`), con duraciones de 150–250 ms, y las utilidades globales, el tutorial y los toasts respetan `prefers-reduced-motion`. Las animaciones del padrón dejan de sobrescribir las globales `fadeIn`/`scaleIn`.
 - Las conversaciones del agente actualizan su copia de la memoria en el siguiente turno tras corregir, desactivar, reactivar, revertir o borrar un recuerdo.
 - El editor de rutinas del agente permite elegir la conversación de destino y muestra dónde se ejecuta cada rutina existente.
