@@ -57,6 +57,33 @@ function lines(text: string): string[] {
   return parts;
 }
 
+export type WriteDiffPreview = {
+  added_lines: number;
+  removed_lines: number;
+  unchanged: boolean;
+  preview: string;
+  truncated: boolean;
+};
+
+// Convierte el diff unificado acotado que el backend calcula sobre el contenido
+// real en disco (write_diff de la aprobación) en la estructura que FileDiff renderiza.
+export function parseUnifiedDiff(preview: WriteDiffPreview): FileChange {
+  const lines: DiffLine[] = [];
+  for (const row of preview.preview.split('\n')) {
+    if (row.startsWith('@@') || row.startsWith('---') || row.startsWith('+++')) continue;
+    if (row.startsWith('+')) lines.push({ kind: 'add', text: row.slice(1) });
+    else if (row.startsWith('-')) lines.push({ kind: 'remove', text: row.slice(1) });
+    else if (row.startsWith(' ')) lines.push({ kind: 'context', text: row.slice(1) });
+  }
+  return {
+    hunks: [markChanges(lines)],
+    added: preview.added_lines,
+    removed: preview.removed_lines,
+    whole: false,
+    starts: [null],
+  };
+}
+
 export function diffLines(before: string, after: string): DiffLine[] {
   const a = before ? lines(before) : [];
   const b = after ? lines(after) : [];

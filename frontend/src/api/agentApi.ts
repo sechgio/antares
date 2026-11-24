@@ -203,7 +203,8 @@ export interface AgentApproval {
   risk_reason?: string;
   context?: { account?: string; tool?: string; sheet_id?: string; scopes?: string[]; filename?: string;
     page_url?: string; page_time_origin?: number; domain?: string; policy_blocked?: boolean;
-    computer?: { app?: string; window?: string; element?: string }; subagent?: string; subagent_role?: AgentRole };
+    computer?: { app?: string; window?: string; element?: string }; subagent?: string; subagent_role?: AgentRole;
+    write_diff?: { added_lines: number; removed_lines: number; unchanged: boolean; preview: string; truncated: boolean } };
   resources?: { path: string; sha256?: string }[];
   dispatch?: { status: string; finished_at?: number };
 }
