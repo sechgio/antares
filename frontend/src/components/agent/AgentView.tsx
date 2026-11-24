@@ -421,13 +421,7 @@ export default function AgentView({
             text: 'No se pudo actualizar la conversación. El estado mostrado puede estar desactualizado.',
           }
         : pending[0]
-          ? {
-              kind: 'item',
-              key: `approval:${pending[0].id}`,
-              text: 'Hay una acción pendiente de tu aprobación.',
-              target: `agent-approval-${pending[0].id}`,
-              action: 'Revisar acción',
-            }
+          ? null
           : questions[0]
             ? {
                 kind: 'item',

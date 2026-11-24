@@ -1638,13 +1638,12 @@ it('prioriza la aprobación y la pregunta, y anuncia cada pregunta una sola vez'
   localStorage.setItem('antares-agent-session', 's1');
   render(<AgentView />);
   await act(async () => {});
-  const attention = screen.getByRole('region', { name: 'Atención del agente' });
-  expect(within(attention).getByRole('button', { name: 'Revisar acción' })).toBeVisible();
-  fireEvent.click(within(attention).getByRole('button', { name: 'Revisar acción' }));
-  expect(screen.getByLabelText('Ver detalles de la acción')).toHaveFocus();
-  expect(within(attention).queryByRole('button', { name: 'Responder' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'Atención del agente' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Hay una acción pendiente de tu aprobación.')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Revisar acción' })).not.toBeInTheDocument();
   list.mockResolvedValue({ ...empty, questions: [question] });
   await act(async () => { update(); });
+  const attention = screen.getByRole('region', { name: 'Atención del agente' });
   expect(within(attention).getByRole('button', { name: 'Responder' })).toBeVisible();
   const announcement = screen.getByRole('status', { name: 'Avisos del agente' });
   expect(announcement).toHaveTextContent('El agente necesita tu respuesta para continuar.');

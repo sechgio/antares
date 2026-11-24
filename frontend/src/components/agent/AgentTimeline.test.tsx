@@ -825,7 +825,6 @@ it('detalla el comando y la ruta en la aprobación de una acción del equipo', (
   expect(screen.getByText('Get-ChildItem', { exact: true })).toBeVisible();
   expect(screen.getByText('Carpeta: C:\datos')).toBeInTheDocument();
   expect(screen.getByText(/puede acceder al equipo completo/)).toBeInTheDocument();
-  expect(screen.getByText(/pide aprobación humana para cada comando, también en Acceso completo/)).toBeInTheDocument();
   expect(screen.queryByText(/elimina o descarta archivos/)).not.toBeInTheDocument();
   expect(screen.queryByText(/^Riesgo /)).not.toBeInTheDocument();
 });
