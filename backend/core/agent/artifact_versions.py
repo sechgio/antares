@@ -15,6 +15,7 @@ import threading
 import time
 from pathlib import Path
 
+from backend.core.agent import drafts
 from backend.utils.atomic_write import atomic_write_json
 
 MAX_REVISIONS = 20
@@ -51,6 +52,18 @@ def _write_index(base: Path, index: dict) -> None:
     atomic_write_json(_index_path(base), index)
 
 
+def _confined(drafts_dir: Path, value: str) -> Path | None:
+    """Resuelve la ruta de un archivo de artefacto confinada al espacio de borradores.
+
+    Los registros pueden llevar rutas relativas al espacio o absolutas; ambas se
+    validan con realpath para rechazar traversal, symlinks y salidas del espacio.
+    """
+    if not value:
+        return None
+    candidate = value if Path(value).is_absolute() else str(drafts_dir / value)
+    return drafts.inside(drafts_dir, candidate)
+
+
 def record(base: Path, session_id: str, artifact: dict, drafts_dir: Path, provenance: dict | None = None) -> dict | None:
     """Registra una revisión del artefacto copiando los bytes verificados.
 
@@ -76,7 +89,9 @@ def record(base: Path, session_id: str, artifact: dict, drafts_dir: Path, proven
         for position, file in enumerate(files):
             if not isinstance(file, dict) or not file.get("sha256"):
                 continue
-            source = drafts_dir / str(file.get("path") or "")
+            source = _confined(drafts_dir, str(file.get("path") or ""))
+            if source is None:
+                continue
             try:
                 if not source.is_file() or source.stat().st_size > MAX_FILE_BYTES:
                     continue
@@ -161,7 +176,9 @@ def restore(base: Path, session_id: str, artifact_id: str, revision: int, drafts
             content = blob.read_bytes()
             if hashlib.sha256(content).hexdigest() != file["sha256"]:
                 raise ValueError("La revisión está corrupta; no se puede restaurar")
-            target = drafts_dir / str(file.get("path") or "")
+            target = _confined(drafts_dir, str(file.get("path") or ""))
+            if target is None:
+                raise ValueError("La revisión apunta fuera del espacio de artefactos; no se puede restaurar")
             staged.append((target, content, str(file.get("path") or "")))
         for target, content, _rel in staged:
             target.parent.mkdir(parents=True, exist_ok=True)
