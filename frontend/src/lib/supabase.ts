@@ -36,6 +36,30 @@ function seedBlob(): SessionBlob | null {
   return seed && typeof seed === 'object' && !Array.isArray(seed) ? (seed as SessionBlob) : null;
 }
 
+function migrateLegacyLocalStorageKeys(blob: SessionBlob, persist: () => void): void {
+  try {
+    const legacyKeys: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith('sb-')) legacyKeys.push(key);
+    }
+    let migrated = false;
+    for (const key of legacyKeys) {
+      if (!Object.prototype.hasOwnProperty.call(blob, key)) {
+        const value = window.localStorage.getItem(key);
+        if (value !== null) {
+          blob[key] = value;
+          migrated = true;
+        }
+      }
+      window.localStorage.removeItem(key);
+    }
+    if (migrated) persist();
+  } catch {
+    // Sin acceso a localStorage no hay nada que migrar; el storage seguro sigue activo.
+  }
+}
+
 export function createSecureSupabaseStorage(): {
   getItem: (key: string) => string | null;
   setItem: (key: string, value: string) => void;
@@ -43,11 +67,12 @@ export function createSecureSupabaseStorage(): {
 } | null {
   const seeded = seedBlob();
   const bridge = electronBridge();
-  if (!seeded || !bridge) return null;
-  const blob: SessionBlob = { ...seeded };
+  if (!bridge) return null;
+  const blob: SessionBlob = { ...(seeded ?? {}) };
   const persist = () => {
     void bridge.invoke('supabase_session_put', { blob: { ...blob } }).catch(() => {});
   };
+  migrateLegacyLocalStorageKeys(blob, persist);
   return {
     getItem: (key) => (Object.prototype.hasOwnProperty.call(blob, key) ? blob[key] : null),
     setItem: (key, value) => {
