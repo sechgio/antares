@@ -30,7 +30,6 @@ const {
   SYSTEM_PROMPT,
   legacyNotes,
   migrateInstructions,
-  splitMemorySnapshot,
   withMemorySnapshot,
 } = require('./agent-prompts');
 
@@ -1205,22 +1204,17 @@ async function skillsIndex(session, tools) {
 }
 
 async function memoryContext(session, initialText) {
-  if (shared.memorySnapshots.has(session.conversationId)) return { context: '' };
-  const conv = await conversation(session.id);
-  const stored = String((await conv.agent(ctx())).instructions || '');
-  if (splitMemorySnapshot(stored).snapshot) {
-    shared.memorySnapshots.add(session.conversationId);
-    return { context: '' };
-  }
-  await _writeMemorySnapshot(session, initialText, conv, stored);
-  shared.memorySnapshots.add(session.conversationId);
+  await _writeMemorySnapshot(session, initialText);
   return { context: '' };
 }
 
-async function _writeMemorySnapshot(session, initialText, conv, stored) {
-  const profile = await execution.sessionProfile(session);
+async function _writeMemorySnapshot(session, initialText, force = false) {
+  let revision = null;
   let context = '';
   try {
+    ({ revision = null } = await bridge('agent_internal_memory_revision', {}));
+    if (!force && revision !== null && revision === session.memory_revision) return;
+    const profile = await execution.sessionProfile(session);
     ({ context } = await bridge('agent_internal_memory_context', {
       session_id: session.id,
       text: initialText,
@@ -1230,18 +1224,27 @@ async function _writeMemorySnapshot(session, initialText, conv, stored) {
       memory_scope: profile?.memory_scope || null,
     }));
   } catch {
-    context = '';
+    revision = null;
   }
-  const instructions = withMemorySnapshot(stored, context);
-  if (instructions !== stored) await conv.configure({ instructions }, ctx());
+  const conv = await conversation(session.id);
+  const { AgentDoc, configure } = shared.deps.pi;
+  await conv.commit(async (tx) => {
+    const current = (await tx.doc(shared.state.SessionsDoc)).sessions[session.id];
+    if (!current || current.deleted) return;
+    if (revision === null ? current.memory_revision !== session.memory_revision
+      : current.memory_revision > revision || (!force && current.memory_revision === revision)) return;
+    const stored = (await tx.doc(AgentDoc, conv.id)).instructions || '';
+    const instructions = withMemorySnapshot(stored, context);
+    if (instructions !== stored) await configure(tx, conv.id, { instructions });
+    if (revision === null) delete current.memory_revision;
+    else current.memory_revision = revision;
+  }, ctx());
 }
 
 async function regenerateMemorySnapshot(sessionId, initialText = '') {
   const session = (await sessions())[String(sessionId || '')];
   if (!session) return;
-  const conv = await conversation(session.id);
-  const stored = String((await conv.agent(ctx())).instructions || '');
-  await _writeMemorySnapshot(session, initialText, conv, stored);
+  await _writeMemorySnapshot(session, initialText, true);
 }
 
 async function _admittedRequest(session, requestId) {
@@ -1529,7 +1532,6 @@ async function shutdown() {
   }
   shared.watchers.clear();
   shared.live.clear();
-  shared.memorySnapshots.clear();
   require('./agent-browser').close();
   require('./agent-cua').close();
   if (shared.state) {

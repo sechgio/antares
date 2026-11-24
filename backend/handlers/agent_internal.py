@@ -770,6 +770,10 @@ def _grant_remove(params: JsonObject) -> JsonObject:
     return {"removed": _store().revoke_grant(str(params["session_id"]), str(params["path"]))}
 
 
+def _memory_revision(params: JsonObject) -> JsonObject:
+    return {"revision": _memory().revision}
+
+
 @with_locale
 @validate_params("session_id", "text")
 def _memory_context(params: JsonObject) -> JsonObject:
@@ -941,6 +945,7 @@ HANDLERS = {
     "agent_question_answer": _question_answer,
     "agent_panel_respond": _panel_respond,
     "agent_internal_memory_context": _memory_context,
+    "agent_internal_memory_revision": _memory_revision,
     "agent_internal_grant_remove": _grant_remove,
     "agent_internal_workspace_set": _workspace_set,
     "agent_memory_list": _memory_list,

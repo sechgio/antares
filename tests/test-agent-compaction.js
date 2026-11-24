@@ -87,6 +87,8 @@ function makeBridge() {
     switch (method) {
       case 'agent_internal_activity':
         return { attention: {} };
+      case 'agent_internal_memory_revision':
+        return { revision: state.memoryRevision || 0 };
       case 'agent_internal_memory_context': {
         state.memoryCalls = [...(state.memoryCalls || []), params];
         return { context: state.memory || '', items: [] };
@@ -733,6 +735,28 @@ async function main() {
       markerAt > 0 && instructions.slice(markerAt).includes('usa la B'),
       'tras compactar el bloque de memoria se recoloca al final de las instrucciones',
     );
+    await runtime.shutdown();
+  }
+
+  {
+    const { script, state: bridgeState } = await openCompaction({ window: BIG_WINDOW });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const send = async () => {
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: '¿Qué formato usamos?' });
+      assert(await waitIdle(session.id), 'el turno con memoria termina');
+      return script.requests.at(-1);
+    };
+    bridgeState.memory = 'Preferencia vigente: usa formato octogonal';
+    assert((await send()).includes('formato octogonal'), 'el proveedor recibe el recuerdo inicial');
+    bridgeState.memoryRevision = 1;
+    bridgeState.memory = 'Preferencia vigente: usa formato hexagonal';
+    const edited = await send();
+    assert(edited.includes('formato hexagonal') && !edited.includes('formato octogonal'), 'el siguiente turno recibe la corrección');
+    bridgeState.memoryRevision = 2;
+    bridgeState.memory = '';
+    assert(!(await send()).includes('formato hexagonal'), 'el siguiente turno omite el recuerdo borrado');
+    await send();
+    assert(bridgeState.memoryCalls.length === 3, 'una copia vacía también se conserva hasta el próximo cambio');
     await runtime.shutdown();
   }
 

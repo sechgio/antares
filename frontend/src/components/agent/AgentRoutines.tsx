@@ -5,6 +5,7 @@ import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
+import ThemedSelect from '../ui/ThemedSelect';
 
 const MAX_ROUTINES = 3;
 
@@ -19,9 +20,12 @@ export default function AgentRoutines({ profileId }: { profileId: string }) {
   const { addToast } = useToast();
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [routines, setRoutines] = useState<AgentTask[]>([]);
+  const [sessionId, setSessionId] = useState('');
   const [content, setContent] = useState('');
   const [minutes, setMinutes] = useState('1440');
   const [busy, setBusy] = useState(false);
+  const conversations = sessions.map((session) => ({ value: session.id, label: session.title || 'Sin título' }));
+  const destination = conversations.find(({ value }) => value === sessionId) ?? conversations[0];
 
   const load = useCallback(async () => {
     const [{ sessions: all }, { tasks }] = await Promise.all([agentApi.agentSessionsList(), agentApi.agentTasksList()]);
@@ -36,11 +40,11 @@ export default function AgentRoutines({ profileId }: { profileId: string }) {
 
   const add = async () => {
     const every = Number(minutes);
-    if (busy || !content.trim() || !sessions.length || !Number.isInteger(every) || every < 1) return;
+    if (busy || !content.trim() || !destination || !Number.isInteger(every) || every < 1) return;
     setBusy(true);
     try {
       await agentApi.agentTasksSave({
-        session_id: sessions[0].id, content: content.trim(), every_minutes: every,
+        session_id: destination.value, content: content.trim(), every_minutes: every,
         due_at: new Date(Date.now() + every * 60000).toISOString(),
       });
       setContent('');
@@ -69,7 +73,12 @@ export default function AgentRoutines({ profileId }: { profileId: string }) {
         <ul className="space-y-1" aria-label="Rutinas del agente">
           {routines.map((task) => (
             <li key={task.id} className="flex items-center gap-2 text-[12px] text-[var(--text-secondary)]">
-              <span className="min-w-0 flex-1 truncate" title={task.content}>{task.content}</span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate" title={task.content}>{task.content}</div>
+                <div className="truncate text-[var(--text-muted)]">
+                  {conversations.find(({ value }) => value === task.session_id)?.label}
+                </div>
+              </div>
               <span className="shrink-0 text-[var(--text-muted)]">{everyText(task.interval_ms)}</span>
               <Button variant="ghost" size="sm" aria-label={`Cancelar rutina: ${task.content.slice(0, 60)}`} onClick={() => void cancel(task.id)}>
                 <X size={12} />
@@ -83,17 +92,21 @@ export default function AgentRoutines({ profileId }: { profileId: string }) {
       ) : full ? (
         <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">El agente ya tiene {MAX_ROUTINES} rutinas; cancela alguna para crear otra.</p>
       ) : (
-        <div className="flex items-center gap-2">
-          <Input value={content} onChange={(e) => setContent(e.target.value)} maxLength={12000} aria-label="Encargo de la rutina"
-            placeholder="Por ejemplo, resume los correos del día" className="min-w-0 flex-1"
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void add(); } }} />
-          <Input type="number" inputMode="numeric" min={1} value={minutes} onChange={(e) => setMinutes(e.target.value)}
-            aria-label="Repetir cada (minutos)" className="w-20" />
-          <Button variant="ghost" size="sm" disabled={busy || !content.trim()} onClick={() => void add()}>Añadir</Button>
+        <div className="space-y-2">
+          <ThemedSelect aria-label="Conversación de la rutina" value={destination?.value ?? ''}
+            onChange={setSessionId} options={conversations} disabled={busy} />
+          <div className="flex items-center gap-2">
+            <Input value={content} onChange={(e) => setContent(e.target.value)} maxLength={12000} aria-label="Encargo de la rutina"
+              placeholder="Por ejemplo, resume los correos del día" className="min-w-0 flex-1"
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void add(); } }} />
+            <Input type="number" inputMode="numeric" min={1} value={minutes} onChange={(e) => setMinutes(e.target.value)}
+              aria-label="Repetir cada (minutos)" className="w-20" />
+            <Button variant="ghost" size="sm" disabled={busy || !content.trim()} onClick={() => void add()}>Añadir</Button>
+          </div>
         </div>
       )}
       <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">
-        Se ejecutan en su conversación más reciente, con su presupuesto y sus permisos. Máximo {MAX_ROUTINES}; las que programe el propio agente se repiten como mucho cada 30 minutos.
+        Cada rutina se ejecuta en la conversación elegida, con su presupuesto y sus permisos. Máximo {MAX_ROUTINES}. Las que programe el propio agente se repiten como mucho cada 30 minutos.
       </p>
     </div>
   );

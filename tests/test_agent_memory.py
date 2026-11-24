@@ -256,6 +256,19 @@ def test_memory_context_handler_rejects_unknown_scope(store):
         agent_internal._memory_context({"session_id": "s1", "text": "x", "profile_id": "p", "memory_scope": "all"})
 
 
+def test_human_memory_changes_advance_a_persisted_revision(store, monkeypatch):
+    item = memory.memory_for(store).remember("s1", {"kind": "preference", "title": "Formato", "content": "PDF"})
+    revision = agent_internal._memory_revision({})["revision"]
+    assert revision == 0
+    for action in ("edit", "disable", "enable", "revert"):
+        agent_internal._memory_update({"id": item["id"], "action": action, "content": "DOCX", "version": 1})
+        revision += 1
+        assert agent_internal._memory_revision({})["revision"] == revision
+    agent_internal._memory_delete({"id": item["id"]})
+    monkeypatch.setattr(memory, "_stores", {})
+    assert agent_internal._memory_revision({})["revision"] == revision + 1
+
+
 def test_relevant_fact_is_not_starved_by_long_preferences(store):
     mem = memory.memory_for(store)
     for index in range(8):

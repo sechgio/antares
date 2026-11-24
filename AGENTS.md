@@ -44,7 +44,7 @@ Conserva el comportamiento observable ajeno a la petición: salidas, formatos, o
 2. Si toca contratos de `shared/`, IPC, esquema Canvas, migraciones o RLS, o elimina/reemplaza APIs existentes, detente y pide confirmación antes de escribir.
 3. Separa los commits: primero el movimiento estructural sin cambio de comportamiento y con checks verdes; después la funcionalidad.
 
-La etiqueta `size/exempt` del repositorio declara la misma excepción ante el gate automático: sin ella ni el marcador `cambio amplio:`, `review-policy` bloquea los PR de 2000 líneas o más.
+Para diffs de más de 400 líneas efectivas, `cambio amplio:` o la etiqueta `size/exempt` declara el alcance ante `review-policy`. El control de tamaño bloquea desde 2000 líneas efectivas. La etiqueta `size/exempt` convierte ese bloqueo en un aviso.
 
 ## Antes de entregar
 

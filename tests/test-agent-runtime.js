@@ -65,6 +65,7 @@ const INTERNAL_RPCS = [
   'agent_internal_mentions',
   'agent_internal_dispatch_finish',
   'agent_internal_activity',
+  'agent_internal_memory_revision',
   'agent_internal_memory_context',
   'agent_internal_grant_remove',
   'agent_internal_effects',
@@ -91,6 +92,8 @@ function makeBridge() {
         return { attention: state.attention };
       case 'agent_internal_profile_usage':
         return { tokens: 0 };
+      case 'agent_internal_memory_revision':
+        return { revision: 0 };
       case 'agent_internal_memory_context':
         state.memoryCalls = [...(state.memoryCalls || []), params];
         return /plantilla/.test(params.text)

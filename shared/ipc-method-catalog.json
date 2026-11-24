@@ -70,6 +70,7 @@
     "agent_shell_job_cancel": { "handler": "backend:agent_internal", "inputSchema": {"type":"object","properties":{"session_id":{"type":"string"},"job_id":{"type":"string","pattern":"^[a-f0-9]{32}$"}},"required":["session_id","job_id"]} },
     "agent_internal_shell_jobs_cancel_session": { "handler": "backend:agent_internal", "internal": true, "inputSchema": {"type":"object","properties":{"session_id":{"type":"string"}},"required":["session_id"]} },
     "agent_internal_memory_context": { "handler": "backend:agent_internal", "internal": true, "inputSchema": {"type":"object","properties":{"session_id":{"type":"string"},"text":{"type":"string"},"profile_id":{"type":["string","null"],"minLength":1,"maxLength":120},"memory_scope":{"type":["string","null"],"enum":["shared-read","own","none",null]},"tools":{"type":"array","items":{"type":"object"}},"accounts":{"type":"object"}},"required":["session_id","text"]} },
+    "agent_internal_memory_revision": { "handler": "backend:agent_internal", "internal": true, "idempotent": true, "outputSchema": {"type":"object","properties":{"revision":{"type":"integer","minimum":0}},"required":["revision"]} },
     "agent_internal_grant_remove": { "handler": "backend:agent_internal", "internal": true },
     "agent_internal_workspace_set": { "handler": "backend:agent_internal", "internal": true },
     "agent_session_rename": { "handler": "native:agent", "inputSchema": {"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"}},"required":["id","title"]} },
