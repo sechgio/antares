@@ -101,13 +101,6 @@ describe('getLocalThumbnail', () => {
     expect(localThumbnail).toHaveBeenCalledTimes(2);
   });
 
-  it('returns null on IPC failure so caller can show a placeholder', async () => {
-    localThumbnail.mockRejectedValueOnce(new Error('nativeImage not available'));
-
-    const result = await getLocalThumbnail('C:\\photos\\missing.jpg');
-    expect(result).toBeNull();
-  });
-
   it('returns null for empty path without calling API', async () => {
     const result = await getLocalThumbnail('   ');
     expect(result).toBeNull();

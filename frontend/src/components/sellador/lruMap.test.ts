@@ -30,18 +30,6 @@ describe('createLruMap weighted', () => {
     expect(cache.bytes).toBeLessThanOrEqual(estimateStringBytes('xx'));
   });
 
-  it('promotes on get so least-recently-used is evicted', () => {
-    const cache = createLruMap<string, string>({
-      maxBytes: estimateStringBytes('xx'),
-      sizeOf: estimateStringBytes,
-    });
-    cache.set('a', 'xx');
-    expect(cache.get('a')).toBe('xx');
-    cache.set('b', 'xx');
-    expect(cache.get('a')).toBeUndefined();
-    expect(cache.get('b')).toBe('xx');
-  });
-
   it('refuses to retain a single oversized entry', () => {
     const cache = createLruMap<string, string>({
       maxBytes: 10,

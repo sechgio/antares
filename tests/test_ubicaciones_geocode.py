@@ -68,11 +68,6 @@ def test_geocode_address_returns_none_on_empty_results() -> None:
         assert geo.geocode_address("direccion inexistente") is None
 
 
-def test_geocode_address_returns_none_on_http_failure() -> None:
-    with patch.object(geo, "_http_get", return_value=None):
-        assert geo.geocode_address("Av X 123") is None
-
-
 def test_geocode_address_does_not_cache_temporary_http_failure() -> None:
     with patch.object(geo, "_http_get", side_effect=[None, _nominatim_payload()]) as http:
         assert geo.geocode_address("Av X 123") is None

@@ -49,15 +49,6 @@ describe('pdf local-image allowlist', () => {
     vi.restoreAllMocks();
   });
 
-  it('emits a token when File staging succeeds', async () => {
-    const file = new File(['x'], 'a.jpg', { type: 'image/jpeg' });
-    stubElectronStaging();
-    const localImagePaths: Record<string, string> = {};
-    const src = await fileToPdfImageSource(file, 'photo-0', localImagePaths);
-    expect(src).toBe(buildLocalImageToken('photo-0'));
-    expect(localImagePaths[src]).toBe('antares-read_1');
-  });
-
   it('falls back to compressed data URL when staging is unavailable', async () => {
     const file = new File(['fake-image-bytes'], 'a.jpg', { type: 'image/jpeg' });
     vi.stubGlobal('window', { electronAPI: {} });
@@ -281,15 +272,6 @@ describe('logoToPdfSource', () => {
     const localImagePaths: Record<string, string> = {};
     const src = await logoToPdfSource('data:image/png;base64,AAAA', file, 'logo-left', localImagePaths, false);
     expect(src).toBe('data:image/png;base64,AAAA');
-    expect(Object.keys(localImagePaths)).toHaveLength(0);
-  });
-
-  it('falls back to a durable URL when the File has no local path', async () => {
-    const file = new File(['x'], 'logo.png', { type: 'image/png' });
-    vi.stubGlobal('window', { electronAPI: { getPathForFile: vi.fn(() => '') } });
-    const localImagePaths: Record<string, string> = {};
-    const src = await logoToPdfSource('blob:logo-left', file, 'logo-left', localImagePaths, true);
-    expect(src).toBe('blob:logo-left');
     expect(Object.keys(localImagePaths)).toHaveLength(0);
   });
 

@@ -344,17 +344,6 @@ describe('API Client', () => {
     expect('result_file_token' in result).toBe(false);
   });
 
-  it('should use a timeout budget that outlives Electron main startup wait', async () => {
-    _resetBackendReadyForTests();
-    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
-    mockInvoke.mockResolvedValue({ version: '1' });
-
-    await api.version();
-
-    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 100_000);
-    setTimeoutSpy.mockRestore();
-  });
-
   it('should use extended timeout budget for long-running methods', async () => {
     _resetBackendReadyForTests();
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');

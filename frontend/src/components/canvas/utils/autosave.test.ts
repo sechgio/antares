@@ -60,16 +60,6 @@ describe('adaptive autosave budget', () => {
     expect(autosaveDelayForDoc(doc)).toBe(AUTOSAVE_MEDIUM_MS);
   });
 
-  it('uses the medium delay for many small layers without a full serialization', () => {
-    const doc = createEmptyDocument('Many layers');
-    doc.layers = Array.from({ length: 41 }, (_, index) => ({
-      ...doc.layers[0]!,
-      id: `layer-${index}`,
-    }));
-
-    expect(autosaveDelayForDoc(doc)).toBe(AUTOSAVE_MEDIUM_MS);
-  });
-
   it('keeps an empty document on the short debounce', () => {
     expect(autosaveDelayForDoc(null)).toBe(AUTOSAVE_DEBOUNCE_MS);
   });

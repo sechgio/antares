@@ -65,25 +65,6 @@ describe('reportes-campo report model', () => {
         expect(html).toContain('antares-local-image:photo-0');
     });
 
-    it('renders a dynamic 2+1 grid for three photos without extra empty cells', () => {
-        const config = getReportConfig('panel-fotografico');
-        const photos: PhotoFile[] = [
-            makePhoto('a.jpg'),
-            makePhoto('b.jpg'),
-            makePhoto('c.jpg'),
-        ];
-        const html = buildReportPdfHtml({
-            config,
-            header: getDefaultHeader(config),
-            photos,
-            logoLeft: null,
-            logoRight: null,
-        });
-
-        expect((html.match(/alt="Foto \d+"/g) ?? []).length).toBe(3);
-        expect(html.match(/Sin imagen/g) ?? []).toHaveLength(0);
-    });
-
     it('renders exact photo cells for every supported image count in PDF HTML', () => {
         const config = getReportConfig('panel-fotografico');
 
