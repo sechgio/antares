@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +37,8 @@ TOOL_SPECS: list[JsonObject] = [
             "El proceso puede acceder al equipo completo con los permisos del usuario, fuera de los grants de archivos. "
             "Cada comando requiere aprobación salvo en Acceso completo, donde solo la piden los que borran o "
             "descartan archivos. "
-            "Devuelve output_id para recuperar con shell_output la salida completa si el resumen se recorta"
+            "Devuelve output_id para recuperar con shell_output la salida completa si el resumen se recorta. "
+            "Si supera timeout_s no se pierde: sigue en segundo plano y devuelve job_id para shell_job_status"
         ),
         "inputSchema": {
             "type": "object",
@@ -85,8 +87,14 @@ def kill_tree(process: subprocess.Popen[bytes]) -> None:
                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
+Adopt = Callable[
+    [subprocess.Popen[bytes], str, dict[str, bytes], list[threading.Thread], float],
+    tuple[str, Callable[[str, bytes], None]] | None,
+]
+
+
 def run(params: JsonObject, grants: dict[str, JsonObject], root: Path, token: Any = None,
-        *, workspace: Path | None = None) -> JsonObject:
+        *, workspace: Path | None = None, adopt: Adopt | None = None) -> JsonObject:
     command = params.get("command")
     if not isinstance(command, str) or not command.strip():
         raise ValueError("Indica el comando")
@@ -109,18 +117,23 @@ def run(params: JsonObject, grants: dict[str, JsonObject], root: Path, token: An
     )
     chunks: dict[str, list[bytes]] = {"stdout": [], "stderr": []}
     report = getattr(token, "report", None)
+    sink_lock = threading.Lock()
+    sink: list[Callable[[str, bytes], None]] = [lambda name, chunk: chunks[name].append(chunk)]
+    job_id: str | None = None
 
     def pump(name: str, stream: Any) -> None:
         decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         pending = ""
         try:
             for chunk in iter(lambda: stream.read1(4096), b""):
-                chunks[name].append(chunk)
-                if callable(report):
+                with sink_lock:
+                    sink[0](name, chunk)
+                    live = job_id is None
+                if live and callable(report):
                     text = pending + decoder.decode(chunk)
                     pending = "\r" if text.endswith("\r") else ""
                     report((text[:-1] if pending else text).replace("\r\n", "\n"))
-            if callable(report):
+            if job_id is None and callable(report):
                 report((pending + decoder.decode(b"", final=True)).replace("\r\n", "\n"))
         finally:
             stream.close()
@@ -138,9 +151,26 @@ def run(params: JsonObject, grants: dict[str, JsonObject], root: Path, token: An
             break
         if time.monotonic() - started > timeout:
             timed_out = True
-            kill_tree(process)
+            if adopt is not None:
+                with sink_lock:
+                    captured = {name: b"".join(parts) for name, parts in chunks.items()}
+                    adopted = adopt(process, command, captured, readers, time.monotonic() - started)
+                    if adopted is not None:
+                        job_id, sink[0] = adopted
+            if job_id is None:
+                kill_tree(process)
             break
         time.sleep(0.1)
+    if job_id is not None:
+        partial = {name: b"".join(chunks[name]).decode("utf-8", errors="replace").replace("\r\n", "\n")
+                   for name in ("stdout", "stderr")}
+        return {"exit_code": None, "cwd": str(cwd), "status": "running", "job_id": job_id, "output_id": job_id,
+                "stdout": computer_files.clip_text(partial["stdout"], _MAX_OUTPUT_CHARS),
+                "stderr": computer_files.clip_text(partial["stderr"], _MAX_OUTPUT_CHARS),
+                "duration_s": round(time.monotonic() - started, 2),
+                "background": (f"El comando superó {timeout} s y sigue en segundo plano como job {job_id}. "
+                               "No lo repitas: espera con wait_event kind=shell_job, consulta shell_job_status "
+                               "o detenlo con shell_job_cancel.")}
     process.wait()
     for reader in readers:
         reader.join(2)

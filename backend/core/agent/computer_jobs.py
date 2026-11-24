@@ -9,6 +9,7 @@ import subprocess
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from io import BufferedReader
 from pathlib import Path
@@ -355,6 +356,41 @@ def start(params: JsonObject, grants: dict[str, JsonObject], root: Path, session
     threading.Thread(target=_monitor, args=(job,), daemon=True, name=f"shell-job-{job_id}").start()
     return {"job_id": job_id, "output_id": job_id, "status": "running", "timeout_s": timeout,
             "started_at": job.started_at}
+
+
+def adopt(process: subprocess.Popen[bytes], command: str, output: dict[str, bytes], readers: list[threading.Thread],
+          elapsed_s: float, *, root: Path, session_id: str) -> tuple[str, Callable[[str, bytes], None]] | None:
+    """Convierte en job un shell_run que superó su tiempo, sin matarlo ni obligar a repetirlo.
+
+    Devuelve el id del job y el destino al que deben pasar los lectores del proceso,
+    o None si no queda hueco de jobs y el llamador debe detenerlo como antes.
+    """
+    with _LOCK:
+        running = [job for job in _JOBS.values() if job.status == "running"]
+        if (sum(1 for job in running if job.session_id == session_id) >= _MAX_JOBS_PER_SESSION
+                or len(running) >= _MAX_JOBS_GLOBAL):
+            return None
+        job_id = uuid.uuid4().hex
+        job = _Job(id=job_id, session_id=session_id, root=root, process=process,
+                   started_at=time.time() - elapsed_s,
+                   deadline=time.monotonic() + max(1.0, _MAX_JOB_SECONDS - elapsed_s),
+                   command=command, readers=readers)
+        for stream, data in output.items():
+            _append(job, stream, data)
+        _JOBS[job_id] = job
+    try:
+        _flush(job)
+        _write_meta(job, "running")
+    except OSError:
+        logger.warning("No se pudo registrar el job %s", job.id, exc_info=True)
+    _notify(job.session_id, job.id, "start", name=_command_name(job.command), status="running", cancellable=True)
+    threading.Thread(target=_monitor, args=(job,), daemon=True, name=f"shell-job-{job_id}").start()
+
+    def sink(stream: str, chunk: bytes) -> None:
+        with job.lock:
+            _append(job, stream, chunk)
+
+    return job_id, sink
 
 
 def _read_meta(root: Path, job_id: str, session_id: str) -> JsonObject:

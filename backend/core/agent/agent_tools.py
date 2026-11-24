@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 from typing import TYPE_CHECKING, Any
 
 from backend.core.agent import (
@@ -77,8 +78,9 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
         return computer_files.fit(computer_files.run(name, args, store.grants_for(session_id),
                                                      store.workspace_dir(session_id)))
     if name == "shell_run":
-        return computer_files.fit(computer_shell.run(args, store.grants_for(session_id), root, token,
-                                                     workspace=store.workspace_dir(session_id)))
+        return computer_files.fit(computer_shell.run(
+            args, store.grants_for(session_id), root, token, workspace=store.workspace_dir(session_id),
+            adopt=functools.partial(computer_jobs.adopt, root=root, session_id=session_id)))
     if name == "shell_output":
         return computer_shell.read_output(args, root)
     if name == "shell_job_start":
