@@ -546,6 +546,27 @@ async function policyState() {
   };
 }
 
+async function runGraph() {
+  const { pi } = shared.deps;
+  const all = Object.values(await sessions()).filter((session) => !session.deleted);
+  const liveStates = new Map();
+  for (const session of all) {
+    let live = null;
+    let inbox = null;
+    try {
+      live = await shared.state.harness.snapshot(pi.LiveDoc, session.conversationId, ctx());
+      inbox = await shared.state.harness.snapshot(pi.InboxDoc, session.conversationId, ctx());
+    } catch (err) {
+      void err;
+    }
+    liveStates.set(session.id, {
+      run: live && live.run ? live.run : null,
+      inboxPending: !!(inbox && inbox.items && inbox.items.length),
+    });
+  }
+  return require('./agent-run-graph').buildRunGraph(all.map(toPublicSession), liveStates);
+}
+
 async function policyRulesSet(params) {
   let rules = null;
   if (params.rules !== undefined) {
@@ -1716,6 +1737,7 @@ module.exports = {
     agent_session_rules_set: sessionRulesSet,
     agent_policy_get: policyState,
     agent_policy_rules_set: policyRulesSet,
+    agent_run_graph: runGraph,
     agent_session_reasoning_set: sessionReasoningSet,
     agent_messages_list: messagesList,
     agent_rooms_list: roomsList,

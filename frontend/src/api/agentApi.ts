@@ -24,6 +24,28 @@ export interface AgentScopedRule {
   decision: AgentChannelRule;
 }
 
+export type AgentRunState = 'queued' | 'running' | 'waiting_approval' | 'blocked' | 'done' | 'failed' | 'cancelled' | 'uncertain';
+
+export interface AgentRunNode {
+  id: string;
+  kind: 'session' | 'delegation';
+  title: string;
+  state: AgentRunState;
+  parent_id: string | null;
+  depth: number;
+  children: string[];
+  created_at?: number | null;
+  updated_at?: number | null;
+  started_at?: number | null;
+  error?: string | null;
+  agent?: { id: string; name: string } | null;
+  role?: string | null;
+  round?: number;
+  task?: string;
+  delivery?: { state: string | null; attempts: number };
+  root_parent_request_id?: string | null;
+}
+
 export interface AgentUndo {
   available: boolean;
   kind?: 'restore' | 'delete';
@@ -396,6 +418,8 @@ export const agentApi = {
       'agent_policy_rules_set',
       { rules, ...(scoped_rules ? { scoped_rules } : {}) },
     ),
+
+  agentRunGraph: () => _invoke<{ nodes: AgentRunNode[]; roots: string[] }>('agent_run_graph'),
 
   agentSessionReasoningSet: (id: string, reasoning_effort: AgentReasoningEffort) =>
     _invoke<{ session: AgentSession }>('agent_session_reasoning_set', { id, reasoning_effort }),

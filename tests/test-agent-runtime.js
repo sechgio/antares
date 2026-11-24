@@ -1072,6 +1072,20 @@ async function main() {
   }
 
   {
+    const { bridge } = makeBridge();
+    await openFaux([fauxAssistantMessage('Hola')], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const graph = await runtime.handlers.agent_run_graph({});
+    assert(Array.isArray(graph.nodes) && Array.isArray(graph.roots), 'el grafo devuelve nodos y raíces');
+    const node = graph.nodes.find((item) => item.id === session.id);
+    assert(node, 'la conversación creada aparece en el grafo');
+    assert(node.kind === 'session' && node.parent_id === null, 'una conversación nueva es raíz del grafo');
+    assert(graph.roots.includes(session.id), 'la conversación nueva está entre las raíces');
+    assert(typeof node.state === 'string' && node.state.length > 0, 'todo nodo lleva un estado operable');
+    await runtime.shutdown();
+  }
+
+  {
     const { bridge, state } = makeBridge();
     const skillsBridge = async (method, params) => {
       const result = await bridge(method, params);
