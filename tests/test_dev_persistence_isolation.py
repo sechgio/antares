@@ -1,12 +1,27 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 from pathlib import Path
 
 from backend.core.fichas_tecnicas.database import DEFAULT_DB_PATH as FT_PATH
 from backend.core.informes_v2.database import DEFAULT_DB_PATH as INF_PATH
 from backend.core.technical_reports.database import DEFAULT_DB_PATH as TR_PATH
 from backend.utils.paths import resource_path, user_data_path
+
+
+def test_user_data_store_is_redirected_away_from_real_user_profile() -> None:
+    if sys.platform == "win32":
+        redirected = Path(os.environ.get("LOCALAPPDATA", "")).resolve()
+        real_profile_store = (Path.home() / "AppData" / "Local").resolve()
+    else:
+        redirected = Path(os.environ.get("XDG_DATA_HOME", "")).resolve()
+        real_profile_store = (Path.home() / ".local" / "share").resolve()
+
+    assert redirected != real_profile_store
+    assert "antares-test-userdata-" in redirected.name
+    assert user_data_path("probe").resolve().is_relative_to(redirected)
 
 
 def test_default_db_paths_use_user_data_path() -> None:

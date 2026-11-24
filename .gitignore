@@ -29,6 +29,12 @@ venv*/
 test_output/
 .coverage
 
+pytest-of-*/
+antares-scalability-*/
+antares-spreadsheet-results/
+antares_inline_*
+antares-test-userdata-*/
+
 node_modules/
 dist-electron/
 
