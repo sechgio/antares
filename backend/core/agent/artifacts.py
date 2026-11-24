@@ -9,7 +9,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from backend.core.agent import drafts
+from backend.core.agent import artifact_versions, drafts
 from backend.core.integrations.types import JsonObject
 
 if TYPE_CHECKING:
@@ -126,8 +126,26 @@ def verified_file(store: AgentStore, session_id: str, params: JsonObject) -> tup
 
 
 def action(store: AgentStore, session_id: str, params: JsonObject) -> JsonObject:
-    artifact, file, path = verified_file(store, session_id, params)
     operation = params.get("action")
+    if operation in ("versions", "restore"):
+        artifact = next((item for item in store.artifacts_for(session_id) if item["id"] == params.get("artifact_id")), None)
+        if artifact is None:
+            raise ValueError("El artefacto no pertenece a esta conversación")
+        if operation == "versions":
+            return artifact_versions.versions(store.base_dir, session_id, str(artifact["id"]))
+        revision = params.get("revision")
+        if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
+            raise ValueError("Indica la revisión exacta que quieres restaurar")
+        outcome = artifact_versions.restore(store.base_dir, session_id, str(artifact["id"]), revision, store.drafts_dir(session_id))
+        history = artifact_versions.versions(store.base_dir, session_id, str(artifact["id"]))
+        match = next((item for item in history["revisions"] if item["revision"] == revision), None)
+        hashes = {int(f["index"]): str(f["sha256"]) for f in (match or {}).get("files", [])}
+        store.update_artifact_file_hashes(session_id, str(artifact["id"]), hashes)
+        record = next((item for item in store.artifacts_for(session_id) if item["id"] == artifact["id"]), artifact)
+        artifact_versions.record(store.base_dir, session_id, record, store.drafts_dir(session_id),
+                                 {"session_id": session_id, "restored_from": revision})
+        return {**outcome, "revision": revision}
+    artifact, file, path = verified_file(store, session_id, params)
     if artifact.get("kind") == "page":
         if operation != "file":
             raise ValueError("Abre la página interactiva para consultar sus controles")

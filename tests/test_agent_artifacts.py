@@ -281,3 +281,72 @@ def test_image_preview_checks_the_exact_bytes_it_renders(tmp_path, monkeypatch):
     monkeypatch.setattr(artifacts, "verified_file", replace_after_verification)
     with pytest.raises(ValueError, match="cambió"):
         artifacts.action(store, "s1", {"artifact_id": artifact["id"], "file_index": 0, "action": "preview"})
+
+
+def test_registering_an_artifact_records_a_restorable_revision(tmp_path):
+    store = agent.AgentStore(tmp_path / "agent")
+    root = store.drafts_dir("s1")
+    root.mkdir(parents=True)
+    path = root / "sample.pdf"
+    with pymupdf.open() as pdf:
+        pdf.new_page()
+        pdf.save(path)
+    artifact = store.add_artifact("s1", documents.native_artifact({"saved_path": str(path)}, root, "a1"))
+    listed = artifacts.action(store, "s1", {"artifact_id": artifact["id"], "action": "versions"})
+    assert len(listed["revisions"]) == 1
+    assert listed["revisions"][0]["revision"] == 1
+    assert listed["revisions"][0]["provenance"]["session_id"] == "s1"
+
+
+def test_restore_recovers_exact_bytes_and_updates_the_record(tmp_path):
+    store = agent.AgentStore(tmp_path / "agent")
+    root = store.drafts_dir("s1")
+    root.mkdir(parents=True)
+    path = root / "pagina.json"
+    page_v1 = json.dumps({"type": "doc", "content": [{"type": "paragraph", "text": "versión uno"}]})
+    path.write_text(page_v1, encoding="utf-8")
+    import hashlib
+
+    artifact = store.add_artifact("s1", {
+        "id": "p1", "kind": "page", "template_revision": "rev1",
+        "files": [{"path": "pagina.json", "name": "pagina.json", "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "mime": "application/json"}],
+    })
+    page_v2 = json.dumps({"type": "doc", "content": [{"type": "paragraph", "text": "versión dos"}]})
+    path.write_text(page_v2, encoding="utf-8")
+    store.add_artifact("s1", {
+        "id": "p1", "kind": "page", "template_revision": "rev2",
+        "files": [{"path": "pagina.json", "name": "pagina.json", "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "mime": "application/json"}],
+    }, expected_revision="rev1")
+    listed = artifacts.action(store, "s1", {"artifact_id": artifact["id"], "action": "versions"})
+    assert [item["revision"] for item in listed["revisions"]] == [1, 2]
+
+    outcome = artifacts.action(store, "s1", {"artifact_id": artifact["id"], "action": "restore", "revision": 1})
+    assert outcome["restored"] == 1
+    assert json.loads(path.read_text(encoding="utf-8"))["content"][0]["text"] == "versión uno"
+    # El registro apunta ahora al hash restaurado: las lecturas verificadas vuelven a pasar.
+    updated = store.artifacts_for("s1")[0]
+    assert updated["files"][0]["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+    # La restauración misma queda registrada con su lineage.
+    history = artifacts.action(store, "s1", {"artifact_id": artifact["id"], "action": "versions"})
+    assert len(history["revisions"]) == 3
+    assert history["revisions"][-1]["provenance"]["restored_from"] == 1
+    # Y se puede volver a la versión dos: nada se pierde al deshacer.
+    artifacts.action(store, "s1", {"artifact_id": artifact["id"], "action": "restore", "revision": 2})
+    assert json.loads(path.read_text(encoding="utf-8"))["content"][0]["text"] == "versión dos"
+
+
+def test_restore_rejects_foreign_sessions_and_bad_revisions(tmp_path):
+    store = agent.AgentStore(tmp_path / "agent")
+    root = store.drafts_dir("s1")
+    root.mkdir(parents=True)
+    path = root / "sample.pdf"
+    with pymupdf.open() as pdf:
+        pdf.new_page()
+        pdf.save(path)
+    artifact = store.add_artifact("s1", documents.native_artifact({"saved_path": str(path)}, root, "a1"))
+    with pytest.raises(ValueError, match="conversación"):
+        artifacts.action(store, "s2", {"artifact_id": artifact["id"], "action": "versions"})
+    with pytest.raises(ValueError, match="revisión exacta"):
+        artifacts.action(store, "s1", {"artifact_id": artifact["id"], "action": "restore"})
+    with pytest.raises(ValueError, match="no existe"):
+        artifacts.action(store, "s1", {"artifact_id": artifact["id"], "action": "restore", "revision": 99})

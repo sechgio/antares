@@ -13,7 +13,7 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import date
 from pathlib import Path
 
-from backend.core.agent import agent_tools, drafts, resource_grants, subagent
+from backend.core.agent import agent_tools, artifact_versions, drafts, resource_grants, subagent
 from backend.core.agent import progress as agent_progress
 from backend.core.agent import undo as undo_journal
 from backend.core.agent.agent_chat import replay_safe, result_failed, scrub_secrets, tool_specs
@@ -389,6 +389,7 @@ class AgentStore:
 
     def add_artifact(self, session_id: str, artifact: JsonObject, *, expected_revision: str | None = None) -> JsonObject:
         record = {**artifact, "session_id": session_id, "created_at": _now_ms()}
+        is_new_version = False
         with self._lock:
             entry = self._artifacts.get(session_id, {"items": []})
             existing = next((item for item in entry["items"] if item["id"] == record["id"]), None)
@@ -399,13 +400,38 @@ class AgentStore:
                 updated = {**entry, "items": [record if item is existing else item for item in entry["items"]]}
                 atomic_write_json(self._artifacts_path, {**self._artifacts, session_id: updated})
                 self._artifacts[session_id] = updated
-                return dict(record)
-            if existing is not None:
+                is_new_version = True
+            elif existing is not None:
                 return dict(existing)
-            updated = {**entry, "items": [*entry["items"], record]}
-            atomic_write_json(self._artifacts_path, {**self._artifacts, session_id: updated})
-            self._artifacts[session_id] = updated
+            else:
+                updated = {**entry, "items": [*entry["items"], record]}
+                atomic_write_json(self._artifacts_path, {**self._artifacts, session_id: updated})
+                self._artifacts[session_id] = updated
+                is_new_version = True
+        if is_new_version:
+            self._record_artifact_revision(session_id, record)
         return dict(record)
+
+    def _record_artifact_revision(self, session_id: str, record: JsonObject) -> None:
+        """Copia los bytes del artefacto al historial; nunca rompe el registro."""
+        try:
+            artifact_versions.record(
+                self.base_dir, session_id, record, self.drafts_dir(session_id), {"session_id": session_id},
+            )
+        except Exception:  # el historial es auxiliar y no debe abortar la entrega
+            logging.getLogger(__name__).exception("No se pudo registrar la revisión del artefacto")
+
+    def update_artifact_file_hashes(self, session_id: str, artifact_id: str, hashes: dict[int, str]) -> None:
+        """Apunta los archivos del artefacto a los bytes restaurados en borradores."""
+        with self._lock:
+            for item in (self._artifacts.get(session_id) or {}).get("items", []):
+                if item["id"] == artifact_id:
+                    for index, digest in hashes.items():
+                        if 0 <= index < len(item.get("files", [])):
+                            item["files"][index]["sha256"] = digest
+                    atomic_write_json(self._artifacts_path, self._artifacts)
+                    return
+            raise ValueError("Artefacto no encontrado")
 
     def artifacts_for(self, session_id: str) -> list[JsonObject]:
         with self._lock:

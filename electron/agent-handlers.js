@@ -23,7 +23,8 @@ async function artifactAction(params) {
   await require('./agent-runtime').open();
   await require('./agent-shared').requireSession(String(params.session_id || ''));
   const { _callBackend } = require('./ipc-router');
-  if (params.action === 'review') return _callBackend('agent_internal_artifact_action', params);
+  if (params.action === 'review' || params.action === 'versions' || params.action === 'restore')
+    return _callBackend('agent_internal_artifact_action', params);
   const file = await _callBackend('agent_internal_artifact_action', { ...params, action: 'file' });
   if (file.page) {
     if (params.action === 'preview') return { html: require('./agent-pages').preview(file.page, params.color_scheme), sha256: file.sha256 };
