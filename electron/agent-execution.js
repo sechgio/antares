@@ -340,7 +340,13 @@ function cappedOpenAIApi(api) {
       ...options,
       onPayload: async (payload, target) => {
         const next = options && options.onPayload ? await options.onPayload(payload, target) : undefined;
-        return capOpenAITools(next === undefined ? payload : next);
+        const capped = capOpenAITools(next === undefined ? payload : next);
+        const sessionId = options?.sessionId;
+        if (sessionId && options.cacheRetention !== 'none' && !capped?.prompt_cache_key) {
+          const url = URL.parse(target?.baseUrl || model?.baseUrl || '');
+          if (url?.origin === 'https://api.x.ai') return { ...capped, prompt_cache_key: sessionId };
+        }
+        return capped;
       },
     });
   return { ...api, stream: wrap(api.stream), streamSimple: wrap(api.streamSimple) };
@@ -841,17 +847,26 @@ async function refreshTools() {
 
 let tokenEstimator;
 const requestCuts = new Map();
+const MAX_REQUEST_CUTS = 256;
 
 async function compactRequest(messages, api, context) {
-  const sessionId = await sessionForConversation(api.conversationId, api, context);
-  const session = sessionId ? (await sessions())[sessionId] : null;
-  const model = session && shared.state.models.getModel(session.provider, session.model);
-  const budget = requestBudget(model && (model.workingWindow || model.contextWindow), model && model.maxTokens);
+  const { model: ref } = await api.agent(context);
+  const model = ref && api.models.getModel(ref.provider, ref.modelId);
+  const window = model && (model.workingWindow || model.contextWindow);
+  const budget = requestBudget(window, model && (api.settings.stream?.maxTokens ?? model.maxTokens));
   if (!budget) return undefined;
   tokenEstimator ||= await import('@earendil-works/pi-ai/utils/estimate');
-  if (!requestCuts.has(api.conversationId)) requestCuts.set(api.conversationId, {});
+  const anchor = messages.find((message) => message.role === 'user')?.timestamp;
+  const previous = requestCuts.get(api.conversationId);
+  const current =
+    previous?.anchor === anchor && previous?.provider === ref.provider && previous?.modelId === ref.modelId
+      ? previous
+      : { anchor, provider: ref.provider, modelId: ref.modelId, cuts: {} };
+  requestCuts.delete(api.conversationId);
+  requestCuts.set(api.conversationId, current);
+  if (requestCuts.size > MAX_REQUEST_CUTS) requestCuts.delete(requestCuts.keys().next().value);
   return compactMessages(messages, {
-    cuts: requestCuts.get(api.conversationId),
+    cuts: current.cuts,
     budget,
     estimate: (list) => tokenEstimator.estimateContextTokens(list).tokens,
     messageTokens: tokenEstimator.estimateMessageTokens,

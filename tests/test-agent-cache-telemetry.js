@@ -40,9 +40,9 @@ async function main() {
     const entry = [...events].reverse().find((item) => item.event === name);
     return entry ? { event: entry.event, ...entry.fields } : null;
   };
-  const send = async (api, queue, sessionId, body, options = {}) => {
+  const send = async (api, queue, sessionId, body, options = {}, model = {}) => {
     queue.push(body);
-    return api.streamSimple({}, {}, { sessionId, ...options }).result();
+    return api.streamSimple(model, {}, { sessionId, ...options }).result();
   };
   try {
     const { api, queue } = fakeApi();
@@ -95,6 +95,22 @@ async function main() {
 
     await send(api, queue, 'cache-telemetry-session-2', { system: system('prompt estable'), tools, messages: [user('otro')] });
     assert(latest('agent.cache_prefix').break === 'initial', 'cada sesión compara solo con su petición anterior');
+
+    const routed = 'cache-telemetry-routed';
+    const primary = { provider: 'custom', api: 'openai-completions', id: 'grok-4', baseUrl: 'https://api.x.ai/v1' };
+    const endpoint = { ...primary, baseUrl: 'https://proxy.example/v1' };
+    const body = { model: 'grok-4', messages: [user('hola')], prompt_cache_key: 'private-routing-key' };
+    await send(api, queue, routed, body, {}, primary);
+    const original = latest('agent.cache_prefix');
+    await send(api, queue, routed, body, {}, endpoint);
+    const changedEndpoint = latest('agent.cache_prefix');
+    assert(changedEndpoint.break === 'initial' && changedEndpoint.session === original.session &&
+      changedEndpoint.request_hash !== original.request_hash, 'un cambio de endpoint abre otra serie de caché');
+    await send(api, queue, routed, { ...body, model: 'otro' }, {}, primary);
+    assert(latest('agent.cache_prefix').break === 'initial', 'el modelo del payload también delimita la caché');
+    await send(api, queue, routed, body, {}, primary);
+    assert(latest('agent.cache_prefix').break === 'none' && !JSON.stringify(events).includes('private-routing-key'),
+      'se retoma la comparación del destino original y la clave de caché queda fuera de los logs');
 
     const openai = 'cache-telemetry-session-openai';
     await send(api, queue, openai, { messages: [{ role: 'system', content: 'prompt' }, user('hola')] });
