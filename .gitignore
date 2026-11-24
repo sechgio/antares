@@ -29,10 +29,10 @@ venv*/
 test_output/
 .coverage
 
-backend/pytest-of-*/
-backend/antares-scalability-*/
-backend/antares-spreadsheet-results/
-backend/antares_inline_*
+pytest-of-*/
+antares-scalability-*/
+antares-spreadsheet-results/
+antares_inline_*
 
 node_modules/
 dist-electron/

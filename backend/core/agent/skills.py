@@ -371,7 +371,7 @@ def _catalog(grants: dict[str, JsonObject], workspace: Path, library: Path,
     return sorted(found, key=lambda skill: (skill.name, str(skill.path))), warnings, truncated
 
 
-def _public_entry(skill: "_Skill") -> JsonObject:
+def _public_entry(skill: _Skill) -> JsonObject:
     entry: JsonObject = {"id": skill.id, "name": skill.name, "description": skill.description}
     if skill.version:
         entry["version"] = skill.version
