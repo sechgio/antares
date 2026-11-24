@@ -1,7 +1,5 @@
 'use strict';
 
-// Pruebas del núcleo puro de automatización por eventos.
-
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const triggers = require('../electron/agent-triggers');

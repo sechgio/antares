@@ -1,5 +1,3 @@
-"""Pruebas del historial content-addressed de artefactos."""
-
 from __future__ import annotations
 
 import hashlib

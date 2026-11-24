@@ -586,7 +586,6 @@ async function triggerChain() {
     assert.equal(afterRestart.fired, 0, 'la bandeja durable sobrevive al reinicio');
     console.log('[PASS] Encadenamiento task_completed: disparo atómico, dedupe y bandeja durable tras reinicio.');
 
-    // Trigger de archivo real: una escritura en la carpeta vigilada encola el encargo.
     const watched = fs2.mkdtempSync(path2.join(os2.tmpdir(), 'antares-watched-'));
     const fileTask = await runtime.handlers.agent_tasks_save({
       session_id: session.id, content: 'Procesa el archivo nuevo', trigger: { type: 'file_changed', path: watched, pattern: '*.xlsx' },

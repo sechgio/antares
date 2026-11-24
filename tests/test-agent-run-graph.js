@@ -1,7 +1,5 @@
 'use strict';
 
-// Pruebas del ensamblador puro del grafo de ejecución multiagente.
-
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { buildRunGraph } = require('../electron/agent-run-graph');

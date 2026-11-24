@@ -49,8 +49,6 @@ function ensureWatcher(folder) {
   }
 }
 
-// Sincroniza los watchers con los encargos pendientes: abre los que falten y
-// cierra los que ya no tienen ningún trigger vivo.
 async function syncWatchers() {
   const state = shared.state;
   if (!state || stopped) return;

@@ -7,7 +7,6 @@ evita martillear servidores caídos sin impedir el reintento manual.
 
 from __future__ import annotations
 
-# disconnected | connecting | needs_auth | degraded | healthy | disabled | unverified
 STATES = frozenset({"disconnected", "connecting", "needs_auth", "degraded", "healthy", "disabled", "unverified"})
 
 BACKOFF_BASE_S = 5

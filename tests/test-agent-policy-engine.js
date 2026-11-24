@@ -19,7 +19,6 @@ function throws(fn) {
 }
 
 try {
-  // --- Validación ---
   assert(engine.validateScopedRules(null).length === 0, 'sin reglas devuelve lista vacía');
   const valid = engine.validateScopedRules([
     { scope: 'command', value: 'git status', decision: 'allow' },
@@ -54,7 +53,6 @@ try {
   assert(throws(() => engine.validateScopedRules([{ scope: 'domain', value: 'x', decision: 'allow' }])),
     'un dominio allow necesita un host válido');
 
-  // --- Extracción de objetivos ---
   const shellTargets = engine.extractTargets('shell_run', { command: 'git status' });
   assert(shellTargets.command === 'git status', 'extrae el comando de shell_run');
   const fsTargets = engine.extractTargets('fs_write', { path: FILE });
@@ -135,7 +133,6 @@ try {
   ], { mcp_server: 'github', mcp_tool: 'create_issue' });
   assert(mcpExact.decision === 'deny', 'la regla exacta de herramienta MCP gana');
 
-  // --- Reglas de turno en memoria ---
   engine.addTurnRule('conv1', { scope: 'command', value: 'git', decision: 'allow' });
   assert(engine.turnRulesFor('conv1').length === 1, 'la regla de turno se guarda en memoria');
   assert(engine.turnRulesFor('conv2').length === 0, 'otra conversación no la ve');
