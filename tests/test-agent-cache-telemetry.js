@@ -40,9 +40,9 @@ async function main() {
     const entry = [...events].reverse().find((item) => item.event === name);
     return entry ? { event: entry.event, ...entry.fields } : null;
   };
-  const send = async (api, queue, sessionId, body, options = {}, model = {}) => {
+  const send = async (api, queue, sessionId, body, options = {}, model = {}, context = {}) => {
     queue.push(body);
-    return api.streamSimple(model, {}, { sessionId, ...options }).result();
+    return api.streamSimple(model, context, { sessionId, ...options }).result();
   };
   try {
     const { api, queue } = fakeApi();
@@ -111,6 +111,19 @@ async function main() {
     await send(api, queue, routed, body, {}, primary);
     assert(latest('agent.cache_prefix').break === 'none' && !JSON.stringify(events).includes('private-routing-key'),
       'se retoma la comparación del destino original y la clave de caché queda fuera de los logs');
+
+    const rebuilding = 'cache-telemetry-rebuilds';
+    const checkpoint = user('The conversation history before this point was compacted into the following summary:\n<summary>Seguimos.</summary>');
+    const toolOutput = { role: 'toolResult', toolCallId: 'call-1', content: [{ type: 'text', text: 'resultado' }] };
+    const pruned = { ...toolOutput, content: [{ type: 'text', text: '[Resultado de fs_read omitido para ahorrar contexto: 3500 caracteres]' }] };
+    await send(api, queue, rebuilding, { messages: [user('antes'), toolOutput] });
+    await send(api, queue, rebuilding, { messages: [checkpoint, toolOutput] }, {}, {}, { messages: [checkpoint, toolOutput] });
+    const compacted = latest('agent.cache_prefix');
+    assert(compacted.break === 'history' && compacted.expected_rebuild === 'compaction' && compacted.request_gap_ms >= 0,
+      'un checkpoint nuevo identifica una reconstrucción esperada sin inferir el TTL real');
+    await send(api, queue, rebuilding, { messages: [checkpoint, pruned] }, {}, {}, { messages: [checkpoint, pruned] });
+    assert(latest('agent.cache_prefix').expected_rebuild === 'tool_pruning',
+      'un cambio de historial causado por poda tiene su propio diagnóstico');
 
     const openai = 'cache-telemetry-session-openai';
     await send(api, queue, openai, { messages: [{ role: 'system', content: 'prompt' }, user('hola')] });

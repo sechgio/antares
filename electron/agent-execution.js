@@ -314,8 +314,25 @@ async function buildProvider(record) {
 }
 
 function withWorkingWindow(api) {
-  const wrap = (stream) => (model, context, options) =>
-    stream(model && model.workingWindow ? { ...model, contextWindow: model.workingWindow } : model, context, options);
+  const wrap = (stream) => (model, context, options) => {
+    if (!model?.workingWindow) return stream(model, context, options);
+    return stream({ ...model, contextWindow: model.workingWindow }, context, {
+      ...options,
+      onPayload: async (payload, target) => {
+        tokenEstimator ||= await import('@earendil-works/pi-ai/utils/estimate');
+        const input = (context.messages || []).reduce(
+          (sum, message) => sum + tokenEstimator.estimateMessageTokens(message),
+          0,
+        );
+        if (input >= model.workingWindow) {
+          throw new Error(
+            'context_length_exceeded: el encargo y su contexto superan la ventana del modelo. Reduce los adjuntos o divide el encargo.',
+          );
+        }
+        return options?.onPayload?.(payload, target);
+      },
+    });
+  };
   return { ...api, stream: wrap(api.stream), streamSimple: wrap(api.streamSimple) };
 }
 
@@ -790,15 +807,16 @@ async function refreshTools() {
             if (budget && budget.exhausted) await pauseForBudget(api, context, 'token_budget');
             await noteTurnStart(api, messages || []);
             const currentMemory = withoutOldMemorySnapshots(messages);
-            const compacted = await compactRequest(currentMemory, api, context);
-            const prepared = compacted || currentMemory;
-            const enveloped = envelopeToolResults(prepared);
             const rounds = shared.rounds.get(api.conversationId) || 0;
             const turn = shared.turns.get(api.conversationId);
-            const next = withSentNotices(api.conversationId, enveloped, (list) => {
+            const prepared = withSentNotices(api.conversationId, envelopeToolResults(currentMemory), (list) => {
               const planned = planReminder(list, turn, rounds);
               return budgetWarning(planned || list, rounds) || planned;
             });
+            const compacted = await compactRequest(currentMemory, prepared, api, context);
+            const next = compacted
+              ? withSentNotices(api.conversationId, envelopeToolResults(compacted))
+              : prepared;
             return leadingSystem(next) || (next !== messages ? { messages: next } : undefined);
           },
           afterTools: async (_output, results, api, context) => {
@@ -851,7 +869,7 @@ let tokenEstimator;
 const requestCuts = new Map();
 const MAX_REQUEST_CUTS = 256;
 
-async function compactRequest(messages, api, context) {
+async function compactRequest(messages, prepared, api, context) {
   const { model: ref } = await api.agent(context);
   const model = ref && api.models.getModel(ref.provider, ref.modelId);
   const window = model && (model.workingWindow || model.contextWindow);
@@ -870,7 +888,7 @@ async function compactRequest(messages, api, context) {
   return compactMessages(messages, {
     cuts: current.cuts,
     budget,
-    estimate: (list) => tokenEstimator.estimateContextTokens(list).tokens,
+    estimate: () => tokenEstimator.estimateContextTokens(prepared).tokens,
     messageTokens: tokenEstimator.estimateMessageTokens,
   });
 }
@@ -971,7 +989,7 @@ function withSentNotices(conversationId, messages, notify) {
   for (const id of sent.keys()) if (!present.has(id)) sent.delete(id);
   const last = messages[messages.length - 1];
   const notified =
-    last && last.role === 'toolResult' && last.toolCallId && !present.has(last.toolCallId) ? notify(next) : undefined;
+    last && last.role === 'toolResult' && last.toolCallId && !present.has(last.toolCallId) ? notify?.(next) : undefined;
   if (notified) {
     sent.set(last.toolCallId, notified[notified.length - 1].content.slice(blocksOf(last.content).length));
     next = notified;

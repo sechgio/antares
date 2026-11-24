@@ -49,7 +49,11 @@ async function ensureWatcher(session, context) {
   stream.start(async (events) => {
     for (const event of events) applyEvent(convId, event);
     if (events.length) notifyChanged(convId);
+    if (events.some((event) => event.type === 'message_end' && event.entry?.kind === 'pi.compaction')) {
+      await require('./agent-runtime').regenerateMemorySnapshot(session.id);
+    }
   });
+  await require('./agent-runtime').regenerateMemorySnapshot(session.id);
 }
 
 function applySnapshot(convId, snapshot) {
