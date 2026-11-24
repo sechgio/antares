@@ -297,7 +297,7 @@ export default function PreviewPanelView() {
   );
 
   const fetchSheetRows = useCallback(
-    async (token: string, sheetName: string): Promise<unknown[][]> => {
+    async (token: string, sheetName: string, isCurrent: () => boolean): Promise<unknown[][]> => {
       const rows: unknown[][] = [];
       let offset = 0;
       for (;;) {
@@ -308,7 +308,7 @@ export default function PreviewPanelView() {
           limit: 2000,
         });
         rows.push(...page.rows);
-        if (!page.has_more) break;
+        if (!page.has_more || !isCurrent()) break;
         offset += page.rows.length;
         await new Promise<void>((r) => setTimeout(r, 0));
       }
@@ -332,7 +332,7 @@ export default function PreviewPanelView() {
       }
       if (sh && sh.rows.length === 0 && spillToken) {
         try {
-          const rows = await fetchSheetRows(spillToken, nextName);
+          const rows = await fetchSheetRows(spillToken, nextName, () => gen === sheetLoadGenRef.current);
           if (gen !== sheetLoadGenRef.current) return;
           sh = { ...sh, rows, rowCount: rows.length };
           setSheets((prev) => prev.map((s) => (
@@ -447,7 +447,7 @@ export default function PreviewPanelView() {
           applyParsedSheets(stubs, res.warnings, true);
           return;
         }
-        const rows = await fetchSheetRows(token, pick.name);
+        const rows = await fetchSheetRows(token, pick.name, () => parseGen === parseGenRef.current);
         if (parseGen !== parseGenRef.current) {
           if (spillTokenRef.current !== token) void releaseSpillToken(token);
           return;

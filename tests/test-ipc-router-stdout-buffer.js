@@ -84,6 +84,32 @@ function run() {
     assert.strictEqual(r.pending.len, 0);
   }
 
+  {
+    let seed = 7;
+    const rand = (n) => {
+      seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+      return seed % n;
+    };
+    const expected = [];
+    for (let i = 0; i < 400; i += 1) {
+      expected.push(JSON.stringify({ id: i, result: 'ñá🚀'.repeat(rand(40)) + 'x'.repeat(rand(3000)) }));
+    }
+    expected.splice(200, 0, JSON.stringify({ id: 'big', result: 'z'.repeat(6 * 1024 * 1024) }));
+    const stream = Buffer.from(expected.map((line, i) => (i % 50 === 0 ? `\n${line}` : line)).join('\n') + '\n');
+    let state = emptyPending();
+    const got = [];
+    for (let offset = 0; offset < stream.length; ) {
+      const size = rand(5) === 0 ? 1 + rand(8) : 1 + rand(256 * 1024);
+      const r = _consumeStdoutLines(state, stream.subarray(offset, offset + size), 68 * 1024 * 1024);
+      assert.strictEqual(r.dropped, false);
+      for (const line of r.lines) got.push(line.toString('utf8'));
+      state = r.pending;
+      offset += size;
+    }
+    assert.strictEqual(state.len, 0, 'no leftover after random chunking');
+    assert.deepStrictEqual(got, expected, 'random chunk boundaries reproduce every line byte-for-byte');
+  }
+
   console.log('  ✓ Buffer framing + split lines + byteLength + maxPendingBytes cap');
   console.log('\nAll ipc-router stdout buffer tests passed.');
 }

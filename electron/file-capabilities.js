@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const fsp = fs.promises;
+const realpathAsync = require('util').promisify(fs.realpath);
 const os = require('os');
 const path = require('path');
 const { assertAllowedReadPath, assertPathNotSymlink, assertPathNotSymlinkAsync } = require('./path-allowlist');
@@ -128,7 +129,7 @@ async function createFileCapabilityAsync({ filePath, mode, webContentsId, name, 
     token,
     mode,
     path: resolved,
-    realPath: await fsp.realpath(resolved),
+    realPath: await realpathAsync(resolved),
     name: name || path.basename(resolved),
     size: typeof size === 'number' ? size : stat.size,
     webContentsId: webContentsId ?? null,
@@ -138,6 +139,25 @@ async function createFileCapabilityAsync({ filePath, mode, webContentsId, name, 
   _capabilities.set(token, entry);
   _ensureSweep();
   return entry;
+}
+
+let _dirRealpathMemo = null;
+
+function _realpathForCheck(filePath) {
+  if (fs.lstatSync(filePath).isSymbolicLink()) return fs.realpathSync(filePath);
+  if (!_dirRealpathMemo) {
+    _dirRealpathMemo = new Map();
+    queueMicrotask(() => {
+      _dirRealpathMemo = null;
+    });
+  }
+  const dir = path.dirname(filePath);
+  let realDir = _dirRealpathMemo.get(dir);
+  if (realDir === undefined) {
+    realDir = fs.realpathSync(dir);
+    _dirRealpathMemo.set(dir, realDir);
+  }
+  return path.join(realDir, path.basename(filePath));
 }
 
 function resolveCapability(token, expectedMode, webContentsId) {
@@ -156,7 +176,7 @@ function resolveCapability(token, expectedMode, webContentsId) {
     _logCapabilityDenial('capability_window_mismatch');
     throw new Error('capability not bound to this window');
   }
-  const real = fs.realpathSync(entry.path);
+  const real = _realpathForCheck(entry.path);
   const matches = entry.realPath
     ? real === entry.realPath
     : process.platform === 'win32'
