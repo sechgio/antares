@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import atexit
 import json
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -10,6 +14,22 @@ from pathlib import Path
 import pytest
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
+
+# Los tests no deben tocar el store real del usuario (%LOCALAPPDATA%\Antares):
+# la redirección ocurre al importar conftest, antes de que los módulos de test
+# importen backend y se calculen constantes de rutas, y la heredan los backend
+# lanzados como subprocesos. mkdtemp es único por proceso, así los workers de
+# xdist no comparten store.
+_TEST_USER_DATA_ROOT = Path(tempfile.mkdtemp(prefix="antares-test-userdata-"))
+os.environ["LOCALAPPDATA"] = str(_TEST_USER_DATA_ROOT)
+os.environ["XDG_DATA_HOME"] = str(_TEST_USER_DATA_ROOT)
+
+
+def _cleanup_test_user_data() -> None:
+    shutil.rmtree(_TEST_USER_DATA_ROOT, ignore_errors=True)
+
+
+atexit.register(_cleanup_test_user_data)
 
 
 def drain_stderr(proc: subprocess.Popen, sink: list[str]) -> None:
