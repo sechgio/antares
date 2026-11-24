@@ -848,6 +848,11 @@ export function ApprovalCard({
             <TriangleAlert size={13} strokeWidth={1.75} aria-hidden="true" className="mt-[3px] shrink-0" />
             <span>Este comando elimina o descarta archivos y Antares no puede deshacerlo. Comprueba las rutas antes de permitirlo.</span>
           </p>}
+          {approval.risk && approval.risk_reason && (
+            <p className={`text-[12px] leading-[18px] ${approval.risk === 'low' ? 'text-[var(--text-secondary)]' : approval.risk === 'high' ? 'text-[var(--accent-red)]' : 'text-[var(--accent-yellow)]'}`}>
+              Riesgo {approval.risk === 'low' ? 'bajo' : approval.risk === 'high' ? 'alto' : 'medio'} · {approval.risk_reason}
+            </p>
+          )}
           {(typeof params.command === 'string' || facts.length > 0) && (
             <ul className="space-y-0.5 rounded-lg bg-[var(--bg-base)] px-3 py-2 font-mono text-[11.5px] leading-[18px] text-[var(--text-secondary)]">
               {typeof params.command === 'string' && (

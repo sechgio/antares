@@ -811,6 +811,22 @@ it('detalla el comando y la ruta en la aprobación de una acción del equipo', (
   expect(screen.getByText(/puede acceder al equipo completo/)).toBeInTheDocument();
   expect(screen.getByText(/pide aprobación humana para cada comando, también en Acceso completo/)).toBeInTheDocument();
   expect(screen.queryByText(/elimina o descarta archivos/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/^Riesgo /)).not.toBeInTheDocument();
+});
+
+it('muestra el análisis de riesgo del comando sin cambiar la aprobación humana', () => {
+  const base = { id: 'a', session_id: 's', call_id: 'c', method: 'shell_run', status: 'pending', created_at: 1, decided_at: null } as const;
+  const { rerender } = render(<ApprovalCard busy={false} onDecide={vi.fn()} approval={{
+    ...base, params: { command: 'git status && git diff' }, risk: 'low',
+    risk_reason: 'Lectura pura en todas las partes: git status, git diff',
+  }} />);
+  expect(screen.getByText('Riesgo bajo · Lectura pura en todas las partes: git status, git diff')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Permitir esta acción' })).toBeEnabled();
+  rerender(<ApprovalCard busy={false} onDecide={vi.fn()} approval={{
+    ...base, params: { command: 'git status && rm -rf build' }, risk: 'high',
+    risk_reason: 'El comando escribe, instala o modifica el sistema',
+  }} />);
+  expect(screen.getByText('Riesgo alto · El comando escribe, instala o modifica el sistema')).toBeVisible();
 });
 
 it('muestra las instrucciones completas al aprobar la creación de una skill', () => {

@@ -169,6 +169,8 @@ export interface AgentApproval {
   channel?: AgentChannel | null;
   source?: AgentApprovalSource | null;
   consumed_by?: string;
+  risk?: 'low' | 'medium' | 'high';
+  risk_reason?: string;
   context?: { account?: string; tool?: string; sheet_id?: string; scopes?: string[]; filename?: string;
     page_url?: string; page_time_origin?: number; domain?: string; policy_blocked?: boolean;
     computer?: { app?: string; window?: string; element?: string }; subagent?: string; subagent_role?: AgentRole };

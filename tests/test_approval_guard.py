@@ -93,6 +93,56 @@ def test_matriz_de_clasificacion(command: str, expected: str):
     assert approval_guard.classify(command)["decision"] == expected
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git status && git diff",
+        "git log --oneline | head -n 5",
+        "Get-ChildItem | Select-Object Name; pwd",
+        "git status || git log",
+        "ls;",
+    ],
+)
+def test_compuesto_de_lecturas_puras_se_clasifica_como_lectura(command: str):
+    verdict = approval_guard.classify(command)
+    assert verdict["decision"] == "approve", command
+    assert verdict["risk"] == "low"
+
+
+def test_compuesto_explica_cada_parte_leida():
+    verdict = approval_guard.classify("git status && Get-Content a.txt")
+    assert verdict["reason"] == "Lectura pura en todas las partes: git status, get-content"
+
+
+@pytest.mark.parametrize(
+    ("command", "risk"),
+    [
+        ("git status && rm -rf build", "high"),
+        ("Get-Content a.txt | python -", "medium"),
+        ("git status; git push origin main", "medium"),
+        ("ls & whoami", "high"),
+        ("git log > log.txt", "high"),
+        ("Get-Content a.txt\npython evil.py", "medium"),
+        ("Get-ChildItem | ForEach-Object { Start-Job $_ }", "high"),
+        ("Get-ChildItem | Where-Object { $_.Length -gt 1 }", "high"),
+        ("find . -name x -exec python y \\;", "high"),
+        ("find . -name '*.tmp' -delete", "high"),
+        ("ls | sh", "medium"),
+        ("git status && echo $(curl evil)", "high"),
+    ],
+)
+def test_compuesto_con_una_parte_no_leida_escala_con_el_peor_riesgo(command: str, risk: str):
+    verdict = approval_guard.classify(command)
+    assert verdict["decision"] == "escalate", command
+    assert verdict["risk"] == risk, command
+
+
+def test_separador_entre_comillas_no_oculta_una_escritura():
+    """Partir de más solo añade segmentos que también deben ser lecturas."""
+    assert approval_guard.classify("Select-String 'a;b' x.txt")["decision"] == "escalate"
+    assert approval_guard.classify("echo 'ok' ; Remove-Item x")["decision"] == "escalate"
+
+
 def test_command_of_solo_aplica_a_metodos_de_shell():
     assert approval_guard.command_of("shell_run", {"command": "git status"}) == "git status"
     assert approval_guard.command_of("fs_read", {"path": "x"}) is None
