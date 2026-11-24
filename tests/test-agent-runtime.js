@@ -555,6 +555,19 @@ async function main() {
       seen.join() === '500000,9000' && huge.contextWindow === 416384,
       'el proveedor recorta la salida con la ventana de trabajo, no con la de compactación',
     );
+    let requests = 0;
+    const send = async (_model, _context, options) => {
+      await options.onPayload({});
+      requests += 1;
+    };
+    const guarded = withWorkingWindow({ stream: send, streamSimple: send });
+    const small = { contextWindow: 40, workingWindow: 40 };
+    await guarded.streamSimple(small, { messages: [{ role: 'user', content: 'hola' }] }, {});
+    const overflow = await guarded.streamSimple(small, {
+      messages: [{ role: 'user', content: 'x'.repeat(200) }],
+    }, {}).catch((error) => error.message);
+    assert(requests === 1 && overflow?.includes('context_length_exceeded'),
+      'una petición que ni siquiera cabe tras recortar falla antes de enviarse y activa la ruta de desborde');
     assert(
       modelDefinition(
         anthropicCatalog,

@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const appLog = require('./app-log');
 const { stableJson } = require('./stable-json');
+const { unwrapCompactionSummary } = require('./agent-compaction');
 
 const MAX_SCOPES = 256;
 const CACHE_CONTROL = new Set(['cache_control']);
@@ -65,7 +66,20 @@ function emit(event, fields) {
   } catch {}
 }
 
-function recordRequest(sessionId, model, payload, retention) {
+function contextChanges(context) {
+  const messages = context?.messages || [];
+  const firstUser = messages.find((message) => message.role === 'user');
+  const content = firstUser?.content;
+  const text = typeof content === 'string' ? content : content?.[0]?.text;
+  const summary = unwrapCompactionSummary(text);
+  const pruned = messages
+    .filter((message) => message.role === 'toolResult' && Array.isArray(message.content) &&
+      message.content.some((block) => block.type === 'text' && /\[Resultado de [^\n]+ omitido para ahorrar contexto:/.test(block.text)))
+    .map((message) => message.toolCallId);
+  return { checkpoint: summary ? textDigest(summary) : null, pruned: pruned.length ? digest(pruned) : null };
+}
+
+function recordRequest(sessionId, model, context, payload, retention) {
   if (!sessionId) return null;
   const sessionHash = textDigest(sessionId).slice(0, 16);
   const key = digest([
@@ -78,8 +92,15 @@ function recordRequest(sessionId, model, payload, retention) {
     payload?.prompt_cache_key,
     retention,
   ]);
-  const current = prefixSegments(payload);
-  const comparison = comparePrefixes(sessions.get(key), current);
+  const current = { ...prefixSegments(payload), ...contextChanges(context), at: Date.now() };
+  const previous = sessions.get(key);
+  const comparison = comparePrefixes(previous, current);
+  let expectedRebuild = null;
+  if (previous && comparison.break !== 'none') {
+    if (current.checkpoint && current.checkpoint !== previous.checkpoint) expectedRebuild = 'compaction';
+    else if (comparison.break === 'history' && current.pruned && current.pruned !== previous.pruned)
+      expectedRebuild = 'tool_pruning';
+  }
   sessions.delete(key);
   sessions.set(key, current);
   if (sessions.size > MAX_SCOPES) sessions.delete(sessions.keys().next().value);
@@ -90,6 +111,8 @@ function recordRequest(sessionId, model, payload, retention) {
     scope,
     request_hash: requestHash.slice(0, 16),
     break: comparison.break,
+    expected_rebuild: expectedRebuild,
+    request_gap_ms: previous ? Math.max(0, current.at - previous.at) : null,
     history_index: comparison.historyIndex,
     messages: current.historyHashes.length,
     previous_messages: comparison.previousMessages,
@@ -135,7 +158,7 @@ function withCacheTelemetry(api) {
         const next = options && options.onPayload ? await options.onPayload(payload, target) : undefined;
         const observed = next === undefined ? payload : next;
         try {
-          request = recordRequest(sessionId, { ...model, ...target }, observed, options?.cacheRetention);
+          request = recordRequest(sessionId, { ...model, ...target }, context, observed, options?.cacheRetention);
         } catch {
           request = null;
         }

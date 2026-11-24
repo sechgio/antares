@@ -219,7 +219,7 @@ async function _indexConversations() {
 const LEGACY_REASONING = ['minimal', 'low', 'medium', 'high'];
 
 function toPublicSession(current) {
-  const { conversationId, style, modules, ...rest } = current;
+  const { conversationId, style, modules, memory_checkpoint, ...rest } = current;
   if (rest.approval_rules && typeof rest.approval_rules === 'object') {
     rest.approval_rules = { ...rest.approval_rules };
   }
@@ -1204,16 +1204,18 @@ async function skillsIndex(session, tools) {
 }
 
 async function memoryContext(session, initialText) {
-  await _writeMemorySnapshot(session, initialText);
+  if (!(await regenerateMemorySnapshot(session.id))) await _writeMemorySnapshot(session, initialText);
   return { context: '' };
 }
 
-async function _writeMemorySnapshot(session, initialText, force = false) {
+async function _writeMemorySnapshot(session, initialText, checkpoint) {
+  const { harness, SessionsDoc } = shared.state;
+  const { AgentDoc, configure } = shared.deps.pi;
   let revision = null;
-  let context = '';
+  let context;
   try {
     ({ revision = null } = await bridge('agent_internal_memory_revision', {}));
-    if (!force && revision !== null && revision === session.memory_revision) return;
+    if (!checkpoint && revision !== null && revision === session.memory_revision) return false;
     const profile = await execution.sessionProfile(session);
     ({ context } = await bridge('agent_internal_memory_context', {
       session_id: session.id,
@@ -1223,28 +1225,66 @@ async function _writeMemorySnapshot(session, initialText, force = false) {
       profile_id: session.profile?.id || null,
       memory_scope: profile?.memory_scope || null,
     }));
-  } catch {
-    revision = null;
+  } catch (error) {
+    if (checkpoint) throw error;
+    return false;
   }
-  const conv = await conversation(session.id);
-  const { AgentDoc, configure } = shared.deps.pi;
-  await conv.commit(async (tx) => {
-    const current = (await tx.doc(shared.state.SessionsDoc)).sessions[session.id];
-    if (!current || current.deleted) return;
-    if (revision === null ? current.memory_revision !== session.memory_revision
-      : current.memory_revision > revision || (!force && current.memory_revision === revision)) return;
-    const stored = (await tx.doc(AgentDoc, conv.id)).instructions || '';
+  return harness.commit(async (tx) => {
+    const current = (await tx.doc(SessionsDoc)).sessions[session.id];
+    if (!current || current.deleted) return false;
+    if (
+      checkpoint &&
+      (current.memory_checkpoint === checkpoint.id || (await tx.latestHeadMarker(session.conversationId))?.id !== checkpoint.id)
+    ) return false;
+    const staleRevision = revision === null
+      ? current.memory_revision !== session.memory_revision
+      : current.memory_revision > revision || (!checkpoint && current.memory_revision === revision);
+    if (staleRevision) return false;
+    const stored = (await tx.doc(AgentDoc, session.conversationId)).instructions || '';
     const instructions = withMemorySnapshot(stored, context);
-    if (instructions !== stored) await configure(tx, conv.id, { instructions });
+    if (instructions !== stored) await configure(tx, session.conversationId, { instructions });
     if (revision === null) delete current.memory_revision;
     else current.memory_revision = revision;
+    if (checkpoint) current.memory_checkpoint = checkpoint.id;
+    return true;
   }, ctx());
 }
 
-async function regenerateMemorySnapshot(sessionId, initialText = '') {
-  const session = (await sessions())[String(sessionId || '')];
-  if (!session) return;
-  await _writeMemorySnapshot(session, initialText, true);
+const memoryRefreshes = new Map();
+
+function regenerateMemorySnapshot(sessionId) {
+  if (memoryRefreshes.has(sessionId)) return memoryRefreshes.get(sessionId);
+  const refresh = _refreshCommittedMemory(sessionId)
+    .catch((err) => console.error(`[agent] no se pudo actualizar la memoria: ${execution.sanitizeProviderError(err.message)}`))
+    .finally(() => memoryRefreshes.delete(sessionId));
+  memoryRefreshes.set(sessionId, refresh);
+  return refresh;
+}
+
+async function _refreshCommittedMemory(sessionId) {
+  const { harness, SessionsDoc } = shared.state;
+  const { pi } = shared.deps;
+  let refreshed = false;
+  let attempted;
+  for (;;) {
+    const candidate = await harness.commit(async (tx) => {
+      const session = (await tx.doc(SessionsDoc)).sessions[sessionId];
+      if (!session || session.deleted) return undefined;
+      const head = await tx.latestHeadMarker(session.conversationId);
+      if (head?.kind !== pi.CompactionEntry.kind || head.id === session.memory_checkpoint) return undefined;
+      return { session: { ...session }, head };
+    }, ctx());
+    if (!candidate || candidate.head.id === attempted) return refreshed;
+    const { session, head } = candidate;
+    attempted = head.id;
+    const content = head.model?.[0]?.content;
+    const summary = compactionPolicy.unwrapCompactionSummary(typeof content === 'string' ? content : content?.[0]?.text);
+    if (!summary) return refreshed;
+    if (!(await _writeMemorySnapshot(session, summary, head))) continue;
+    refreshed = true;
+    shared.skillIndexes.delete(session.conversationId);
+    compactionPolicy.recordCommittedCompaction(session, head, summary);
+  }
 }
 
 async function _admittedRequest(session, requestId) {

@@ -127,7 +127,9 @@ function trimToolResult(message, max) {
   const text = textOf(message.content);
   const hasImage = Array.isArray(message.content) && message.content.some((block) => block && block.type === 'image');
   if (text.length <= max && !hasImage) return null;
-  return { ...message, content: [{ type: 'text', text: truncate(text, max) }] };
+  const bounded = clipMiddle(text, max, '\n[… recortado para ahorrar contexto …]\n');
+  const output = hasImage ? `${bounded}\n[imagen omitida para ahorrar contexto]` : bounded;
+  return { ...message, content: [{ type: 'text', text: output }] };
 }
 
 function toolResultCount(messages) {
@@ -267,6 +269,17 @@ function hardTrim(messages) {
   return changed ? next : null;
 }
 
+function trimRecentToolResults(messages) {
+  let changed = false;
+  const next = messages.map((message) => {
+    if (message.role !== 'toolResult') return message;
+    const trimmed = trimToolResult(message, HARD_TEXT_CHARS);
+    changed ||= !!trimmed;
+    return trimmed || message;
+  });
+  return changed ? next : null;
+}
+
 function compactMessages(messages, { budget, estimate, messageTokens = (message) => estimate([message]), cuts }) {
   if (!Array.isArray(messages) || !budget || typeof estimate !== 'function') return undefined;
   const measured = estimate(messages);
@@ -291,6 +304,7 @@ function compactMessages(messages, { budget, estimate, messageTokens = (message)
     (list) => foldOldTurns(list, KEEP_RECENT_USER_TURNS),
     (list) => foldOldTurns(list, 1),
     hardTrim,
+    trimRecentToolResults,
   ];
   for (const stage of stages) {
     if (size(current) <= budget) break;

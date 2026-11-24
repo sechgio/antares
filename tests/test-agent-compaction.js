@@ -91,6 +91,7 @@ function makeBridge() {
         return { revision: state.memoryRevision || 0 };
       case 'agent_internal_memory_context': {
         state.memoryCalls = [...(state.memoryCalls || []), params];
+        if (state.memoryFailure) throw new Error('memoria temporalmente no disponible');
         return { context: state.memory || '', items: [] };
       }
       case 'agent_internal_artifacts':
@@ -416,6 +417,22 @@ async function main() {
   }
 
   {
+    const active = user('Comprueba el resultado');
+    const messages = [
+      system('sys'), active, assistant(''),
+      assistant('', 3, [toolCall('latest', 'canvas_list')]),
+      toolResult('latest', 'canvas_list', `Inicio ${'x'.repeat(5000)} código de salida 17`),
+    ];
+    const compacted = compactMessages(messages, { budget: 300, estimate });
+    const result = compacted?.at(-1);
+    assert(
+      compacted?.includes(active) && result?.toolCallId === 'latest' && chars(result) < 500 &&
+        result.content[0].text.endsWith('código de salida 17'),
+      'un resultado reciente demasiado largo conserva el emparejamiento y el final al recortarse',
+    );
+  }
+
+  {
     const active = { ...user(''), content: [{ type: 'text', text: 'Revisa el adjunto' }, { type: 'image' }] };
     const messages = [system('sys'), user('encargo anterior'), assistant('hecho'), active];
     for (let index = 0; index < 12; index += 1) {
@@ -714,8 +731,8 @@ async function main() {
     assert(listing.usage && listing.usage.compactions === 1, 'el medidor cuenta la compactación aplicada');
     assert(listing.compacting === false, 'el estado «compactando» se apaga al terminar');
     assert(
-      auditRecords(dir).some((record) => record.outcome === 'summary' && record.reason === 'threshold'),
-      'la compactación queda en el registro auditable',
+      await waitFor(() => auditRecords(dir).some((record) => record.outcome === 'summary' && record.reason === 'threshold' && record.entry_id)),
+      'la auditoría registra la entrada durable de la compactación',
     );
     await runtime.shutdown();
   }
@@ -743,6 +760,8 @@ async function main() {
     assert(turnCalls().length === 1, 'los turnos siguientes no reconsultan memoria');
     await fillUntilCompaction(session.id, script);
     assert(await waitIdle(session.id), 'el turno continúa después de compactar');
+    assert(await waitFor(async () => (await instructionsOf()).includes('usa la B')), 'la memoria incorpora la compactación confirmada');
+    await runtime.regenerateMemorySnapshot(session.id);
     const regenerations = bridgeState.memoryCalls.filter((call) => String(call.text).includes('Encargo actual'));
     assert(regenerations.length === 1, 'la compactación regenera el snapshot una sola vez');
     assert(
@@ -777,6 +796,34 @@ async function main() {
     assert(!(await send()).includes('formato hexagonal'), 'el siguiente turno omite el recuerdo borrado');
     await send();
     assert(bridgeState.memoryCalls.length === 3, 'una copia vacía también se conserva hasta el próximo cambio');
+    await runtime.shutdown();
+  }
+
+  {
+    const { script, state: bridgeState } = await openCompaction();
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    bridgeState.memory = 'Memoria anterior al checkpoint';
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Prepara el informe' });
+    assert(await waitIdle(session.id), 'la sesión captura su memoria inicial');
+    bridgeState.memoryFailure = true;
+    await fillUntilCompaction(session.id, script);
+    await runtime.regenerateMemorySnapshot(session.id);
+    const state = runtime._internal.state();
+    const conv = await convOf(session.id);
+    assert(
+      (await conv.agent(state.ctx)).instructions.includes('Memoria anterior al checkpoint'),
+      'un fallo de lectura tras confirmar la compactación conserva el snapshot anterior',
+    );
+    bridgeState.memoryFailure = false;
+    bridgeState.memory = 'Memoria recuperada para el informe';
+    await runtime.regenerateMemorySnapshot(session.id);
+    const reads = bridgeState.memoryCalls.length;
+    await runtime.regenerateMemorySnapshot(session.id);
+    assert(
+      (await conv.agent(state.ctx)).instructions.includes('Memoria recuperada para el informe') &&
+        bridgeState.memoryCalls.length === reads,
+      'al recuperarse, el checkpoint queda aplicado una sola vez y su marca evita otra lectura',
+    );
     await runtime.shutdown();
   }
 
@@ -914,7 +961,7 @@ async function main() {
   }
 
   {
-    const { dir } = await openCompaction();
+    const { dir, state: bridgeState } = await openCompaction();
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const state = runtime._internal.state();
     const map = await state.harness.snapshot(state.SessionsDoc, state.ctx);
@@ -972,8 +1019,8 @@ async function main() {
       'el gasto de cada llamada de resumen queda en pi.usage',
     );
     assert(
-      auditRecords(dir).some((record) => record.outcome === 'summary'),
-      'el resumen reintentado queda registrado',
+      !auditRecords(dir).some((record) => record.outcome === 'summary') && !bridgeState.memoryCalls?.length,
+      'generar un resumen sin confirmar la entrada conserva la memoria y la auditoría de checkpoints',
     );
     const commit = state.harness.commit;
     state.harness.commit = async () => {
@@ -1024,7 +1071,7 @@ async function main() {
     ];
     let sent;
     const decision = await compactionModule.beforeCompact(
-      { ...fakeCompaction(), messages: source },
+      { ...fakeCompaction(), entries: [{ kind: 'pi.compaction', model: [checkpoint] }], messages: source },
       {
         ...fakeRuntime(sessions[session.id].conversationId),
         settings: { compaction: POLICY },
@@ -1051,6 +1098,11 @@ async function main() {
     );
     assert(prompt.includes('Se omitió o recortó parte del historial') && decision?.summary.includes('Seguir con final.csv.'),
       'el modelo recibe un historial acotado y produce un resumen utilizable');
+    assert(
+      decision?.summary.includes(`## Extractos de mensajes del usuario\n${JSON.stringify(correction)}`) &&
+        decision.summary.includes('> ## Encargo actual\n> Seguir con final.csv.'),
+      'el checkpoint separa la cita del historial y el texto generado aunque el modelo escriba encabezados',
+    );
     await runtime.shutdown();
   }
 
