@@ -27,7 +27,7 @@
     "test": "node scripts/run-test-suites.js",
     "test:frontend": "cd frontend && bun run test:all",
     "test:turns": "vitest run",
-    "test:stress": "cd backend && uv run --project .. --locked --extra dev pytest ../tests/test_stress_conversion.py -v -m slow",
+    "test:stress": "cd backend && uv run --project .. --locked --extra dev python -m pytest ../tests/test_stress_conversion.py -v -m slow",
     "bench:ipc": "uv run --project . --locked --extra dev python scripts/benchmark_ipc_latency.py",
     "bench:scalability": "uv run --project . --locked --extra dev python scripts/scalability_baseline.py --scale 1x --output benchmarks/scalability-1x.json",
     "bench:desktop": "node scripts/benchmark-desktop-performance.js",
