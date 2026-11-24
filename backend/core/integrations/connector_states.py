@@ -19,7 +19,7 @@ def backoff_seconds(failures: int) -> int:
     """Espera exponencial acotada: 5s, 10s, 20s… hasta un techo de 5 minutos."""
     if failures < 1:
         return 0
-    return min(BACKOFF_BASE_S * (2 ** min(failures - 1, BACKOFF_MAX_FAILURES)), BACKOFF_CAP_S)
+    return int(min(BACKOFF_BASE_S * (2 ** min(failures - 1, BACKOFF_MAX_FAILURES)), BACKOFF_CAP_S))
 
 
 def normalize_mcp(status: str, *, failures: int = 0, backoff_active: bool = False) -> str:
