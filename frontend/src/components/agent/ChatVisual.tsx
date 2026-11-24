@@ -1,16 +1,20 @@
-import { memo, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Check, Copy, Image as ImageIcon } from 'lucide-react';
+import { memo, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Check, Copy, Image as ImageIcon, Maximize2, X } from 'lucide-react';
+import { DialogSurface } from '../ui/Dialog';
 import { sanitizeHtmlForPreview } from '../../../../shared/html-sanitizer.js';
 
 type Series = { name: string; data: number[] };
 export type ChartSpec = { type: 'bar' | 'line' | 'pie'; title: string; labels: string[]; series: Series[] };
 
 const PALETTE = ['#5E6AD2', '#22C7A9', '#F59E0B', '#EF4444', '#3B82F6', '#A855F7', '#22C55E', '#EC4899'];
-const W = 560;
+const CHART_WIDTH = 560;
 const H = 220;
-const PAD = { l: 40, r: 8, t: 10, b: 26 };
+const PAD = { t: 12, b: 28 };
+const CHAR = 6.2;
+const INSET = 14;
 const MAX_POINTS = 120;
-const GRID = { stroke: 'var(--border-subtle)' };
+const GRID = { stroke: 'color-mix(in srgb, var(--text-primary) 8%, transparent)' };
+const BASELINE = { stroke: 'color-mix(in srgb, var(--text-primary) 22%, transparent)' };
 const AXIS = { fill: 'var(--text-muted)' };
 
 export function parseChart(source: string): ChartSpec | null {
@@ -72,27 +76,53 @@ function Legend({ items }: { items: { name: string; color: string }[] }) {
 function CartesianChart({ spec }: { spec: ChartSpec }) {
   const id = useId();
   const [hover, setHover] = useState<number | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  // Drawn at the real width so axis text keeps its size in a narrow chat.
+  const [W, setWidth] = useState(CHART_WIDTH);
+  useEffect(() => {
+    const node = box.current;
+    if (!node) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = Math.round(entry.contentRect.width);
+      if (width > 0) setWidth(width);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
   const values = spec.series.flatMap((s) => s.data);
-  const ticks = niceTicks(Math.min(0, ...values), Math.max(0, ...values));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  // Bars need a zero baseline; a line keeps its data range so small changes stay visible.
+  const ticks = spec.type === 'line' && min !== max ? niceTicks(min, max) : niceTicks(Math.min(0, min), Math.max(0, max));
   const lo = ticks[0];
   const hi = ticks[ticks.length - 1];
-  const band = (W - PAD.l - PAD.r) / spec.labels.length;
+  const count = spec.labels.length;
+  const line = spec.type === 'line';
+  const last = count - 1;
+  // A single line is labeled at its end, so the plot leaves room for that value.
+  const endLabel = line && spec.series.length === 1 ? format(spec.series[0].data[last]) : null;
+  const left = Math.ceil(Math.max(...ticks.map((v) => format(v).length)) * CHAR) + 12;
+  const right = endLabel ? Math.ceil(endLabel.length * CHAR) + 12 : 4;
+  const plot = W - left - right;
+  // Bars sit in equal bands; a line runs edge to edge with a small inset.
+  const band = line ? (count > 1 ? (plot - 2 * INSET) / last : plot) : plot / count;
   const y = (v: number) => PAD.t + ((hi - v) / (hi - lo)) * (H - PAD.t - PAD.b);
-  const x = (i: number) => PAD.l + band * (i + 0.5);
-  const step = Math.ceil(spec.labels.length / 10);
-  const group = Math.min(band * 0.72, 28 * spec.series.length);
-  const barWidth = group / spec.series.length;
-  const bar = (left: number, v: number) => {
+  const x = (i: number) => (line ? (count > 1 ? left + INSET + band * i : left + plot / 2) : left + band * (i + 0.5));
+  const labelWidth = Math.max(...spec.labels.map((label) => short(label).length)) * CHAR + 14;
+  const step = Math.max(1, Math.ceil(labelWidth / band));
+  const barWidth = Math.min((band * 0.72) / spec.series.length, 24);
+  const group = barWidth * spec.series.length;
+  const bar = (start: number, v: number) => {
     const top = y(Math.max(v, 0));
     const bottom = y(Math.min(v, 0));
-    const r = Math.max(0, Math.min(3, barWidth / 2 - 1, bottom - top));
+    const r = Math.max(0, Math.min(4, barWidth / 2 - 1, bottom - top));
     const w = Math.max(barWidth - 2, 1);
     return v >= 0
-      ? `M${left},${bottom}V${top + r}Q${left},${top} ${left + r},${top}H${left + w - r}Q${left + w},${top} ${left + w},${top + r}V${bottom}Z`
-      : `M${left},${top}V${bottom - r}Q${left},${bottom} ${left + r},${bottom}H${left + w - r}Q${left + w},${bottom} ${left + w},${bottom - r}V${top}Z`;
+      ? `M${start},${bottom}V${top + r}Q${start},${top} ${start + r},${top}H${start + w - r}Q${start + w},${top} ${start + w},${top + r}V${bottom}Z`
+      : `M${start},${top}V${bottom - r}Q${start},${bottom} ${start + r},${bottom}H${start + w - r}Q${start + w},${bottom} ${start + w},${bottom - r}V${top}Z`;
   };
   return (
-    <div className="relative">
+    <div ref={box} className="relative">
       <svg
         viewBox={`0 0 ${W} ${H}`}
         role="img"
@@ -111,27 +141,27 @@ function CartesianChart({ spec }: { spec: ChartSpec }) {
         {ticks.map((v) => (
           <g key={v}>
             <line
-              x1={PAD.l}
-              x2={W - PAD.r}
+              x1={left}
+              x2={W - right}
               y1={y(v)}
               y2={y(v)}
-              style={GRID}
-              strokeDasharray={v === 0 ? undefined : '2 4'}
+              style={v === 0 || (v === lo && lo > 0) ? BASELINE : GRID}
+              shapeRendering="crispEdges"
             />
-            <text x={PAD.l - 8} y={y(v) + 3.5} textAnchor="end" fontSize="10.5" style={AXIS} className="tabular-nums">
+            <text x={left - 10} y={y(v) + 3.5} textAnchor="end" fontSize="10.5" style={AXIS} className="tabular-nums">
               {format(v)}
             </text>
           </g>
         ))}
         {spec.labels.map((label, i) =>
-          i % step ? null : (
-            <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="10.5" style={AXIS}>
+          (last - i) % step ? null : (
+            <text key={i} x={x(i)} y={H - 9} textAnchor="middle" fontSize="10.5" style={AXIS}>
               {short(label)}
             </text>
           ),
         )}
         {hover !== null && spec.type === 'line' && (
-          <line x1={x(hover)} x2={x(hover)} y1={PAD.t} y2={H - PAD.b} style={GRID} />
+          <line x1={x(hover)} x2={x(hover)} y1={PAD.t} y2={H - PAD.b} style={BASELINE} strokeDasharray="3 3" />
         )}
         {spec.type === 'bar' && hover !== null && (
           <rect
@@ -159,7 +189,7 @@ function CartesianChart({ spec }: { spec: ChartSpec }) {
           ) : (
             <g key={si}>
               <path
-                d={`M${x(0)},${y(lo < 0 ? 0 : lo)}${s.data.map((v, i) => `L${x(i)},${y(v)}`).join('')}L${x(s.data.length - 1)},${y(lo < 0 ? 0 : lo)}Z`}
+                d={`M${x(0)},${y(lo)}${s.data.map((v, i) => `L${x(i)},${y(v)}`).join('')}L${x(s.data.length - 1)},${y(lo)}Z`}
                 fill={`url(#${id}-${si})`}
               />
               <polyline
@@ -176,12 +206,24 @@ function CartesianChart({ spec }: { spec: ChartSpec }) {
                     key={i}
                     cx={x(i)}
                     cy={y(v)}
-                    r={3.5}
+                    r={4}
                     fill={PALETTE[si]}
                     stroke="var(--bg-elevated)"
                     strokeWidth={2}
                   />
                 ) : null,
+              )}
+              {endLabel && (
+                <text
+                  x={x(last) + 10}
+                  y={y(s.data[last]) + 3.5}
+                  fontSize="11"
+                  fontWeight={600}
+                  fill="var(--text-primary)"
+                  className="tabular-nums"
+                >
+                  {endLabel}
+                </text>
               )}
             </g>
           ),
@@ -201,10 +243,10 @@ function CartesianChart({ spec }: { spec: ChartSpec }) {
       {hover !== null && (
         <div
           role="tooltip"
-          className="pointer-events-none absolute top-0 z-10 min-w-[120px] -translate-x-1/2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2.5 py-2 text-[11.5px] shadow-lg"
+          className="pointer-events-none absolute top-0 z-10 min-w-[132px] -translate-x-1/2 rounded-lg border border-[color:color-mix(in_srgb,var(--text-primary)_12%,transparent)] bg-[var(--bg-input)] px-3 py-2 text-[11.5px] shadow-lg"
           style={{ left: `${Math.min(Math.max((x(hover) / W) * 100, 14), 86)}%` }}
         >
-          <p className="mb-1 font-medium text-[var(--text-primary)]">{spec.labels[hover]}</p>
+          <p className="mb-1.5 font-medium text-[var(--text-primary)]">{spec.labels[hover]}</p>
           {spec.series.map((s, si) => (
             <p key={si} className="flex items-center gap-1.5 text-[var(--text-secondary)]">
               <Swatch color={PALETTE[si]} />
@@ -228,10 +270,12 @@ export function horizontal(spec: ChartSpec): boolean {
 
 function HorizontalBars({ spec }: { spec: ChartSpec }) {
   const max = Math.max(...spec.series.flatMap((s) => s.data)) || 1;
+  // Every row shares the longest label's width, capped so the bars keep most of the space.
+  const columns = `min(${Math.max(...spec.labels.map((label) => label.length)) + 1}ch, 40%) 1fr`;
   return (
-    <ul role="img" aria-label={spec.title || 'Gráfico'} className="space-y-2.5">
+    <ul role="img" aria-label={spec.title || 'Gráfico'} className="flex flex-col gap-2.5">
       {spec.labels.map((label, i) => (
-        <li key={i} className="grid grid-cols-[minmax(0,38%)_1fr] items-center gap-3 text-[11.5px]">
+        <li key={i} className="grid items-center gap-4 text-[11.5px]" style={{ gridTemplateColumns: columns }}>
           <span className="truncate text-[var(--text-secondary)]" title={label}>
             {label}
           </span>
@@ -255,9 +299,20 @@ function HorizontalBars({ spec }: { spec: ChartSpec }) {
   );
 }
 
+export function donutSlices(spec: ChartSpec): { labels: string[]; data: number[] } {
+  const { labels } = spec;
+  const data = spec.series[0].data;
+  if (labels.length <= PALETTE.length) return { labels, data };
+  // Past the palette, colors would repeat; the smallest slices share one "Otros" slice.
+  const order = data.map((_, i) => i).sort((a, b) => data[b] - data[a]);
+  const kept = order.slice(0, PALETTE.length - 1).sort((a, b) => a - b);
+  const rest = order.slice(PALETTE.length - 1).reduce((sum, i) => sum + data[i], 0);
+  return { labels: [...kept.map((i) => labels[i]), 'Otros'], data: [...kept.map((i) => data[i]), rest] };
+}
+
 function DonutChart({ spec }: { spec: ChartSpec }) {
   const [hover, setHover] = useState<number | null>(null);
-  const data = spec.series[0].data;
+  const { labels, data } = donutSlices(spec);
   const total = data.reduce((sum, v) => sum + v, 0);
   const R = 80;
   const C = 2 * Math.PI * R;
@@ -303,12 +358,12 @@ function DonutChart({ spec }: { spec: ChartSpec }) {
             {format(hover === null ? total : data[hover])}
           </span>
           <span className="max-w-[90px] truncate text-[10.5px] text-[var(--text-muted)]">
-            {hover === null ? 'Total' : spec.labels[hover]}
+            {hover === null ? 'Total' : labels[hover]}
           </span>
         </div>
       </div>
-      <ul className="min-w-[160px] flex-1 space-y-1.5 text-[12px]">
-        {spec.labels.map((label, i) => (
+      <ul className="flex min-w-[160px] flex-1 flex-col gap-1.5 text-[12px]">
+        {labels.map((label, i) => (
           <li
             key={i}
             className="flex items-center gap-2"
@@ -332,17 +387,34 @@ function Frame({ lang, source }: { lang: 'svg' | 'html'; source: string }) {
   const [ready, setReady] = useState(false);
   const doc = useMemo(() => {
     const color = getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim() || 'CanvasText';
-    const base = `<style>html,body{margin:0;background:transparent;color:${color};font:13px system-ui,sans-serif}svg{display:block;max-width:100%;height:auto;margin:auto}</style>`;
+    const base = `<style>html,body{margin:0;background:transparent;color:${color};font:13px system-ui,sans-serif}svg{display:block;max-width:100%;max-height:480px;height:auto;margin:auto}</style>`;
     return sanitizeHtmlForPreview(
       lang === 'html' && /<html[\s>]/i.test(source)
         ? source.replace(/<head[^>]*>/i, (head) => head + base)
         : `<!doctype html><html><head><meta charset="utf-8">${base}</head><body>${source}</body></html>`,
     );
   }, [lang, source]);
+  const observer = useRef<ResizeObserver | null>(null);
+  useEffect(() => () => observer.current?.disconnect(), []);
+  // The first load can report the empty initial document, and the content keeps
+  // resizing with the chat width, so the height follows the document instead.
   const measure = () => {
-    const content = ref.current?.contentDocument?.documentElement.scrollHeight;
-    if (content) setHeight(Math.min(Math.max(content, 40), 640));
+    const frame = ref.current;
+    const root = frame?.contentDocument?.documentElement;
+    const Observer = (frame?.contentWindow as (Window & typeof globalThis) | null | undefined)?.ResizeObserver;
     setReady(true);
+    if (!root || !Observer) return;
+    const fit = () => {
+      const content = Math.ceil(root.getBoundingClientRect().height);
+      // A scrollbar narrows the content until it fits and then stays; only scroll past the cap.
+      root.style.overflowY = content > 640 ? 'auto' : 'hidden';
+      if (content) setHeight(Math.min(Math.max(content, 40), 640));
+    };
+    observer.current?.disconnect();
+    const next = new Observer(fit);
+    next.observe(root);
+    observer.current = next;
+    fit();
   };
   return (
     <iframe
@@ -355,6 +427,95 @@ function Frame({ lang, source }: { lang: 'svg' | 'html'; source: string }) {
       style={{ height }}
       className={`block w-full border-0 transition-opacity duration-200 ${ready ? 'opacity-100' : 'opacity-0'}`}
     />
+  );
+}
+
+const MERMAID_THEME = {
+  '--pele-bg': 'var(--bg-elevated)',
+  '--pele-fg': 'var(--text-primary)',
+  '--pele-muted': 'var(--text-muted)',
+  '--pele-line': 'var(--text-muted)',
+  '--pele-surface': 'color-mix(in srgb, var(--text-primary) 6%, transparent)',
+  '--pele-surface-alt': 'color-mix(in srgb, var(--text-primary) 10%, transparent)',
+  '--pele-border': 'color-mix(in srgb, var(--text-primary) 28%, transparent)',
+  '--pele-accent': 'var(--accent-primary)',
+  '--pele-critical': 'var(--accent-red)',
+  ...Object.fromEntries(PALETTE.map((color, i) => [`--pele-series-${i + 1}`, color])),
+} as CSSProperties;
+
+const MERMAID_KINDS: Record<string, string> = {
+  flowchart: 'Diagrama de flujo',
+  graph: 'Diagrama de flujo',
+  sequenceDiagram: 'Diagrama de secuencia',
+  classDiagram: 'Diagrama de clases',
+  stateDiagram: 'Diagrama de estados',
+  'stateDiagram-v2': 'Diagrama de estados',
+  erDiagram: 'Diagrama entidad-relación',
+  gantt: 'Cronograma',
+  pie: 'Gráfico circular',
+  mindmap: 'Mapa mental',
+  timeline: 'Línea de tiempo',
+};
+
+export function mermaidTitle(source: string): string {
+  const title = /^\s*(?:pie\s+)?title[\s:]\s*(.+?)\s*$/m.exec(source)?.[1].replace(/^["']|["']$/g, '');
+  if (title) return title;
+  const kind = /^\s*([\w-]+)/m.exec(source.replace(/^\s*---[\s\S]*?---/, '').replace(/^\s*%%.*$/gm, ''))?.[1];
+  return (kind && MERMAID_KINDS[kind]) || 'Diagrama';
+}
+
+function Mermaid({ source }: { source: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    let cancelled = false;
+    let mounted: { destroy(): void } | undefined;
+    const fail = (reason: unknown) => {
+      if (!cancelled) setError(reason instanceof Error ? reason.message : 'No se pudo dibujar el diagrama.');
+    };
+    Promise.all([import('pele/lazy'), import('dompurify')])
+      .then(([pele, { default: DOMPurify }]) => {
+        if (cancelled) return undefined;
+        const purifier = DOMPurify(window);
+        return pele.mountAsync(element, source, {
+          links: false,
+          images: false,
+          zoom: false,
+          autoDirection: false,
+          sanitize: (svg) =>
+            purifier.sanitize(svg, {
+              FORBID_ATTR: ['href', 'xlink:href', 'src', 'srcset'],
+              FORBID_TAGS: ['a', 'image', 'foreignObject', 'style'],
+              USE_PROFILES: { svg: true, svgFilters: true },
+              RETURN_DOM_FRAGMENT: true,
+            }),
+          onRender: () => setError(null),
+          onError: fail,
+        });
+      })
+      .then((result) => {
+        if (cancelled) result?.destroy();
+        else mounted = result;
+      }, fail);
+    return () => {
+      cancelled = true;
+      mounted?.destroy();
+    };
+  }, [source]);
+  return (
+    <>
+      {error && (
+        <div>
+          <p className="mb-1 text-[11.5px] text-[var(--accent-red)]">No se pudo dibujar el diagrama: {error}</p>
+          <pre className="overflow-auto whitespace-pre-wrap font-mono text-[12px] leading-[18px] text-[var(--text-secondary)]">
+            {source}
+          </pre>
+        </div>
+      )}
+      <div ref={ref} data-mermaid hidden={error !== null} style={MERMAID_THEME} className="flex justify-center [&_svg]:max-w-full" />
+    </>
   );
 }
 
@@ -387,15 +548,27 @@ function DataTable({ spec }: { spec: ChartSpec }) {
 }
 
 const TAB = 'rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors';
+const ICON_BUTTON =
+  'rounded-md p-1 text-[var(--text-muted)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_6%,transparent)] hover:text-[var(--text-primary)]';
 
 function ChatVisual({ lang, source, fallback }: { lang: string; source: string; fallback: ReactNode }) {
   const [showCode, setShowCode] = useState(false);
   const [copied, setCopied] = useState(false);
   const [imaged, setImaged] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const titleId = useId();
   const view = useRef<HTMLDivElement>(null);
   const spec = useMemo(() => (lang === 'chart' ? parseChart(source) : null), [lang, source]);
-  if (lang === 'chart' && !spec) return <>{fallback}</>;
-  const title = spec?.title || (lang === 'html' ? 'Interfaz' : lang === 'svg' ? 'Ilustración' : 'Gráfico');
+  if (lang === 'chart' && !spec)
+    return (
+      <div>
+        <p className="mb-1 text-[11.5px] text-[var(--text-muted)]">No se pudo dibujar el gráfico; se muestra su código.</p>
+        {fallback}
+      </div>
+    );
+  const title =
+    spec?.title ||
+    (lang === 'html' ? 'Interfaz' : lang === 'svg' ? 'Ilustración' : lang === 'mermaid' ? mermaidTitle(source) : 'Gráfico');
   const legend =
     spec && spec.type !== 'pie' && spec.series.length > 1
       ? spec.series.map((s, i) => ({ name: s.name, color: PALETTE[i] }))
@@ -425,12 +598,30 @@ function ChatVisual({ lang, source, fallback }: { lang: string; source: string; 
       })
       .catch(() => {});
   };
+  const body = (
+    <>
+      {legend.length > 0 && <Legend items={legend} />}
+      {spec ? (
+        spec.type === 'pie' ? (
+          <DonutChart spec={spec} />
+        ) : horizontal(spec) ? (
+          <HorizontalBars spec={spec} />
+        ) : (
+          <CartesianChart spec={spec} />
+        )
+      ) : lang === 'mermaid' ? (
+        <Mermaid source={source} />
+      ) : (
+        <Frame lang={lang as 'svg' | 'html'} source={source} />
+      )}
+    </>
+  );
   return (
     <section
       aria-label={title}
-      className="w-full overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]"
+      className="chat-visual w-full overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)]"
     >
-      <header className="flex items-center gap-2 border-b border-[var(--border-subtle)] px-3 py-2">
+      <header className="flex items-center gap-2 border-b border-[var(--border-subtle)] py-2 pl-4 pr-2.5">
         <p className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-[var(--text-primary)]">{title}</p>
         <div className="flex rounded-lg bg-[color:color-mix(in_srgb,var(--text-primary)_6%,transparent)] p-0.5">
           {(['Vista', 'Código'] as const).map((label) => {
@@ -448,7 +639,7 @@ function ChatVisual({ lang, source, fallback }: { lang: string; source: string; 
             );
           })}
         </div>
-        {spec && !showCode && (
+        {(spec || lang === 'mermaid') && !showCode && (
           <button
             type="button"
             onClick={copyImage}
@@ -457,6 +648,17 @@ function ChatVisual({ lang, source, fallback }: { lang: string; source: string; 
             className="rounded-md p-1 text-[var(--text-muted)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_6%,transparent)] hover:text-[var(--text-primary)]"
           >
             {imaged ? <Check size={13} /> : <ImageIcon size={13} />}
+          </button>
+        )}
+        {!showCode && (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            aria-label="Ampliar"
+            title="Ampliar"
+            className={ICON_BUTTON}
+          >
+            <Maximize2 size={13} />
           </button>
         )}
         <button
@@ -470,25 +672,32 @@ function ChatVisual({ lang, source, fallback }: { lang: string; source: string; 
         </button>
       </header>
       {showCode ? (
-        <pre className="max-h-[420px] overflow-auto whitespace-pre p-3 font-mono text-[12px] leading-[18px] text-[var(--text-secondary)]">
+        <pre className="max-h-[420px] overflow-auto whitespace-pre px-4 py-3 font-mono text-[12px] leading-[18px] text-[var(--text-secondary)]">
           {source}
         </pre>
       ) : (
-        <div ref={view} className="space-y-3 p-3">
-          {legend.length > 0 && <Legend items={legend} />}
-          {spec ? (
-            spec.type === 'pie' ? (
-              <DonutChart spec={spec} />
-            ) : horizontal(spec) ? (
-              <HorizontalBars spec={spec} />
-            ) : (
-              <CartesianChart spec={spec} />
-            )
-          ) : (
-            <Frame lang={lang as 'svg' | 'html'} source={source} />
-          )}
+        <div ref={view} className="space-y-4 px-4 pb-4 pt-3.5">
+          {body}
           {spec && <DataTable spec={spec} />}
         </div>
+      )}
+      {expanded && (
+        <DialogSurface portal labelledBy={titleId} onClose={() => setExpanded(false)} className="max-w-5xl p-3">
+          <div className="mb-3 flex items-center gap-2">
+            <h2 id={titleId} className="min-w-0 flex-1 truncate text-sm font-medium">
+              {title}
+            </h2>
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              aria-label="Cerrar vista ampliada"
+              className={ICON_BUTTON}
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="max-h-[80vh] space-y-3 overflow-auto rounded-lg bg-[var(--bg-elevated)] p-4">{body}</div>
+        </DialogSurface>
       )}
     </section>
   );
