@@ -252,8 +252,28 @@ def test_shell_runs_powershell_in_the_workspace(store):
     assert out["exit_code"] == 3
     assert out["stdout"].splitlines() == ["ñandú 5", str(store.drafts_dir("s1"))]
     assert "código 3" in out["error"] and agent.result_failed(json.dumps(out))
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_that_exceeds_its_timeout_continues_as_a_job_without_repeating(store):
+    command = "[Console]::Write('antes'); Start-Sleep -Seconds 3; [Console]::Write('despues')"
+    try:
+        out = _run(store, "shell_run", command=command, timeout_s=1)
+        assert out["status"] == "running" and out["exit_code"] is None and "error" not in out
+        assert out["output_id"] == out["job_id"] and "shell_job_status" in out["background"]
+        assert out["duration_s"] < 10 and not agent.result_failed(json.dumps(out))
+        finished = _wait_job(store, out["job_id"], {"exited"}, timeout=20)
+        assert finished["exit_code"] == 0
+        assert _run(store, "shell_output", output_id=out["output_id"])["content"] == "antesdespues"
+    finally:
+        computer_jobs.kill_all()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
+def test_shell_timeout_still_stops_the_command_when_no_job_slot_is_free(store, monkeypatch):
+    monkeypatch.setattr(computer_jobs, "_MAX_JOBS_PER_SESSION", 0)
     timed = _run(store, "shell_run", command="Start-Sleep -Seconds 20", timeout_s=1)
-    assert "superó 1 s" in timed["error"] and timed["duration_s"] < 10
+    assert "superó 1 s" in timed["error"] and timed["duration_s"] < 10 and "job_id" not in timed
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell")
