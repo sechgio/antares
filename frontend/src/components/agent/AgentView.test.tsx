@@ -805,7 +805,7 @@ it('descarta la lectura previa al envío y drena la actualización pendiente de 
   expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Mensaje nuevo', expect.any(String), []);
   await act(async () => { initial.resolve(empty); });
   expect(list).toHaveBeenCalledTimes(2);
-  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
+  expect(within(screen.getByRole('status', { name: 'Avisos del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
   await act(async () => {
     current.resolve({ ...empty, running: true, messages: [{ role: 'user', content: 'Mensaje nuevo', ts: 1 }] });
   });
@@ -824,7 +824,9 @@ it('no repite el estado de trabajo mientras una herramienta en curso ya lo muest
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
   expect(screen.getByRole('log', { name: 'Salida de npm test' })).toBeInTheDocument();
-  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Ejecutando algunos comandos')).toBeInTheDocument();
+  expect(within(screen.getByRole('status', { name: 'Avisos del agente' })).getByText('Ejecutando algunos comandos')).toBeInTheDocument();
+  expect(screen.queryByRole('region', { name: 'Atención del agente' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Ver detalles' })).not.toBeInTheDocument();
   expect(screen.queryByText('Trabajando en ello')).not.toBeInTheDocument();
   unmount();
   list.mockResolvedValue({ ...empty, running: true,
@@ -832,7 +834,7 @@ it('no repite el estado de trabajo mientras una herramienta en curso ya lo muest
   render(<AgentView />);
   await act(async () => {});
   expect(await screen.findByText(/Ejecutó/)).toBeInTheDocument();
-  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
+  expect(within(screen.getByRole('status', { name: 'Avisos del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
 });
 
 it('no aplica running=false de una lectura antigua mientras el envío sigue pendiente', async () => {
@@ -846,7 +848,7 @@ it('no aplica running=false de una lectura antigua mientras el envío sigue pend
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Mensaje nuevo' } });
   fireEvent.click(screen.getByLabelText('Enviar'));
   await act(async () => { initial.resolve(empty); });
-  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
+  expect(within(screen.getByRole('status', { name: 'Avisos del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
   await act(async () => { send.resolve({ accepted: true }); });
 });
 
@@ -865,7 +867,7 @@ it('mantiene el turno activo cuando un sondeo termina antes de que se acepte el 
   await act(async () => { vi.advanceTimersByTime(1500); });
   expect(list).toHaveBeenCalledTimes(2);
   await act(async () => { poll.resolve(empty); });
-  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
+  expect(within(screen.getByRole('status', { name: 'Avisos del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
   await act(async () => { send.resolve({ accepted: true }); });
 });
 
@@ -1433,7 +1435,7 @@ it('mantiene activo el primer turno mientras espera la aceptación del mensaje',
   await act(async () => {});
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Primer encargo' } });
   await act(async () => { fireEvent.keyDown(screen.getByLabelText('Mensaje para el agente'), { key: 'Enter' }); });
-  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
+  expect(within(screen.getByRole('status', { name: 'Avisos del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
   await act(async () => { send.resolve({ accepted: true }); });
 });
 
@@ -1679,7 +1681,7 @@ it('explica la actividad sin anunciar de nuevo los segundos transcurridos', asyn
   vi.useFakeTimers();
   render(<AgentView />);
   await act(async () => {});
-  expect(screen.getByRole('region', { name: 'Atención del agente' })).toHaveTextContent('Leyendo el archivo');
+  expect(screen.getByRole('status', { name: 'Avisos del agente' })).toHaveTextContent('Leyendo el archivo');
   const announcement = screen.getByRole('status', { name: 'Avisos del agente' });
   const mutations = vi.fn();
   const observer = new MutationObserver(mutations);
@@ -2039,7 +2041,7 @@ it.each([
   }] });
   render(<AgentView />);
   await act(async () => {});
-  expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText(phrase)).toBeVisible();
+  expect(within(screen.getByRole('status', { name: 'Avisos del agente' })).getByText(phrase)).toBeInTheDocument();
 });
 
 it('un ACK anterior no sustituye el recibo de una indicación más reciente', async () => {

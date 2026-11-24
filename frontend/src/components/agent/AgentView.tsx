@@ -104,7 +104,6 @@ import {
   AssistantTurn,
   DaySeparator,
   MessageRow,
-  ThinkingRow,
   ToolGroup,
   dayLabel,
   groupTurns,
@@ -376,8 +375,6 @@ export default function AgentView({
   const correctionInFlightRef = useRef(false);
   const [sendingCorrection, setSendingCorrection] = useState(false);
   const [stopping, setStopping] = useState(false);
-  const [runningSince, setRunningSince] = useState<number | null>(null);
-  const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<number | null>(null);
   const inFlightRef = useRef(false);
   const wantedRef = useRef<{ id: string; silent: boolean } | null>(null);
@@ -705,23 +702,6 @@ export default function AgentView({
       behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
     });
   };
-
-  useEffect(() => {
-    if (!running) {
-      setRunningSince(null);
-      setElapsed(0);
-      return;
-    }
-    setRunningSince((prev) => prev ?? Date.now());
-  }, [running]);
-
-  useEffect(() => {
-    if (runningSince == null) return;
-    const tick = window.setInterval(() => {
-      setElapsed(Math.max(0, Math.floor((Date.now() - runningSince) / 1000)));
-    }, 1000);
-    return () => window.clearInterval(tick);
-  }, [runningSince]);
 
   useEffect(() => {
     const ta = draftRef.current;
@@ -1991,17 +1971,13 @@ export default function AgentView({
               onCancel={(item) => void cancelProgress(item)}
             />
             {delegations.length > 0 && <SubagentRoster items={delegations} />}
-            {attention && (
+            {attention && attention.kind !== 'working' && (
               <div
                 role="region"
                 aria-label="Atención del agente"
                 className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2 px-3 py-2"
               >
-                {attention.kind === 'working' ? (
-                  <ThinkingRow elapsedSeconds={elapsed} agent={agentIdentity} label={attention.text} />
-                ) : (
-                  <p className="min-w-0 flex-1 text-[13px] text-[var(--text-secondary)]">{attention.text}</p>
-                )}
+                <p className="min-w-0 flex-1 text-[13px] text-[var(--text-secondary)]">{attention.text}</p>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -2016,17 +1992,10 @@ export default function AgentView({
                         behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
                       });
                       target?.querySelector<HTMLElement>('input, button, summary')?.focus({ preventScroll: true });
-                    } else {
-                      jumpToEnd();
-                      listRef.current?.focus({ preventScroll: true });
                     }
                   }}
                 >
-                  {attention.kind === 'stale'
-                    ? 'Reintentar actualización'
-                    : attention.kind === 'item'
-                      ? attention.action
-                      : 'Ver detalles'}
+                  {attention.kind === 'item' ? attention.action : 'Reintentar actualización'}
                 </Button>
               </div>
             )}
