@@ -260,7 +260,12 @@ def test_agent_broker_rules_and_undo_have_explicit_contracts():
     methods = _catalog()["methods"]
     rules = methods["agent_session_rules_set"]
     assert rules["handler"] == "native:agent"
-    assert rules["inputSchema"]["required"] == ["id", "rules"]
+    assert rules["inputSchema"]["required"] == ["id"]
+    scoped = rules["inputSchema"]["properties"]["scoped_rules"]["items"]
+    assert scoped["required"] == ["scope", "value", "decision"]
+    assert scoped["properties"]["scope"]["enum"] == ["path", "command", "domain", "app", "mcp"]
+    assert scoped["properties"]["decision"]["enum"] == ["allow", "ask", "deny"]
+    assert "required" not in methods["agent_policy_rules_set"]["inputSchema"]
     rule_props = rules["inputSchema"]["properties"]["rules"]["properties"]
     assert rule_props["terminal"]["enum"] == ["ask", "deny"]
     assert rule_props["other"]["enum"] == ["ask", "deny"]

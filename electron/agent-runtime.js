@@ -169,6 +169,7 @@ async function _open(options = {}) {
     };
     const policy = await harness.snapshot(PolicyDoc, ctx());
     shared.globalRules = { ...(policy && policy.rules ? policy.rules : {}) };
+    shared.globalScopedRules = Array.isArray(policy && policy.scoped_rules) ? policy.scoped_rules.map((rule) => ({ ...rule })) : [];
     await _indexConversations();
     await _restoreExecutionContext();
     if (!options.skipImport) {
@@ -540,28 +541,46 @@ async function policyState() {
   const doc = await shared.state.harness.snapshot(shared.state.PolicyDoc, ctx());
   return {
     rules: { ...((doc && doc.rules) || {}) },
+    scoped_rules: Array.isArray(doc && doc.scoped_rules) ? doc.scoped_rules.map((rule) => ({ ...rule })) : [],
     audit: Array.isArray(doc && doc.audit) ? doc.audit.slice(-50).map((entry) => ({ ...entry })) : [],
   };
 }
 
 async function policyRulesSet(params) {
-  let rules;
-  try {
-    rules = validateRules(params.rules);
-  } catch (err) {
-    throw validation(String((err && err.message) || err));
+  let rules = null;
+  if (params.rules !== undefined) {
+    try {
+      rules = validateRules(params.rules);
+    } catch (err) {
+      throw validation(String((err && err.message) || err));
+    }
   }
+  let scopedRules = null;
+  if (params.scoped_rules !== undefined) {
+    try {
+      scopedRules = require('./agent-policy-engine').validateScopedRules(params.scoped_rules);
+    } catch (err) {
+      throw validation(String((err && err.message) || err));
+    }
+  }
+  if (rules === null && scopedRules === null) throw validation('Indica las reglas de canal o las reglas con alcance');
   if ([...shared.live.values()].some((live) => live.run || (live.inbox || []).length)) {
     throw validation('Espera a que terminen los turnos para cambiar las reglas globales');
   }
   const result = await shared.state.harness.commit(async (tx) => {
     const doc = await tx.doc(shared.state.PolicyDoc);
     const before = { ...(doc.rules || {}) };
-    doc.rules = Object.keys(rules).length ? { ...rules } : {};
+    if (rules !== null) doc.rules = Object.keys(rules).length ? { ...rules } : {};
+    if (scopedRules !== null) doc.scoped_rules = scopedRules;
     doc.audit = auditRules(doc.audit, before, doc.rules, 'global');
-    return { rules: { ...doc.rules }, audit: doc.audit.slice(-50).map((entry) => ({ ...entry })) };
+    return {
+      rules: { ...doc.rules },
+      scoped_rules: Array.isArray(doc.scoped_rules) ? doc.scoped_rules.map((rule) => ({ ...rule })) : [],
+      audit: doc.audit.slice(-50).map((entry) => ({ ...entry })),
+    };
   }, ctx());
   shared.globalRules = { ...result.rules };
+  shared.globalScopedRules = result.scoped_rules.map((rule) => ({ ...rule }));
   return result;
 }
 
@@ -596,12 +615,23 @@ async function saveSessionRule(sessionId, channel, rule) {
 
 async function sessionRulesSet(params) {
   const sessionId = _text(params.id, 'la conversación', 120, true);
-  let rules;
-  try {
-    rules = validateRules(params.rules);
-  } catch (err) {
-    throw validation(String((err && err.message) || err));
+  let rules = null;
+  if (params.rules !== undefined) {
+    try {
+      rules = validateRules(params.rules);
+    } catch (err) {
+      throw validation(String((err && err.message) || err));
+    }
   }
+  let scopedRules = null;
+  if (params.scoped_rules !== undefined) {
+    try {
+      scopedRules = require('./agent-policy-engine').validateScopedRules(params.scoped_rules);
+    } catch (err) {
+      throw validation(String((err && err.message) || err));
+    }
+  }
+  if (rules === null && scopedRules === null) throw validation('Indica las reglas de canal o las reglas con alcance');
   const session = await requireSession(sessionId);
   const { pi } = shared.deps;
   return shared.state.harness.commit(async (tx) => {
@@ -612,11 +642,18 @@ async function sessionRulesSet(params) {
     const current = doc.sessions[sessionId];
     if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
     const before = { ...(current.approval_rules || {}) };
-    const savedRules = Object.keys(rules).length ? { ...rules } : null;
-    if (savedRules) current.approval_rules = savedRules;
-    else delete current.approval_rules;
+    let savedRules = null;
+    if (rules !== null) {
+      savedRules = Object.keys(rules).length ? { ...rules } : null;
+      if (savedRules) current.approval_rules = savedRules;
+      else delete current.approval_rules;
+    }
+    if (scopedRules !== null) {
+      if (scopedRules.length) current.scoped_rules = scopedRules;
+      else delete current.scoped_rules;
+    }
     const policy = await tx.doc(shared.state.PolicyDoc);
-    policy.audit = auditRules(policy.audit, before, savedRules || {}, 'session', sessionId);
+    policy.audit = auditRules(policy.audit, before, savedRules || before, 'session', sessionId);
     current.updated_at = Date.now();
     return {
       session: toPublicSession(current),
@@ -1387,6 +1424,46 @@ async function turnCancel(params) {
   return { cancelled: true };
 }
 
+function scopedRuleForApproval(approval) {
+  const engine = require('./agent-policy-engine');
+  const method = String((approval && approval.method) || '');
+  const params = (approval && approval.params) || {};
+  let candidate = null;
+  if (method === 'shell_run' || method === 'shell_job_start') {
+    const command = typeof params.command === 'string' ? params.command.trim() : '';
+    const singleSegment = command && !/&&|\|\||[;|]/.test(command);
+    if (singleSegment) candidate = { scope: 'command', value: command, decision: 'allow' };
+  } else if (typeof params.path === 'string' && params.path.trim() && /^(fs_|spreadsheet_)/.test(method)) {
+    candidate = { scope: 'path', value: params.path, decision: 'allow' };
+  } else if (/^mcp2?__/.test(method)) {
+    const body = method.startsWith('mcp2__') ? method.slice(6) : method.slice(5);
+    const sep = body.indexOf('__');
+    if (sep > 0) candidate = { scope: 'mcp', value: `${body.slice(0, sep)}/${body.slice(sep + 2)}`, decision: 'allow' };
+  }
+  if (!candidate) return null;
+  try {
+    return engine.validateScopedRules([candidate])[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function addSessionScopedRule(sessionId, rule) {
+  const engine = require('./agent-policy-engine');
+  return shared.state.harness.commit(async (tx) => {
+    const doc = await tx.doc(shared.state.SessionsDoc);
+    const current = doc.sessions[sessionId];
+    if (!current || current.deleted) return false;
+    const existing = Array.isArray(current.scoped_rules) ? current.scoped_rules : [];
+    const key = `${rule.scope}:${engine.normalizeScopeValue(rule.scope, rule.value)}`;
+    if (existing.some((item) => `${item.scope}:${item.value}` === key && item.decision === rule.decision)) return true;
+    const merged = [...existing.filter((item) => `${item.scope}:${item.value}` !== key), rule].slice(-engine.MAX_SCOPED_RULES);
+    current.scoped_rules = engine.validateScopedRules(merged);
+    current.updated_at = Date.now();
+    return true;
+  }, ctx());
+}
+
 async function approve(params, approved) {
   const approvalId = String((params && params.approval_id) || '');
   const channel = typeof params.channel === 'string' ? params.channel : '';
@@ -1416,8 +1493,12 @@ async function approve(params, approved) {
       ? String(approval.method || '')
       : null;
   if (remembered !== null && !remembered.startsWith('web_') && !remembered.startsWith('cua_') && approval.channel) {
+    // Recuerdo granular: si la acción tiene un objetivo extraíble (comando, ruta o herramienta MCP)
+    // se guarda una regla con scope exacto; solo cuando no hay objetivo se degrada al canal completo.
+    const scopedRule = scopedRuleForApproval(approval);
     try {
-      await saveSessionRule(String(approval.session_id), String(approval.channel), 'allow');
+      if (scopedRule) await addSessionScopedRule(String(approval.session_id), scopedRule);
+      else await saveSessionRule(String(approval.session_id), String(approval.channel), 'allow');
     } catch {}
   }
   execution.notifyDecision(approvalId);

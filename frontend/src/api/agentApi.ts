@@ -15,7 +15,14 @@ export type AgentPermissionMode = 'ask' | 'auto' | 'full';
 export type AgentChannel = 'terminal' | 'files' | 'desktop' | 'cloud' | 'mcp' | 'documents' | 'memory' | 'agenda' | 'other';
 export type AgentChannelRule = 'ask' | 'allow' | 'deny';
 export type AgentApprovalRules = Partial<Record<AgentChannel, AgentChannelRule>>;
-export type AgentApprovalSource = 'manual' | 'rule' | 'full' | 'web' | 'cancel';
+export type AgentApprovalSource = 'manual' | 'rule' | 'full' | 'web' | 'cancel' | 'scoped' | 'smart';
+export type AgentScopedRuleScope = 'path' | 'command' | 'domain' | 'app' | 'mcp';
+
+export interface AgentScopedRule {
+  scope: AgentScopedRuleScope;
+  value: string;
+  decision: AgentChannelRule;
+}
 
 export interface AgentUndo {
   available: boolean;
@@ -46,6 +53,7 @@ export interface AgentSession {
   last_error: string | null;
   permission_mode?: AgentPermissionMode;
   approval_rules?: AgentApprovalRules;
+  scoped_rules?: AgentScopedRule[];
   reasoning_effort?: AgentReasoningEffort;
   reasoning_levels?: AgentReasoningEffort[];
   profile?: { id: string; name: string };
@@ -377,14 +385,17 @@ export const agentApi = {
   agentSessionPermissionsSet: (id: string, permission_mode: AgentPermissionMode) =>
     _invoke<{ session: AgentSession }>('agent_session_permissions_set', { id, permission_mode }),
 
-  agentSessionRulesSet: (id: string, rules: AgentApprovalRules) =>
-    _invoke<{ session: AgentSession; audit?: AgentRuleAudit[] }>('agent_session_rules_set', { id, rules }),
+  agentSessionRulesSet: (id: string, rules: AgentApprovalRules, scoped_rules?: AgentScopedRule[]) =>
+    _invoke<{ session: AgentSession; audit?: AgentRuleAudit[] }>('agent_session_rules_set', { id, rules, ...(scoped_rules ? { scoped_rules } : {}) }),
 
   agentPolicyGet: () =>
-    _invoke<{ rules: AgentApprovalRules; audit: AgentRuleAudit[] }>('agent_policy_get'),
+    _invoke<{ rules: AgentApprovalRules; scoped_rules?: AgentScopedRule[]; audit: AgentRuleAudit[] }>('agent_policy_get'),
 
-  agentPolicyRulesSet: (rules: AgentApprovalRules) =>
-    _invoke<{ rules: AgentApprovalRules; audit: AgentRuleAudit[] }>('agent_policy_rules_set', { rules }),
+  agentPolicyRulesSet: (rules: AgentApprovalRules, scoped_rules?: AgentScopedRule[]) =>
+    _invoke<{ rules: AgentApprovalRules; scoped_rules?: AgentScopedRule[]; audit: AgentRuleAudit[] }>(
+      'agent_policy_rules_set',
+      { rules, ...(scoped_rules ? { scoped_rules } : {}) },
+    ),
 
   agentSessionReasoningSet: (id: string, reasoning_effort: AgentReasoningEffort) =>
     _invoke<{ session: AgentSession }>('agent_session_reasoning_set', { id, reasoning_effort }),

@@ -52,6 +52,7 @@ const shared = {
   providerOverrides: new Map(),
   nativeTools: null,
   globalRules: {},
+  globalScopedRules: [],
   attachments: new Map(),
   dialog: null,
   notify: null,
