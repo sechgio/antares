@@ -54,38 +54,62 @@ export function tableTsv(columns: string[], rows: Cell[][]): string {
   return [columns, ...rows].map((row) => row.map(clean).join('\t')).join('\n');
 }
 
-function PanelFrame({ title, answered, meta, children }: { title: string; answered?: boolean; meta?: ReactNode; children: ReactNode }) {
-  return <section aria-label={title} data-panel-state={answered ? 'answered' : 'open'} className="agent-panel">
+function PanelFrame({ title, answered, dismissed, onDismiss, meta, children }: {
+  title: string; answered?: boolean; dismissed?: boolean; onDismiss?: () => void; meta?: ReactNode; children: ReactNode;
+}) {
+  return <section aria-label={title} data-panel-state={answered ? 'answered' : dismissed ? 'dismissed' : 'open'} className="agent-panel">
     <p className="agent-panel__title">{title}{answered
       ? <span className="agent-panel__meta"><Check size={11} className="mr-0.5 inline" aria-hidden="true" />Respondido</span>
-      : meta && <span className="agent-panel__meta">{meta}</span>}</p>
+      : dismissed
+        ? <span className="agent-panel__meta">Omitido</span>
+        : meta && <span className="agent-panel__meta">{meta}</span>}
+    {onDismiss && <button type="button" className="agent-panel__dismiss" aria-label={`Omitir ${title}`} title="Seguir sin responder" onClick={onDismiss}>Omitir</button>}</p>
     {children}
   </section>;
 }
 
 function ChoicePanel({ panel, props, onRespond }: PanelViewProps<z.infer<typeof choiceSchema>>) {
   const [pending, setPending] = useState<string | null>(null);
+  const [other, setOther] = useState('');
   const answered = panel.status === 'answered';
+  const closed = panel.status !== 'open';
   const chosen = panel.response && 'choice' in panel.response ? panel.response.choice : pending;
+  const custom = chosen && !props.options.includes(chosen) ? chosen : null;
   const choose = async (choice: string) => {
     setPending(choice);
     try { await onRespond(panel, { choice }); } finally { setPending(null); }
   };
-  const shortcuts = !answered && props.options.length <= 9;
+  const shortcuts = !closed && props.options.length <= 9;
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const index = Number(event.key) - 1;
     if (!shortcuts || pending !== null || event.altKey || event.ctrlKey || event.metaKey || !(index >= 0 && index < props.options.length)) return;
     event.preventDefault();
     void choose(props.options[index]);
   };
-  return <PanelFrame title={props.prompt} answered={answered}>
+  const dismiss = closed || pending !== null ? undefined : () => {
+    setPending('');
+    void onRespond(panel, { dismissed: true }).finally(() => setPending(null));
+  };
+  return <PanelFrame title={props.prompt} answered={answered} dismissed={panel.status === 'dismissed'} onDismiss={dismiss}>
     <div className="agent-panel__options" onKeyDown={onKeyDown}>
       {props.options.map((option, index) => <button key={option} type="button" className="agent-panel__option" aria-pressed={chosen === option}
-        aria-keyshortcuts={shortcuts ? String(index + 1) : undefined} disabled={answered || pending !== null} onClick={() => void choose(option)}>
+        aria-keyshortcuts={shortcuts ? String(index + 1) : undefined} disabled={closed || pending !== null} onClick={() => void choose(option)}>
         {chosen === option && <Check size={13} strokeWidth={2.5} aria-hidden="true" />}
         {shortcuts && <kbd aria-hidden="true" className="agent-panel__key">{index + 1}</kbd>}{option}
       </button>)}
+      {custom && <button type="button" className="agent-panel__option" aria-pressed="true" disabled>
+        <Check size={13} strokeWidth={2.5} aria-hidden="true" />{custom}
+      </button>}
     </div>
+    {!closed && <form className="agent-panel__other" onSubmit={(event) => {
+      event.preventDefault();
+      if (other.trim()) void choose(other.trim());
+    }}>
+      <input aria-label="Otra respuesta" value={other} maxLength={2000} placeholder="Otra respuesta…" disabled={pending !== null}
+        className="agent-panel__input" onChange={(event) => setOther(event.target.value)} />
+      <button type="submit" className="agent-panel__tool" aria-label="Enviar otra respuesta" title="Enviar"
+        disabled={pending !== null || !other.trim()}><ArrowRight size={14} aria-hidden="true" /></button>
+    </form>}
   </PanelFrame>;
 }
 
@@ -108,6 +132,9 @@ function FormPanel({ panel, props, onRespond }: PanelViewProps<z.infer<typeof fo
     }
   };
   const title = props.title || 'Completa los datos';
+  if (panel.status === 'dismissed') {
+    return <PanelFrame title={title} dismissed><p className="agent-panel__note">Seguiste sin completar este formulario.</p></PanelFrame>;
+  }
   if (answered) {
     return <PanelFrame title={title} answered>
       <dl className="agent-panel__summary">
@@ -119,7 +146,11 @@ function FormPanel({ panel, props, onRespond }: PanelViewProps<z.infer<typeof fo
       </dl>
     </PanelFrame>;
   }
-  return <PanelFrame title={title}>
+  const dismiss = busy ? undefined : () => {
+    setBusy(true);
+    void onRespond(panel, { dismissed: true }).finally(() => setBusy(false));
+  };
+  return <PanelFrame title={title} onDismiss={dismiss}>
     <form className="agent-panel__fields" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       {props.fields.map((field) => {
         const id = `panel-${panel.id}-${field.name}`;

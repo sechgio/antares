@@ -260,11 +260,11 @@ export interface AgentPanel {
   call_id: string;
   type: string;
   props: Record<string, unknown>;
-  status: 'open' | 'answered';
+  status: 'open' | 'answered' | 'dismissed';
   response: AgentPanelResponse | null;
   created_at: number;
 }
-export type AgentPanelResponse = { choice: string } | { values: Record<string, string | number | boolean> };
+export type AgentPanelResponse = { choice: string } | { values: Record<string, string | number | boolean> } | { dismissed: true };
 
 export interface AgentBrowserTab {
   id: string;

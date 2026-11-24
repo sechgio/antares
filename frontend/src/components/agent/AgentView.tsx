@@ -406,6 +406,11 @@ export default function AgentView({
     [turns, artifacts, panels],
   );
   const turnPanels = useMemo(() => placePanels(turns, panels), [turns, panels]);
+  const lastTurn = turns[turns.length - 1];
+  const openPanel =
+    lastTurn?.role === 'assistant'
+      ? turnPanels.get(lastTurn.key)?.find((panel) => panel.status === 'open' && (panel.type === 'choice' || panel.type === 'form'))
+      : undefined;
   const attention: ConversationAttention | null =
     sessionId !== sessionIdRef.current
       ? null
@@ -435,7 +440,15 @@ export default function AgentView({
               ? activeCall || !messages.some((message) => message.partial)
                 ? { kind: 'working', key: `working:${activeCall?.id ?? 'turn'}`, text: activityText(activeCall?.name) }
                 : null
-              : artifact
+              : openPanel
+                ? {
+                    kind: 'item',
+                    key: `panel:${openPanel.id}`,
+                    text: 'El agente espera tu respuesta en el panel.',
+                    target: `agent-panel-${openPanel.id}`,
+                    action: 'Responder',
+                  }
+                : artifact
                 ? {
                     kind: 'item',
                     key: `artifact:${artifact.id}:${artifact.files.map((file) => file.sha256).join(',')}`,
@@ -1331,10 +1344,16 @@ export default function AgentView({
 
   const respondPanel = async (panel: AgentPanel, response: AgentPanelResponse) => {
     if (!sessionId) return;
+    if (sendInFlightRef.current || modelBusy || stopping || selectingWorkspace) {
+      addToast({ message: 'Espera un momento y vuelve a responder el panel', type: 'warning' });
+      return;
+    }
     try {
       const { message } = await agentApi.agentPanelRespond(sessionId, panel.id, response);
       setPanels((current) =>
-        current.map((item) => (item.id === panel.id ? { ...item, status: 'answered', response } : item)),
+        current.map((item) =>
+          item.id === panel.id ? { ...item, status: 'dismissed' in response ? 'dismissed' : 'answered', response } : item,
+        ),
       );
       await send(false, message);
     } catch (err) {

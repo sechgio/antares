@@ -56,6 +56,21 @@ def test_form_response_lists_values_and_other_sessions_are_isolated(dispatch):
     assert out["message"] == f"[panel:{panel_id}] Formulario enviado:\n- zona: Norte\n- urgente: true"
 
 
+def test_dismissing_a_panel_closes_it_and_tells_the_agent(dispatch, tmp_path):
+    panel_id = dispatch("ask-2", "panel_show", {"type": "choice", "props": {"prompt": "¿Formato?", "options": ["PDF"]}})["panel"]["id"]
+    respond = agent_internal.HANDLERS["agent_panel_respond"]
+    out = respond({"session_id": "s1", "panel_id": panel_id, "response": {"dismissed": True}})
+    assert out["message"] == f"[panel:{panel_id}] El usuario omitió el panel sin responder."
+    assert out["panel"]["status"] == "dismissed"
+    with pytest.raises(Exception, match="ya no está activo"):
+        respond({"session_id": "s1", "panel_id": panel_id, "response": {"choice": "PDF"}})
+    [reloaded] = agent.AgentStore(tmp_path / "agent").panels_for("s1")
+    assert reloaded["status"] == "dismissed"
+    table_id = dispatch("table-2", "panel_show", {"type": "table", "props": {"columns": ["OT"], "rows": [[1]]}})["panel"]["id"]
+    with pytest.raises(Exception, match="no admite respuestas"):
+        respond({"session_id": "s1", "panel_id": table_id, "response": {"dismissed": True}})
+
+
 def test_invalid_panels_are_rejected_and_tables_take_no_answers(dispatch):
     assert "error" in dispatch("bad-1", "panel_show", {"type": "page", "props": {}})
     assert "error" in dispatch("bad-2", "panel_show", {"type": "choice", "props": {"text": "x" * 210_000}})

@@ -2136,8 +2136,12 @@ it('responde un panel del chat como mensaje de usuario con referencia al panel',
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
   const card = await screen.findByRole('region', { name: '¿Qué formato?' });
+  const attention = screen.getByRole('region', { name: 'Atención del agente' });
+  expect(attention).toHaveTextContent('El agente espera tu respuesta en el panel.');
+  expect(within(attention).getByRole('button', { name: 'Responder' })).toHaveAttribute('aria-controls', 'agent-panel-p1');
   await act(async () => { fireEvent.click(within(card).getByRole('button', { name: 'Excel' })); });
   expect(respond).toHaveBeenCalledExactlyOnceWith('s1', 'p1', { choice: 'Excel' });
   await waitFor(() => expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', '[panel:p1] Opción elegida: Excel', expect.any(String), []));
   expect(screen.getByRole('region', { name: '¿Qué formato?' })).toHaveAttribute('data-panel-state', 'answered');
+  expect(screen.queryByRole('region', { name: 'Atención del agente' })).toBeNull();
 });

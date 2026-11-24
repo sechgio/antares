@@ -970,6 +970,32 @@ it('elige una opción con su número cuando el panel tiene el foco', async () =>
   await waitFor(() => expect(onPanelRespond).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }), { choice: 'Excel' }));
 });
 
+it('responde un panel choice con texto libre y lo muestra marcado al quedar respondido', async () => {
+  const { onPanelRespond, unmount } = renderPanel(makePanel('choice', { prompt: '¿Qué formato?', options: ['PDF', 'Excel'] }));
+  const send = screen.getByRole('button', { name: 'Enviar otra respuesta' });
+  expect(send).toBeDisabled();
+  fireEvent.change(screen.getByRole('textbox', { name: 'Otra respuesta' }), { target: { value: '  Word  ' } });
+  fireEvent.click(send);
+  await waitFor(() => expect(onPanelRespond).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }), { choice: 'Word' }));
+  unmount();
+  renderPanel(makePanel('choice', { prompt: '¿Qué formato?', options: ['PDF', 'Excel'] }, { status: 'answered', response: { choice: 'Word' } }));
+  expect(screen.getByRole('button', { name: 'Word' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.queryByRole('textbox', { name: 'Otra respuesta' })).toBeNull();
+});
+
+it('omite un panel abierto y lo deja cerrado como omitido al recargarlo', async () => {
+  const { onPanelRespond, unmount } = renderPanel(makePanel('form', { title: 'Datos', fields: [{ name: 'zona', label: 'Zona' }] }));
+  fireEvent.click(screen.getByRole('button', { name: 'Omitir Datos' }));
+  await waitFor(() => expect(onPanelRespond).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }), { dismissed: true }));
+  unmount();
+  renderPanel(makePanel('choice', { prompt: '¿Qué formato?', options: ['PDF'] }, { status: 'dismissed', response: { dismissed: true } }));
+  const panel = screen.getByRole('region', { name: '¿Qué formato?' });
+  expect(panel).toHaveAttribute('data-panel-state', 'dismissed');
+  expect(within(panel).getByText('Omitido')).toBeVisible();
+  expect(within(panel).queryByRole('button', { name: /Omitir/ })).toBeNull();
+  expect(within(panel).getByRole('button', { name: 'PDF' })).toBeDisabled();
+});
+
 it('conserva el borrador de un formulario si el panel se vuelve a montar', async () => {
   const panel = makePanel('form', { title: 'Borrador', fields: [{ name: 'zona', label: 'Zona' }] }, { id: 'p-borrador' });
   const { onPanelRespond, unmount } = renderPanel(panel);
