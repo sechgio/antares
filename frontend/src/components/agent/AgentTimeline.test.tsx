@@ -357,6 +357,22 @@ it('en la vista de pensamiento la fila cerrada no copia la cadena', () => {
   expect(screen.getByText(/Comparo/).closest('[aria-hidden="true"]')).not.toBeNull();
 });
 
+it('oculta la cadena de un agente y conserva solo el estado genérico mientras piensa', () => {
+  const reasoning = 'Comparo las plantillas\nY luego elijo';
+  const { rerender } = render(<AssistantTurn view="verbose" hideReasoning messages={[{
+    role: 'assistant', content: 'Listo', reasoning, reasoning_ms: 2_000, ts: 1,
+  }]} />);
+  expect(screen.getByText('Listo')).toBeVisible();
+  expect(screen.queryByText(/Comparo/)).toBeNull();
+  expect(screen.queryByRole('button', { name: /Pensó/ })).toBeNull();
+
+  rerender(<AssistantTurn view="verbose" hideReasoning messages={[{
+    role: 'assistant', content: '', reasoning, partial: true, ts: 2,
+  }]} />);
+  expect(screen.queryByText(/Comparo/)).toBeNull();
+  expect(screen.getByRole('status')).toHaveTextContent(thinkingPhrase('reasoning-0'));
+});
+
 it('pinta los avisos del sistema aparte sin quitar la respuesta ni mezclarse con el trabajo', () => {
   const turns = groupTurns([
     { role: 'user', content: 'Revisa', ts: 1 },
