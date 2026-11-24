@@ -882,3 +882,35 @@ def test_path_status_reuses_workspace_and_grant_resolution(store, tmp_path):
         computer_files.stat_path(str(existing), {}, root)
     store.add_grants("s1", [resource_grants.grant_record(str(existing), None)])
     assert computer_files.stat_path(str(existing), store.grants_for("s1"), root)["exists"] is True
+
+
+def test_write_approval_carries_a_bounded_diff_of_the_replacement(store):
+    _run(store, "fs_write", path="informe.txt", content="línea uno\nlínea dos\nlínea tres\n")
+    intent = agent_internal._intent("s1", "fs_write", {
+        "path": "informe.txt", "content": "línea uno\nlínea cambiada\nlínea tres\nlínea cuatro\n", "overwrite": True,
+    })
+    diff = intent["context"]["write_diff"]
+    assert diff["added_lines"] == 2 and diff["removed_lines"] == 1
+    assert "-línea dos" in diff["preview"] and "+línea cambiada" in diff["preview"]
+    assert diff["truncated"] is False and diff["unchanged"] is False
+
+
+def test_write_diff_is_none_for_new_binary_or_identical_files(store):
+    fresh = agent_internal._intent("s1", "fs_write", {"path": "nuevo.txt", "content": "x"})
+    assert "write_diff" not in fresh["context"], "un archivo nuevo no tiene nada que comparar"
+    _run(store, "fs_write", path="igual.txt", content="mismo\n")
+    same = agent_internal._intent("s1", "fs_write", {"path": "igual.txt", "content": "mismo\n", "overwrite": True})
+    assert same["context"]["write_diff"]["unchanged"] is True
+    assert same["context"]["write_diff"]["added_lines"] == 0
+    docx = pytest.importorskip("docx")
+    _run(store, "fs_write", path="carta.docx", content="cuerpo")
+    word = agent_internal._intent("s1", "fs_write", {"path": "carta.docx", "content": "otro", "overwrite": True})
+    assert "write_diff" not in word["context"], "el docx no se compara como texto plano"
+
+
+def test_write_diff_never_breaks_the_approval(store):
+    _run(store, "fs_write", path="binario.txt", content="texto inicial")
+    (store.drafts_dir("s1") / "binario.txt").write_bytes(b"\xff\xfe\x00\x01binario")
+    intent = agent_internal._intent("s1", "fs_write", {"path": "binario.txt", "content": "nuevo", "overwrite": True})
+    assert "write_diff" not in intent["context"], "un archivo no decodificable no rompe la aprobación"
+    assert intent["resources"][0]["sha256"], "la revisión del archivo sigue verificándose"
