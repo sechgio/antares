@@ -35,10 +35,24 @@ it('lista solo las rutinas activas del agente y crea las nuevas en su conversaci
   expect(list.getAllByRole('listitem')).toHaveLength(1);
   expect(list.getByText('Rutina diaria')).toBeInTheDocument();
   expect(list.getByText('cada día')).toBeInTheDocument();
+  expect(list.getByText('Antigua')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Conversación de la rutina' })).toHaveTextContent('Reciente');
   fireEvent.change(screen.getByLabelText('Encargo de la rutina'), { target: { value: 'Resume los correos' } });
   fireEvent.change(screen.getByLabelText('Repetir cada (minutos)'), { target: { value: '60' } });
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Añadir' })); });
   expect(save).toHaveBeenCalledWith(expect.objectContaining({ session_id: 'new', content: 'Resume los correos', every_minutes: 60 }));
+});
+
+it('programa la rutina en la conversación seleccionada del mismo agente', async () => {
+  vi.spyOn(agentApi, 'agentTasksList').mockResolvedValue({ queues: [], tasks: [] });
+  const save = vi.spyOn(agentApi, 'agentTasksSave').mockResolvedValue({ scheduled: task('nueva', {}) });
+  await act(async () => { render(<AgentRoutines profileId="bot" />); });
+  fireEvent.click(screen.getByRole('button', { name: 'Conversación de la rutina' }));
+  expect(screen.queryByRole('option', { name: 'Otra' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('option', { name: 'Antigua' }));
+  fireEvent.change(screen.getByLabelText('Encargo de la rutina'), { target: { value: 'Resume los correos' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Añadir' })); });
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ session_id: 'old' }));
 });
 
 it('cancela una rutina y avisa cuando el agente ya tiene tres', async () => {

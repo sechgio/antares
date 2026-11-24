@@ -143,6 +143,16 @@ def test_private_memory_context_accepts_legacy_calls_and_checks_profile_scope():
             jsonschema.validate({**params, "profile_id": profile_id}, entry["inputSchema"])
 
 
+def test_memory_revision_is_private_and_idempotent():
+    from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
+
+    method = "agent_internal_memory_revision"
+    entry = _catalog()["methods"][method]
+    assert entry["internal"] is True and entry["idempotent"] is True
+    assert entry["outputSchema"]["properties"]["revision"] == {"type": "integer", "minimum": 0}
+    assert method not in ORCHESTRATABLE_METHODS
+
+
 def test_agent_memory_update_declares_optional_journal_date():
     import jsonschema
 

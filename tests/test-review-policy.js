@@ -320,7 +320,7 @@ function testEvaluatePolicy() {
 
   const huge = policy.evaluatePolicy({
     number: 2,
-    body: goodPrBody(),
+    body: `${goodPrBody()}\n\ncambio amplio: el alcance está declarado y se verificó el resultado.`,
     additions: 2400,
     deletions: 20,
     files: [{ path: 'backend/handlers/nuevo.py', additions: 2400, deletions: 0, status: 'added' }],
@@ -328,7 +328,8 @@ function testEvaluatePolicy() {
     comments: [],
     author: { login: 'sechgio' },
   });
-  eq(huge.verdict, 'blocked', 'un PR de 2420 líneas sin declarar se bloquea');
+  eq(huge.verdict, 'blocked', 'un PR de 2420 líneas se bloquea aunque declare su alcance');
+  assert(huge.checks.some((c) => c.id === 'alcance' && c.status === 'pass'), 'el marcador declara el alcance del PR');
   assert(
     huge.checks.some((c) => c.id === 'tamano' && c.status === 'fail' && c.severity === policy.BLOCKING),
     'bloquea por tamaño',

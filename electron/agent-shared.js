@@ -45,7 +45,6 @@ const shared = {
   turns: new Map(),
   turnRuns: new Map(),
   skillIndexes: new Map(),
-  memorySnapshots: new Set(),
   unattendedApps: new Map(),
   waitingInput: new Set(),
   wakers: new Set(),

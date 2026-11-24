@@ -162,11 +162,15 @@ class MemoryStore:
         self._tool_versions: dict[str, str] = dict(data.get("tool_versions") or {})
         self._profiles: dict[str, str] = dict(data.get("profiles") or {})
         self._scopes: dict[str, str] = dict(data.get("scopes") or {})
+        self.revision = int(data.get("revision") or 0)
 
-    def _write(self) -> None:
+    def _write(self, *, user_change: bool = False) -> None:
+        revision = self.revision + int(user_change)
         atomic_write_json(self._path, {"items": self._items, "applied": self._applied,
                                      "tool_versions": self._tool_versions, "profiles": self._profiles,
+                                     **({"revision": revision} if revision else {}),
                                      **({"scopes": self._scopes} if self._scopes else {})})
+        self.revision = revision
 
     @staticmethod
     def _view(item: JsonObject) -> JsonObject:
@@ -333,7 +337,7 @@ class MemoryStore:
                 item["updated_at"] = _now()
             else:
                 raise ValueError("Acción de memoria no válida")
-            self._write()
+            self._write(user_change=True)
             return self._view(item)
 
     def delete(self, item_id: str) -> bool:
@@ -342,7 +346,7 @@ class MemoryStore:
             self._applied = {sid: [i for i in ids if i != item_id] for sid, ids in self._applied.items()}
             self._applied = {sid: ids for sid, ids in self._applied.items() if ids}
             if removed:
-                self._write()
+                self._write(user_change=True)
             return removed
 
     def search(self, query: str, limit: int = 10, *, session_id: str | None = None,

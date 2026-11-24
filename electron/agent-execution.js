@@ -6,6 +6,7 @@ const { channelFor, channelLabel } = require('./agent-channels');
 const { control_tool_results: CONTROL_TOOL_RESULT_NAMES } = require('../shared/agent-tool-output.json');
 const { stableJson } = require('./stable-json');
 const { clampRetryAfterMs } = require('./agent-http');
+const { splitMemorySnapshot } = require('./agent-prompts');
 const script = require('./agent-script');
 
 const {
@@ -788,8 +789,9 @@ async function refreshTools() {
             );
             if (budget && budget.exhausted) await pauseForBudget(api, context, 'token_budget');
             await noteTurnStart(api, messages || []);
-            const compacted = await compactRequest(messages, api, context);
-            const prepared = compacted || messages;
+            const currentMemory = withoutOldMemorySnapshots(messages);
+            const compacted = await compactRequest(currentMemory, api, context);
+            const prepared = compacted || currentMemory;
             const enveloped = envelopeToolResults(prepared);
             const rounds = shared.rounds.get(api.conversationId) || 0;
             const turn = shared.turns.get(api.conversationId);
@@ -877,6 +879,20 @@ function leadingSystem(messages) {
   const index = messages.findIndex((message) => message.role === 'system');
   if (index <= 0) return undefined;
   return { messages: [messages[index], ...messages.slice(0, index), ...messages.slice(index + 1)] };
+}
+
+function withoutOldMemorySnapshots(messages) {
+  const latest = messages.findLastIndex((message) => message.role === 'system' && message.sections?.instructions !== undefined);
+  let cleaned;
+  for (let index = 0; index < latest; index += 1) {
+    const message = messages[index];
+    if (message.role !== 'system' || !message.sections?.instructions) continue;
+    const { stable, snapshot } = splitMemorySnapshot(message.sections.instructions);
+    if (!snapshot) continue;
+    cleaned ||= messages.slice();
+    cleaned[index] = { ...message, sections: { ...message.sections, instructions: `${stable}\n</instructions>` } };
+  }
+  return cleaned || messages;
 }
 
 const CONTROL_TOOL_RESULTS = new Set(CONTROL_TOOL_RESULT_NAMES);

@@ -92,6 +92,11 @@ function main() {
   const preloadMethods = extractPreloadMethods(preloadSource);
   const knownUsedMethods = new Set([...apiMethods, ...preloadMethods]);
   const allowed = catalog.METHOD_NAMES;
+  const memoryRevision = 'agent_internal_memory_revision';
+  if (!allowed.has(memoryRevision) || knownUsedMethods.has(memoryRevision)
+    || !catalog.INTERNAL_METHODS.has(memoryRevision) || !catalog.IDEMPOTENT_METHODS.has(memoryRevision)) {
+    throw new Error('La revisión de memoria es una lectura privada del agente.');
+  }
   const imagePreview = catalog.METHODS.agent_artifact_action;
   const internalImagePreview = catalog.METHODS.agent_internal_artifact_action;
   if (!apiMethods.has('agent_artifact_action') || imagePreview.handler !== 'native:agent'
