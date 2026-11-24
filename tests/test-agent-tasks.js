@@ -566,8 +566,8 @@ async function triggerChain() {
       /no admite fecha/,
     );
     await assert.rejects(
-      runtime.handlers.agent_tasks_save({ session_id: session.id, content: 'x', trigger: { type: 'file_changed', path: '/tmp' } }),
-      /próxima iteración/,
+      runtime.handlers.agent_tasks_save({ session_id: session.id, content: 'x', trigger: { type: 'file_changed' } }),
+      /carpeta/,
     );
 
     const first = await tasks._internal.fireTaskCompleted(sourceId);
@@ -585,6 +585,35 @@ async function triggerChain() {
     const afterRestart = await tasks._internal.fireTaskCompleted(sourceId);
     assert.equal(afterRestart.fired, 0, 'la bandeja durable sobrevive al reinicio');
     console.log('[PASS] Encadenamiento task_completed: disparo atómico, dedupe y bandeja durable tras reinicio.');
+
+    // Trigger de archivo real: una escritura en la carpeta vigilada encola el encargo.
+    const watched = fs2.mkdtempSync(path2.join(os2.tmpdir(), 'antares-watched-'));
+    const fileTask = await runtime.handlers.agent_tasks_save({
+      session_id: session.id, content: 'Procesa el archivo nuevo', trigger: { type: 'file_changed', path: watched, pattern: '*.xlsx' },
+    });
+    assert.equal(fileTask.scheduled.trigger.type, 'file_changed', 'el trigger de archivo ya se acepta');
+    await require('../electron/agent-file-watcher').syncWatchers();
+    assert.ok(require('../electron/agent-file-watcher')._watchers.size >= 1, 'la carpeta queda vigilada');
+    fs2.writeFileSync(path2.join(watched, 'ignorado.txt'), 'no es xlsx');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    fs2.writeFileSync(path2.join(watched, 'ventas.xlsx'), 'datos');
+    const deadline = Date.now() + 8000;
+    let firedListing = null;
+    while (Date.now() < deadline) {
+      firedListing = await runtime.handlers.agent_tasks_list({ session_id: session.id });
+      if (firedListing.tasks.some((task) => task.kind === 'queue' && task.content === 'Procesa el archivo nuevo')) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.ok(
+      firedListing.tasks.some((task) => task.kind === 'queue' && task.content === 'Procesa el archivo nuevo'),
+      'escribir un xlsx en la carpeta vigilada encola el encargo',
+    );
+    assert.equal(
+      firedListing.tasks.filter((task) => task.kind === 'queue' && task.content === 'Procesa el archivo nuevo').length,
+      1,
+      'el txt ignorado y las ráfagas no duplican el encargo',
+    );
+    console.log('[PASS] Trigger file_changed: watcher real, patrón glob y dedupe de ráfagas.');
   } finally {
     await runtime.shutdown().catch(() => {});
   }

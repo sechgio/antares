@@ -74,15 +74,11 @@ function completeDelivery(task, current) {
 // Disparo idempotente de encargos encadenados: la escritura en la bandeja de
 // triggers y la creación del encargo en cola ocurren en el mismo commit, así
 // un reinicio a mitad no duplica ni pierde la activación.
-async function fireTaskCompleted(sourceTaskId) {
+async function fireEvent(event) {
   const state = shared.state;
   if (!state) return { fired: 0 };
   const { matchesTrigger, inboxEntry, inboxAccept } = require('./agent-triggers');
   const snapshot = await state.harness.snapshot(state.TasksDoc, ctx());
-  const source = (snapshot.tasks || {})[sourceTaskId];
-  if (!source) return { fired: 0 };
-  const cycle = (source.runs || []).length;
-  const event = { type: 'task_completed', task_id: sourceTaskId, cycle, at: Date.now() };
   const candidates = Object.values(snapshot.tasks || {}).filter(
     (task) => task.trigger && task.status === 'pending' && matchesTrigger(task.trigger, event),
   );
@@ -120,6 +116,15 @@ async function fireTaskCompleted(sourceTaskId) {
     }
     return { fired };
   }, ctx());
+}
+
+async function fireTaskCompleted(sourceTaskId) {
+  const state = shared.state;
+  if (!state) return { fired: 0 };
+  const snapshot = await state.harness.snapshot(state.TasksDoc, ctx());
+  const source = (snapshot.tasks || {})[sourceTaskId];
+  if (!source) return { fired: 0 };
+  return fireEvent({ type: 'task_completed', task_id: sourceTaskId, cycle: (source.runs || []).length, at: Date.now() });
 }
 
 const TOOL = {
@@ -1408,8 +1413,6 @@ async function schedule(args, sessionId, api) {
     } catch (err) {
       throw validation(String((err && err.message) || err));
     }
-    if (trigger.type === 'file_changed')
-      throw validation('Los triggers de archivo estarán disponibles en la próxima iteración; usa task_completed');
     if (args.due_at !== undefined || hasInterval)
       throw validation('Un encargo por evento no admite fecha ni repetición: se activa cuando ocurre el evento');
   }
@@ -1503,7 +1506,10 @@ async function schedule(args, sessionId, api) {
     };
     doc.tasks[id] = task;
     return { scheduled: task };
-  }, ctx());
+  }, ctx()).then((result) => {
+    require('./agent-file-watcher').syncWatchers().catch(() => {});
+    return result;
+  });
 }
 
 async function listTasks(params = {}) {
@@ -1540,7 +1546,10 @@ async function cancelTask(params = {}) {
       task.updated_at = Date.now();
     }
     return { cancelled: true, id };
-  }, ctx());
+  }, ctx()).then((result) => {
+    require('./agent-file-watcher').syncWatchers().catch(() => {});
+    return result;
+  });
 }
 
 async function runTaskNow(params = {}) {
@@ -1733,9 +1742,12 @@ function start() {
     tick().catch((err) => console.warn('[agent] scheduled task failed:', err?.message));
   }, 1000);
   timer.unref?.();
+  require('./agent-file-watcher').reset?.();
+  require('./agent-file-watcher').syncWatchers().catch(() => {});
 }
 
 async function stop() {
+  require('./agent-file-watcher').stop();
   clearInterval(timer);
   timer = null;
   if (ticking) await ticking;
@@ -1770,6 +1782,7 @@ module.exports = {
   cancelTask,
   runTaskNow,
   queueControl: queue.queueControl,
+  fireEvent,
   _internal: {
     fireTaskCompleted,
     delegationBrief,
