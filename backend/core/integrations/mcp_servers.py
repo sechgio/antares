@@ -277,7 +277,7 @@ def approval_context(server_id: str, advertised_name: str, *, force: bool = Fals
     config = {k: server.get(k) for k in ("id", "transport", "url", "command", "args", "tool_revision")}
     canonical = json.dumps({"config": config, "tool": tool, "credentials": _secrets(server_id)},
                            sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-    return {"account": f"MCP: {server['name']}", "server_id": server_id, "tool": real_name,
+    return {"account": f"MCP: {server['name']}", "server_id": server_id, "server_name": str(server["name"]), "tool": real_name,
             "tool_version": hashlib.sha256(canonical.encode("utf-8")).hexdigest()}
 
 

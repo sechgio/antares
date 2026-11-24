@@ -1468,11 +1468,23 @@ function scopedRuleForApproval(approval) {
     const singleSegment = command && !/&&|\|\||[;|]/.test(command);
     if (singleSegment) candidate = { scope: 'command', value: command, decision: 'allow' };
   } else if (typeof params.path === 'string' && params.path.trim() && /^(fs_|spreadsheet_)/.test(method)) {
-    candidate = { scope: 'path', value: params.path, decision: 'allow' };
+    // La regla vive en el mismo espacio que la evaluación: los params crudos.
+    // La unidad útil de recuerdo es la carpeta cuando la hay —una regla de
+    // archivo exacto no cubriría nunca una escritura nueva— y el matching de
+    // paths ya es por prefijo con separadores normalizados. Un archivo suelto
+    // en la raíz del workspace degrada a regla exacta de ese archivo.
+    const trimmed = params.path.trim().replace(/[\\/]+$/, '');
+    const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+    candidate = { scope: 'path', value: cut > 0 ? trimmed.slice(0, cut) : trimmed, decision: 'allow' };
   } else if (/^mcp2?__/.test(method)) {
-    const body = method.startsWith('mcp2__') ? method.slice(6) : method.slice(5);
-    const sep = body.indexOf('__');
-    if (sep > 0) candidate = { scope: 'mcp', value: `${body.slice(0, sep)}/${body.slice(sep + 2)}`, decision: 'allow' };
+    // Los alias mcp2 llevan hashes irreversibles: la regla se guarda con la
+    // identidad real del contexto verificado, la misma que matchea el motor.
+    const context = (approval && approval.context) || {};
+    const server = typeof context.server_name === 'string' && context.server_name.trim()
+      ? context.server_name.trim() : null;
+    const toolName = typeof context.tool === 'string' && context.tool.trim() ? context.tool.trim() : null;
+    if (server && toolName) candidate = { scope: 'mcp', value: `${server}/${toolName}`, decision: 'allow' };
+    else if (server) candidate = { scope: 'mcp', value: server, decision: 'allow' };
   }
   if (!candidate) return null;
   try {
