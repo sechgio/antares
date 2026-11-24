@@ -568,6 +568,10 @@ export const agentApi = {
 
   agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),
 
+  agentTemplateExport: (id: string) => _invoke<{ template: Record<string, unknown> }>('agent_template_export', { id }),
+
+  agentTemplateImport: (template: Record<string, unknown>) => _invoke<{ profile: AgentProfile }>('agent_template_import', { template }),
+
   agentMemoryList: () => _invoke<{ items: AgentMemoryItem[] }>('agent_memory_list'),
   agentSkillsList: () =>
     _invoke<{ skills: AgentSkill[]; library: string; warnings: string[]; truncated: boolean }>('agent_skills_list'),

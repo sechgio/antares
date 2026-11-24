@@ -380,6 +380,24 @@ async function profileDelete(params = {}) {
   return { deleted: true, id };
 }
 
+async function templateExport(params = {}) {
+  const id = String(params.id || '');
+  const profile = (await _profiles())[id];
+  if (!profile) throw notFound('El agente ya no existe');
+  return { template: require('./agent-profile-templates').exportTemplate(profile) };
+}
+
+async function templateImport(params = {}) {
+  const templates = require('./agent-profile-templates');
+  let validated;
+  try {
+    validated = templates.validateTemplate(params.template);
+  } catch (error) {
+    throw validation(error.message);
+  }
+  return profileSave(validated);
+}
+
 async function sessionCreate(params) {
   const provider = params && params.provider;
   if (typeof provider !== 'string' || !provider) throw validation('Falta el parámetro provider');
@@ -1754,6 +1772,8 @@ module.exports = {
     agent_profiles_list: profilesList,
     agent_profile_save: profileSave,
     agent_profile_delete: profileDelete,
+    agent_template_export: templateExport,
+    agent_template_import: templateImport,
     agent_approve: (p) => approve(p, true),
     agent_deny: (p) => approve(p, false),
     agent_effect_undo: effectUndo,
