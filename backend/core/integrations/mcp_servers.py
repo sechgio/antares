@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
 
-from backend.core.integrations import http_guard, mcp_client, vault
+from backend.core.integrations import connector_states, http_guard, mcp_client, vault
 from backend.core.integrations.types import JsonObject
 from backend.utils.atomic_write import atomic_write_json
 from backend.utils.paths import user_data_path
@@ -288,6 +288,11 @@ def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
         if cached and not force and time.time() - cached[0] < _TOOLS_TTL_S:
             return [{**tool, "enabled": tool["name"] not in server.get("disabled_tools", [])} for tool in cached[1]]
     secrets = _secrets(server_id)
+    with _lock:
+        previous = dict(_tools_status.get(server_id) or {})
+    backoff_until = float(previous.get("backoff_until") or 0)
+    if not force and backoff_until > time.time():
+        raise ValueError(str(previous.get("error") or "El servidor MCP sigue en espera tras fallos repetidos"))
     try:
         if server["transport"] == "http":
             tools = _http_with_401_retry(
@@ -297,8 +302,11 @@ def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
             tools = mcp_client.list_tools_stdio(server["command"], server.get("args") or [], _stdio_env(secrets))
     except Exception as err:
         with _lock:
+            failures = int((_tools_status.get(server_id) or {}).get("failures") or 0) + 1
+            wait = connector_states.backoff_seconds(failures)
             _tools_status[server_id] = {"status": "unavailable", "checked_at": int(time.time() * 1000),
-                                        "error": str(_redact(str(err), secrets))[:400]}
+                                        "error": str(_redact(str(err), secrets))[:400],
+                                        "failures": failures, "backoff_until": time.time() + wait}
         raise ValueError(str(_redact(str(err), secrets))[:400]) from None
     clean = []
     for tool in tools:
@@ -312,7 +320,8 @@ def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
         })
     with _lock:
         _tools_cache[server_id] = (time.time(), clean)
-        _tools_status[server_id] = {"status": "ready", "checked_at": int(time.time() * 1000), "tools_count": len(clean)}
+        _tools_status[server_id] = {"status": "ready", "checked_at": int(time.time() * 1000), "tools_count": len(clean),
+                                    "failures": 0, "backoff_until": 0}
         servers = _load()
         for s in servers:
             if s.get("id") == server_id:
@@ -331,7 +340,15 @@ def server_statuses(*, refresh: bool = False) -> list[JsonObject]:
                 list_tools(server_id, force=True)
         with _lock:
             status = dict(_tools_status.get(server_id) or {"status": "unverified"})
-        result.append({"id": server_id, "name": server["name"], **status})
+        backoff_until = float(status.get("backoff_until") or 0)
+        backoff_active = backoff_until > time.time()
+        failures = int(status.get("failures") or 0)
+        result.append({"id": server_id, "name": server["name"], **status,
+                       "state": connector_states.normalize_mcp(str(status.get("status") or ""),
+                                                               failures=failures, backoff_active=backoff_active),
+                       "failures": failures,
+                       "backoff_until": backoff_until if backoff_active else 0,
+                       "backoff_seconds": max(0, int(backoff_until - time.time())) if backoff_active else 0})
     return result
 
 

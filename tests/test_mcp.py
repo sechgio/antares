@@ -496,3 +496,66 @@ def test_stdio_bounds_frames_pending_messages_and_notification_timeout(mcp_root,
         mcp_client.list_tools_stdio(sys.executable, [str(script)], dict(os.environ))
     assert time.monotonic() - started < 3
 
+
+
+def test_failed_server_backs_off_instead_of_hammering(mcp_root, monkeypatch):
+    monkeypatch.setattr(mcp_servers, "_tools_cache", {})
+    monkeypatch.setattr(mcp_servers, "_tools_status", {})
+    server = mcp_servers.add_server("Inestable", "http", url="https://example.test/mcp")
+    attempts = []
+
+    def unavailable(*args):
+        attempts.append(time.time())
+        raise RuntimeError("caído")
+
+    monkeypatch.setattr(mcp_client, "list_tools_http", unavailable)
+    with pytest.raises(ValueError, match="caído"):
+        mcp_servers.list_tools(server["id"])
+    assert len(attempts) == 1
+    # La segunda lectura automática no reintenta: respeta el backoff.
+    with pytest.raises(ValueError, match="caído"):
+        mcp_servers.list_tools(server["id"])
+    assert len(attempts) == 1, "el backoff evita martillear el servidor caído"
+    statuses = mcp_servers.server_statuses()
+    entry = next(item for item in statuses if item["id"] == server["id"])
+    assert entry["state"] == "degraded"
+    assert entry["failures"] == 1
+    assert entry["backoff_seconds"] > 0
+    # El reintento explícito (force) sí atraviesa el backoff y agrava la espera.
+    with pytest.raises(ValueError, match="caído"):
+        mcp_servers.list_tools(server["id"], force=True)
+    assert len(attempts) == 2
+    entry = next(item for item in mcp_servers.server_statuses() if item["id"] == server["id"])
+    assert entry["failures"] == 2
+    assert entry["backoff_seconds"] >= 8, "el backoff crece exponencialmente"
+
+
+def test_success_resets_backoff_and_reports_healthy(mcp_root, monkeypatch):
+    monkeypatch.setattr(mcp_servers, "_tools_cache", {})
+    monkeypatch.setattr(mcp_servers, "_tools_status", {})
+    server = mcp_servers.add_server("Recuperable", "http", url="https://example.test/mcp")
+    monkeypatch.setattr(mcp_client, "list_tools_http", lambda *args: (_ for _ in ()).throw(RuntimeError("caído")))
+    with pytest.raises(ValueError):
+        mcp_servers.list_tools(server["id"])
+    monkeypatch.setattr(mcp_client, "list_tools_http", lambda *args: [{"name": "echo"}])
+    tools = mcp_servers.list_tools(server["id"], force=True)
+    assert tools[0]["name"] == "echo"
+    entry = next(item for item in mcp_servers.server_statuses() if item["id"] == server["id"])
+    assert entry["state"] == "healthy"
+    assert entry["failures"] == 0
+    assert entry["backoff_seconds"] == 0
+
+
+def test_backoff_seconds_are_capped():
+    from backend.core.integrations import connector_states
+
+    assert connector_states.backoff_seconds(0) == 0
+    assert connector_states.backoff_seconds(1) == 5
+    assert connector_states.backoff_seconds(2) == 10
+    assert connector_states.backoff_seconds(3) == 20
+    assert connector_states.backoff_seconds(20) == 300, "el backoff tiene techo de 5 minutos"
+    assert connector_states.normalize_mcp("ready") == "healthy"
+    assert connector_states.normalize_mcp("unavailable", failures=2, backoff_active=True) == "degraded"
+    assert connector_states.normalize_mcp("unavailable") == "disconnected"
+    assert connector_states.normalize_cloud(connected=True) == "healthy"
+    assert connector_states.normalize_cloud(connected=False, refresh_failed=True) == "needs_auth"
