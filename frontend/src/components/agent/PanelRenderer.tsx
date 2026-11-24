@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
-import { AppWindow, ArrowRight, Check, ExternalLink, Maximize2, Search, Table2, X, type LucideIcon } from 'lucide-react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ComponentType, type KeyboardEvent, type ReactNode } from 'react';
+import { AppWindow, ArrowDown, ArrowRight, ArrowUp, Check, Copy, ExternalLink, Maximize2, Search, Table2, X, type LucideIcon } from 'lucide-react';
 import { z } from 'zod';
 import { agentApi, type AgentPanel, type AgentPanelResponse } from '../../api/agentApi';
 import { useToast } from '../../hooks/useToast';
@@ -37,6 +37,22 @@ const PAGE_INLINE_MAX = 640;
 const PAGE_THEME = { '--page-text': '--text-primary', '--page-muted': '--text-secondary', '--page-line': '--border-subtle',
   '--page-field': '--bg-input', '--page-accent': '--accent-primary' };
 const NUMBER = new Intl.NumberFormat('es', { maximumFractionDigits: 2 });
+const COLLATOR = new Intl.Collator('es', { numeric: true, sensitivity: 'base' });
+const formDrafts = new Map<string, Record<string, string | number | boolean>>();
+
+type Cell = string | number | null;
+type TableSort = { column: number; dir: 'asc' | 'desc' } | null;
+
+function compareCells(a: Cell, b: Cell, dir: 'asc' | 'desc'): number {
+  if (a === null || b === null) return a === b ? 0 : a === null ? 1 : -1;
+  const order = typeof a === 'number' && typeof b === 'number' ? a - b : COLLATOR.compare(String(a), String(b));
+  return dir === 'asc' ? order : -order;
+}
+
+export function tableTsv(columns: string[], rows: Cell[][]): string {
+  const clean = (value: Cell) => (value === null ? '' : String(value).replace(/[\t\r\n]+/g, ' '));
+  return [columns, ...rows].map((row) => row.map(clean).join('\t')).join('\n');
+}
 
 function PanelFrame({ title, answered, meta, children }: { title: string; answered?: boolean; meta?: ReactNode; children: ReactNode }) {
   return <section aria-label={title} data-panel-state={answered ? 'answered' : 'open'} className="agent-panel">
@@ -55,11 +71,19 @@ function ChoicePanel({ panel, props, onRespond }: PanelViewProps<z.infer<typeof 
     setPending(choice);
     try { await onRespond(panel, { choice }); } finally { setPending(null); }
   };
+  const shortcuts = !answered && props.options.length <= 9;
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const index = Number(event.key) - 1;
+    if (!shortcuts || pending !== null || event.altKey || event.ctrlKey || event.metaKey || !(index >= 0 && index < props.options.length)) return;
+    event.preventDefault();
+    void choose(props.options[index]);
+  };
   return <PanelFrame title={props.prompt} answered={answered}>
-    <div className="agent-panel__options">
-      {props.options.map((option) => <button key={option} type="button" className="agent-panel__option" aria-pressed={chosen === option}
-        disabled={answered || pending !== null} onClick={() => void choose(option)}>
-        {chosen === option && <Check size={13} strokeWidth={2.5} aria-hidden="true" />}{option}
+    <div className="agent-panel__options" onKeyDown={onKeyDown}>
+      {props.options.map((option, index) => <button key={option} type="button" className="agent-panel__option" aria-pressed={chosen === option}
+        aria-keyshortcuts={shortcuts ? String(index + 1) : undefined} disabled={answered || pending !== null} onClick={() => void choose(option)}>
+        {chosen === option && <Check size={13} strokeWidth={2.5} aria-hidden="true" />}
+        {shortcuts && <kbd aria-hidden="true" className="agent-panel__key">{index + 1}</kbd>}{option}
       </button>)}
     </div>
   </PanelFrame>;
@@ -67,14 +91,21 @@ function ChoicePanel({ panel, props, onRespond }: PanelViewProps<z.infer<typeof 
 
 function FormPanel({ panel, props, onRespond }: PanelViewProps<z.infer<typeof formSchema>>) {
   const answered = panel.status === 'answered';
-  const initial = panel.response && 'values' in panel.response ? panel.response.values : {};
+  const initial = panel.response && 'values' in panel.response ? panel.response.values : formDrafts.get(panel.id) ?? {};
   const [values, setValues] = useState<Record<string, string | number | boolean>>(initial);
   const [busy, setBusy] = useState(false);
-  const set = (name: string, value: string | number | boolean) => setValues((current) => ({ ...current, [name]: value }));
+  const set = (name: string, value: string | number | boolean) => setValues((current) => {
+    const next = { ...current, [name]: value };
+    formDrafts.set(panel.id, next);
+    return next;
+  });
   const missing = props.fields.some((field) => field.required && field.type !== 'checkbox' && !String(values[field.name] ?? '').trim());
   const submit = async () => {
     setBusy(true);
-    try { await onRespond(panel, { values }); } finally { setBusy(false); }
+    try { await onRespond(panel, { values }); } finally {
+      formDrafts.delete(panel.id);
+      setBusy(false);
+    }
   };
   const title = props.title || 'Completa los datos';
   if (answered) {
@@ -135,9 +166,20 @@ function PanelViewer({ title, icon: Icon, actions, onClose, children }: {
   </DialogSurface>;
 }
 
-function DataTable({ columns, rows, numeric, limit }: { columns: string[]; rows: (string | number | null)[][]; numeric: boolean[]; limit: number }) {
+function DataTable({ columns, rows, numeric, limit, sort, onSort }: {
+  columns: string[]; rows: Cell[][]; numeric: boolean[]; limit: number; sort: TableSort; onSort: (column: number) => void;
+}) {
   return <table>
-    <thead><tr>{columns.map((column, cell) => <th key={column} className={numeric[cell] ? 'is-numeric' : undefined}>{column}</th>)}</tr></thead>
+    <thead><tr>{columns.map((column, cell) => {
+      const dir = sort?.column === cell ? sort.dir : null;
+      const Arrow = dir === 'desc' ? ArrowDown : ArrowUp;
+      return <th key={column} className={numeric[cell] ? 'is-numeric' : undefined}
+        aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : undefined}>
+        <button type="button" className="agent-panel__sort" onClick={() => onSort(cell)}>
+          {column}<Arrow size={11} aria-hidden="true" className={dir ? undefined : 'is-idle'} />
+        </button>
+      </th>;
+    })}</tr></thead>
     <tbody>{rows.slice(0, limit).map((row, index) => <tr key={index}>
       {columns.map((column, cell) => {
         const value = row[cell];
@@ -152,10 +194,25 @@ function DataTable({ columns, rows, numeric, limit }: { columns: string[]; rows:
 function TablePanel({ props }: PanelViewProps<z.infer<typeof tableSchema>>) {
   const [query, setQuery] = useState('');
   const [full, setFull] = useState(false);
+  const [sort, setSort] = useState<TableSort>(null);
+  const [copied, setCopied] = useState(false);
   const rows = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase('es');
-    return needle ? props.rows.filter((row) => row.some((cell) => String(cell ?? '').toLocaleLowerCase('es').includes(needle))) : props.rows;
-  }, [props.rows, query]);
+    const filtered = needle ? props.rows.filter((row) => row.some((cell) => String(cell ?? '').toLocaleLowerCase('es').includes(needle))) : props.rows;
+    return sort ? [...filtered].sort((a, b) => compareCells(a[sort.column] ?? null, b[sort.column] ?? null, sort.dir)) : filtered;
+  }, [props.rows, query, sort]);
+  const onSort = (column: number) => setSort((current) => current?.column !== column ? { column, dir: 'asc' }
+    : current.dir === 'asc' ? { column, dir: 'desc' } : null);
+  const copyRows = () => {
+    void navigator.clipboard?.writeText(tableTsv(props.columns, rows)).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {});
+  };
+  const copy = <button type="button" className="agent-panel__tool" aria-label={copied ? 'Filas copiadas' : 'Copiar filas para Excel'}
+    title={copied ? 'Copiado' : 'Copiar filas (se pegan en Excel)'} onClick={copyRows}>
+    {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+  </button>;
   const title = props.title || 'Tabla';
   const numeric = props.columns.map((_, cell) => props.rows.some((row) => typeof row[cell] === 'number')
     && props.rows.every((row) => row[cell] === null || typeof row[cell] === 'number'));
@@ -169,18 +226,19 @@ function TablePanel({ props }: PanelViewProps<z.infer<typeof tableSchema>>) {
     <div className="agent-panel__head">
       <p className="agent-panel__title">{title}{count}</p>
       {search}
+      {copy}
       <button type="button" className="agent-panel__tool" aria-label={`Ver ${title} a pantalla completa`} title="Pantalla completa"
         onClick={() => setFull(true)}><Maximize2 size={14} aria-hidden="true" /></button>
     </div>
-    <div className="agent-panel__table"><DataTable columns={props.columns} rows={rows} numeric={numeric} limit={TABLE_PREVIEW_ROWS} /></div>
+    <div className="agent-panel__table"><DataTable columns={props.columns} rows={rows} numeric={numeric} limit={TABLE_PREVIEW_ROWS} sort={sort} onSort={onSort} /></div>
     {empty}
     {rows.length > TABLE_PREVIEW_ROWS && <button type="button" className="agent-panel__more" onClick={() => setFull(true)}>
       Ver las {rows.length} filas<ArrowRight size={13} aria-hidden="true" />
     </button>}
     {full && <PanelViewer title={title} icon={Table2} onClose={() => setFull(false)}>
       <div className="agent-panel-viewer__content">
-        <div className="agent-panel__head"><p className="agent-panel__title">{title}{count}</p>{search}</div>
-        <div className="agent-panel__table is-full"><DataTable columns={props.columns} rows={rows} numeric={numeric} limit={TABLE_ROW_LIMIT} /></div>
+        <div className="agent-panel__head"><p className="agent-panel__title">{title}{count}</p>{search}{copy}</div>
+        <div className="agent-panel__table is-full"><DataTable columns={props.columns} rows={rows} numeric={numeric} limit={TABLE_ROW_LIMIT} sort={sort} onSort={onSort} /></div>
         {empty}
         {rows.length > TABLE_ROW_LIMIT && <p className="agent-panel__note">Mostrando {TABLE_ROW_LIMIT} de {rows.length} filas; filtra para acotar.</p>}
       </div>

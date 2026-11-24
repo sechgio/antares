@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
-import MessageMarkdown, { parseBlocks } from './MessageMarkdown';
-import { niceTicks } from './ChatVisual';
+
+vi.mock('html-to-image', () => ({ toBlob: vi.fn(async () => new Blob(['png'], { type: 'image/png' })) }));
+import MessageMarkdown, { cachedBlocks, parseBlocks, tableClipboard } from './MessageMarkdown';
+import { horizontal, niceTicks } from './ChatVisual';
 import { FilePreviewContext, localPreviewResource } from './filePreviewContext';
 
 it('abre referencias locales con espacios y rechaza enlaces remotos o ejecutables', () => {
@@ -143,4 +145,91 @@ it('enmarca el código con su lenguaje y lo copia al terminar de escribirse', ()
   expect(screen.getByText('código')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Copiar código' }));
   expect(writeText).toHaveBeenCalledWith('const x = 1;');
+});
+
+it('reutiliza los bloques de un mensaje terminado y no cachea el que sigue llegando', () => {
+  const text = '# Informe\n\nTexto final';
+  expect(cachedBlocks(text, false)).toBe(cachedBlocks(text, false));
+  expect(cachedBlocks(text, true)).not.toBe(cachedBlocks(text, true));
+  expect(cachedBlocks(text, true)).toEqual(cachedBlocks(text, false));
+});
+
+it('dibuja separadores, tachado, tareas, numeración inicial y citas de varias líneas', () => {
+  const blocks = parseBlocks('Antes\n\n---\n\n3. tres\n4. cuatro\n\n> uno\n> dos\n\n> otra');
+  expect(blocks.map((b) => b.kind)).toEqual(['p', 'hr', 'ol', 'quote', 'quote']);
+  expect(blocks[2]).toEqual({ kind: 'ol', items: ['tres', 'cuatro'], start: 3 });
+  expect(blocks[3]).toEqual({ kind: 'quote', text: 'uno\ndos' });
+  const { container } = render(<MessageMarkdown text={'~~viejo~~ nuevo\n\n* * *\n\n- [x] Hecho\n- [ ] Pendiente\n- normal\n\n2. b'} />);
+  expect(screen.getByText('viejo').tagName).toBe('DEL');
+  expect(container.querySelectorAll('hr')).toHaveLength(1);
+  const boxes = screen.getAllByRole('checkbox');
+  expect(boxes.map((box) => (box as HTMLInputElement).checked)).toEqual([true, false]);
+  expect(screen.getByText('normal').tagName).toBe('LI');
+  expect(container.querySelector('ol')).toHaveAttribute('start', '2');
+});
+
+it('pasa a barras horizontales cuando las etiquetas son largas', async () => {
+  const source = '{"type":"bar","title":"Metrado por actividad","labels":["Excavación de zanjas","Relleno compactado"],"series":[{"name":"m3","data":[120,80]}]}';
+  const { container } = render(<MessageMarkdown text={'```chart\n' + source + '\n```'} />);
+  expect(await screen.findByRole('img', { name: 'Metrado por actividad' })).toBeInTheDocument();
+  expect(container.querySelector('svg[role="img"]')).toBeNull();
+  expect(screen.getByTitle('Excavación de zanjas')).toBeInTheDocument();
+  const bars = container.querySelectorAll<HTMLElement>('[data-bar]');
+  expect([...bars].map((bar) => bar.style.width)).toEqual(['100%', `${(80 / 120) * 100}%`]);
+  expect(horizontal({ type: 'bar', title: '', labels: ['Excavación de zanjas'], series: [{ name: 'a', data: [-1] }] })).toBe(false);
+  expect(horizontal({ type: 'bar', title: '', labels: ['Ene'], series: [{ name: 'a', data: [1] }] })).toBe(false);
+});
+
+class FakeClipboardItem {
+  constructor(public items: Record<string, Blob>) {}
+}
+
+function stubClipboard() {
+  const write = vi.fn(async (_items: FakeClipboardItem[]) => undefined);
+  vi.stubGlobal('ClipboardItem', FakeClipboardItem);
+  vi.stubGlobal('navigator', { ...navigator, clipboard: { write, writeText: vi.fn(async () => undefined) } });
+  return write;
+}
+
+it('prepara una tabla para Excel como HTML y texto sin marcas de markdown', () => {
+  const { text, html } = tableClipboard(['Partida', 'Metrado'], [['**Excavación** <zanja>', '1250'], ['[Relleno](C:/a.xlsx)', '`830`']]);
+  expect(text).toBe('Partida\tMetrado\nExcavación <zanja>\t1250\nRelleno\t830');
+  expect(html).toBe('<table><thead><tr><th>Partida</th><th>Metrado</th></tr></thead><tbody>'
+    + '<tr><td>Excavación &lt;zanja&gt;</td><td>1250</td></tr><tr><td>Relleno</td><td>830</td></tr></tbody></table>');
+});
+
+it('copia una tabla terminada con su estructura y no ofrece copiarla mientras llega', async () => {
+  const write = stubClipboard();
+  try {
+    const table = '| Partida | Metrado |\n| --- | ---: |\n| Excavación | 1250 |';
+    const { rerender } = render(<MessageMarkdown text={table} streaming />);
+    expect(screen.queryByRole('button', { name: 'Copiar tabla' })).toBeNull();
+    rerender(<MessageMarkdown text={table} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar tabla' }));
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+    const item = write.mock.calls[0][0][0];
+    expect(Object.keys(item.items)).toEqual(['text/html', 'text/plain']);
+    expect(await item.items['text/plain'].text()).toBe('Partida\tMetrado\nExcavación\t1250');
+    expect(await screen.findByRole('button', { name: 'Copiado' })).toBeInTheDocument();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it('copia un gráfico como imagen PNG y oculta la opción en la vista de código', async () => {
+  const write = stubClipboard();
+  try {
+    const { toBlob } = await import('html-to-image');
+    render(<MessageMarkdown text={chart} />);
+    await screen.findByRole('img', { name: 'Ventas' });
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar imagen' }));
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+    expect(toBlob).toHaveBeenCalledWith(expect.any(HTMLElement), expect.objectContaining({ pixelRatio: 2 }));
+    expect(Object.keys(write.mock.calls[0][0][0].items)).toEqual(['image/png']);
+    expect(await screen.findByRole('button', { name: 'Imagen copiada' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Código' }));
+    expect(screen.queryByRole('button', { name: /imagen/i })).toBeNull();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

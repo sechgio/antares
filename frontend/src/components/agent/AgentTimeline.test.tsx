@@ -944,6 +944,51 @@ it('pinta un panel choice dentro del turno y responde con la opción elegida', a
   await waitFor(() => expect(onPanelRespond).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }), { choice: 'Excel' }));
 });
 
+it('elige una opción con su número cuando el panel tiene el foco', async () => {
+  const { onPanelRespond } = renderPanel(makePanel('choice', { prompt: '¿Qué formato?', options: ['PDF', 'Excel'] }));
+  const pdf = screen.getByRole('button', { name: 'PDF' });
+  expect(pdf).toHaveAttribute('aria-keyshortcuts', '1');
+  fireEvent.keyDown(pdf, { key: '3' });
+  expect(onPanelRespond).not.toHaveBeenCalled();
+  fireEvent.keyDown(pdf, { key: '2' });
+  await waitFor(() => expect(onPanelRespond).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }), { choice: 'Excel' }));
+});
+
+it('conserva el borrador de un formulario si el panel se vuelve a montar', async () => {
+  const panel = makePanel('form', { title: 'Borrador', fields: [{ name: 'zona', label: 'Zona' }] }, { id: 'p-borrador' });
+  const { onPanelRespond, unmount } = renderPanel(panel);
+  fireEvent.change(screen.getByLabelText('Zona'), { target: { value: 'Sur' } });
+  unmount();
+  renderPanel(panel, onPanelRespond);
+  expect(screen.getByLabelText('Zona')).toHaveValue('Sur');
+  fireEvent.click(screen.getByRole('button', { name: 'Enviar' }));
+  await waitFor(() => expect(onPanelRespond).toHaveBeenCalledWith(expect.objectContaining({ id: 'p-borrador' }), { values: { zona: 'Sur' } }));
+});
+
+it('ordena las columnas de un panel table y copia las filas visibles para Excel', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+  try {
+    renderPanel(makePanel('table', { title: 'Órdenes', columns: ['OT', 'Zona', 'Metrado'], rows: [[101, 'Norte', 80.5], [102, 'Sur', null], [103, 'Norte\tA', 1230]] }));
+    const table = screen.getByRole('region', { name: 'Órdenes' });
+    const metrado = () => within(table).getByRole('columnheader', { name: 'Metrado' });
+    const firstColumn = () => within(table).getAllByRole('row').slice(1).map((row) => row.firstChild?.textContent);
+    fireEvent.click(within(metrado()).getByRole('button'));
+    expect(metrado()).toHaveAttribute('aria-sort', 'ascending');
+    expect(firstColumn()).toEqual(['101', '103', '102']);
+    fireEvent.click(within(metrado()).getByRole('button'));
+    expect(metrado()).toHaveAttribute('aria-sort', 'descending');
+    expect(firstColumn()).toEqual(['103', '101', '102']);
+    fireEvent.click(within(table).getByRole('button', { name: 'Copiar filas para Excel' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('OT\tZona\tMetrado\n103\tNorte A\t1230\n101\tNorte\t80.5\n102\tSur\t'));
+    fireEvent.click(within(metrado()).getByRole('button'));
+    expect(metrado()).not.toHaveAttribute('aria-sort');
+    expect(firstColumn()).toEqual(['101', '102', '103']);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it('deja un panel respondido deshabilitado y marcado al re-renderizarlo desde la sesión', () => {
   renderPanel(makePanel('choice', { prompt: '¿Qué formato?', options: ['PDF', 'Excel'] }, { status: 'answered', response: { choice: 'PDF' } }));
   const panel = screen.getByRole('region', { name: '¿Qué formato?' });
