@@ -117,7 +117,7 @@ export default function OptionsCard({
                 <Button variant="none" size="none"
                   onClick={() => onFormatoChange(f)}
                   aria-label={info?.desc || f}
-                  className={`relative flex flex-col items-center gap-1 px-2 py-2.5 rounded-xl border text-center transition-all duration-200 ${
+                  className={`relative flex flex-col items-center gap-1 px-2 py-2.5 rounded-xl border text-center transition duration-200 ${
                     active
                       ? 'bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] border-[color:color-mix(in_srgb,var(--accent-primary)_40%,transparent)] text-[var(--accent-primary)]'
                       : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)]'
@@ -166,7 +166,7 @@ export default function OptionsCard({
               <Button variant="none" size="none"
                 key={preset.label}
                 onClick={() => onCalidadChange(preset.value)}
-                className={`flex flex-col items-center gap-1 px-2 py-2 rounded-xl border text-center transition-all duration-200 ${
+                className={`flex flex-col items-center gap-1 px-2 py-2 rounded-xl border text-center transition duration-200 ${
                   active
                     ? 'border-[color:color-mix(in_srgb,var(--accent-primary)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)]'
                     : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)] hover:border-[var(--border-medium)]'

@@ -50,6 +50,7 @@ const PANEL_WIDTH = 232;
 const ACCOUNT_MENU_WIDTH = 264;
 const PEEK_CLOSE_DELAY_MS = 180;
 const PEEK_INSET = 6;
+const PANEL_TRANSITION_MS = 260;
 
 interface SidebarProps {
   activeTab: TabId;
@@ -198,6 +199,18 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
 
   useEffect(() => () => window.clearTimeout(peekTimer.current), []);
 
+  const [panelClosing, setPanelClosing] = useState(false);
+  const [prevExpanded, setPrevExpanded] = useState(expanded);
+  if (prevExpanded !== expanded) {
+    setPrevExpanded(expanded);
+    setPanelClosing(!expanded);
+  }
+  useEffect(() => {
+    if (!panelClosing) return;
+    const id = window.setTimeout(() => setPanelClosing(false), PANEL_TRANSITION_MS);
+    return () => window.clearTimeout(id);
+  }, [panelClosing]);
+
   useEffect(() => {
     if (!peeking) return;
     const onKey = (event: KeyboardEvent) => {
@@ -247,21 +260,21 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
 
   const panelVisible = expanded || peeking;
 
-  const panelBody = (
+  const renderPanelBody = (pinned: boolean) => (
     <>
       <div className="flex h-11 shrink-0 items-center justify-between pl-3.5 pr-1.5">
         <h2 className="truncate text-[13.5px] font-semibold tracking-[-0.01em]">{shownGroup.label}</h2>
         <div className="relative shrink-0">
           <Button variant="none" size="none"
             data-testid="sidebar-toggle"
-            aria-label={expanded ? 'Alternar barra lateral' : 'Fijar panel'}
-            aria-expanded={expanded}
+            aria-label={pinned ? 'Alternar barra lateral' : 'Fijar panel'}
+            aria-expanded={pinned}
             onClick={toggleExpanded}
             className="flex size-7 items-center justify-center rounded-md text-[var(--text-muted)] transition-[color,background-color,transform] duration-150 ease-[var(--ease-out)] hover:bg-[color:color-mix(in_srgb,var(--text-primary)_8%,transparent)] hover:text-[var(--text-primary)] active:scale-[0.94] motion-reduce:active:scale-100"
           >
-            {expanded ? <PanelLeft className="size-[15px]" strokeWidth={1.75} /> : <Pin className="size-[15px]" strokeWidth={1.75} />}
+            {pinned ? <PanelLeft className="size-[15px]" strokeWidth={1.75} /> : <Pin className="size-[15px]" strokeWidth={1.75} />}
           </Button>
-          <HoverTooltip label={expanded ? 'Ocultar panel' : 'Fijar panel'} shortcut="Ctrl+B" />
+          <HoverTooltip label={pinned ? 'Ocultar panel' : 'Fijar panel'} shortcut="Ctrl+B" />
         </div>
       </div>
 
@@ -378,7 +391,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
             )}
             style={{ width: PANEL_WIDTH }}
           >
-            {expanded && panelBody}
+            {(expanded || panelClosing) && renderPanelBody(true)}
           </div>
         </div>
 
@@ -398,7 +411,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
           )}
           style={{ top: PEEK_INSET, bottom: PEEK_INSET + 8, left: RAIL_WIDTH + PEEK_INSET, width: PANEL_WIDTH }}
         >
-          {panelBody}
+          {renderPanelBody(false)}
         </div>
       )}
 

@@ -68,7 +68,7 @@ const MemoizedRunListItem = React.memo(function RunListItem({
 
   return (
     <div
-      className={`w-full text-left px-4 py-3.5 text-sm transition-all border-l-[3px] flex gap-2.5 ${
+      className={`w-full text-left px-4 py-3.5 text-sm transition border-l-[3px] flex gap-2.5 ${
         isSelected
           ? 'bg-[var(--bg-elevated)] border-[var(--accent-primary)]'
           : 'bg-transparent border-transparent hover:bg-[var(--bg-elevated)]'

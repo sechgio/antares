@@ -60,7 +60,7 @@ export const DesignPanel: React.FC<DesignPanelProps> = ({
               <Button variant="none" size="none"
                 key={tab}
                 onClick={() => setDesignTab(tab)}
-                className={`flex-1 text-[10px] font-medium py-1 rounded-md transition-all ${
+                className={`flex-1 text-[10px] font-medium py-1 rounded-md transition ${
                   designTab === tab
                     ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm'
                     : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
@@ -88,7 +88,7 @@ export const DesignPanel: React.FC<DesignPanelProps> = ({
                               [f.key]: { ...s.texts[f.key], bold: !s.texts[f.key].bold }
                             }
                           }))}
-                          className={`w-5 h-5 rounded text-[9px] font-bold transition-all ${style.bold ? 'bg-[color:color-mix(in_srgb,var(--accent-primary)_15%,transparent)] text-[var(--accent-primary)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
+                          className={`w-5 h-5 rounded text-[9px] font-bold transition ${style.bold ? 'bg-[color:color-mix(in_srgb,var(--accent-primary)_15%,transparent)] text-[var(--accent-primary)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
                         >B</Button>
                         <Button variant="none" size="none"
                           onClick={() => onUpdateStyle(s => ({
@@ -98,7 +98,7 @@ export const DesignPanel: React.FC<DesignPanelProps> = ({
                               [f.key]: { ...s.texts[f.key], visible: !s.texts[f.key].visible }
                             }
                           }))}
-                          className={`w-5 h-5 rounded flex items-center justify-center transition-all ${style.visible ? 'bg-[color:color-mix(in_srgb,var(--accent-green)_15%,transparent)] text-[var(--accent-green)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
+                          className={`w-5 h-5 rounded flex items-center justify-center transition ${style.visible ? 'bg-[color:color-mix(in_srgb,var(--accent-green)_15%,transparent)] text-[var(--accent-green)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
                         ><Eye size={9} /></Button>
                       </div>
                     </div>
@@ -185,7 +185,7 @@ export const DesignPanel: React.FC<DesignPanelProps> = ({
                 <span className="text-[10px] font-medium text-[var(--text-primary)]">Visibilidad</span>
                 <Button variant="none" size="none"
                   onClick={() => onUpdateStyle(s => ({ ...s, pin: { ...s.pin, visible: !s.pin.visible } }))}
-                  className={`w-5 h-5 rounded flex items-center justify-center transition-all ${customStyles.pin.visible !== false ? 'bg-[color:color-mix(in_srgb,var(--accent-green)_15%,transparent)] text-[var(--accent-green)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
+                  className={`w-5 h-5 rounded flex items-center justify-center transition ${customStyles.pin.visible !== false ? 'bg-[color:color-mix(in_srgb,var(--accent-green)_15%,transparent)] text-[var(--accent-green)]' : 'bg-[var(--bg-input)] text-[var(--text-muted)]'}`}
                 >
                   <Eye size={9} />
                 </Button>
@@ -203,7 +203,7 @@ export const DesignPanel: React.FC<DesignPanelProps> = ({
                       <Button variant="none" size="none"
                         onClick={() => onUpdateStyle(s => ({ ...s, pin: { ...s.pin, color: presetColor } }))}
                         aria-label={presetColor ? `Color: ${presetColor}` : 'Color original (rojo)'}
-                        className={`w-4.5 h-4.5 rounded-full border transition-all cursor-pointer ${
+                        className={`w-4.5 h-4.5 rounded-full border transition cursor-pointer ${
                           (customStyles.pin.color ?? '') === presetColor
                             ? 'border-[var(--accent-primary)] scale-110 shadow-sm'
                             : 'border-[var(--border-subtle)] hover:scale-105'

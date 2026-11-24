@@ -438,7 +438,7 @@ export const UbicacionesView: React.FC = () => {
 
               {inputMode === 'excel' ? (
                 excelFile ? (
-                  <div className="flex items-center gap-2 rounded-lg border border-[color:color-mix(in_srgb,var(--accent-green)_25%,transparent)] bg-[var(--accent-green)]/[0.06] px-3 py-2 transition-all mt-1">
+                  <div className="flex items-center gap-2 rounded-lg border border-[color:color-mix(in_srgb,var(--accent-green)_25%,transparent)] bg-[var(--accent-green)]/[0.06] px-3 py-2 transition mt-1">
                     <CheckCircle2 size={14} className="text-[var(--accent-green)] shrink-0" />
                     <span className="text-[11px] font-medium text-[var(--text-primary)] truncate flex-1">
                       {excelFile.name}
@@ -459,7 +459,7 @@ export const UbicacionesView: React.FC = () => {
                     onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                     onDragLeave={() => setIsDragging(false)}
                     onDrop={handleDrop}
-                    className={`group flex items-center gap-2.5 py-2 px-3 rounded-lg border-2 border-dashed transition-all duration-200 cursor-pointer mt-1 ${
+                    className={`group flex items-center gap-2.5 py-2 px-3 rounded-lg border-2 border-dashed transition duration-200 cursor-pointer mt-1 ${
                       isDragging
                         ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/[0.06] scale-[1.01]'
                         : 'border-[var(--border-medium)] hover:border-[color:color-mix(in_srgb,var(--accent-primary)_50%,transparent)] hover:bg-[var(--bg-elevated)]'
@@ -531,7 +531,7 @@ export const UbicacionesView: React.FC = () => {
               </label>
               <Button variant="none" size="none"
                 onClick={handleSelectOutputDir}
-                className={`flex items-center gap-2 w-full rounded-lg border px-3 py-2 text-left transition-all duration-200 ${
+                className={`flex items-center gap-2 w-full rounded-lg border px-3 py-2 text-left transition duration-200 ${
                   outputDir
                     ? 'border-[color:color-mix(in_srgb,var(--accent-green)_25%,transparent)] bg-[var(--accent-green)]/[0.06]'
                     : 'border-[var(--border-subtle)] bg-[var(--bg-surface)] hover:border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]'

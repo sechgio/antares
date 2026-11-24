@@ -166,7 +166,7 @@ export default function SettingsModal({ isOpen, section, onSectionChange, onClos
                   onClick={() => onSectionChange(def.id)}
                   aria-current={isActive ? 'page' : undefined}
                   data-testid={`settings-section-${def.id}`}
-                  className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-medium transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] ${
+                  className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-medium transition duration-150 outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] ${
                     isActive
                       ? 'bg-[var(--accent-primary-glow)] text-[var(--text-primary)]'
                       : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'

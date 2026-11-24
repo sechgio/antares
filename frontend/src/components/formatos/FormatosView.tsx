@@ -1232,7 +1232,7 @@ export default function FormatosView() {
                         e.stopPropagation();
                         handleDelete(f.id);
                       }}
-                      className="opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-[var(--accent-red)] transition-all"
+                      className="opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-[var(--accent-red)] transition"
                       title="Eliminar formato"
                       aria-label={`Eliminar formato ${f.nombre}`}
                     >

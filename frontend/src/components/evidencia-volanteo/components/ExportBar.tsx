@@ -12,7 +12,7 @@ export default function ExportBar({ format, onFormatChange }: Props) {
           key={fmt}
           onClick={() => onFormatChange(fmt)}
           aria-pressed={format === fmt}
-          className={`flex-1 py-1.5 text-[11px] font-semibold rounded transition-all duration-200 ${
+          className={`flex-1 py-1.5 text-[11px] font-semibold rounded transition duration-200 ${
             format === fmt
               ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-[0_1px_3px_rgba(0,0,0,0.1)]'
               : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-base)]'

@@ -715,7 +715,7 @@ export default function ConversionView() {
             <ConversionPresets currentConfig={currentConfig} onLoadConfig={handleLoadConfig} className="hidden sm:block shrink-0" />
             <Button variant="none" size="none"
               onClick={selectDest}
-              className="inline-flex min-w-0 max-w-[min(280px,100%)] items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] transition-all hover:border-[var(--border-medium)] hover:text-[var(--text-primary)] group"
+              className="inline-flex min-w-0 max-w-[min(280px,100%)] items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-4 py-2 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-medium)] hover:text-[var(--text-primary)] group"
             >
               <FolderOpen className="h-4 w-4 shrink-0 text-[var(--text-muted)] group-hover:text-[var(--accent-primary)] transition-colors" />
               <span className="min-w-0 truncate">

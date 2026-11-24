@@ -36,7 +36,7 @@ function LogoSlot({
             onSelect();
           }
         }}
-        className={`group cursor-pointer rounded-md border flex flex-col items-center justify-center transition-all overflow-hidden relative ${
+        className={`group cursor-pointer rounded-md border flex flex-col items-center justify-center transition overflow-hidden relative ${
           logo
             ? 'border-[var(--border-subtle)] bg-[var(--bg-surface)]'
             : 'border-transparent bg-[var(--bg-surface)] hover:bg-[color:color-mix(in_srgb,var(--border-subtle)_30%,transparent)]'

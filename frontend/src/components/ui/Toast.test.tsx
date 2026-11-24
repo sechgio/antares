@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import ToastContainer from './Toast';
 import { ToastProvider, useToast } from '../../hooks/useToast';
@@ -26,6 +26,41 @@ describe('ToastContainer', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Guardado');
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar notificación' }));
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('plays the exit animation before unmounting a dismissed toast', async () => {
+    render(
+      <ToastProvider>
+        <ToastTrigger />
+        <ToastContainer />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar toast' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar notificación' }));
+
+    const leaving = screen.getByTestId('app-toast').closest('.app-toast-shell');
+    expect(leaving).toHaveAttribute('data-leaving', 'true');
+    expect(leaving).toHaveAttribute('aria-hidden', 'true');
+    await waitFor(() => expect(screen.queryByTestId('app-toast')).not.toBeInTheDocument());
+  });
+
+  it('unmounts each dismissed toast after its own exit animation', async () => {
+    render(
+      <ToastProvider>
+        <ToastTrigger />
+        <ToastContainer />
+      </ToastProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar toast' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar toast' }));
+    const [first, second] = screen.getAllByRole('button', { name: 'Cerrar notificación' });
+    fireEvent.click(first);
+    fireEvent.click(second);
+
+    expect(screen.getAllByTestId('app-toast')).toHaveLength(2);
+    await waitFor(() => expect(screen.queryAllByTestId('app-toast')).toHaveLength(0));
   });
 
   it('renders a compact pill below the titlebar so it does not cover window or modal close controls', () => {

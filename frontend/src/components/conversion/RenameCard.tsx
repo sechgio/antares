@@ -232,7 +232,7 @@ export default function RenameCard(props: RenameCardProps) {
         <Button variant="none" size="none"
           key={sep.id || 'none'}
           onClick={() => changeSeparator(sep.id)}
-          className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-all ${
+          className={`flex-1 py-2 rounded-lg border text-xs font-medium transition ${
             wordSeparator === sep.id
               ? 'bg-[color:color-mix(in_srgb,var(--accent-secondary)_20%,transparent)] text-[var(--accent-secondary)] border-[color:color-mix(in_srgb,var(--accent-secondary)_40%,transparent)]'
               : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:border-[var(--border-medium)]'
@@ -427,7 +427,7 @@ export default function RenameCard(props: RenameCardProps) {
                         <Button variant="none" size="none"
                           key={col}
                           onClick={() => toggleCol(col)}
-                          className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
+                          className={`px-3 py-2 rounded-lg border text-xs font-medium transition ${
                             active
                               ? 'bg-[var(--accent-primary)] text-[var(--text-on-accent)] border-[var(--accent-primary)] shadow-sm'
                               : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-subtle)] hover:border-[var(--border-medium)]'

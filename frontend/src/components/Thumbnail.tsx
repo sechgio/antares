@@ -109,7 +109,7 @@ export default function Thumbnail({ path, fileToken, file, size = 48, variant = 
           src={state.displaySrc}
           alt=""
           loading="lazy"
-          className={`h-full w-full object-cover transition-all duration-300 group-hover:scale-105 ${
+          className={`h-full w-full object-cover transition duration-300 group-hover:scale-105 ${
             isCard ? 'rounded-[10px]' : 'rounded-[10px] border border-bdr-subtle shadow-sm'
           } ${state.imageLoaded ? 'opacity-100' : 'opacity-0'}`}
           onLoad={handleLoad}

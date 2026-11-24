@@ -151,7 +151,7 @@ export default function EspaciosWelcome({ onCreateEspacio }: EspaciosWelcomeProp
                 <motion.div
                   key={item.step}
                   {...fadeUp(0.25 + index * 0.08, reducedMotion)}
-                  className="group relative flex gap-4 rounded-xl border border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_80%,transparent)] p-4 backdrop-blur-sm transition-all hover:border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]"
+                  className="group relative flex gap-4 rounded-xl border border-[var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--bg-elevated)_80%,transparent)] p-4 backdrop-blur-sm transition hover:border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]"
                 >
                   <span
                     className="relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold ring-1 ring-[var(--border-subtle)] transition-transform group-hover:scale-105"
@@ -188,7 +188,7 @@ export default function EspaciosWelcome({ onCreateEspacio }: EspaciosWelcomeProp
                   <Button variant="none" size="none"
                     key={view.id}
                     onClick={() => handleViewChange(view.id)}
-                    className={`group flex flex-col gap-3 rounded-xl border p-4 text-left transition-all ${
+                    className={`group flex flex-col gap-3 rounded-xl border p-4 text-left transition ${
                       isActive
                         ? 'border-[color:color-mix(in_srgb,var(--accent-primary)_40%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-primary)_8%,transparent)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent-primary)_20%,transparent)]'
                         : 'border-[var(--border-subtle)] bg-[var(--bg-base)] hover:border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]'

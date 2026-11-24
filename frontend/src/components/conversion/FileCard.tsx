@@ -26,7 +26,7 @@ export default React.memo(function FileCard({ path, selected, isPrimary, onClick
       onDoubleClick={onDoubleClick}
       onMouseEnter={() => setShowRemove(true)}
       onMouseLeave={() => setShowRemove(false)}
-      className={`group relative cursor-pointer rounded-xl overflow-hidden border transition-all duration-200 ${
+      className={`group relative cursor-pointer rounded-xl overflow-hidden border transition duration-200 ${
         isPrimary
           ? 'border-[var(--accent-primary)] shadow-[0_0_0_3px_var(--accent-primary-glow)] scale-[1.02] z-10'
           : selected
@@ -48,7 +48,7 @@ export default React.memo(function FileCard({ path, selected, isPrimary, onClick
         )}
 
         <div
-          className={`absolute left-2 top-2 flex h-5.5 w-5.5 items-center justify-center rounded-full border-2 transition-all duration-200 ${
+          className={`absolute left-2 top-2 flex h-5.5 w-5.5 items-center justify-center rounded-full border-2 transition duration-200 ${
             selected
               ? 'bg-[var(--accent-primary)] border-[var(--accent-primary)]'
               : 'border-[color:color-mix(in_srgb,var(--text-primary)_40%,transparent)] group-hover:border-[color:color-mix(in_srgb,var(--text-primary)_80%,transparent)]'
@@ -64,7 +64,7 @@ export default React.memo(function FileCard({ path, selected, isPrimary, onClick
 
         <Button variant="none" size="none"
           onClick={onRemove}
-          className={`absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-primary)] backdrop-blur-sm transition-all duration-200 hover:bg-[var(--accent-red)] hover:text-[var(--text-on-accent)] shadow-sm ${
+          className={`absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-primary)] backdrop-blur-sm transition duration-200 hover:bg-[var(--accent-red)] hover:text-[var(--text-on-accent)] shadow-sm ${
             showRemove || isPrimary ? 'opacity-100' : 'opacity-0'
           }`}
           style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 60%, transparent)' }}

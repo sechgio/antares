@@ -1,4 +1,4 @@
-import React, { useState, Suspense, useCallback, useEffect } from 'react';
+import React, { useState, Suspense, useCallback, useEffect, startTransition } from 'react';
 import Sidebar from './components/layout/Sidebar';
 import TitleBar from './components/layout/TitleBar';
 import { ToastProvider } from './hooks/useToast';
@@ -153,11 +153,11 @@ function AppContent() {
   const stickyNotesEnabled = usePluginEnabled('sticky-notes');
 
   const handleTabChange = useCallback((tab: TabId) => {
-    if (tab === 'canvas') {
-      prefetchCanvasView();
-      setCanvasMounted(true);
-    }
-    setActiveTab(tab);
+    if (tab === 'canvas') prefetchCanvasView();
+    startTransition(() => {
+      if (tab === 'canvas') setCanvasMounted(true);
+      setActiveTab(tab);
+    });
   }, []);
   const openSettings = useCallback((section: ConfigSectionId = 'appearance') => {
     prefetchSettingsModal();
@@ -363,7 +363,7 @@ function AppContent() {
                     </div>
                   )}
                   {ActiveView && (
-                    <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4'}`}>
+                    <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4 [scrollbar-gutter:stable]'}`}>
                       <ErrorBoundary key={activeTab} view={activeTab}>
                         {activeTab === 'agent' ? (
                           <AgentView onConfigureProvider={openProvidersSection} onOpenModule={openAgentModule} />

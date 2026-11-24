@@ -48,7 +48,7 @@ export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps
           {meta.reexecute && (
             <Button variant="none" size="none"
               onClick={onReexecute}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent-primary)] px-3 py-1.5 text-[11px] font-semibold text-[var(--text-on-accent)] transition-all hover:bg-[var(--accent-primary-hover)] active:scale-[0.98]"
+              className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent-primary)] px-3 py-1.5 text-[11px] font-semibold text-[var(--text-on-accent)] transition hover:bg-[var(--accent-primary-hover)] active:scale-[0.98]"
             >
               <RotateCw size={12} strokeWidth={2} />
               {t('history.reexecute')}
@@ -56,7 +56,7 @@ export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps
           )}
           <Button variant="none" size="none"
             onClick={onDelete}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--accent-red)_30%,transparent)] bg-transparent px-3 py-1.5 text-[11px] font-medium text-[var(--accent-red)] transition-all hover:bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] active:scale-[0.98]"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[color:color-mix(in_srgb,var(--accent-red)_30%,transparent)] bg-transparent px-3 py-1.5 text-[11px] font-medium text-[var(--accent-red)] transition hover:bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] active:scale-[0.98]"
           >
             <Trash2 size={12} strokeWidth={2} />
             {t('history.delete')}
@@ -73,7 +73,7 @@ export default function RunDetail({ run, onReexecute, onDelete }: RunDetailProps
         </div>
         <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--bg-elevated)]">
           <div
-            className={`h-full rounded-full transition-all ${successRate === 100 ? 'bg-[var(--accent-green)]' : successRate >= 50 ? 'bg-[var(--accent-yellow)]' : 'bg-[var(--accent-red)]'}`}
+            className={`h-full rounded-full transition-[width,background-color] ease-[var(--ease-out)] ${successRate === 100 ? 'bg-[var(--accent-green)]' : successRate >= 50 ? 'bg-[var(--accent-yellow)]' : 'bg-[var(--accent-red)]'}`}
             style={{ width: `${successRate}%` }}
           />
         </div>

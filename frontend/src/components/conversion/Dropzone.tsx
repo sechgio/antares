@@ -138,7 +138,7 @@ export default function Dropzone({
   return (
     <div className="flex min-h-0 w-full flex-1 items-center justify-center p-4">
       <div
-        className={`flex aspect-square w-[min(380px,calc(100vw-2rem))] max-h-[min(380px,calc(100vh-12rem))] flex-col items-center justify-center rounded-2xl border-2 border-dashed px-4 py-5 text-center transition-all duration-500 ${
+        className={`flex aspect-square w-[min(380px,calc(100vw-2rem))] max-h-[min(380px,calc(100vh-12rem))] flex-col items-center justify-center rounded-2xl border-2 border-dashed px-4 py-5 text-center transition-[border-color,background-color,box-shadow,transform] duration-200 ease-[var(--ease-out)] motion-reduce:transition-none ${
           dragOver
             ? 'border-[var(--accent-primary)] bg-[color:color-mix(in_srgb,var(--accent-primary)_5%,transparent)] shadow-[0_0_40px_var(--accent-primary-glow)] scale-[1.02]'
             : pasting
@@ -147,8 +147,8 @@ export default function Dropzone({
         }`}
       >
         <div className="mb-3 w-full min-w-0 px-1">
-          <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-sm transition-transform duration-500 ${dragOver ? 'scale-110' : ''}`}>
-            <UploadCloud className={`h-6 w-6 transition-colors duration-300 ${dragOver ? 'text-[var(--accent-primary)]' : 'text-[var(--text-muted)]'}`} />
+          <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-sm transition-transform duration-200 ease-[var(--ease-out)] motion-reduce:transition-none ${dragOver ? 'scale-105' : ''}`}>
+            <UploadCloud className={`h-6 w-6 transition-colors duration-150 ${dragOver ? 'text-[var(--accent-primary)]' : 'text-[var(--text-muted)]'}`} />
           </div>
           <h3 className="mb-1.5 text-base font-semibold leading-snug text-[var(--text-primary)]">
             {dragOver ? 'Suelta los archivos aquí' : pasting ? 'Pegando archivos...' : 'Arrastra imágenes o videos aquí'}

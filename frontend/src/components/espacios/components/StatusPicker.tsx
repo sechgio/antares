@@ -75,7 +75,7 @@ export default function StatusPicker({
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         onClick={() => !disabled && toggle()}
-        className={`group inline-flex items-center gap-1.5 rounded-full border font-medium outline-none transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${
+        className={`group inline-flex items-center gap-1.5 rounded-full border font-medium outline-none transition duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${
           isSm ? 'px-2.5 py-1 text-[11px]' : 'px-3 py-1.5 text-sm'
         } focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--accent-primary)_35%,transparent)]`}
         style={{

@@ -10,28 +10,30 @@ const DIALOG_ICONS: Record<NonNullable<DialogOptions['type']>, LucideIcon> = {
   destructive: AlertTriangle,
 };
 
-export function DialogSurface({ children, onClose, onBackdropClose = onClose, labelledBy, role = 'dialog', className = 'max-w-[28rem] p-5', portal = false }: {
-  children: ReactNode; onClose: () => void; onBackdropClose?: () => void; labelledBy: string; role?: 'dialog' | 'alertdialog'; className?: string; portal?: boolean;
+export function DialogSurface({ children, onClose, onBackdropClose = onClose, labelledBy, role = 'dialog', className = 'max-w-[28rem] p-5', portal = false, closing = false }: {
+  children: ReactNode; onClose: () => void; onBackdropClose?: () => void; labelledBy: string; role?: 'dialog' | 'alertdialog'; className?: string; portal?: boolean; closing?: boolean;
 }) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  useFocusTrap(dialogRef, true);
+  useFocusTrap(dialogRef, !closing);
 
   useEffect(() => {
+    if (closing) return undefined;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [closing, onClose]);
 
   const surface = (
     <div ref={overlayRef} data-testid="app-dialog-overlay"
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-fade-in"
+      data-closing={closing ? 'true' : undefined} aria-hidden={closing ? true : undefined} inert={closing ? true : undefined}
+      className="app-dialog-overlay fixed inset-0 z-[100] flex items-center justify-center p-4 animate-fade-in"
       style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 88%, transparent)', backdropFilter: 'blur(6px)' }}
       onClick={(e) => { if (e.target === overlayRef.current) onBackdropClose(); }}>
-      <div ref={dialogRef} data-testid="app-dialog" className={`w-full rounded-xl animate-scale-in ${className}`}
+      <div ref={dialogRef} data-testid="app-dialog" className={`app-dialog-panel w-full rounded-xl animate-scale-in ${className}`}
         tabIndex={-1} style={{ backgroundColor: 'var(--bg-base)', color: 'var(--text-primary)',
           border: '1px solid color-mix(in srgb, var(--accent-primary) 32%, var(--border-subtle))' }}
         role={role} aria-modal="true" aria-labelledby={labelledBy}>
@@ -45,7 +47,8 @@ export function DialogSurface({ children, onClose, onBackdropClose = onClose, la
 export default function Dialog() {
   const { isOpen, options, closeDialog } = useDialog();
 
-  if (!isOpen || !options) return null;
+  if (!options) return null;
+  const closing = !isOpen;
 
   const {
     title,
@@ -74,7 +77,7 @@ export default function Dialog() {
   const confirmFg = isDestructive ? 'var(--text-on-danger, #fff)' : 'var(--text-on-accent)';
 
   return (
-    <DialogSurface onClose={closeDialog} onBackdropClose={handleCancel} labelledBy="app-dialog-title" role="alertdialog">
+    <DialogSurface onClose={closeDialog} onBackdropClose={handleCancel} labelledBy="app-dialog-title" role="alertdialog" closing={closing}>
         <div className="mb-5 flex items-start gap-4">
           <div
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"

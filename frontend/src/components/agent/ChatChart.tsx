@@ -349,7 +349,7 @@ export function DonutChart({ spec }: { spec: ChartSpec }) {
                 strokeDasharray={`${Math.max(length - gap, 0)} ${C}`}
                 strokeDashoffset={-offset}
                 opacity={hover === null || hover === i ? 1 : 0.4}
-                className="transition-all duration-150"
+                className="transition-[stroke-width,opacity] duration-150"
                 onMouseEnter={() => setHover(i)}
               />
             );

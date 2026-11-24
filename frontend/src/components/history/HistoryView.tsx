@@ -314,7 +314,7 @@ export default function HistoryView() {
 
                 placeholder={t('history.search.placeholder')}
 
-                className="w-56 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] py-2 pl-9 pr-3 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] transition-all focus:border-[var(--accent-primary)] focus:outline-none focus:shadow-[0_0_0_3px_var(--accent-primary-glow)]"
+                className="w-56 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] py-2 pl-9 pr-3 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] transition focus:border-[var(--accent-primary)] focus:outline-none focus:shadow-[0_0_0_3px_var(--accent-primary-glow)]"
 
               />
 
@@ -333,7 +333,7 @@ export default function HistoryView() {
 
               aria-label="Filtros"
 
-              className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-[12px] font-medium transition-all ${
+              className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-[12px] font-medium transition ${
 
                 filtersOpen || hasActiveFilters
 
@@ -374,7 +374,7 @@ export default function HistoryView() {
 
                 aria-label={t('history.actions.exportCsv')}
 
-                className="inline-flex h-9 items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 text-[12px] font-medium text-[var(--text-secondary)] transition-all hover:border-[var(--border-medium)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed"
+                className="inline-flex h-9 items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 text-[12px] font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-medium)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed"
 
               >
 
@@ -411,7 +411,7 @@ export default function HistoryView() {
 
                   onClick={() => setActiveType(filter.value)}
 
-                  className={`shrink-0 rounded-lg border px-3 py-1.5 text-[11px] font-medium transition-all ${
+                  className={`shrink-0 rounded-lg border px-3 py-1.5 text-[11px] font-medium transition ${
 
                     activeType === filter.value
 
@@ -542,7 +542,7 @@ export default function HistoryView() {
               <Button variant="none" size="none"
                 onClick={() => void loadPage(false)}
                 disabled={loadingRuns}
-                className="inline-flex h-6 items-center rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2.5 text-[11px] font-medium text-[var(--text-secondary)] transition-all hover:border-[var(--accent-primary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-6 items-center rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2.5 text-[11px] font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent-primary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loadingRuns ? t('history.loading') : t('history.loadMore')}
               </Button>

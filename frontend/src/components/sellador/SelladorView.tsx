@@ -753,7 +753,7 @@ export default function SelladorView() {
               size="none"
               onClick={handleApply}
               disabled={!canApply || applying}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-[var(--border-medium)] bg-[var(--text-primary)] px-4 py-2.5 text-[10px] font-mono uppercase tracking-[0.15em] text-[var(--bg-base)] transition-all hover:opacity-90 disabled:opacity-30"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-[var(--border-medium)] bg-[var(--text-primary)] px-4 py-2.5 text-[10px] font-mono uppercase tracking-[0.15em] text-[var(--bg-base)] transition hover:opacity-90 disabled:opacity-30"
             >
               {applying ? (
                 <Loader2 size={13} className="animate-spin" />

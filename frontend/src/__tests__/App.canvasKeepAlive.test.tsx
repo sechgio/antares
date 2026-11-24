@@ -136,7 +136,7 @@ describe('App Canvas keep-alive', () => {
 
       fireEvent.click(await findSidebarTab('Conversión'));
       await waitFor(() => {
-        expect(screen.getByTestId('canvas-keep-alive')).toBeInTheDocument();
+        expect(screen.getByTestId('canvas-keep-alive')).toHaveClass('hidden');
       });
 
       await vi.advanceTimersByTimeAsync(60 * 1000 + 100);

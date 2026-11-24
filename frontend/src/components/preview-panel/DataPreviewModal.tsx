@@ -368,7 +368,7 @@ export default function DataPreviewModal({
     >
       <div
         ref={modalRef}
-        className={`w-full flex flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] transition-all duration-200 animate-scale-in ${
+        className={`w-full flex flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-base)] transition-[height,max-width,max-height] duration-200 animate-scale-in ${
           isFullScreen
             ? "h-[96vh] max-w-[98vw]"
             : "h-[90vh] max-h-[940px] max-w-[1500px]"
@@ -416,7 +416,7 @@ export default function DataPreviewModal({
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Buscar en todas las columnas..."
                 aria-label="Buscar en todas las columnas"
-                className="h-8 w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] pl-8 pr-7 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition-all focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary-glow)]"
+                className="h-8 w-full rounded-lg border border-[var(--border-medium)] bg-[var(--bg-elevated)] pl-8 pr-7 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none transition focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary-glow)]"
               />
               {searchQuery && (
                 <Button
@@ -674,7 +674,7 @@ export default function DataPreviewModal({
                 variant="none"
                 size="none"
                 onClick={onClose}
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] transition-all"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:border-[var(--border-medium)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-primary)] transition"
                 aria-label="Cerrar vista previa"
               >
                 <X size={16} />
@@ -1157,7 +1157,7 @@ export default function DataPreviewModal({
                               variant="none"
                               size="none"
                               onClick={() => copyToClipboard(text, header)}
-                              className="opacity-0 group-hover/field:opacity-100 p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all"
+                              className="opacity-0 group-hover/field:opacity-100 p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] transition"
                               title={`Copiar ${header}`}
                             >
                               <Copy size={11} />

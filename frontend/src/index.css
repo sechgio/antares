@@ -472,13 +472,10 @@
 
 @layer utilities {
   .animate-fade-in {
-    animation: fadeIn 0.3s ease-out forwards;
+    animation: fadeIn 160ms var(--ease-out) forwards;
   }
   .animate-scale-in {
-    animation: scaleIn 0.25s ease-out forwards;
-  }
-  .animate-slide-left {
-    animation: slideLeft 0.3s ease-out forwards;
+    animation: scaleIn 180ms var(--ease-out) forwards;
   }
   .animate-shimmer {
     animation: shimmer 1.5s infinite linear;
@@ -527,11 +524,6 @@
   to { opacity: 1; transform: scale(1); }
 }
 
-@keyframes slideLeft {
-  from { opacity: 0; transform: translateX(100%); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
 @keyframes shimmer {
   from { transform: translateX(-100%); }
   to { transform: translateX(100%); }
@@ -554,6 +546,57 @@
 
 .animate-pulse {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes appDialogOverlayOut {
+  to { opacity: 0; }
+}
+
+@keyframes appDialogPanelOut {
+  to { opacity: 0; transform: scale(0.98); }
+}
+
+.app-dialog-overlay[data-closing] {
+  animation: appDialogOverlayOut 140ms var(--ease-out) forwards;
+}
+
+.app-dialog-overlay[data-closing] .app-dialog-panel {
+  animation: appDialogPanelOut 140ms var(--ease-out) forwards;
+}
+
+@keyframes appToastIn {
+  from { opacity: 0; transform: translateX(16px); }
+}
+
+@keyframes appToastOut {
+  to { opacity: 0; transform: translateX(16px); }
+}
+
+.app-toast-shell {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 180ms var(--ease-out);
+}
+
+.app-toast-shell[data-leaving] {
+  grid-template-rows: 0fr;
+}
+
+.app-toast-slot {
+  min-height: 0;
+  padding-bottom: 8px;
+}
+
+.app-toast-shell[data-leaving] .app-toast-slot {
+  overflow: hidden;
+}
+
+.app-toast-in {
+  animation: appToastIn 200ms var(--ease-out) both;
+}
+
+.app-toast-shell[data-leaving] .app-toast-in {
+  animation: appToastOut 180ms var(--ease-out) forwards;
 }
 
 @keyframes lg-aurora-drift {
@@ -605,8 +648,22 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .agent-popover-in,
-  .agent-trace-in {
+  .agent-trace-in,
+  .animate-fade-in,
+  .animate-scale-in,
+  .animate-shimmer,
+  .animate-pulse,
+  .app-toast-in {
     animation: none;
+  }
+
+  .app-toast-shell {
+    transition: none;
+  }
+
+  .app-toast-shell[data-leaving],
+  .app-dialog-overlay[data-closing] {
+    display: none;
   }
 }
 

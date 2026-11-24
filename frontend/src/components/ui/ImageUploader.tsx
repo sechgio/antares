@@ -50,11 +50,11 @@ const SKINS = {
     imgDecoding: 'async' as const,
     overlayAlpha: '50%',
     showIndexBadge: false,
-    expandClass: 'mx-auto flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-full text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] border border-[var(--border-subtle)] transition-all',
+    expandClass: 'mx-auto flex items-center justify-center gap-1.5 px-4 py-1.5 rounded-full text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] bg-[var(--bg-surface)] hover:bg-[var(--bg-elevated)] border border-[var(--border-subtle)] transition',
   },
   flat: {
     wrapper: 'flex flex-col gap-3',
-    zoneBase: 'group cursor-pointer rounded-md border px-4 py-4 flex items-center gap-3 transition-all',
+    zoneBase: 'group cursor-pointer rounded-md border px-4 py-4 flex items-center gap-3 transition',
     zoneIdle: 'border-transparent bg-[var(--bg-surface)] hover:bg-[color:color-mix(in_srgb,var(--border-subtle)_30%,transparent)]',
     iconBox: (isDragging: boolean) =>
       `w-9 h-9 rounded-md flex items-center justify-center shrink-0 transition-colors ${isDragging ? 'bg-[color:color-mix(in_srgb,var(--accent-primary)_10%,transparent)] text-[var(--accent-primary)]' : 'bg-[var(--bg-base)] text-[var(--text-muted)] group-hover:text-[var(--text-primary)]'}`,
@@ -70,7 +70,7 @@ const SKINS = {
     clearClass: 'text-[10px] font-medium text-[var(--text-muted)] hover:text-[var(--accent-red)]',
     grid: 'grid grid-cols-5 gap-1.5',
     item: 'relative group rounded-md overflow-hidden bg-[var(--bg-surface)] border border-[var(--border-subtle)] aspect-square',
-    img: 'w-full h-full object-cover transition-transform duration-300 group-hover:scale-110',
+    img: 'w-full h-full object-cover transition-transform duration-300 ease-[var(--ease-out)] group-hover:scale-105',
     imgDecoding: undefined as 'async' | undefined,
     overlayAlpha: '60%',
     showIndexBadge: true,

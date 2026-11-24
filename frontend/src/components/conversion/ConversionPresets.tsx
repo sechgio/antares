@@ -204,7 +204,7 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
         onClick={toggle}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)] transition-all"
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-subtle)] hover:border-[var(--border-medium)] hover:text-[var(--text-primary)] transition"
       >
         <Settings2 className="h-4 w-4" />
         <span>Configuración</span>
@@ -292,7 +292,7 @@ export default function ConversionPresets({ currentConfig, onLoadConfig, classNa
                       <Button variant="none" size="none"
                         onClick={(e) => handleDelete(preset.id, e)}
                         aria-label="Eliminar"
-                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] transition-all"
+                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[color:color-mix(in_srgb,var(--accent-red)_10%,transparent)] transition"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>

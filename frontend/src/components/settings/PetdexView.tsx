@@ -453,7 +453,7 @@ export default function PetdexView() {
                   key={pet.slug}
                   onClick={() => handleSelectPet(pet)}
                   title={`${pet.displayName} · ${pet.kind}`}
-                  className={`group relative flex flex-col items-center rounded-md border p-2 transition-all ${
+                  className={`group relative flex flex-col items-center rounded-md border p-2 transition ${
                     isSelected
                       ? 'border-[var(--accent-primary)] bg-[var(--accent-primary-glow)] ring-1 ring-[color:color-mix(in_srgb,var(--accent-primary)_40%,transparent)]'
                       : 'border-transparent bg-[var(--bg-base)] hover:border-[var(--border-medium)] hover:bg-[var(--bg-elevated)]'

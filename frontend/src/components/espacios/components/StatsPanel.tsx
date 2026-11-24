@@ -50,7 +50,7 @@ export default function StatsPanel({ stats, filteredCount, totalCount }: StatsPa
         <span className="tabular-nums font-medium text-[var(--text-primary)]">{stats.progress}%</span>
         <span className="h-1.5 w-16 overflow-hidden rounded-full bg-[var(--bg-input)] sm:w-20">
           <span
-            className="block h-full rounded-full bg-[var(--accent-primary)] transition-all duration-300"
+            className="block h-full rounded-full bg-[var(--accent-primary)] transition-[width] ease-[var(--ease-out)] duration-300"
             style={{ width: `${stats.progress}%` }}
           />
         </span>
