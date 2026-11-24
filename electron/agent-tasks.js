@@ -1771,6 +1771,7 @@ module.exports = {
   runTaskNow,
   queueControl: queue.queueControl,
   _internal: {
+    fireTaskCompleted,
     delegationBrief,
     delegationReport,
     planBrief,
