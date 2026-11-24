@@ -65,7 +65,7 @@ export default function SelectPicker({
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         onClick={() => !disabled && toggle()}
-        className={`group inline-flex items-center gap-1.5 rounded-full border bg-[var(--bg-elevated)] outline-none transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${
+        className={`group inline-flex items-center gap-1.5 rounded-full border bg-[var(--bg-elevated)] outline-none transition duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${
           isSm ? 'h-8 max-w-[200px] pl-2.5 pr-2 text-xs' : 'px-3 py-1.5 text-sm'
         } ${
           open

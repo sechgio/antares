@@ -549,7 +549,7 @@ export default function AppearanceView() {
                       }}
                       aria-label={`Acento ${item.key}`}
                       aria-pressed={isActive}
-                      className={`h-4 w-4 shrink-0 rounded-full border transition-all ${
+                      className={`h-4 w-4 shrink-0 rounded-full border transition ${
                         isActive ? 'border-[var(--text-primary)] scale-110' : 'border-transparent hover:border-[var(--text-secondary)]'
                       }`}
                       style={{ backgroundColor: item.color }}

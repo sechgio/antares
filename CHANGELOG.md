@@ -136,6 +136,7 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Animaciones y saltos de la interfaz: el panel lateral conserva su contenido mientras se cierra, cambiar de pestaña ya no muestra «Cargando...» mientras carga la vista nueva, la barra de scroll ya no desplaza el contenido y los toasts y el diálogo de confirmación tienen animación de salida. Las transiciones animan solo color, opacidad, sombra y `transform` (sin `transition-all`), con duraciones de 150–250 ms, y las utilidades globales, el tutorial y los toasts respetan `prefers-reduced-motion`. Las animaciones del padrón dejan de sobrescribir las globales `fadeIn`/`scaleIn`.
 - Las conversaciones del agente actualizan su copia de la memoria en el siguiente turno tras corregir, desactivar, reactivar, revertir o borrar un recuerdo.
 - El editor de rutinas del agente permite elegir la conversación de destino y muestra dónde se ejecuta cada rutina existente.
 - El Generador Reportes descarta la selección y los datos anteriores al importar otro archivo o cambiar de hoja; una carga pendiente, vacía o fallida ya no permite exportar un reporte con registros de la selección anterior.

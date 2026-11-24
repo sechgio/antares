@@ -35,7 +35,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({
       ref={ref}
       data-slot="button"
       type={type}
-      className={`transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-base)] ${sizeClasses[size]} ${variants[variant]} ${className}`}
+      className={`transition-[color,background-color,border-color,box-shadow,opacity,transform] ease-[var(--ease-out)] duration-150 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] motion-reduce:active:scale-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-base)] ${sizeClasses[size]} ${variants[variant]} ${className}`}
       {...props}
     >
       {children}

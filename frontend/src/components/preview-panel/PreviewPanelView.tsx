@@ -717,7 +717,7 @@ export default function PreviewPanelView() {
   return (
     <div className="flex h-full w-full bg-[var(--bg-base)] text-[var(--text-primary)] overflow-hidden">
       <aside
-        className={`flex flex-col bg-[var(--bg-surface)] border-r border-[var(--border-subtle)] transition-all duration-300 ${isFocusMode ? "w-0 overflow-hidden opacity-0 border-none" : "w-[340px]"}`}
+        className={`flex flex-col bg-[var(--bg-surface)] border-r border-[var(--border-subtle)] transition-[width,opacity] duration-300 ${isFocusMode ? "w-0 overflow-hidden opacity-0 border-none" : "w-[340px]"}`}
       >
         <div className="shrink-0 h-11 px-3 flex items-center border-b border-[var(--border-subtle)]">
           <div className="flex items-center gap-2 w-full">
@@ -910,7 +910,7 @@ export default function PreviewPanelView() {
                     onChange={(e) => setRequiresImages(e.target.checked)}
                     className="sr-only peer"
                   />
-                  <div className="w-7 h-3.5 bg-[var(--bg-base)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-[var(--text-on-accent)] after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[var(--text-primary)] after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-[var(--accent-green)] border border-[var(--border-medium)]"></div>
+                  <div className="w-7 h-3.5 bg-[var(--bg-base)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-[var(--text-on-accent)] after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-[var(--text-primary)] after:rounded-full after:h-2.5 after:w-2.5 after:transition-transform peer-checked:bg-[var(--accent-green)] border border-[var(--border-medium)]"></div>
                 </label>
               </div>
             </div>
@@ -1005,7 +1005,7 @@ export default function PreviewPanelView() {
                   variant="none"
                   size="none"
                   onClick={() => setShowDataPreview(true)}
-                  className="w-full flex items-center justify-center gap-1.5 border border-[var(--border-medium)] hover:border-[var(--text-secondary)] rounded-md py-1 text-center hover:bg-[var(--bg-elevated)] transition-all text-[10px] text-[var(--text-secondary)]"
+                  className="w-full flex items-center justify-center gap-1.5 border border-[var(--border-medium)] hover:border-[var(--text-secondary)] rounded-md py-1 text-center hover:bg-[var(--bg-elevated)] transition text-[10px] text-[var(--text-secondary)]"
                 >
                   <Table2 size={12} /> Ver Datos
                 </Button>
@@ -1114,7 +1114,7 @@ export default function PreviewPanelView() {
                 variant="none"
                 size="none"
                 onClick={() => setShowColumnModal(true)}
-                className="w-full border border-dashed border-[var(--border-medium)] hover:border-[var(--text-secondary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] rounded-md py-1 text-center hover:bg-[var(--bg-elevated)] transition-all flex items-center justify-center gap-1.5 text-[10px]"
+                className="w-full border border-dashed border-[var(--border-medium)] hover:border-[var(--text-secondary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] rounded-md py-1 text-center hover:bg-[var(--bg-elevated)] transition flex items-center justify-center gap-1.5 text-[10px]"
               >
                 + Columna Personalizada
               </Button>

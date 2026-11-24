@@ -55,7 +55,7 @@ export default function Step({
       </Button>
       <div
         ref={contentRef}
-        className="overflow-hidden transition-all duration-200 ease-in-out"
+        className="overflow-hidden transition-[max-height,opacity] duration-200 ease-in-out"
         style={{
           maxHeight: isOpen
             ? `${contentRef.current?.scrollHeight ?? 800}px`

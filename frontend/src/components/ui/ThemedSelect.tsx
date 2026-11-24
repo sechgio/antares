@@ -202,7 +202,7 @@ export default function ThemedSelect({
         aria-activedescendant={
           isOpen && options[highlightedIndex] ? `${menuId}-${options[highlightedIndex].value}` : undefined
         }
-        className={`flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-[11px] font-medium transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none ${
+        className={`flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-[11px] font-medium transition-[background-color,border-color,box-shadow] duration-150 ease-[var(--ease-out)] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none ${
           isOpen
             ? 'bg-[var(--bg-elevated)] border-[var(--accent-primary)] ring-2 ring-[var(--accent-primary-glow)]'
             : 'bg-[var(--bg-input)] border-[var(--border-subtle)] hover:border-[var(--border-medium)] focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary-glow)]'

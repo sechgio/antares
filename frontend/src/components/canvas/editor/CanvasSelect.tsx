@@ -94,7 +94,7 @@ export default function CanvasSelect({
         }}
         disabled={disabled}
         aria-expanded={isOpen}
-        className="canvas-input flex w-full items-center justify-between gap-1.5 px-2 text-left cursor-pointer transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="canvas-input flex w-full items-center justify-between gap-1.5 px-2 text-left cursor-pointer transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <span className="truncate flex items-center gap-1.5 min-w-0 font-medium">
           {selectedOption?.icon}

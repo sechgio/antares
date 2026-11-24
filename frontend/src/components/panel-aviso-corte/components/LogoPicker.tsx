@@ -63,7 +63,7 @@ export default function LogoPicker({ right, onRight }: Props) {
         onDrop={onDrop}
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
-        className={`relative cursor-pointer rounded-lg border border-dashed overflow-hidden transition-all duration-200 ${
+        className={`relative cursor-pointer rounded-lg border border-dashed overflow-hidden transition duration-200 ${
           dragging
             ? 'border-[var(--accent-primary)] bg-[color:color-mix(in_srgb,var(--accent-primary)_8%,transparent)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary)_15%,transparent)]'
             : 'border-[var(--border-subtle)] hover:border-[color:color-mix(in_srgb,var(--accent-primary)_50%,transparent)] hover:bg-[var(--bg-surface)]'

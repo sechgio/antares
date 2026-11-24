@@ -21,7 +21,7 @@ export const EmptyPreviewPanel: React.FC<{ formato: string }> = ({ formato }) =>
     </div>
     <div className="flex-1 flex flex-col items-center justify-center p-8">
     <div
-      className={`relative bg-[var(--bg-input)] shadow-inner overflow-hidden flex flex-col transition-all duration-500 rounded-lg border border-[var(--border-subtle)] ${
+      className={`relative bg-[var(--bg-input)] shadow-inner overflow-hidden flex flex-col transition-[width,height] duration-[250ms] ease-[var(--ease-out)] motion-reduce:transition-none rounded-lg border border-[var(--border-subtle)] ${
         formato === 'vertical' ? 'w-48 h-64' : 'w-64 h-48'
       }`}
     >

@@ -48,7 +48,7 @@ export default function ColorSwatchPicker({ color, label, onChange }: ColorSwatc
             e.stopPropagation();
             toggle();
           }}
-          className="flex h-6 w-6 items-center justify-center rounded-full transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--accent-primary)_40%,transparent)]"
+          className="flex h-6 w-6 items-center justify-center rounded-full transition-transform duration-150 ease-[var(--ease-out)] hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--accent-primary)_40%,transparent)]"
         >
           <span
             className="h-3.5 w-3.5 rounded-full border border-black/15 shadow-sm"
@@ -82,7 +82,7 @@ export default function ColorSwatchPicker({ color, label, onChange }: ColorSwatc
                     aria-label={`Color ${preset}`}
                     aria-pressed={selected}
                     onClick={() => selectColor(preset)}
-                    className={`h-5 w-5 rounded-full transition-transform hover:scale-110 ${
+                    className={`h-5 w-5 rounded-full transition-transform duration-150 ease-[var(--ease-out)] hover:scale-105 ${
                       selected
                         ? 'ring-2 ring-[var(--text-primary)] ring-offset-1 ring-offset-[var(--bg-elevated)]'
                         : ''

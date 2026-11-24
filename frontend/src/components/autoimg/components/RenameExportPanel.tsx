@@ -245,7 +245,7 @@ export default function RenameExportPanel({ onDone }: RenameExportPanelProps) {
           <div className="mt-3 space-y-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3">
             <div className="h-1.5 overflow-hidden rounded-full bg-[var(--bg-elevated)]">
               <div
-                className="h-full rounded-full bg-[var(--accent-primary)] transition-all duration-300"
+                className="h-full rounded-full bg-[var(--accent-primary)] transition-[width] ease-[var(--ease-out)] duration-300"
                 style={{ width: `${pct}%` }}
               />
             </div>

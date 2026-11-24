@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useId } from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { WithHoverTooltip } from '@/components/ui/HoverTooltip';
 import "./tutorial-overlay.css";
 
@@ -28,6 +28,9 @@ export default function TutorialOverlay({ isOpen, onClose, steps }: TutorialOver
   const [currentStep, setCurrentStep] = useState(0);
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null);
   const maskId = useId().replace(/:/g, "");
+  const reducedMotion = useReducedMotion();
+  const spotlightTransition = reducedMotion ? { duration: 0 } : { type: "spring" as const, bounce: 0, duration: 0.35 };
+  const cardTransition = reducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.23, 1, 0.32, 1] as const };
 
   useEffect(() => {
     if (isOpen) {
@@ -122,6 +125,7 @@ export default function TutorialOverlay({ isOpen, onClose, steps }: TutorialOver
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={reducedMotion ? { duration: 0 } : { duration: 0.2 }}
             onClick={onClose}
           >
             <svg
@@ -143,7 +147,7 @@ export default function TutorialOverlay({ isOpen, onClose, steps }: TutorialOver
                         width: targetRect.width + 16,
                         height: targetRect.height + 16,
                       }}
-                      transition={{ type: "spring", stiffness: 300, damping: 28 }}
+                      transition={spotlightTransition}
                       rx="12"
                       ry="12"
                       fill="black"
@@ -174,16 +178,16 @@ export default function TutorialOverlay({ isOpen, onClose, steps }: TutorialOver
                 height: targetRect.height + 16,
               }}
               exit={{ opacity: 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 28 }}
+              transition={spotlightTransition}
             />
           )}
 
           <motion.div
             className="tutorial-overlay"
-            initial={{ opacity: 0, scale: 0.9, x: "-50%", y: "-45%" }}
+            initial={{ opacity: 0, scale: 0.96, x: "-50%", y: "-48%" }}
             animate={{ opacity: 1, scale: 1, x: "-50%", y: "-50%" }}
-            exit={{ opacity: 0, scale: 0.9, x: "-50%", y: "-45%" }}
-            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            exit={{ opacity: 0, scale: 0.96, x: "-50%", y: "-48%" }}
+            transition={cardTransition}
           >
             <div className="tutorial-header">
               <WithHoverTooltip label="Cerrar tutorial" placement="bottom">

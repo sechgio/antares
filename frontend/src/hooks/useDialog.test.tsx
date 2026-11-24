@@ -68,4 +68,17 @@ describe('ui/Dialog promise resolution', () => {
 
     await waitFor(() => expect(results).toEqual([false]));
   });
+
+  it('keeps the dialog hidden and inert during its exit animation, then unmounts it', async () => {
+    setup(() => {});
+
+    fireEvent.click(screen.getByRole('button', { name: 'abrir' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancelar' }));
+
+    const overlay = screen.getByTestId('app-dialog-overlay');
+    expect(overlay).toHaveAttribute('data-closing', 'true');
+    expect(overlay).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId('app-dialog-overlay')).not.toBeInTheDocument());
+  });
 });

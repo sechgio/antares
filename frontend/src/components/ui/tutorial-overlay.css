@@ -73,7 +73,8 @@
     color: var(--text-secondary);
     cursor: pointer;
     border-radius: 8px;
-    transition: all 0.2s;
+    transition: 0.2s;
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
 }
 
 .tutorial-close:hover {
@@ -146,7 +147,8 @@
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: 0.2s;
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
     border: none;
     font-family: inherit;
 }
@@ -194,7 +196,8 @@
     border: none;
     background: var(--border-subtle);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: 0.2s;
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform, width;
     padding: 0;
 }
 
@@ -222,7 +225,8 @@
     cursor: pointer;
     font-size: 0.8rem;
     font-weight: 500;
-    transition: all 0.2s;
+    transition: 0.2s;
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
     font-family: inherit;
 }
 
@@ -243,5 +247,19 @@
     }
     50% {
         transform: scale(1.1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tutorial-spotlight-ring,
+    .tutorial-trigger-btn svg {
+        animation: none;
+    }
+
+    .tutorial-close,
+    .tutorial-btn,
+    .tutorial-dot,
+    .tutorial-trigger-btn {
+        transition: none;
     }
 }

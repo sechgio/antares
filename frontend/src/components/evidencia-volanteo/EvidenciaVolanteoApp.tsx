@@ -135,7 +135,7 @@ export default function EvidenciaVolanteoApp() {
             <Button variant="none" size="none"
               onClick={handleExport}
               disabled={session.isExporting}
-              className="flex items-center justify-center gap-2 rounded-md bg-[var(--accent-primary)] px-4 py-2.5 text-[13px] font-semibold text-[var(--text-on-accent)] hover:opacity-90 disabled:opacity-50 transition-all shadow-sm w-full"
+              className="flex items-center justify-center gap-2 rounded-md bg-[var(--accent-primary)] px-4 py-2.5 text-[13px] font-semibold text-[var(--text-on-accent)] hover:opacity-90 disabled:opacity-50 transition shadow-sm w-full"
             >
               {session.isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
               Exportar documento

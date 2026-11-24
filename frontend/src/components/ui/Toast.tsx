@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { useToast, type ToastItem } from '../../hooks/useToast';
 
 const typeIcon: Record<string, string> = {
@@ -17,7 +17,7 @@ const ToastCard = memo(function ToastCard({ toast, onRemove }: { toast: ToastIte
       aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
       aria-atomic="true"
       data-testid="app-toast"
-      className="pointer-events-auto flex max-w-[min(400px,calc(100vw-2rem))] items-center gap-2 rounded-full border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[var(--text-primary)] shadow-lg animate-slide-left"
+      className="pointer-events-auto flex max-w-[min(400px,calc(100vw-2rem))] items-center gap-2 rounded-full border border-[var(--border-medium)] bg-[var(--bg-elevated)] px-3 py-1.5 text-[var(--text-primary)] shadow-lg app-toast-in"
     >
       <div className={`shrink-0 ${iconClass}`} aria-hidden="true">
         {toast.type === 'success' && (
@@ -57,16 +57,65 @@ const ToastCard = memo(function ToastCard({ toast, onRemove }: { toast: ToastIte
   );
 });
 
+const TOAST_EXIT_MS = 180;
+
+type RenderedToast = { toast: ToastItem; leaving: boolean };
+
 export default function ToastContainer() {
   const { toasts, removeToast } = useToast();
+  const [rendered, setRendered] = useState<RenderedToast[]>([]);
+
+  useEffect(() => {
+    setRendered((prev) => {
+      const live = new Map(toasts.map((toast) => [toast.id, toast]));
+      const next = prev.map((item) => {
+        const toast = live.get(item.toast.id);
+        return toast ? { toast, leaving: false } : { ...item, leaving: true };
+      });
+      const known = new Set(prev.map((item) => item.toast.id));
+      for (const toast of toasts) {
+        if (!known.has(toast.id)) next.push({ toast, leaving: false });
+      }
+      return next;
+    });
+  }, [toasts]);
+
+  const exitTimers = useRef(new Map<string, number>());
+  useEffect(() => {
+    for (const { toast, leaving } of rendered) {
+      if (!leaving || exitTimers.current.has(toast.id)) continue;
+      exitTimers.current.set(toast.id, window.setTimeout(() => {
+        exitTimers.current.delete(toast.id);
+        setRendered((prev) => prev.filter((item) => item.toast.id !== toast.id));
+      }, TOAST_EXIT_MS));
+    }
+  }, [rendered]);
+
+  useEffect(() => {
+    const timers = exitTimers.current;
+    return () => {
+      for (const id of timers.values()) window.clearTimeout(id);
+      timers.clear();
+    };
+  }, []);
 
   return (
     <div
       data-testid="app-toast-container"
-      className="pointer-events-none fixed top-20 right-4 z-[200] flex flex-col items-end gap-2"
+      className="pointer-events-none fixed top-20 right-4 z-[200] flex flex-col items-end"
     >
-      {toasts.map((toast) => (
-        <ToastCard key={toast.id} toast={toast} onRemove={removeToast} />
+      {rendered.map(({ toast, leaving }) => (
+        <div
+          key={toast.id}
+          className="app-toast-shell"
+          data-leaving={leaving ? 'true' : undefined}
+          aria-hidden={leaving ? true : undefined}
+          inert={leaving ? true : undefined}
+        >
+          <div className="app-toast-slot">
+            <ToastCard toast={toast} onRemove={removeToast} />
+          </div>
+        </div>
       ))}
     </div>
   );

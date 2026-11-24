@@ -28,7 +28,7 @@ export default function PreviewButton({ active, onToggle }: PreviewButtonProps) 
         <span className="relative inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
           <span
             aria-hidden={showPause}
-            className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ease-out ${
+            className={`absolute inset-0 flex items-center justify-center transition duration-300 ease-out ${
               showPause ? 'scale-95 opacity-0 blur-[2px]' : 'scale-100 opacity-100 blur-none'
             }`}
           >
@@ -36,7 +36,7 @@ export default function PreviewButton({ active, onToggle }: PreviewButtonProps) 
           </span>
           <span
             aria-hidden={!showPause}
-            className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ease-out ${
+            className={`absolute inset-0 flex items-center justify-center transition duration-300 ease-out ${
               showPause ? 'scale-100 opacity-100 blur-none' : 'scale-95 opacity-0 blur-[2px]'
             }`}
           >

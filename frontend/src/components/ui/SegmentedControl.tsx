@@ -33,7 +33,7 @@ export function SegmentedControl<T extends string = string>({
             onClick={() => onChange(option.value)}
             disabled={disabled}
             aria-pressed={active}
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[10px] font-medium transition-all duration-150 ${
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[10px] font-medium transition-[color,background-color,box-shadow] duration-150 ease-[var(--ease-out)] ${
               active
                 ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm ring-1 ring-[var(--border-subtle)]'
                 : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'

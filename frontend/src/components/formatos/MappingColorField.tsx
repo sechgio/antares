@@ -66,7 +66,7 @@ export default function MappingColorField({ mapping, originalMapping, showReset,
               <Button variant="none" size="none"
                 aria-label={preset.label}
                 onClick={() => onChange(hexToMappingColor(preset.hex))}
-                className={`h-6 w-6 rounded-full border transition-transform hover:scale-110 ${
+                className={`h-6 w-6 rounded-full border transition-transform duration-150 ease-[var(--ease-out)] hover:scale-105 ${
                   active ? 'border-[var(--accent-primary)] ring-1 ring-[color:color-mix(in_srgb,var(--accent-primary)_50%,transparent)]' : 'border-[var(--border-subtle)]'
                 }`}
                 style={{ backgroundColor: preset.hex }}

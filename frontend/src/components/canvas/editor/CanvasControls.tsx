@@ -97,8 +97,8 @@ export function CanvasSegmented<T extends string>({
             aria-pressed={active}
             className={
               compact
-                ? 'flex-1 rounded px-2 py-1.5 text-[10px] font-medium transition-all duration-150'
-                : 'rounded-md px-3 py-1 text-[11px] font-semibold transition-all duration-150'
+                ? 'flex-1 rounded px-2 py-1.5 text-[10px] font-medium transition duration-150'
+                : 'rounded-md px-3 py-1 text-[11px] font-semibold transition duration-150'
             }
             style={
               active

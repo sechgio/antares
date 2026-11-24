@@ -148,6 +148,22 @@ describe('Sidebar', () => {
     expect(screen.getByRole('heading', { name: 'Reportes' })).toBeInTheDocument();
   });
 
+  it('keeps the panel content mounted while the collapse transition runs', () => {
+    vi.useFakeTimers();
+    try {
+      renderSidebar();
+      const heading = screen.getByRole('heading', { name: 'Producción' });
+
+      fireEvent.click(screen.getByTestId('sidebar-toggle'));
+      expect(heading).toBeInTheDocument();
+
+      act(() => { vi.advanceTimersByTime(300); });
+      expect(heading).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('collapses the panel when clicking the group already shown', () => {
     renderSidebar();
 

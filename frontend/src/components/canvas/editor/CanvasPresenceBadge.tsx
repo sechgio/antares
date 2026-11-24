@@ -52,7 +52,7 @@ export default memo(function CanvasPresenceBadge({
   return (
     <WithHoverTooltip label={names ? `${label}: ${names}` : label} placement="bottom" variant="dark">
       <div
-        className="inline-flex h-7 items-center gap-1.5 rounded-md border border-emerald-500/20 bg-emerald-500/[0.06] px-2 text-emerald-400/90 select-none transition-all duration-150 hover:bg-emerald-500/10 hover:text-emerald-400"
+        className="inline-flex h-7 items-center gap-1.5 rounded-md border border-emerald-500/20 bg-emerald-500/[0.06] px-2 text-emerald-400/90 select-none transition duration-150 hover:bg-emerald-500/10 hover:text-emerald-400"
         aria-label={label}
         data-testid="canvas-presence-badge"
         data-status={status}

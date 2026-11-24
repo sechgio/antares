@@ -169,7 +169,8 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    transition: all 0.2s;
+    transition: 0.2s;
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
 }
 
 .vgen-layout-toggle button.active {
@@ -377,7 +378,8 @@ textarea.vgen-input {
     border-radius: 8px;
     cursor: pointer;
     background: var(--vgen-bg-panel);
-    transition: all 0.2s;
+    transition: 0.2s;
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
 }
 
 .vgen-record-item:hover {
@@ -417,7 +419,8 @@ textarea.vgen-input {
     border-radius: 4px;
     background: var(--vgen-bg-panel);
     color: var(--vgen-ink-soft);
-    transition: all 0.2s;
+    transition: 0.2s;
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
     font-size: 0.65rem;
     font-weight: bold;
     cursor: pointer;
@@ -684,7 +687,7 @@ textarea.vgen-input {
 }
 
 .vgen-range::-webkit-slider-thumb:hover {
-    transform: scale(1.15);
+    transform: scale(1.1);
 }
 
 .vgen-range::-moz-range-thumb {
@@ -724,7 +727,8 @@ textarea.vgen-input {
     background: transparent;
     color: var(--vgen-ink-soft);
     cursor: pointer;
-    transition: all 120ms ease;
+    transition: 120ms ease;
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
     padding: 0;
 }
 
@@ -1767,7 +1771,8 @@ textarea.vgen-input {
     background: var(--vgen-bg-panel);
     color: var(--vgen-ink-soft);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: 0.2s;
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
 }
 
 .vgen-floating-panel-btn:hover {
@@ -1805,7 +1810,8 @@ textarea.vgen-input {
     color: var(--vgen-ink-soft);
     cursor: pointer;
     border-bottom: 2px solid transparent;
-    transition: all 0.2s;
+    transition: 0.2s;
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
     font-family: inherit;
 }
 
@@ -1858,13 +1864,14 @@ textarea.vgen-input {
     font-family: inherit;
     cursor: pointer;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), 0 2px 6px rgba(0, 0, 0, 0.15);
-    transition: all 0.25s ease;
+    transition: 0.25s ease;
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
 }
 
 .vgen-fab:hover {
     background: color-mix(in srgb, var(--vgen-ink) 88%, var(--vgen-bg-main));
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.2);
-    transform: translateY(-50%) scale(1.08);
+    transform: translateY(-50%) scale(1.04);
 }
 
 .vgen-fab.active {

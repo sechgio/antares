@@ -115,7 +115,8 @@
     background: transparent;
     border: none;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: 0.15s ease;
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
     white-space: nowrap;
     display: flex;
     align-items: center;
@@ -234,7 +235,8 @@
     background: var(--rcampo-elevated);
     border: 1px solid var(--rcampo-border);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: 0.15s ease;
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
     white-space: nowrap;
 }
 
@@ -798,7 +800,8 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: 0.2s ease;
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
     overflow: hidden;
     position: relative;
 }
@@ -896,7 +899,8 @@
     padding: 10px 8px;
     text-align: center;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: 0.15s ease;
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
     background: var(--rcampo-input);
     color: var(--rcampo-secondary);
 }
