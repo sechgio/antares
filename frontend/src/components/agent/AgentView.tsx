@@ -1432,15 +1432,18 @@ export default function AgentView({
     }
   };
 
+  const previewResource = useCallback(
+    (resource: string) => {
+      if (sessionId) {
+        setBrowserOpen(false);
+        setFilePreview({ sessionId, target: { kind: 'resource', resource } });
+      }
+    },
+    [sessionId],
+  );
+
   return (
-    <FilePreviewContext.Provider
-      value={(resource) => {
-        if (sessionId) {
-          setBrowserOpen(false);
-          setFilePreview({ sessionId, target: { kind: 'resource', resource } });
-        }
-      }}
-    >
+    <FilePreviewContext.Provider value={previewResource}>
       <div
         className="agent-workspace relative flex h-full min-h-0 bg-[var(--bg-surface)]"
         onKeyDown={(e) => {

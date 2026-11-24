@@ -1,7 +1,17 @@
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 
-export default function CopyButton({ text, label = 'Copiar respuesta', className = 'group-hover:opacity-100' }: { text: string; label?: string; className?: string }) {
+function writeClipboard(text: string, html?: string): Promise<void> {
+  if (html && typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+    return navigator.clipboard.write([new ClipboardItem({
+      'text/html': new Blob([html], { type: 'text/html' }),
+      'text/plain': new Blob([text], { type: 'text/plain' }),
+    })]);
+  }
+  return navigator.clipboard?.writeText(text) ?? Promise.reject(new Error('Portapapeles no disponible'));
+}
+
+export default function CopyButton({ text, html, label = 'Copiar respuesta', className = 'group-hover:opacity-100' }: { text: string; html?: string; label?: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -10,7 +20,7 @@ export default function CopyButton({ text, label = 'Copiar respuesta', className
       aria-label={copied ? 'Copiado' : label}
       title={copied ? 'Copiado' : 'Copiar'}
       onClick={() => {
-        void navigator.clipboard?.writeText(text).then(() => {
+        void writeClipboard(text, html).then(() => {
           setCopied(true);
           window.setTimeout(() => setCopied(false), 1500);
         }).catch(() => {});

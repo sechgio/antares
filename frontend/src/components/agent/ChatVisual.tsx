@@ -1,5 +1,5 @@
 import { memo, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, Image as ImageIcon } from 'lucide-react';
 import { sanitizeHtmlForPreview } from '../../../../shared/html-sanitizer.js';
 
 type Series = { name: string; data: number[] };
@@ -218,6 +218,43 @@ function CartesianChart({ spec }: { spec: ChartSpec }) {
   );
 }
 
+export function horizontal(spec: ChartSpec): boolean {
+  return (
+    spec.type === 'bar' &&
+    spec.labels.some((label) => label.length > 11) &&
+    spec.series.every((s) => s.data.every((v) => v >= 0))
+  );
+}
+
+function HorizontalBars({ spec }: { spec: ChartSpec }) {
+  const max = Math.max(...spec.series.flatMap((s) => s.data)) || 1;
+  return (
+    <ul role="img" aria-label={spec.title || 'Gráfico'} className="space-y-2.5">
+      {spec.labels.map((label, i) => (
+        <li key={i} className="grid grid-cols-[minmax(0,38%)_1fr] items-center gap-3 text-[11.5px]">
+          <span className="truncate text-[var(--text-secondary)]" title={label}>
+            {label}
+          </span>
+          <span className="space-y-1">
+            {spec.series.map((s, si) => (
+              <span key={si} className="flex items-center gap-2" title={`${s.name}: ${format(s.data[i])}`}>
+                <span className="min-w-0 flex-1">
+                  <span
+                    data-bar
+                    className="block h-2.5 rounded-r"
+                    style={{ width: `${(s.data[i] / max) * 100}%`, minWidth: s.data[i] > 0 ? 2 : 0, background: PALETTE[si] }}
+                  />
+                </span>
+                <span className="w-14 shrink-0 text-right tabular-nums text-[var(--text-primary)]">{format(s.data[i])}</span>
+              </span>
+            ))}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function DonutChart({ spec }: { spec: ChartSpec }) {
   const [hover, setHover] = useState<number | null>(null);
   const data = spec.series[0].data;
@@ -354,6 +391,8 @@ const TAB = 'rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors';
 function ChatVisual({ lang, source, fallback }: { lang: string; source: string; fallback: ReactNode }) {
   const [showCode, setShowCode] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [imaged, setImaged] = useState(false);
+  const view = useRef<HTMLDivElement>(null);
   const spec = useMemo(() => (lang === 'chart' ? parseChart(source) : null), [lang, source]);
   if (lang === 'chart' && !spec) return <>{fallback}</>;
   const title = spec?.title || (lang === 'html' ? 'Interfaz' : lang === 'svg' ? 'Ilustración' : 'Gráfico');
@@ -367,6 +406,22 @@ function ChatVisual({ lang, source, fallback }: { lang: string; source: string; 
       .then(() => {
         setCopied(true);
         window.setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {});
+  };
+  const copyImage = () => {
+    const node = view.current;
+    if (!node || typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) return;
+    const backgroundColor = getComputedStyle(node.closest('section') ?? node).backgroundColor;
+    void import('html-to-image')
+      .then(({ toBlob }) => toBlob(node, { backgroundColor, pixelRatio: 2 }))
+      .then((blob) => {
+        if (!blob) throw new Error('No se pudo generar la imagen');
+        return navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      })
+      .then(() => {
+        setImaged(true);
+        window.setTimeout(() => setImaged(false), 1500);
       })
       .catch(() => {});
   };
@@ -393,6 +448,17 @@ function ChatVisual({ lang, source, fallback }: { lang: string; source: string; 
             );
           })}
         </div>
+        {spec && !showCode && (
+          <button
+            type="button"
+            onClick={copyImage}
+            aria-label={imaged ? 'Imagen copiada' : 'Copiar imagen'}
+            title={imaged ? 'Imagen copiada' : 'Copiar imagen (se pega en Word o Excel)'}
+            className="rounded-md p-1 text-[var(--text-muted)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_6%,transparent)] hover:text-[var(--text-primary)]"
+          >
+            {imaged ? <Check size={13} /> : <ImageIcon size={13} />}
+          </button>
+        )}
         <button
           type="button"
           onClick={copy}
@@ -408,11 +474,13 @@ function ChatVisual({ lang, source, fallback }: { lang: string; source: string; 
           {source}
         </pre>
       ) : (
-        <div className="space-y-3 p-3">
+        <div ref={view} className="space-y-3 p-3">
           {legend.length > 0 && <Legend items={legend} />}
           {spec ? (
             spec.type === 'pie' ? (
               <DonutChart spec={spec} />
+            ) : horizontal(spec) ? (
+              <HorizontalBars spec={spec} />
             ) : (
               <CartesianChart spec={spec} />
             )

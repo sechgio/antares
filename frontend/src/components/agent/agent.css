@@ -540,6 +540,17 @@
 .agent-panel__option:disabled {
   cursor: default;
 }
+.agent-panel__key {
+  margin-left: -4px;
+  min-width: 16px;
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
 .agent-panel[data-panel-state='answered'] .agent-panel__option[aria-pressed='false'] {
   opacity: 0.4;
 }
@@ -750,6 +761,31 @@ textarea.agent-panel__input {
 }
 .agent-panel__table .is-numeric {
   text-align: right;
+}
+.agent-panel__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.agent-panel__table th.is-numeric .agent-panel__sort {
+  flex-direction: row-reverse;
+}
+.agent-panel__sort:hover,
+.agent-panel__table th[aria-sort] .agent-panel__sort {
+  color: var(--text-primary);
+}
+.agent-panel__sort .is-idle {
+  opacity: 0;
+}
+.agent-panel__sort:hover .is-idle,
+.agent-panel__sort:focus-visible .is-idle {
+  opacity: 0.5;
 }
 .agent-panel__table td.is-empty {
   color: var(--text-muted);
