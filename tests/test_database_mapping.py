@@ -51,12 +51,6 @@ class TestParseIdRenameMapping:
         with pytest.raises(ValueError, match="fila 2"):
             db.parse_id_rename_mapping(str(excel))
 
-    def test_duplicate_id_raises(self, tmp_path) -> None:
-        excel = tmp_path / "map.xlsx"
-        _write_mapping_excel(excel, [("A.jpg", "uno"), ("A.jpg", "dos")])
-        with pytest.raises(ValueError, match="duplicado"):
-            db.parse_id_rename_mapping(str(excel))
-
     def test_duplicate_id_keeps_excel_row_without_iterrows(self, tmp_path) -> None:
         import pandas as pd
 

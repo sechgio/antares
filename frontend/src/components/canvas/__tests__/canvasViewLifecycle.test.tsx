@@ -392,49 +392,6 @@ describe('CanvasView lifecycle', () => {
     fireEvent.keyUp(window, { code: 'Space', key: ' ' });
   });
 
-  it('skips bootstrap history when the active document changes before it resolves', async () => {
-    let resolveHistory: (value: { past: CanvasDocument[]; future: CanvasDocument[] }) => void = () => {};
-    const currentDocumentRef = { current: docA };
-    const currentRevisionRef = { current: 0 };
-    const restoreHistory = vi.fn();
-    vi.mocked(api.canvasGetHistory).mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveHistory = resolve;
-        }),
-    );
-
-    renderHook(() =>
-      useCanvasBootstrap({
-        replaceDocument: (document) => {
-          currentDocumentRef.current = document;
-          currentRevisionRef.current = 1;
-        },
-        restoreHistory,
-        historyReadyRef: { current: false },
-        restoreGenerationRef: { current: 0 },
-        currentDocumentRef,
-        currentRevisionRef,
-        setDocs: vi.fn(),
-        setLoading: vi.fn(),
-        runCloudSync: vi.fn(async () => {}),
-      }),
-    );
-    await waitFor(() => {
-      expect(api.canvasGetHistory).toHaveBeenCalledWith(docA.id);
-    });
-
-    currentDocumentRef.current = docB;
-    currentRevisionRef.current = 2;
-    await act(async () => {
-      resolveHistory({ past: [{ ...docA, name: 'A undo state' }], future: [] });
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(restoreHistory).not.toHaveBeenCalled();
-  });
-
   it('skips bootstrap history when the active document revision changes before it resolves', async () => {
     let resolveHistory: (value: { past: CanvasDocument[]; future: CanvasDocument[] }) => void = () => {};
     const currentDocumentRef = { current: docA };

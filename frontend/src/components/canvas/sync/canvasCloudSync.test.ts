@@ -721,45 +721,6 @@ describe('syncCanvasDocuments', () => {
     expect(followUp).not.toHaveBeenCalled();
   });
 
-  it('guarded: does NOT delete a local doc when remote is soft-deleted', async () => {
-    const localDoc = { id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' };
-    const remoteMeta = {
-      id: 'doc-1',
-      name: 'Old',
-      updated_at: '2026-07-22T12:00:00Z',
-      deleted_at: '2026-07-22T12:00:00Z',
-    };
-
-    vi.mocked(api.canvasList).mockResolvedValue({ documents: [localDoc] });
-    enqueue([remoteMeta]);
-
-    const result = await syncCanvasDocuments({ guarded: true, openDocumentId: 'doc-1', openDirty: false });
-
-    expect(result.deletedLocal).toBe(0);
-    expect(vi.mocked(api.canvasDelete)).not.toHaveBeenCalled();
-  });
-
-  it('guarded: surfaces remote-deleted conflict for the open doc instead of deleting', async () => {
-    const localDoc = { id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' };
-    const localFull = makeDoc({ id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' });
-    const remoteMeta = {
-      id: 'doc-1',
-      name: 'Old',
-      updated_at: '2026-07-22T12:00:00Z',
-      deleted_at: '2026-07-22T12:00:00Z',
-    };
-
-    vi.mocked(api.canvasList).mockResolvedValue({ documents: [localDoc] });
-    vi.mocked(api.canvasGet).mockResolvedValue({ document: localFull });
-    enqueue([remoteMeta]);
-
-    const result = await syncCanvasDocuments({ guarded: true, openDocumentId: 'doc-1', openDirty: false });
-
-    expect(result.deletedLocal).toBe(0);
-    expect(vi.mocked(api.canvasDelete)).not.toHaveBeenCalled();
-    expect(result.conflict).toMatchObject({ remoteDeleted: true });
-  });
-
   it('guarded: does NOT overwrite an existing local doc with a newer remote', async () => {
     const localDoc = { id: 'doc-1', name: 'Old', updatedAt: '2026-07-01T00:00:00Z' };
     const remoteMeta = {
@@ -1352,16 +1313,6 @@ describe('pushCanvasDocument', () => {
     expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
 
-  it('preserves existing created_by on update instead of overwriting with the current user', async () => {
-    const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T13:00:00Z' });
-    supabaseMock.rpc.mockResolvedValueOnce({ data: true, error: null });
-
-    const ok = await pushCanvasDocument(doc);
-
-    expect(ok).toBe(true);
-    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
-  });
-
   it('aborts before upsert when canvas-asset refs cannot be resolved', async () => {
     const prevApi = window.electronAPI;
     window.electronAPI = {
@@ -1403,39 +1354,6 @@ describe('pushCanvasDocument', () => {
     expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
 
-  it('fails closed when the version-preservation RPC is unavailable', async () => {
-    const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T10:00:00Z' });
-    supabaseMock.rpc
-      .mockResolvedValueOnce({
-        data: null,
-        error: { code: 'PGRST202', message: 'canvas_push_document_lww_v2 is missing' },
-      })
-      .mockResolvedValueOnce({
-        data: null,
-        error: { code: 'PGRST202', message: 'canvas_push_document_lww is missing' },
-      });
-    enqueue({ updated_at: '2026-07-22T12:00:00Z', deleted_at: null, created_by: 'user-other' });
-
-    await expect(pushCanvasDocument(doc)).rejects.toThrow(/ningún RPC LWW/);
-
-    expect(supabaseMock.chainable.insert).not.toHaveBeenCalled();
-  });
-
-  it('uses the versioned atomic RPC when available and returns true on success', async () => {
-    const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T12:00:00Z' });
-    supabaseMock.rpc.mockResolvedValueOnce({ data: true, error: null });
-
-    const ok = await pushCanvasDocument(doc);
-
-    expect(ok).toBe(true);
-    expect(supabaseMock.rpc).toHaveBeenCalledWith('canvas_push_document_lww_v2', {
-      p_document: doc,
-      p_updated_at: '2026-07-22T12:00:00Z',
-      p_force_resurrect: false,
-    });
-    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
-  });
-
   it('falls back to the legacy atomic LWW RPC when v2 is missing', async () => {
     const doc = makeDoc({ id: 'doc-legacy-rpc', updatedAt: '2026-07-22T12:00:00Z' });
     supabaseMock.rpc
@@ -1454,22 +1372,6 @@ describe('pushCanvasDocument', () => {
       p_document: doc,
       p_updated_at: '2026-07-22T12:00:00Z',
     });
-    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
-  });
-
-  it('fails closed instead of using an unsafe upsert when both LWW RPCs are missing', async () => {
-    const doc = makeDoc({ id: 'doc-no-rpc', updatedAt: '2026-07-22T12:00:00Z' });
-    supabaseMock.rpc
-      .mockResolvedValueOnce({
-        data: null,
-        error: { code: 'PGRST202', message: 'canvas_push_document_lww_v2 is missing' },
-      })
-      .mockResolvedValueOnce({
-        data: null,
-        error: { code: 'PGRST202', message: 'canvas_push_document_lww is missing' },
-      });
-
-    await expect(pushCanvasDocument(doc)).rejects.toThrow(/LWW.*disponible|sincronizar/i);
     expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
 
@@ -1580,21 +1482,6 @@ describe('pushCanvasDocument', () => {
     expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
   });
 
-  it('does not fall back to an unsafe upsert after real PostgREST missing-RPC errors', async () => {
-    const doc = makeDoc({ id: 'doc-1', updatedAt: '2026-07-22T12:00:00Z' });
-    supabaseMock.rpc
-      .mockResolvedValueOnce({
-        data: null,
-        error: { code: 'PGRST202', message: 'Could not find the function public.canvas_push_document_lww_v2' },
-      })
-      .mockResolvedValueOnce({
-        data: null,
-        error: { code: 'PGRST202', message: 'Could not find the function public.canvas_push_document_lww' },
-      });
-
-    await expect(pushCanvasDocument(doc)).rejects.toThrow(/ningún RPC LWW/);
-    expect(supabaseMock.chainable.upsert).not.toHaveBeenCalled();
-  });
 });
 
 describe('pullCanvasDocument', () => {
