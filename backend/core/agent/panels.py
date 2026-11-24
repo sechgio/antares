@@ -29,7 +29,13 @@ def validate(panel: object) -> JsonObject:
     return {"type": panel["type"], "props": panel["props"]}
 
 
+def is_dismissal(panel: JsonObject, response: object) -> bool:
+    return panel["type"] in ("choice", "form") and isinstance(response, dict) and response.get("dismissed") is True
+
+
 def response_message(panel: JsonObject, response: object) -> str:
+    if is_dismissal(panel, response):
+        return f"[panel:{panel['id']}] El usuario omitió el panel sin responder."
     if panel["type"] == "choice":
         if not isinstance(response, dict) or not isinstance(response.get("choice"), str) or not response["choice"].strip():
             raise ValueError("Elige una opción")

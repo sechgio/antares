@@ -490,14 +490,14 @@ class AgentStore:
             return [dict(item) for item in self._panels.values() if item.get("session_id") == session_id]
 
     def respond_panel(self, session_id: str, panel_id: str, response: object) -> tuple[JsonObject, str]:
-        from backend.core.agent.panels import response_message
+        from backend.core.agent.panels import is_dismissal, response_message
 
         with self._lock:
             item = self._panels.get(panel_id)
             if item is None or item.get("session_id") != session_id or item.get("status") != "open":
                 raise ValueError("El panel ya no está activo en esta conversación")
             message = response_message(item, response)
-            item.update({"status": "answered", "response": response})
+            item.update({"status": "dismissed" if is_dismissal(item, response) else "answered", "response": response})
             atomic_write_json(self._panels_path, self._panels)
             return dict(item), message
 
