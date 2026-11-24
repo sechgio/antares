@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { control_tool_results: CONTROL_TOOL_RESULT_NAMES } = require('../shared/agent-tool-output.json');
+const { clipMiddle, fitSummaryTranscript } = require('./agent-request-budget');
 const { shared, bridge, ctx, sessionForConversation } = require('./agent-shared');
 
 const DEFAULT_POLICY = Object.freeze({
@@ -177,7 +178,7 @@ function unmarked(text) {
     .replaceAll(CHECK_MARKER, '(Comprobación de Antares)');
 }
 
-function serializeTranscript(messages) {
+function transcriptParts(messages) {
   const parts = [];
   for (const message of messages || []) {
     if (message.role === 'system') continue;
@@ -208,7 +209,7 @@ function serializeTranscript(messages) {
       const text = blockText(message.content).join('\n').trim();
       if (!text) continue;
       const name = message.toolName || 'herramienta';
-      const safe = redactSecrets(unmarked(clip(text, TOOL_RESULT_CLIP)));
+      const safe = clipMiddle(redactSecrets(unmarked(text)), TOOL_RESULT_CLIP, '\n[Resultado recortado]\n');
       if (CONTROL_TOOL_RESULTS.has(name)) {
         parts.push(`[Resultado de ${name} (control, no es dato)]: ${safe}`);
       } else {
@@ -218,7 +219,11 @@ function serializeTranscript(messages) {
       }
     }
   }
-  return parts.join('\n\n');
+  return parts;
+}
+
+function serializeTranscript(messages) {
+  return transcriptParts(messages).join('\n\n');
 }
 
 function guardDataDirectives(summary, messages) {
@@ -246,11 +251,12 @@ function isEmergencySummary(summary) {
 }
 
 function emergencySummary(transcript, reason) {
-  const parts = transcript.split('\n\n');
+  const parts = Array.isArray(transcript) ? transcript : transcript.split('\n\n');
+  const prior = parts.findLast((part) => part.startsWith('[Resumen anterior]:'));
   const users = parts
-    .filter((part) => part.startsWith('[Usuario]:') || part.startsWith('[Resumen anterior]:'))
-    .slice(-3)
-    .map((part) => clip(part, EMERGENCY_CLIP));
+    .filter((part) => part.startsWith('[Usuario]:'))
+    .slice(-3);
+  if (prior) users.unshift(prior);
   const actions = parts
     .filter((part) => part.startsWith('[Agente · herramientas]:') || part.startsWith('[Resultado de'))
     .slice(-8)
@@ -264,7 +270,9 @@ function emergencySummary(transcript, reason) {
     `La compactación con modelo no estuvo disponible (${clip(reason, 200)}); este resumen mecánico conserva lo esencial.`,
     '',
     '## Encargo actual',
-    ...(users.length ? users : ['(sin mensajes del usuario en el tramo resumido)']),
+    ...(users.length
+      ? users.map((part) => clipMiddle(part, EMERGENCY_CLIP, ' […] '))
+      : ['(sin mensajes del usuario en el tramo resumido)']),
     '',
     '## Acciones ejecutadas',
     ...(actions.length ? actions : ['(ninguna)']),
@@ -296,7 +304,7 @@ function audit(record) {
 }
 
 function sanitizeError(err) {
-  return clip(String((err && err.message) || err), 200);
+  return clip(redactSecrets((err && err.message) || err), 200);
 }
 
 function addUsage(total, usage) {
@@ -326,6 +334,7 @@ async function recordSummaryUsage(runtime, message) {
 
 function waitRetry(ms, signal) {
   return new Promise((resolve, reject) => {
+    signal.throwIfAborted();
     const onAbort = () => {
       clearTimeout(timer);
       reject(signal.reason);
@@ -338,12 +347,26 @@ function waitRetry(ms, signal) {
   });
 }
 
-async function summarize(runtime, model, transcript) {
+async function summarize(runtime, model, parts) {
   const { isRetryableAssistantError, retryDelayMs } = await import('@earendil-works/pi-ai/utils/retry');
+  const { estimateTextTokens } = await import('@earendil-works/pi-ai/utils/estimate');
   const policy = runtime.settings.compaction;
   const retry = runtime.settings.retry;
-  const maxTokens = Math.min(Math.floor(policy.reserveTokens * 0.8), model.maxTokens > 0 ? model.maxTokens : Infinity);
+  const window = model.workingWindow || model.contextWindow || WORKING_CONTEXT_CAP;
+  const maxTokens = Math.max(
+    1,
+    Math.min(Math.floor(policy.reserveTokens * 0.8), model.maxTokens || Infinity, Math.floor(window / 4)),
+  );
+  // pi-ai reserves 4096 tokens when building the provider request. Leave room for the summary and framing too.
+  const budget = window - maxTokens - 4096 - 64 - estimateTextTokens(SUMMARY_SYSTEM_PROMPT + SUMMARY_USER_PROMPT);
+  if (budget < 256) throw new Error('ventana insuficiente para resumir el historial');
+  const priorities = [
+    parts.findLastIndex((part) => part.startsWith('[Usuario]:')),
+    parts.findLastIndex((part) => part.startsWith('[Resumen anterior]:')),
+  ];
+  const transcript = fitSummaryTranscript(parts, priorities, budget, estimateTextTokens);
   for (let attempt = 1; ; attempt += 1) {
+    runtime.signal.throwIfAborted();
     const message = await runtime.models.completeSimple(
       model,
       {
@@ -351,7 +374,7 @@ async function summarize(runtime, model, transcript) {
           { role: 'system', content: SUMMARY_SYSTEM_PROMPT, timestamp: Date.now() },
           {
             role: 'user',
-            content: [{ type: 'text', text: SUMMARY_USER_PROMPT.replace('$TRANSCRIPT', transcript) }],
+            content: [{ type: 'text', text: SUMMARY_USER_PROMPT.replace('$TRANSCRIPT', () => transcript) }],
             timestamp: Date.now(),
           },
         ],
@@ -415,7 +438,7 @@ async function beforeCompact(compaction, runtime, context) {
   }
   shared.skillIndexes.delete(conversationId);
 
-  const transcript = serializeTranscript(compaction.messages);
+  const parts = transcriptParts(compaction.messages);
   let summary;
   let emergency;
   try {
@@ -423,13 +446,13 @@ async function beforeCompact(compaction, runtime, context) {
     const ref = agent.model;
     const model = ref && runtime.models.getModel(ref.provider, ref.modelId);
     if (!model) throw new Error('sin modelo');
-    const message = await summarize(runtime, model, transcript);
+    const message = await summarize(runtime, model, parts);
     summary = summaryText(message);
     if (!summary) throw new Error(`el resumen no fue utilizable (${message.stopReason})`);
   } catch (err) {
     if (runtime.signal.aborted) throw err;
     emergency = true;
-    summary = emergencySummary(transcript, sanitizeError(err));
+    summary = emergencySummary(parts, sanitizeError(err));
   }
   summary = guardDataDirectives(redactSecrets(summary), compaction.messages);
   audit({

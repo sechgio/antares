@@ -400,12 +400,32 @@ async function main() {
   assert(requestBudget(8192, 2048) === 5735, 'una ventana de 8 k reserva sitio para la respuesta y el prompt');
   assert(requestBudget(128000, 8192) > 100000, 'una ventana grande conserva la mayor parte del historial');
   assert(requestBudget(0) === 0 && requestBudget(undefined) === 0, 'sin ventana no se compacta');
+  assert(
+    requestBudget(128000, 32768) === 88832 && requestBudget(1024, 256) < 1024,
+    'el presupuesto reserva toda la salida del modelo y no excede una ventana pequeña',
+  );
 
   {
     const messages = [system('sys'), user('hola')];
     assert(
       compactMessages(messages, { budget: 1000, estimate }) === undefined,
       'una petición que cabe en la ventana no se toca',
+    );
+  }
+
+  {
+    const active = { ...user(''), content: [{ type: 'text', text: 'Revisa el adjunto' }, { type: 'image' }] };
+    const messages = [system('sys'), user('encargo anterior'), assistant('hecho'), active];
+    for (let index = 0; index < 12; index += 1) {
+      const id = `active-${index}`;
+      messages.push(assistant('analizando', index + 3, [toolCall(id, 'canvas_list')]));
+      messages.push(toolResult(id, 'canvas_list', 'r'.repeat(4000), index + 4));
+    }
+    const compacted = compactMessages(messages, { budget: 1500, estimate });
+    assert(compacted?.includes(active), 'el recorte fuerte conserva íntegro el encargo activo con su adjunto');
+    assert(
+      compacted?.filter((message) => message.role === 'toolResult').length === 12,
+      'el recorte conserva la relación entre llamadas y resultados del turno activo',
     );
   }
 
@@ -960,6 +980,53 @@ async function main() {
       'un fallo al apuntar el gasto conserva el resumen del modelo',
     );
     shared.live.delete(convId);
+    await runtime.shutdown();
+  }
+
+  {
+    await openCompaction();
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const state = runtime._internal.state();
+    const { sessions } = await state.harness.snapshot(state.SessionsDoc, state.ctx);
+    const checkpoint = user(
+      'The conversation history before this point was compacted into the following summary:\n<summary>\nRuta: informes/final.csv\n</summary>',
+    );
+    const correction = 'Corrección literal: usa $& y $` como valores';
+    const source = [
+      checkpoint,
+      ...Array.from({ length: 40 }, (_, index) => toolResult(`old-${index}`, 'fs_read', 'x'.repeat(8000))),
+      user(correction),
+      toolResult('last', 'fs_read', `Inicio ${'x'.repeat(3000)} código de salida 17`),
+    ];
+    let sent;
+    const decision = await compactionModule.beforeCompact(
+      { ...fakeCompaction(), messages: source },
+      {
+        ...fakeRuntime(sessions[session.id].conversationId),
+        settings: { compaction: POLICY },
+        agent: async () => ({ model: { provider: 'faux', modelId: 'faux-1' } }),
+        models: {
+          getModel: () => ({ workingWindow: WINDOW, contextWindow: 4096, maxTokens: 2048 }),
+          completeSimple: async (_model, request, options) => {
+            sent = { request, options };
+            return { stopReason: 'stop', content: [{ type: 'text', text: '## Encargo actual\nSeguir con final.csv.' }] };
+          },
+        },
+      },
+      state.ctx,
+    );
+    const { estimateContextTokens } = await import('@earendil-works/pi-ai/utils/estimate');
+    const prompt = sent?.request.messages[1].content[0].text || '';
+    assert(
+      sent && estimateContextTokens(sent.request).tokens + sent.options.maxTokens + 4096 <= WINDOW,
+      'la llamada del resumidor cabe en la ventana de trabajo incluyendo salida y margen del proveedor',
+    );
+    assert(
+      prompt.includes(correction) && prompt.includes('Ruta: informes/final.csv') && prompt.includes('código de salida 17'),
+      'el resumidor conserva la corrección literal, el checkpoint y el final del resultado reciente',
+    );
+    assert(prompt.includes('Se omitió o recortó parte del historial') && decision?.summary.includes('Seguir con final.csv.'),
+      'el modelo recibe un historial acotado y produce un resumen utilizable');
     await runtime.shutdown();
   }
 

@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const appLog = require('./app-log');
 const { stableJson } = require('./stable-json');
 
-const MAX_SESSIONS = 256;
+const MAX_SCOPES = 256;
 const CACHE_CONTROL = new Set(['cache_control']);
 const sessions = new Map();
 
@@ -65,18 +65,29 @@ function emit(event, fields) {
   } catch {}
 }
 
-function recordRequest(sessionId, payload) {
-  const key = String(sessionId || '');
-  if (!key) return null;
+function recordRequest(sessionId, model, payload, retention) {
+  if (!sessionId) return null;
+  const sessionHash = textDigest(sessionId).slice(0, 16);
+  const key = digest([
+    sessionId,
+    model?.provider,
+    model?.api,
+    model?.baseUrl,
+    model?.id,
+    payload?.model,
+    payload?.prompt_cache_key,
+    retention,
+  ]);
   const current = prefixSegments(payload);
   const comparison = comparePrefixes(sessions.get(key), current);
   sessions.delete(key);
   sessions.set(key, current);
-  if (sessions.size > MAX_SESSIONS) sessions.delete(sessions.keys().next().value);
-  const requestHash = textDigest(`${current.systemHash}:${current.toolsHash}:${current.historyHash}`);
-  const sessionHash = textDigest(key).slice(0, 16);
+  if (sessions.size > MAX_SCOPES) sessions.delete(sessions.keys().next().value);
+  const requestHash = textDigest(`${key}:${current.systemHash}:${current.toolsHash}:${current.historyHash}`);
+  const scope = key.slice(0, 16);
   emit('agent.cache_prefix', {
     session: sessionHash,
+    scope,
     request_hash: requestHash.slice(0, 16),
     break: comparison.break,
     history_index: comparison.historyIndex,
@@ -89,7 +100,7 @@ function recordRequest(sessionId, payload) {
     tools_hash: current.toolsHash.slice(0, 16),
     history_hash: current.historyHash.slice(0, 16),
   });
-  return { session: sessionHash, requestHash };
+  return { session: sessionHash, scope, requestHash };
 }
 
 function recordUsage(request, message) {
@@ -103,6 +114,7 @@ function recordUsage(request, message) {
   const prompt = input + cacheRead + cacheWrite;
   emit('agent.cache_usage', {
     session: request.session,
+    scope: request.scope,
     request_hash: request.requestHash.slice(0, 16),
     input,
     output,
@@ -123,7 +135,7 @@ function withCacheTelemetry(api) {
         const next = options && options.onPayload ? await options.onPayload(payload, target) : undefined;
         const observed = next === undefined ? payload : next;
         try {
-          request = recordRequest(sessionId, observed);
+          request = recordRequest(sessionId, { ...model, ...target }, observed, options?.cacheRetention);
         } catch {
           request = null;
         }

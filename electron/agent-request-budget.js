@@ -5,16 +5,50 @@ const KEEP_RECENT_TOOL_RESULTS = 3;
 const KEEP_RECENT_USER_TURNS = 2;
 const OLD_TEXT_CHARS = 1200;
 const HARD_TEXT_CHARS = 400;
-const RESERVE_CAP = 16384;
+const SAFETY_MARGIN_CAP = 16384;
 const RESERVE_FLOOR = 2048;
 const CUT_SLACK = 4;
 
 function requestBudget(contextWindow, maxTokens) {
   const window = Number(contextWindow) || 0;
   if (window <= 0) return 0;
-  const answer = Math.min(Number(maxTokens) || 0, Math.max(0, Math.floor(window / 4)), 8192);
-  const reserve = Math.min(RESERVE_CAP, Math.max(RESERVE_FLOOR, answer + Math.floor(window * 0.05)));
-  return Math.max(1024, window - reserve);
+  const answer = Math.max(0, Number(maxTokens) || 0);
+  const margin = Math.min(SAFETY_MARGIN_CAP, Math.floor(window * 0.05));
+  const reserve = Math.max(RESERVE_FLOOR, answer + margin);
+  return Math.max(1, window - reserve);
+}
+
+function clipMiddle(text, max, marker) {
+  if (text.length <= max) return text;
+  const half = Math.floor((max - marker.length) / 2);
+  return half > 0 ? `${text.slice(0, half)}${marker}${text.slice(-half)}` : text.slice(0, max);
+}
+
+function fitSummaryTranscript(parts, priorities, budget, estimate) {
+  const transcript = parts.join('\n\n');
+  if (estimate(transcript) <= budget) return transcript;
+
+  const notice = '[Se omitió o recortó parte del historial para ajustarlo a la ventana del resumidor.]';
+  let remaining = budget - estimate(`${notice}\n\n`);
+  const kept = new Map();
+  for (const index of priorities) {
+    if (index < 0) continue;
+    const limit = Math.floor(remaining / 2);
+    const part = parts[index];
+    // The pi-ai estimator uses four characters per token. Leave room for the separator.
+    const bounded =
+      estimate(`${part}\n\n`) <= limit ? part : clipMiddle(part, Math.max(0, (limit - 1) * 4), '\n[… recortado …]\n');
+    remaining -= estimate(`${bounded}\n\n`);
+    kept.set(index, bounded);
+  }
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    if (kept.has(index)) continue;
+    const tokens = estimate(`${parts[index]}\n\n`);
+    if (tokens > remaining) continue;
+    remaining -= tokens;
+    kept.set(index, parts[index]);
+  }
+  return [notice, ...parts.flatMap((_, index) => (kept.has(index) ? [kept.get(index)] : []))].join('\n\n');
 }
 
 function textOf(content) {
@@ -125,9 +159,10 @@ function pruneOldToolResults(messages, cut) {
 
 function trimOldMessages(messages, cutoff) {
   if (cutoff <= 0) return null;
+  const activeUser = messages.findLastIndex((message) => message.role === 'user');
   let changed = false;
   const next = messages.map((message, index) => {
-    if (index >= cutoff || message.role === 'system') return message;
+    if (index >= cutoff || index === activeUser || message.role === 'system') return message;
     const trimmed =
       message.role === 'user'
         ? trimUser(message, OLD_TEXT_CHARS)
@@ -213,9 +248,10 @@ function foldOldTurns(messages, keepTurns) {
 
 function hardTrim(messages) {
   const cutoff = Math.max(0, messages.length - 2);
+  const activeUser = messages.findLastIndex((message) => message.role === 'user');
   let changed = false;
   const next = messages.map((message, index) => {
-    if (index >= cutoff || message.role === 'system') return message;
+    if (index >= cutoff || index === activeUser || message.role === 'system') return message;
     const trimmed =
       message.role === 'toolResult'
         ? trimToolResult(message, HARD_TEXT_CHARS)
@@ -264,4 +300,4 @@ function compactMessages(messages, { budget, estimate, messageTokens = (message)
   return current === messages ? undefined : current;
 }
 
-module.exports = { compactMessages, requestBudget };
+module.exports = { clipMiddle, compactMessages, fitSummaryTranscript, requestBudget };

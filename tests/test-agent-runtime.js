@@ -6459,6 +6459,20 @@ for line in sys.stdin:
     const few = { tools: many.slice(0, 5), messages: [] };
     sent.push(few);
     assert((await api.streamSimple({}, {}, {})) === few, 'una lista dentro del límite se envía sin cambios');
+    const xai = { baseUrl: 'https://api.x.ai/v1' };
+    const routing = { sessionId: 'provider-session-id' };
+    sent.push(few, few, few, { ...few, prompt_cache_key: 'caller-key' }, few);
+    assert(
+      (await api.streamSimple(xai, {}, routing)).prompt_cache_key === routing.sessionId &&
+        (await api.streamSimple(xai, {}, routing)).prompt_cache_key === routing.sessionId,
+      'xAI recibe la misma clave de caché durante la conversación',
+    );
+    assert(
+      (await api.streamSimple(xai, {}, { ...routing, cacheRetention: 'none' })) === few &&
+        (await api.streamSimple(xai, {}, routing)).prompt_cache_key === 'caller-key' &&
+        (await api.streamSimple({ baseUrl: 'https://api.x.ai.example.com/v1' }, {}, routing)) === few,
+      'la clave automática respeta la política, las claves del llamador y el origen de xAI',
+    );
     const { withCacheTelemetry } = require('../electron/agent-cache-telemetry');
     const appLog = require('../electron/app-log');
     const prefixLogs = [];
