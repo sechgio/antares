@@ -480,7 +480,7 @@ function run() {
   assert(
     runner
       .replace(/\s+/g, '')
-      .includes("run('uv',['run','--project',ROOT,'--locked','--extra','dev','pytest','../tests','-v']"),
+      .includes("run('uv',['run','--project',ROOT,'--locked','--extra','dev','python','-m','pytest','../tests','-v']"),
     'test runner runs pytest through the locked Python environment',
   );
   assert(
@@ -504,7 +504,7 @@ function run() {
   assert(runner.includes("'test-quality-ratchet.js'"), 'test runner treats quality-ratchet as a contract test');
   assert(runner.includes("'test-review-policy.js'"), 'test runner treats review-policy as a contract test');
   assert(
-    packageJson.scripts['test:stress'].includes('uv run --project .. --locked --extra dev pytest'),
+    packageJson.scripts['test:stress'].includes('uv run --project .. --locked --extra dev python -m pytest'),
     'stress tests use the locked Python environment',
   );
   assert(
