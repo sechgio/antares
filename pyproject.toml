@@ -61,6 +61,7 @@ ignore = ["E501"]
 [tool.mypy]
 # Stubs del venv (numpy sobre CPython 3.14) en sintaxis 3.12: un objetivo menor no parsea.
 python_version = "3.12"
+exclude = "(pytest-of-|antares-scalability-|antares-spreadsheet-results|antares-test-userdata-|antares_inline_)"
 warn_return_any = true
 warn_unused_configs = true
 warn_unused_ignores = true

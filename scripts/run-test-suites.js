@@ -149,9 +149,12 @@ async function runSuite(name, shard = null) {
       runNodeTests(CONTRACT_TESTS);
       return;
     case 'backend':
+      // `python -m pytest` en vez del console script: con el launcher pytest.exe
+      // tempfile no logra escribir en %LOCALAPPDATA%\Temp en algunos entornos
+      // Windows y gettempdir() cae al cwd, contaminando backend/ con artefactos.
       run(
         'uv',
-        ['run', '--project', ROOT, '--locked', '--extra', 'dev', 'pytest', '../tests', '-v'],
+        ['run', '--project', ROOT, '--locked', '--extra', 'dev', 'python', '-m', 'pytest', '../tests', '-v'],
         path.join(ROOT, 'backend'),
       );
       return;
