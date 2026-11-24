@@ -22,6 +22,9 @@ const page = { version: 1, title: 'Trabajos', html: '<h1>Trabajos</h1><input id=
     assert.match(thumbnail, /<h1>Trabajos<\/h1>/);
     assert.doesNotMatch(thumbnail, /<script|oninput=|AntaresPage|window\.unwanted/);
     assert.doesNotMatch(pages.documents(page, 'dark" onload="bad()').content, /onload=/);
+    assert.equal(pages.scriptSyntaxError(page.script), null);
+    assert.equal(pages.scriptSyntaxError('const total = await Promise.resolve(1);'), null);
+    assert.match(pages.scriptSyntaxError('const a = 1;\nconst b = "sin cerrar;'), /línea 2/);
     const [first, parallel] = await Promise.all([preview.openPage(page, 'dark'), preview.openPage(page, 'light')]);
     assert.equal(new URL(first).origin, new URL(parallel).origin);
     assert.equal((await fetch(parallel)).status, 200);

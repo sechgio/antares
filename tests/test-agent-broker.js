@@ -351,12 +351,9 @@ async function main() {
     const session = await createSession();
     await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'ejecuta' });
-    assert(await waitFor(() => [...state.approvals.values()].some((a) => a.status === 'pending')),
-      'un comando que borra archivos sigue pidiendo aprobación incluso en Acceso completo');
-    assert(state.dispatches.length === 0, 'el comando no se ejecuta antes de decidir');
-    const [approval] = [...state.approvals.values()];
-    await runtime.handlers.agent_approve({ approval_id: approval.id });
-    assert(await waitIdle(session.id), 'el turno del terminal termina');
+    assert(await waitIdle(session.id), 'el turno del terminal termina sin esperar aprobación');
+    assert(state.dispatches.length === 1 && state.dispatches[0].approval_source === 'full',
+      'Acceso completo auto-aprueba el comando de terminal');
     await runtime.shutdown();
   }
 
