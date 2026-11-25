@@ -1746,7 +1746,7 @@ it.each([false, true])('muestra el resultado sin arrastrar el historial cuando s
     artifacts: [{ id: 'result', family: 'canvas', template_id: 'doc', template_revision: 'r1',
       files: [{ name: 'informe.pdf', sha256: 'hash', pages: 1, mime: 'application/pdf', size: 20 }] }] });
   await act(async () => { update(); });
-  expect(screen.getByRole('region', { name: 'Atención del agente' })).toHaveTextContent('Resultado disponible: informe.pdf');
+  expect(screen.queryByRole('region', { name: 'Atención del agente' })).not.toBeInTheDocument();
   if (readingAbove) {
     expect(transcript.scrollTo).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: /Ir al final/ })).toBeVisible();
