@@ -6742,11 +6742,12 @@ for line in sys.stdin:
       ];
       const receipt = async () => {
         const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
-        const result = listed.messages
-          .flatMap((message) => message.tool_calls || [])
-          .filter((call) => call.name === 'subagent_run')
-          .at(-1).result;
-        return JSON.parse(result);
+        return JSON.parse(
+          listed.messages
+            .flatMap((message) => message.tool_calls || [])
+            .filter((call) => call.name === 'subagent_run')
+            .at(-1).result,
+        );
       };
       faux.setResponses(responses('primera lectura'));
       await runtime.handlers.agent_message_send({ session_id: session.id, content: 'delega la revisión' });
