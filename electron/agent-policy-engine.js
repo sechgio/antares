@@ -24,7 +24,9 @@ const DYNAMIC_OR_REDIRECT = /[`$<>]/;
 const WINDOWS = process.platform === 'win32';
 
 function normalizeWhitespace(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim();
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function normalizePathValue(value) {
@@ -123,11 +125,14 @@ function extractTargets(name, args, context) {
   if (typeof ctx.domain === 'string' && ctx.domain) targets.domain = ctx.domain;
   else if (typeof params.url === 'string' && params.url.trim()) {
     try {
-      targets.domain = String(new URL(params.url).hostname || '').toLowerCase().replace(/\.$/, '');
+      targets.domain = String(new URL(params.url).hostname || '')
+        .toLowerCase()
+        .replace(/\.$/, '');
     } catch {}
   }
   const computer = ctx.computer && typeof ctx.computer === 'object' ? ctx.computer : null;
-  if (computer && typeof computer.app === 'string' && computer.app.trim()) targets.app = computer.app.trim().toLowerCase();
+  if (computer && typeof computer.app === 'string' && computer.app.trim())
+    targets.app = computer.app.trim().toLowerCase();
   else if (typeof params.app === 'string' && params.app.trim()) targets.app = params.app.trim().toLowerCase();
   const mcpBody = tool.startsWith('mcp2__') ? tool.slice(6) : tool.startsWith('mcp__') ? tool.slice(5) : '';
   if (mcpBody) {
@@ -214,7 +219,8 @@ function specificity(rule, targets) {
     }
     return best;
   }
-  if (rule.scope === 'domain') return targets.domain && domainMatches(rule.value, targets.domain) ? normalizeDomainValue(rule.value).length : 0;
+  if (rule.scope === 'domain')
+    return targets.domain && domainMatches(rule.value, targets.domain) ? normalizeDomainValue(rule.value).length : 0;
   if (rule.scope === 'app') return targets.app && targets.app === String(rule.value).toLowerCase() ? 1 : 0;
   if (rule.scope === 'mcp') return mcpMatches(rule.value, targets) ? (String(rule.value).includes('/') ? 2 : 1) : 0;
   return 0;

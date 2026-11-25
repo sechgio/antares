@@ -54,9 +54,19 @@ test('el estado en vivo manda sobre el estado almacenado', () => {
 });
 
 test('los estados de delegación se mapean al vocabulario del grafo', () => {
-  const cases = { pending: 'queued', working: 'running', done: 'done', failed: 'failed', cancelled: 'cancelled', uncertain: 'uncertain' };
+  const cases = {
+    pending: 'queued',
+    working: 'running',
+    done: 'done',
+    failed: 'failed',
+    cancelled: 'cancelled',
+    uncertain: 'uncertain',
+  };
   for (const [status, expected] of Object.entries(cases)) {
-    const graph = buildRunGraph([session('b', { delegation: { parent_session_id: 'a', status } }), session('a')], new Map());
+    const graph = buildRunGraph(
+      [session('b', { delegation: { parent_session_id: 'a', status } }), session('a')],
+      new Map(),
+    );
     assert.equal(graph.nodes.find((node) => node.id === 'b').state, expected, `estado ${status}`);
   }
 });

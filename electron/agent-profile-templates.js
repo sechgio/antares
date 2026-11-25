@@ -7,7 +7,16 @@
 const TEMPLATE_FORMAT = 'antares-agent-template/v1';
 const MAX_BUNDLE_CHARS = 64 * 1024;
 
-const PROFILE_FIELDS = ['name', 'color', 'description', 'role', 'instructions', 'starter', 'memory_scope', 'daily_tokens'];
+const PROFILE_FIELDS = [
+  'name',
+  'color',
+  'description',
+  'role',
+  'instructions',
+  'starter',
+  'memory_scope',
+  'daily_tokens',
+];
 
 function exportTemplate(profile) {
   if (!profile || typeof profile !== 'object') throw new Error('El perfil no existe');
@@ -34,7 +43,10 @@ function validateTemplate(raw) {
   }
   const serialized = JSON.stringify(raw);
   if (serialized.length > MAX_BUNDLE_CHARS) throw new Error('La plantilla excede el tamaño máximo');
-  const unknown = Object.keys(raw).filter((key) => key !== 'format' && key !== 'tools' && key !== 'tools_deny' && key !== 'model' && !PROFILE_FIELDS.includes(key));
+  const unknown = Object.keys(raw).filter(
+    (key) =>
+      key !== 'format' && key !== 'tools' && key !== 'tools_deny' && key !== 'model' && !PROFILE_FIELDS.includes(key),
+  );
   if (unknown.length) throw new Error(`La plantilla tiene campos no reconocidos: ${unknown.join(', ')}`);
   if (typeof raw.name !== 'string' || !raw.name.trim()) throw new Error('La plantilla necesita un nombre');
   for (const field of ['color', 'description', 'role', 'instructions', 'starter', 'memory_scope']) {
@@ -43,10 +55,17 @@ function validateTemplate(raw) {
   if (raw.daily_tokens !== undefined && raw.daily_tokens !== null && !Number.isInteger(raw.daily_tokens)) {
     throw new Error('El presupuesto diario debe ser un entero o vacío');
   }
-  if (raw.tools !== undefined && !validStringList(raw.tools)) throw new Error('Las herramientas deben ser una lista de texto');
-  if (raw.tools_deny !== undefined && !validStringList(raw.tools_deny)) throw new Error('Las herramientas bloqueadas deben ser una lista de texto');
+  if (raw.tools !== undefined && !validStringList(raw.tools))
+    throw new Error('Las herramientas deben ser una lista de texto');
+  if (raw.tools_deny !== undefined && !validStringList(raw.tools_deny))
+    throw new Error('Las herramientas bloqueadas deben ser una lista de texto');
   if (raw.model !== undefined) {
-    if (!raw.model || typeof raw.model !== 'object' || typeof raw.model.provider !== 'string' || typeof raw.model.model !== 'string') {
+    if (
+      !raw.model ||
+      typeof raw.model !== 'object' ||
+      typeof raw.model.provider !== 'string' ||
+      typeof raw.model.model !== 'string'
+    ) {
       throw new Error('El modelo debe indicar proveedor y modelo');
     }
   }

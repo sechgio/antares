@@ -8,15 +8,18 @@ const TRIGGER_TYPES = new Set(['file_changed', 'task_completed']);
 const MAX_INBOX_ENTRIES = 500;
 
 function validateTrigger(trigger) {
-  if (!trigger || typeof trigger !== 'object' || Array.isArray(trigger)) throw new Error('El trigger debe ser un objeto');
+  if (!trigger || typeof trigger !== 'object' || Array.isArray(trigger))
+    throw new Error('El trigger debe ser un objeto');
   if (!TRIGGER_TYPES.has(trigger.type)) throw new Error('Tipo de trigger no soportado');
   if (trigger.type === 'file_changed') {
-    if (typeof trigger.path !== 'string' || !trigger.path.trim()) throw new Error('El trigger de archivo necesita una carpeta');
+    if (typeof trigger.path !== 'string' || !trigger.path.trim())
+      throw new Error('El trigger de archivo necesita una carpeta');
     if (trigger.pattern !== undefined && (typeof trigger.pattern !== 'string' || trigger.pattern.length > 200))
       throw new Error('El patrón del trigger no es válido');
   }
   if (trigger.type === 'task_completed') {
-    if (typeof trigger.task_id !== 'string' || !trigger.task_id.trim()) throw new Error('El trigger necesita la tarea origen');
+    if (typeof trigger.task_id !== 'string' || !trigger.task_id.trim())
+      throw new Error('El trigger necesita la tarea origen');
   }
   return {
     type: trigger.type,
@@ -35,7 +38,10 @@ function normalizePath(value) {
 
 function matchesPattern(name, pattern) {
   if (!pattern) return true;
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
   return new RegExp(`^${escaped}$`, 'i').test(name);
 }
 
@@ -86,4 +92,13 @@ function inboxAccept(inbox, entry) {
   return { accepted: entry, items: next };
 }
 
-module.exports = { validateTrigger, matchesTrigger, dedupeKey, inboxEntry, inboxAccept, TRIGGER_TYPES, normalizePath, matchesPattern };
+module.exports = {
+  validateTrigger,
+  matchesTrigger,
+  dedupeKey,
+  inboxEntry,
+  inboxAccept,
+  TRIGGER_TYPES,
+  normalizePath,
+  matchesPattern,
+};

@@ -33,7 +33,12 @@ function handleEvent(folder, eventType, filename) {
   }
   const full = path.join(folder, name);
   require('./agent-tasks')
-    .fireEvent({ type: 'file_changed', path: full, kind: eventType === 'rename' ? 'created' : 'modified', at: Date.now() })
+    .fireEvent({
+      type: 'file_changed',
+      path: full,
+      kind: eventType === 'rename' ? 'created' : 'modified',
+      at: Date.now(),
+    })
     .catch((err) => console.warn('[agent] trigger file_changed falló:', err?.message));
 }
 
@@ -41,7 +46,9 @@ function ensureWatcher(folder) {
   const key = normalizePath(folder);
   if (watchers.has(key) || stopped) return;
   try {
-    const watcher = fs.watch(folder, { persistent: false }, (eventType, filename) => handleEvent(folder, eventType, filename));
+    const watcher = fs.watch(folder, { persistent: false }, (eventType, filename) =>
+      handleEvent(folder, eventType, filename),
+    );
     watcher.on('error', () => dropWatcher(key));
     watchers.set(key, { watcher, folder });
   } catch (err) {

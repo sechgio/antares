@@ -5,18 +5,27 @@ const assert = require('node:assert/strict');
 const triggers = require('../electron/agent-triggers');
 
 test('valida la forma de cada tipo de trigger', () => {
-  assert.deepEqual(triggers.validateTrigger({ type: 'file_changed', path: 'C:/inbox' }), { type: 'file_changed', path: 'C:/inbox' });
+  assert.deepEqual(triggers.validateTrigger({ type: 'file_changed', path: 'C:/inbox' }), {
+    type: 'file_changed',
+    path: 'C:/inbox',
+  });
   assert.throws(() => triggers.validateTrigger({ type: 'file_changed' }), /carpeta/);
   assert.throws(() => triggers.validateTrigger({ type: 'task_completed' }), /tarea origen/);
   assert.throws(() => triggers.validateTrigger({ type: 'webhook' }), /no soportado/);
   assert.throws(() => triggers.validateTrigger(null), /objeto/);
-  assert.deepEqual(triggers.validateTrigger({ type: 'task_completed', task_id: 't1' }), { type: 'task_completed', task_id: 't1' });
+  assert.deepEqual(triggers.validateTrigger({ type: 'task_completed', task_id: 't1' }), {
+    type: 'task_completed',
+    task_id: 't1',
+  });
 });
 
 test('el trigger de archivo solo cubre el nivel directo de la carpeta', () => {
   const trigger = triggers.validateTrigger({ type: 'file_changed', path: 'C:\\inbox' });
   assert.equal(triggers.matchesTrigger(trigger, { type: 'file_changed', path: 'C:\\inbox\\datos.xlsx', at: 1 }), true);
-  assert.equal(triggers.matchesTrigger(trigger, { type: 'file_changed', path: 'C:\\inbox\\sub\\datos.xlsx', at: 1 }), false);
+  assert.equal(
+    triggers.matchesTrigger(trigger, { type: 'file_changed', path: 'C:\\inbox\\sub\\datos.xlsx', at: 1 }),
+    false,
+  );
   assert.equal(triggers.matchesTrigger(trigger, { type: 'file_changed', path: 'C:\\otra\\datos.xlsx', at: 1 }), false);
   // Normalización: separadores y mayúsculas no rompen el match en Windows.
   assert.equal(triggers.matchesTrigger(trigger, { type: 'file_changed', path: 'c:/inbox/DATOS.xlsx', at: 1 }), true);
@@ -37,8 +46,16 @@ test('el trigger de tarea solo se activa con su origen exacto', () => {
 
 test('la deduplicación de archivos colapsa ráfagas del mismo minuto', () => {
   const trigger = triggers.validateTrigger({ type: 'file_changed', path: '/inbox' });
-  const first = triggers.inboxEntry(trigger, { type: 'file_changed', path: '/inbox/a.xlsx', at: 60000 * 5 + 100 }, 'task1');
-  const second = triggers.inboxEntry(trigger, { type: 'file_changed', path: '/inbox/a.xlsx', at: 60000 * 5 + 40000 }, 'task1');
+  const first = triggers.inboxEntry(
+    trigger,
+    { type: 'file_changed', path: '/inbox/a.xlsx', at: 60000 * 5 + 100 },
+    'task1',
+  );
+  const second = triggers.inboxEntry(
+    trigger,
+    { type: 'file_changed', path: '/inbox/a.xlsx', at: 60000 * 5 + 40000 },
+    'task1',
+  );
   assert.equal(first.key, second.key, 'mismo archivo y minuto comparten clave');
   let inbox = [];
   let outcome = triggers.inboxAccept(inbox, first);
@@ -64,7 +81,11 @@ test('la bandeja queda acotada descartando lo más antiguo', () => {
   const trigger = triggers.validateTrigger({ type: 'file_changed', path: '/inbox' });
   let items = [];
   for (let index = 0; index < 600; index += 1) {
-    const entry = triggers.inboxEntry(trigger, { type: 'file_changed', path: `/inbox/f${index}.xlsx`, at: index * 60000 }, 'task1');
+    const entry = triggers.inboxEntry(
+      trigger,
+      { type: 'file_changed', path: `/inbox/f${index}.xlsx`, at: index * 60000 },
+      'task1',
+    );
     items = triggers.inboxAccept(items, entry).items;
   }
   assert.equal(items.length, 500);

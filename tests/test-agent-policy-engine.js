@@ -30,28 +30,57 @@ try {
   assert(valid.length === 5, 'acepta las cinco clases de scope');
   assert(valid[2].value === 'example.com', 'el dominio se normaliza a minúsculas sin punto final');
   assert(valid[3].value === 'excel', 'la app se normaliza a minúsculas');
-  assert(throws(() => engine.validateScopedRules({})), 'un mapa no es una lista de reglas');
-  assert(throws(() => engine.validateScopedRules([{ scope: 'nope', value: 'x', decision: 'allow' }])), 'scope desconocido');
-  assert(throws(() => engine.validateScopedRules([{ scope: 'path', value: 'x', decision: 'nope' }])), 'decisión desconocida');
-  assert(throws(() => engine.validateScopedRules([{ scope: 'path', value: '', decision: 'deny' }])), 'valor vacío');
-  assert(throws(() => engine.validateScopedRules([
-    { scope: 'command', value: 'git', decision: 'allow' },
-    { scope: 'command', value: 'git', decision: 'deny' },
-  ])), 'duplicados se rechazan');
+  assert(
+    throws(() => engine.validateScopedRules({})),
+    'un mapa no es una lista de reglas',
+  );
+  assert(
+    throws(() => engine.validateScopedRules([{ scope: 'nope', value: 'x', decision: 'allow' }])),
+    'scope desconocido',
+  );
+  assert(
+    throws(() => engine.validateScopedRules([{ scope: 'path', value: 'x', decision: 'nope' }])),
+    'decisión desconocida',
+  );
+  assert(
+    throws(() => engine.validateScopedRules([{ scope: 'path', value: '', decision: 'deny' }])),
+    'valor vacío',
+  );
+  assert(
+    throws(() =>
+      engine.validateScopedRules([
+        { scope: 'command', value: 'git', decision: 'allow' },
+        { scope: 'command', value: 'git', decision: 'deny' },
+      ]),
+    ),
+    'duplicados se rechazan',
+  );
 
   const rootValue = WINDOWS ? 'C:\\' : '/';
-  assert(throws(() => engine.validateScopedRules([{ scope: 'path', value: rootValue, decision: 'allow' }])),
-    'no se puede permitir el disco completo');
-  assert(!throws(() => engine.validateScopedRules([{ scope: 'path', value: rootValue, decision: 'deny' }])),
-    'sí se puede bloquear el disco completo');
-  assert(throws(() => engine.validateScopedRules([{ scope: 'path', value: `${ROOT}*`, decision: 'allow' }])),
-    'las rutas allow no admiten comodines');
-  assert(throws(() => engine.validateScopedRules([{ scope: 'command', value: 'git status > out', decision: 'allow' }])),
-    'un comando allow no puede contener redirección');
-  assert(throws(() => engine.validateScopedRules([{ scope: 'command', value: '&&', decision: 'allow' }])),
-    'un comando allow necesita un comando concreto');
-  assert(throws(() => engine.validateScopedRules([{ scope: 'domain', value: 'x', decision: 'allow' }])),
-    'un dominio allow necesita un host válido');
+  assert(
+    throws(() => engine.validateScopedRules([{ scope: 'path', value: rootValue, decision: 'allow' }])),
+    'no se puede permitir el disco completo',
+  );
+  assert(
+    !throws(() => engine.validateScopedRules([{ scope: 'path', value: rootValue, decision: 'deny' }])),
+    'sí se puede bloquear el disco completo',
+  );
+  assert(
+    throws(() => engine.validateScopedRules([{ scope: 'path', value: `${ROOT}*`, decision: 'allow' }])),
+    'las rutas allow no admiten comodines',
+  );
+  assert(
+    throws(() => engine.validateScopedRules([{ scope: 'command', value: 'git status > out', decision: 'allow' }])),
+    'un comando allow no puede contener redirección',
+  );
+  assert(
+    throws(() => engine.validateScopedRules([{ scope: 'command', value: '&&', decision: 'allow' }])),
+    'un comando allow necesita un comando concreto',
+  );
+  assert(
+    throws(() => engine.validateScopedRules([{ scope: 'domain', value: 'x', decision: 'allow' }])),
+    'un dominio allow necesita un host válido',
+  );
 
   const shellTargets = engine.extractTargets('shell_run', { command: 'git status' });
   assert(shellTargets.command === 'git status', 'extrae el comando de shell_run');
@@ -73,18 +102,18 @@ try {
   assert(engine.commandMatches('git status', 'git status', true), 'comando completo coincide');
   assert(!engine.commandMatches('git status', 'git statusx', true), 'los tokens son completos, no subcadenas');
   assert(!engine.commandMatches('git status', 'git diff', true), 'otro subcomando no coincide');
-  assert(!engine.commandMatches('git', 'git status && rm file', true),
-    'allow estricto: un segmento que no coincide rompe el match');
-  assert(engine.commandMatches('git', 'git status && git diff', true),
-    'allow estricto: todos los segmentos git coinciden');
-  assert(engine.commandMatches('rm', 'git status && rm file', false),
-    'deny amplio: basta un segmento coincidente');
-  assert(!engine.commandMatches('git', 'git status > out.txt', true),
-    'la redirección bloquea el match de allow');
-  assert(!engine.commandMatches('git', 'echo $(whoami)', true),
-    'la ejecución dinámica bloquea el match de allow');
-  assert(engine.commandMatches('echo', 'echo $(whoami)', false),
-    'la ejecución dinámica no bloquea el match de deny');
+  assert(
+    !engine.commandMatches('git', 'git status && rm file', true),
+    'allow estricto: un segmento que no coincide rompe el match',
+  );
+  assert(
+    engine.commandMatches('git', 'git status && git diff', true),
+    'allow estricto: todos los segmentos git coinciden',
+  );
+  assert(engine.commandMatches('rm', 'git status && rm file', false), 'deny amplio: basta un segmento coincidente');
+  assert(!engine.commandMatches('git', 'git status > out.txt', true), 'la redirección bloquea el match de allow');
+  assert(!engine.commandMatches('git', 'echo $(whoami)', true), 'la ejecución dinámica bloquea el match de allow');
+  assert(engine.commandMatches('echo', 'echo $(whoami)', false), 'la ejecución dinámica no bloquea el match de deny');
 
   // --- Matching de rutas con frontera ---
   assert(engine.pathMatches(ROOT, FILE), 'la regla cubre archivos bajo la carpeta');
@@ -100,37 +129,52 @@ try {
 
   // --- Evaluación con precedencia ---
   const targets = { command: 'git status', paths: [FILE], domain: 'example.com', app: 'excel' };
-  const denyWins = engine.evaluateScoped([
-    { scope: 'command', value: 'git', decision: 'allow' },
-    { scope: 'command', value: 'git status', decision: 'deny' },
-  ], targets);
+  const denyWins = engine.evaluateScoped(
+    [
+      { scope: 'command', value: 'git', decision: 'allow' },
+      { scope: 'command', value: 'git status', decision: 'deny' },
+    ],
+    targets,
+  );
   assert(denyWins.decision === 'deny' && denyWins.rule.value === 'git status', 'deny gana aunque haya allow');
-  const askForces = engine.evaluateScoped([
-    { scope: 'command', value: 'git', decision: 'allow' },
-    { scope: 'command', value: 'git status', decision: 'ask' },
-  ], targets);
+  const askForces = engine.evaluateScoped(
+    [
+      { scope: 'command', value: 'git', decision: 'allow' },
+      { scope: 'command', value: 'git status', decision: 'ask' },
+    ],
+    targets,
+  );
   assert(askForces.decision === 'ask', 'ask fuerza revisión manual sobre allow');
-  const mostSpecific = engine.evaluateScoped([
-    { scope: 'command', value: 'git', decision: 'deny' },
-    { scope: 'command', value: 'git status', decision: 'deny' },
-  ], targets);
+  const mostSpecific = engine.evaluateScoped(
+    [
+      { scope: 'command', value: 'git', decision: 'deny' },
+      { scope: 'command', value: 'git status', decision: 'deny' },
+    ],
+    targets,
+  );
   assert(mostSpecific.rule.value === 'git status', 'entre denies gana el más específico para explicar');
-  assert(engine.evaluateScoped([
-    { scope: 'command', value: 'git', decision: 'allow' },
-  ], targets).decision === 'allow', 'allow simple se evalúa');
-  assert(engine.evaluateScoped([
-    { scope: 'command', value: 'npm', decision: 'allow' },
-  ], targets) === null, 'sin match no hay decisión');
+  assert(
+    engine.evaluateScoped([{ scope: 'command', value: 'git', decision: 'allow' }], targets).decision === 'allow',
+    'allow simple se evalúa',
+  );
+  assert(
+    engine.evaluateScoped([{ scope: 'command', value: 'npm', decision: 'allow' }], targets) === null,
+    'sin match no hay decisión',
+  );
   assert(engine.evaluateScoped([], targets) === null, 'sin reglas no hay decisión');
 
-  const mcpEval = engine.evaluateScoped([
-    { scope: 'mcp', value: 'github', decision: 'allow' },
-  ], { mcp_server: 'github', mcp_tool: 'create_issue' });
+  const mcpEval = engine.evaluateScoped([{ scope: 'mcp', value: 'github', decision: 'allow' }], {
+    mcp_server: 'github',
+    mcp_tool: 'create_issue',
+  });
   assert(mcpEval.decision === 'allow', 'la regla de servidor cubre todas sus herramientas');
-  const mcpExact = engine.evaluateScoped([
-    { scope: 'mcp', value: 'github/create_issue', decision: 'deny' },
-    { scope: 'mcp', value: 'github', decision: 'allow' },
-  ], { mcp_server: 'github', mcp_tool: 'create_issue' });
+  const mcpExact = engine.evaluateScoped(
+    [
+      { scope: 'mcp', value: 'github/create_issue', decision: 'deny' },
+      { scope: 'mcp', value: 'github', decision: 'allow' },
+    ],
+    { mcp_server: 'github', mcp_tool: 'create_issue' },
+  );
   assert(mcpExact.decision === 'deny', 'la regla exacta de herramienta MCP gana');
 
   engine.addTurnRule('conv1', { scope: 'command', value: 'git', decision: 'allow' });
@@ -138,7 +182,6 @@ try {
   assert(engine.turnRulesFor('conv2').length === 0, 'otra conversación no la ve');
   engine.clearTurnRules('conv1');
   assert(engine.turnRulesFor('conv1').length === 0, 'limpiar el turno elimina sus reglas');
-
 
   // --- MCP mcp2: la identidad real del spec gana al alias con hashes ---
   const realTargets = engine.extractTargets(
@@ -148,13 +191,15 @@ try {
   );
   assert(realTargets.mcp_server === 'github', 'la regla usa el nombre que el usuario ve en Conexiones');
   assert(realTargets.mcp_tool === 'create_issue', 'y la herramienta real, no el alias con hash');
-  const mcp2Rule = engine.evaluateScoped([
-    { scope: 'mcp', value: 'github/create_issue', decision: 'allow' },
-  ], realTargets);
+  const mcp2Rule = engine.evaluateScoped(
+    [{ scope: 'mcp', value: 'github/create_issue', decision: 'allow' }],
+    realTargets,
+  );
   assert(mcp2Rule.decision === 'allow', 'una regla github/create_issue matchea herramientas mcp2 reales');
-  const mcp2Deny = engine.evaluateScoped([
-    { scope: 'mcp', value: 'github/delete_repo', decision: 'deny' },
-  ], realTargets);
+  const mcp2Deny = engine.evaluateScoped(
+    [{ scope: 'mcp', value: 'github/delete_repo', decision: 'deny' }],
+    realTargets,
+  );
   assert(!mcp2Deny || mcp2Deny.decision !== 'deny', 'otra herramienta no hereda el deny');
   const fallback = engine.extractTargets('mcp2__srv-0123456789ab__do-0123456789ab', {});
   assert(fallback.mcp_server === 'srv-0123456789ab', 'sin contexto cae al parseo del nombre');

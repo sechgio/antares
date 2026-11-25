@@ -5,15 +5,7 @@
 // inspeccionar). No conoce SQLite ni el harness; las dependencias llegan por
 // parámetro para que las pruebas lo ejerciten sin arrancar el runtime.
 
-const GRAPH_STATES = new Set([
-  'queued',
-  'running',
-  'blocked',
-  'done',
-  'failed',
-  'cancelled',
-  'uncertain',
-]);
+const GRAPH_STATES = new Set(['queued', 'running', 'blocked', 'done', 'failed', 'cancelled', 'uncertain']);
 
 function delegationState(status) {
   switch (status) {
@@ -61,7 +53,8 @@ function nodeFor(session, live) {
     node.round = Number(delegation.round) || 1;
     node.started_at = delegation.started_at || null;
     node.root_parent_request_id = delegation.root_parent_request_id || null;
-    if (delegation.delivery) node.delivery = { state: delegation.delivery.state || null, attempts: Number(delegation.delivery.attempts) || 0 };
+    if (delegation.delivery)
+      node.delivery = { state: delegation.delivery.state || null, attempts: Number(delegation.delivery.attempts) || 0 };
     if (delegation.content) node.task = String(delegation.content).slice(0, 200);
   } else if (session.profile) {
     node.agent = { id: session.profile.id, name: session.profile.name };
