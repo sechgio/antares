@@ -277,18 +277,18 @@ it('muestra agentes y conversaciones en una sola lista con un buscador común', 
   await act(async () => {});
   const sidebar = within(screen.getByRole('complementary', { name: 'Agentes y conversaciones' }));
   expect(sidebar.queryByRole('group', { name: 'Vistas del agente' })).not.toBeInTheDocument();
-  expect(within(sidebar.getByRole('region', { name: 'Agentes' })).getByTitle('Nueva conversación con Revisor de PDFs')).toBeInTheDocument();
+  expect(within(sidebar.getByRole('region', { name: 'Agentes' })).getByTitle('Abrir conversación con Revisor de PDFs')).toBeInTheDocument();
   expect(within(sidebar.getByRole('region', { name: 'Conversaciones' })).getByRole('button', { name: 'Primera' })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador pendiente' } });
   fireEvent.click(sidebar.getByRole('button', { name: 'Buscar agentes y conversaciones' }));
   fireEvent.change(sidebar.getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), { target: { value: 'firmas' } });
-  expect(sidebar.getByTitle('Nueva conversación con Revisor de PDFs')).toBeInTheDocument();
+  expect(sidebar.getByTitle('Abrir conversación con Revisor de PDFs')).toBeInTheDocument();
   expect(sidebar.queryByRole('button', { name: 'Primera' })).not.toBeInTheDocument();
   fireEvent.change(sidebar.getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), { target: { value: 'Primera' } });
   expect(sidebar.getByText(/Sin agentes para/)).toBeInTheDocument();
   expect(sidebar.getByRole('button', { name: 'Primera' })).toBeInTheDocument();
   fireEvent.click(sidebar.getByRole('button', { name: 'Cerrar búsqueda' }));
-  expect(sidebar.getByTitle('Nueva conversación con Revisor de PDFs')).toBeInTheDocument();
+  expect(sidebar.getByTitle('Abrir conversación con Revisor de PDFs')).toBeInTheDocument();
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador pendiente');
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
 });
@@ -1409,7 +1409,40 @@ it('permite quitar la carpeta de trabajo desde el compositor', async () => {
   expect(screen.queryByLabelText('Quitar la carpeta de trabajo')).toBeNull();
 });
 
-it('abre una conversación desde un agente guardado con su mensaje inicial', async () => {
+it('abre la conversación existente de un agente y crea una solo cuando no tiene', async () => {
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [
+    {
+      id: 'p1', name: 'Informe mensual', description: 'Cortes del mes', instructions: 'x', starter: 'Prepara el informe',
+      tools: null, created_at: 1, updated_at: 1,
+    },
+    {
+      id: 'p2', name: 'Revisión', description: 'Revisión final', instructions: 'x', starter: 'Revisa el documento',
+      tools: null, created_at: 1, updated_at: 1,
+    },
+  ] });
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [
+    { ...session, id: 's8', title: 'Antigua', updated_at: 1, profile: { id: 'p1', name: 'Informe mensual' } },
+    { ...session, id: 's9', title: 'Reciente', updated_at: 2, profile: { id: 'p1', name: 'Informe mensual' } },
+  ] });
+  const create = vi.spyOn(agentApi, 'agentSessionCreate').mockResolvedValue({
+    session: { ...session, id: 's10', profile: { id: 'p2', name: 'Revisión' } },
+  });
+  render(<AgentView />);
+  await act(async () => {});
+
+  await act(async () => { fireEvent.click(screen.getByTitle('Abrir conversación con Informe mensual')); });
+  await waitFor(() => expect(list).toHaveBeenCalledWith('s9'));
+  expect(create).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('');
+
+  await act(async () => { fireEvent.click(screen.getByTitle('Abrir conversación con Revisión')); });
+  expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba', profile_id: 'p2' });
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Revisa el documento');
+});
+
+it('crea una conversación nueva desde el botón del agente aunque ya tenga una', async () => {
   vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [
     { id: 'local', label: 'Local', configured: true, has_key: true, needs_key: false, default_model: 'prueba' },
   ] } as never);
@@ -1422,7 +1455,7 @@ it('abre una conversación desde un agente guardado con su mensaje inicial', asy
   const create = vi.spyOn(agentApi, 'agentSessionCreate').mockResolvedValue({ session: { ...session, id: 's9', profile: { id: 'p1', name: 'Informe mensual' } } });
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByTitle('Nueva conversación con Informe mensual')); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Nueva conversación con Informe mensual' })); });
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ profile_id: 'p1' }));
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Prepara el informe de este mes');
 });
