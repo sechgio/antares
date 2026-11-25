@@ -142,6 +142,7 @@ outputs/
 plans/
 advisor-plans/
 tasks/
+TASKS.md
 
 BUGS_BOTTLENECKS_AUDIT_*.md
 PERFORMANCE_AUDIT_*.md
