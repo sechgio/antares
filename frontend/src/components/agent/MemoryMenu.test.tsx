@@ -101,3 +101,22 @@ it('muestra el diario con su etiqueta y su fecha', async () => {
   expect(screen.getByText('Se revisó el metrado')).toBeInTheDocument();
   expect(screen.getByText('Indicado en una conversación')).toBeInTheDocument();
 });
+
+it('confirma o descarta recuerdos inferidos pendientes', async () => {
+  const inferred: AgentMemoryItem = {
+    id: 'i1', kind: 'preference', title: 'Formato', content: 'Prefiere PDF', status: 'active', reason: null,
+    confidence: 'inferred', expires_at: Date.now() + 1000, version: 1, updated_at: 3,
+    source: { kind: 'agent', via: 'dreaming', journal_ids: ['j1'] },
+    versions: [{ version: 1, created_at: 1, source: { kind: 'agent', via: 'dreaming' } }],
+  };
+  const update = vi.spyOn(agentApi, 'agentMemoryUpdate').mockResolvedValue({ item: { ...inferred, confidence: 'confirmed' } });
+  const second = { ...inferred, id: 'i2', title: 'Tono' };
+  vi.mocked(agentApi.agentMemoryList).mockResolvedValue({ items: [inferred, second, procedure] });
+  await open();
+  expect(screen.getByText('Pendientes de confirmar')).toBeInTheDocument();
+  expect(screen.getAllByText('Inferido por la consolidación nocturna')).toHaveLength(2);
+  await act(async () => { fireEvent.click(screen.getAllByText('Confirmar')[0]); });
+  expect(update).toHaveBeenLastCalledWith({ id: 'i1', action: 'confirm' });
+  await act(async () => { fireEvent.click(screen.getAllByText('Descartar')[0]); });
+  expect(update).toHaveBeenLastCalledWith({ id: 'i2', action: 'discard' });
+});

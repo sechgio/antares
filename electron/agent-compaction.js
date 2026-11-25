@@ -466,6 +466,8 @@ async function flushMemory(runtime, model, parts, sessionId) {
   const { sessions } = require('./agent-shared');
   const session = (await sessions())[sessionId];
   if (!session) return { skipped: 'sin sesión' };
+  if (session.incognito === true) return { skipped: 'incógnito' };
+  if (session.delegation) return { skipped: 'delegación' };
   const profile = await execution.sessionProfile(session);
   if (profile && profile.memory_scope === 'none') return { skipped: 'memoria desactivada' };
   const cycle = [sessionId, runtime.taskId || '', compactionCycle(parts)].join(':');

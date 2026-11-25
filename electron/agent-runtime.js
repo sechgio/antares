@@ -360,6 +360,11 @@ async function profileSave(params = {}) {
   }
   const dreaming = params.dreaming === undefined ? existing?.dreaming === true : params.dreaming;
   if (typeof dreaming !== 'boolean') throw validation('Indica si el agente consolida su memoria cada noche');
+  const recencyHalfLife =
+    params.recency_half_life_days === undefined ? (existing?.recency_half_life_days ?? 14) : params.recency_half_life_days;
+  if (!Number.isInteger(recencyHalfLife) || recencyHalfLife < 1 || recencyHalfLife > 365) {
+    throw validation('La vida media de recencia debe ser un entero entre 1 y 365 días');
+  }
   const rawModel = params.model === undefined ? (existing?.model ?? null) : params.model;
   let agentModel = null;
   if (rawModel !== null) {
@@ -387,6 +392,7 @@ async function profileSave(params = {}) {
     ...(browserMode !== 'auto' ? { browser_mode: browserMode } : {}),
     ...(dailyTokens !== null ? { daily_tokens: dailyTokens } : {}),
     ...(dreaming ? { dreaming: true } : {}),
+    ...(recencyHalfLife !== 14 ? { recency_half_life_days: recencyHalfLife } : {}),
     ...(agentModel ? { model: agentModel } : {}),
     ...(existing && existing.onboarded_at ? { onboarded_at: existing.onboarded_at } : {}),
     created_at: existing ? existing.created_at : now,
@@ -579,6 +585,26 @@ async function sessionReasoningSet(params) {
     await pi.configure(tx, session.conversationId, { thinkingLevel: execution.thinkingLevelFor(levels, effort) });
     current.reasoning_effort = effort;
     current.reasoning_levels = levels;
+    current.updated_at = Date.now();
+    return { session: toPublicSession(current) };
+  }, ctx());
+}
+
+async function sessionIncognitoSet(params) {
+  const sessionId = _text(params.id, 'la conversación', 120, true);
+  if (typeof params.incognito !== 'boolean') throw validation('El modo incógnito debe ser verdadero o falso');
+  const session = await requireSession(sessionId);
+  const { pi } = shared.deps;
+  return shared.state.harness.commit(async (tx) => {
+    const live = await tx.doc(pi.LiveDoc, session.conversationId);
+    const inbox = await tx.doc(pi.InboxDoc, session.conversationId);
+    if (live.run || inbox.items.length) throw validation('Espera a que termine el turno para cambiar el modo incógnito');
+    const doc = await tx.doc(shared.state.SessionsDoc);
+    const current = doc.sessions[sessionId];
+    if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
+    if (params.incognito) current.incognito = true;
+    else delete current.incognito;
+    delete current.memory_revision;
     current.updated_at = Date.now();
     return { session: toPublicSession(current) };
   }, ctx());
@@ -1363,8 +1389,10 @@ async function _writeMemorySnapshot(session, initialText, checkpoint) {
       accounts: _accounts(),
       profile_id: session.profile?.id || null,
       memory_scope: profile?.memory_scope || null,
+      incognito: session.incognito === true,
+      private_memory: !session.delegation,
     }));
-    if (checkpoint && profile?.memory_scope !== 'none') await _promoteCandidates(session, initialText);
+    if (checkpoint && profile?.memory_scope !== 'none' && !session.incognito && !session.delegation) await _promoteCandidates(session, initialText);
   } catch (error) {
     if (checkpoint) throw error;
     return false;
@@ -1391,6 +1419,7 @@ async function _writeMemorySnapshot(session, initialText, checkpoint) {
 }
 
 async function _promoteCandidates(session, summary) {
+  if (session.incognito === true || session.delegation) return;
   const items = compactionPolicy.memoryCandidates(summary);
   if (!items.length) return;
   try {
@@ -1841,6 +1870,7 @@ module.exports = {
     agent_session_delete: sessionDelete,
     agent_session_rename: sessionRename,
     agent_session_model_set: sessionModelSet,
+    agent_session_incognito_set: sessionIncognitoSet,
     agent_session_permissions_set: sessionPermissionsSet,
     agent_session_rules_set: sessionRulesSet,
     agent_policy_get: policyState,

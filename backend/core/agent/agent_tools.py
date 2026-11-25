@@ -130,6 +130,6 @@ def run(name: str, args: JsonObject, store: AgentStore, session_id: str, token: 
         if args.get("type") not in {"choice", "form", "table"}:
             raise ValueError("panel_show admite choice, form o table; para páginas usa page_create")
         return {"panel": panels.validate(args)}
-    if name in {"memory_search", "memory_remember", "procedure_learn"}:
+    if name in {"memory_search", "memory_explain", "memory_remember", "procedure_learn"}:
         return memory.run(name, args, store, session_id, profile_id=profile_id, memory_scope=memory_scope)
     raise ValueError(f"Herramienta no disponible para el agente: {name}")

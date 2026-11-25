@@ -1402,6 +1402,37 @@ async function main() {
     await runtime.shutdown();
   }
 
+  {
+    const { dir, state: bridgeState } = await openCompaction();
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_incognito_set({ id: session.id, incognito: true });
+    const state = runtime._internal.state();
+    const map = await state.harness.snapshot(state.SessionsDoc, state.ctx);
+    const convId = map.sessions[session.id].conversationId;
+    shared.live.set(convId, { tools: [] });
+    let flushCalls = 0;
+    const harnessRuntime = {
+      ...fakeRuntime(convId),
+      agent: async () => ({ model: { provider: 'faux', modelId: 'faux-1' } }),
+      models: {
+        getModel: () => ({ maxTokens: 2048 }),
+        completeSimple: async (_model, request) => {
+          if (String(request.messages[0].content || '').includes('turno interno')) flushCalls += 1;
+          return { stopReason: 'stop', content: [{ type: 'text', text: '## Encargo actual\nSeguir.' }] };
+        },
+      },
+    };
+    await compactionModule.beforeCompact(fakeCompaction(), harnessRuntime, state.ctx);
+    assert(flushCalls === 0, 'el modo incógnito no gasta modelo en el volcado');
+    assert(!bridgeState.flushes?.length, 'el modo incógnito no escribe journal durante la compactación');
+    assert(
+      auditRecords(dir).some((record) => record.outcome === 'flush' && record.detail === 'incógnito'),
+      'el registro explica el volcado omitido por incógnito',
+    );
+    shared.live.delete(convId);
+    await runtime.shutdown();
+  }
+
   finish();
 }
 

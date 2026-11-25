@@ -36,7 +36,7 @@ it('crea un agente con indicaciones y solo las herramientas elegidas', async () 
   fireEvent.click(screen.getByRole('switch', { name: 'Permitir templates_catalog' }));
   await act(async () => { fireEvent.click(create); });
   expect(save).toHaveBeenCalledWith({ name: 'Informe mensual', color: '#0E7490', description: '', role: 'explorer', instructions: 'Usa la plantilla de cortes',
-    starter: 'Prepara el informe', tools: ['templates_catalog'], tools_deny: [], memory_scope: 'shared-read', daily_tokens: null, dreaming: false, model: null });
+    starter: 'Prepara el informe', tools: ['templates_catalog'], tools_deny: [], memory_scope: 'shared-read', daily_tokens: null, dreaming: false, recency_half_life_days: 14, model: null });
   expect(onSaved).toHaveBeenCalledWith(saved);
 });
 
@@ -82,10 +82,13 @@ it('activa y desactiva la consolidación nocturna de memoria del agente', async 
   expect(toggle).not.toBeChecked();
   fireEvent.click(toggle);
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
-  expect(save.mock.calls[0][0]).toMatchObject({ dreaming: true });
+  expect(save.mock.calls[0][0]).toMatchObject({ dreaming: true, recency_half_life_days: 14 });
+  fireEvent.change(screen.getByLabelText('Vida media de recencia en días'), { target: { value: '21' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(save.mock.calls[1][0]).toMatchObject({ dreaming: true, recency_half_life_days: 21 });
   fireEvent.click(screen.getByRole('switch', { name: 'Consolidar el diario cada noche' }));
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
-  expect(save.mock.calls[1][0]).toMatchObject({ dreaming: false });
+  expect(save.mock.calls[2][0]).toMatchObject({ dreaming: false });
   fireEvent.click(screen.getByRole('button', { name: 'Ninguna' }));
   expect(screen.getByRole('switch', { name: 'Consolidar el diario cada noche' })).toBeDisabled();
 });
@@ -101,7 +104,7 @@ it('permite empezar solo con nombre y sin abrir las opciones avanzadas', async (
   expect(create).toBeEnabled();
   expect(screen.getByLabelText('Indicaciones del agente')).not.toBeRequired();
   await act(async () => { fireEvent.click(create); });
-  expect(save).toHaveBeenCalledWith({ name: 'Revisor', color: '', role: 'explorer', instructions: '', description: '', starter: '', tools: null, tools_deny: [], memory_scope: 'shared-read', daily_tokens: null, dreaming: false, model: null });
+  expect(save).toHaveBeenCalledWith({ name: 'Revisor', color: '', role: 'explorer', instructions: '', description: '', starter: '', tools: null, tools_deny: [], memory_scope: 'shared-read', daily_tokens: null, dreaming: false, recency_half_life_days: 14, model: null });
 });
 
 it('conserva el color al editar y permite volver al automático', async () => {

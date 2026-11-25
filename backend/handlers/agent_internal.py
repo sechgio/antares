@@ -801,8 +801,14 @@ def _memory_context(params: JsonObject) -> JsonObject:
     memory_scope = params.get("memory_scope")
     if memory_scope is not None and memory_scope not in ("shared-read", "own", "none"):
         raise ValidationError("El alcance de memoria no es válido")
+    incognito = params.get("incognito")
+    if incognito is not None and not isinstance(incognito, bool):
+        raise ValidationError("El modo incógnito debe ser verdadero o falso")
+    private_memory = params.get("private_memory", True)
+    if not isinstance(private_memory, bool):
+        raise ValidationError("private_memory debe ser verdadero o falso")
     return memory.context(str(params["session_id"]), str(params["text"]), versions, templates, accounts, profile_id,
-                          memory_scope)
+                          memory_scope, incognito, private_memory)
 
 
 @with_locale
@@ -826,16 +832,25 @@ def _memory_flush(params: JsonObject) -> JsonObject:
 @with_locale
 @validate_params("profile_id", "days")
 def _memory_dream_input(params: JsonObject) -> JsonObject:
-    return _memory().dream_input(str(params["profile_id"]), int(params["days"]))
+    half_life = params.get("recency_half_life_days", 14)
+    if not isinstance(half_life, int) or isinstance(half_life, bool) or not 1 <= half_life <= 365:
+        raise ValidationError("recency_half_life_days debe ser un entero entre 1 y 365")
+    return _memory().dream_input(str(params["profile_id"]), int(params["days"]), half_life)
 
 
 @with_locale
 @validate_params("profile_id", "journal_ids")
 def _memory_consolidate(params: JsonObject) -> JsonObject:
     try:
+        half_life = params.get("recency_half_life_days", 14)
+        if not isinstance(half_life, int) or isinstance(half_life, bool) or not 1 <= half_life <= 365:
+            raise ValidationError("recency_half_life_days debe ser un entero entre 1 y 365")
         return _memory().consolidate(str(params["profile_id"]), params.get("memory_scope"),
                                      list(params["journal_ids"]), list(params.get("facts") or []),
-                                     list(params.get("preferences") or []), list(params.get("obsolete") or []))
+                                     list(params.get("preferences") or []), list(params.get("obsolete") or []),
+                                     half_life_days=half_life,
+                                     light=params.get("light") if isinstance(params.get("light"), dict) else None,
+                                     deep=params.get("deep") if isinstance(params.get("deep"), dict) else None)
     except ValueError as err:
         raise ValidationError(str(err)) from err
 
@@ -882,6 +897,15 @@ def _memory_update(params: JsonObject) -> JsonObject:
         return {"item": _memory().update(str(params["id"]), params)}
     except ValueError as err:
         raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("id")
+def _memory_explain(params: JsonObject) -> JsonObject:
+    try:
+        return _memory().explain(str(params["id"]))
+    except ValueError as err:
+        raise NotFoundError(str(err)) from err
 
 
 @with_locale
@@ -997,5 +1021,6 @@ HANDLERS = {
     "agent_skill_create": _skill_create,
     "agent_internal_skill_resolve": _skill_resolve,
     "agent_memory_update": _memory_update,
+    "agent_memory_explain": _memory_explain,
     "agent_memory_delete": _memory_delete,
 }

@@ -62,7 +62,7 @@ const TOOLS_LOAD = 'tools_load';
 const requiredSkills = new Map();
 const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent', 'plan']);
 const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD, 'task_schedule', ...mcpProxy.META]);
-const MEMORY_TOOLS = ['memory_search', 'memory_remember', 'procedure_learn'];
+const MEMORY_TOOLS = ['memory_search', 'memory_explain', 'memory_remember', 'procedure_learn'];
 const UI_ACTION_TOOLS = new Set([
   'cua_click',
   'cua_drag',

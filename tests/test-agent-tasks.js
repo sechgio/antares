@@ -645,6 +645,16 @@ async function dreamingRoutine() {
     { id: 'j2', date: '2026-01-04', title: 'Llamada',
       content: 'Repitió que la oficina está en Lima', archived: false },
   ];
+  const light = {
+    scanned: 2, discarded: 0, tool_output_stripped: 0,
+    candidates: [{ key: 'oficina lima', kind: 'fact', title: 'Oficina', count: 2, days: ['2026-01-03', '2026-01-04'],
+      explicit: true, journal_ids: ['j1', 'j2'], evidence: [{ journal_id: 'j2', date: '2026-01-04', snippet: 'Repitió que la oficina está en Lima' }] }],
+  };
+  const deep = {
+    threshold: 0.45, half_life_days: 14,
+    scored: [{ ...light.candidates[0], score: 0.9, recurrence: 1, recency: 1, passed: true }],
+    candidates: [{ ...light.candidates[0], score: 0.9, recurrence: 1, recency: 1, passed: true }],
+  };
   const bridge = async (method, params) => {
     if (method === 'agent_internal_tools') return { tools: [] };
     if (method === 'agent_internal_provider') return { style: 'openai_chat', base_url: 'http://unused', api_key: 'test' };
@@ -656,8 +666,10 @@ async function dreamingRoutine() {
     if (method === 'agent_internal_profile_usage') return { tokens: delegatedTokens };
     if (method === 'agent_internal_memory_dream_input' || method === 'agent_internal_memory_consolidate') {
       calls.push({ method, params });
-      if (method === 'agent_internal_memory_dream_input') return { journals, memories: [] };
-      return { promoted: 1, updated: 0, deduplicated: 0, rejected: 0, insufficient: 0, obsoleted: 0, archived: 1 };
+      if (method === 'agent_internal_memory_dream_input') {
+        return { journals, memories: [], light, deep, budgets: { agent_chars: 0, agent_limit: 2200, user_chars: 0, user_limit: 1375 } };
+      }
+      return { promoted: 1, updated: 0, deduplicated: 0, rejected: 0, insufficient: 0, obsoleted: 0, archived: 1, superseded: 0 };
     }
     throw new Error(`Puente inesperado: ${method}`);
   };
@@ -714,14 +726,14 @@ async function dreamingRoutine() {
       obsolete: ['m-old'],
     }));
     await tasks._internal.dreamTick(runtime._internal.state(), at(6, 3, 30));
-    assert.equal(requests.length, 1, 'el modelo se consulta una vez');
+    assert.equal(requests.length, 1, `el modelo se consulta una vez: ${JSON.stringify({ calls, logLines })}`);
     assert.ok(requests[0].includes('<tool_output origin="memory">'), 'los diarios llegan como datos de herramienta');
     assert.ok(requests[0].includes('la oficina está en Lima'), 'el contenido del diario llega al modelo');
     assert.equal(consolidations().length, 1, 'el resultado validado se consolida una vez');
     assert.deepEqual(consolidations()[0].params, {
       profile_id: profile.id, memory_scope: null, journal_ids: ['j1', 'j2'],
       facts: [{ title: 'Oficina', content: 'La oficina está en Lima', sources: ['j1', 'j2'], explicit: false }],
-      preferences: [], obsolete: ['m-old'],
+      preferences: [], obsolete: ['m-old'], recency_half_life_days: 14, light, deep,
     });
     assert.ok(
       logLines.some((line) => line.includes(profile.id) && line.includes('1 promovidos')
