@@ -86,6 +86,20 @@ describe('perfiles portables', () => {
     expect(readProfileSkill(loaded, { skill_id: 'profile:review' }).content).toContain('Instrucciones cargables.');
   }, 30000);
 
+  it('lee SOUL.md y USER.md opcionales con límite de tamaño', () => {
+    expect(loadAgentProfile('reviewer')).not.toHaveProperty('soul');
+    expect(loadAgentProfile('reviewer')).not.toHaveProperty('user');
+    write('reviewer/SOUL.md', '﻿Tono cercano y directo.\n');
+    write('reviewer/USER.md', 'Se llama Ana y prefiere tablas.');
+    expect(loadAgentProfile('reviewer')).toMatchObject({
+      instructions: 'Rol: revisar. Tono: claro. Límites: solo lectura.',
+      soul: 'Tono cercano y directo.',
+      user: 'Se llama Ana y prefiere tablas.',
+    });
+    write('reviewer/USER.md', 'x'.repeat(4001));
+    expect(() => loadAgentProfile('reviewer')).toThrow(/USER\.md.*4000/);
+  });
+
   it('2: comparte skills entre agentes y resuelve propia > compartida por name', () => {
     profile('writer');
     skill('_shared/skills/common', 'common');
@@ -590,6 +604,53 @@ describe('integración con el arranque del agente', () => {
     expect(session.model).toBe('faux-2');
     expect(session.profile).toEqual({ id: 'reviewer', name: 'Guardado' });
     expect((await (await conversation(session.id)).agent(ctx())).instructions).toContain('Instrucción guardada');
+  });
+
+  it('ensambla SYSTEM_PROMPT, SOUL.md, AGENTS.md y USER.md en orden estable', async () => {
+    const { SYSTEM_PROMPT, agentInstructions } = require('../../electron/agent-prompts');
+    profile('reviewer', { model: 'faux-1' });
+    await fixture();
+    const plain = (await runtime.handlers.agent_session_create({ provider: 'faux', profile_id: 'reviewer' })).session;
+    const before = (await (await conversation(plain.id)).agent(ctx())).instructions;
+    expect(before).toBe(agentInstructions(loadAgentProfile('reviewer')));
+    expect(before).not.toMatch(/SOUL\.md|USER\.md/);
+    write('reviewer/SOUL.md', 'Tono cercano.');
+    write('reviewer/USER.md', 'Prefiere tablas.');
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', profile_id: 'reviewer' });
+    const text = (await (await conversation(session.id)).agent(ctx())).instructions;
+    const order = ['Tono cercano.', 'Rol: revisar.', 'Prefiere tablas.'].map((part) => text.indexOf(part));
+    expect(text.startsWith(`${SYSTEM_PROMPT}\n\n`)).toBe(true);
+    expect(order.every((at, index) => at > 0 && (index === 0 || at > order[index - 1]))).toBe(true);
+    expect(text).toBe(agentInstructions(loadAgentProfile('reviewer')));
+  });
+
+  it('guarda SOUL/USER en perfiles y exporta la plantilla con y sin USER', async () => {
+    await fixture();
+    const { profile: saved } = await runtime.handlers.agent_profile_save({
+      name: 'Redactor',
+      instructions: 'Redacta informes.',
+      soul: 'Tono formal.',
+      user: 'Firma como Ana.',
+      tools: null,
+    });
+    const { profile: edited } = await runtime.handlers.agent_profile_save({
+      id: saved.id,
+      name: 'Redactor',
+      instructions: 'Redacta informes breves.',
+      tools: null,
+    });
+    expect(edited).toMatchObject({ soul: 'Tono formal.', user: 'Firma como Ana.' });
+    const full = (await runtime.handlers.agent_template_export({ id: saved.id })).template;
+    expect(full).toMatchObject({ format: 'antares-agent-template/v1', soul: 'Tono formal.', user: 'Firma como Ana.' });
+    const shared = (await runtime.handlers.agent_template_export({ id: saved.id, include_user: false })).template;
+    expect(shared.soul).toBe('Tono formal.');
+    expect(shared).not.toHaveProperty('user');
+    const { profile: imported } = await runtime.handlers.agent_template_import({ template: shared });
+    expect(imported.soul).toBe('Tono formal.');
+    expect(imported).not.toHaveProperty('user');
+    await expect(
+      runtime.handlers.agent_profile_save({ name: 'Largo', instructions: '', soul: 'x'.repeat(4001), tools: null }),
+    ).rejects.toThrow(/SOUL.*4000/);
   });
 
   it('falla antes de crear la conversación si el perfil portable es inválido', async () => {

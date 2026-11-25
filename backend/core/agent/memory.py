@@ -10,6 +10,7 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from backend.core.agent.memory_index import Doc, MemoryIndex
 from backend.core.integrations.types import JsonObject
 from backend.utils.atomic_write import atomic_write_json
 
@@ -167,6 +168,7 @@ class MemoryStore:
         self._profiles: dict[str, str] = dict(data.get("profiles") or {})
         self._scopes: dict[str, str] = dict(data.get("scopes") or {})
         self.revision = int(data.get("revision") or 0)
+        self._index = MemoryIndex(base_dir / "memory_index.sqlite")
 
     def _write(self, *, user_change: bool = False) -> None:
         revision = self.revision + int(user_change)
@@ -175,6 +177,26 @@ class MemoryStore:
                                      **({"revision": revision} if revision else {}),
                                      **({"scopes": self._scopes} if self._scopes else {})})
         self.revision = revision
+        self._index.sync(self._docs())
+
+    def _docs(self) -> dict[str, Doc]:
+        docs: dict[str, Doc] = {}
+        for item_id, item in self._items.items():
+            if item["status"] != "active" or self._expired(item):
+                continue
+            view = self._view(item)
+            body = " ".join(str(view.get(k) or "") for k in ("content", "when", "date"))
+            body = " ".join([body, *(f"{s['tool']} {s['purpose']}" for s in view.get("steps") or [])]).strip()
+            age = _journal_age(view) if item["kind"] == "journal" else max(0, _now() - int(item["updated_at"])) / 86400000
+            docs[item_id] = Doc(str(item["kind"]), str(view["title"]), body, age, _key(f"{view['title']} {body}"))
+        return docs
+
+    def _ranked(self, query: str, allowed: set[str]) -> dict[str, tuple[float, str]] | None:
+        return self._index.rank(query, _key(query), self._docs(), allowed)
+
+    def rebuild_index(self) -> bool:
+        with self._lock:
+            return self._index.rebuild(self._docs())
 
     @staticmethod
     def _view(item: JsonObject) -> JsonObject:
@@ -389,11 +411,16 @@ class MemoryStore:
                profile_id: str | None = None, memory_scope: str | None = None) -> list[JsonObject]:
         words = _words(query)
         with self._lock:
+            eligible = [item for item in self._items.values()
+                        if item["status"] == "active" and not self._expired(item) and (session_id is None or self._visible(
+                            item, session_id, profile_id=profile_id, memory_scope=memory_scope))]
+            ranked = self._ranked(query, {str(item["id"]) for item in eligible}) if words else None
+            if ranked is not None:
+                order = sorted(ranked, key=lambda i: (-ranked[i][0], -int(self._items[i]["updated_at"])))[:limit]
+                return [{**self._view(self._items[i]), **({"snippet": ranked[i][1]} if ranked[i][1] else {})}
+                        for i in order]
             scored = []
-            for item in self._items.values():
-                if item["status"] != "active" or self._expired(item) or (session_id is not None and not self._visible(
-                        item, session_id, profile_id=profile_id, memory_scope=memory_scope)):
-                    continue
+            for item in eligible:
                 view = self._view(item)
                 text = " ".join(str(view.get(k) or "") for k in ("title", "content", "when", "date"))
                 text += " " + " ".join(f"{s['tool']} {s['purpose']}" for s in view.get("steps") or [])
@@ -439,7 +466,7 @@ class MemoryStore:
                 self._scopes.pop(session_id, None)
             self._tool_versions.update(versions)
             words = _words(text)
-            chosen: list[tuple[int, JsonObject]] = []
+            eligible: list[JsonObject] = []
             for item in self._items.values():
                 if item["status"] != "active" or self._expired(item) or not self._visible(item, session_id):
                     continue
@@ -451,10 +478,17 @@ class MemoryStore:
                     if reason:
                         item.update(status="suspended", reason=reason, updated_at=_now())
                         continue
-                haystack = " ".join(str(view.get(k) or "") for k in ("title", "content", "when"))
-                score = len(words & _words(haystack))
-                if item["kind"] == "preference" or score:
-                    chosen.append((score * 10 + (1 if item["kind"] == "preference" else 0), view))
+                eligible.append(view)
+            ranked = self._ranked(text, {str(view["id"]) for view in eligible}) if words else None
+            chosen: list[tuple[float, JsonObject]] = []
+            for view in eligible:
+                if ranked is not None:
+                    score: float = ranked.get(str(view["id"]), (0.0, ""))[0]
+                else:
+                    haystack = " ".join(str(view.get(k) or "") for k in ("title", "content", "when"))
+                    score = len(words & _words(haystack)) * 10
+                if view["kind"] == "preference" or score:
+                    chosen.append((score + (1 if ranked is None and view["kind"] == "preference" else 0), view))
             chosen.sort(key=lambda entry: (-entry[0], -int(entry[1]["updated_at"])))
             lines: list[str] = []
             used: list[str] = []
