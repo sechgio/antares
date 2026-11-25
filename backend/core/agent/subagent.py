@@ -72,13 +72,8 @@ def resolve_role(profile_role: object, requested_role: object) -> str:
     return requested
 
 
-def system_prompt(
-    name: str,
-    instructions: str,
-    role: str = DEFAULT_ROLE,
-    output_schema: JsonObject | None = None,
-    identity: str = "",
-) -> str:
+def system_prompt(name: str, instructions: str, role: str = DEFAULT_ROLE,
+                  output_schema: JsonObject | None = None, identity: str = "") -> str:
     role = normalize_role(role)
     prompt = (
         f"Eres el subagente «{name}» de Antares y trabajas para el agente principal de esta conversación. "
@@ -340,8 +335,7 @@ def run(
                 model,
                 messages,
                 system=system_prompt(
-                    name, str(agent.get("instructions") or ""), role, output_schema,
-                    identity=str(agent.get("identity") or ""),
+                    name, str(agent.get("instructions") or ""), role, output_schema, identity=str(agent.get("identity") or ""),
                 ),
                 tools=tools,
             )
