@@ -303,3 +303,15 @@ def test_compose_custom_styles() -> None:
         custom_styles=custom_styles,
     )
     assert img.size == _dimensions_for("vertical", preview=True)[:2]
+
+
+def test_compose_rejects_unbounded_pin_scale() -> None:
+    cap_w, cap_h = _map_capture_size("vertical", preview=True)
+    with pytest.raises(ValueError, match=r"pin.scale"):
+        _compose_ubicacion_image(
+            SAMPLE_DATOS,
+            "vertical",
+            _fake_map_png(cap_w, cap_h),
+            preview=True,
+            custom_styles={"pin": {"scale": 1e8}},
+        )

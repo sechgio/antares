@@ -75,8 +75,23 @@ function policyFile() {
 }
 
 function driverEnv() {
+  const inherited = {};
+  for (const key of [
+    'SystemRoot',
+    'WINDIR',
+    'PATH',
+    'PATHEXT',
+    'COMSPEC',
+    'TEMP',
+    'TMP',
+    'USERPROFILE',
+    'APPDATA',
+    'LOCALAPPDATA',
+  ]) {
+    if (typeof process.env[key] === 'string') inherited[key] = process.env[key];
+  }
   return {
-    ...process.env,
+    ...inherited,
     CUA_DRIVER_RS_TELEMETRY_ENABLED: '0',
     CUA_DRIVER_RS_UPDATE_CHECK: '0',
     CUA_DRIVER_POLICY_FILE: policyFile(),

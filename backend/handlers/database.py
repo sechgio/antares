@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from pathlib import PureWindowsPath
 from typing import Any
 
 from backend.core.config_fields import get_field_names, load_fields
@@ -17,6 +18,12 @@ from backend.core.repository import _db_schema_lock
 from backend.handlers.common import validate_params, with_locale
 
 
+def _reject_ads_filename(path: str) -> None:
+    if ":" in PureWindowsPath(path).name:
+        msg = "El nombre de archivo no puede contener un Alternate Data Stream (ADS)"
+        raise ValueError(msg)
+
+
 @with_locale
 @validate_params("path")
 def db_import(params: dict[str, Any]) -> dict[str, int]:
@@ -31,7 +38,10 @@ def db_import(params: dict[str, Any]) -> dict[str, int]:
 @with_locale
 @validate_params("path")
 def db_export(params: dict[str, Any]) -> dict[str, int]:
-    return {"exported": exportar_excel(params.get("path", ""))}
+    raw_path = str(params.get("path") or "")
+    path = str(params.get("_resolved_output_path") or raw_path)
+    _reject_ads_filename(path)
+    return {"exported": exportar_excel(path)}
 
 @with_locale
 def db_clear(params: dict[str, Any]) -> dict[str, int]:
@@ -40,10 +50,12 @@ def db_clear(params: dict[str, Any]) -> dict[str, int]:
 @with_locale
 @validate_params("path")
 def db_template(params: dict[str, Any]) -> dict[str, Any]:
-    path = params.get("path", "")
+    path = str(params.get("path") or "")
     if path and not path.lower().endswith(".xlsx"):
         path = path + ".xlsx"
-    generar_plantilla_excel(path)
+    write_path = str(params.get("_resolved_output_path") or path)
+    _reject_ads_filename(write_path)
+    generar_plantilla_excel(write_path)
     return {"path": path}
 
 @with_locale

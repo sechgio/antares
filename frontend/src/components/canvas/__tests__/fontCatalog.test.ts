@@ -68,7 +68,9 @@ describe('renderCanvasHtml google fonts', () => {
     const html = renderCanvasHtml({ ...doc, layers: [...doc.layers, text] }, emptyCtx);
     expect(html).toContain('https://fonts.googleapis.com/css2?');
     expect(html).toContain('family=Inter');
-    expect(html).toContain("font-family:'Inter', sans-serif");
+    // Los atributos style se serializan escapados: el HTML parsea &#39; de vuelta
+    // a comillas simples, así el CSS resultante es idéntico.
+    expect(html).toContain('font-family:&#39;Inter&#39;, sans-serif');
   });
 
   it('omits Google Fonts link when only system fonts are used', () => {

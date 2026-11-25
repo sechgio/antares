@@ -114,9 +114,11 @@ export const designApi = {
 
   designMemoryClear: () => _invoke<DesignMemoryResponse>('design_memory_clear'),
 
-  designExportPdf: (body: { id?: string; document?: DesignDocument; outputPath?: string; overwrite?: boolean; notes?: boolean }) =>
-    _invoke<
+  designExportPdf: (body: { id?: string; document?: DesignDocument; outputPath?: string; overwrite?: boolean; notes?: boolean }) => {
+    const { outputPath, ...params } = body;
+    return _invoke<
       | { pdf_base64: string; filename: string; saved_path?: undefined }
       | { pdf_base64?: undefined; filename: string; saved_path: string }
-    >('design_export_pdf', body),
+    >('design_export_pdf', outputPath === undefined ? params : { ...params, output_path: outputPath });
+  },
 };

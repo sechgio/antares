@@ -379,6 +379,51 @@ class TestImportarExcel:
         assert db.obtener_todos() == [{"archivo": "IMG-001.jpg", "cliente": "Cliente Norte"}]
 
 
+class TestExportarExcel:
+    def test_exportar_sobrescribe_destino_y_no_deja_temporal(self, db_path, catalog, tmp_path) -> None:
+        pytest.importorskip("pandas")
+        import sqlite3
+
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("INSERT INTO imagenes (codigo, nombre) VALUES (?, ?)", ("ABC", "Producto"))
+        conn.commit()
+        conn.close()
+        dest = tmp_path / "salida.xlsx"
+        dest.write_bytes(b"old")
+
+        assert db.exportar_excel(str(dest)) == 1
+
+        assert dest.read_bytes() != b"old"
+        assert not list(tmp_path.glob("salida.xlsx.*.tmp"))
+
+    def test_fallo_de_escritura_conserva_destino_existente(self, db_path, catalog, tmp_path, monkeypatch) -> None:
+        pandas = pytest.importorskip("pandas")
+        dest = tmp_path / "salida.xlsx"
+        dest.write_bytes(b"old")
+
+        def fail_write(*_args, **_kwargs) -> None:
+            raise RuntimeError("write boom")
+
+        monkeypatch.setattr(pandas.DataFrame, "to_excel", fail_write)
+        with pytest.raises(RuntimeError, match="write boom"):
+            db.exportar_excel(str(dest))
+
+        assert dest.read_bytes() == b"old"
+        assert not list(tmp_path.glob("salida.xlsx.*.tmp"))
+
+
+class TestGenerarPlantillaExcel:
+    def test_generar_sobrescribe_destino_y_no_deja_temporal(self, catalog, tmp_path) -> None:
+        pytest.importorskip("pandas")
+        dest = tmp_path / "plantilla.xlsx"
+        dest.write_bytes(b"old")
+
+        assert db.generar_plantilla_excel(str(dest)) == 1
+
+        assert dest.read_bytes() != b"old"
+        assert not list(tmp_path.glob("plantilla.xlsx.*.tmp"))
+
+
 class TestObtenerTodos:
     def test_retorna_lista_vacia(self, db_path, config_path) -> None:
         save_fields([{"name": "codigo", "type": "TEXT"}])

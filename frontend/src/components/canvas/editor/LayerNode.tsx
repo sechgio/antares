@@ -375,6 +375,9 @@ function LayerNode({
   const tablePreview = layer.type === 'table' ? parseTableData(layer.meta?.rowsData) : null;
   const signatureName = layer.type === 'signature' ? layer.value || 'Firma' : '';
   const checkboxMark = layer.type === 'checkbox' && layer.meta?.checked ? '✓' : '';
+  // getBlobUrl devuelve '' para esquemas bloqueados (file:, javascript:, data: no raster,
+  // http(s) remotos): en ese caso no se monta el <img> para no cargar el recurso.
+  const imageSrc = layer.type === 'image' && layer.value ? getBlobUrl(layer.value) : '';
 
   return (
     <div
@@ -543,9 +546,9 @@ function LayerNode({
             />
           ))}
         </div>
-      ) : layer.type === 'image' && layer.value ? (
+      ) : layer.type === 'image' && imageSrc ? (
         <img
-          src={getBlobUrl(layer.value)}
+          src={imageSrc}
           alt=""
           draggable={false}
           decoding="async"
