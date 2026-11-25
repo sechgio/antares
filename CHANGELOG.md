@@ -8,6 +8,8 @@ y este proyecto sigue [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- La memoria y `sessions_search` de Agent buscan con FTS5 (`unicode61 remove_diacritics 2` y prefijos): toleran acentos, plurales y prefijos, ordenan por BM25 con frase, tipo y recencia, y devuelven fragmentos resaltados. El índice de memoria (`memory_index.sqlite`) se reconstruye desde `memory.json` y se sincroniza al guardar; los embeddings son opcionales (`ANTARES_MEMORY_EMBEDDINGS`) y se fusionan por RRF. Sin FTS5 se conserva la búsqueda por palabras.
+- Los perfiles de agente separan identidad y usuario: `SOUL.md` (personalidad y tono) y `USER.md` (preferencias estables) opcionales junto a `AGENTS.md`, ensamblados en orden estable antes del snapshot de memoria; la plantilla `antares-agent-template/v1` los incluye y `agent_template_export` admite `include_user: false` para compartirla sin datos del usuario.
 - Los artefactos de Agent conservan historial versionado content-addressed con provenance y restauración byte-exacta: cada escritura registra revisión con su hash, las páginas actualizadas en sitio encadenan revisiones y `artifact_action` admite `versions` y `restore` sin abandonar la conversación.
 - El grafo de ejecución multiagente se puede inspeccionar con `agent_run_graph`: bosque de sesiones y delegaciones ensamblado desde el estado durable, con lineage padre-hijo y estados operables.
 - Los encargos de Agent se encadenan por eventos: `task_completed` dispara encargos en cascada con dedupe y bandeja durable que sobrevive reinicios, y `file_changed` vigila carpetas autorizadas con patrones glob y dedupe de ráfagas.

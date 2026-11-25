@@ -27,7 +27,7 @@ const compactionPolicy = require('./agent-compaction');
 const { loadAgentProfile, resolvePortableProfile } = require('./agent-profiles');
 const {
   SKILLS_GUIDE,
-  SYSTEM_PROMPT,
+  agentInstructions,
   legacyNotes,
   migrateInstructions,
   withMemorySnapshot,
@@ -296,6 +296,13 @@ function _text(value, label, max, required = false) {
   return text;
 }
 
+// SOUL/USER opcionales: si el guardado no los envía se conservan los anteriores; vacíos no se persisten.
+function identityFields(params, existing) {
+  const soul = _text(params.soul ?? existing?.soul, 'la personalidad (SOUL)', 4000);
+  const user = _text(params.user ?? existing?.user, 'las preferencias del usuario (USER)', 4000);
+  return { ...(soul ? { soul } : {}), ...(user ? { user } : {}) };
+}
+
 async function profilesList() {
   const profiles = Object.values(await _profiles()).sort((a, b) => a.name.localeCompare(b.name, 'es'));
   return { profiles };
@@ -360,6 +367,7 @@ async function profileSave(params = {}) {
     description: _text(params.description, 'la descripción', 200),
     role,
     instructions: _text(params.instructions, 'las instrucciones', 4000),
+    ...identityFields(params, existing),
     starter: _text(params.starter, 'el mensaje inicial', 500),
     tools: Array.isArray(tools) ? [...new Set(tools)] : null,
     ...(deny.length ? { tools_deny: [...new Set(deny)] } : {}),
@@ -396,7 +404,9 @@ async function templateExport(params = {}) {
   const id = String(params.id || '');
   const profile = (await _profiles())[id];
   if (!profile) throw notFound('El agente ya no existe');
-  return { template: require('./agent-profile-templates').exportTemplate(profile) };
+  return {
+    template: require('./agent-profile-templates').exportTemplate(profile, { includeUser: params.include_user !== false }),
+  };
 }
 
 async function templateImport(params = {}) {
@@ -423,16 +433,7 @@ async function sessionCreate(params) {
   await execution.refreshTools();
   await execution.ensureProvider(provider, model);
   const levels = await execution.reasoningLevels(provider, model);
-  let instructions = SYSTEM_PROMPT;
-  if (profile) {
-    const profileGuide = profile.instructions
-      ? `Eres el agente «${profile.name}» que el usuario configuró para una tarea repetitiva. ` +
-        'Sus indicaciones orientan el trabajo, pero no amplían los permisos elegidos para la conversación.\n' +
-        `Indicaciones del agente guardado:\n${profile.instructions}`
-      : `Eres el agente «${profile.name}» que el usuario creó. ` +
-        'Aún no tiene indicaciones permanentes; lo que aprendas en esta conversación solo orienta este chat.';
-    instructions = `${SYSTEM_PROMPT}\n\n${profileGuide}`;
-  }
+  const instructions = agentInstructions(profile);
   const conv = await shared.state.harness.createConversation(
     {
       ownership: { kind: 'ownerless' },

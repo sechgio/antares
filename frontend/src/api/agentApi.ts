@@ -90,6 +90,8 @@ export interface AgentProfile {
   description: string;
   role?: AgentRole;
   instructions: string;
+  soul?: string;
+  user?: string;
   starter: string;
   tools: string[] | null;
   tools_deny?: string[];
@@ -564,12 +566,13 @@ export const agentApi = {
 
   agentProfilesList: () => _invoke<{ profiles: AgentProfile[] }>('agent_profiles_list'),
 
-  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; role?: AgentRole; instructions: string; starter: string; tools: string[] | null; tools_deny?: string[]; memory_scope?: AgentMemoryScope; daily_tokens?: number | null; model?: { provider: string; model: string } | null }) =>
+  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; role?: AgentRole; instructions: string; soul?: string; user?: string; starter: string; tools: string[] | null; tools_deny?: string[]; memory_scope?: AgentMemoryScope; daily_tokens?: number | null; model?: { provider: string; model: string } | null }) =>
     _invoke<{ profile: AgentProfile }>('agent_profile_save', p),
 
   agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),
 
-  agentTemplateExport: (id: string) => _invoke<{ template: Record<string, unknown> }>('agent_template_export', { id }),
+  agentTemplateExport: (id: string, include_user?: boolean) =>
+    _invoke<{ template: Record<string, unknown> }>('agent_template_export', include_user === undefined ? { id } : { id, include_user }),
 
   agentTemplateImport: (template: Record<string, unknown>) => _invoke<{ profile: AgentProfile }>('agent_template_import', { template }),
 
