@@ -1,6 +1,11 @@
 const {
-  assert, finish, stubBackendCommand, evictModule,
-  makeFakeProc, patchSpawn, installInertTimers,
+  assert,
+  finish,
+  stubBackendCommand,
+  evictModule,
+  makeFakeProc,
+  patchSpawn,
+  installInertTimers,
 } = require('./helpers/harness');
 
 const DEGRADED_READY_LINE =

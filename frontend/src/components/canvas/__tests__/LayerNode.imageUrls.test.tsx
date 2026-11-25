@@ -15,14 +15,7 @@ function renderImageLayer(value: string) {
     cssVars: boxCss('10mm', '10mm', '40mm', '30mm'),
   });
   const { container } = render(
-    <LayerNode
-      layer={layer}
-      selected={false}
-      interactive
-      scale={1}
-      editing={false}
-      {...baseHandlers}
-    />,
+    <LayerNode layer={layer} selected={false} interactive scale={1} editing={false} {...baseHandlers} />,
   );
   return container;
 }
