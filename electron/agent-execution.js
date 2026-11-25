@@ -30,6 +30,7 @@ const {
 const { compactMessages, requestBudget } = require('./agent-request-budget');
 const policyEngine = require('./agent-policy-engine');
 const { resolvePortableProfile } = require('./agent-profiles');
+const sessionSearch = require('./session-search');
 
 const compaction = require('./agent-compaction');
 
@@ -507,6 +508,8 @@ async function searchSessions(args, currentSessionId, context) {
   if (args.session_id !== undefined && typeof args.session_id !== 'string')
     throw validation('Indica una conversación válida');
   const words = normal(query).split(/\s+/);
+  const ranked = sessionSearch.available();
+  const docs = [];
   const candidates = Object.values(await sessions())
     .filter(
       (session) =>
@@ -538,6 +541,10 @@ async function searchSessions(args, currentSessionId, context) {
                 .join('');
         if (text.startsWith(shared.CHECK_MARKER)) continue;
         const safe = sanitizeProviderError(text);
+        if (ranked) {
+          if (safe.trim()) docs.push({ session, entry, message, text: safe, ts: message.timestamp || 0 });
+          continue;
+        }
         const normalized = normal(safe);
         if (!words.every((word) => normalized.includes(word))) continue;
         const start = Math.max(0, normalized.indexOf(words[0]) - 80);
@@ -555,6 +562,25 @@ async function searchSessions(args, currentSessionId, context) {
       if (!cursor) break;
     }
     if (cursor) truncated = true;
+  }
+  if (ranked) {
+    const order = sessionSearch.rank(query, docs);
+    const picked = order
+      ? order.map(({ index, snippet }) => ({ ...docs[index], excerpt: snippet }))
+      : docs.filter((doc) => words.every((word) => normal(doc.text).includes(word)));
+    for (const doc of picked.slice(0, limit)) {
+      const start = Math.max(0, normal(doc.text).indexOf(words[0]) - 80);
+      matches.push({
+        session_id: doc.session.id,
+        title: doc.session.title,
+        message_id: doc.entry.id,
+        role: doc.message.role,
+        ts: doc.ts,
+        excerpt:
+          doc.excerpt ?? `${start ? '…' : ''}${doc.text.slice(start, start + 300)}${doc.text.length > start + 300 ? '…' : ''}`,
+      });
+    }
+    truncated = truncated || picked.length > limit;
   }
   return { matches, searched_sessions: searched, truncated };
 }
