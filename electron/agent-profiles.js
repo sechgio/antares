@@ -10,6 +10,7 @@ const MAX_SKILLS = 256;
 const MAX_HOOKS = 32;
 const MAX_HOOK_CONTEXT = 2000;
 const MAX_HOOK_TOTAL = 8000;
+const MAX_IDENTITY_CHARS = 4000;
 const HOOK_EVENTS = new Set(['subagentStart', 'subagentStop', 'preToolUse', 'postToolUse']);
 const HOOK_TOOL_EVENTS = new Set(['preToolUse', 'postToolUse']);
 
@@ -38,6 +39,14 @@ function readText(file, root) {
   } catch (error) {
     throw new Error(`No se puede leer ${file}: ${error.message}`);
   }
+}
+
+// SOUL.md (personalidad y tono) y USER.md (preferencias estables) son opcionales: configuración del usuario.
+function optionalText(file, root) {
+  if (!fs.existsSync(file)) return '';
+  const text = readText(file, root).trim();
+  if (text.length > MAX_IDENTITY_CHARS) throw new Error(`${file}: excede ${MAX_IDENTITY_CHARS} caracteres`);
+  return text;
 }
 
 function requiredText(value, field, file) {
@@ -156,6 +165,8 @@ function loadAgentProfile(slug, baseInstructions = '') {
     throw new Error(`${file}: el slug «${metadata.slug}» no coincide con la carpeta «${slug}»`);
   }
   const instructions = readText(path.join(directory, 'AGENTS.md'), directory);
+  const soul = optionalText(path.join(directory, 'SOUL.md'), directory);
+  const user = optionalText(path.join(directory, 'USER.md'), directory);
   const skills = loadSkills(path.join(root, '_shared', 'skills'), root);
   for (const [name, skill] of loadSkills(path.join(directory, 'skills'), directory)) skills.set(name, skill);
   if (skills.size > MAX_SKILLS) throw new Error(`${directory}: supera el máximo de 256 skills`);
@@ -165,6 +176,8 @@ function loadAgentProfile(slug, baseInstructions = '') {
     model: metadata.model,
     description: metadata.description,
     instructions: [baseInstructions, instructions].filter(Boolean).join('\n\n'),
+    ...(soul ? { soul } : {}),
+    ...(user ? { user } : {}),
     skills,
     hooks: loadHooks(directory, directory),
   };
