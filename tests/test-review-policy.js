@@ -306,6 +306,7 @@ function testEvaluatePolicy() {
     files: [
       { path: 'backend/core/repository.py', additions: 90, deletions: 20 },
       { path: 'tests/test_repository.py', additions: 30, deletions: 10 },
+      { path: 'changelog.d/feat-x.md', additions: 2, deletions: 0, status: 'added' },
     ],
     reviews: [{ author: { login: 'revisora' }, state: 'APPROVED', body: 'nit: renombra la variable' }],
     comments: [],
@@ -348,7 +349,10 @@ function testEvaluatePolicy() {
     body: goodPrBody(),
     additions: 2400,
     deletions: 20,
-    files: [{ path: 'backend/handlers/nuevo.py', additions: 2400, deletions: 0, status: 'added' }],
+    files: [
+      { path: 'backend/handlers/nuevo.py', additions: 2400, deletions: 0, status: 'added' },
+      { path: 'changelog.d/feat-x.md', additions: 2, deletions: 0, status: 'added' },
+    ],
     reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
     comments: [],
     labels: [{ name: 'size/exempt' }],
@@ -632,7 +636,7 @@ function testUnmeasurableSize() {
     additions: null,
     deletions: null,
     changedFiles: null,
-    files: [],
+    files: [{ path: 'changelog.d/feat-x.md', additions: 2, deletions: 0, status: 'added' }],
     reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
     comments: [],
     author: { login: 'sechgio' },
@@ -761,6 +765,7 @@ function testRiskSection() {
     files: [
       { path: 'backend/core/converter.py', additions: 30, deletions: 4, status: 'modified' },
       { path: 'tests/test_converter.py', additions: 6, deletions: 0, status: 'modified' },
+      { path: 'changelog.d/feat-x.md', additions: 2, deletions: 0, status: 'added' },
     ],
     body: bodyWithRisk(['- [ ] Toca el protocolo IPC', '- [x] Ninguna de las anteriores']),
   });
@@ -1026,7 +1031,10 @@ function testAdvisoryChecks() {
       additions: 4000,
       deletions: 100,
       changedFiles: 900,
-      files: [{ path: 'backend/core/x.py', additions: 10, deletions: 0, status: 'modified' }],
+      files: [
+        { path: 'backend/core/x.py', additions: 10, deletions: 0, status: 'modified' },
+        { path: 'changelog.d/feat-x.md', additions: 2, deletions: 0, status: 'added' },
+      ],
       reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
       comments: [],
       author: { login: 'sechgio' },

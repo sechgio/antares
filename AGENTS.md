@@ -28,7 +28,7 @@ El diff puede contener únicamente:
 
 - La funcionalidad pedida y su cableado en el punto de integración.
 - Ajustes imprescindibles para compilar y pasar lint, tipos y tests: firmas usadas por la nueva llamada, exports, campos de interfaces, casos de unions y registro IPC.
-- Acompañantes obligatorias: catálogo IPC, revisión de `frontend/src/api.ts`, `electron/preload.js` y pruebas de paridad; consumidores y pruebas de contratos compartidos; pruebas del comportamiento modificado; `CHANGELOG.md` cuando lo exija la plantilla de PR; lockfiles regenerados por cambios de dependencias.
+- Acompañantes obligatorias: catálogo IPC, revisión de `frontend/src/api.ts`, `electron/preload.js` y pruebas de paridad; consumidores y pruebas de contratos compartidos; pruebas del comportamiento modificado; `changelog.d/<rama>.md` cuando lo exija la plantilla de PR; lockfiles regenerados por cambios de dependencias.
 - Ajustes de `shared/budgets.json` o `.quality-baseline.json` solo si un check falla por este cambio y no existe una vía mínima para cumplir el techo. Justifica cualquier aumento de techo en el PR.
 - Imports, variables, funciones o archivos que este cambio deje huérfanos.
 
@@ -67,6 +67,6 @@ La suite corre con `isolate: false`, orden aleatorio (`shuffle`) y `mockReset: t
 
 ## Restricción de Markdown (HARD RULE)
 
-Solo se permite commit o push de estos Markdown: `AGENTS.md`, `CODING_STANDARDS.md`, `CHANGELOG.md`, `CLAUDE.md`, `README.md`, `CONTEXT.md`, `docs/adr/*.md`, `docs/adr/README.md` y `.github/pull_request_template.md`.
+Solo se permite commit o push de estos Markdown: `AGENTS.md`, `CODING_STANDARDS.md`, `CHANGELOG.md`, `CLAUDE.md`, `README.md`, `CONTEXT.md`, `changelog.d/*.md`, `docs/adr/*.md`, `docs/adr/README.md` y `.github/pull_request_template.md`.
 
 Cualquier otro Markdown, incluidos planes, notas, drafts y reportes temporales, debe permanecer local, añadirse a `.gitignore` o eliminarse antes del commit/PR.
