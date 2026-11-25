@@ -2239,6 +2239,7 @@ module.exports = {
   localDay,
   profileBudget,
   unattendedBudget,
+  recordProfileUsage,
   DEFAULT_UNATTENDED_DAILY_TOKENS,
   profileFilter,
   profileInitialTools,

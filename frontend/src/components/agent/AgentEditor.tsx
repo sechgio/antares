@@ -47,6 +47,7 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
   const [memoryScope, setMemoryScope] = useState<AgentMemoryScope>(profile?.memory_scope ?? 'shared-read');
   const [model, setModel] = useState<{ provider: string; model: string } | null>(profile?.model ?? null);
   const [dailyTokens, setDailyTokens] = useState(profile?.daily_tokens ? String(profile.daily_tokens) : '');
+  const [dreaming, setDreaming] = useState(profile?.dreaming ?? false);
   const [instructions, setInstructions] = useState(profile?.instructions ?? '');
   const [starter, setStarter] = useState(profile?.starter ?? '');
   const [allTools, setAllTools] = useState(profile ? profile.tools === null : true);
@@ -77,6 +78,7 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
         ...(profile ? { id: profile.id } : {}),
         name, color, description, role, memory_scope: memoryScope, instructions, starter,
         daily_tokens: dailyTokens.trim() ? Number(dailyTokens) : null,
+        dreaming,
         model: model ?? null,
         tools: allTools ? null : [...selected],
         tools_deny: allTools ? [...denied] : [],
@@ -234,6 +236,15 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
                 ]}
               />
               <span className="block text-[11px] leading-relaxed text-[var(--text-muted)]">{MEMORY_HINT[memoryScope]}</span>
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <span className="text-[13px] text-[var(--text-primary)]">Consolidar el diario cada noche</span>
+                <Toggle checked={dreaming} disabled={memoryScope === 'none'} aria-label="Consolidar el diario cada noche"
+                  onChange={setDreaming} />
+              </div>
+              <span className="block text-[11px] leading-relaxed text-[var(--text-muted)]">
+                A las 3:00 guarda como hechos y preferencias lo que se repite en su diario de los últimos 7 días o lo
+                que afirmaste. Gasta tokens de su presupuesto diario.
+              </span>
             </div>
           </div>
           <label className={FIELD}>
