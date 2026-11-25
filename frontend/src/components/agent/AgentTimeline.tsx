@@ -852,7 +852,6 @@ export function ApprovalCard({
             <TriangleAlert size={13} strokeWidth={1.75} aria-hidden="true" className="mt-[3px] shrink-0 text-[var(--accent-yellow)]" />
             <span>
               Este comando puede acceder al equipo completo con tus permisos, fuera de las carpetas adjuntas.
-              Antares pide aprobación humana para cada comando, también en Acceso completo.
             </span>
           </p>}
           {typeof params.command === 'string' && DESTRUCTIVE_COMMAND.test(params.command) && <p className="flex gap-2 text-[12px] leading-[18px] text-[var(--accent-red)]">

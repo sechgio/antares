@@ -69,7 +69,7 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
   ].filter((group) => group.items.length > 0), [tools]);
 
   const save = async () => {
-    if (savingRef.current || !name.trim() || !instructions.trim()) return;
+    if (savingRef.current || !name.trim()) return;
     savingRef.current = true;
     setSaving(true);
     try {
@@ -128,7 +128,7 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
       <header className="relative shrink-0 px-6 pb-1 pt-5">
         <h2 className="pr-8 text-[17px] font-semibold leading-6 text-[var(--text-primary)]">{profile ? 'Editar agente' : 'Conoce a tu agente'}</h2>
         <p className="mt-1 text-[13px] leading-5 text-[var(--text-secondary)]">
-          Dale un nombre y cuéntale cómo quieres que trabaje. Podrás cambiarlo después.
+          Dale un nombre. Si no escribes instrucciones, el agente te preguntará cómo quieres usarlo al empezar.
         </p>
         <button
           type="button"
@@ -166,10 +166,10 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
           </div>
         </fieldset>
         <label className="block space-y-2">
-          <span className="block text-xs font-medium text-[var(--text-secondary)]">Una instrucción permanente</span>
-          <Textarea required value={instructions} onChange={(e) => setInstructions(e.target.value)} maxLength={4000} rows={5}
+          <span className="block text-xs font-medium text-[var(--text-secondary)]">Instrucciones permanentes (opcional)</span>
+          <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} maxLength={4000} rows={5}
             aria-label="Indicaciones del agente" className="w-full resize-y text-[13px] leading-5"
-            placeholder="Responde de forma breve y muestra tu trabajo." />
+            placeholder="Opcional: responde de forma breve y muestra tu trabajo." />
         </label>
         <details open={Boolean(profile)} className="group">
           <summary className="flex cursor-pointer list-none items-center justify-between rounded-lg py-1 text-[13px] text-[var(--text-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent-primary)]">
@@ -304,7 +304,7 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
         {profile && <Button variant="ghost" size="sm" className="text-[var(--accent-red)]" disabled={saving} onClick={() => void remove()}>Borrar</Button>}
         <span className="flex-1" />
         <Button variant="ghost" size="sm" disabled={saving} onClick={onClose}>Cancelar</Button>
-        <Button type="submit" size="sm" className="rounded-lg px-4" disabled={saving || !name.trim() || !instructions.trim()}>
+        <Button type="submit" size="sm" className="rounded-lg px-4" disabled={saving || !name.trim()}>
           {saving ? 'Guardando…' : profile ? 'Guardar' : canStartChat ? 'Crear y chatear' : 'Crear agente'}
         </Button>
       </footer>

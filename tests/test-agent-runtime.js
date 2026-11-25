@@ -742,54 +742,43 @@ async function main() {
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Lista y limpia' });
-    assert(await waitFor(() => state.approvals.size === 1), 'Acceso completo sigue pidiendo aprobación para el shell');
-    assert(state.dispatches.length === 0, 'no ejecuta el listado antes de la aprobación humana');
-    await runtime.handlers.agent_approve({ approval_id: [...state.approvals.values()][0].id });
+    assert(await waitIdle(session.id), 'Acceso completo ejecuta el shell sin esperar aprobación humana');
+    assert(state.dispatches.length === 2, 'Acceso completo ejecuta cada comando una vez');
     assert(
-      await waitFor(() => [...state.approvals.values()].filter((a) => a.status === 'pending').length === 1),
-      'un segundo comando, aunque sea de lectura, pide otra aprobación en Acceso completo',
+      [...state.approvals.values()].every((a) => a.status === 'approved'),
+      'Acceso completo no deja aprobaciones de shell pendientes',
     );
-    assert(state.dispatches.length === 1, 'no borra antes de la aprobación humana');
-    const pending = [...state.approvals.values()].find((a) => a.status === 'pending');
-    await runtime.handlers.agent_approve({ approval_id: pending.id });
-    assert(await waitIdle(session.id), 'el shell continúa después de la aprobación humana');
-    assert(state.dispatches.length === 2, 'la aprobación ejecuta el comando destructivo una vez');
     await runtime.shutdown();
   }
 
   {
     const { bridge, state } = makeBridge();
-    const shellBridge = async (method, params) => {
+    const pageBridge = async (method, params) => {
       const result = await bridge(method, params);
       if (method === 'agent_internal_tools')
         result.tools.push({
-          name: 'shell_run',
+          name: 'page_create',
           kind: 'backend',
-          module: 'computer',
-          gated: true,
+          module: 'documents',
+          gated: false,
           inputSchema: { type: 'object', properties: {} },
         });
       return result;
     };
     await openFaux(
       [
-        fauxAssistantMessage([fauxToolCall('shell_run', { command: 'cmd /c del .\\tmp.txt' })], {
-          stopReason: 'toolUse',
-        }),
-        fauxAssistantMessage('Listo'),
+        fauxAssistantMessage(
+          [fauxToolCall('page_create', { title: 'Panel', html: '<h1></h1>', script: 'const a = "sin cerrar;' })],
+          { stopReason: 'toolUse' },
+        ),
+        fauxAssistantMessage('Corrijo la página'),
       ],
-      shellBridge,
+      pageBridge,
     );
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
-    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
-    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Limpia el archivo' });
-    assert(
-      await waitFor(() => state.approvals.size === 1),
-      'un verbo destructivo envuelto pide aprobación humana en Acceso completo',
-    );
-    assert(state.dispatches.length === 0, 'no borra nada antes de la aprobación humana');
-    await runtime.handlers.agent_approve({ approval_id: [...state.approvals.values()][0].id });
-    assert(await waitIdle(session.id), 'el flujo termina tras la aprobación');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'Crea la página' });
+    assert(await waitIdle(session.id), 'el turno termina tras rechazar la página');
+    assert(state.dispatches.length === 0, 'una página con error de sintaxis no llega a guardarse');
     await runtime.shutdown();
   }
 
@@ -1893,6 +1882,85 @@ async function main() {
     );
     await runtime.shutdown();
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+
+  {
+    const { bridge } = makeBridge();
+    let seen = '';
+    let requests = 0;
+    const onboardingBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools') {
+        result.tools.push({
+          name: 'ask_user',
+          kind: 'backend',
+          module: 'documents',
+          gated: false,
+          inputSchema: { type: 'object', properties: {} },
+        });
+      }
+      return result;
+    };
+    await openFaux(
+      [
+        (context) => {
+          requests += 1;
+          seen = JSON.stringify(context.messages);
+          return fauxAssistantMessage('¡Hola! Soy Revisor interactivo. ¿Para qué te gustaría usarme principalmente?');
+        },
+      ],
+      onboardingBridge,
+    );
+    const { profile } = await runtime.handlers.agent_profile_save({
+      name: 'Revisor interactivo',
+      instructions: '',
+      tools: null,
+    });
+    assert(profile.instructions === '', 'el agente se guarda sin instrucciones permanentes');
+    const { session } = await runtime.handlers.agent_session_create({
+      provider: 'faux',
+      model: 'faux-1',
+      profile_id: profile.id,
+    });
+    assert(await waitFor(() => seen), 'el agente sin instrucciones arranca solo');
+    assert(await waitIdle(session.id), 'la presentación inicial termina');
+    assert(
+      seen.includes('¿Para qué te gustaría usar este agente principalmente?') &&
+        seen.includes('Programar y desplegar proyectos') &&
+        seen.includes('Organizar archivos y documentos') &&
+        seen.includes('Investigar y resumir información') &&
+        seen.includes('Automatizar tareas repetitivas') &&
+        seen.includes('Otra cosa'),
+      'el onboarding pregunta el propósito con opciones interactivas',
+    );
+    assert(
+      seen.includes('ask_user') &&
+        seen.includes('usa sus respuestas solo en esta conversación') &&
+        seen.includes('ni guardes memoria'),
+      'el onboarding usa la tarjeta de preguntas y limita las respuestas a esta conversación',
+    );
+    const transcript = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    assert(
+      !transcript.messages.some((message) => message.role === 'user'),
+      'el arranque automático no aparece como un mensaje escrito por el usuario',
+    );
+    assert(
+      transcript.messages.some(
+        (message) => message.role === 'assistant' && message.content.includes('Revisor interactivo'),
+      ),
+      'el agente se presenta en la conversación nueva',
+    );
+    assert(requests === 1, 'la primera conversación lanza una sola presentación');
+    await runtime.handlers.agent_session_create({
+      provider: 'faux',
+      model: 'faux-1',
+      profile_id: profile.id,
+    });
+    assert(
+      !(await waitFor(() => requests === 2, 600)),
+      'la segunda conversación del mismo agente empieza sin repetir el onboarding',
+    );
+    await runtime.shutdown();
   }
 
   {
@@ -3489,7 +3557,6 @@ async function main() {
     assert(profile.id && profile.tools.join() === 'canvas_list', 'el agente guarda instrucciones y herramientas');
     for (const bad of [
       { name: '', instructions: 'x' },
-      { name: 'X', instructions: '' },
       { name: 'X', instructions: 'token: abcdef123456' },
       { name: 'X', instructions: 'y', tools: ['desconocida'] },
       { id: 'nope', name: 'X', instructions: 'y' },

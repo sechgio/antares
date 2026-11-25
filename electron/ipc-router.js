@@ -152,71 +152,35 @@ function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
   const piece = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
   const bufs = pending.bufs;
   const totalLen = pending.len + piece.length;
-  bufs.push(piece);
+  let newline = piece.indexOf(0x0a);
 
-  if (piece.indexOf(0x0a) === -1) {
+  if (newline === -1) {
     if (totalLen > maxPendingBytes) {
       return { pending: { bufs: [], len: 0 }, lines: [], dropped: true };
     }
+    bufs.push(piece);
     return { pending: { bufs, len: totalLen }, lines: [], dropped: false };
   }
 
   const lines = [];
-  let lineStartPos = 0;
-  let globalPos = 0;
-  for (const buf of bufs) {
-    for (let i = 0; i < buf.length; i++) {
-      if (buf[i] === 0x0a) {
-        const lineLen = globalPos - lineStartPos;
-        if (lineLen > 0) {
-          if (lineLen <= buf.length && lineStartPos >= globalPos - i) {
-            const startInBuf = i - lineLen;
-            lines.push(buf.subarray(startInBuf, i));
-          } else {
-            const parts = [];
-            let curPos = lineStartPos;
-            let pos = 0;
-            for (const b of bufs) {
-              const nextPos = pos + b.length;
-              if (nextPos <= curPos) {
-                pos = nextPos;
-                continue;
-              }
-              if (pos >= curPos + lineLen) break;
-              const s = Math.max(0, curPos - pos);
-              const e = Math.min(b.length, curPos + lineLen - pos);
-              if (e > s) parts.push(b.subarray(s, e));
-              pos = nextPos;
-            }
-            lines.push(parts.length === 1 ? parts[0] : Buffer.concat(parts, lineLen));
-          }
-        }
-        lineStartPos = globalPos + 1;
-      }
-      globalPos++;
-    }
+  const firstLen = pending.len + newline;
+  if (firstLen > 0) {
+    const head = piece.subarray(0, newline);
+    lines.push(bufs.length === 0 ? head : Buffer.concat([...bufs, head], firstLen));
   }
-  const pendingRemLen = totalLen - lineStartPos;
+  let start = newline + 1;
+  while ((newline = piece.indexOf(0x0a, start)) !== -1) {
+    if (newline > start) lines.push(piece.subarray(start, newline));
+    start = newline + 1;
+  }
+  const pendingRemLen = piece.length - start;
   if (pendingRemLen > maxPendingBytes) {
     return { pending: { bufs: [], len: 0 }, lines, dropped: true };
   }
   if (pendingRemLen === 0) {
     return { pending: { bufs: [], len: 0 }, lines, dropped: false };
   }
-  const tailParts = [];
-  let pos = 0;
-  for (const b of bufs) {
-    const nextPos = pos + b.length;
-    if (nextPos <= lineStartPos) {
-      pos = nextPos;
-      continue;
-    }
-    if (pos >= totalLen) break;
-    const s = Math.max(0, lineStartPos - pos);
-    tailParts.push(b.subarray(s));
-    pos = nextPos;
-  }
-  return { pending: { bufs: tailParts, len: pendingRemLen }, lines, dropped: false };
+  return { pending: { bufs: [piece.subarray(start)], len: pendingRemLen }, lines, dropped: false };
 }
 
 function _ensureListeners() {

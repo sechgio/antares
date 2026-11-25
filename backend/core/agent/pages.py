@@ -22,6 +22,8 @@ TOOL_SPECS: list[JsonObject] = [{
         "No hay red, imports externos, Node ni bridge. AntaresPage.data contiene data; AntaresPage.rows y "
         "AntaresPage.columns contienen TODAS las filas y columnas de spreadsheet_path (Excel/CSV autorizado), "
         "sin el recorte de file_read. Calcula indicadores, gráficos y tabla desde las mismas filas filtradas. "
+        "No fijes colores ni fondos: usa las clases page-* y las variables --page-* para que "
+        "la página siga el tema claro u oscuro del chat. "
         "Para modificar una página usa artifact_id y expected_revision de artifacts_list; conserva su identidad."
     ),
     "inputSchema": {"type": "object", "additionalProperties": False, "properties": {

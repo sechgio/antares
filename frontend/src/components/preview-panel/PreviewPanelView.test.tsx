@@ -321,6 +321,58 @@ describe('PreviewPanelView column mapping', () => {
     await waitFor(() => expect(getRows).toHaveBeenCalledTimes(4));
   }, 15000);
 
+  it('stops paging a large sheet once another sheet is selected', async () => {
+    vi.mocked(api.spreadsheetParse)
+      .mockReset()
+      .mockResolvedValue({
+        workbookName: 'grande.xlsx',
+        sheets: [],
+        warnings: [],
+        result_file_token: 'spill_big',
+        sheet_meta: [
+          { name: 'Sheet1', rowCount: 2 },
+          { name: 'Sheet2', rowCount: 50000 },
+        ],
+      });
+    const firstBigPage = {
+      name: 'Sheet2',
+      rows: [['SGIO'], ['big-1']],
+      offset: 0,
+      limit: 2000,
+      total: 50000,
+      has_more: true,
+    };
+    let resolveBig: (value: typeof firstBigPage) => void = () => {};
+    const pendingBig = new Promise<typeof firstBigPage>((resolve) => {
+      resolveBig = resolve;
+    });
+    const getRows = vi.mocked(api.spreadsheetGetRows);
+    getRows.mockReset().mockImplementation(async ({ sheet, offset }) => {
+      if (sheet === 'Sheet2') return offset ? { ...firstBigPage, offset } : pendingBig;
+      return { name: 'Sheet1', rows: [['SGIO'], ['small-1']], offset: 0, limit: 2000, total: 2, has_more: false };
+    });
+
+    const { container } = renderView();
+    const input = container.querySelector('input[accept=".csv,.xlsx,.xls"]')!;
+    fireEvent.change(input, { target: { files: [new File(['wb'], 'grande.xlsx')] } });
+    await screen.findByText('small-1');
+    fireEvent.click(screen.getByLabelText('Cerrar vista previa'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hoja' }));
+    fireEvent.click(await screen.findByRole('option', { name: /Sheet2/ }));
+    await waitFor(() => expect(getRows).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole('button', { name: 'Hoja' }));
+    fireEvent.click(await screen.findByRole('option', { name: /Sheet1/ }));
+    await waitFor(() => expect(getRows).toHaveBeenCalledTimes(3));
+
+    await act(async () => {
+      resolveBig(firstBigPage);
+      await pendingBig;
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(getRows.mock.calls.filter(([body]) => body.sheet === 'Sheet2' && (body.offset ?? 0) > 0)).toHaveLength(0);
+  }, 15000);
+
   it('ignores a pending sheet load after importing a replacement workbook', async () => {
     vi.mocked(api.spreadsheetParse)
       .mockReset()

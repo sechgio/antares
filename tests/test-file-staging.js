@@ -185,6 +185,48 @@ async function main() {
     }
   }
 
+  {
+    const { createFileCapability, createFileCapabilityAsync } = require('../electron/file-capabilities.js');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-realpath-'));
+    try {
+      const realA = path.join(tmpDir, 'A');
+      const realB = path.join(tmpDir, 'B');
+      fs.mkdirSync(realA);
+      fs.mkdirSync(realB);
+      const photos = Array.from({ length: 50 }, (_, i) => path.join(realA, `Foto${i}.JPG`));
+      for (const photo of photos) fs.writeFileSync(photo, 'a');
+      fs.writeFileSync(path.join(realB, 'Foto0.JPG'), 'b');
+
+      const dialogPaths =
+        process.platform === 'win32' ? photos.map((p) => p[0].toLowerCase() + p.slice(1)) : photos;
+      const asyncCaps = await Promise.all(
+        dialogPaths.map((filePath) => createFileCapabilityAsync({ filePath, mode: 'read' })),
+      );
+      asyncCaps.forEach((cap, i) => {
+        assert.strictEqual(
+          resolveCapability(cap.token, 'read', null).path,
+          path.resolve(dialogPaths[i]),
+          'token creado desde diálogo resuelve aunque la ruta no use la capitalización del disco',
+        );
+      });
+
+      const linkDir = path.join(tmpDir, 'link');
+      fs.symlinkSync(realA, linkDir, 'junction');
+      const viaLink = createFileCapability({ filePath: path.join(linkDir, 'Foto0.JPG'), mode: 'read' });
+      assert.strictEqual(resolveCapability(viaLink.token, 'read', null).path, path.join(linkDir, 'Foto0.JPG'));
+      await Promise.resolve();
+      fs.rmSync(linkDir, { recursive: false, force: true });
+      fs.symlinkSync(realB, linkDir, 'junction');
+      assert.throws(
+        () => resolveCapability(viaLink.token, 'read', null),
+        /symlink escape/,
+        'un directorio padre redirigido tras crear el token debe rechazarse',
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  }
+
   console.log('  ✓ staging preserves .xlsx extension (no .tmp rewrite)');
   console.log('\nAll file-staging tests passed.');
 }

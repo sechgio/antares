@@ -81,8 +81,6 @@ const DESKTOP_ACTION_TOOLS = new Set([
   'desktop_focus',
 ]);
 const NEVER_AUTO_APPROVE = new Set([
-  'shell_run',
-  'shell_job_start',
   'cua_launch_app',
   'skill_create',
   ...UI_ACTION_TOOLS,
@@ -1557,6 +1555,12 @@ async function executeTool(spec, args, api, context) {
   const childControl = !!session.delegation && CHILD_CONTROL_TOOLS.has(spec.name);
   if (!childControl && !(await toolEnabled(sessionId, spec.name, context))) {
     const text = `Herramienta deshabilitada en esta conversación: ${spec.name}`;
+    noteToolResult(api, spec.name, text, true);
+    return { content: [{ type: 'text', text }], isError: true };
+  }
+  const syntaxError = spec.name === 'page_create' && require('./agent-pages').scriptSyntaxError((args || {}).script);
+  if (syntaxError) {
+    const text = `La página no se creó: el script tiene un error de sintaxis: ${syntaxError}. Corrígelo y vuelve a llamar a page_create.`;
     noteToolResult(api, spec.name, text, true);
     return { content: [{ type: 'text', text }], isError: true };
   }

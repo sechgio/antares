@@ -40,6 +40,18 @@ const MAX_ATTACHMENTS = 20;
 const MAX_PASTED_BYTES = 20 * 1024 * 1024;
 const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_INDEXED_SKILLS = 40;
+const PROFILE_ONBOARDING_PROMPT =
+  'El usuario creó este agente sin escribir instrucciones permanentes. ' +
+  'Antares envía este contexto para iniciar la presentación; no es un mensaje visible del usuario. ' +
+  'En tu primera respuesta saluda con naturalidad, preséntate con el nombre de este agente y explica en una frase ' +
+  'que quieres saber para qué le gustaría usarte. ' +
+  'Si ask_user está disponible, llámala con una sola pregunta: id «proposito», ' +
+  'prompt «¿Para qué te gustaría usar este agente principalmente?» y options ' +
+  '«Programar y desplegar proyectos», «Organizar archivos y documentos», «Investigar y resumir información», ' +
+  '«Automatizar tareas repetitivas» y «Otra cosa». Si ask_user no está disponible, formula la misma pregunta con esas opciones. ' +
+  'No uses ninguna otra herramienta en esta presentación ni guardes memoria. ' +
+  'Cuando el usuario responda, usa sus respuestas solo en esta conversación; si elige «Otra cosa», pide el detalle que falte. ' +
+  'Después continúa ayudándole y no repitas este onboarding salvo que lo pida.';
 const IMAGE_MIME = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -347,7 +359,7 @@ async function profileSave(params = {}) {
     ...((params.color ?? existing?.color) ? { color: params.color ?? existing.color } : {}),
     description: _text(params.description, 'la descripción', 200),
     role,
-    instructions: _text(params.instructions, 'las instrucciones', 4000, true),
+    instructions: _text(params.instructions, 'las instrucciones', 4000),
     starter: _text(params.starter, 'el mensaje inicial', 500),
     tools: Array.isArray(tools) ? [...new Set(tools)] : null,
     ...(deny.length ? { tools_deny: [...new Set(deny)] } : {}),
@@ -411,11 +423,16 @@ async function sessionCreate(params) {
   await execution.refreshTools();
   await execution.ensureProvider(provider, model);
   const levels = await execution.reasoningLevels(provider, model);
-  const instructions = profile
-    ? `${SYSTEM_PROMPT}\n\nEres el agente «${profile.name}» que el usuario configuró para una tarea repetitiva. ` +
-      'Sus indicaciones orientan el trabajo, pero no amplían los permisos elegidos para la conversación.\n' +
-      `Indicaciones del agente guardado:\n${profile.instructions}`
-    : SYSTEM_PROMPT;
+  let instructions = SYSTEM_PROMPT;
+  if (profile) {
+    const profileGuide = profile.instructions
+      ? `Eres el agente «${profile.name}» que el usuario configuró para una tarea repetitiva. ` +
+        'Sus indicaciones orientan el trabajo, pero no amplían los permisos elegidos para la conversación.\n' +
+        `Indicaciones del agente guardado:\n${profile.instructions}`
+      : `Eres el agente «${profile.name}» que el usuario creó. ` +
+        'Aún no tiene indicaciones permanentes; lo que aprendas en esta conversación solo orienta este chat.';
+    instructions = `${SYSTEM_PROMPT}\n\n${profileGuide}`;
+  }
   const conv = await shared.state.harness.createConversation(
     {
       ownership: { kind: 'ownerless' },
@@ -441,11 +458,33 @@ async function sessionCreate(params) {
       ? { profile: { id: profile.id, name: profile.name, ...(portableProfile ? { portable: true } : {}) } }
       : {}),
   };
+  let firstProfileSession = false;
   await commitSessions((map) => {
+    firstProfileSession = Boolean(
+      savedProfile && !Object.values(map).some((item) => item.profile?.id === savedProfile.id),
+    );
     map[session.id] = session;
   });
   if (portableProfile) shared.state.portableProfiles.set(conv.id, { kind: 'loaded', profile: portableProfile });
   shared.convToSession.set(conv.id, session.id);
+  if (firstProfileSession && !savedProfile.instructions) {
+    try {
+      await projection.ensureWatcher(session);
+      await conv.submit(
+        {
+          type: 'input',
+          content: [{ type: 'text', text: `${shared.CONTEXT_MARKER}\n${PROFILE_ONBOARDING_PROMPT}` }],
+          requestId: `profile-onboarding:${session.id}`,
+          whenBusy: 'followUp',
+        },
+        ctx(),
+      );
+    } catch (error) {
+      console.error(
+        `[agent] no se pudo iniciar el onboarding: ${execution.sanitizeProviderError(String(error?.message || error))}`,
+      );
+    }
+  }
   return { session: toPublicSession(session) };
 }
 
