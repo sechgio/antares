@@ -350,6 +350,18 @@ async function main() {
     );
     delete electronStub.dialog;
 
+    const viewsBefore = views.length;
+    const tabsBefore = tabs.length;
+    await browser.run('web_open', { url: 'https://sesion.example', mode: 'ephemeral' }, { sessionId: 'tarea-sesion' });
+    browser.release('tarea-sesion');
+    assert(
+      views.length === viewsBefore &&
+        tabs.length === tabsBefore + 1 &&
+        tabs[tabs.length - 1].contents.loads.join() === 'https://sesion.example' &&
+        !tabs[tabs.length - 1].contents.isDestroyed(),
+      'con «Mi sesión de Chrome» web_open sigue en la pestaña de Chrome: el modo efímero no crea vistas ni la cierra',
+    );
+
     browser.setEngine('edge');
     browser.close();
     assert(browser.state().engine === null, 'cerrar el navegador del agente olvida la elección');
