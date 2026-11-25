@@ -36,6 +36,21 @@ function seedBlob(): SessionBlob | null {
   return seed && typeof seed === 'object' && !Array.isArray(seed) ? (seed as SessionBlob) : null;
 }
 
+// El seed llega en claro a la ventana via preload; una vez copiado al blob en memoria
+// se elimina del global para que no quede legible por cualquier script del renderer.
+function clearSessionSeed(): void {
+  try {
+    const win = (globalThis as unknown as { window?: { supabaseSessionSeed?: unknown } }).window;
+    if (!win || win.supabaseSessionSeed === undefined) return;
+    delete win.supabaseSessionSeed;
+    if (win.supabaseSessionSeed !== undefined) {
+      win.supabaseSessionSeed = null;
+    }
+  } catch {
+    // best-effort: si la propiedad no es configurable queda el valor expuesto por preload
+  }
+}
+
 function migrateLegacyLocalStorageKeys(blob: SessionBlob, persist: () => void): void {
   try {
     const legacyKeys: string[] = [];
@@ -69,6 +84,7 @@ export function createSecureSupabaseStorage(): {
   const bridge = electronBridge();
   if (!bridge) return null;
   const blob: SessionBlob = { ...(seeded ?? {}) };
+  if (seeded) clearSessionSeed();
   const persist = () => {
     void bridge.invoke('supabase_session_put', { blob: { ...blob } }).catch(() => {});
   };

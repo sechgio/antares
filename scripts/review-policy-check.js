@@ -258,6 +258,32 @@ function evaluatePolicy(pr, meta = {}) {
     'El diff no toca tests. Si es un cambio de comportamiento, añade uno que falle sin él.',
   );
 
+  const NO_CHANGELOG_LABEL = 'no-changelog';
+  const fragmentFiles = files.filter((f) =>
+    /^changelog\.d\/[^/]+\.md$/.test(String((f && f.path) || '').replace(/\\/g, '/')),
+  );
+  if (botAuthor || onlyGenerated) {
+    add('changelog', 'Release notes', 'skip', 'PR de bot o solo archivos generados: no se exigen notas.', true);
+  } else if (fragmentFiles.length > 0) {
+    add('changelog', 'Release notes', 'pass', `${fragmentFiles.length} fragmento(s) en changelog.d/`, true);
+  } else if (labels.includes(NO_CHANGELOG_LABEL)) {
+    add(
+      'changelog',
+      'Release notes',
+      'pass',
+      'Sin cambio visible para el usuario, declarado con la etiqueta `no-changelog`.',
+      true,
+    );
+  } else {
+    add(
+      'changelog',
+      'Release notes',
+      'fail',
+      'Sin fragmento en `changelog.d/` ni etiqueta `no-changelog`. Añade `changelog.d/<rama>.md` con las notas de release (secciones `### Added`/`### Fixed`/…) o aplica la etiqueta si el cambio no es visible para el usuario.',
+      true,
+    );
+  }
+
   if (sizeUnknown) {
     add('alcance', 'Alcance declarado', 'skip', `${sizeUnknownReason}: no se puede auditar el alcance.`);
   } else {

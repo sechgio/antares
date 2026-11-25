@@ -20,6 +20,7 @@ const MAX_SCOPED_RULES = 200;
 const MAX_VALUE_CHARS = 240;
 
 const SEGMENT_SPLIT = /&&|\|\||[;|]/;
+const COMMAND_LINE_BREAKS = /[\r\n\v\f\u2028\u2029]+/g;
 const DYNAMIC_OR_REDIRECT = /[`$<>]/;
 const WINDOWS = process.platform === 'win32';
 
@@ -27,6 +28,10 @@ function normalizeWhitespace(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function normalizeCommandText(value) {
+  return normalizeWhitespace(String(value || '').replace(COMMAND_LINE_BREAKS, ';'));
 }
 
 function normalizePathValue(value) {
@@ -47,7 +52,7 @@ function normalizeDomainValue(value) {
 }
 
 function normalizeCommandValue(value) {
-  return normalizeWhitespace(value).toLowerCase();
+  return normalizeCommandText(value).toLowerCase();
 }
 
 function normalizeScopeValue(scope, value) {
@@ -124,8 +129,10 @@ function extractTargets(name, args, context) {
   }
   if (typeof ctx.domain === 'string' && ctx.domain) targets.domain = ctx.domain;
   else if (typeof params.url === 'string' && params.url.trim()) {
+    const rawUrl = params.url.trim();
+    const candidate = /^[a-z][a-z0-9+.-]*:/i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
     try {
-      targets.domain = String(new URL(params.url).hostname || '')
+      targets.domain = String(new URL(candidate).hostname || '')
         .toLowerCase()
         .replace(/\.$/, '');
     } catch {}
@@ -153,7 +160,7 @@ function extractTargets(name, args, context) {
 }
 
 function segmentsOf(command) {
-  return normalizeWhitespace(command)
+  return normalizeCommandText(command)
     .split(SEGMENT_SPLIT)
     .map((part) => part.trim())
     .filter(Boolean);
@@ -171,7 +178,7 @@ function segmentMatches(ruleTokens, segment) {
 
 function commandMatches(rule, command, strict) {
   const value = normalizeCommandValue(rule);
-  const text = normalizeWhitespace(command);
+  const text = normalizeCommandText(command);
   if (!value || !text) return false;
   const ruleTokens = tokensOf(value);
   if (!ruleTokens.length) return false;

@@ -349,15 +349,15 @@ function processJinja2Template(
   html = html.replace(/\{%\s*if\s+logo_right\s*%\}([\s\S]*?)\{%\s*endif\s*%\}/g, (_m, content) => logoRight ? content : '');
 
   html = html.split('{{ title }}').join('PANEL FOTOGRÁFICO VOLANTEO');
-  html = html.split('{{ logo_left }}').join(logoLeft || EMPTY_PIXEL);
-  html = html.split('{{ logo_right }}').join(logoRight || EMPTY_PIXEL);
+  html = html.split('{{ logo_left }}').join(escapeHtml(logoLeft || EMPTY_PIXEL));
+  html = html.split('{{ logo_right }}').join(escapeHtml(logoRight || EMPTY_PIXEL));
 
   let prev = '';
   while (html !== prev) {
     prev = html;
     html = html.replace(/\{\{\s*report\.data\.get\(\s*'([^']+)'\s*,\s*([\s\S]+?)\s*\)\s*\}\}/g, (_m, key, defBlock) => {
       const cleanKey = key.replace(/\s+/g, ' ').trim();
-      if (reportData[cleanKey] && reportData[cleanKey] !== '-') return reportData[cleanKey];
+      if (reportData[cleanKey] && reportData[cleanKey] !== '-') return escapeHtml(reportData[cleanKey]);
       let fallback = defBlock.trim();
       if ((fallback.startsWith("'") && fallback.endsWith("'")) || (fallback.startsWith('"') && fallback.endsWith('"'))) {
         fallback = fallback.slice(1, -1);
@@ -370,8 +370,8 @@ function processJinja2Template(
   html = html.replace(/\{\{\s*report\.images\[(\d+)\]\.(path|name)\s*\}\}/g, (_m, idxStr, prop) => {
     const idx = parseInt(idxStr);
     if (images[idx]) {
-      if (prop === 'path') return imageUrls[idx] || '';
-      if (prop === 'name') return images[idx].name;
+      if (prop === 'path') return escapeHtml(imageUrls[idx] || '');
+      if (prop === 'name') return escapeHtml(images[idx].name);
     }
     return '';
   });
@@ -402,8 +402,8 @@ function processJinja2Template(
       const img = toRender[i];
       const imgIdx = images.indexOf(img);
       let item = loopContent;
-      item = item.split('{{ img.path }}').join(imageUrls[imgIdx] || '');
-      item = item.split('{{ img.name }}').join(img.name);
+      item = item.split('{{ img.path }}').join(escapeHtml(imageUrls[imgIdx] || ''));
+      item = item.split('{{ img.name }}').join(escapeHtml(img.name));
       item = item.replace(/\{\{\s*img\.date.*\}\}/g, new Date(img.lastModified).toLocaleString());
       item = item.replace(/\{\{\s*img\.coords.*\}\}/g, '');
       item = item.split('{{ loop.index }}').join(String(i + 1));

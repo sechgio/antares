@@ -161,13 +161,14 @@ async function removeFolder({ folder_id }) {
   return { success: true, folders };
 }
 
-async function toggleFolder({ folder_id, activo }) {
+async function toggleFolder({ folder_id, activo, enabled }) {
+  const value = activo !== undefined ? activo : enabled;
   await ensureSheetId();
   const { values } = await sheets.readRange('FOLDERS!A:E');
   let found = false;
   for (let i = _foldersStart(values); i < values.length; i++) {
     if (values[i][1] === folder_id) {
-      values[i][2] = activo ? '✅' : '❌';
+      values[i][2] = value ? '✅' : '❌';
       found = true;
       break;
     }

@@ -57,7 +57,8 @@ _resource_locks: dict[str, threading.Lock] = {}
 _native_leases: dict[str, list[threading.Lock]] = {}
 _NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_export_pdf", "fichas_tecnicas_export_pdf",
                     "document_generate", "padron_", "volantes_", "espacios_", "canvas_fill_fields", "canvas_apply_layers",
-                    "gdrive_", "gsheets_", "onedrive_", "excel_", "web_", "cua_")
+                    "gdrive_", "gsheets_", "onedrive_", "gmail_", "outlook_", "github_",
+                    "excel_", "web_", "cua_")
 _APP_SCOPED_PREFIXES = ("cua_",)
 _CLOUD_UPLOADS = frozenset({"gdrive_upload", "onedrive_upload"})
 _META_METHODS = frozenset({"task_schedule"})
@@ -820,6 +821,15 @@ def _memory_promote(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+@validate_params("session_id", "entries")
+def _memory_flush(params: JsonObject) -> JsonObject:
+    try:
+        return _memory().flush_journal(str(params["session_id"]), params.get("entries"))
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
 @validate_params("profile_id", "days")
 def _memory_dream_input(params: JsonObject) -> JsonObject:
     half_life = params.get("recency_half_life_days", 14)
@@ -1001,6 +1011,7 @@ HANDLERS = {
     "agent_internal_memory_context": _memory_context,
     "agent_internal_memory_revision": _memory_revision,
     "agent_internal_memory_promote": _memory_promote,
+    "agent_internal_memory_flush": _memory_flush,
     "agent_internal_memory_dream_input": _memory_dream_input,
     "agent_internal_memory_consolidate": _memory_consolidate,
     "agent_internal_grant_remove": _grant_remove,

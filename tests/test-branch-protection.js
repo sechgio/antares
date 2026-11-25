@@ -35,12 +35,16 @@ const ACTUAL_PROTECTED = {
     required_approving_review_count: 1,
   },
   required_signatures: { enabled: false },
-  enforce_admins: { enabled: false },
+  enforce_admins: { enabled: true },
+  required_status_checks: {
+    strict: true,
+    contexts: ['Lint, audit, and test (Windows)'],
+  },
   required_linear_history: { enabled: false },
   allow_force_pushes: { enabled: false },
   allow_deletions: { enabled: false },
   block_creations: { enabled: false },
-  required_conversation_resolution: { enabled: false },
+  required_conversation_resolution: { enabled: true },
   lock_branch: { enabled: false },
   allow_fork_syncing: { enabled: false },
 };
@@ -69,11 +73,11 @@ function testNormalizeExpected() {
   eq(flat.dismissStaleReviews, true, 'descarta aprobaciones obsoletas');
   eq(flat.requireCodeOwnerReviews, false, 'no exige CODEOWNERS');
   eq(flat.requireLastPushApproval, false, 'no exige aprobacion del ultimo push');
-  eq(flat.enforceAdmins, false, 'no aplica a administradores');
+  eq(flat.enforceAdmins, true, 'aplica también a administradores');
   eq(flat.allowForcePushes, false, 'prohibe force push');
   eq(flat.allowDeletions, false, 'prohibe borrar la rama');
-  eq(flat.requiredStatusChecks.length, 0, 'sin status checks requeridos');
-  eq(flat.strictStatusChecks, false, 'strict desactivado');
+  eq(flat.requiredStatusChecks.length, 1, 'exige el check agregado de CI');
+  eq(flat.strictStatusChecks, true, 'exige rama actualizada antes de mergear');
 
   const empty = core.normalizeExpected(null);
   eq(empty.requiredApprovingReviewCount, 0, 'cuerpo nulo => cero aprobaciones');
@@ -98,10 +102,10 @@ function testNormalizeActual() {
 
   eq(flat.requiredApprovingReviewCount, 1, 'aprobaciones requeridas');
   eq(flat.dismissStaleReviews, true, 'descarta aprobaciones obsoletas');
-  eq(flat.enforceAdmins, false, 'enforce_admins se lee desde .enabled');
+  eq(flat.enforceAdmins, true, 'enforce_admins se lee desde .enabled');
   eq(flat.allowForcePushes, false, 'allow_force_pushes se lee desde .enabled');
   eq(flat.allowDeletions, false, 'allow_deletions se lee desde .enabled');
-  eq(flat.requiredStatusChecks.length, 0, 'sin status checks');
+  eq(flat.requiredStatusChecks.length, 1, 'status checks requeridos');
 
   const unprotected = core.normalizeActual(null);
   eq(unprotected.requiredApprovingReviewCount, 0, 'sin proteger => cero aprobaciones');
@@ -168,40 +172,31 @@ function testDiffForcePushEnabled() {
 
 function testDiffStatusChecks() {
   process.stdout.write('diffProtection(): status checks requeridos\n');
-  const expectedWithChecks = JSON.parse(JSON.stringify(EXPECTED));
-  expectedWithChecks.required_status_checks = {
-    strict: false,
-    contexts: ['Lint, audit, and test'],
-  };
+  const githubWithoutChecks = JSON.parse(JSON.stringify(ACTUAL_PROTECTED));
+  delete githubWithoutChecks.required_status_checks;
+  const missing = core.diffProtection(EXPECTED, githubWithoutChecks);
+  eq(missing.length, 1, 'falta el check en GitHub');
+  eq(missing[0].field, 'requiredStatusChecks', 'el campo es status checks');
 
-  const stillEmpty = core.diffProtection(expectedWithChecks, ACTUAL_PROTECTED);
-  eq(stillEmpty.length, 1, 'falta el check en GitHub');
-  eq(stillEmpty[0].field, 'requiredStatusChecks', 'el campo es status checks');
-
-  const githubChecks = JSON.parse(JSON.stringify(ACTUAL_PROTECTED));
-  githubChecks.required_status_checks = {
-    strict: false,
-    contexts: ['Lint, audit, and test'],
-  };
-  const matched = core.diffProtection(expectedWithChecks, githubChecks);
+  const matched = core.diffProtection(EXPECTED, ACTUAL_PROTECTED);
   eq(matched.length, 0, 'mismo check en ambos lados => sin deriva');
 
-  const strictOn = JSON.parse(JSON.stringify(githubChecks));
-  strictOn.required_status_checks.strict = true;
-  const strictDiff = core.diffProtection(expectedWithChecks, strictOn);
+  const strictOff = JSON.parse(JSON.stringify(ACTUAL_PROTECTED));
+  strictOff.required_status_checks.strict = false;
+  const strictDiff = core.diffProtection(EXPECTED, strictOff);
   eq(strictDiff.length, 1, 'strict difiere');
   eq(strictDiff[0].field, 'strictStatusChecks', 'el campo es strict');
 }
 
 function testDiffEnforceAdmins() {
   process.stdout.write('diffProtection(): enforce_admins\n');
-  const hardened = JSON.parse(JSON.stringify(ACTUAL_PROTECTED));
-  hardened.enforce_admins = { enabled: true };
-  const diffs = core.diffProtection(EXPECTED, hardened);
+  const weakened = JSON.parse(JSON.stringify(ACTUAL_PROTECTED));
+  weakened.enforce_admins = { enabled: false };
+  const diffs = core.diffProtection(EXPECTED, weakened);
   eq(diffs.length, 1, 'una sola diferencia');
   eq(diffs[0].field, 'enforceAdmins', 'el campo es enforce_admins');
-  eq(diffs[0].actual, true, 'GitHub lo tiene activo');
-  eq(diffs[0].expected, false, 'el archivo lo mantiene en false mientras haya un solo dev');
+  eq(diffs[0].actual, false, 'GitHub lo tiene desactivado');
+  eq(diffs[0].expected, true, 'el archivo exige aplicar las reglas también a administradores');
 }
 
 function testRenderReport() {
@@ -247,10 +242,17 @@ function testConfigFileSanity() {
   eq(typeof EXPECTED, 'object', 'el archivo parsea como objeto');
   eq(EXPECTED.required_pull_request_reviews.required_approving_review_count, 1,
     'exige una aprobacion');
-  eq(EXPECTED.enforce_admins, false,
-    'enforce_admins en false: con un solo desarrollador GitHub no permite autoaprobacion');
+  eq(EXPECTED.enforce_admins, true,
+    'enforce_admins activo: los administradores tampoco pueden saltarse la protección');
   eq(EXPECTED.allow_force_pushes, false, 'prohibe force push');
   eq(EXPECTED.allow_deletions, false, 'prohibe borrar la rama');
+  eq(EXPECTED.required_conversation_resolution, true, 'exige resolver conversaciones');
+  assert(
+    EXPECTED.required_status_checks
+      && EXPECTED.required_status_checks.strict === true
+      && EXPECTED.required_status_checks.contexts.includes('Lint, audit, and test (Windows)'),
+    'exige el check agregado de CI con la rama actualizada',
+  );
 }
 
 function run() {

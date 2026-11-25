@@ -25,7 +25,7 @@ declare global {
       canvasAssetPut?: (chunk: ArrayBuffer | Uint8Array) => Promise<{ asset_id: string; ref: string; bytes: number }>;
       canvasAssetGet?: (ref: string) => Promise<{ ref: string; chunk: ArrayBuffer; bytes: number }>;
       canvasAssetInfo?: (ref: string) => Promise<{ ref: string; asset_id: string; bytes: number }>;
-      reportRendererError?: (report: Record<string, unknown>) => Promise<unknown>;
+      reportRendererError?: (report: Record<string, unknown>) => void;
       reportRendererEvent?: (event: string, fields?: Record<string, unknown>, level?: string) => void;
     };
   }
@@ -33,7 +33,7 @@ declare global {
 
 type IpcTimeoutTier = keyof typeof ipcMethodCatalog.timeouts;
 const IPC_METHOD_TIMEOUTS: Record<IpcTimeoutTier, number> = ipcMethodCatalog.timeouts;
-const IPC_METHOD_ENTRIES = ipcMethodCatalog.methods as Record<string, { timeout?: IpcTimeoutTier; handler?: string }>;
+const IPC_METHOD_ENTRIES = ipcMethodCatalog.methods as Record<string, { timeout?: IpcTimeoutTier; handler?: string; idempotent?: boolean }>;
 const FE_STARTUP_BUFFER_MS = 60_000;
 const FE_TIMEOUT_BUFFER_MS = 10_000;
 let _backendSeenReady = false;
@@ -262,7 +262,7 @@ export const _invoke = async <T>(method: string, params?: Record<string, unknown
       return await _invokeOnce<T>(method, params);
     } catch (err: unknown) {
       const retryAfterMs = apiRetryAfterMs(err);
-      if (retryAfterMs === null) throw err;
+      if (retryAfterMs === null || IPC_METHOD_ENTRIES[method]?.idempotent !== true) throw err;
       await new Promise<void>((resolve) =>
         setTimeout(resolve, Math.min(retryAfterMs, INVOKE_RETRY_MAX_DELAY_MS)),
       );

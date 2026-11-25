@@ -12,6 +12,7 @@ from typing import Any, cast
 from backend.core.config_fields import get_field_names, load_fields, sanitize_field_defs, save_fields
 from backend.core.exceptions import DatabaseError
 from backend.core.repository import _db_lock, _db_read_lock, _db_schema_lock, get_connection, get_read_connection
+from backend.utils.atomic_write import atomic_output_file
 from backend.utils.paths import user_data_path
 
 logger = logging.getLogger(__name__)
@@ -428,7 +429,13 @@ def exportar_excel(excel_path: str) -> int:
         cols = ", ".join(_qi(fn) for fn in field_names)
         df = pd.read_sql_query(f"SELECT {cols} FROM imagenes ORDER BY id", conn)
 
-    df.to_excel(excel_path, index=False, engine="openpyxl")
+    with atomic_output_file(
+        excel_path,
+        extension=None,
+        overwrite=True,
+        write_token=True,
+    ) as target:
+        df.to_excel(target.tmp_path, index=False, engine="openpyxl")
     return len(df)
 
 
@@ -779,5 +786,11 @@ def generar_plantilla_excel(ruta_salida: str) -> int:
         else:
             sample.append(f"Ejemplo {fname}")
     df.loc[0] = sample
-    df.to_excel(ruta_salida, index=False, engine="openpyxl")
+    with atomic_output_file(
+        ruta_salida,
+        extension=".xlsx",
+        overwrite=True,
+        write_token=True,
+    ) as target:
+        df.to_excel(target.tmp_path, index=False, engine="openpyxl")
     return len(df)

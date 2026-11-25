@@ -41,17 +41,21 @@ const MAX_PASTED_BYTES = 20 * 1024 * 1024;
 const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_INDEXED_SKILLS = 40;
 const PROFILE_ONBOARDING_PROMPT =
-  'El usuario creó este agente sin escribir instrucciones permanentes. ' +
-  'Antares envía este contexto para iniciar la presentación; no es un mensaje visible del usuario. ' +
+  'El usuario creó este agente sin completar su presentación persistente. ' +
+  'Antares envía este contexto para iniciarla; no es un mensaje visible del usuario. ' +
   'En tu primera respuesta saluda con naturalidad, preséntate con el nombre de este agente y explica en una frase ' +
   'que quieres saber para qué le gustaría usarte. ' +
   'Si ask_user está disponible, llámala con una sola pregunta: id «proposito», ' +
   'prompt «¿Para qué te gustaría usar este agente principalmente?» y options ' +
   '«Programar y desplegar proyectos», «Organizar archivos y documentos», «Investigar y resumir información», ' +
   '«Automatizar tareas repetitivas» y «Otra cosa». Si ask_user no está disponible, formula la misma pregunta con esas opciones. ' +
-  'No uses ninguna otra herramienta en esta presentación ni guardes memoria. ' +
-  'Cuando el usuario responda, usa sus respuestas solo en esta conversación; si elige «Otra cosa», pide el detalle que falte. ' +
-  'Después continúa ayudándole y no repitas este onboarding salvo que lo pida.';
+  'No uses ninguna herramienta durante esta presentación salvo ask_user y profile_onboarding_save. ' +
+  'Cuando el usuario responda, haz como mucho dos preguntas breves para acordar nombre, rol, tono y avatar opcional del agente, ' +
+  'y sus preferencias estables (idioma, forma de trabajo y zona horaria). No pidas ni guardes secretos. ' +
+  'Antes de guardar, muestra el contenido exacto y breve que escribirás en IDENTITY.md y USER.md y pide confirmación explícita. ' +
+  'Solo después de esa confirmación llama profile_onboarding_save con confirmed=true, identity con name/role/tone/avatar opcional ' +
+  'y user con las preferencias estables (máximo 4000 caracteres). Esa herramienta valida y persiste ambos archivos; no uses fs_write ni memoria para esto. ' +
+  'Si el usuario no confirma, no guardes nada. Cuando termine, continúa ayudándole y no repitas esta presentación salvo que pida «rehacer presentación».';
 const IMAGE_MIME = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -299,9 +303,10 @@ function _text(value, label, max, required = false) {
 
 // SOUL/USER opcionales: si el guardado no los envía se conservan los anteriores; vacíos no se persisten.
 function identityFields(params, existing) {
+  const identity = _text(params.identity ?? existing?.identity, 'la identidad del agente (IDENTITY)', 4000);
   const soul = _text(params.soul ?? existing?.soul, 'la personalidad (SOUL)', 4000);
   const user = _text(params.user ?? existing?.user, 'las preferencias del usuario (USER)', 4000);
-  return { ...(soul ? { soul } : {}), ...(user ? { user } : {}) };
+  return { ...(identity ? { identity } : {}), ...(soul ? { soul } : {}), ...(user ? { user } : {}) };
 }
 
 async function profilesList() {
@@ -389,6 +394,7 @@ async function profileSave(params = {}) {
     ...(dreaming ? { dreaming: true } : {}),
     ...(recencyHalfLife !== 14 ? { recency_half_life_days: recencyHalfLife } : {}),
     ...(agentModel ? { model: agentModel } : {}),
+    ...(existing && existing.onboarded_at ? { onboarded_at: existing.onboarded_at } : {}),
     created_at: existing ? existing.created_at : now,
     updated_at: now,
   };
@@ -421,7 +427,7 @@ async function templateExport(params = {}) {
   const profile = (await _profiles())[id];
   if (!profile) throw notFound('El agente ya no existe');
   return {
-    template: require('./agent-profile-templates').exportTemplate(profile, { includeUser: params.include_user !== false }),
+    template: require('./agent-profile-templates').exportTemplate(profile, { includeUser: params.include_user === true }),
   };
 }
 
@@ -449,6 +455,9 @@ async function sessionCreate(params) {
   await execution.refreshTools();
   await execution.ensureProvider(provider, model);
   const levels = await execution.reasoningLevels(provider, model);
+  const needsOnboarding = Boolean(
+    savedProfile ? !savedProfile.instructions && !savedProfile.onboarded_at : portableProfile && !portableProfile.onboarded_at,
+  );
   const instructions = agentInstructions(profile);
   const conv = await shared.state.harness.createConversation(
     {
@@ -458,7 +467,10 @@ async function sessionCreate(params) {
     ctx(),
   );
   const initialTools = execution.profileInitialTools(profile, [...shared.toolSpecs.values()]);
-  if (initialTools) await conv.configure({ tools: initialTools.map((name) => ({ name })) }, ctx());
+  if (initialTools) {
+    const tools = needsOnboarding ? [...new Set([...initialTools, 'profile_onboarding_save'])] : initialTools;
+    await conv.configure({ tools: tools.map((name) => ({ name })) }, ctx());
+  }
   const now = Date.now();
   const session = {
     id: crypto.randomBytes(6).toString('hex'),
@@ -475,16 +487,12 @@ async function sessionCreate(params) {
       ? { profile: { id: profile.id, name: profile.name, ...(portableProfile ? { portable: true } : {}) } }
       : {}),
   };
-  let firstProfileSession = false;
   await commitSessions((map) => {
-    firstProfileSession = Boolean(
-      savedProfile && !Object.values(map).some((item) => item.profile?.id === savedProfile.id),
-    );
     map[session.id] = session;
   });
   if (portableProfile) shared.state.portableProfiles.set(conv.id, { kind: 'loaded', profile: portableProfile });
   shared.convToSession.set(conv.id, session.id);
-  if (firstProfileSession && !savedProfile.instructions) {
+  if (needsOnboarding) {
     try {
       await projection.ensureWatcher(session);
       await conv.submit(
@@ -496,6 +504,16 @@ async function sessionCreate(params) {
         },
         ctx(),
       );
+      if (savedProfile) {
+        await shared.state.harness.commit(async (tx) => {
+          const doc = await tx.doc(shared.state.ProfilesDoc);
+          if (doc.profiles[savedProfile.id] && !doc.profiles[savedProfile.id].onboarded_at) {
+            doc.profiles[savedProfile.id].onboarded_at = Date.now();
+          }
+        }, ctx());
+      } else if (portableProfile) {
+        require('./agent-profiles').markPortableOnboarded(portableProfile.slug);
+      }
     } catch (error) {
       console.error(
         `[agent] no se pudo iniciar el onboarding: ${execution.sanitizeProviderError(String(error?.message || error))}`,

@@ -92,7 +92,9 @@ function diffProtection(expectedBody, actualBody) {
   const expected = normalizeExpected(expectedBody);
   const actual = normalizeActual(actualBody);
   const diffs = [];
+  const checksDiffer = !sameValue(expected.requiredStatusChecks, actual.requiredStatusChecks);
   for (const field of FIELDS) {
+    if (field.key === 'strictStatusChecks' && checksDiffer) continue;
     const want = expected[field.key];
     const have = actual[field.key];
     if (!sameValue(want, have)) {

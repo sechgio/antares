@@ -11,6 +11,8 @@ const MAX_HOOKS = 32;
 const MAX_HOOK_CONTEXT = 2000;
 const MAX_HOOK_TOTAL = 8000;
 const MAX_IDENTITY_CHARS = 4000;
+const MAX_USER_CHARS = 4000;
+const ONBOARDING_SECRET_RE = /(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{40,}|AKIA[0-9A-Z]{16}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY|bearer\s+[A-Za-z0-9._~+/-]{16,}|(?:password|contraseña|clave|api[_ -]?key|token|secret)\s*[:=]\s*\S+)/i;
 const HOOK_EVENTS = new Set(['subagentStart', 'subagentStop', 'preToolUse', 'postToolUse']);
 const HOOK_TOOL_EVENTS = new Set(['preToolUse', 'postToolUse']);
 
@@ -41,7 +43,7 @@ function readText(file, root) {
   }
 }
 
-// SOUL.md (personalidad y tono) y USER.md (preferencias estables) son opcionales: configuración del usuario.
+// SOUL.md (personalidad y tono), IDENTITY.md (identidad acordada) y USER.md (preferencias estables) son opcionales.
 function optionalText(file, root) {
   if (!fs.existsSync(file)) return '';
   const text = readText(file, root).trim();
@@ -166,6 +168,7 @@ function loadAgentProfile(slug, baseInstructions = '') {
   }
   const instructions = readText(path.join(directory, 'AGENTS.md'), directory);
   const soul = optionalText(path.join(directory, 'SOUL.md'), directory);
+  const identity = optionalText(path.join(directory, 'IDENTITY.md'), directory);
   const user = optionalText(path.join(directory, 'USER.md'), directory);
   const skills = loadSkills(path.join(root, '_shared', 'skills'), root);
   for (const [name, skill] of loadSkills(path.join(directory, 'skills'), directory)) skills.set(name, skill);
@@ -177,10 +180,108 @@ function loadAgentProfile(slug, baseInstructions = '') {
     description: metadata.description,
     instructions: [baseInstructions, instructions].filter(Boolean).join('\n\n'),
     ...(soul ? { soul } : {}),
+    ...(identity ? { identity } : {}),
     ...(user ? { user } : {}),
     skills,
     hooks: loadHooks(directory, directory),
+    ...(Number.isFinite(metadata.onboarded_at) ? { onboarded_at: metadata.onboarded_at } : {}),
   };
+}
+
+function inlineText(value, label, max) {
+  const text = String(value || '').trim().replace(/\s+/g, ' ');
+  if (!text) throw new Error('Falta ' + label);
+  if (text.length > max) throw new Error(label + ' excede ' + max + ' caracteres');
+  if (ONBOARDING_SECRET_RE.test(text)) throw new Error(label + ' parece contener un secreto');
+  return text;
+}
+
+function validateOnboarding(params = {}) {
+  if (params.confirmed !== true) throw new Error('El usuario debe confirmar explícitamente antes de guardar');
+  const raw = params.identity;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('identity debe ser un objeto');
+  const identity = {
+    name: inlineText(raw.name, 'el nombre del agente', 80),
+    role: inlineText(raw.role, 'el rol del agente', 160),
+    tone: inlineText(raw.tone, 'el tono del agente', 240),
+    ...(raw.avatar ? { avatar: inlineText(raw.avatar, 'el avatar del agente', 32) } : {}),
+  };
+  const user = String(params.user || '').trim();
+  if (!user) throw new Error('Faltan las preferencias del usuario');
+  if (user.length > MAX_USER_CHARS) throw new Error('USER.md excede ' + MAX_USER_CHARS + ' caracteres');
+  if (ONBOARDING_SECRET_RE.test(user)) throw new Error('USER.md parece contener un secreto');
+  const lines = [
+    '# Identidad del agente',
+    '',
+    '- Nombre: ' + identity.name,
+    '- Rol: ' + identity.role,
+    '- Tono: ' + identity.tone,
+    ...(identity.avatar ? ['- Avatar: ' + identity.avatar] : []),
+    '',
+  ];
+  return { identityMarkdown: lines.join('\n'), userMarkdown: user + '\n' };
+}
+
+function writeTextAtomic(file, content) {
+  const temporary = file + '.' + process.pid + '.' + Date.now() + '.tmp';
+  try {
+    fs.writeFileSync(temporary, content, { encoding: 'utf8', flag: 'wx' });
+    fs.renameSync(temporary, file);
+  } catch (error) {
+    try { fs.rmSync(temporary, { force: true }); } catch {}
+    throw error;
+  }
+}
+
+function savePortableOnboarding(slug, data) {
+  if (typeof slug !== 'string' || !/^[a-z0-9][a-z0-9_-]*$/.test(slug)) throw new Error('Slug de agente inválido');
+  const root = path.resolve(process.env.AGENTS_HOME || './agents');
+  const directory = path.join(root, slug);
+  const file = path.join(directory, 'agent.json');
+  const metadata = JSON.parse(readText(file, root));
+  writeTextAtomic(path.join(directory, 'IDENTITY.md'), data.identityMarkdown);
+  writeTextAtomic(path.join(directory, 'USER.md'), data.userMarkdown);
+  metadata.onboarded_at = Date.now();
+  writeTextAtomic(file, JSON.stringify(metadata, null, 2) + '\n');
+  return metadata.onboarded_at;
+}
+
+function markPortableOnboarded(slug) {
+  if (typeof slug !== 'string' || !/^[a-z0-9][a-z0-9_-]*$/.test(slug)) throw new Error('Slug de agente inválido');
+  const root = path.resolve(process.env.AGENTS_HOME || './agents');
+  const directory = path.join(root, slug);
+  const file = path.join(directory, 'agent.json');
+  const metadata = JSON.parse(readText(file, root));
+  if (!Number.isFinite(metadata.onboarded_at)) {
+    metadata.onboarded_at = Date.now();
+    writeTextAtomic(file, JSON.stringify(metadata, null, 2) + '\n');
+  }
+  return metadata.onboarded_at;
+}
+
+async function saveSessionOnboarding(sessionId, params) {
+  const data = validateOnboarding(params);
+  const { shared, sessions, ctx } = require('./agent-shared');
+  const session = (await sessions())[String(sessionId || '')];
+  if (!session || !session.profile || !session.profile.id) throw new Error('Esta conversación no tiene un agente de perfil');
+  if (session.profile.portable) {
+    const onboardedAt = savePortableOnboarding(session.profile.id, data);
+    return { saved: true, onboarded_at: onboardedAt };
+  }
+  let onboardedAt = 0;
+  const saved = await shared.state.harness.commit(async (tx) => {
+    const doc = await tx.doc(shared.state.ProfilesDoc);
+    const profile = doc.profiles[session.profile.id];
+    if (!profile) return false;
+    onboardedAt = Date.now();
+    profile.identity = data.identityMarkdown;
+    profile.user = data.userMarkdown;
+    profile.onboarded_at = onboardedAt;
+    profile.updated_at = onboardedAt;
+    return true;
+  }, ctx());
+  if (!saved) throw new Error('El agente ya no existe');
+  return { saved: true, onboarded_at: onboardedAt };
 }
 
 function resolvePortableProfile(registry, conversationId) {
@@ -192,4 +293,11 @@ function resolvePortableProfile(registry, conversationId) {
   return profile;
 }
 
-module.exports = { loadAgentProfile, resolvePortableProfile };
+module.exports = {
+  loadAgentProfile,
+  resolvePortableProfile,
+  saveSessionOnboarding,
+  validateOnboarding,
+  markPortableOnboarded,
+  savePortableOnboarding,
+};

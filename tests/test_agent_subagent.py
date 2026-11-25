@@ -50,6 +50,15 @@ def test_system_prompt_incluye_reglas_de_estilo():
         assert rule in prompt
 
 
+def test_system_prompt_comparte_identity_pero_no_user():
+    prompt = subagent.system_prompt(
+        "Investigador", "Consulta el catálogo y resume.", identity="# Identidad\n- Nombre: Antares"
+    )
+    assert "IDENTITY.md" in prompt
+    assert "Nombre: Antares" in prompt
+    assert "USER.md" not in prompt
+
+
 def test_subagent_ejecuta_lecturas_y_devuelve_traza(tmp_path, monkeypatch):
     store, session = _session(tmp_path)
     replies = [

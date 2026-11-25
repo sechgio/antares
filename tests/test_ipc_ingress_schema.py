@@ -50,7 +50,7 @@ def test_every_declared_input_schema_compiles_under_draft_2020_12() -> None:
         if not schema:
             continue
         try:
-            Draft202012Validator(schema)
+            Draft202012Validator.check_schema(schema)
         except Exception as exc:
             fails.append(f"{name}: {exc}")
     assert fails == [], "schemas de catálogo que no compilan:\n" + "\n".join(fails)

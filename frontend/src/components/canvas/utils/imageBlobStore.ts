@@ -22,6 +22,25 @@ const NO_ELECTRON_ASSETS_MSG = 'No se pueden resolver canvas-asset: sin Electron
 const isImageOrLogoLayer = (layer: CanvasLayer) =>
   layer.type === 'image' || layer.type === 'logo';
 
+// Misma lista raster que SAFE_DATA_URI_PREFIXES en shared/html-sanitizer.js:
+// data:image/svg+xml y data:text/html quedan bloqueados por no estar en ella.
+const SAFE_DATA_IMAGE_URL_RE = /^data:image\/(?:png|jpe?g|gif|bmp|webp|x-icon)/i;
+
+// Las imágenes Canvas son siempre locales (blob:, data: raster, canvas-asset:,
+// tokens antares-local-image: o ids img_blob_). Se bloquean file:, javascript:/vbscript:,
+// data: no raster y http(s) remotos — decisión coherente con la CSP del pipeline
+// (img-src data: blob: en preview/PDF) para que ni el editor ni el HTML exportado
+// carguen recursos remotos, activos o del disco local.
+export function isUnsafeCanvasImageUrl(value: string): boolean {
+  const cleaned = value.trim().replace(/[\s\x00-\x1f\x7f]+/g, '').toLowerCase();
+  if (!cleaned) return false;
+  if (cleaned.startsWith('//')) return true;
+  if (cleaned.startsWith('data:')) return !SAFE_DATA_IMAGE_URL_RE.test(cleaned);
+  const scheme = cleaned.match(/^([a-z][a-z0-9+.-]*):/)?.[1] ?? '';
+  return scheme === 'javascript' || scheme === 'vbscript' || scheme === 'file'
+    || scheme === 'http' || scheme === 'https';
+}
+
 const isCanvasAssetRef = (value: string | undefined) =>
   Boolean(value?.startsWith(CANVAS_ASSET_REF_PREFIX));
 
@@ -178,9 +197,7 @@ export async function registerAndPersistCanvasImage(
 
 export function getBlobUrl(value: string | undefined): string {
   if (!value) return '';
-  if (value.startsWith('blob:') || value.startsWith('http://') || value.startsWith('https://')) {
-    return value;
-  }
+  if (isUnsafeCanvasImageUrl(value)) return '';
   const reg = blobMap.get(value);
   if (reg) return reg.url;
   return value;

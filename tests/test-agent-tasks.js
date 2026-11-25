@@ -23,6 +23,9 @@ async function main() {
   const granted = [];
   let slow = false;
   let reads = 0;
+  let leakedUserPreference = false;
+  let sawSharedIdentity = false;
+  const memoryTexts = [];
   let approvalSeq = 0;
   const bridge = async (method, params) => {
     if (method === 'agent_internal_tools') return { tools: [
@@ -46,7 +49,7 @@ async function main() {
     if (method === 'agent_internal_dispatch_result') return { result: slow ? null : JSON.stringify({ documents: ['Comprobante'] }) };
     if (method === 'agent_internal_provider') return { style: 'openai_chat', base_url: 'http://unused', api_key: 'test' };
     if (method === 'agent_internal_approvals_pending') return { approvals: [] };
-    if (method === 'agent_internal_memory_context') return { context: '' };
+    if (method === 'agent_internal_memory_context') { memoryTexts.push(String(params.text || '')); return { context: '' }; }
     if (method === 'agent_internal_mentions') return { modules: [], unknown: [], ambiguous: [], context: '' };
     if (method === 'agent_internal_artifacts') return { artifacts: [], questions: [], context: {} };
     if (method === 'agent_internal_activity') return { attention: {} };
@@ -450,13 +453,15 @@ async function main() {
     await until(async () => (await runtime.handlers.agent_messages_list({ session_id: longParent.id })).messages
       .some((message) => message.content === 'Recibí la investigación completa'));
     const { profile: analyst } = await runtime.handlers.agent_profile_save({
-      name: 'Analista', instructions: 'SOLO_ANALISTA: consulta Canvas antes de responder', tools: null,
+      name: 'Analista', instructions: 'SOLO_ANALISTA: consulta Canvas antes de responder', tools: null, user: 'PREF_USUARIO_SECRETA', identity: 'IDENTIDAD_COMPARTIDA',
     });
     const { session: fanParent } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     await runtime.handlers.agent_tools_set({ session_id: fanParent.id, names: ['agent_delegate', 'canvas_list'] });
     let combinedTurns = 0, looseTurns = 0;
     const fanout = (context) => {
       const source = JSON.stringify(context.messages);
+      if (source.includes('PREF_USUARIO_SECRETA')) leakedUserPreference = true;
+      if (source.includes('IDENTIDAD_COMPARTIDA')) sawSharedIdentity = true;
       if (source.includes('SOLO_ANALISTA')) {
         if (!source.includes('"role":"toolResult"')) return fauxAssistantMessage([fauxToolCall('canvas_list', {})], { stopReason: 'toolUse' });
         return fauxAssistantMessage('Análisis listo');
@@ -484,6 +489,9 @@ async function main() {
     assert.equal(fanChildren.length, 2);
     assert.ok(fanChildren.every((item) => item.delegation.status === 'delivered' && item.delegation.batch
       && item.delegation.result_request === fanChildren[0].delegation.result_request), 'el lote comparte una sola entrega');
+    assert.equal(leakedUserPreference, false, 'USER.md no aparece en el prompt de una delegación');
+    assert.equal(sawSharedIdentity, true, 'IDENTITY.md sí se comparte con una delegación');
+    assert.equal(memoryTexts.some((text) => text.includes('Analiza los documentos')), false, 'la memoria privada no se inyecta en una delegación');
 
     const { session: defaultSession } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const globalState = runtime._internal.state();
@@ -534,7 +542,7 @@ async function triggerChain() {
     if (method === 'agent_internal_tools') return { tools: [] };
     if (method === 'agent_internal_provider') return { style: 'openai_chat', base_url: 'http://unused', api_key: 'test' };
     if (method === 'agent_internal_approvals_pending') return { approvals: [] };
-    if (method === 'agent_internal_memory_context') return { context: '' };
+    if (method === 'agent_internal_memory_context') { memoryTexts.push(String(params.text || '')); return { context: '' }; }
     if (method === 'agent_internal_mentions') return { modules: [], unknown: [], ambiguous: [], context: '' };
     if (method === 'agent_internal_artifacts') return { artifacts: [], questions: [], context: {} };
     if (method === 'agent_internal_activity') return { attention: {} };
@@ -651,7 +659,7 @@ async function dreamingRoutine() {
     if (method === 'agent_internal_tools') return { tools: [] };
     if (method === 'agent_internal_provider') return { style: 'openai_chat', base_url: 'http://unused', api_key: 'test' };
     if (method === 'agent_internal_approvals_pending') return { approvals: [] };
-    if (method === 'agent_internal_memory_context') return { context: '' };
+    if (method === 'agent_internal_memory_context') { memoryTexts.push(String(params.text || '')); return { context: '' }; }
     if (method === 'agent_internal_mentions') return { modules: [], unknown: [], ambiguous: [], context: '' };
     if (method === 'agent_internal_artifacts') return { artifacts: [], questions: [], context: {} };
     if (method === 'agent_internal_activity') return { attention: {} };

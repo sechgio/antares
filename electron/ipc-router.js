@@ -7,6 +7,7 @@ const {
   waitForReady,
   getState,
   getHealthStatus,
+  getReadyDegraded,
   getLastError,
   getStderrTail,
   manualRestart,
@@ -704,7 +705,9 @@ function _isTransientBackendError(err) {
 }
 
 const DB_CLEAR_MIN_INTERVAL_MS = 5000;
+const MCP_STDIO_CONFIRM_MIN_INTERVAL_MS = 5000;
 let _lastDbClearAttemptAt = 0;
+let _lastMcpStdioConfirmAttemptAt = 0;
 
 async function _maybeConfirmDbClear(method) {
   if (method !== 'db_clear' || typeof dialog?.showMessageBox !== 'function') return;
@@ -726,7 +729,40 @@ async function _maybeConfirmDbClear(method) {
   if (response !== 0) throw new Error('db_clear cancelado');
 }
 
+function _mcpCommandPreview(params) {
+  const command = typeof params.command === 'string' ? params.command.trim() : '';
+  const args = Array.isArray(params.args) ? params.args.map((arg) => String(arg)) : [];
+  return [command, ...args].join(' ').replace(/[\r\n]+/g, ' ').slice(0, 700);
+}
+
+async function _maybeConfirmMcpStdio(method, params) {
+  if (method !== 'mcp_server_add' || typeof dialog?.showMessageBox !== 'function') return;
+  if (!params || typeof params !== 'object' || params.transport !== 'stdio') return;
+  const now = Date.now();
+  if (now - _lastMcpStdioConfirmAttemptAt < MCP_STDIO_CONFIRM_MIN_INTERVAL_MS) {
+    throw new Error('El registro de servidores MCP stdio no puede repetirse con tanta rapidez; espera unos segundos');
+  }
+  _lastMcpStdioConfirmAttemptAt = now;
+  const { getMainWindow } = require('./window-manager');
+  const name = typeof params.name === 'string' && params.name.trim() ? params.name.trim().slice(0, 120) : 'servidor MCP';
+  const commandPreview = _mcpCommandPreview(params) || '(comando vacío)';
+  const { response } = await dialog.showMessageBox(getMainWindow(), {
+    type: 'warning',
+    buttons: ['Registrar servidor stdio', 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Ejecución nativa en tu equipo',
+    message: `¿Registrar «${name}» como servidor MCP stdio?`,
+    detail:
+      'Antares ejecutará este comando como proceso nativo con tus permisos de usuario al verificar o usar el servidor:\n\n' +
+      commandPreview +
+      '\n\nRegístralo solo si confías en su origen. Esta confirmación no puede ser sustituida por la interfaz.',
+  });
+  if (response !== 0) throw new Error('Registro del servidor MCP cancelado');
+}
+
 async function _callBackend(method, params) {
+  await _maybeConfirmMcpStdio(method, params);
   await _maybeConfirmDbClear(method);
   if (!isReady()) {
     if (getState() === STATE.FATAL) throw _buildUnavailableError();
@@ -963,11 +999,14 @@ function registerIpcHandlers() {
   ipcMain.handle('backend-status', async (event) => {
     _requireTrustedSender(event, 'backend-status');
     const isPackaged = _isPackaged();
+    const { degraded, failedHandlerModules } = getReadyDegraded();
     return {
       state: getState(),
       ready: isReady(),
       lastError: getLastError(),
       health: getHealthStatus(),
+      degraded,
+      failedHandlerModules,
       stderrTail: isPackaged ? '' : getStderrTail(),
     };
   });
@@ -994,7 +1033,7 @@ function registerIpcHandlers() {
     }
 
     _lastBackendRestartAt = now;
-    const ok = await manualRestart(_resolveIsDev());
+    const ok = await manualRestart(_resolveIsDev(), { force: true, reason: 'user_requested' });
     return { success: ok, state: getState() };
   });
 

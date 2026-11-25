@@ -572,6 +572,14 @@ def test_native_tools_are_claimed_in_python_and_finished_by_electron(store):
                                 native=True, gated=False)["result"]) == {"ok": True}
 
 
+@pytest.mark.parametrize("method", [
+    "gmail_search", "gmail_get", "outlook_search", "outlook_get", "github_workflow_runs", "github_run_get",
+])
+def test_cloud_native_tools_pass_the_dispatch_prefix_gate(store, method):
+    out = _dispatch(session_id="s1", call_id=f"cloud-{method}", name=method, params={}, native=True, gated=False)
+    assert out["execute"] == "native"
+
+
 def test_memory_write_is_gated_and_keeps_its_receipt(store):
     params = {"kind": "fact", "title": "Papel", "content": "El usuario usa A4"}
     blocked = _dispatch(session_id="s1", call_id="mem1", name="memory_remember", params=params)
