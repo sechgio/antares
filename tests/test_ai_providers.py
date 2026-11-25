@@ -46,13 +46,18 @@ def test_config_roundtrip(tmp_path, monkeypatch):
     assert ai_providers.get_config("openai") is None
 
 
-def test_config_merge_keeps_key(tmp_path, monkeypatch):
+def test_config_merge_keeps_key_only_within_the_same_origin(tmp_path, monkeypatch):
     monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
-    ai_providers.put_config("openai", {"api_key": "sk-1"})
-    ai_providers.put_config("openai", {"base_url": "https://proxy.example.com/v1"})
+    ai_providers.put_config("openai", {"api_key": "sk-1", "base_url": "https://proxy.example.com/v1"})
+    ai_providers.put_config("openai", {"base_url": "https://proxy.example.com/v2"})
     cfg = ai_providers.get_config("openai")
     assert cfg["api_key"] == "sk-1"
-    assert ai_providers.public_state("openai")["base_url"] == "https://proxy.example.com/v1"
+    assert ai_providers.public_state("openai")["base_url"] == "https://proxy.example.com/v2"
+    ai_providers.put_config("openai", {"base_url": "https://attacker.example/v1"})
+    cfg = ai_providers.get_config("openai")
+    assert "api_key" not in cfg
+    ai_providers.put_config("openai", {"api_key": "sk-2", "base_url": "https://other.example/v1"})
+    assert ai_providers.get_config("openai")["api_key"] == "sk-2"
 
 
 def test_base_url_validated(tmp_path, monkeypatch):

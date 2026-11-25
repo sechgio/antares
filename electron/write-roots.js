@@ -5,7 +5,6 @@ const { isPathInside } = require('./path-allowlist');
 
 const _allowedWriteRoots = new Set();
 const MAX_ALLOWED_WRITE_ROOTS = 500;
-const WRITE_ROOTS_FILE = 'antares-write-roots.json';
 
 function _addWriteRoot(root) {
   if (_allowedWriteRoots.has(root)) return false;
@@ -16,54 +15,7 @@ function _addWriteRoot(root) {
   return true;
 }
 
-function _persistedWriteRootsPath() {
-  try {
-    const { app } = require('electron');
-    const userData = app && typeof app.getPath === 'function' ? app.getPath('userData') : null;
-    return userData ? path.join(userData, WRITE_ROOTS_FILE) : null;
-  } catch {
-    return null;
-  }
-}
-
-function _persistWriteRoots() {
-  const file = _persistedWriteRootsPath();
-  if (!file) return;
-  try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify([..._allowedWriteRoots], null, 2), 'utf8');
-  } catch {}
-}
-
-function _loadPersistedWriteRoots() {
-  const file = _persistedWriteRootsPath();
-  if (!file) return;
-  try {
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!Array.isArray(raw)) return;
-    for (const entry of raw) {
-      if (typeof entry !== 'string' || !entry.trim()) continue;
-      try {
-        const resolved = path.resolve(entry.trim());
-        let canonical = resolved;
-        try {
-          canonical = fs.realpathSync(resolved);
-        } catch {
-          try {
-            canonical = fs.realpathSync(path.dirname(resolved));
-            canonical = path.join(canonical, path.basename(resolved));
-          } catch {
-            canonical = resolved;
-          }
-        }
-        _addWriteRoot(canonical);
-      } catch {}
-    }
-    if (_allowedWriteRoots.size >= MAX_ALLOWED_WRITE_ROOTS) _persistWriteRoots();
-  } catch {}
-}
-
-function _registerWriteRootFromPath(rawPath, persist = true) {
+function _registerWriteRootFromPath(rawPath) {
   if (typeof rawPath !== 'string' || !rawPath.trim()) return;
   const resolved = path.resolve(rawPath);
   let root;
@@ -73,7 +25,7 @@ function _registerWriteRootFromPath(rawPath, persist = true) {
   } catch {
     root = path.dirname(resolved);
   }
-  if (_addWriteRoot(root) && persist) _persistWriteRoots();
+  _addWriteRoot(root);
 }
 
 function _isUnderRegisteredWriteRoot(dir) {
@@ -159,7 +111,6 @@ function _assertSafePdfOutputPath(outputPath) {
 }
 
 module.exports = {
-  _loadPersistedWriteRoots,
   _registerWriteRootFromPath,
   _isUnderRegisteredWriteRoot,
   _isUnderStandardUserDir,

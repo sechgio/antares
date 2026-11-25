@@ -198,6 +198,10 @@ def resolve(value: object, grants: dict[str, JsonObject], root: Path, *, write: 
     if _in_workspace(path, root) or _folder_grant(path, grants):
         return path
     if path.is_file() and not path.is_dir():
+        if write:
+            raise ValueError(
+                "Un archivo adjuntado solo autoriza lectura; adjunta su carpeta para escribir"
+            )
         resource_grants.check(str(path), grants)
         return path
     if write:

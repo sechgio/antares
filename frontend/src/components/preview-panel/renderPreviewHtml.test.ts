@@ -241,3 +241,80 @@ describe("renderPreviewHtml — plantillas conocidas", () => {
     expect(html2.match(/photo-grid-compat-fix/g)?.length).toBe(1);
   });
 });
+
+describe("renderPreviewHtml — escape de datos y nombres en plantillas", () => {
+  const tpl = (content: string) => ({ name: "custom.html", content });
+
+  it("escapa nombres de archivo con markup en {{ img.name }} del loop", () => {
+    const evil = img('foto"><script>alert(1)</script>.png');
+    const t = tpl(
+      '{% for img in report.images %}<img src="{{ img.path }}" alt="{{ img.name }}">{% endfor %}',
+    );
+    const html = renderPreviewHtml({
+      customTemplate: t,
+      images: [evil],
+      imageUrls: ["blob:u1"],
+    });
+    expect(html).not.toContain('foto"><script>');
+    expect(html).toContain("foto&quot;&gt;&lt;script&gt;");
+    expect(html).not.toContain("<script>");
+  });
+
+  it("escapa report.images[N].name con markup", () => {
+    const evil = img('<b>bold</b>.png');
+    const t = tpl("<span>{{ report.images[0].name }}</span>");
+    const html = renderPreviewHtml({ customTemplate: t, images: [evil] });
+    expect(html).not.toContain("<b>bold</b>");
+    expect(html).toContain("&lt;b&gt;bold&lt;/b&gt;.png");
+  });
+
+  it("escapa valores de report.data.get con markup sin romper el documento", () => {
+    const t = tpl('<div data-x="{{ report.data.get(\'NIS\', \'-\') }}">{{ report.data.get(\'NIS\', \'-\') }}</div>');
+    const html = renderPreviewHtml({
+      customTemplate: t,
+      data: { col: '1" onmouseover="alert(1)' },
+      mappings: { nis: "col" },
+    });
+    expect(html).not.toContain('data-x="1" onmouseover');
+    expect(html).toContain("1&quot; onmouseover=&quot;alert(1)");
+  });
+
+  it("no altera datos benignos sin caracteres HTML", () => {
+    const t = tpl("<p>{{ report.data.get('NOMBRE', '-') }}</p>");
+    const html = renderPreviewHtml({
+      customTemplate: t,
+      data: { col: "Av. Los Pinos 123, Urb. Santa Catalina" },
+      mappings: { nombre: "col" },
+    });
+    expect(html).toContain("Av. Los Pinos 123, Urb. Santa Catalina");
+  });
+
+  it("escapa comillas en URLs de logo sustituidas en la plantilla", () => {
+    const t = tpl('<img src="{{ logo_left }}">');
+    const html = renderPreviewHtml({
+      customTemplate: t,
+      logoLeft: 'data:image/png;base64,AAA" onerror="x',
+    });
+    expect(html).not.toContain('AAA" onerror="x');
+    expect(html).toContain("AAA&quot; onerror=&quot;x");
+  });
+
+  it("los datos escapados parsean como texto inerte sin inyectar atributos ni nodos", () => {
+    const evil = img('a.png');
+    const t = tpl(
+      '{% for img in report.images %}<div alt="{{ img.name }}">{{ report.data.get(\'NIS\', \'-\') }}</div>{% endfor %}',
+    );
+    const malicious = img('x"><img src=y onerror=alert(1)>');
+    const html = renderPreviewHtml({
+      customTemplate: t,
+      images: [evil, malicious],
+      imageUrls: ["blob:u1", "blob:u2"],
+      data: { col: '<svg onload=alert(1)>' },
+      mappings: { nis: "col" },
+    });
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    expect(parsed.querySelector("img")).toBeNull();
+    expect(parsed.querySelector("svg")).toBeNull();
+    expect(parsed.body.textContent).toContain("<svg onload=alert(1)>");
+  });
+});

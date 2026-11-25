@@ -26,6 +26,9 @@ const RAW_OUTPUT_PATH_METHODS = new Set(
 const INTERNAL_METHODS = new Set(
   Object.keys(METHODS).filter((m) => METHODS[m].internal === true),
 );
+const PUBLIC_METHOD_NAMES = new Set(
+  Object.keys(METHODS).filter((m) => METHODS[m].internal !== true),
+);
 const READ_FILE_TOKEN_SCHEMAS = new Map(
   Object.keys(METHODS)
     .filter((m) => Array.isArray(METHODS[m].fileTokens))
@@ -75,6 +78,7 @@ module.exports = {
   IDEMPOTENT_METHODS,
   RAW_OUTPUT_PATH_METHODS,
   INTERNAL_METHODS,
+  PUBLIC_METHOD_NAMES,
   READ_FILE_TOKEN_SCHEMAS,
   METHOD_OUTPUT_PATH_KEYS,
   nativeMethods,

@@ -43,9 +43,30 @@ interface FrontendEventReport {
   requestId?: string;
 }
 
+// Mismas categorías que SENSITIVE_TEXT_RE de electron/app-log.js: la redacción
+// se aplica en origen para que secretos y PII no crucen el canal IPC.
+const SENSITIVE_TEXT_RE: RegExp[] = [
+  /(\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|secret|token|cookie)\s*[:=]\s*)(?:"[^",;]*"?|'[^',;]*'?|[^\s,;"']+)/gi,
+  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g,
+  /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
+  /(\bBearer\s+)[A-Za-z0-9._~+/=-]+/gi,
+  /(?:[A-Za-z]:\\|\\\\|\/(?:Users|home|tmp|var|private|opt|mnt|workspace)\/)[^\s"'`]+/g,
+];
+
+function redactSensitiveText(value: string): string {
+  let text = value;
+  for (const pattern of SENSITIVE_TEXT_RE) {
+    text = text.replace(pattern, (...matches: unknown[]) =>
+      typeof matches[1] === 'string' ? `${matches[1]}[REDACTED]` : '[REDACTED]',
+    );
+  }
+  return text;
+}
+
 function safeText(value: unknown, maxLength: number): string | undefined {
   if (typeof value !== 'string') return undefined;
-  const text = value.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, maxLength);
+  const redacted = redactSensitiveText(value);
+  const text = redacted.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, maxLength);
   return text || undefined;
 }
 

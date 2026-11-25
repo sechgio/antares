@@ -20,6 +20,31 @@ def test_db_export_devuelve_exported(monkeypatch) -> None:
     assert h.db_export({"path": "out.xlsx"}) == {"exported": 11}
 
 
+def test_db_export_usa_resolved_output_path(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(h, "exportar_excel", lambda p: calls.append(p) or 3)
+    assert h.db_export({
+        "path": "antares-write_token",
+        "_resolved_output_path": r"C:\destino\out.xlsx",
+    }) == {"exported": 3}
+    assert calls == [r"C:\destino\out.xlsx"]
+
+
+def test_db_export_rechaza_ads_en_nombre(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(h, "exportar_excel", lambda p: calls.append(p) or 1)
+    with pytest.raises(ValueError, match="Alternate Data Stream"):
+        h.db_export({"path": r"C:\destino\out.xlsx:secret"})
+    assert calls == []
+
+
+def test_db_export_permite_unidad_windows(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(h, "exportar_excel", lambda p: calls.append(p) or 1)
+    assert h.db_export({"path": r"C:\destino\out.xlsx"}) == {"exported": 1}
+    assert calls == [r"C:\destino\out.xlsx"]
+
+
 def test_db_clear_devuelve_cleared(monkeypatch) -> None:
     monkeypatch.setattr(h, "limpiar_base_datos", lambda: 4)
     assert h.db_clear({}) == {"cleared": 4}
@@ -33,6 +58,24 @@ def test_db_template_completa_extension_y_devuelve_path(monkeypatch) -> None:
 
     h.db_template({"path": "ya.xlsx"})
     assert calls[-1] == "ya.xlsx"
+
+
+def test_db_template_usa_resolved_output_path_para_escribir(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(h, "generar_plantilla_excel", lambda p: calls.append(p))
+    assert h.db_template({
+        "path": "antares-write_token",
+        "_resolved_output_path": r"C:\destino\plantilla.xlsx",
+    }) == {"path": "antares-write_token.xlsx"}
+    assert calls == [r"C:\destino\plantilla.xlsx"]
+
+
+def test_db_template_rechaza_ads_en_nombre(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(h, "generar_plantilla_excel", lambda p: calls.append(p))
+    with pytest.raises(ValueError, match="Alternate Data Stream"):
+        h.db_template({"path": "plantilla.xlsx:secret"})
+    assert calls == []
 
 
 def test_db_fields_devuelve_campos(monkeypatch) -> None:

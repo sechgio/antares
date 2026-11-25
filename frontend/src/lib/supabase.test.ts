@@ -95,4 +95,26 @@ describe('createSecureSupabaseStorage (sb-011)', () => {
     expect(puts.at(-1)).toEqual({ 'sb-seed': 'rota-do' });
     expect(storage!.getItem('nuevo')).toBeNull();
   });
+
+  it('limpia window.supabaseSessionSeed tras consumirlo y conserva los valores en el storage', async () => {
+    const win = window as unknown as { supabaseSessionSeed?: unknown };
+    win.supabaseSessionSeed = { 'sb-seed': 'secreto-consumido' };
+    const puts: Blob[] = [];
+    installBridge(puts);
+
+    const storage = createSecureSupabaseStorage();
+
+    expect(storage).not.toBeNull();
+    expect(win.supabaseSessionSeed ?? null).toBeNull();
+    expect(win.supabaseSessionSeed).not.toEqual({ 'sb-seed': 'secreto-consumido' });
+    expect(storage!.getItem('sb-seed')).toBe('secreto-consumido');
+  });
+
+  it('no toca el global cuando no hay seed que consumir', async () => {
+    const win = window as unknown as { supabaseSessionSeed?: unknown };
+    const puts: Blob[] = [];
+    installBridge(puts);
+    createSecureSupabaseStorage();
+    expect(win.supabaseSessionSeed).toBeUndefined();
+  });
 });

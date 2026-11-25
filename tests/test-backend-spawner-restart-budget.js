@@ -25,6 +25,8 @@ async function run() {
 
   const limit = getAutoRestartLimit();
 
+  const resetTimerCount = () => [...timers.inertTimers].filter((timer) => timer.delay === 60_000).length;
+
   async function crashReadyBackend() {
     const proc = getProcess();
     if (!proc) return false;
@@ -35,12 +37,15 @@ async function run() {
   try {
     await startPythonBackend(true);
     assert(getState() === STATE.READY, 'Backend should start ready');
+    assert(resetTimerCount() === 1, 'Successful start should arm the restart budget reset timer');
 
     for (let i = 0; i < limit; i++) {
       const crashed = await crashReadyBackend();
       assert(crashed, `Should crash backend on attempt ${i + 1}`);
+      assert(resetTimerCount() === 0, `Crash ${i + 1} should cancel the pending restart budget reset timer`);
       const recovered = await waitFor(() => getState() === STATE.READY, 10000);
       assert(recovered, `Backend should recover to ready after crash ${i + 1}`);
+      assert(resetTimerCount() === 1, `Recovery ${i + 1} should re-arm the restart budget reset timer`);
     }
 
     const crashedBeforeFatal = await crashReadyBackend();

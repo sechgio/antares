@@ -10,8 +10,8 @@ function resolveAllowedMethods() {
     } catch {}
   }
   try {
-    const { METHOD_NAMES: ALLOWED_RENDERER_METHODS } = require('../shared/ipc-method-catalog');
-    return new Set(ALLOWED_RENDERER_METHODS);
+    const { PUBLIC_METHOD_NAMES } = require('../shared/ipc-method-catalog');
+    return new Set(PUBLIC_METHOD_NAMES);
   } catch {
     return new Set();
   }

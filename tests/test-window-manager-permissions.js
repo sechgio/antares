@@ -30,12 +30,12 @@ function run() {
   for (const permission of [
     'media',
     'display-capture',
-    'clipboard-read',
     'clipboard-sanitized-write',
   ]) {
     assert(allowed.includes(permission), `allowlist includes ${permission}`);
   }
-  assert(allowed.length === 4, 'allowlist stays minimal (deny-by-default, no extra grants)');
+  assert(!allowed.includes('clipboard-read'), 'clipboard-read stays denied by default');
+  assert(allowed.length === 3, 'allowlist stays minimal (deny-by-default, no extra grants)');
 
   assert(
     /callback\(\s*isTrustedMainFrame\(webContents\)\s*&&\s*allowedPermissions\.has\(permission\)\s*\)/.test(source),

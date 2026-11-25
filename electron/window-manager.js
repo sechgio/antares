@@ -25,7 +25,7 @@ function createWindow(isDev) {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   const iconPath = path.join(__dirname, '..', 'assets', 'icon.ico');
 
-  const { METHOD_NAMES: allowedNow } = require('../shared/ipc-method-catalog');
+  const { PUBLIC_METHOD_NAMES: allowedNow } = require('../shared/ipc-method-catalog');
   const allowedList = [...allowedNow];
   const allowedMethodsArg = `--allowed-ipc-methods=${JSON.stringify(allowedList)}`;
   const isPackagedArg = `--app-is-packaged=${isDev ? '0' : '1'}`;
@@ -79,7 +79,7 @@ function createWindow(isDev) {
     });
   });
 
-  const allowedPermissions = new Set(['media', 'display-capture', 'clipboard-read', 'clipboard-sanitized-write']);
+  const allowedPermissions = new Set(['media', 'display-capture', 'clipboard-sanitized-write']);
   const { isTrustedRendererUrl } = require('./renderer-trust');
   const isTrustedMainFrame = (webContents) => {
     if (!webContents || webContents.isDestroyed?.()) return false;

@@ -197,14 +197,14 @@ def test_custom_provider_roundtrip_and_protocol(provider_server, monkeypatch, pr
         assert followup["messages"][-1]["content"][0]["tool_use_id"] == "call-1"
 
 
-def test_model_and_url_can_be_reset_without_replacing_key(provider_server):
+def test_model_and_url_can_be_reset_but_key_must_be_reentered(provider_server):
     base, _ = provider_server
     ai_providers.put_config("openai", {"api_key": "test-key", "base_url": base, "model": " custom-model "})
     ai_providers.put_config("openai", {"api_key": "new-key"})
     assert ai_providers.public_state("openai")["default_model"] == "custom-model"
     assert ai_providers.public_state("openai")["base_url"] == base
     ai_providers.put_config("openai", {"model": "", "base_url": ""})
-    assert ai_providers.get_config("openai") == {"api_key": "new-key"}
+    assert ai_providers.get_config("openai") == {}
     assert ai_providers.public_state("openai")["default_model"] == "gpt-4o-mini"
 
 
