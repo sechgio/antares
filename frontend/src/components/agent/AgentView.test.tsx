@@ -492,6 +492,30 @@ it('muestra seis agentes y despliega el resto con Ver todos', async () => {
   expect(agents.queryByRole('button', { name: /Ver todos/ })).not.toBeInTheDocument();
 });
 
+it('fija agentes en una cuadrícula y los desfija desde el menú', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [
+    { id: 'a1', name: 'Kai', description: 'Informes', instructions: 'x', starter: '', tools: null, created_at: 1, updated_at: 1 },
+    { id: 'a2', name: 'Shen', description: 'Fotos', instructions: 'x', starter: '', tools: null, created_at: 1, updated_at: 1 },
+  ] });
+  render(<AgentView />);
+  const agents = within(await screen.findByRole('region', { name: 'Agentes' }));
+  await agents.findByRole('img', { name: 'Kai' });
+  expect(agents.queryByRole('group', { name: 'Agentes fijados' })).not.toBeInTheDocument();
+
+  fireEvent.click(agents.getByRole('button', { name: 'Opciones de Kai' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Fijar' }));
+  const grid = within(agents.getByRole('group', { name: 'Agentes fijados' }));
+  expect(grid.getByRole('img', { name: 'Kai' })).toBeInTheDocument();
+  expect(grid.queryByText('Informes')).not.toBeInTheDocument();
+  expect(grid.queryByRole('img', { name: 'Shen' })).not.toBeInTheDocument();
+  expect(JSON.parse(localStorage.getItem('antares-agent-sidebar') ?? '{}')).toMatchObject({ pinned: ['a1'] });
+
+  fireEvent.click(grid.getByRole('button', { name: 'Opciones de Kai' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Desfijar' }));
+  expect(agents.queryByRole('group', { name: 'Agentes fijados' })).not.toBeInTheDocument();
+});
+
 it('oculta y muestra la barra lateral sin perder la conversación ni el borrador', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,

@@ -1534,7 +1534,7 @@ export default function AgentView({
               const arrangedSessions = arrangeSidebar(visibleSessions, sidebarPrefs, showHidden || Boolean(query));
               const hiddenCount = arrangedProfiles.hiddenCount + arrangedSessions.hiddenCount;
               const agentGroups = [
-                { label: '', items: arrangedProfiles.pinned },
+                { label: '', items: arrangedProfiles.pinned, grid: true },
                 ...arrangedProfiles.sections,
                 { label: '', items: arrangedProfiles.rest },
               ];
@@ -1600,6 +1600,59 @@ export default function AgentView({
                   </SidebarItemMenu>
                 );
               };
+              const profileTile = (profile: AgentProfile) => {
+                const menu = sidebarMenu(profile.id, profile.name, 'agente');
+                const active = activeProfile?.id === profile.id;
+                return (
+                  <SidebarItemMenu
+                    key={profile.id}
+                    {...menu}
+                    onRename={(name) => renameProfile(profile, name)}
+                    onDelete={() => void removeProfile(profile)}
+                    className={`group relative flex min-w-0 flex-col items-center rounded-2xl px-1 pb-2 pt-2.5 transition-colors ${active ? 'bg-[var(--bg-input)]' : 'hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]'} ${menu.hidden ? 'opacity-60' : ''}`}
+                  >
+                    <button
+                      type="button"
+                      className="flex w-full min-w-0 flex-col items-center gap-1.5"
+                      title={`Nueva conversación con ${profile.name}`}
+                      onClick={() => {
+                        markRead(profile.id);
+                        void newSession(profile);
+                      }}
+                    >
+                      <span className="relative">
+                        <AgentAvatar
+                          seed={profile.id}
+                          color={profile.color}
+                          name={profile.name}
+                          size={48}
+                          className={active ? 'agent-avatar-active' : ''}
+                        />
+                        {menu.unread && (
+                          <span
+                            aria-hidden="true"
+                            className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-[var(--bg-base)] bg-[var(--accent-primary)]"
+                          />
+                        )}
+                      </span>
+                      <span
+                        className={`w-full truncate text-center text-[12px] leading-4 text-[var(--text-primary)] ${menu.unread ? 'font-semibold' : 'font-medium'}`}
+                      >
+                        {profile.name}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="absolute left-1.5 top-1.5 hidden size-6 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_8%,transparent)] hover:text-[var(--text-primary)] group-hover:flex group-focus-within:flex group-data-[open]:flex"
+                      aria-label={`Editar agente ${profile.name}`}
+                      title="Editar"
+                      onClick={() => setEditing(profile)}
+                    >
+                      <Pencil size={13} />
+                    </button>
+                  </SidebarItemMenu>
+                );
+              };
               const sessionRow = (s: AgentSession) => (
                 <SessionRow
                   key={s.id}
@@ -1649,6 +1702,10 @@ export default function AgentView({
                           <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
                           {group.items.map(profileRow)}
                         </section>
+                      ) : 'grid' in group && group.grid ? (
+                        <div key={`agents-${index}`} role="group" aria-label="Agentes fijados" className="mb-1 grid grid-cols-3 gap-1">
+                          {group.items.map(profileTile)}
+                        </div>
                       ) : (
                         <div key={`agents-${index}`} className="flex flex-col gap-0.5">
                           {group.items.map(profileRow)}
