@@ -1433,8 +1433,9 @@ it('permite quitar la carpeta de trabajo desde el compositor', async () => {
   expect(screen.queryByLabelText('Quitar la carpeta de trabajo')).toBeNull();
 });
 
-it('abre la conversación existente de un agente y crea una solo cuando no tiene', async () => {
+it('reutiliza la conversación desde la tarjeta fijada y el selector compacto', async () => {
   vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
+  localStorage.setItem('antares-agent-sidebar', JSON.stringify({ pinned: ['p1'] }));
   vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [
     {
       id: 'p1', name: 'Informe mensual', description: 'Cortes del mes', instructions: 'x', starter: 'Prepara el informe',
@@ -1456,17 +1457,54 @@ it('abre la conversación existente de un agente y crea una solo cuando no tiene
   render(<AgentView />);
   await act(async () => {});
 
-  await act(async () => { fireEvent.click(screen.getByTitle('Abrir conversación con Informe mensual')); });
-  await waitFor(() => expect(list).toHaveBeenCalledWith('s9'));
+  const tile = within(screen.getByRole('group', { name: 'Agentes fijados' })).getByTitle(/conversación con Informe mensual/);
+  await act(async () => { fireEvent.click(tile); });
   expect(create).not.toHaveBeenCalled();
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('');
+  await waitFor(() => expect(list).toHaveBeenCalledWith('s9'));
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador en curso' } });
+  await act(async () => { fireEvent.click(tile); });
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador en curso');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Antigua' })); });
+  await act(async () => { fireEvent.click(tile); });
+  expect(list).toHaveBeenLastCalledWith('s8');
+  fireEvent.click(screen.getByRole('button', { name: 'Usar agente' }));
+  await act(async () => { fireEvent.click(screen.getByRole('option', { name: 'Informe mensual' })); });
+  expect(list).toHaveBeenLastCalledWith('s8');
+  expect(create).not.toHaveBeenCalled();
 
   await act(async () => { fireEvent.click(screen.getByTitle('Abrir conversación con Revisión')); });
   expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba', profile_id: 'p2' });
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Revisa el documento');
 });
 
-it('crea una conversación nueva desde el botón del agente aunque ya tenga una', async () => {
+it('crea un solo primer chat ante clics rápidos y no cambia la selección al terminar tarde', async () => {
+  const profile = {
+    id: 'p1', name: 'Revisión', description: '', instructions: 'x', starter: 'Revisa el documento',
+    tools: null, created_at: 1, updated_at: 1,
+  };
+  const first = { ...session, id: 's9', title: 'Revisión inicial', profile: { id: profile.id, name: profile.name } };
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [profile] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const creation = deferred<{ session: AgentSession }>();
+  const create = vi.spyOn(agentApi, 'agentSessionCreate').mockReturnValue(creation.promise);
+  render(<AgentView />);
+  const original = await screen.findByRole('button', { name: 'Primera' });
+  const profileButton = screen.getByTitle('Abrir conversación con Revisión');
+  await act(async () => { fireEvent.click(profileButton); });
+  await act(async () => { fireEvent.click(profileButton); });
+  expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba', profile_id: profile.id });
+  await act(async () => { fireEvent.click(original); });
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [first, session] });
+  await act(async () => { creation.resolve({ session: first }); });
+  expect(original).toHaveAttribute('aria-current', 'page');
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('');
+  await act(async () => { fireEvent.click(profileButton); });
+  expect(screen.getByRole('button', { name: first.title })).toHaveAttribute('aria-current', 'page');
+  expect(create).toHaveBeenCalledTimes(1);
+});
+
+it.each([false, true])('permite crear otra conversación explícita con el agente (fijado: %s)', async (pinned) => {
   vi.spyOn(aiProvidersApi, 'aiProvidersList').mockResolvedValue({ providers: [
     { id: 'local', label: 'Local', configured: true, has_key: true, needs_key: false, default_model: 'prueba' },
   ] } as never);
@@ -1477,9 +1515,15 @@ it('crea una conversación nueva desde el botón del agente aunque ya tenga una'
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [{ ...session, id: 's9', profile: { id: 'p1', name: 'Informe mensual' } }] });
   const create = vi.spyOn(agentApi, 'agentSessionCreate').mockResolvedValue({ session: { ...session, id: 's9', profile: { id: 'p1', name: 'Informe mensual' } } });
+  if (pinned) localStorage.setItem('antares-agent-sidebar', JSON.stringify({ pinned: ['p1'] }));
   render(<AgentView />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Nueva conversación con Informe mensual' })); });
+  if (pinned) {
+    fireEvent.click(screen.getByRole('button', { name: 'Opciones de Informe mensual' }));
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'Nueva conversación' })); });
+  } else {
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Nueva conversación con Informe mensual' })); });
+  }
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ profile_id: 'p1' }));
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Prepara el informe de este mes');
 });
