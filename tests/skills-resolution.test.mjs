@@ -1,6 +1,5 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,7 +48,7 @@ print(json.dumps({'catalog': catalog, 'contents': contents, 'scans': catalog_sca
 
 let root;
 beforeEach(() => {
-  root = realpathSync.native(mkdtempSync(path.join(os.tmpdir(), 'antares-skills-')));
+  root = realpathSync.native(mkdtempSync(path.join(repo, '_temp-antares-skills-')));
 });
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });

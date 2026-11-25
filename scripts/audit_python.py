@@ -9,9 +9,10 @@ ROOT = Path(__file__).resolve().parent.parent
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="antares-audit-") as directory:
         requirements = str(Path(directory) / "requirements.txt")
+        uv_cache = str(Path(directory) / "uv-cache")
         exported = subprocess.run(
             [
-                "uv", "export", "--locked", "--no-dev", "--no-emit-project",
+                "uv", "export", "--locked", "--no-dev", "--no-emit-project", "--cache-dir", uv_cache,
                 "--format", "requirements-txt", "--output-file", requirements,
             ],
             cwd=ROOT,
@@ -21,7 +22,10 @@ def main() -> int:
         if exported.returncode:
             return exported.returncode
         return subprocess.run(
-            [sys.executable, "-m", "pip_audit", "--require-hashes", "--disable-pip", "-r", requirements],
+            [
+                sys.executable, "-m", "pip_audit", "--require-hashes", "--disable-pip",
+                "--cache-dir", str(Path(directory) / "pip-audit-cache"), "-r", requirements,
+            ],
             cwd=ROOT,
             check=False,
         ).returncode
