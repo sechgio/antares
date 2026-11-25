@@ -1028,6 +1028,19 @@ export default function AgentView({
     if (sidebarPrefs.unread.includes(id)) setSidebarPrefs((p) => ({ ...p, unread: toggleId(p.unread, id, false) }));
   };
 
+  const openProfileSession = (profile: AgentProfile) => {
+    markRead(profile.id);
+    const existing = sessions
+      .filter((item) => item.profile?.id === profile.id)
+      .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))[0];
+    if (!existing) {
+      void newSession(profile);
+      return;
+    }
+    markRead(existing.id);
+    setSessionId(existing.id);
+  };
+
   const sidebarMenu = (id: string, name: string, noun: 'conversación' | 'agente') => ({
     id,
     name,
@@ -1567,11 +1580,8 @@ export default function AgentView({
                     <button
                       type="button"
                       className="flex min-w-0 flex-1 flex-col text-left"
-                      title={`Nueva conversación con ${profile.name}`}
-                      onClick={() => {
-                        markRead(profile.id);
-                        void newSession(profile);
-                      }}
+                      title={`Abrir conversación con ${profile.name}`}
+                      onClick={() => openProfileSession(profile)}
                     >
                       <span
                         className={`truncate text-[13px] leading-5 text-[var(--text-primary)] ${menu.unread ? 'font-semibold' : 'font-medium'}`}
@@ -1588,6 +1598,18 @@ export default function AgentView({
                         className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent-primary)] group-hover:hidden"
                       />
                     )}
+                    <button
+                      type="button"
+                      className="hidden size-6 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_8%,transparent)] hover:text-[var(--text-primary)] group-hover:flex group-focus-within:flex group-data-[open]:flex"
+                      aria-label={`Nueva conversación con ${profile.name}`}
+                      title="Nueva conversación"
+                      onClick={() => {
+                        markRead(profile.id);
+                        void newSession(profile);
+                      }}
+                    >
+                      <Plus size={13} />
+                    </button>
                     <button
                       type="button"
                       className="hidden size-6 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[color:color-mix(in_srgb,var(--text-primary)_8%,transparent)] hover:text-[var(--text-primary)] group-hover:flex group-focus-within:flex group-data-[open]:flex"
