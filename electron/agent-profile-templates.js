@@ -14,6 +14,7 @@ const PROFILE_FIELDS = [
   'role',
   'instructions',
   'soul',
+  'identity',
   'user',
   'starter',
   'memory_scope',
@@ -21,7 +22,7 @@ const PROFILE_FIELDS = [
 ];
 
 // includeUser=false omite USER.md (datos del usuario) al compartir la plantilla.
-function exportTemplate(profile, { includeUser = true } = {}) {
+function exportTemplate(profile, { includeUser = false } = {}) {
   if (!profile || typeof profile !== 'object') throw new Error('El perfil no existe');
   const bundle = { format: TEMPLATE_FORMAT, name: profile.name };
   for (const field of PROFILE_FIELDS.slice(1)) {
@@ -53,7 +54,7 @@ function validateTemplate(raw) {
   );
   if (unknown.length) throw new Error(`La plantilla tiene campos no reconocidos: ${unknown.join(', ')}`);
   if (typeof raw.name !== 'string' || !raw.name.trim()) throw new Error('La plantilla necesita un nombre');
-  for (const field of ['color', 'description', 'role', 'instructions', 'soul', 'user', 'starter', 'memory_scope']) {
+  for (const field of ['color', 'description', 'role', 'instructions', 'soul', 'identity', 'user', 'starter', 'memory_scope']) {
     if (raw[field] !== undefined && typeof raw[field] !== 'string') throw new Error(`El campo ${field} debe ser texto`);
   }
   if (raw.daily_tokens !== undefined && raw.daily_tokens !== null && !Number.isInteger(raw.daily_tokens)) {

@@ -194,7 +194,34 @@ function spec(name, [label, schema], gated) {
   };
 }
 
+const PROFILE_ONBOARDING_SPEC = {
+  name: 'profile_onboarding_save',
+  description: 'Agente · profile_onboarding_save (efecto: requiere aprobación del usuario): guarda la identidad acordada del agente y las preferencias estables del usuario en el perfil de esta conversación. Solo úsala durante la presentación inicial o cuando el usuario pida rehacerla, después de confirmar el contenido exacto. No guarda secretos.',
+  gated: true,
+  kind: 'native',
+  module: 'agent',
+  label: 'Guardar la identidad y preferencias del agente',
+  inputSchema: {
+    type: 'object', additionalProperties: false,
+    properties: {
+      confirmed: { type: 'boolean', description: 'Debe ser true solo tras confirmación explícita del usuario' },
+      identity: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 80 },
+          role: { type: 'string', minLength: 1, maxLength: 160 },
+          tone: { type: 'string', minLength: 1, maxLength: 240 },
+          avatar: { type: 'string', maxLength: 32 },
+        },
+        required: ['name', 'role', 'tone'],
+      },
+      user: { type: 'string', minLength: 1, maxLength: 4000, description: 'Preferencias estables del usuario para USER.md' },
+    },
+    required: ['confirmed', 'identity', 'user'],
+  },
+};
 const SPECS = [
+  PROFILE_ONBOARDING_SPEC,
   ...Object.entries(AUTOIMG_READS).map(([name, def]) => spec(name, def, false)),
   ...Object.entries(AUTOIMG_EFFECTS).map(([name, def]) => spec(name, def, true)),
   ...Object.entries(REPORT_EXPORTS).map(([name, def]) => ({
@@ -369,6 +396,7 @@ async function runNativeTool(name, params, { sessionId, approvedContext, browser
       throw new Error('La cuenta, los permisos o la hoja cambiaron después de aprobar; solicita una nueva aprobación');
     }
   }
+  if (name === 'profile_onboarding_save') return require('./agent-profiles').saveSessionOnboarding(sessionId, params || {});
   if (CLOUD[name]) return CLOUD[name].run(name, params || {}, { dir: draftsDir(sessionId) });
   if (CUA.has(name)) return require('./agent-cua').run(name, params || {}, { sessionId, dir: `${draftsDir(sessionId)}.screens` });
   if (WEB[name]) {

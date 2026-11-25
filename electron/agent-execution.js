@@ -1894,6 +1894,7 @@ async function dispatchTool(spec, args, sessionId, api, context) {
         name: profile.name,
         role: profile.role || 'explorer',
         instructions: profile.instructions,
+        ...(profile.identity ? { identity: profile.identity } : {}),
         tools: allows ? enabled.filter(allows) : null,
         memory_scope: profile.memory_scope || 'shared-read',
         remaining_tokens: budget ? budget.limit - budget.used : null,
