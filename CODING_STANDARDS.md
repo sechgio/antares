@@ -2,6 +2,12 @@
 
 Referencia por área para las tareas enrutadas desde [AGENTS.md](AGENTS.md). Lee las secciones aplicables; la política de cambios mínimos de ese archivo rige también aquí.
 
+## Comentarios
+
+- Un comentario dice lo que el código no puede: un hecho impuesto desde fuera (comportamiento de un vendor, CLI, sistema operativo, protocolo o versión de Electron, con su versión cuando la tenga), el contrato de un tipo público de `shared/` o del bridge IPC, un invariante de seguridad o un riesgo abierto, o el enlace a un issue upstream.
+- Lo que el código sí puede decir va en el código: un nombre mejor, un tipo, una función extraída. La historia de un cambio la cuenta git.
+- Una regla («nunca X», «debe coincidir con Y») pertenece a un tipo, un test o una guarda; el comentario es el último recurso.
+
 ## Backend
 
 - Python nuevo usa indentación de 4 espacios, type hints, `snake_case` y clases `PascalCase`. Consulta Ruff y mypy en `pyproject.toml`; respeta el largo de línea configurado aunque `E501` esté ignorado.
@@ -39,6 +45,9 @@ Referencia por área para las tareas enrutadas desde [AGENTS.md](AGENTS.md). Lee
 - Lecturas desde el renderer usan tokens de capacidad `file_token`, diálogos nativos aprobados o staging binario. Las escrituras pasan por roots/tokens de escritura. Conserva el rechazo de traversal, symlinks y rutas no permitidas; el renderer no envía rutas absolutas arbitrarias para leer.
 - Conserva el flujo de `electron/dialog-handlers.js`, `electron/file-capabilities.js`, `electron/ipc-file-policy.js` y `electron/path-allowlist.js`.
 - Credenciales, secretos y service-role keys permanecen fuera de la UI. `VITE_*` es configuración pública del cliente.
+- **Los formatos persistidos evolucionan en dos releases cuando el cambio rompe la lectura anterior.** Un cambio aditivo sale en una: campo opcional nuevo, archivo, tabla o columna nueva, relleno único guardado por marker. Un cambio rompiente —renombrar o mover archivos, cambiar el significado de un campo, subir la `version` de un store— primero publica el código que lee el formato nuevo junto al viejo, y solo una release después empieza a escribirlo: así se implementa la invariante de datos del usuario de [AGENTS.md](AGENTS.md).
+- Un store que encuentra un formato más nuevo de lo que entiende falla explícito en lugar de arrancar vacío o descartar lo que no reconoce; los archivos corruptos se apartan con copia (`backup_corrupt_file` en `backend/core/json_store.py`), no se sobrescriben.
+- Las migraciones SQLite usan `MigrationManager` de `backend/core/migrations.py`: idempotentes, registradas en `_schema_migrations` y seguras de ejecutar dos veces.
 
 ## Canvas
 
@@ -56,6 +65,16 @@ Referencia por área para las tareas enrutadas desde [AGENTS.md](AGENTS.md). Lee
 - El primer sync no borra ni sobrescribe silenciosamente documentos locales. Un remoto más nuevo reemplaza solo un documento limpio y reinicia las pilas RAM de undo/redo.
 - Para chunks de Canvas, aplica los budgets de [Entorno y calidad](#entorno-y-calidad).
 
+## Agente
+
+El agente del producto reparte su implementación entre las tools de `backend/core/agent/`, el runtime y la orquestación de `electron/agent-*.js` y la UI de `frontend/src/components/agent/`. Sus contratos transversales son `shared/agent-modules.json`, `shared/agent-plan.json`, `shared/agent-channels.json`, `shared/agent-tool-output.json` y `electron/agent-cua-tools.json`; al modificarlos aplica la disciplina de [IPC y contratos](#ipc-y-contratos).
+
+- **Todo acceso a recursos pasa por un grant explícito.** El agente lee un archivo solo con un grant de `backend/core/agent/resource_grants.py` o `path_grants.py`, que registra provenance y revisión; una ruta del usuario sin grant se rechaza. Si un flujo necesita relajar un grant para funcionar, el flujo está mal, no el grant.
+- **La salida del modelo es input no confiable.** `backend/core/agent/approval_guard.py` y `electron/agent-policy-engine.js` tratan los comandos y rutas propuestos como hostiles: ante una duda de parseo se escala al humano, solo la lectura pura se auto-aprueba, un allow/ask exige que todos los segmentos del comando coincidan con la regla, y la ejecución dinámica o la redirección bloquean esa herencia. Estas propiedades son deliberadas: no las relajes para hacer pasar un test ni un flujo.
+- **Las tool specs son planas y enseñan.** Los `inputSchema` que cruzan hacia el modelo (`TOOL_SPECS` por módulo, agregados en `backend/core/agent/agent_tools.py`) son un único objeto plano: `oneOf`/`anyOf`/`allOf`/`const` se pierden en los conversores de los providers y el modelo adivina formas que nunca vio. Las reglas por variante van en el `description` con valores literales, la validación normaliza lo que tiene un significado obvio antes de rechazar, y un error incluye un ejemplo copiable.
+- **La superficie de tools tiene presupuesto de tokens.** `scripts/dump_agent_tool_specs.py` reproduce el catálogo que recibe el puente y `scripts/check-budgets.js` lo mide contra `agentPrompt` en `shared/budgets.json`; al añadir o reescribir tools, el budget se cumple antes de pedir un aumento.
+- La cobertura de aceptación del agente vive en `tests/test_agent_acceptance_inventory.py` y la familia `tests/test_agent_*`: un comportamiento nuevo de tools o grants extiende esa cobertura.
+
 ## Supabase
 
 - `supabase/migrations/` es la fuente de verdad del esquema. Conserva RLS, least privilege y la separación de funciones privadas; los problemas de permisos no se resuelven exponiendo tablas o funciones privilegiadas al cliente.
@@ -72,6 +91,15 @@ Referencia por área para las tareas enrutadas desde [AGENTS.md](AGENTS.md). Lee
 - `scripts/check_any_guard.py` requiere excepciones explícitas y justificadas. Para límites de calidad y bundles consulta `.quality-baseline.json`, `shared/budgets.json`, `scripts/quality-ratchet.js` y `scripts/check-budgets.js`; los aumentos de techo siguen la política de AGENTS.
 - Toda guarda nueva (lint, check, ratchet, patrón prohibido) necesita fixtures positivo y negativo verificados por un test: el fixture malo debe dispararla y el bueno pasar. Una guarda que no puede demostrar que sigue disparando muere en silencio y da seguridad falsa.
 - Cumple los budgets de Canvas y shell en `shared/budgets.json` y `scripts/check-budgets.js`, incluidos límites de incremento, vendors iniciales y modulepreload.
+- `scripts/quality-ratchet.js` cuenta además los archivos fuente de más de 500 líneas (`largeFiles` en `.quality-baseline.json`) con dirección `max`: el recuento no puede subir, así que un archivo fuente nuevo se escribe por debajo de ese umbral.
+
+## Pruebas
+
+- **Ningún test toca el store real del usuario.** `tests/conftest.py` redirige `LOCALAPPDATA` y `XDG_DATA_HOME` a un temporal por proceso al importarse, antes de que cualquier módulo de backend calcule sus rutas, y los backend lanzados como subproceso lo heredan. Un test que escribe en el store real contamina la máquina del desarrollador y deja de ser reproducible.
+- Para probar el backend como subproceso usa `spawn_backend` y `await_ready` de `tests/conftest.py`: drenan stderr y esperan el handshake `ready` en lugar de adivinar tiempos.
+- **Espera el evento, no el tiempo.** Un test nuevo no sincroniza con `time.sleep` ni pausas fijas: espera la condición observable que prueba el comportamiento (`waitFor` de `tests/helpers/harness.js` en Node, polling con deadline en pytest). Un test que solo pasa con una pausa fija es inestable por diseño.
+- Para falsificar procesos o módulos en los tests de Electron usa los fakes de `tests/helpers/harness.js` (`makeFakeProc`, `patchSpawn`, `stubModule`) y restáuralos en el `finally`; no reimplementes stubs de `child_process` por archivo.
+- La higiene de la suite Vitest (`isolate: false`, `mockReset`, fan-out de `onNotify`) está en [AGENTS.md](AGENTS.md#limpieza-en-pruebas-frontend-vitest).
 
 ## Git, PR y releases
 

@@ -30,8 +30,10 @@ Todas las demás reglas de este archivo y de `CODING_STANDARDS.md` son **default
 | React, controles, navegación, textos, preview o HTML/PDF | [Frontend](CODING_STANDARDS.md#frontend) |
 | Rutas, lectura/escritura, salidas generadas, plantillas, assets o credenciales | [Persistencia y seguridad](CODING_STANDARDS.md#persistencia-y-seguridad) |
 | Canvas, historial, gestos, exportación, sync, montaje en `App.tsx` o flush de cierre | [Canvas](CODING_STANDARDS.md#canvas) |
+| Agente del producto: herramientas, skills, memoria, permisos, navegador, computer-use, delegación o `shared/agent-*.json` | [Agente](CODING_STANDARDS.md#agente) |
 | Auth, conectividad cloud, Supabase, RLS, migraciones o Edge Functions | [Supabase](CODING_STANDARDS.md#supabase) |
 | Instalación, build, calidad o configuración de herramientas | [Entorno y calidad](CODING_STANDARDS.md#entorno-y-calidad) |
+| Pruebas pytest, harness de Node o aislamiento del store de usuario en tests | [Pruebas](CODING_STANDARDS.md#pruebas) |
 | Commit, PR, publicación, fixes de CI o release | [Git, PR y releases](CODING_STANDARDS.md#git-pr-y-releases) |
 
 ## Política de cambios mínimos (HARD RULE)
@@ -75,6 +77,7 @@ Para diffs de más de 400 líneas efectivas, `cambio amplio:` o la etiqueta `siz
 - Comprueba las acciones reversas de cada cambio de estado: activar/desactivar, pausar/reanudar, revocar/reconectar, silenciar/reactivar, bloquear/desbloquear. Si el cambio toca estado persistido, incluye un reinicio de la app en la verificación.
 - Para un cambio de comportamiento visible, verifica en la app real además de en tests: arranca con `bun run dev:app` (o `bun run preview:unpacked` para el flujo empaquetado) y recorre el camino del usuario con su acción reversa. La skill `smoke`, si está instalada, describe el formato del plan y del reporte.
 - Debilitar una prueba de la que depende una comprobación es en sí mismo un riesgo: si un diff toca tests de paridad, de migraciones o de seguridad, revisa esos hunks con el mismo cuidado que el código que protegen.
+- La cobertura automatizada y sus límites declarados se mapean en [docs/verification/README.md](docs/verification/README.md): al añadir comportamiento verificable extiende la cobertura, y lo que siga sin ella se declara allí.
 
 ## Procesos locales
 
@@ -94,6 +97,6 @@ La suite corre con `isolate: false`, orden aleatorio (`shuffle`) y `mockReset: t
 
 ## Restricción de Markdown (HARD RULE)
 
-Solo se permite commit o push de estos Markdown: `AGENTS.md`, `CODING_STANDARDS.md`, `CHANGELOG.md`, `CLAUDE.md`, `README.md`, `CONTEXT.md`, `changelog.d/*.md`, `docs/adr/*.md`, `docs/adr/README.md` y `.github/pull_request_template.md`.
+Solo se permite commit o push de estos Markdown: `AGENTS.md`, `CODING_STANDARDS.md`, `CHANGELOG.md`, `CLAUDE.md`, `README.md`, `CONTEXT.md`, `changelog.d/*.md`, `docs/adr/*.md`, `docs/adr/README.md`, `docs/verification/*.md` y `.github/pull_request_template.md`.
 
 Cualquier otro Markdown, incluidos planes, notas, drafts y reportes temporales, debe permanecer local, añadirse a `.gitignore` o eliminarse antes del commit/PR.

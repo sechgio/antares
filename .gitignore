@@ -78,6 +78,8 @@ opencode.json
 docs/*
 !docs/adr/
 !docs/adr/**
+!docs/verification/
+!docs/verification/**
 
 media/*
 !media/manifest.json
