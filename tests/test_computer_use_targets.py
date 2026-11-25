@@ -68,3 +68,29 @@ def test_check_window_detects_closed_window():
     cache.remember_windows([_window()])
     with pytest.raises(DriverError, match="ya no existe"):
         cache.check_window("w1a2b", alive=False)
+
+
+def test_raw_element_devuelve_el_elemento_retenido_tras_window_state():
+    cache = TargetCache()
+    cache.remember_windows([_window()])
+    sentinel = object()
+    cache.remember_elements("w1a2b", cache.generation, [_element("e0", "1,2,3")], {"1,2,3": sentinel})
+    assert cache.raw_element("w1a2b", "e0") is sentinel
+
+
+def test_raw_element_ausente_sin_retencion_o_elemento_desconocido():
+    cache = TargetCache()
+    cache.remember_windows([_window()])
+    cache.remember_elements("w1a2b", cache.generation, [_element("e0", "1,2,3")])
+    assert cache.raw_element("w1a2b", "e0") is None
+    cache.remember_elements("w1a2b", cache.generation, [_element("e0", "1,2,3")], {"1,2,3": object()})
+    assert cache.raw_element("w1a2b", "e9") is None
+    assert cache.raw_element("w9z", "e0") is None
+
+
+def test_new_enumeration_drops_raw_elements():
+    cache = TargetCache()
+    cache.remember_windows([_window()])
+    cache.remember_elements("w1a2b", cache.generation, [_element("e0", "1,2,3")], {"1,2,3": object()})
+    cache.remember_windows([_window()])
+    assert cache.raw_element("w1a2b", "e0") is None

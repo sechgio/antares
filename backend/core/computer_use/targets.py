@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from typing import Any
 
 from backend.core.integrations.types import JsonObject
 
@@ -19,6 +20,7 @@ class TargetCache:
         self._generation = 0
         self._windows: dict[str, JsonObject] = {}
         self._elements: dict[tuple[str, int], dict[str, JsonObject]] = {}
+        self._raws: dict[tuple[str, int], dict[str, Any]] = {}  # allowlist
         self._lock = threading.RLock()
 
     @property
@@ -35,13 +37,35 @@ class TargetCache:
                 for key, elements in self._elements.items()
                 if key[1] == self._generation and key[0] in self._windows
             }
+            self._raws = {
+                key: raws
+                for key, raws in self._raws.items()
+                if key[1] == self._generation and key[0] in self._windows
+            }
             return self._generation
 
-    def remember_elements(self, window_id: str, generation: int, elements: list[JsonObject]) -> None:
+    def remember_elements(
+        self, window_id: str, generation: int, elements: list[JsonObject],
+        raws: dict[str, Any] | None = None,  # allowlist
+    ) -> None:
         with self._lock:
             if generation != self._generation or window_id not in self._windows:
                 raise DriverError("La enumeración cambió; vuelve a llamar computer_use_enumerate")
-            self._elements[(str(window_id), generation)] = {str(e["element_id"]): dict(e) for e in elements}
+            key = (str(window_id), generation)
+            self._elements[key] = {str(e["element_id"]): dict(e) for e in elements}
+            if raws is not None:
+                self._raws[key] = dict(raws)
+
+    def raw_element(self, window_id: str, element_id: str) -> Any | None:
+        with self._lock:
+            elements = self._elements.get((str(window_id), self._generation))
+            raws = self._raws.get((str(window_id), self._generation))
+        if not elements or not raws:
+            return None
+        entry = elements.get(str(element_id))
+        if entry is None:
+            return None
+        return raws.get(str(entry["runtime_id"]))
 
     def window(self, window_id: str) -> JsonObject:
         with self._lock:

@@ -24,7 +24,7 @@ _MAX_ELEMENTS_CAP = 800
 _WALK_BUDGET_S = 8.0
 _WALK_BUDGET_ACTION_S = 6.0
 _MAX_TEXT = 5_000
-_TYPE_CHAR_DELAY_S = 0.048
+_TYPE_CHUNK_DELAY_S = 0.048
 _RawElements = dict[str, Any]  # allowlist
 _ActionContext = dict[str, Any]  # allowlist
 _SHOT_WIDTH = 1280
@@ -57,7 +57,6 @@ _VK = _wxi.VK
 _EXTENDED = _wxi.EXTENDED
 _mouse = _wxi.mouse
 _key = _wxi.key
-_unicode = _wxi.unicode_input
 
 
 class BITMAPINFOHEADER(ctypes.Structure):
@@ -258,33 +257,76 @@ def enumerate_windows() -> JsonObject:
     return {"generation": generation, "windows": windows}
 
 
-def _entry_from_info(info: Any) -> JsonObject | None:
+def _iuia() -> Any:
+    from pywinauto.uia_defines import IUIA
+
+    return IUIA().iuia
+
+
+def _uia_cache_request(iuia: Any) -> Any:
+    import comtypes.gen.UIAutomationClient as uia_client
+
+    request = iuia.CreateCacheRequest()
+    for prop in (
+        uia_client.UIA_ControlTypePropertyId,
+        uia_client.UIA_NamePropertyId,
+        uia_client.UIA_AutomationIdPropertyId,
+        uia_client.UIA_BoundingRectanglePropertyId,
+        uia_client.UIA_IsEnabledPropertyId,
+        uia_client.UIA_RuntimeIdPropertyId,
+        uia_client.UIA_IsOffscreenPropertyId,
+        UIA_ISPASSWORD,
+        UIA_VALUEVALUE,
+    ):
+        request.AddProperty(prop)
+    request.TreeScope = uia_client.TreeScope_Element
+    return request
+
+
+def _entry_from_cached(el: Any, control_type_names: dict[int, str]) -> JsonObject | None:
+    import comtypes.gen.UIAutomationClient as uia_client
+
     try:
-        rect = info.rectangle
-        rt = info.runtime_id
+        rect = el.CachedBoundingRectangle
+        rt = el.GetCachedPropertyValue(uia_client.UIA_RuntimeIdPropertyId)
     except Exception:
         return None
     if not rt:
         return None
-    raw = info._element
     try:
-        is_password = bool(raw.GetCurrentPropertyValue(UIA_ISPASSWORD))
+        is_password = bool(el.GetCachedPropertyValue(UIA_ISPASSWORD))
     except Exception:
         is_password = False
     try:
-        raw_value = raw.GetCurrentPropertyValue(UIA_VALUEVALUE)
+        raw_value = el.GetCachedPropertyValue(UIA_VALUEVALUE)
     except Exception:
         raw_value = None
+    try:
+        control_type = str(control_type_names.get(int(el.CachedControlType)) or "").lower()
+    except Exception:
+        control_type = ""
+    try:
+        name = el.CachedName
+    except Exception:
+        name = ""
+    try:
+        automation_id = el.CachedAutomationId
+    except Exception:
+        automation_id = None
+    try:
+        enabled = bool(el.CachedIsEnabled)
+    except Exception:
+        enabled = True
     left, top = int(rect.left), int(rect.top)
     width, height = int(rect.right) - left, int(rect.bottom) - top
     entry: JsonObject = {
         "runtime_id": ",".join(str(v) for v in rt),
-        "role": str(info.control_type or "").lower() or "unknown",
-        "name": str(info.name or "")[:80],
-        "automation_id": str(info.automation_id or "")[:120] or None,
+        "role": control_type or "unknown",
+        "name": str(name or "")[:80],
+        "automation_id": str(automation_id or "")[:120] or None,
         "rect": [left, top, width, height],
         "center": [left + width // 2, top + height // 2],
-        "enabled": info.enabled is not False,
+        "enabled": enabled,
         "is_password": is_password,
     }
     if raw_value is not None and not isinstance(raw_value, bool):
@@ -292,25 +334,54 @@ def _entry_from_info(info: Any) -> JsonObject | None:
     return entry
 
 
-def _walk_elements(hwnd: int, max_nodes: int, budget_s: float) -> tuple[list[JsonObject], _RawElements, bool]:
-    from pywinauto.uia_element_info import UIAElementInfo
+def _walk_elements(
+    hwnd: int, max_nodes: int, budget_s: float, control_view: bool = False
+) -> tuple[list[JsonObject], _RawElements, bool]:
+    """Recorre el árbol UIA en una sola llamada con todas las propiedades cacheadas.
 
+    El coste está dominado por la navegación del proveedor en el proceso destino;
+    las propiedades se leen sin round-trips extra. budget_s acotaba el recorrido
+    incremental anterior; la llamada agregada es atómica y no puede interrumpirse,
+    pero en la práctica termina antes que el recorrido clásico al costar cada nodo
+    una fracción del coste anterior.
+    """
+    import comtypes.gen.UIAutomationClient as uia_client
+    from pywinauto.uia_defines import IUIA
+
+    iuia = _iuia()
+    control_type_names = IUIA().known_control_type_ids
+    del budget_s  # la llamada agregada es atómica; ver docstring
     out: list[JsonObject] = []
     raws: _RawElements = {}
-    pending = [UIAElementInfo(int(hwnd))]
-    deadline = time.monotonic() + budget_s
-    while pending and len(out) < max_nodes and time.monotonic() < deadline:
-        info = pending.pop(0)
-        entry = _entry_from_info(info)
+    try:
+        root = iuia.ElementFromHandle(int(hwnd))
+        cache_request = _uia_cache_request(iuia)
+        cached_root = root.BuildUpdatedCache(cache_request)
+        condition = iuia.ControlViewCondition if control_view else iuia.CreateTrueCondition()
+        found = root.FindAllBuildCache(uia_client.TreeScope_Descendants, condition, cache_request)
+        count = int(found.Length)
+        discovered = [cached_root] + [found.GetElement(index) for index in range(count)]
+    except Exception:
+        return out, raws, False
+    total = 0
+    for el in discovered:
+        entry = _entry_from_cached(el, control_type_names)
         if entry is None:
             continue
-        raws[entry["runtime_id"]] = info._element
-        out.append(entry)
-        try:
-            pending.extend(info.children())
-        except Exception:
+        if control_view:
+            try:
+                if bool(el.CachedIsOffscreen):
+                    continue
+            except Exception:
+                pass
+            if entry["rect"][2] <= 2 or entry["rect"][3] <= 2:
+                continue
+        total += 1
+        if len(out) >= max_nodes:
             continue
-    truncated = bool(pending) or len(out) >= max_nodes
+        raws[entry["runtime_id"]] = el
+        out.append(entry)
+    truncated = total > len(out)
     for index, entry in enumerate(out):
         entry["element_id"] = f"e{index}"
     return out, raws, truncated
@@ -423,6 +494,38 @@ def focused_is_password() -> bool:
     return bool(_run_on_worker(run, 5.0))
 
 
+_STALE_MESSAGE = (
+    "El elemento cambió desde la última observación (árbol obsoleto). Vuelve a llamar computer_use_window_state."
+)
+
+
+def _resolve_element(hwnd: int, window_id: str, element_id: str) -> tuple[JsonObject, Any]:
+    """Valida un elemento observado y devuelve su estado fresco y su elemento UIA.
+
+    La vía rápida revalida solo ese elemento con una lectura cacheada (~1 round-trip);
+    si el elemento UIA no está retenido en caché cae al recorrido completo del árbol,
+    que es como se validaba siempre antes de existir la caché.
+    """
+    cached = _CACHE.element(window_id, element_id)
+    raw = _CACHE.raw_element(window_id, element_id)
+    if raw is not None:
+        from pywinauto.uia_defines import IUIA
+
+        try:
+            updated = raw.BuildUpdatedCache(_uia_cache_request(_iuia()))
+        except Exception as exc:
+            raise DriverError(_STALE_MESSAGE) from exc
+        fresh = _entry_from_cached(updated, IUIA().known_control_type_ids)
+        if fresh is None or fresh["runtime_id"] != str(cached["runtime_id"]):
+            raise DriverError(_STALE_MESSAGE)
+        fresh["element_id"] = element_id
+        return fresh, raw
+    elements, raws, _ = _walk_elements(hwnd, _MAX_ELEMENTS_CAP, _WALK_BUDGET_ACTION_S)
+    by_runtime = {str(e["runtime_id"]): e for e in elements}
+    current = _CACHE.check_element(window_id, element_id, by_runtime)
+    return current, raws.get(str(current["runtime_id"]))
+
+
 def perform_action(window_id: str, action: str, element_id: str | None, params: JsonObject) -> JsonObject:
     if action not in policy.ACTIONS:
         raise ValueError(f"Acción no válida: {action}")
@@ -437,15 +540,17 @@ def perform_action(window_id: str, action: str, element_id: str | None, params: 
     def run() -> JsonObject:
         _check_action_active()
         hwnd = _prepare_window(window)
-        elements, raws, _ = _walk_elements(hwnd, _MAX_ELEMENTS_CAP, _WALK_BUDGET_ACTION_S)
-        by_runtime = {str(e["runtime_id"]): e for e in elements}
-        target = _CACHE.check_element(window_id, element_id, by_runtime) if element_id else None
+        target = None
+        raws: _RawElements = {}
+        if element_id is not None:
+            target, raw = _resolve_element(hwnd, window_id, element_id)
+            raws[str(target["runtime_id"])] = raw
         current_policy = policy.classify_action(
             action, target_password=bool(target and target.get("is_password")), window_elevated=bool(window.get("elevated"))
         )
         if current_policy["category"] == policy.HANDOFF:
             raise DriverRefused(current_policy["reason"])
-        ctx = {"window_id": window_id, "by_runtime": by_runtime, "raws": raws, "window_rect": _window_rect(hwnd)}
+        ctx = {"window_id": window_id, "raws": raws, "window_rect": _window_rect(hwnd)}
         _check_action_active()
         result = _ACTION_IMPL[action](hwnd, target, element_id, params, ctx)
         return {"action": action, "performed": True, "policy": current_policy, "window_rect": ctx["window_rect"], **result}
@@ -496,19 +601,13 @@ def _act_type_text(hwnd: int, target: JsonObject | None, element_id: str | None,
     if target is None:
         raise ValueError("Indica el elemento destino del texto")
     _ensure_element_focus(ctx, target)
-    sent = 0
-    for char in text.replace("\r\n", "\n"):
+    inputs = _wxi.text_inputs(text)
+    sent = len(text.replace("\r\n", "\n"))
+    chunk = 64
+    for start in range(0, len(inputs), chunk):
         _check_action_active()
-        if char == "\n":
-            _send(_key(0x0D), _key(0x0D, up=True))
-        elif char == "\t":
-            _send(_key(0x09), _key(0x09, up=True))
-        else:
-            encoded = char.encode("utf-16-le")
-            units = [int.from_bytes(encoded[i:i + 2], "little") for i in range(0, len(encoded), 2)]
-            _send(*[_unicode(unit) for unit in units], *[_unicode(unit, up=True) for unit in units])
-        sent += 1
-        time.sleep(_TYPE_CHAR_DELAY_S)
+        _send(*inputs[start:start + chunk])
+        time.sleep(_TYPE_CHUNK_DELAY_S)
     return {"typed": sent}
 
 
@@ -550,9 +649,10 @@ def _act_drag(hwnd: int, target: JsonObject | None, element_id: str | None, para
     to_element = params.get("to_element_id")
     to_x, to_y = params.get("to_x"), params.get("to_y")
     if to_element is not None:
-        destination = ctx["by_runtime"].get(str(_CACHE.element(ctx["window_id"], str(to_element))["runtime_id"]))
-        if destination is None:
-            raise DriverError("El elemento destino está obsoleto; reintenta la observación")
+        try:
+            destination, _destination_raw = _resolve_element(hwnd, ctx["window_id"], str(to_element))
+        except DriverError as exc:
+            raise DriverError("El elemento destino está obsoleto; reintenta la observación") from exc
         dx, dy = _center(destination, ctx["window_rect"])
     elif isinstance(to_x, (int, float)) and isinstance(to_y, (int, float)) and not isinstance(to_x, bool):
         dx, dy = int(to_x), int(to_y)
@@ -622,8 +722,8 @@ def window_state(window_id: str, screenshot: bool = False, max_elements: int = _
         if was_minimized:
             user32.ShowWindow(hwnd, _SW_RESTORE)
             time.sleep(0.4)
-        elements, _raws, truncated = _walk_elements(hwnd, max_elements, _WALK_BUDGET_S)
-        _CACHE.remember_elements(window_id, _CACHE.generation, elements)
+        elements, raws, truncated = _walk_elements(hwnd, max_elements, _WALK_BUDGET_S)
+        _CACHE.remember_elements(window_id, _CACHE.generation, elements, raws)
         result: JsonObject = {
             "window": {**window, "minimized": False, "was_minimized": was_minimized},
             "generation": _CACHE.generation,

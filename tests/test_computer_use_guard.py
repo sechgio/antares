@@ -106,6 +106,9 @@ class _StubCache:
     def element(self, window_id, element_id):
         return {"is_password": False}
 
+    def raw_element(self, window_id, element_id):
+        return None
+
     def remember_elements(self, *_args):
         pass
 
