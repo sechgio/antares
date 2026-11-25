@@ -353,7 +353,7 @@ function _assertAllowedRawOutputPath(outRaw) {
     if (hasSymlinkAncestor(resolved)) {
       throw new Error('symlink no permitido en ruta de salida');
     }
-    if (finalStat) {
+    if (finalStat && !finalStat.isDirectory()) {
       _confirmReadOnlyOverwrite(resolved);
     }
   } catch (e) {

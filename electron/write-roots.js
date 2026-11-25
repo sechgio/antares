@@ -15,8 +15,6 @@ function _addWriteRoot(root) {
   return true;
 }
 
-function _loadPersistedWriteRoots() {}
-
 function _registerWriteRootFromPath(rawPath) {
   if (typeof rawPath !== 'string' || !rawPath.trim()) return;
   const resolved = path.resolve(rawPath);
@@ -113,7 +111,6 @@ function _assertSafePdfOutputPath(outputPath) {
 }
 
 module.exports = {
-  _loadPersistedWriteRoots,
   _registerWriteRootFromPath,
   _isUnderRegisteredWriteRoot,
   _isUnderStandardUserDir,

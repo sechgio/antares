@@ -234,7 +234,6 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
 }
 
 writeRoots._clearAllowedWriteRoots();
-writeRoots._loadPersistedWriteRoots();
 
 module.exports = {
   handleDialogCall,

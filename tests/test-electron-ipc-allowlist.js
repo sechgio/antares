@@ -147,6 +147,13 @@ function main() {
     }
   }
 
+  const windowManagerSource = fs.readFileSync(path.join(ROOT, 'electron', 'window-manager.js'), 'utf8');
+  if (!windowManagerSource.includes('PUBLIC_METHOD_NAMES')) {
+    throw new Error('window-manager debe pasar PUBLIC_METHOD_NAMES al preload, sin métodos internos.');
+  }
+  const internalInPublic = [...catalog.INTERNAL_METHODS].filter((m) => catalog.PUBLIC_METHOD_NAMES.has(m));
+  const missingFromPublic = [...knownUsedMethods].filter((m) => allowed.has(m) && !catalog.PUBLIC_METHOD_NAMES.has(m));
+
   const missingFromAllowlist = [...apiMethods].filter((m) => !allowed.has(m));
   const unexpectedInAllowlist = [...allowed].filter((m) => !knownUsedMethods.has(m));
 
@@ -198,6 +205,20 @@ function main() {
   if (missingFromAllowlist.length > 0) {
     console.error(
       `[FAIL] Métodos usados en api.ts/api/*.ts pero no en ALLOWED_RENDERER_METHODS:\n  - ${missingFromAllowlist.join('\n  - ')}`
+    );
+    failed = true;
+  }
+
+  if (internalInPublic.length > 0) {
+    console.error(
+      `[FAIL] Métodos internos expuestos en PUBLIC_METHOD_NAMES:\n  - ${internalInPublic.join('\n  - ')}`
+    );
+    failed = true;
+  }
+
+  if (missingFromPublic.length > 0) {
+    console.error(
+      `[FAIL] Métodos usados por el renderer ausentes de PUBLIC_METHOD_NAMES:\n  - ${missingFromPublic.join('\n  - ')}`
     );
     failed = true;
   }

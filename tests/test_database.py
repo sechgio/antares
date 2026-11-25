@@ -380,6 +380,15 @@ class TestImportarExcel:
 
 
 class TestExportarExcel:
+    def test_exportar_conserva_nombre_sin_extension(self, db_path, catalog, tmp_path) -> None:
+        pytest.importorskip("pandas")
+        dest = tmp_path / "salida"
+
+        assert db.exportar_excel(str(dest)) == 0
+
+        assert dest.is_file()
+        assert not (tmp_path / "salida.xlsx").exists()
+
     def test_exportar_sobrescribe_destino_y_no_deja_temporal(self, db_path, catalog, tmp_path) -> None:
         pytest.importorskip("pandas")
         import sqlite3

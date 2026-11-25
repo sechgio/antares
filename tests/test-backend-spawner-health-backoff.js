@@ -54,6 +54,21 @@ async function run() {
       const activeProc = lastProc;
       activeProc.stdin.write = () => true;
 
+      if (index === 0) {
+        const firstProbe = runHealthCheckOnce();
+        await flushAsyncTurns(3);
+        const firstProbeTimer = timers.find((timer) => timer.delay === 3_000 && !timer.cleared);
+        assert(Boolean(firstProbeTimer), 'first failed probe should arm its probe timeout');
+        firstProbeTimer.fn(...firstProbeTimer.args);
+        await firstProbe;
+        assert(spawn.count === 1, 'a single failed probe must not restart the backend');
+        assert(getState() === 'ready', 'spawner should remain ready after a single failed probe');
+        assert(
+          !timers.some((timer) => timer.delay === expectedBackoffs[0] && !timer.cleared),
+          'no recovery backoff should arm after a single failed probe',
+        );
+      }
+
       const recovery = runHealthCheckOnce();
       await flushAsyncTurns(3);
       const probeTimer = timers.find((timer) => timer.delay === 3_000 && !timer.cleared);

@@ -7,6 +7,7 @@ const {
   waitForReady,
   getState,
   getHealthStatus,
+  getReadyDegraded,
   getLastError,
   getStderrTail,
   manualRestart,
@@ -998,11 +999,14 @@ function registerIpcHandlers() {
   ipcMain.handle('backend-status', async (event) => {
     _requireTrustedSender(event, 'backend-status');
     const isPackaged = _isPackaged();
+    const { degraded, failedHandlerModules } = getReadyDegraded();
     return {
       state: getState(),
       ready: isReady(),
       lastError: getLastError(),
       health: getHealthStatus(),
+      degraded,
+      failedHandlerModules,
       stderrTail: isPackaged ? '' : getStderrTail(),
     };
   });
@@ -1029,7 +1033,7 @@ function registerIpcHandlers() {
     }
 
     _lastBackendRestartAt = now;
-    const ok = await manualRestart(_resolveIsDev());
+    const ok = await manualRestart(_resolveIsDev(), { force: true, reason: 'user_requested' });
     return { success: ok, state: getState() };
   });
 

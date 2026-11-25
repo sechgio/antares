@@ -8,8 +8,22 @@ import DurationSequencer from './vitest.sequencer.ts';
 
 const sharedHtmlSanitizerPath = path.resolve(import.meta.dirname, '../shared/html-sanitizer.js');
 
+const configuredSupabaseOrigin = (() => {
+  try {
+    const raw = process.env.VITE_SUPABASE_URL;
+    if (!raw) return '';
+    const url = new URL(raw);
+    return url.protocol === 'https:' && url.hostname ? url.origin : '';
+  } catch {
+    return '';
+  }
+})();
+const supabaseConnectSrc = configuredSupabaseOrigin
+  ? `${configuredSupabaseOrigin.replace(/^https:/, 'wss:')} ${configuredSupabaseOrigin}`
+  : 'wss://*.supabase.co https://*.supabase.co';
+
 const productionCsp =
-  "default-src 'self'; frame-src 'self' http://127.0.0.1:*; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://assets.petdex.dev; font-src 'self' https://fonts.gstatic.com; media-src https:; connect-src 'self' wss://*.supabase.co https://*.supabase.co https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev https://*.api.radio-browser.info https://*.audius.co https://stream.nightride.fm https://media01.gamingnow.net:8010 https://itunes.apple.com https://musicbrainz.org https://api.jamendo.com https://archive.org https://ice6.somafm.com; object-src 'none'; base-uri 'none'; form-action 'none'";
+  `default-src 'self'; frame-src 'self' http://127.0.0.1:*; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://assets.petdex.dev; font-src 'self' https://fonts.gstatic.com; media-src https:; connect-src 'self' ${supabaseConnectSrc} https://fonts.googleapis.com https://fonts.gstatic.com https://petdex.dev https://assets.petdex.dev https://*.api.radio-browser.info https://*.audius.co https://stream.nightride.fm https://media01.gamingnow.net:8010 https://itunes.apple.com https://musicbrainz.org https://api.jamendo.com https://archive.org https://ice6.somafm.com; object-src 'none'; base-uri 'none'; form-action 'none'`;
 
 const productionCspPlugin = (enabled: boolean) => ({
   name: 'production-csp-meta',
