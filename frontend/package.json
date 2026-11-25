@@ -10,10 +10,10 @@
     "check:canvas-budget": "node scripts/canvas-appear-budget.mjs",
     "check:shell-budget": "node scripts/shell-preload-budget.mjs",
     "preview": "vite preview",
-    "test": "vitest run",
-    "test:static": "vitest run --config vitest.static.config.ts",
-    "test:all": "vitest run && bun run test:static",
-    "test:coverage": "vitest run --coverage"
+    "test": "node node_modules/vitest/vitest.mjs run",
+    "test:static": "node node_modules/vitest/vitest.mjs run --config vitest.static.config.ts",
+    "test:all": "node node_modules/vitest/vitest.mjs run && bun run test:static",
+    "test:coverage": "node node_modules/vitest/vitest.mjs run --coverage"
   },
   "engines": {
     "node": ">=22.19.0"

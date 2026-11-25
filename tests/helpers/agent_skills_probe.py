@@ -1,12 +1,16 @@
+import atexit
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 from backend.core.agent import skills
 
 options = json.load(sys.stdin)
-root = Path(options["root"])
+probe = tempfile.TemporaryDirectory(prefix="antares-skills-probe-")
+atexit.register(probe.cleanup)
+root = Path(probe.name)
 os.environ["SKILLS_HOME"] = str(root / "base-skills")
 os.environ["SKILLS_EXTERNAL_HOMES"] = str(root / "external-skills")
 library = root / "probe-library"

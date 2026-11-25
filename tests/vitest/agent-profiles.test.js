@@ -30,7 +30,7 @@ function runSkills(name, profile, params = {}, catalog = []) {
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env, PYTHONPATH: root, PYTHONUTF8: '1' },
-        input: JSON.stringify({ root: home, name, params, catalog, profile_skills: [...profile.skills.values()] }),
+        input: JSON.stringify({ name, params, catalog, profile_skills: [...profile.skills.values()] }),
       },
     ),
   );
