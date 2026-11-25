@@ -353,6 +353,8 @@ async function profileSave(params = {}) {
       `El presupuesto diario debe estar entre ${MIN_DAILY_TOKENS} y ${MAX_DAILY_TOKENS} tokens, o vacío para no limitarlo`,
     );
   }
+  const dreaming = params.dreaming === undefined ? existing?.dreaming === true : params.dreaming;
+  if (typeof dreaming !== 'boolean') throw validation('Indica si el agente consolida su memoria cada noche');
   const rawModel = params.model === undefined ? (existing?.model ?? null) : params.model;
   let agentModel = null;
   if (rawModel !== null) {
@@ -379,6 +381,7 @@ async function profileSave(params = {}) {
     ...(memoryScope !== 'shared-read' ? { memory_scope: memoryScope } : {}),
     ...(browserMode !== 'auto' ? { browser_mode: browserMode } : {}),
     ...(dailyTokens !== null ? { daily_tokens: dailyTokens } : {}),
+    ...(dreaming ? { dreaming: true } : {}),
     ...(agentModel ? { model: agentModel } : {}),
     created_at: existing ? existing.created_at : now,
     updated_at: now,
@@ -401,6 +404,7 @@ async function profileDelete(params = {}) {
     removed = Boolean(doc.profiles[id]);
     delete doc.profiles[id];
     if (doc.usage) delete doc.usage[id];
+    if (doc.dreaming) delete doc.dreaming[id];
   }, ctx());
   if (!removed) throw notFound('El agente ya no existe');
   return { deleted: true, id };
@@ -1342,6 +1346,7 @@ async function _writeMemorySnapshot(session, initialText, checkpoint) {
       profile_id: session.profile?.id || null,
       memory_scope: profile?.memory_scope || null,
     }));
+    if (checkpoint && profile?.memory_scope !== 'none') await _promoteCandidates(session, initialText);
   } catch (error) {
     if (checkpoint) throw error;
     return false;
@@ -1367,6 +1372,20 @@ async function _writeMemorySnapshot(session, initialText, checkpoint) {
   }, ctx());
 }
 
+async function _promoteCandidates(session, summary) {
+  const items = compactionPolicy.memoryCandidates(summary);
+  if (!items.length) return;
+  try {
+    const counts = await bridge('agent_internal_memory_promote', { session_id: session.id, items });
+    require('./app-log').logInfo(
+      `[agent] memoria candidata de ${session.id}: ${counts.promoted} promovidos, ${counts.updated} renovados, ` +
+        `${counts.deduplicated} deduplicados, ${counts.rejected} descartados`,
+    );
+  } catch (err) {
+    console.error(`[agent] no se pudo promover la memoria candidata: ${execution.sanitizeProviderError(err.message)}`);
+  }
+}
+
 const memoryRefreshes = new Map();
 
 function regenerateMemorySnapshot(sessionId) {
@@ -1389,7 +1408,7 @@ async function _refreshCommittedMemory(sessionId) {
       if (!session || session.deleted) return undefined;
       const head = await tx.latestHeadMarker(session.conversationId);
       if (head?.kind !== pi.CompactionEntry.kind || head.id === session.memory_checkpoint) return undefined;
-      return { session: { ...session }, head };
+      return { session: { ...session, profile: session.profile ? { ...session.profile } : session.profile }, head };
     }, ctx());
     if (!candidate || candidate.head.id === attempted) return refreshed;
     const { session, head } = candidate;

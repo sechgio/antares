@@ -97,6 +97,11 @@ function main() {
     || !catalog.INTERNAL_METHODS.has(memoryRevision) || !catalog.IDEMPOTENT_METHODS.has(memoryRevision)) {
     throw new Error('La revisión de memoria es una lectura privada del agente.');
   }
+  for (const m of ['agent_internal_memory_promote', 'agent_internal_memory_dream_input', 'agent_internal_memory_consolidate']) {
+    if (!allowed.has(m) || knownUsedMethods.has(m) || !catalog.INTERNAL_METHODS.has(m)) {
+      throw new Error('La promoción y la consolidación de memoria son llamadas privadas del agente.');
+    }
+  }
   const imagePreview = catalog.METHODS.agent_artifact_action;
   const internalImagePreview = catalog.METHODS.agent_internal_artifact_action;
   if (!apiMethods.has('agent_artifact_action') || imagePreview.handler !== 'native:agent'

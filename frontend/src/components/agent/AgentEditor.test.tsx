@@ -36,7 +36,7 @@ it('crea un agente con indicaciones y solo las herramientas elegidas', async () 
   fireEvent.click(screen.getByRole('switch', { name: 'Permitir templates_catalog' }));
   await act(async () => { fireEvent.click(create); });
   expect(save).toHaveBeenCalledWith({ name: 'Informe mensual', color: '#0E7490', description: '', role: 'explorer', instructions: 'Usa la plantilla de cortes',
-    starter: 'Prepara el informe', tools: ['templates_catalog'], tools_deny: [], memory_scope: 'shared-read', daily_tokens: null, model: null });
+    starter: 'Prepara el informe', tools: ['templates_catalog'], tools_deny: [], memory_scope: 'shared-read', daily_tokens: null, dreaming: false, model: null });
   expect(onSaved).toHaveBeenCalledWith(saved);
 });
 
@@ -75,6 +75,21 @@ it('elige el alcance de memoria del agente y conserva el guardado', async () => 
   expect(save.mock.calls[0][0]).toMatchObject({ id: saved.id, memory_scope: 'none' });
 });
 
+it('activa y desactiva la consolidación nocturna de memoria del agente', async () => {
+  const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: saved });
+  await act(async () => { render(<AgentEditor profile={saved} onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} />); });
+  const toggle = screen.getByRole('switch', { name: 'Consolidar el diario cada noche' });
+  expect(toggle).not.toBeChecked();
+  fireEvent.click(toggle);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(save.mock.calls[0][0]).toMatchObject({ dreaming: true });
+  fireEvent.click(screen.getByRole('switch', { name: 'Consolidar el diario cada noche' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Guardar' })); });
+  expect(save.mock.calls[1][0]).toMatchObject({ dreaming: false });
+  fireEvent.click(screen.getByRole('button', { name: 'Ninguna' }));
+  expect(screen.getByRole('switch', { name: 'Consolidar el diario cada noche' })).toBeDisabled();
+});
+
 it('permite empezar solo con nombre y sin abrir las opciones avanzadas', async () => {
   const save = vi.spyOn(agentApi, 'agentProfileSave').mockResolvedValue({ profile: { ...saved, instructions: '' } });
   await act(async () => { render(<AgentEditor profile={null} onClose={vi.fn()} onSaved={vi.fn()} onDeleted={vi.fn()} />); });
@@ -86,7 +101,7 @@ it('permite empezar solo con nombre y sin abrir las opciones avanzadas', async (
   expect(create).toBeEnabled();
   expect(screen.getByLabelText('Indicaciones del agente')).not.toBeRequired();
   await act(async () => { fireEvent.click(create); });
-  expect(save).toHaveBeenCalledWith({ name: 'Revisor', color: '', role: 'explorer', instructions: '', description: '', starter: '', tools: null, tools_deny: [], memory_scope: 'shared-read', daily_tokens: null, model: null });
+  expect(save).toHaveBeenCalledWith({ name: 'Revisor', color: '', role: 'explorer', instructions: '', description: '', starter: '', tools: null, tools_deny: [], memory_scope: 'shared-read', daily_tokens: null, dreaming: false, model: null });
 });
 
 it('conserva el color al editar y permite volver al automático', async () => {

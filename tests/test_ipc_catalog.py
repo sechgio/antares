@@ -483,3 +483,17 @@ def test_catalog_full_projection_matches_json() -> None:
     assert file_tokens_for("print_pdf") == (("pdf_path",),)
     assert not is_idempotent("print_pdf")
     assert is_idempotent("printers_list")
+
+
+def test_memory_dreaming_methods_are_private_and_the_profile_toggle_is_boolean():
+    import jsonschema
+    methods = _catalog()["methods"]
+    for name in ("agent_internal_memory_promote", "agent_internal_memory_dream_input",
+                 "agent_internal_memory_consolidate"):
+        assert methods[name]["handler"] == "backend:agent_internal" and methods[name]["internal"] is True
+        assert methods[name].get("idempotent", False) is (name == "agent_internal_memory_dream_input")
+    schema = methods["agent_profile_save"]["inputSchema"]
+    for dreaming in (True, False):
+        jsonschema.validate({"name": "Revisor", "instructions": "Revisa documentos", "dreaming": dreaming}, schema)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({"name": "Revisor", "instructions": "x", "dreaming": "true"}, schema)
