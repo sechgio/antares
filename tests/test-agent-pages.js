@@ -58,6 +58,13 @@ const page = { version: 1, title: 'Trabajos', html: '<h1>Trabajos</h1><input id=
     assert.match(html, /import\(source\)/);
     assert.doesNotMatch(html, /<img src=x/);
     assert.equal(frame.headers.get('referrer-policy'), 'no-referrer');
+    assert.match(html, /var pele=/, 'la página incluye el motor Pele');
+    assert.match(html, /AntaresPageCharts/, 'la página expone la API de gráficos');
+    assert.match(html, /chartToMermaid/, 'la página incluye el contrato chart compartido');
+    assert.match(html, /--pele-series-1/, 'la página tema las series de Pele');
+    assert.doesNotMatch(pages.preview(page, 'dark'), /var pele=|AntaresPageCharts/, 'la miniatura no carga el motor');
+    assert.doesNotMatch(pages.documents(page, 'dark', { charts: false }).content, /var pele=/, 'charts:false omite el motor');
+    assert.match(embeddedHtml, /var pele=/, 'la página embebida también incluye el motor');
     const second = await preview.openPage({ ...page, title: 'Otra' });
     assert.notEqual(first, second);
     fs.writeFileSync(path.join(root, 'index.html'), '<p>Preview</p>');

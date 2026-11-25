@@ -39,6 +39,7 @@ files:
   - "!node_modules/axios/**/*"
   - "!node_modules/async/**/*"
   - "frontend/dist/**/*"
+  - "frontend/node_modules/pele/dist/pele.global.js"
   - "electron/**/*"
   - "shared/**/*"
   - "assets/icon.ico"

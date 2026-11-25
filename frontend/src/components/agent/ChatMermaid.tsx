@@ -1,18 +1,5 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { PALETTE } from './ChatChart';
-
-const MERMAID_THEME = {
-  '--pele-bg': 'var(--bg-elevated)',
-  '--pele-fg': 'var(--text-primary)',
-  '--pele-muted': 'var(--text-muted)',
-  '--pele-line': 'var(--text-muted)',
-  '--pele-surface': 'color-mix(in srgb, var(--text-primary) 6%, transparent)',
-  '--pele-surface-alt': 'color-mix(in srgb, var(--text-primary) 10%, transparent)',
-  '--pele-border': 'color-mix(in srgb, var(--text-primary) 28%, transparent)',
-  '--pele-accent': 'var(--accent-primary)',
-  '--pele-critical': 'var(--accent-red)',
-  ...Object.fromEntries(PALETTE.map((color, i) => [`--pele-series-${i + 1}`, color])),
-} as CSSProperties;
+import { useRef } from 'react';
+import { PELE_THEME, usePeleMount } from './ChatChart';
 
 const MERMAID_KINDS: Record<string, string> = {
   flowchart: 'Diagrama de flujo',
@@ -37,44 +24,7 @@ export function mermaidTitle(source: string): string {
 
 export function Mermaid({ source }: { source: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    let cancelled = false;
-    let mounted: { destroy(): void } | undefined;
-    const fail = (reason: unknown) => {
-      if (!cancelled) setError(reason instanceof Error ? reason.message : 'No se pudo dibujar el diagrama.');
-    };
-    Promise.all([import('pele/lazy'), import('dompurify')])
-      .then(([pele, { default: DOMPurify }]) => {
-        if (cancelled) return undefined;
-        const purifier = DOMPurify(window);
-        return pele.mountAsync(element, source, {
-          links: false,
-          images: false,
-          zoom: false,
-          autoDirection: false,
-          sanitize: (svg) =>
-            purifier.sanitize(svg, {
-              FORBID_ATTR: ['href', 'xlink:href', 'src', 'srcset'],
-              FORBID_TAGS: ['a', 'image', 'foreignObject', 'style'],
-              USE_PROFILES: { svg: true, svgFilters: true },
-              RETURN_DOM_FRAGMENT: true,
-            }),
-          onRender: () => setError(null),
-          onError: fail,
-        });
-      })
-      .then((result) => {
-        if (cancelled) result?.destroy();
-        else mounted = result;
-      }, fail);
-    return () => {
-      cancelled = true;
-      mounted?.destroy();
-    };
-  }, [source]);
+  const error = usePeleMount(ref, source);
   return (
     <>
       {error && (
@@ -89,8 +39,8 @@ export function Mermaid({ source }: { source: string }) {
         ref={ref}
         data-mermaid
         hidden={error !== null}
-        style={MERMAID_THEME}
-        className="flex justify-center [&_svg]:max-w-full"
+        style={PELE_THEME}
+        className="flex justify-center [&_svg]:max-w-full [&_.pele-zoom]:opacity-0 [&_.pele-zoom]:transition-opacity hover:[&_.pele-zoom]:opacity-100 focus-within:[&_.pele-zoom]:opacity-100"
       />
     </>
   );

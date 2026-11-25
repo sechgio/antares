@@ -2,7 +2,8 @@ import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } fro
 import { Check, Copy, Image as ImageIcon, Maximize2, X } from 'lucide-react';
 import { DialogSurface } from '../ui/Dialog';
 import { sanitizeHtmlForPreview } from '../../../../shared/html-sanitizer.js';
-import { CartesianChart, DataTable, DonutChart, HorizontalBars, Legend, PALETTE, horizontal, parseChart } from './ChatChart';
+import { parseChartSpec } from '../../../../shared/chart-spec.js';
+import { DataTable, PeleChart } from './ChatChart';
 import { Mermaid, mermaidTitle } from './ChatMermaid';
 
 function Frame({ lang, source }: { lang: 'svg' | 'html'; source: string }) {
@@ -65,7 +66,7 @@ function ChatVisual({ lang, source, fallback }: { lang: string; source: string; 
   const [expanded, setExpanded] = useState(false);
   const titleId = useId();
   const view = useRef<HTMLDivElement>(null);
-  const spec = useMemo(() => (lang === 'chart' ? parseChart(source) : null), [lang, source]);
+  const spec = useMemo(() => (lang === 'chart' ? parseChartSpec(source) : null), [lang, source]);
   if (lang === 'chart' && !spec)
     return (
       <div>
@@ -76,10 +77,6 @@ function ChatVisual({ lang, source, fallback }: { lang: string; source: string; 
   const title =
     spec?.title ||
     (lang === 'html' ? 'Interfaz' : lang === 'svg' ? 'Ilustración' : lang === 'mermaid' ? mermaidTitle(source) : 'Gráfico');
-  const legend =
-    spec && spec.type !== 'pie' && spec.series.length > 1
-      ? spec.series.map((s, i) => ({ name: s.name, color: PALETTE[i] }))
-      : [];
   const copy = () => {
     void navigator.clipboard
       ?.writeText(source)
@@ -94,7 +91,13 @@ function ChatVisual({ lang, source, fallback }: { lang: string; source: string; 
     if (!node || typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) return;
     const backgroundColor = getComputedStyle(node.closest('section') ?? node).backgroundColor;
     void import('html-to-image')
-      .then(({ toBlob }) => toBlob(node, { backgroundColor, pixelRatio: 2 }))
+      .then(({ toBlob }) =>
+        toBlob(node, {
+          backgroundColor,
+          pixelRatio: 2,
+          filter: (element) => !(element instanceof Element && element.classList.contains('pele-zoom')),
+        }),
+      )
       .then((blob) => {
         if (!blob) throw new Error('No se pudo generar la imagen');
         return navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
@@ -105,23 +108,12 @@ function ChatVisual({ lang, source, fallback }: { lang: string; source: string; 
       })
       .catch(() => {});
   };
-  const body = (
-    <>
-      {legend.length > 0 && <Legend items={legend} />}
-      {spec ? (
-        spec.type === 'pie' ? (
-          <DonutChart spec={spec} />
-        ) : horizontal(spec) ? (
-          <HorizontalBars spec={spec} />
-        ) : (
-          <CartesianChart spec={spec} />
-        )
-      ) : lang === 'mermaid' ? (
-        <Mermaid source={source} />
-      ) : (
-        <Frame lang={lang as 'svg' | 'html'} source={source} />
-      )}
-    </>
+  const body = spec ? (
+    <PeleChart spec={spec} />
+  ) : lang === 'mermaid' ? (
+    <Mermaid source={source} />
+  ) : (
+    <Frame lang={lang as 'svg' | 'html'} source={source} />
   );
   return (
     <section
