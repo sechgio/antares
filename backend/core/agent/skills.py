@@ -94,10 +94,11 @@ def _manifest_fields(metadata: dict) -> dict:
     if author is not None and (not isinstance(author, str) or len(author) > 100):
         raise ValueError("El autor admite hasta 100 caracteres")
     requires_modules = _str_list(metadata.get("requires_modules"), "requires_modules")
-    known = modules.catalog()
-    unknown = [name for name in requires_modules if name not in known]
-    if unknown:
-        raise ValueError(f"Módulos requeridos no reconocidos: {', '.join(unknown)}")
+    if requires_modules:
+        known = modules.catalog()
+        unknown = [name for name in requires_modules if name not in known]
+        if unknown:
+            raise ValueError(f"Módulos requeridos no reconocidos: {', '.join(unknown)}")
     return {
         "version": version,
         "requires_tools": _str_list(metadata.get("requires_tools"), "requires_tools"),
