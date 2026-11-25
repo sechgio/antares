@@ -223,6 +223,16 @@ def test_paths_outside_the_workspace_need_a_grant(store, tmp_path):
     assert [e["name"] for e in _run(store, "fs_list", path=str(outside))["entries"]] == ["nuevo.txt", "secreto.txt"]
 
 
+def test_individually_attached_files_remain_read_only(store, tmp_path):
+    attached = tmp_path / "adjunto.txt"
+    attached.write_text("contenido sensible", encoding="utf-8")
+    store.add_grants("s1", [resource_grants.grant_record(str(attached), None)])
+    assert _run(store, "fs_read", path=str(attached))["content"] == "1\tcontenido sensible"
+    with pytest.raises(ValueError, match="solo autoriza lectura"):
+        _run(store, "fs_write", path=str(attached), content="modificado", overwrite=True)
+    assert attached.read_text(encoding="utf-8") == "contenido sensible"
+
+
 def test_word_documents_are_written_read_and_edited(store):
     docx = pytest.importorskip("docx")
     path = _run(store, "fs_write", path="carta.docx", content="# Aviso\nEstimado cliente:\nSaludos")["saved_path"]

@@ -532,11 +532,14 @@ function isPrivateIpv4(ip) {
 }
 
 function isPrivateHostname(hostname) {
-  const host = String(hostname || '')
+  let host = String(hostname || '')
     .toLowerCase()
     .replace(/^\[|\]$/g, '');
   if (host === 'localhost' || host.endsWith('.localhost')) return true;
   if (host.includes(':')) {
+    try {
+      host = new URL(`http://[${host}]`).hostname.replace(/^\[|\]$/g, '');
+    } catch {}
     if (host === '::' || host === '::1' || host.startsWith('::ffff:')) return true;
     if (/^f[cd][0-9a-f]{2}:/.test(host)) return true;
     if (/^fe[89ab][0-9a-f]:/.test(host)) return true;

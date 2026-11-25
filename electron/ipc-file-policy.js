@@ -332,14 +332,16 @@ function _assertAllowedRawOutputPath(outRaw) {
   const { isAllowedReadPath } = require('./path-allowlist');
   try {
     const resolved = path.resolve(outRaw);
-    if (fs.existsSync(resolved) && fs.lstatSync(resolved).isSymbolicLink()) {
+    let finalStat = null;
+    try {
+      finalStat = fs.lstatSync(resolved);
+    } catch (err) {
+      if (!err || err.code !== 'ENOENT') throw err;
+    }
+    if (finalStat && finalStat.isSymbolicLink()) {
       throw new Error('symlink no permitido en ruta de salida');
     }
-    const dir = fs.existsSync(resolved)
-      ? fs.lstatSync(resolved).isDirectory()
-        ? resolved
-        : path.dirname(resolved)
-      : path.dirname(resolved);
+    const dir = finalStat && finalStat.isDirectory() ? resolved : path.dirname(resolved);
     const { isUnderAllowedWriteRoot } = require('./dialog-handlers');
     if (!isUnderAllowedWriteRoot(dir) && !isAllowedReadPath(resolved) && !isAllowedReadPath(dir)) {
       throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
@@ -351,7 +353,7 @@ function _assertAllowedRawOutputPath(outRaw) {
     if (hasSymlinkAncestor(resolved)) {
       throw new Error('symlink no permitido en ruta de salida');
     }
-    if (fs.existsSync(resolved) && !isUnderAllowedWriteRoot(dir)) {
+    if (finalStat && !finalStat.isDirectory()) {
       _confirmReadOnlyOverwrite(resolved);
     }
   } catch (e) {

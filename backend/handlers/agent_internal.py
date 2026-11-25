@@ -57,7 +57,8 @@ _resource_locks: dict[str, threading.Lock] = {}
 _native_leases: dict[str, list[threading.Lock]] = {}
 _NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_export_pdf", "fichas_tecnicas_export_pdf",
                     "document_generate", "padron_", "volantes_", "espacios_", "canvas_fill_fields", "canvas_apply_layers",
-                    "gdrive_", "gsheets_", "onedrive_", "excel_", "web_", "cua_")
+                    "gdrive_", "gsheets_", "onedrive_", "gmail_", "outlook_", "github_",
+                    "excel_", "web_", "cua_")
 _APP_SCOPED_PREFIXES = ("cua_",)
 _CLOUD_UPLOADS = frozenset({"gdrive_upload", "onedrive_upload"})
 _META_METHODS = frozenset({"task_schedule"})

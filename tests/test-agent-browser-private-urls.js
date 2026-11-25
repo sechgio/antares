@@ -59,6 +59,10 @@ function throwsPrivate(url) {
       isPrivateHostname('::') && isPrivateHostname('::ffff:127.0.0.1') && isPrivateHostname('::ffff:8.8.8.8'),
       'IPv6 no especificada y mapeadas a IPv4 se bloquean',
     );
+    assert(
+      isPrivateHostname('::ffff:7f00:1') && isPrivateHostname('0:0:0:0:0:ffff:7f00:1'),
+      'IPv4 mapeada en notación hexadecimal, también expandida, se bloquea',
+    );
     assert(isPrivateHostname('fc00::1') && isPrivateHostname('fdff::1'), 'rango único local fc00::/7');
     assert(
       isPrivateHostname('fe80::1') && isPrivateHostname('febf::1') && !isPrivateHostname('fec0::1'),

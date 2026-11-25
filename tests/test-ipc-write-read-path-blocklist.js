@@ -132,6 +132,40 @@ async function run() {
       benign.outputPath === path.join(customDir, 'informe.pdf'),
       'el artefacto legitimo del diálogo sigue escribiéndose en la raíz concedida',
     );
+
+    const rootOverwrite = path.join(customDir, 'existente.xlsx');
+    await fs.promises.writeFile(rootOverwrite, 'version-previa');
+    const rootAllowRouter = makeRouterWithDialog(tmpRoot, docsDir, () => 0);
+    assert(
+      rootAllowRouter._validateAndResolveWriteParams({ outputPath: rootOverwrite }, null).outputPath === rootOverwrite,
+      'bajo write root la sobrescritura sigue exigiendo confirmación y puede aceptarse explícitamente',
+    );
+    const rootCancelTarget = path.join(customDir, 'cancelable-en-root.xlsx');
+    await fs.promises.writeFile(rootCancelTarget, 'version-previa');
+    const rootDenyRouter = makeRouterWithDialog(tmpRoot, docsDir, () => 1);
+    let rootOverwriteCancelled = '';
+    try {
+      rootDenyRouter._validateAndResolveWriteParams({ outputPath: rootCancelTarget }, null);
+    } catch (e) {
+      rootOverwriteCancelled = e.message;
+    }
+    assert(/cancelada/.test(rootOverwriteCancelled), 'una write root ya no permite sobrescribir silenciosamente');
+
+    const dangling = path.join(customDir, 'colgante.xlsx');
+    let symlinkCreated = false;
+    try {
+      fs.symlinkSync(path.join(customDir, 'objetivo-inexistente.xlsx'), dangling, 'file');
+      symlinkCreated = true;
+    } catch {}
+    if (symlinkCreated) {
+      let danglingRejected = '';
+      try {
+        router._validateAndResolveWriteParams({ outputPath: dangling }, null);
+      } catch (e) {
+        danglingRejected = e.message;
+      }
+      assert(/symlink/.test(danglingRejected), 'un symlink colgante no puede usarse como salida');
+    }
   } finally {
     _clearAllowedWriteRoots();
     clearAllowedReadPaths();

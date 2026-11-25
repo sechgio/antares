@@ -353,6 +353,9 @@ def _compose_ubicacion_image(
         pin = _get_pin_rgba()
         if pin is not None:
             pin_scale_val = cs_pin.get("scale", float(spec["pin_scale"]))
+            if not isinstance(pin_scale_val, (int, float)) or isinstance(pin_scale_val, bool) or not 0.01 <= float(pin_scale_val) <= 1.0:
+                raise ValueError("pin.scale debe estar entre 0.01 y 1")
+            pin_scale_val = float(pin_scale_val)
             new_pin_w = max(1, int(out_w * pin_scale_val))
             new_pin_h = max(1, int(pin.height * (new_pin_w / pin.width)))
             pin_resized = pin.resize((new_pin_w, new_pin_h), resample)

@@ -28,7 +28,7 @@ function isAllowedGoogleFontUrl(url) {
   return GOOGLE_FONT_HOST_RE.test(String(url).trim());
 }
 
-const _URL_ENTITY_RE = /&(?:#(x[0-9a-fA-F]+|\d+);?|([a-zA-Z][a-zA-Z0-9]*);)/g;
+const _URL_ENTITY_RE = /&(?:#([xX][0-9a-fA-F]+|\d+);?|([a-zA-Z][a-zA-Z0-9]*);)/g;
 const _NAMED_URL_ENTITIES = {
   colon: ':',
   tab: '\t',

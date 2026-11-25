@@ -152,23 +152,30 @@ jobs:
         shell: bash
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
 
-      - name: Configure code signing (optional)
+      - name: Validate code signing configuration
         shell: bash
         env:
           WINDOWS_CODESIGN_PFX: ${{ secrets.WINDOWS_CODESIGN_PFX }}
           WINDOWS_CODESIGN_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
         run: |
-          if [[ -n "$WINDOWS_CODESIGN_PFX" ]]; then
-            echo "CSC_LINK=$WINDOWS_CODESIGN_PFX" >> "$GITHUB_ENV"
-            echo "CSC_KEY_PASSWORD=$WINDOWS_CODESIGN_PASSWORD" >> "$GITHUB_ENV"
-            echo "ANTARES_CODESIGN=1" >> "$GITHUB_ENV"
-          else
-            echo "ANTARES_CODESIGN=0" >> "$GITHUB_ENV"
-            echo "Secret WINDOWS_CODESIGN_PFX ausente: el artefacto se publicara sin firma Authenticode."
+          if [[ -z "$WINDOWS_CODESIGN_PFX" || -z "$WINDOWS_CODESIGN_PASSWORD" ]]; then
+            echo "Los secretos WINDOWS_CODESIGN_PFX/WINDOWS_CODESIGN_PASSWORD son obligatorios para publicar releases firmados."
+            exit 1
           fi
 
       - name: Build Electron App
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CODESIGN_PFX }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
         run: bun x electron-builder --win --publish never
+
+      - name: Verify installer Authenticode signature
+        shell: pwsh
+        run: |
+          $installer = @(Get-ChildItem -Path 'dist-electron/Antares-Setup-*.exe' -File)
+          if ($installer.Count -ne 1) { throw "Expected exactly one installer, found $($installer.Count)." }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer[0].FullName
+          if ($signature.Status -ne 'Valid') { throw "Installer is not Authenticode-signed: $($signature.Status)" }
 
       - name: Generate release checksums
         shell: pwsh

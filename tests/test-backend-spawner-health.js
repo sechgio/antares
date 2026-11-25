@@ -61,14 +61,20 @@ async function run() {
       activeProc.stdin.write = () => {};
     }
     await runHealthCheckOnce();
+    assert(spawn.count === 1, 'A single failed probe should not restart the backend');
+    assert(getState() === 'ready', 'Backend should remain ready after one failed probe');
+    const firstFailureStatus = getHealthStatus();
+    assert(firstFailureStatus.consecutive_failures === 1, 'First failed probe records one consecutive failure');
+
+    await runHealthCheckOnce();
     const restarted = await waitFor(() => spawn.count >= 2 && getState() === 'ready');
 
-    assert(restarted, 'Unresponsive backend should be restarted automatically');
+    assert(restarted, 'Unresponsive backend should restart after consecutive probe failures');
     assert(getState() === 'ready', 'Spawner should return to ready after health recovery');
     const recoveredStatus = getHealthStatus();
-    assert(recoveredStatus.failures_total === 1, 'Health status counts failed probes');
+    assert(recoveredStatus.failures_total === 2, 'Health status counts failed probes');
     assert(recoveredStatus.last_failure_reason === 'probe_timeout', 'Health status classifies probe timeout');
-    assert(recoveredStatus.consecutive_failures === 1, 'Health status preserves failure streak until a probe succeeds');
+    assert(recoveredStatus.consecutive_failures === 2, 'Health status preserves failure streak until a probe succeeds');
   } finally {
     killPython();
     spawn.restore();

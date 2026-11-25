@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { strict: assert } = require('assert');
 
-const { finish } = require('./helpers/harness');
+const { finish, stubModule, evictModule } = require('./helpers/harness');
 const { loadIpcRouter } = require('./helpers/ipc-router');
 
 function evict(name) {
@@ -126,6 +126,87 @@ async function main() {
       assert.match(source, new RegExp(`'${ext.replace('.', '\\.')}'`), `denylist cubre ${ext}`);
     }
     void policy;
+  }
+
+  {
+    const dialogs = [];
+    const router = loadIpcRouter({
+      electron: {
+        dialog: { showMessageBox: async (win, opts) => { dialogs.push(opts); return { response: 1 }; } },
+      },
+      windowManager: { getMainWindow: () => ({ destroyed: false }) },
+      ready: true,
+    });
+    const params = {
+      name: 'Local',
+      transport: 'stdio',
+      command: 'powershell.exe',
+      args: ['-NoProfile', '-Command', 'Write-Output x'],
+    };
+    await assert.rejects(
+      () => router._callBackend('mcp_server_add', params),
+      /cancelado/,
+      'cancelar la confirmación nativa bloquea el registro MCP stdio',
+    );
+    assert.strictEqual(dialogs.length, 1, 'mcp_server_add stdio pide confirmación nativa');
+    assert.match(dialogs[0].detail, /powershell\.exe -NoProfile -Command Write-Output x/, 'el diálogo muestra el comando completo');
+    dialogs.length = 0;
+    await assert.rejects(
+      () => router._callBackend('mcp_server_add', { ...params, transport: 'http', url: 'https://example.com/mcp' }),
+      /Backend process not available/,
+      'un servidor MCP http no usa el gate de ejecución nativa',
+    );
+    assert.strictEqual(dialogs.length, 0, 'http no abre confirmación de proceso nativo');
+  }
+
+  {
+    const calls = [];
+    const dialogs = [];
+    const loadAgentHandlers = (dialogResponse) => {
+      calls.length = 0;
+      dialogs.length = 0;
+      stubModule('electron', {
+        dialog: { showMessageBox: async (win, opts) => { dialogs.push(opts); return { response: dialogResponse }; } },
+      });
+      stubModule('electron/window-manager', { getMainWindow: () => ({}) });
+      stubModule('electron/agent-runtime', {
+        open: async () => {},
+        handlers: {
+          agent_sessions_list: async () => ({ sessions: [{ id: 's1', permission_mode: 'ask' }] }),
+          agent_session_permissions_set: async (params) => { calls.push(['permissions', params]); return { ok: true }; },
+          agent_policy_rules_set: async (params) => { calls.push(['policy', params]); return { ok: true }; },
+        },
+      });
+      evictModule('electron/agent-handlers');
+      return require('../electron/agent-handlers');
+    };
+
+    let handlers = loadAgentHandlers(1);
+    await assert.rejects(
+      () => handlers.handleAgentCall('agent_session_permissions_set', { id: 's1', permission_mode: 'full' }),
+      /cancelada/,
+      'cancelar la confirmación nativa bloquea elevar la sesión a acceso completo',
+    );
+    assert.strictEqual(calls.length, 0, 'la elevación cancelada no llega al runtime');
+    assert.strictEqual(dialogs.length, 1, 'elevar a full pide confirmación nativa');
+
+    handlers = loadAgentHandlers(0);
+    await handlers.handleAgentCall('agent_session_permissions_set', { id: 's1', permission_mode: 'full' });
+    assert.strictEqual(calls.length, 1, 'aceptar la confirmación nativa permite elevar la sesión');
+
+    handlers = loadAgentHandlers(1);
+    await handlers.handleAgentCall('agent_policy_rules_set', { rules: { files: 'deny' } });
+    assert.strictEqual(calls.length, 1, 'una rebaja de permisos no necesita confirmación');
+    assert.strictEqual(dialogs.length, 0, 'una regla deny no abre diálogo');
+
+    handlers = loadAgentHandlers(1);
+    await assert.rejects(
+      () => handlers.handleAgentCall('agent_policy_rules_set', { scoped_rules: [{ scope: 'path', value: 'C:\\Docs', decision: 'allow' }] }),
+      /cancelada/,
+      'una regla allow persistente también exige confirmación nativa',
+    );
+    assert.strictEqual(calls.length, 0, 'la regla allow cancelada no llega al runtime');
+    assert.match(dialogs[0].detail, /C:\\Docs/, 'el diálogo muestra el alcance permitido');
   }
 
   finish();

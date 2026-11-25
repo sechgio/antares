@@ -109,6 +109,23 @@ async function main() {
     result = run();
     assert(result.status === 0 && fs.existsSync(binary) && calls().length === 1, 'missing Electron binary downloads without reinstalling packages');
 
+    const bareHome = path.join(fixture, 'home');
+    const shimDir = path.join(fixture, 'shim');
+    const shimFile = path.join(shimDir, process.platform === 'win32' ? 'bun.cmd' : 'bun');
+    fs.mkdirSync(bareHome, { recursive: true });
+    write(shimFile, process.platform === 'win32'
+      ? `@"${process.execPath}" "${fakeBun}" %*\r\n`
+      : `#!/bin/sh\nexec "${process.execPath}" "${fakeBun}" "$@"\n`);
+    fs.chmodSync(shimFile, 0o755);
+    const pathKey = Object.keys(process.env).find((name) => name.toUpperCase() === 'PATH');
+    if (fs.existsSync(log)) fs.unlinkSync(log);
+    result = spawnSync(process.execPath, [path.join(fixture, 'scripts', 'dev.js')], {
+      cwd: os.tmpdir(), encoding: 'utf8', timeout: 15000,
+      env: { ...process.env, BUN_EXECPATH: '', HOME: bareHome, USERPROFILE: bareHome, [pathKey]: `${shimDir}${path.delimiter}${process.env[pathKey]}` },
+    });
+    assert(result.status === 0 && calls().at(-1)?.args.join(' ') === 'run dev:app',
+      `bun resolved from PATH (npm shim) launches without BUN_EXECPATH or ~/.bun: ${result.stderr}`);
+
     if (process.platform === 'win32') {
       fs.copyFileSync(process.execPath, binary);
       runningElectron = spawn(binary, ['-e', "console.log('ready'); setInterval(() => {}, 1000)"], { stdio: ['ignore', 'pipe', 'ignore'] });

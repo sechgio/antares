@@ -232,9 +232,7 @@ def create_target(name: object, library: Path) -> Path:
 
 def _publish(target: Path, data: bytes) -> None:
     with atomic_output_file(target, extension=".md", write_token=True) as output:
-        fd = os.open(output.tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
+        output.tmp_path.write_bytes(data)
 
 
 def create(library: Path, name: object, description: object, content: object = "") -> JsonObject:

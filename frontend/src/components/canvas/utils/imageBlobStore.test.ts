@@ -111,12 +111,32 @@ describe("registerImageBlob / getBlobUrl / getThumbnailUrl", () => {
     expect(getThumbnailUrl(reg.blobId)).toBe(reg.url);
   });
 
-  it("getBlobUrl pasa blob:/http tal cual y devuelve value si no conoce", () => {
+  it("getBlobUrl pasa blob:/data raster tal cual y devuelve value si no conoce", () => {
     expect(getBlobUrl("blob:raw")).toBe("blob:raw");
-    expect(getBlobUrl("https://x/y.png")).toBe("https://x/y.png");
+    expect(getBlobUrl("data:image/png;base64,AAA")).toBe("data:image/png;base64,AAA");
     expect(getBlobUrl("img_blob_unknown")).toBe("img_blob_unknown");
     expect(getBlobUrl(undefined)).toBe("");
     expect(getThumbnailUrl(undefined)).toBe("");
+  });
+
+  it("getBlobUrl bloquea file:, javascript:, data: no raster y http(s) remotos", () => {
+    expect(getBlobUrl("file:///C:/Users/x/secreto.png")).toBe("");
+    expect(getBlobUrl("javascript:alert(1)")).toBe("");
+    expect(getBlobUrl("  JaVaScRiPt:alert(1)")).toBe("");
+    expect(getBlobUrl("java\tscript:alert(1)")).toBe("");
+    expect(getBlobUrl("data:text/html;base64,PHNjcmlwdD4=")).toBe("");
+    expect(getBlobUrl("data:image/svg+xml;base64,PHN2Zz4=")).toBe("");
+    expect(getBlobUrl("https://cdn.example.com/x.png")).toBe("");
+    expect(getBlobUrl("http://example.com/x.png")).toBe("");
+    expect(getBlobUrl("//evil.example.com/x.png")).toBe("");
+    expect(getThumbnailUrl("https://cdn.example.com/x.png")).toBe("");
+  });
+
+  it("getBlobUrl preserva referencias internas no rasterizadas", () => {
+    expect(getBlobUrl("canvas-asset:abc123")).toBe("canvas-asset:abc123");
+    expect(getBlobUrl("antares-local-image:row-0-img-0")).toBe("antares-local-image:row-0-img-0");
+    expect(getBlobUrl("data:image/jpeg;base64,AAA")).toBe("data:image/jpeg;base64,AAA");
+    expect(getBlobUrl("data:image/webp;base64,AAA")).toBe("data:image/webp;base64,AAA");
   });
 });
 

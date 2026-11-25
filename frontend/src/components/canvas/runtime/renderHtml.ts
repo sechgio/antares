@@ -18,6 +18,7 @@ import { ensureLinePath } from '../ops/pathGeometry';
 import { parseTableData } from '../ops/tableData';
 import { applyInstanceOverrides } from '../ops/components';
 import { escapeHtml } from '../../../utils/html';
+import { isUnsafeCanvasImageUrl } from '../utils/imageBlobStore';
 import { MM_TO_PX } from '../ops/drawHelpers';
 
 
@@ -124,9 +125,10 @@ function resolveLayerContent(
       ...layer.cssVars,
       '--object-fit': layer.cssVars['--object-fit'] || 'contain',
     });
+    const safeSrc = isUnsafeCanvasImageUrl(src) ? '' : src;
     return {
       kind: 'image',
-      html: `<img src="${escapeHtml(src)}" alt="logo" style="${imgStyle}" />`,
+      html: `<img src="${escapeHtml(safeSrc)}" alt="logo" style="${escapeHtml(imgStyle)}" />`,
     };
   }
   if (layer.type === 'imageSlot') {
@@ -147,9 +149,10 @@ function resolveLayerContent(
     const captionHtml = captions.length
       ? `<div style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);color:#fff;font-size:7pt;padding:${CAPTION_PAD};line-height:1.2;">${captions.join(' · ')}</div>`
       : '';
+    const safeSlotSrc = isUnsafeCanvasImageUrl(src) ? '' : src;
     return {
       kind: 'html',
-      html: `<div style="position:relative;width:100%;height:100%;overflow:hidden;"><img src="${escapeHtml(src)}" alt="foto-${index}" style="${imgStyle}" />${captionHtml}</div>`,
+      html: `<div style="position:relative;width:100%;height:100%;overflow:hidden;"><img src="${escapeHtml(safeSlotSrc)}" alt="foto-${index}" style="${escapeHtml(imgStyle)}" />${captionHtml}</div>`,
     };
   }
   if (layer.type === 'image') {
@@ -160,9 +163,10 @@ function resolveLayerContent(
       };
     }
     const imgStyle = imageContentInlineStyle(layer.cssVars);
+    const safeValue = isUnsafeCanvasImageUrl(layer.value) ? '' : layer.value;
     return {
       kind: 'image',
-      html: `<img src="${escapeHtml(layer.value)}" alt="" style="${imgStyle}" />`,
+      html: `<img src="${escapeHtml(safeValue)}" alt="" style="${escapeHtml(imgStyle)}" />`,
     };
   }
   if (isVectorShapeLayerType(layer.type)) {
@@ -313,12 +317,12 @@ export function renderCanvasHtml(
           isTextualLayerType(ensured.type)
             ? `width:100%;line-height:${lineHeight};white-space:pre-wrap;font-family:${fontFamily};font-size:inherit;color:inherit;text-align:${align};${typo}`
             : `width:100%;line-height:${lineHeight};white-space:pre-wrap;`;
-        return `<div data-layer="${escapeHtml(ensured.id)}" style="${box}"><span style="${innerSpan}">${resolved.html}</span></div>`;
+        return `<div data-layer="${escapeHtml(ensured.id)}" style="${escapeHtml(box)}"><span style="${escapeHtml(innerSpan)}">${resolved.html}</span></div>`;
       }
       if (resolved.kind === 'image' || resolved.kind === 'html') {
-        return `<div data-layer="${escapeHtml(ensured.id)}" style="${box}">${resolved.html}</div>`;
+        return `<div data-layer="${escapeHtml(ensured.id)}" style="${escapeHtml(box)}">${resolved.html}</div>`;
       }
-      return `<div data-layer="${escapeHtml(ensured.id)}" style="${box}"></div>`;
+      return `<div data-layer="${escapeHtml(ensured.id)}" style="${escapeHtml(box)}"></div>`;
     })
     .join('\n');
 

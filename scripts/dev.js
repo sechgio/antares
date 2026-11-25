@@ -14,15 +14,16 @@ delete installEnv.ELECTRON_SKIP_BINARY_DOWNLOAD;
 function resolveBunBinary() {
   const homeBun = path.join(os.homedir(), '.bun', 'bin', process.platform === 'win32' ? 'bun.exe' : 'bun');
   if (fs.existsSync(homeBun)) return homeBun;
-  return process.platform === 'win32' ? 'bun.exe' : 'bun';
+  return 'bun';
 }
 
 function bun(args, cwd, env = process.env) {
   const cli = process.env.BUN_EXECPATH;
-  return spawnSync(cli ? process.execPath : resolveBunBinary(),
-    cli ? [cli, ...args] : args, {
-      cwd, env, stdio: 'inherit', windowsHide: true,
-    });
+  const bin = cli ? process.execPath : resolveBunBinary();
+  const options = { cwd, env, stdio: 'inherit', windowsHide: true };
+  // Sin ruta absoluta, en Windows bun suele ser solo bun.cmd (npm global): cmd.exe es quien lo resuelve.
+  if (process.platform === 'win32' && bin === 'bun') return spawnSync([bin, ...args].join(' '), { ...options, shell: true });
+  return spawnSync(bin, cli ? [cli, ...args] : args, options);
 }
 
 function missingDependencies(dir, commands) {

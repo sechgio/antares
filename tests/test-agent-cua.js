@@ -50,6 +50,7 @@ const cua = require('../electron/agent-cua');
 const { nativeToolSpecs, nativeToolContext } = require('../electron/agent-native-tools');
 
 async function main() {
+  process.env.ANTARES_TEST_SECRET_CANARY = 'secreto-canario';
   const specs = nativeToolSpecs().filter((spec) => spec.name.startsWith('cua_'));
   assert(specs.length === 15 && specs.every((spec) => spec.module === 'computer' && spec.kind === 'native'),
     'las 15 herramientas cua_ se registran como nativas del módulo Equipo');
@@ -79,6 +80,8 @@ async function main() {
   const env = daemon.options.env;
   assert(env.CUA_DRIVER_RS_TELEMETRY_ENABLED === '0' && env.CUA_DRIVER_RS_UPDATE_CHECK === '0',
     'el driver arranca sin telemetría ni comprobación de actualizaciones');
+  assert(!('ANTARES_TEST_SECRET_CANARY' in env) && !Object.values(env).some((value) => String(value).includes('secreto-canario')),
+    'el driver no hereda secretos del entorno de Electron');
   const policy = fs.readFileSync(env.CUA_DRIVER_POLICY_FILE, 'utf8');
   assert(policy.includes('list_windows') && policy.includes('get_window_state') && !policy.includes('kill_app')
     && !policy.includes('clipboard'), 'la política del daemon solo admite las herramientas expuestas');
