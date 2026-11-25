@@ -53,7 +53,14 @@ function skill(directory, name, body = 'Instrucciones cargables.') {
 function profile(slug = 'reviewer', metadata = {}) {
   write(
     `${slug}/agent.json`,
-    JSON.stringify({ name: 'Revisor', slug, model: 'local-model', description: 'Revisa entregas', ...metadata }),
+    JSON.stringify({
+      name: 'Revisor',
+      slug,
+      model: 'local-model',
+      description: 'Revisa entregas',
+      onboarded_at: 1,
+      ...metadata,
+    }),
   );
   write(`${slug}/AGENTS.md`, 'Rol: revisar. Tono: claro. Límites: solo lectura.');
 }
@@ -640,7 +647,7 @@ describe('integración con el arranque del agente', () => {
       tools: null,
     });
     expect(edited).toMatchObject({ soul: 'Tono formal.', user: 'Firma como Ana.' });
-    const full = (await runtime.handlers.agent_template_export({ id: saved.id })).template;
+    const full = (await runtime.handlers.agent_template_export({ id: saved.id, include_user: true })).template;
     expect(full).toMatchObject({ format: 'antares-agent-template/v1', soul: 'Tono formal.', user: 'Firma como Ana.' });
     const shared = (await runtime.handlers.agent_template_export({ id: saved.id, include_user: false })).template;
     expect(shared.soul).toBe('Tono formal.');
