@@ -1950,7 +1950,7 @@ export default function AgentView({
             role="region"
             aria-label="Mensajes"
             tabIndex={-1}
-            className="custom-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-4 pb-4 pt-3 [&>*]:mx-auto [&>*]:max-w-[960px]"
+            className="custom-scrollbar min-h-0 flex-1 space-y-8 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-4 pb-4 pt-3 [&>*]:mx-auto [&>*]:max-w-[768px]"
           >
             {showHero ? (
               <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
@@ -2059,7 +2059,7 @@ export default function AgentView({
           <div role="status" aria-label="Avisos del agente" aria-live="polite" aria-atomic="true" className="sr-only">
             {announcement && <span key={announcement.key}>{announcement.text}</span>}
           </div>
-          <div className="mx-auto w-full max-w-[992px] shrink-0 px-4 pb-3">
+          <div className="mx-auto w-full max-w-[800px] shrink-0 px-4 pb-3">
             {rooms.length > 0 && <RoomRoster rooms={rooms} />}
             <AgentProgress
               items={progress}

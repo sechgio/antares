@@ -1,6 +1,5 @@
 .agent-workspace {
   --agent-panel: var(--bg-surface);
-  --agent-bubble: color-mix(in srgb, var(--bg-input) 65%, var(--bg-surface));
 }
 
 .agent-workspace .agent-conversation {
@@ -10,7 +9,14 @@
   background: var(--bg-base);
 }
 .agent-workspace .agent-message-user {
-  background: var(--agent-bubble);
+  background: var(--accent-primary);
+  color: var(--text-on-accent);
+}
+.agent-workspace .agent-message-answer {
+  background: var(--bg-elevated);
+}
+.agent-workspace .agent-message-answer:has(.chat-visual) {
+  width: 100%;
 }
 .agent-workspace .agent-markdown {
   overflow-wrap: anywhere;

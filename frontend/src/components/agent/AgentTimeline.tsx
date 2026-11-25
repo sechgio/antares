@@ -410,7 +410,7 @@ function UserBubble({ msg }: { msg: AgentMessage }) {
       </div>}
       {msg.content && <div className="flex w-full min-w-0 items-end justify-end gap-1">
         <CopyButton text={msg.content} label="Copiar mensaje" />
-        <div className="agent-message-user min-w-0 max-w-[min(600px,88%)] rounded-2xl px-4 py-3 text-[14px] leading-[22px] text-[var(--text-primary)]">
+        <div className="agent-message-user min-w-0 max-w-[min(600px,88%)] rounded-[20px] px-4 py-2.5 text-[14px] leading-[22px]">
           <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
         </div>
       </div>}
@@ -731,10 +731,10 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
   const duration = !working && startedAt && last && last.ts > startedAt ? last.ts - startedAt : undefined;
   const thought = steps.length === 1 && steps[0].kind === 'reasoning' ? steps[0] : null;
   return (
-    <div className="agent-trace-in agent-turn group space-y-1.5">
+    <div className="agent-trace-in agent-turn group space-y-2.5">
       <div className="flex items-center gap-1.5">
-        {agent && <AgentAvatar seed={agent.seed} color={agent.color} name={agent.name} size={24} working={working} />}
-        <span className="text-[13px] font-medium leading-5 text-[var(--text-secondary)]">{agent?.name ?? 'Agente'}</span>
+        {agent && <AgentAvatar seed={agent.seed} color={agent.color} name={agent.name} size={20} working={working} />}
+        <span className="text-[12px] font-medium leading-5 text-[var(--text-muted)]">{agent?.name ?? 'Agente'}</span>
         {answer && !answer.partial && <CopyButton text={answer.content} />}
       </div>
       {thought
@@ -744,7 +744,7 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
         : steps.length > 0 && <Activity entries={steps} working={working} answering={!!answer} duration={duration} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />}
       {sessionId && onPanelRespond && panelEntries.map((panel) => <PanelRenderer key={panel.id} panel={panel} sessionId={sessionId} onRespond={onPanelRespond} />)}
       {answer && (
-        <div className="agent-message-answer min-w-0 max-w-full py-1 text-[15px] leading-[26px] text-[var(--text-primary)]">
+        <div className="agent-message-answer w-fit min-w-0 max-w-full rounded-[18px] px-4 py-3 text-[15px] leading-[26px] text-[var(--text-primary)]">
           <MessageMarkdown text={answer.content} streaming={!!answer.partial} />
         </div>
       )}
