@@ -62,3 +62,18 @@ def key(vk: int, up: bool = False) -> Input:
 
 def unicode_input(unit: int, up: bool = False) -> Input:
     return Input(type=INPUT_KEYBOARD, u=InputUnion(ki=KeybdInput(0, unit, UNICODE | (KEYUP if up else 0), 0, 0)))
+
+
+def text_inputs(text: str) -> list[Input]:
+    inputs: list[Input] = []
+    for char in text.replace("\r\n", "\n"):
+        if char == "\n":
+            inputs.extend((key(0x0D), key(0x0D, up=True)))
+        elif char == "\t":
+            inputs.extend((key(0x09), key(0x09, up=True)))
+        else:
+            encoded = char.encode("utf-16-le")
+            units = [int.from_bytes(encoded[i:i + 2], "little") for i in range(0, len(encoded), 2)]
+            inputs.extend(unicode_input(unit) for unit in units)
+            inputs.extend(unicode_input(unit, up=True) for unit in units)
+    return inputs

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import ctypes
-import json
 import os
-import subprocess
 import sys
 import threading
 import time
@@ -210,67 +208,51 @@ def _windows() -> list[JsonObject]:
     return found
 
 
-_UIA_SCRIPT = r"""
-$ErrorActionPreference='Stop'
-[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
-Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
-$root=[System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]__HWND__)
-$walker=[System.Windows.Automation.TreeWalker]::ControlViewWalker
-$out=New-Object System.Collections.ArrayList
-$queue=New-Object System.Collections.Queue
-$queue.Enqueue(@($root,0))
-while($queue.Count -gt 0 -and $out.Count -lt __MAX__){
-  $pair=$queue.Dequeue();$el=$pair[0];$depth=$pair[1]
-  try{$c=$el.Current}catch{continue}
-  $r=$c.BoundingRectangle
-  if(-not $c.IsOffscreen -and $r.Width -gt 2 -and $r.Height -gt 2 -and -not [double]::IsInfinity($r.X)){
-    $value=$null
-    try{$vp=$el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern);$value=$vp.Current.Value}catch{}
-    if($c.Name -or $value -or $c.ControlType.ProgrammaticName -match 'Edit|Button|MenuItem|ListItem|TabItem|CheckBox|ComboBox|Hyperlink|Document'){
-      [void]$out.Add([ordered]@{n=$c.Name;t=$c.ControlType.ProgrammaticName.Replace('ControlType.','');x=[int]$r.X;y=[int]$r.Y;w=[int]$r.Width;h=[int]$r.Height;e=$c.IsEnabled;v=$value})
-    }
-  }
-  if($depth -lt 14){
-    $child=$walker.GetFirstChild($el)
-    while($child -ne $null){$queue.Enqueue(@($child,($depth+1)));$child=$walker.GetNextSibling($child)}
-  }
-}
-$rr=$root.Current.BoundingRectangle
-ConvertTo-Json -InputObject ([ordered]@{root=[ordered]@{x=[int]$rr.X;y=[int]$rr.Y;w=[int]$rr.Width};items=@($out)}) -Depth 4 -Compress
-"""
+_INTERACTIVE_TOKENS = ("edit", "button", "menuitem", "listitem", "tabitem", "checkbox", "combobox", "hyperlink", "document")
 
 
 def _elements(window: JsonObject) -> list[JsonObject]:
-    script = _UIA_SCRIPT.replace("__HWND__", str(int(window["_hwnd"]))).replace("__MAX__", str(_MAX_ELEMENTS))
+    """Controles de la ventana activa leídos en proceso con UIA cacheado.
+
+    Antes se lanzaba un powershell.exe por observación (cientos de ms en el mejor
+    caso, varios segundos en ventanas complejas); el recorrido cacheado en el
+    worker del driver devuelve el mismo resultado en una fracción del tiempo.
+    """
+    hwnd = int(window["_hwnd"])
+
+    def walk() -> tuple[list[JsonObject], dict[str, str]]:
+        from pywinauto.uia_defines import IUIA
+
+        elements, _raws, _truncated = driver._walk_elements(hwnd, driver._MAX_ELEMENTS_CAP, _UIA_TIMEOUT_S, control_view=True)
+        canonical = {str(control_type).lower(): str(control_type) for control_type in IUIA().known_control_type_ids.values()}
+        return elements, canonical
+
     try:
-        completed = subprocess.run(
-            ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-            capture_output=True, timeout=_UIA_TIMEOUT_S, check=False,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-        raw = json.loads(completed.stdout.decode("utf-8", errors="replace") or "{}")
-    except (subprocess.TimeoutExpired, ValueError, OSError):
+        entries, canonical = driver._run_on_worker(walk, _UIA_TIMEOUT_S)
+    except Exception:
         return []
-    if not isinstance(raw, dict) or not isinstance(raw.get("root"), dict):
-        return []
-    root = raw["root"]
     scale = _scale()
-    ratio = window["width"] * scale / max(1, int(root.get("w") or 0)) if root.get("w") else 1.0
-    origin_x, origin_y = int(root.get("x") or 0), int(root.get("y") or 0)
     elements: list[JsonObject] = []
-    for item in raw.get("items") or []:
-        if not isinstance(item, dict):
+    for entry in entries:
+        left, top, width, height = (int(v) for v in entry["rect"])
+        role = str(entry.get("role") or "")
+        value = str(entry["value"])[:200] if entry.get("value") else ""
+        name = str(entry.get("name") or "")[:80]
+        if not name and not value and not any(token in role for token in _INTERACTIVE_TOKENS):
             continue
-        x, y, w, h = (int(item.get(k) or 0) for k in ("x", "y", "w", "h"))
-        cx = window["x"] + ((x - origin_x) + w / 2) * ratio / scale
-        cy = window["y"] + ((y - origin_y) + h / 2) * ratio / scale
-        entry: JsonObject = {"name": str(item.get("n") or "")[:80], "type": str(item.get("t") or ""),
-                             "center_x": int(cx), "center_y": int(cy)}
-        if item.get("v"):
-            entry["value"] = str(item["v"])[:200]
-        if item.get("e") is False:
-            entry["enabled"] = False
-        elements.append(entry)
+        item: JsonObject = {
+            "name": name,
+            "type": canonical.get(role, role),
+            "center_x": int((left + width / 2) / scale),
+            "center_y": int((top + height / 2) / scale),
+        }
+        if value:
+            item["value"] = value
+        if entry.get("enabled") is False:
+            item["enabled"] = False
+        elements.append(item)
+        if len(elements) >= _MAX_ELEMENTS:
+            break
     return elements
 
 
