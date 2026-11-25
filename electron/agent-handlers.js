@@ -6,6 +6,7 @@ const { FORBIDDEN_FALLBACK_EXTENSIONS } = require('./ipc-file-policy');
 const AGENT_METHODS = nativeMethods('agent');
 const AGENT_PRIVILEGE_CONFIRM_MIN_INTERVAL_MS = 5000;
 const PERMISSION_RANK = { ask: 0, auto: 1, full: 2 };
+const PERMISSION_LABELS = { ask: 'Solicitar aprobación', auto: 'Aprobar por mí', full: 'Acceso completo' };
 let _lastAgentPrivilegeConfirmAt = 0;
 
 function _ruleElevationSummary(params) {
@@ -35,11 +36,13 @@ async function _confirmAgentPrivilegeEscalation(method, params, runtime) {
     const currentMode = current && current.permission_mode ? current.permission_mode : 'ask';
     if ((PERMISSION_RANK[target] || 0) <= (PERMISSION_RANK[currentMode] || 0)) return;
     title = 'Elevar permisos del agente';
-    message = `¿Cambiar esta conversación de «${currentMode}» a «${target}»?`;
+    message = `¿Activar «${PERMISSION_LABELS[target]}» en esta conversación?`;
     lines = [
       target === 'full'
         ? 'El agente podrá ejecutar acciones permitidas sin pedir confirmación en cada paso.'
         : 'El agente podrá realizar acciones de bajo riesgo sin pedir confirmación en cada paso.',
+      '',
+      `Modo actual: ${PERMISSION_LABELS[currentMode] || currentMode}.`,
     ];
   } else if (method === 'agent_session_rules_set' || method === 'agent_policy_rules_set') {
     lines = _ruleElevationSummary(params);
@@ -65,6 +68,7 @@ async function _confirmAgentPrivilegeEscalation(method, params, runtime) {
     buttons: ['Permitir elevación', 'Cancelar'],
     defaultId: 1,
     cancelId: 1,
+    noLink: true,
     title,
     message,
     detail: lines.join('\n').slice(0, 900),
