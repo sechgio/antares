@@ -74,4 +74,33 @@ if [ -n "$secret_hits" ]; then
   exit 1
 fi
 
+staged_paths=$(git diff --cached --name-only --diff-filter=ACMR)
+
+if printf '%s\n' "$staged_paths" | grep -q '^changelog\.d/[^/]*\.md$'; then
+  if ! node scripts/check-release-notes.js --staged; then
+    echo ""
+    echo "✗ Commit bloqueado: fragmento de release notes con formato inválido."
+    echo ""
+    exit 1
+  fi
+fi
+
+if printf '%s\n' "$staged_paths" | grep -Eq '^(shared/ipc-method-catalog\.json|shared/ipc-method-catalog\.js|backend/core/ipc_catalog\.py)$'; then
+  echo "Catálogo IPC staged: ejecutando pruebas de paridad..."
+  if ! node tests/test-electron-ipc-allowlist.js >/dev/null 2>&1; then
+    echo ""
+    echo "✗ Commit bloqueado: tests/test-electron-ipc-allowlist.js falló."
+    echo "  Revisa la paridad preload/router/catálogo."
+    echo ""
+    exit 1
+  fi
+  if ! uv run --locked --extra dev python -m pytest tests/test_ipc_catalog.py -x -q; then
+    echo ""
+    echo "✗ Commit bloqueado: tests/test_ipc_catalog.py falló."
+    echo "  Revisa la paridad del catálogo IPC con su proyección Python."
+    echo ""
+    exit 1
+  fi
+fi
+
 exit 0

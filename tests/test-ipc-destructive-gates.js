@@ -189,6 +189,9 @@ async function main() {
     );
     assert.strictEqual(calls.length, 0, 'la elevación cancelada no llega al runtime');
     assert.strictEqual(dialogs.length, 1, 'elevar a full pide confirmación nativa');
+    assert.strictEqual(dialogs[0].noLink, true, 'el diálogo usa botones estándar, no enlaces de comando');
+    assert.match(dialogs[0].message, /«Acceso completo»/, 'el diálogo nombra el modo con su etiqueta visible');
+    assert.match(dialogs[0].detail, /Modo actual: Solicitar aprobación/, 'el diálogo muestra el modo actual legible');
 
     handlers = loadAgentHandlers(0);
     await handlers.handleAgentCall('agent_session_permissions_set', { id: 's1', permission_mode: 'full' });

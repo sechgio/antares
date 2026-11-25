@@ -346,6 +346,31 @@ class MemoryStore:
             self._write()
             return self._view(item)
 
+    def flush_journal(self, session_id: str, entries: object) -> JsonObject:
+        if not isinstance(entries, list) or len(entries) > 5:
+            raise ValueError("entries debe ser una lista de hasta 5 entradas")
+        saved = 0
+        rejected = 0
+        deduplicated = 0
+        with self._lock:
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    rejected += 1
+                    continue
+                try:
+                    title = _clean(entry.get("title"), "un título", MAX_TITLE)
+                    content = _clean(entry.get("content"), "el contenido", MAX_TEXT)
+                    existing = self._same("journal", title, session_id, _journal_date(None))
+                    latest = existing["versions"][-1] if existing is not None else None
+                    if latest and str(latest.get("content") or "") == content:
+                        deduplicated += 1
+                        continue
+                    self.remember(session_id, {"kind": "journal", "title": title, "content": content})
+                    saved += 1
+                except ValueError:
+                    rejected += 1
+        return {"saved": saved, "rejected": rejected, "deduplicated": deduplicated}
+
     def learn(self, store: AgentStore, session_id: str, params: JsonObject) -> JsonObject:
         with self._lock:
             self._check_writable(session_id)

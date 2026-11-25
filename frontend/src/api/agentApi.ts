@@ -92,7 +92,9 @@ export interface AgentProfile {
   role?: AgentRole;
   instructions: string;
   soul?: string;
+  identity?: string;
   user?: string;
+  onboarded_at?: number;
   starter: string;
   tools: string[] | null;
   tools_deny?: string[];
@@ -569,7 +571,7 @@ export const agentApi = {
 
   agentProfilesList: () => _invoke<{ profiles: AgentProfile[] }>('agent_profiles_list'),
 
-  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; role?: AgentRole; instructions: string; soul?: string; user?: string; starter: string; tools: string[] | null; tools_deny?: string[]; memory_scope?: AgentMemoryScope; browser_mode?: AgentBrowserMode; daily_tokens?: number | null; dreaming?: boolean; model?: { provider: string; model: string } | null }) =>
+  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; role?: AgentRole; instructions: string; soul?: string; identity?: string; user?: string; starter: string; tools: string[] | null; tools_deny?: string[]; memory_scope?: AgentMemoryScope; browser_mode?: AgentBrowserMode; daily_tokens?: number | null; dreaming?: boolean; model?: { provider: string; model: string } | null }) =>
     _invoke<{ profile: AgentProfile }>('agent_profile_save', p),
 
   agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),

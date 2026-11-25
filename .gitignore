@@ -78,6 +78,8 @@ opencode.json
 docs/*
 !docs/adr/
 !docs/adr/**
+!docs/verification/
+!docs/verification/**
 
 media/*
 !media/manifest.json
@@ -142,6 +144,7 @@ outputs/
 plans/
 advisor-plans/
 tasks/
+TASKS.md
 
 BUGS_BOTTLENECKS_AUDIT_*.md
 PERFORMANCE_AUDIT_*.md

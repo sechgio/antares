@@ -22,6 +22,6 @@
 
 - [ ] `bun run ci` pasa en local y probé la ruta negativa
 - [ ] Revisé mi diff completo; sin `any` / `# type: ignore` / `eslint-disable` sin justificar
-- [ ] `CHANGELOG.md` y docs/ADR actualizados si aplica
+- [ ] `changelog.d/<rama>.md` con las notas de release (o etiqueta `no-changelog` si el cambio no es visible) y docs/ADR actualizados si aplica
 
 > Revisión: `blocking:` · `suggestion:` · `nit:` · `question:` · `praise:`

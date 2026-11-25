@@ -460,3 +460,31 @@ def test_supersede_of_the_same_memory_is_rejected_loudly(store):
     view = {i["id"]: i for i in mem.items()}
     assert view[created["id"]]["status"] == "active"
     assert len(view[created["id"]]["versions"]) == 1, "el rechazo no muta el recuerdo"
+
+
+def test_flush_journal_writes_only_brief_valid_entries(store):
+    mem = memory.memory_for(store)
+    result = mem.flush_journal("s1", [
+        {"title": "Decisión de formato", "content": "El informe quedará en CSV"},
+        {"title": "Secreto", "content": "token=abc123"},
+        {"title": "", "content": "sin título"},
+    ])
+    assert result == {"saved": 1, "rejected": 2, "deduplicated": 0}
+    items = mem.search("CSV", session_id="s1")
+    assert len(items) == 1
+    assert items[0]["kind"] == "journal"
+    assert items[0]["date"]
+
+
+def test_flush_journal_limits_entries(store):
+    with pytest.raises(ValueError, match="hasta 5"):
+        memory.memory_for(store).flush_journal("s1", [{"title": str(i), "content": "x"} for i in range(6)])
+
+
+def test_flush_journal_exact_repeat_is_idempotent(store):
+    mem = memory.memory_for(store)
+    entry = {"title": "Pendiente", "content": "Enviar el informe"}
+    assert mem.flush_journal("s1", [entry])["saved"] == 1
+    assert mem.flush_journal("s1", [entry]) == {"saved": 0, "rejected": 0, "deduplicated": 1}
+    item = mem.search("informe", session_id="s1")[0]
+    assert len(item["versions"]) == 1
