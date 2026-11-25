@@ -6,14 +6,17 @@ import threading
 import time
 import unicodedata
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from backend.core.agent.memory_index import Doc, MemoryIndex
 from backend.core.integrations.types import JsonObject
 from backend.utils.atomic_write import atomic_write_json
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from backend.core.agent.agent import AgentStore
 
 LABELS = {"preference": "Preferencia", "fact": "Hecho", "procedure": "Procedimiento"}
@@ -25,6 +28,11 @@ MAX_VERSIONS = 20
 CONTEXT_CHARS = 4000
 CONTEXT_ITEMS = 8
 FAILURE_LIMIT = 2
+INFERRED_DAYS = 30
+AUTO_HEADROOM = 50
+DREAM_CHARS = 24000
+DREAM_MEMORIES = 50
+DREAM_MEMORY_CHARS = 300
 VERIFIED = frozenset({"succeeded", "submitted"})
 _SELF = frozenset({"memory_search", "memory_remember", "procedure_learn"})
 _ACCOUNT_PROVIDERS = (("gdrive_", "google"), ("gsheets_", "google"), ("onedrive_", "microsoft"),
@@ -167,6 +175,7 @@ class MemoryStore:
         self._profiles: dict[str, str] = dict(data.get("profiles") or {})
         self._scopes: dict[str, str] = dict(data.get("scopes") or {})
         self.revision = int(data.get("revision") or 0)
+        self._index = MemoryIndex(base_dir / "memory_index.sqlite")
 
     def _write(self, *, user_change: bool = False) -> None:
         revision = self.revision + int(user_change)
@@ -175,6 +184,26 @@ class MemoryStore:
                                      **({"revision": revision} if revision else {}),
                                      **({"scopes": self._scopes} if self._scopes else {})})
         self.revision = revision
+        self._index.sync(self._docs())
+
+    def _docs(self) -> dict[str, Doc]:
+        docs: dict[str, Doc] = {}
+        for item_id, item in self._items.items():
+            if item["status"] != "active" or self._expired(item):
+                continue
+            view = self._view(item)
+            body = " ".join(str(view.get(k) or "") for k in ("content", "when", "date"))
+            body = " ".join([body, *(f"{s['tool']} {s['purpose']}" for s in view.get("steps") or [])]).strip()
+            age = _journal_age(view) if item["kind"] == "journal" else max(0, _now() - int(item["updated_at"])) / 86400000
+            docs[item_id] = Doc(str(item["kind"]), str(view["title"]), body, age, _key(f"{view['title']} {body}"))
+        return docs
+
+    def _ranked(self, query: str, allowed: set[str]) -> dict[str, tuple[float, str]] | None:
+        return self._index.rank(query, _key(query), self._docs(), allowed)
+
+    def rebuild_index(self) -> bool:
+        with self._lock:
+            return self._index.rebuild(self._docs())
 
     @staticmethod
     def _view(item: JsonObject) -> JsonObject:
@@ -231,6 +260,36 @@ class MemoryStore:
     def _check_writable(self, session_id: str) -> None:
         if self._scopes.get(session_id) == "none":
             raise ValueError("Este agente no usa memoria; no puede guardar recuerdos ni procedimientos")
+
+    def _absorb(self, kind: str, entry: JsonObject, source: JsonObject, profile_id: str | None,
+                visible: Callable[[JsonObject], bool], expires_at: int | None, *, update: bool) -> str:
+        try:
+            title = _clean(entry.get("title"), "un título", MAX_TITLE)
+            content = _clean(entry.get("content"), "el contenido", MAX_TEXT)
+        except ValueError:
+            return "rejected"
+        keys = {_key(title), _key(content)} - {""}
+        match = next((item for item in self._items.values() if item["kind"] in ("fact", "preference") and visible(item)
+                      and keys & {item["key"], _key(str(self._view(item).get("content") or ""))}), None)
+        if match is None:
+            if len(self._items) >= MAX_ITEMS - AUTO_HEADROOM:
+                return "rejected"
+            item = self._create(kind, title, {"content": content}, source)
+            item["expires_at"] = expires_at
+            if profile_id:
+                item["profile_id"] = profile_id
+            return "promoted"
+        expired = self._expired(match)
+        if (match.get("profile_id") != profile_id or match["status"] != "active"
+                or match["versions"][-1]["source"]["kind"] == "user" or not (update or expired)):
+            return "deduplicated"
+        changed = _key(content) != _key(str(self._view(match).get("content") or ""))
+        if not changed and not expired and match.get("expires_at") == expires_at:
+            return "deduplicated"
+        if changed:
+            self._add_version(match, {"content": content}, source)
+        match.update(expires_at=expires_at, updated_at=_now())
+        return "updated"
 
     def items(self) -> list[JsonObject]:
         with self._lock:
@@ -331,6 +390,80 @@ class MemoryStore:
             self._write()
             return self._view(item)
 
+    def promote(self, session_id: str, items: list[JsonObject]) -> JsonObject:
+        counts = dict.fromkeys(("promoted", "updated", "deduplicated", "rejected"), 0)
+        with self._lock:
+            self._check_writable(session_id)
+            source = {"kind": "agent", "session_id": session_id, "via": "compaction"}
+            for entry in items:
+                if entry.get("kind") not in ("preference", "fact"):
+                    counts["rejected"] += 1
+                    continue
+                counts[self._absorb(str(entry["kind"]), entry, source, self._profiles.get(session_id),
+                                    lambda item: self._visible(item, session_id), _now() + INFERRED_DAYS * 86400000,
+                                    update=False)] += 1
+            if counts["promoted"] or counts["updated"]:
+                self._write()
+        return counts
+
+    def dream_input(self, profile_id: str, days: int) -> JsonObject:
+        since = (date.today() - timedelta(days=days)).isoformat()
+        with self._lock:
+            views = sorted((self._view(item) for item in self._items.values()
+                            if item.get("profile_id") == profile_id and item["status"] == "active"
+                            and not self._expired(item)), key=lambda view: -int(view["updated_at"]))
+            journals: list[JsonObject] = []
+            size = 0
+            for view in sorted((v for v in views if v["kind"] == "journal" and str(v.get("date") or "") >= since),
+                               key=lambda v: str(v.get("date") or ""), reverse=True):
+                entry = {"id": view["id"], "date": view["date"], "title": _unmarked(view["title"]),
+                         "content": _unmarked(str(view.get("content") or "")),
+                         "archived": bool(view.get("consolidated_at"))}
+                size += len(entry["title"]) + len(entry["content"])
+                if size > DREAM_CHARS:
+                    break
+                journals.append(entry)
+            memories = [{"id": v["id"], "kind": v["kind"], "title": _unmarked(v["title"]),
+                         "content": _unmarked(str(v.get("content") or ""))[:DREAM_MEMORY_CHARS]}
+                        for v in views if v["kind"] in ("fact", "preference")][:DREAM_MEMORIES]
+        return {"journals": journals, "memories": memories}
+
+    def consolidate(self, profile_id: str, memory_scope: str | None, journal_ids: list[str], facts: list[JsonObject],
+                    preferences: list[JsonObject], obsolete: list[str]) -> JsonObject:
+        counts = dict.fromkeys(("promoted", "updated", "deduplicated", "rejected", "insufficient", "obsoleted",
+                                "archived"), 0)
+        with self._lock:
+            if memory_scope == "none":
+                raise ValueError("Este agente no usa memoria; no puede guardar recuerdos ni procedimientos")
+            batch = {jid: self._items[jid] for jid in map(str, journal_ids) if jid in self._items
+                     and self._items[jid]["kind"] == "journal" and self._items[jid].get("profile_id") == profile_id}
+            dates = {jid: str(self._view(item).get("date") or "") for jid, item in batch.items()}
+            for kind, entries in (("fact", facts), ("preference", preferences)):
+                for entry in entries:
+                    sources = list(dict.fromkeys(s for s in map(str, entry.get("sources") or []) if s in batch))
+                    if len({dates[s] for s in sources}) < 2 and not (entry.get("explicit") is True and sources):
+                        counts["insufficient"] += 1
+                        continue
+                    source = {"kind": "agent", "via": "dreaming", "journal_ids": sources}
+                    counts[self._absorb(kind, entry, source, profile_id, lambda item: self._visible(
+                        item, "", profile_id=profile_id, memory_scope=memory_scope), None, update=True)] += 1
+            for item_id in dict.fromkeys(map(str, obsolete)):
+                item = self._items.get(item_id)
+                if (item is None or item["kind"] not in ("fact", "preference") or item.get("profile_id") != profile_id
+                        or item["status"] != "active" or item["versions"][-1]["source"]["kind"] == "user"):
+                    continue
+                item.update(status="suspended", reason="Obsoleto según el diario del agente; actívalo si sigue vigente",
+                            updated_at=_now())
+                counts["obsoleted"] += 1
+            archived_at = _now()
+            for item in batch.values():
+                if not item.get("consolidated_at"):
+                    item["consolidated_at"] = archived_at
+                    counts["archived"] += 1
+            if counts["promoted"] or counts["updated"] or counts["obsoleted"] or counts["archived"]:
+                self._write()
+        return counts
+
     def update(self, item_id: str, params: JsonObject) -> JsonObject:
         action = params.get("action")
         with self._lock:
@@ -373,6 +506,8 @@ class MemoryStore:
                 item["updated_at"] = _now()
             else:
                 raise ValueError("Acción de memoria no válida")
+            if action in ("edit", "revert") and any(v["source"].get("via") == "compaction" for v in item["versions"]):
+                item["expires_at"] = None
             self._write(user_change=True)
             return self._view(item)
 
@@ -389,11 +524,16 @@ class MemoryStore:
                profile_id: str | None = None, memory_scope: str | None = None) -> list[JsonObject]:
         words = _words(query)
         with self._lock:
+            eligible = [item for item in self._items.values()
+                        if item["status"] == "active" and not self._expired(item) and (session_id is None or self._visible(
+                            item, session_id, profile_id=profile_id, memory_scope=memory_scope))]
+            ranked = self._ranked(query, {str(item["id"]) for item in eligible}) if words else None
+            if ranked is not None:
+                order = sorted(ranked, key=lambda i: (-ranked[i][0], -int(self._items[i]["updated_at"])))[:limit]
+                return [{**self._view(self._items[i]), **({"snippet": ranked[i][1]} if ranked[i][1] else {})}
+                        for i in order]
             scored = []
-            for item in self._items.values():
-                if item["status"] != "active" or self._expired(item) or (session_id is not None and not self._visible(
-                        item, session_id, profile_id=profile_id, memory_scope=memory_scope)):
-                    continue
+            for item in eligible:
                 view = self._view(item)
                 text = " ".join(str(view.get(k) or "") for k in ("title", "content", "when", "date"))
                 text += " " + " ".join(f"{s['tool']} {s['purpose']}" for s in view.get("steps") or [])
@@ -439,7 +579,7 @@ class MemoryStore:
                 self._scopes.pop(session_id, None)
             self._tool_versions.update(versions)
             words = _words(text)
-            chosen: list[tuple[int, JsonObject]] = []
+            eligible: list[JsonObject] = []
             for item in self._items.values():
                 if item["status"] != "active" or self._expired(item) or not self._visible(item, session_id):
                     continue
@@ -451,10 +591,17 @@ class MemoryStore:
                     if reason:
                         item.update(status="suspended", reason=reason, updated_at=_now())
                         continue
-                haystack = " ".join(str(view.get(k) or "") for k in ("title", "content", "when"))
-                score = len(words & _words(haystack))
-                if item["kind"] == "preference" or score:
-                    chosen.append((score * 10 + (1 if item["kind"] == "preference" else 0), view))
+                eligible.append(view)
+            ranked = self._ranked(text, {str(view["id"]) for view in eligible}) if words else None
+            chosen: list[tuple[float, JsonObject]] = []
+            for view in eligible:
+                if ranked is not None:
+                    score: float = ranked.get(str(view["id"]), (0.0, ""))[0]
+                else:
+                    haystack = " ".join(str(view.get(k) or "") for k in ("title", "content", "when"))
+                    score = len(words & _words(haystack)) * 10
+                if view["kind"] == "preference" or score:
+                    chosen.append((score + (1 if ranked is None and view["kind"] == "preference" else 0), view))
             chosen.sort(key=lambda entry: (-entry[0], -int(entry[1]["updated_at"])))
             lines: list[str] = []
             used: list[str] = []

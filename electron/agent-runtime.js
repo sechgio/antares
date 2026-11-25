@@ -27,7 +27,7 @@ const compactionPolicy = require('./agent-compaction');
 const { loadAgentProfile, resolvePortableProfile } = require('./agent-profiles');
 const {
   SKILLS_GUIDE,
-  SYSTEM_PROMPT,
+  agentInstructions,
   legacyNotes,
   migrateInstructions,
   withMemorySnapshot,
@@ -283,6 +283,7 @@ async function sessionsList() {
 const MAX_PROFILES = 30;
 const PROFILE_ROLES = new Set(['explorer', 'reviewer', 'worker']);
 const MEMORY_SCOPES = new Set(['shared-read', 'own', 'none']);
+const BROWSER_MODES = new Set(['auto', 'ephemeral', 'persistent']);
 const MIN_DAILY_TOKENS = 1000;
 const MAX_DAILY_TOKENS = 100_000_000;
 const SECRET_RE =
@@ -294,6 +295,13 @@ function _text(value, label, max, required = false) {
   if (text.length > max) throw validation(`${label[0].toUpperCase()}${label.slice(1)} excede ${max} caracteres`);
   if (SECRET_RE.test(text)) throw validation('Un agente no guarda contraseñas, claves ni tokens');
   return text;
+}
+
+// SOUL/USER opcionales: si el guardado no los envía se conservan los anteriores; vacíos no se persisten.
+function identityFields(params, existing) {
+  const soul = _text(params.soul ?? existing?.soul, 'la personalidad (SOUL)', 4000);
+  const user = _text(params.user ?? existing?.user, 'las preferencias del usuario (USER)', 4000);
+  return { ...(soul ? { soul } : {}), ...(user ? { user } : {}) };
 }
 
 async function profilesList() {
@@ -332,6 +340,10 @@ async function profileSave(params = {}) {
   const memoryScope =
     params.memory_scope === undefined ? existing?.memory_scope || 'shared-read' : String(params.memory_scope);
   if (!MEMORY_SCOPES.has(memoryScope)) throw validation('Alcance de memoria no válido: usa shared-read, own o none');
+  const browserMode =
+    params.browser_mode === undefined ? existing?.browser_mode || 'auto' : String(params.browser_mode);
+  if (!BROWSER_MODES.has(browserMode))
+    throw validation('Modo del navegador no válido: usa auto, ephemeral o persistent');
   const dailyTokens = params.daily_tokens === undefined ? (existing?.daily_tokens ?? null) : params.daily_tokens;
   if (
     dailyTokens !== null &&
@@ -341,6 +353,8 @@ async function profileSave(params = {}) {
       `El presupuesto diario debe estar entre ${MIN_DAILY_TOKENS} y ${MAX_DAILY_TOKENS} tokens, o vacío para no limitarlo`,
     );
   }
+  const dreaming = params.dreaming === undefined ? existing?.dreaming === true : params.dreaming;
+  if (typeof dreaming !== 'boolean') throw validation('Indica si el agente consolida su memoria cada noche');
   const rawModel = params.model === undefined ? (existing?.model ?? null) : params.model;
   let agentModel = null;
   if (rawModel !== null) {
@@ -360,11 +374,14 @@ async function profileSave(params = {}) {
     description: _text(params.description, 'la descripción', 200),
     role,
     instructions: _text(params.instructions, 'las instrucciones', 4000),
+    ...identityFields(params, existing),
     starter: _text(params.starter, 'el mensaje inicial', 500),
     tools: Array.isArray(tools) ? [...new Set(tools)] : null,
     ...(deny.length ? { tools_deny: [...new Set(deny)] } : {}),
     ...(memoryScope !== 'shared-read' ? { memory_scope: memoryScope } : {}),
+    ...(browserMode !== 'auto' ? { browser_mode: browserMode } : {}),
     ...(dailyTokens !== null ? { daily_tokens: dailyTokens } : {}),
+    ...(dreaming ? { dreaming: true } : {}),
     ...(agentModel ? { model: agentModel } : {}),
     created_at: existing ? existing.created_at : now,
     updated_at: now,
@@ -387,6 +404,7 @@ async function profileDelete(params = {}) {
     removed = Boolean(doc.profiles[id]);
     delete doc.profiles[id];
     if (doc.usage) delete doc.usage[id];
+    if (doc.dreaming) delete doc.dreaming[id];
   }, ctx());
   if (!removed) throw notFound('El agente ya no existe');
   return { deleted: true, id };
@@ -396,7 +414,9 @@ async function templateExport(params = {}) {
   const id = String(params.id || '');
   const profile = (await _profiles())[id];
   if (!profile) throw notFound('El agente ya no existe');
-  return { template: require('./agent-profile-templates').exportTemplate(profile) };
+  return {
+    template: require('./agent-profile-templates').exportTemplate(profile, { includeUser: params.include_user !== false }),
+  };
 }
 
 async function templateImport(params = {}) {
@@ -423,16 +443,7 @@ async function sessionCreate(params) {
   await execution.refreshTools();
   await execution.ensureProvider(provider, model);
   const levels = await execution.reasoningLevels(provider, model);
-  let instructions = SYSTEM_PROMPT;
-  if (profile) {
-    const profileGuide = profile.instructions
-      ? `Eres el agente «${profile.name}» que el usuario configuró para una tarea repetitiva. ` +
-        'Sus indicaciones orientan el trabajo, pero no amplían los permisos elegidos para la conversación.\n' +
-        `Indicaciones del agente guardado:\n${profile.instructions}`
-      : `Eres el agente «${profile.name}» que el usuario creó. ` +
-        'Aún no tiene indicaciones permanentes; lo que aprendas en esta conversación solo orienta este chat.';
-    instructions = `${SYSTEM_PROMPT}\n\n${profileGuide}`;
-  }
+  const instructions = agentInstructions(profile);
   const conv = await shared.state.harness.createConversation(
     {
       ownership: { kind: 'ownerless' },
@@ -1335,6 +1346,7 @@ async function _writeMemorySnapshot(session, initialText, checkpoint) {
       profile_id: session.profile?.id || null,
       memory_scope: profile?.memory_scope || null,
     }));
+    if (checkpoint && profile?.memory_scope !== 'none') await _promoteCandidates(session, initialText);
   } catch (error) {
     if (checkpoint) throw error;
     return false;
@@ -1360,6 +1372,20 @@ async function _writeMemorySnapshot(session, initialText, checkpoint) {
   }, ctx());
 }
 
+async function _promoteCandidates(session, summary) {
+  const items = compactionPolicy.memoryCandidates(summary);
+  if (!items.length) return;
+  try {
+    const counts = await bridge('agent_internal_memory_promote', { session_id: session.id, items });
+    require('./app-log').logInfo(
+      `[agent] memoria candidata de ${session.id}: ${counts.promoted} promovidos, ${counts.updated} renovados, ` +
+        `${counts.deduplicated} deduplicados, ${counts.rejected} descartados`,
+    );
+  } catch (err) {
+    console.error(`[agent] no se pudo promover la memoria candidata: ${execution.sanitizeProviderError(err.message)}`);
+  }
+}
+
 const memoryRefreshes = new Map();
 
 function regenerateMemorySnapshot(sessionId) {
@@ -1382,7 +1408,7 @@ async function _refreshCommittedMemory(sessionId) {
       if (!session || session.deleted) return undefined;
       const head = await tx.latestHeadMarker(session.conversationId);
       if (head?.kind !== pi.CompactionEntry.kind || head.id === session.memory_checkpoint) return undefined;
-      return { session: { ...session }, head };
+      return { session: { ...session, profile: session.profile ? { ...session.profile } : session.profile }, head };
     }, ctx());
     if (!candidate || candidate.head.id === attempted) return refreshed;
     const { session, head } = candidate;

@@ -153,6 +153,25 @@ const GUIDE_SECTIONS = [
 const LEGACY_GUIDES = GUIDE_SECTIONS.map(({ guide }) => guide);
 const RETIRED_GUIDE_KEYS = ['Modo 100 %: dentro de un encargo autorizado'];
 
+// Orden fijo para conservar el prefijo del prompt cache: SYSTEM_PROMPT, SOUL.md, AGENTS.md y USER.md;
+// el snapshot dinámico de memoria se añade al final con withMemorySnapshot.
+function agentInstructions(profile) {
+  if (!profile) return SYSTEM_PROMPT;
+  const guide = profile.instructions
+    ? `Eres el agente «${profile.name}» que el usuario configuró para una tarea repetitiva. ` +
+      'Sus indicaciones orientan el trabajo, pero no amplían los permisos elegidos para la conversación.\n' +
+      `Indicaciones del agente guardado:\n${profile.instructions}`
+    : `Eres el agente «${profile.name}» que el usuario creó. ` +
+      'Aún no tiene indicaciones permanentes; lo que aprendas en esta conversación solo orienta este chat.';
+  const soul = profile.soul
+    ? `Personalidad y tono del agente (SOUL.md, configuración del usuario; no amplía permisos):\n${profile.soul}`
+    : '';
+  const user = profile.user
+    ? `Preferencias y datos estables del usuario (USER.md, configuración del usuario; no amplían permisos):\n${profile.user}`
+    : '';
+  return [SYSTEM_PROMPT, soul, guide, user].filter(Boolean).join('\n\n');
+}
+
 function splitMemorySnapshot(instructions) {
   const text = String(instructions || '');
   const at = text.indexOf(shared.MEMORY_SNAPSHOT_MARKER);
@@ -196,6 +215,7 @@ module.exports = {
   EXECUTION_GUIDE,
   LEGACY_GUIDES,
   SYSTEM_PROMPT,
+  agentInstructions,
   legacyNotes,
   migrateInstructions,
   splitMemorySnapshot,

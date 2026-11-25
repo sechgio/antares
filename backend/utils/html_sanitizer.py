@@ -19,7 +19,7 @@ SAFE_DATA_URI_PREFIXES = (
 )
 
 
-_URL_ENTITY_RE = re.compile(r"&(?:#(x[0-9a-fA-F]+|\d+);?|([a-zA-Z][a-zA-Z0-9]*);)")
+_URL_ENTITY_RE = re.compile(r"&(?:#([xX][0-9a-fA-F]+|\d+);?|([a-zA-Z][a-zA-Z0-9]*);)")
 _NAMED_URL_ENTITIES = {
     "colon": ":", "tab": "\t", "newline": "\n", "sol": "/", "bsol": "\\",
     "period": ".", "amp": "&", "lt": "<", "gt": ">", "quot": '"', "apos": "'",

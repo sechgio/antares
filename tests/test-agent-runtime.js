@@ -4817,6 +4817,22 @@ async function main() {
       await runtime.handlers.agent_profile_save({ id: own.id, name: 'Propio', instructions: 'y', tools: null })
     ).profile;
     assert(kept.memory_scope === 'own', 'editar sin indicar el alcance lo conserva');
+    assert(!('browser_mode' in shared), 'el modo de navegador por defecto (auto) no cambia la ficha guardada');
+    const ephemeralBot = (
+      await runtime.handlers.agent_profile_save({ id: own.id, name: 'Propio', instructions: 'y', tools: null, browser_mode: 'ephemeral' })
+    ).profile;
+    const keptBrowser = (
+      await runtime.handlers.agent_profile_save({ id: own.id, name: 'Propio', instructions: 'z', tools: null })
+    ).profile;
+    assert(ephemeralBot.browser_mode === 'ephemeral' && keptBrowser.browser_mode === 'ephemeral',
+      'el perfil guarda su modo de navegador y editarlo sin indicarlo lo conserva');
+    let browserModeError = null;
+    try {
+      await runtime.handlers.agent_profile_save({ name: 'Navegador', instructions: 'x', tools: null, browser_mode: 'siempre' });
+    } catch (err) {
+      browserModeError = err;
+    }
+    assert(!!browserModeError, 'un modo de navegador desconocido se rechaza');
     const { session: ownSession } = await runtime.handlers.agent_session_create({
       provider: 'faux',
       model: 'faux-1',

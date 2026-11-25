@@ -189,20 +189,37 @@ function commitAll(message) {
 }
 
 function pushBranch(branch) {
-  const upstream = trySh(`git rev-parse --abbrev-ref "${branch}@{upstream}" 2>&1`);
-  if (upstream && !upstream.includes('fatal')) {
-    sh(`git push origin "${branch}"`);
+  let upstream = null;
+  try {
+    upstream = git(['rev-parse', '--abbrev-ref', `${branch}@{upstream}`]);
+  } catch {}
+  if (upstream) {
+    git(['push', 'origin', branch]);
   } else {
-    sh(`git push -u origin "${branch}"`);
+    git(['push', '-u', 'origin', branch]);
   }
   console.log(`    Branch ${branch} pusheada a origin.`);
 }
 
 function findOpenPrNumber(branch) {
-  const json = trySh(
-    `gh pr list --head "${branch}" --base "${BASE_BRANCH}" --state open --json number --jq ".[0].number" 2>&1`,
-  );
-  if (!json || json.includes('error') || json === 'null') return null;
+  let json = null;
+  try {
+    json = gh([
+      'pr',
+      'list',
+      '--head',
+      branch,
+      '--base',
+      BASE_BRANCH,
+      '--state',
+      'open',
+      '--json',
+      'number',
+      '--jq',
+      '.[0].number',
+    ]);
+  } catch {}
+  if (!json || json === 'null') return null;
   const num = Number(json);
   return Number.isFinite(num) ? num : null;
 }

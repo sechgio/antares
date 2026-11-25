@@ -63,6 +63,10 @@ EXPECTED_CANVAS_DOCUMENT_TRIGGERS = {
     "canvas_documents_storage_guard_trigger",
 }
 
+COLLAB_INVARIANTS_SQL = (
+    MIGRATIONS_DIR / "20261112000000_collab_update_invariants.sql"
+).read_text(encoding="utf-8").lower()
+
 
 def _split_statements(sql: str) -> list[str]:
     statements: list[str] = []
@@ -499,6 +503,46 @@ def test_board_columns_system_columns_cannot_be_updated() -> None:
     assert "old.is_system" in definition, "el guard de UPDATE debe reaccionar a filas de sistema"
 
 
+def test_board_columns_authenticated_insert_cannot_persist_system_flag() -> None:
+    assert ("public.board_columns", "board_columns_force_client_columns_non_system") in STATE.triggers
+    assert re.search(
+        r"create\s+trigger\s+board_columns_force_client_columns_non_system\s+"
+        r"before\s+insert\s+or\s+update\s+on\s+public\.board_columns",
+        COLLAB_INVARIANTS_SQL,
+    ), "el guard de is_system debe ejecutarse antes del INSERT/UPDATE"
+
+    definition = STATE.functions[("public", "board_columns_force_client_columns_non_system", ())].lower()
+    assert re.search(
+        r"new\.is_system\s+and\s+current_user\s*=\s*'authenticated'",
+        definition,
+    ), "solo el INSERT directo de authenticated pierde el flag de sistema"
+    assert "new.is_system := false" in definition
+    assert "auth.role()" not in definition, (
+        "auth.role() seguiría siendo authenticated dentro del seed SECURITY DEFINER"
+    )
+
+    seed = STATE.functions[("private", "seed_default_board_columns", ("uuid",))].lower()
+    assert "security definer" in seed, "el seed legítimo debe salir del rol authenticated"
+
+
+def test_canvas_documents_force_attribution_covers_update() -> None:
+    assert re.search(
+        r"create\s+trigger\s+canvas_documents_force_attribution\s+"
+        r"before\s+insert\s+or\s+update\s+on\s+public\.canvas_documents",
+        COLLAB_INVARIANTS_SQL,
+    ), "el guard debe ejecutarse tanto en INSERT como en UPDATE"
+
+    definition = STATE.functions[("public", "canvas_documents_force_attribution", ())].lower()
+    assert "new.updated_at" in definition
+    assert "clock_timestamp()" in definition
+    assert "interval '5 minutes'" in definition
+    assert "raise exception" in definition
+    assert "v_uid := auth.uid()" in definition
+    assert "tg_op = 'insert'" in definition
+    assert "new.created_by := v_uid" in definition
+    assert "new.updated_by := v_uid" in definition
+
+
 def test_destructive_writes_are_authority_scoped() -> None:
     for table in ("public.espacios", "public.proyectos", "public.tareas"):
         policies = STATE.policies_by_table(table)
@@ -533,6 +577,16 @@ def test_canvas_version_append_rpc_is_owner_scoped() -> None:
     assert "from public.canvas_documents" in definition, "busca el documento antes de anexar"
     assert "is distinct from auth.uid()" in definition and "private.is_admin()" in definition, (
         "anexar versiones exige creador o administrador"
+    )
+
+
+def test_canvas_version_append_rpc_reuses_pruning_and_dedup_helper() -> None:
+    definition = STATE.functions[("private", "canvas_append_document_version", ("uuid", "jsonb"))].lower()
+    assert "return private.canvas_record_document_version" in definition
+    assert "insert into public.canvas_document_versions" not in definition
+    assert "private.canvas_assert_document_within_limit" in definition
+    assert "nullif(p_document->>'updatedat', '')" in definition, (
+        "la deduplicación debe usar la marca lógica del documento, no un now() por reintento"
     )
 
 

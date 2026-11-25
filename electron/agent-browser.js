@@ -8,6 +8,10 @@ const preview = require('./agent-preview');
 
 const PARTITION = 'persist:antares-agent-browser';
 const USER_PARTITION = 'persist:antares-agent-user';
+// Sin el prefijo persist: Electron guarda la partición solo en memoria.
+const EPHEMERAL_PREFIX = 'antares-agent-ephemeral-';
+const MAX_EPHEMERAL_SESSIONS = 3;
+const BROWSER_MODES = new Set(['ephemeral', 'persistent']);
 const MAX_TEXT = 3_500;
 const MAX_ELEMENTS = 80;
 const MAX_CANDIDATES = 400;
@@ -96,6 +100,14 @@ const TOOLS = {
           description:
             'Dirección http(s), búsqueda o ruta de un archivo local previsualizable ' +
             '(.html, .pdf o imagen) del espacio de trabajo (o file://) para verlo en vista previa con recarga en vivo; para leer otro archivo local usa fs_read',
+        },
+        mode: {
+          type: 'string',
+          enum: ['ephemeral', 'persistent'],
+          description:
+            'ephemeral: sesión en memoria que se borra al terminar la tarea, para buscar y leer sitios públicos; ' +
+            'persistent: conserva cookies e inicios de sesión, solo si la tarea necesita una sesión iniciada o el usuario lo pide. ' +
+            'Por defecto, el modo del perfil del agente',
         },
       },
       required: ['url'],
@@ -354,6 +366,9 @@ const barrierSessions = new Set();
 let downloadSlot = null;
 let engineChoice = null;
 let engineLink = null;
+const ephemeral = new Map();
+const sessionModes = new Map();
+let ephemeralSeq = 0;
 
 function browserError(message, code, extra = {}) {
   const error = new Error(message);
@@ -397,8 +412,94 @@ function acquireAgent(sessionId) {
 }
 
 function release(sessionId) {
+  disposeEphemeral(sessionId);
   if (!agentOwner || !sessionId || agentOwner.sessionId !== sessionId) return;
   agentOwner = null;
+}
+
+function resolveMode(requested, profileMode) {
+  const profile = BROWSER_MODES.has(profileMode) ? profileMode : 'auto';
+  if (requested !== undefined && !BROWSER_MODES.has(requested)) {
+    throw browserError('El modo del navegador debe ser ephemeral o persistent', 'BROWSER_MODE', { recoverable: true });
+  }
+  if (profile === 'ephemeral' && requested === 'persistent') {
+    throw browserError(
+      'El perfil de este agente solo usa el navegador efímero; pide al usuario que cambie el modo del navegador del perfil',
+      'BROWSER_MODE',
+      { recoverable: true },
+    );
+  }
+  return requested || (profile === 'persistent' ? 'persistent' : 'ephemeral');
+}
+
+function agentPartition(sessionId, requested, profileMode) {
+  const mode =
+    requested === undefined && sessionModes.has(sessionId)
+      ? sessionModes.get(sessionId)
+      : resolveMode(requested, profileMode);
+  if (mode !== 'ephemeral') {
+    sessionModes.set(sessionId, mode);
+    return PARTITION;
+  }
+  let partition = ephemeral.get(sessionId);
+  if (!partition) {
+    if (ephemeral.size >= MAX_EPHEMERAL_SESSIONS) {
+      throw browserError(
+        `Ya hay ${MAX_EPHEMERAL_SESSIONS} sesiones efímeras del navegador abiertas; espera a que terminen esas tareas`,
+        'EPHEMERAL_LIMIT',
+        { retryable: false, recoverable: true },
+      );
+    }
+    partition = `${EPHEMERAL_PREFIX}${String(sessionId).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64)}-${++ephemeralSeq}`;
+    ephemeral.set(sessionId, partition);
+  }
+  sessionModes.set(sessionId, mode);
+  return partition;
+}
+
+function dropAgentView(tab) {
+  if (tab.view) {
+    if (alive(tab.parent)) tab.parent.contentView.removeChildView(tab.view);
+    if (alive(tab.view.webContents)) tab.view.webContents.close();
+  }
+  tab.view = null;
+  tab.parent = null;
+}
+
+function switchAgentPartition(partition) {
+  const tab = tabEntry(AGENT_TAB);
+  if ((tab.partition || PARTITION) === partition) return;
+  dropAgentView(tab);
+  tab.partition = partition;
+}
+
+// Cierra la vista, borra cookies, almacenamiento y caché de la partición efímera de la sesión y la libera.
+// Si el usuario tiene el control de esa pestaña, la tarea sigue abierta hasta que lo devuelva.
+function disposeEphemeral(sessionId, force = false) {
+  const partition = ephemeral.get(sessionId);
+  const tab = tabs.get(AGENT_TAB);
+  const onTab = !!partition && !!tab && tab.partition === partition;
+  if (!partition || (!force && onTab && tab.userControl)) return;
+  ephemeral.delete(sessionId);
+  sessionModes.delete(sessionId);
+  if (onTab) {
+    dropAgentView(tab);
+    tab.partition = null;
+    tab.userControl = false;
+    tab.lastUserInputAt = 0;
+  }
+  if (downloadSlot && downloadSlot.partition === partition) {
+    downloadSlot.settle(new Error('La tarea terminó antes de completar la descarga'), null);
+  }
+  const ses = sessionCache.get(partition);
+  sessionCache.delete(partition);
+  barrierSessions.delete(partition);
+  if (!ses) return;
+  for (const clear of [() => ses.clearStorageData(), () => ses.clearCache()]) {
+    try {
+      Promise.resolve(clear()).catch(() => {});
+    } catch {}
+  }
 }
 
 function assertAgentTarget(raw) {
@@ -431,11 +532,14 @@ function isPrivateIpv4(ip) {
 }
 
 function isPrivateHostname(hostname) {
-  const host = String(hostname || '')
+  let host = String(hostname || '')
     .toLowerCase()
     .replace(/^\[|\]$/g, '');
   if (host === 'localhost' || host.endsWith('.localhost')) return true;
   if (host.includes(':')) {
+    try {
+      host = new URL(`http://[${host}]`).hostname.replace(/^\[|\]$/g, '');
+    } catch {}
     if (host === '::' || host === '::1' || host.startsWith('::ffff:')) return true;
     if (/^f[cd][0-9a-f]{2}:/.test(host)) return true;
     if (/^fe[89ab][0-9a-f]:/.test(host)) return true;
@@ -588,7 +692,7 @@ function downloadName(value) {
   return name && name !== '.' && name !== '..' ? name : 'archivo';
 }
 
-async function startDownload(url, drafts) {
+async function startDownload(url, drafts, partition = PARTITION) {
   if (!drafts) throw new Error('Los borradores requieren una conversación');
   if (!isWeb(url)) throw new Error('Indica la dirección http(s) del archivo');
   publicWebUrl(url);
@@ -601,7 +705,7 @@ async function startDownload(url, drafts) {
   }
   const requested = new URL(url);
   requested.hash = '';
-  const slot = { dir: drafts, url: requested.href };
+  const slot = { dir: drafts, url: requested.href, partition };
   slot.wait = new Promise((resolve, reject) => {
     slot.settle = (error, saved) => {
       clearTimeout(slot.timeout);
@@ -614,7 +718,7 @@ async function startDownload(url, drafts) {
     if (downloadSlot === slot) slot.settle(new Error('La descarga no comenzó; comprueba la dirección'), null);
   }, LOAD_TIMEOUT_MS);
   try {
-    prepareSession(require('electron'), PARTITION).downloadURL(slot.url);
+    prepareSession(require('electron'), partition).downloadURL(slot.url);
   } catch (error) {
     slot.settle(error, null);
   }
@@ -745,7 +849,7 @@ function ensureTab(id) {
   const tab = tabEntry(id);
   if (tab.view && alive(tab.view.webContents)) return tab;
   const electron = require('electron');
-  const ses = prepareSession(electron, id === AGENT_TAB ? PARTITION : USER_PARTITION);
+  const ses = prepareSession(electron, id === AGENT_TAB ? tab.partition || PARTITION : USER_PARTITION);
   tab.view = new electron.WebContentsView({
     webPreferences: {
       session: ses,
@@ -1819,7 +1923,7 @@ async function observeAfter(contents) {
   return snapshot(contents, 0, RESULT_BUDGET - 400);
 }
 
-async function run(name, params = {}, { dir, drafts, approvedContext, sessionId, resolvePath } = {}) {
+async function run(name, params = {}, { dir, drafts, approvedContext, sessionId, resolvePath, browserMode } = {}) {
   const file = name === 'web_open' ? localTarget(params.url) : null;
   if (name === 'web_open' && file === null) {
     assertAgentTarget(params.url);
@@ -1840,11 +1944,24 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
   let tab = tabs.get(AGENT_TAB);
   if (tab && tab.userControl) throw userControlError();
   await waitForHumanIdle(name, tab);
+  if (!engineChoice && sessionId) {
+    const partition = tab && tab.partition;
+    if (name === 'web_open') switchAgentPartition(agentPartition(sessionId, params.mode, browserMode));
+    else if (partition && partition.startsWith(EPHEMERAL_PREFIX) && ephemeral.get(sessionId) !== partition) {
+      switchAgentPartition(PARTITION);
+    }
+  }
   if (name === 'web_handover') {
     setUserControl(true, AGENT_TAB);
     return { handed_over: true, ...state() };
   }
-  if (name === 'web_download') return startDownload(String(params.url || '').trim(), drafts);
+  if (name === 'web_download') {
+    return startDownload(
+      String(params.url || '').trim(),
+      drafts,
+      !engineChoice && sessionId ? agentPartition(sessionId, undefined, browserMode) : PARTITION,
+    );
+  }
   if (name === 'web_open') {
     if (!docked) activeTab = AGENT_TAB;
     const target = file !== null ? await previewUrl(file, resolvePath) : normalizeUrl(params.url);
@@ -2202,6 +2319,7 @@ async function uploadFile(input, ref, filePath) {
 }
 
 function close() {
+  for (const sessionId of [...ephemeral.keys()]) disposeEphemeral(sessionId, true);
   for (const tab of tabs.values()) {
     if (tab.view && alive(tab.view.webContents)) tab.view.webContents.close();
   }
@@ -2230,6 +2348,8 @@ module.exports = {
   sessionOpenContext,
   TOOLS,
   PARTITION,
+  EPHEMERAL_PREFIX,
+  MAX_EPHEMERAL_SESSIONS,
   USER_CONTROL_ERROR,
   USER_BUSY_ERROR,
   AGENT_TAB,

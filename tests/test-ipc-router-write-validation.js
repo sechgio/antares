@@ -170,11 +170,13 @@ async function run() {
     const dialogHandlersPath = require.resolve('../electron/dialog-handlers');
     evictModule('electron/dialog-handlers');
     const router2 = loadRouter({ documentsDir: docsDir, downloadsDir: dlDir, userDataDir });
-    const p8 = router2._validateAndResolveWriteParams({ outputDir: path.join(persistedRoot, 'salidas') }, null);
-    assert(
-      p8.outputDir === path.join(persistedRoot, 'salidas'),
-      'outputDir bajo raíz persistida de sesión anterior se acepta',
-    );
+    let rejectedPersistedRoot = false;
+    try {
+      router2._validateAndResolveWriteParams({ outputDir: path.join(persistedRoot, 'salidas') }, null);
+    } catch (e) {
+      rejectedPersistedRoot = /no está permitida/.test(e.message);
+    }
+    assert(rejectedPersistedRoot, 'una raíz persistida de una sesión anterior ya no concede escritura');
     let rejectedOutsideRoot = false;
     try {
       router2._validateAndResolveWriteParams({ outputDir: path.join(arbitraryDir, 'otra') }, null);
@@ -199,9 +201,14 @@ async function run() {
       await fs.promises.readFile(path.join(userDataDir, 'antares-write-roots.json'), 'utf8'),
     );
     assert(
-      persisted.includes(path.resolve(path.join(tmpRoot, 'nueva-raiz'))),
-      'dialog_folder persiste la raíz de escritura en userData',
+      !persisted.includes(path.resolve(path.join(tmpRoot, 'nueva-raiz'))),
+      'dialog_folder no convierte la raíz de escritura en consentimiento persistente',
     );
+    const sameSession = router2._validateAndResolveWriteParams(
+      { outputDir: path.join(tmpRoot, 'nueva-raiz', 'salidas') },
+      null,
+    );
+    assert(sameSession.outputDir === path.join(tmpRoot, 'nueva-raiz', 'salidas'), 'la raíz elegida sí vale durante la sesión actual');
 
     const readOnlyDir = path.join(tmpRoot, 'solo-lectura');
     await fs.promises.mkdir(readOnlyDir, { recursive: true });
@@ -608,11 +615,10 @@ async function run() {
       await fs.promises.readFile(path.join(userDataDir, 'antares-write-roots.json'), 'utf8'),
     );
     assert(
-      persistedAfterCap.length === 2
+      persistedAfterCap.length === 1
         && persistedAfterCap.includes(path.resolve(persistedRoot))
-        && persistedAfterCap.includes(path.resolve(path.join(tmpRoot, 'nueva-raiz')))
         && !persistedAfterCap.some((entry) => entry.startsWith(path.resolve(capBase))),
-      'dialog_save no persiste su raíz (solo sesión); el archivo solo guarda raíces de carpeta',
+      'las raíces elegidas por diálogo ya no se persisten en userData',
     );
 
     const overCapRoots = [];
@@ -624,17 +630,14 @@ async function run() {
     evictModule('electron/dialog-handlers');
     const reloadedHandlers = require(dialogHandlersPath);
     assert(
-      !reloadedHandlers.isUnderAllowedWriteRoot(path.join(tmpRoot, 'bulk', 'r0')),
-      'la carga expulsa las raíces más antiguas de un archivo sobre el tope',
+      !reloadedHandlers.isUnderAllowedWriteRoot(path.join(tmpRoot, 'bulk', 'r0'))
+        && !reloadedHandlers.isUnderAllowedWriteRoot(path.join(tmpRoot, 'bulk', `r${MAX_ROOTS + 99}`)),
+      'un archivo legacy de raíces persistidas ya no concede escritura al arrancar',
     );
-    assert(
-      reloadedHandlers.isUnderAllowedWriteRoot(path.join(tmpRoot, 'bulk', `r${MAX_ROOTS + 99}`)),
-      'la carga conserva las raíces más recientes de un archivo sobre el tope',
-    );
-    const trimmedFile = JSON.parse(
+    const unchangedFile = JSON.parse(
       await fs.promises.readFile(path.join(userDataDir, 'antares-write-roots.json'), 'utf8'),
     );
-    assert(trimmedFile.length === MAX_ROOTS, 'la carga re-persiste el archivo recortado al tope');
+    assert(unchangedFile.length === MAX_ROOTS + 100, 'el archivo legacy no se reescribe ni se usa como autoridad');
 
     const { _sanitizeFilename } = require('../electron/write-roots');
     assert(_sanitizeFilename('') === 'reporte.pdf', 'nombre vacío cae al fallback');

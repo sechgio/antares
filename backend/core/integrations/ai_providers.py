@@ -191,8 +191,17 @@ def endpoint_url(base: str, path: str) -> str:
     return f"{base}{path}"
 
 
+def _origin(url: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    port = parsed.port
+    default_port = 443 if parsed.scheme == "https" else 80 if parsed.scheme == "http" else None
+    return urllib.parse.urlunsplit(
+        (parsed.scheme.lower(), (parsed.hostname or "").lower() + ("" if port in (None, default_port) else f":{port}"), "", "", "")
+    )
+
+
 def put_config(provider: str, config: JsonObject) -> JsonObject:
-    get_provider(provider)
+    spec = get_provider(provider)
     existing = get_config(provider) or {}
     payload = dict(existing)
     api_key = config.get("api_key")
@@ -205,10 +214,15 @@ def put_config(provider: str, config: JsonObject) -> JsonObject:
         payload["api_key"] = stripped
     base_url = config.get("base_url")
     if base_url is not None:
+        old_base = str(existing.get("base_url") or spec.get("base_url") or "")
         if not isinstance(base_url, str) or not base_url.strip():
             payload.pop("base_url", None)
+            new_base = str(spec.get("base_url") or "")
         else:
-            payload["base_url"] = _validate_base_url(base_url)
+            new_base = _validate_base_url(base_url)
+            payload["base_url"] = new_base
+        if api_key is None and payload.get("api_key") and old_base and new_base and _origin(old_base) != _origin(new_base):
+            payload.pop("api_key", None)
     model = config.get("model")
     if model is not None:
         if not isinstance(model, str) or len(model.strip()) > 120:

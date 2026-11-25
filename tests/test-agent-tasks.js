@@ -518,7 +518,7 @@ async function main() {
   }
 }
 
-main().then(triggerChain).catch((err) => { console.error(err); process.exitCode = 1; });
+main().then(triggerChain).then(dreamingRoutine).catch((err) => { console.error(err); process.exitCode = 1; });
 
 // Integración del encadenamiento por eventos: el despacho atómico de
 // fireTaskCompleted sobre tareas reales creadas por la vía pública.
@@ -619,3 +619,149 @@ async function triggerChain() {
 }
 
 
+async function dreamingRoutine() {
+  const { fauxProvider, fauxAssistantMessage } = await import('@earendil-works/pi-ai');
+  const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-dreaming-'));
+  const dbPath = path.join(dir, 'agent.sqlite');
+  const tasks = require('../electron/agent-tasks');
+  const appLog = require('../electron/app-log');
+  const calls = [];
+  const requests = [];
+  const replies = [];
+  const logLines = [];
+  let delegatedTokens = 0;
+  let journals = [
+    { id: 'j1', date: '2026-01-03', title: 'Visita',
+      content: 'El usuario comentó que la oficina está en Lima', archived: true },
+    { id: 'j2', date: '2026-01-04', title: 'Llamada',
+      content: 'Repitió que la oficina está en Lima', archived: false },
+  ];
+  const bridge = async (method, params) => {
+    if (method === 'agent_internal_tools') return { tools: [] };
+    if (method === 'agent_internal_provider') return { style: 'openai_chat', base_url: 'http://unused', api_key: 'test' };
+    if (method === 'agent_internal_approvals_pending') return { approvals: [] };
+    if (method === 'agent_internal_memory_context') return { context: '' };
+    if (method === 'agent_internal_mentions') return { modules: [], unknown: [], ambiguous: [], context: '' };
+    if (method === 'agent_internal_artifacts') return { artifacts: [], questions: [], context: {} };
+    if (method === 'agent_internal_activity') return { attention: {} };
+    if (method === 'agent_internal_profile_usage') return { tokens: delegatedTokens };
+    if (method === 'agent_internal_memory_dream_input' || method === 'agent_internal_memory_consolidate') {
+      calls.push({ method, params });
+      if (method === 'agent_internal_memory_dream_input') return { journals, memories: [] };
+      return { promoted: 1, updated: 0, deduplicated: 0, rejected: 0, insufficient: 0, obsoleted: 0, archived: 1 };
+    }
+    throw new Error(`Puente inesperado: ${method}`);
+  };
+  const open = async () => {
+    const faux = fauxProvider();
+    runtime._internal._providerOverrides.set('faux', faux.provider);
+    await runtime.open({ dir, storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    const step = async (context) => {
+      faux.appendResponses([step]);
+      const last = [...(context?.messages || [])].reverse().find((message) => message.role === 'user');
+      const text = typeof last?.content === 'string'
+        ? last.content
+        : (last?.content || []).map((block) => block.text || '').join('\n');
+      requests.push(text);
+      return fauxAssistantMessage(replies.shift() ?? '{}');
+    };
+    faux.setResponses([step]);
+    await tasks.stop();
+    return faux;
+  };
+  const originalLogInfo = appLog.logInfo;
+  appLog.logInfo = (line) => logLines.push(line);
+  const at = (day, hour, minute = 0) => new Date(2026, 0, day, hour, minute).getTime();
+  const consolidations = () => calls.filter((call) => call.method === 'agent_internal_memory_consolidate');
+  const dreamReads = () => calls.filter((call) => call.method === 'agent_internal_memory_dream_input');
+  try {
+    await open();
+    const { profile } = await runtime.handlers.agent_profile_save({
+      name: 'Archivista', instructions: 'Ordena el diario', tools: null,
+      model: { provider: 'faux', model: 'faux-1' }, daily_tokens: 1_000_000,
+    });
+    assert.equal(profile.dreaming, undefined, 'la consolidación nocturna está apagada por defecto');
+    await tasks._internal.dreamTick(runtime._internal.state(), at(5, 3, 30));
+    assert.equal(calls.length, 0, 'un agente con la rutina desactivada no consolida');
+    assert.equal(requests.length, 0, 'ni siquiera llama al modelo');
+    await assert.rejects(
+      runtime.handlers.agent_profile_save({ name: 'x', instructions: 'x', tools: null, dreaming: 'sí' }),
+      /consolida/,
+    );
+    await runtime.handlers.agent_profile_save({
+      id: profile.id, name: 'Archivista', instructions: 'Ordena el diario', tools: null, dreaming: true,
+    });
+    const listed = (await runtime.handlers.agent_profiles_list()).profiles.find((item) => item.id === profile.id);
+    assert.equal(listed.dreaming, true, 'la ficha guarda la consolidación nocturna');
+    await tasks._internal.dreamTick(runtime._internal.state(), at(6, 2, 0));
+    assert.equal(calls.length, 0, 'antes de las 3:00 no corre');
+
+    replies.push(JSON.stringify({
+      facts: [
+        { title: 'Oficina', content: 'La oficina está en Lima', sources: ['j1', 'j2'] },
+        { title: 'Acceso', content: `Su token: ${'x'.repeat(20)}`, sources: ['j2'] },
+      ],
+      preferences: [],
+      obsolete: ['m-old'],
+    }));
+    await tasks._internal.dreamTick(runtime._internal.state(), at(6, 3, 30));
+    assert.equal(requests.length, 1, 'el modelo se consulta una vez');
+    assert.ok(requests[0].includes('<tool_output origin="memory">'), 'los diarios llegan como datos de herramienta');
+    assert.ok(requests[0].includes('la oficina está en Lima'), 'el contenido del diario llega al modelo');
+    assert.equal(consolidations().length, 1, 'el resultado validado se consolida una vez');
+    assert.deepEqual(consolidations()[0].params, {
+      profile_id: profile.id, memory_scope: null, journal_ids: ['j1', 'j2'],
+      facts: [{ title: 'Oficina', content: 'La oficina está en Lima', sources: ['j1', 'j2'], explicit: false }],
+      preferences: [], obsolete: ['m-old'],
+    });
+    assert.ok(
+      logLines.some((line) => line.includes(profile.id) && line.includes('1 promovidos')
+        && line.includes('1 descartados') && line.includes('1 archivados')),
+      'el registro informa los contadores de la consolidación',
+    );
+
+    await tasks._internal.dreamTick(runtime._internal.state(), at(6, 5, 0));
+    assert.equal(requests.length, 1, 'la consolidación corre como máximo una vez al día');
+
+    await runtime.handlers.agent_profile_save({
+      id: profile.id, name: 'Archivista', instructions: 'Ordena el diario', tools: null, dreaming: false,
+    });
+    await runtime.shutdown();
+    await open();
+    await runtime.handlers.agent_profile_save({
+      id: profile.id, name: 'Archivista', instructions: 'Ordena el diario', tools: null, dreaming: true,
+    });
+    await tasks._internal.dreamTick(runtime._internal.state(), at(6, 6, 0));
+    assert.equal(requests.length, 1, 'la marca diaria sobrevive al reinicio');
+
+    delegatedTokens = 1_000_000;
+    await tasks._internal.dreamTick(runtime._internal.state(), at(7, 3, 30));
+    assert.equal(requests.length, 1, 'sin presupuesto no se consulta al modelo');
+    assert.equal(consolidations().length, 1, 'sin presupuesto tampoco se consolida');
+    assert.ok(logLines.some((line) => line.includes('sin presupuesto')), 'el agotamiento queda registrado');
+    delegatedTokens = 0;
+
+    replies.push('esto no es JSON');
+    await tasks._internal.dreamTick(runtime._internal.state(), at(8, 3, 30));
+    assert.equal(requests.length, 2, 'una respuesta inválida sí llama al modelo');
+    assert.equal(consolidations().length, 1, 'una respuesta inválida no consolida nada');
+    assert.ok(logLines.some((line) => line.includes('falló')), 'el fallo del modelo queda registrado');
+
+    journals = journals.map((entry) => ({ ...entry, archived: true }));
+    await tasks._internal.dreamTick(runtime._internal.state(), at(9, 3, 30));
+    assert.equal(requests.length, 2, 'sin entradas nuevas no se consulta al modelo');
+    assert.ok(logLines.some((line) => line.includes('sin entradas nuevas en el diario')));
+
+    await runtime.handlers.agent_profile_save({
+      id: profile.id, name: 'Archivista', instructions: 'Ordena el diario', tools: null, dreaming: false,
+    });
+    await tasks._internal.dreamTick(runtime._internal.state(), at(10, 3, 30));
+    assert.equal(dreamReads().length, 4, 'desactivarla detiene hasta la lectura del diario');
+    console.log('[PASS] Consolidación nocturna de memoria del agente.');
+  } finally {
+    appLog.logInfo = originalLogInfo;
+    await runtime.shutdown().catch(() => {});
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}

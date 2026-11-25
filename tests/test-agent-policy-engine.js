@@ -90,6 +90,8 @@ try {
   assert(webTargets.domain === 'example.com', 'el dominio sale del contexto de aprobación');
   const openTargets = engine.extractTargets('web_open', { url: 'https://sub.example.com/page' });
   assert(openTargets.domain === 'sub.example.com', 'web_open extrae el dominio de la url');
+  const bareOpenTargets = engine.extractTargets('web_open', { url: 'evil.example/path' });
+  assert(bareOpenTargets.domain === 'evil.example', 'web_open extrae el dominio aunque falte el esquema');
   const cuaTargets = engine.extractTargets('cua_click', {}, { computer: { app: 'excel' } });
   assert(cuaTargets.app === 'excel', 'la app sale del contexto computer');
   const mcpTargets = engine.extractTargets('mcp__github__create_issue', {});
@@ -114,6 +116,18 @@ try {
   assert(!engine.commandMatches('git', 'git status > out.txt', true), 'la redirección bloquea el match de allow');
   assert(!engine.commandMatches('git', 'echo $(whoami)', true), 'la ejecución dinámica bloquea el match de allow');
   assert(engine.commandMatches('echo', 'echo $(whoami)', false), 'la ejecución dinámica no bloquea el match de deny');
+  assert(
+    !engine.commandMatches('git status', 'git status\nRemove-Item x', true),
+    'un salto de línea separa comandos y no hereda allow',
+  );
+  assert(
+    !engine.commandMatches('git', 'git status\r\nRemove-Item x', true),
+    'CRLF tampoco permite ocultar un segundo comando',
+  );
+  assert(
+    engine.commandMatches('remove-item', 'git status\nRemove-Item x', false),
+    'deny amplio sigue detectando cualquier comando multilínea',
+  );
 
   // --- Matching de rutas con frontera ---
   assert(engine.pathMatches(ROOT, FILE), 'la regla cubre archivos bajo la carpeta');

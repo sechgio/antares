@@ -357,7 +357,7 @@ async function generateDocument(params, sessionId) {
   return { generated: true, saved_paths: saved, artifact_metadata: plan.metadata };
 }
 
-async function runNativeTool(name, params, { sessionId, approvedContext } = {}) {
+async function runNativeTool(name, params, { sessionId, approvedContext, browserMode } = {}) {
   if (!SPECS.some((s) => s.name === name)) throw new Error(`Herramienta nativa no disponible: ${name}`);
   if (name === SCRIPT_TOOL) throw new Error('script_run se ejecuta en el motor del agente, no en el backend');
   if (REPORT_EXPORTS[name]) return exportReportPdf(REPORT_EXPORTS[name], params || {}, sessionId);
@@ -373,7 +373,7 @@ async function runNativeTool(name, params, { sessionId, approvedContext } = {}) 
   if (CUA.has(name)) return require('./agent-cua').run(name, params || {}, { sessionId, dir: `${draftsDir(sessionId)}.screens` });
   if (WEB[name]) {
     return require('./agent-browser').run(name, params || {},
-      { dir: `${draftsDir(sessionId)}.screens`, drafts: draftsDir(sessionId), approvedContext, sessionId,
+      { dir: `${draftsDir(sessionId)}.screens`, drafts: draftsDir(sessionId), approvedContext, sessionId, browserMode,
         resolvePath: sessionId
           ? (target) => require('./ipc-router')._callBackend('agent_internal_path_status', { session_id: sessionId, path: target })
           : null });

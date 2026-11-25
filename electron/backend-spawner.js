@@ -14,12 +14,16 @@ const RESTART_RESET_MS = 60_000;
 const STDERR_BUFFER_LINES = 30;
 const HEALTH_CHECK_INTERVAL_MS = 15_000;
 const HEALTH_PROBE_TIMEOUT_MS = 3_000;
+const HEALTH_RESTART_MIN_CONSECUTIVE_FAILURES = 2;
 let pythonProcess = null;
 let _state = STATE.IDLE;
 let _isDev = false;
 let _isShuttingDown = false;
 let _restartCount = 0;
 let _restartResetTimer = null;
+let _restartResetTimerProc = null;
+let _readyDegraded = false;
+let _readyFailedHandlerModules = [];
 let _stderrBuffer = [];
 let _stderrLineBuffer = '';
 let _lastError = null;
@@ -110,6 +114,9 @@ function hasRecentJobActivity(windowMs = JOB_ACTIVITY_GRACE_MS) {
 }
 function getHealthStatus() {
   return { ..._healthStatus };
+}
+function getReadyDegraded() {
+  return { degraded: _readyDegraded, failedHandlerModules: [..._readyFailedHandlerModules] };
 }
 let _lastLoggedHealthSkipReason = null;
 function _recordHealthSkip(reason) {
@@ -374,6 +381,8 @@ async function startPythonBackend(isDev, attempt = 1) {
     _state = STATE.STARTING;
     _lastError = null;
     _stderrBuffer = [];
+    _readyDegraded = false;
+    _readyFailedHandlerModules = [];
     _resetReadyGate();
     _notifyRenderer('backend.starting', { attempt: 1, limit: getAutoRestartLimit() });
   }
@@ -395,11 +404,16 @@ async function startPythonBackend(isDev, attempt = 1) {
     _state = STATE.READY;
     _readyResolve?.();
     if (_restartResetTimer) clearTimeout(_restartResetTimer);
+    _restartResetTimerProc = pythonProcess;
     _restartResetTimer = setTimeout(() => {
       _restartCount = 0;
     }, RESTART_RESET_MS);
     _startHealthCheck();
-    _notifyRenderer('backend.ready', { version: _resolveAppVersion() });
+    _notifyRenderer('backend.ready', {
+      version: _resolveAppVersion(),
+      degraded: _readyDegraded,
+      failedHandlerModules: [..._readyFailedHandlerModules],
+    });
   } catch (err) {
     if (cycleSignal?.aborted) {
       _releaseStartCycleIfOwned(myAbort);
@@ -547,6 +561,12 @@ async function runHealthCheckOnce() {
       _recordHealthSkip('job_active');
       logInfo(
         '[backend-spawner] Health probe timed out but a job was recently active — skipping restart (backend is busy, not dead).'
+      );
+      return;
+    }
+    if (_healthStatus.consecutive_failures < HEALTH_RESTART_MIN_CONSECUTIVE_FAILURES) {
+      logInfo(
+        `[backend-spawner] Health probe failed (${_healthStatus.consecutive_failures}/${HEALTH_RESTART_MIN_CONSECUTIVE_FAILURES}) — waiting for consecutive failures before restarting.`
       );
       return;
     }
@@ -744,6 +764,11 @@ function _spawn(isDev) {
     if (pythonProcess && pythonProcess.pid === spawnedPid) {
       pythonProcess = null;
     }
+    if (_restartResetTimer && _restartResetTimerProc === spawnedProcess) {
+      clearTimeout(_restartResetTimer);
+      _restartResetTimer = null;
+      _restartResetTimerProc = null;
+    }
     _state = wasReady ? STATE.EXITED : _state;
     if (wasReady && !_isShuttingDown && _state !== STATE.FATAL) {
       const stderrTail = getStderrTail();
@@ -780,6 +805,10 @@ function _spawn(isDev) {
               setAppContext({ backendVersion: msg.params.backend_version });
             }
             const degraded = msg.params?.status === 'degraded';
+            _readyDegraded = degraded;
+            _readyFailedHandlerModules = Array.isArray(msg.params?.failed_handler_modules)
+              ? msg.params.failed_handler_modules
+              : [];
             if (degraded) {
               console.warn(
                 '[backend-spawner] backend ready with status=degraded; failed_handler_modules=',
@@ -844,6 +873,7 @@ function killPython() {
   _state = STATE.EXITED;
   _stopHealthCheck();
   if (_restartResetTimer) clearTimeout(_restartResetTimer);
+  _restartResetTimerProc = null;
   _forceKillProcess(pythonProcess);
 }
 async function manualRestart(isDev, { force = false, reason = null } = {}) {
@@ -877,6 +907,7 @@ async function manualRestart(isDev, { force = false, reason = null } = {}) {
     _restartCount = 0;
     if (_restartResetTimer) clearTimeout(_restartResetTimer);
     _restartResetTimer = null;
+    _restartResetTimerProc = null;
     _lastError = null;
     _stderrBuffer = [];
     clearJobActivity();
@@ -920,6 +951,7 @@ module.exports = {
   waitForReady,
   getState,
   getHealthStatus,
+  getReadyDegraded,
   getLastError,
   getStderrTail,
   getAutoRestartLimit,

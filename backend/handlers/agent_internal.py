@@ -57,7 +57,8 @@ _resource_locks: dict[str, threading.Lock] = {}
 _native_leases: dict[str, list[threading.Lock]] = {}
 _NATIVE_PREFIXES = ("autoimg_", "technical_reports_export_pdf", "informes_v2_export_pdf", "fichas_tecnicas_export_pdf",
                     "document_generate", "padron_", "volantes_", "espacios_", "canvas_fill_fields", "canvas_apply_layers",
-                    "gdrive_", "gsheets_", "onedrive_", "excel_", "web_", "cua_")
+                    "gdrive_", "gsheets_", "onedrive_", "gmail_", "outlook_", "github_",
+                    "excel_", "web_", "cua_")
 _APP_SCOPED_PREFIXES = ("cua_",)
 _CLOUD_UPLOADS = frozenset({"gdrive_upload", "onedrive_upload"})
 _META_METHODS = frozenset({"task_schedule"})
@@ -805,6 +806,32 @@ def _memory_context(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+@validate_params("session_id", "items")
+def _memory_promote(params: JsonObject) -> JsonObject:
+    try:
+        return _memory().promote(str(params["session_id"]), list(params["items"]))
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
+@validate_params("profile_id", "days")
+def _memory_dream_input(params: JsonObject) -> JsonObject:
+    return _memory().dream_input(str(params["profile_id"]), int(params["days"]))
+
+
+@with_locale
+@validate_params("profile_id", "journal_ids")
+def _memory_consolidate(params: JsonObject) -> JsonObject:
+    try:
+        return _memory().consolidate(str(params["profile_id"]), params.get("memory_scope"),
+                                     list(params["journal_ids"]), list(params.get("facts") or []),
+                                     list(params.get("preferences") or []), list(params.get("obsolete") or []))
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
 def _memory_list(params: JsonObject) -> JsonObject:
     return {"items": _memory().items()}
 
@@ -950,6 +977,9 @@ HANDLERS = {
     "agent_panel_respond": _panel_respond,
     "agent_internal_memory_context": _memory_context,
     "agent_internal_memory_revision": _memory_revision,
+    "agent_internal_memory_promote": _memory_promote,
+    "agent_internal_memory_dream_input": _memory_dream_input,
+    "agent_internal_memory_consolidate": _memory_consolidate,
     "agent_internal_grant_remove": _grant_remove,
     "agent_internal_workspace_set": _workspace_set,
     "agent_memory_list": _memory_list,

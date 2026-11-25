@@ -22,6 +22,12 @@
       "absent": ["<iframe", "file:///etc/passwd"]
     },
     {
+      "id": "uppercase-hex-entity-javascript-url",
+      "note": "Las referencias hexadecimales HTML aceptan X mayúscula; debe decodificarse antes de detectar javascript:.",
+      "html": "<head></head><a href=\"javascript&#X3A;alert(1)\">x</a>",
+      "absent": ["alert(1)"]
+    },
+    {
       "id": "object-embed-strip",
       "note": "object (par) y embed (tag suelto) deben eliminarse.",
       "html": "<head></head><object data=\"https://evil.example/x\"></object><embed src=\"file:///etc/passwd\">",
