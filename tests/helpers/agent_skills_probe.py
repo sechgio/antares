@@ -10,7 +10,7 @@ from backend.core.agent import skills
 options = json.load(sys.stdin)
 probe = tempfile.TemporaryDirectory(prefix="antares-skills-probe-")
 atexit.register(probe.cleanup)
-root = Path(probe.name)
+root = Path(probe.name).resolve()
 os.environ["SKILLS_HOME"] = str(root / "base-skills")
 os.environ["SKILLS_EXTERNAL_HOMES"] = str(root / "external-skills")
 library = root / "probe-library"
