@@ -449,6 +449,71 @@ function testEvaluatePolicy() {
     'un diff acotado no necesita declaración de alcance',
   );
 
+  const changelogBase = {
+    body: goodPrBody(),
+    additions: 40,
+    deletions: 10,
+    files: [
+      { path: 'backend/core/formatos.py', additions: 30, deletions: 10 },
+      { path: 'tests/test_formatos.py', additions: 10, deletions: 0 },
+    ],
+    reviews: [{ author: { login: 'revisora' }, state: 'APPROVED' }],
+    comments: [],
+    author: { login: 'sechgio' },
+  };
+
+  const noFragment = policy.evaluatePolicy({ number: 40, ...changelogBase });
+  assert(
+    noFragment.checks.some((c) => c.id === 'changelog' && c.status === 'fail' && c.severity === policy.BLOCKING),
+    'un PR sin fragmento ni etiqueta queda bloqueado por release notes',
+  );
+
+  const withFragment = policy.evaluatePolicy({
+    number: 41,
+    ...changelogBase,
+    files: [...changelogBase.files, { path: 'changelog.d/feat-x.md', additions: 3, deletions: 0, status: 'added' }],
+  });
+  assert(
+    withFragment.checks.some((c) => c.id === 'changelog' && c.status === 'pass'),
+    'un fragmento en changelog.d/ satisface el check',
+  );
+
+  const withLabel = policy.evaluatePolicy({
+    number: 42,
+    ...changelogBase,
+    labels: [{ name: 'no-changelog' }],
+  });
+  assert(
+    withLabel.checks.some((c) => c.id === 'changelog' && c.status === 'pass'),
+    'la etiqueta no-changelog satisface el check sin fragmento',
+  );
+
+  const botPr = policy.evaluatePolicy({
+    number: 43,
+    ...changelogBase,
+    author: { login: 'dependabot[bot]', is_bot: true },
+  });
+  assert(
+    botPr.checks.some((c) => c.id === 'changelog' && c.status === 'skip'),
+    'un PR de bot no exige notas de release',
+  );
+
+  const generatedOnly = policy.evaluatePolicy({
+    number: 44,
+    ...changelogBase,
+    files: [{ path: 'frontend/bun.lock', additions: 30, deletions: 10 }],
+  });
+  assert(
+    generatedOnly.checks.some((c) => c.id === 'changelog' && c.status === 'skip'),
+    'un diff de solo archivos generados no exige notas de release',
+  );
+
+  const draftNoFragment = policy.evaluatePolicy({ number: 45, ...changelogBase, isDraft: true });
+  assert(
+    draftNoFragment.checks.some((c) => c.id === 'changelog' && c.status !== 'fail'),
+    'un borrador sin fragmento avisa pero no bloquea',
+  );
+
   const report = policy.renderReport({ number: 7 }, good);
   assert(report.includes('Veredicto'), 'el informe incluye el veredicto');
   assert(report.includes('antares-review-policy'), 'el informe lleva marca para idempotencia');
