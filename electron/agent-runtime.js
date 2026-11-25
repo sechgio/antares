@@ -181,6 +181,7 @@ async function _open(options = {}) {
     };
     const policy = await harness.snapshot(PolicyDoc, ctx());
     shared.globalRules = { ...(policy && policy.rules ? policy.rules : {}) };
+    shared.globalScopedRules = Array.isArray(policy && policy.scoped_rules) ? policy.scoped_rules.map((rule) => ({ ...rule })) : [];
     await _indexConversations();
     await _restoreExecutionContext();
     if (!options.skipImport) {
@@ -391,6 +392,24 @@ async function profileDelete(params = {}) {
   return { deleted: true, id };
 }
 
+async function templateExport(params = {}) {
+  const id = String(params.id || '');
+  const profile = (await _profiles())[id];
+  if (!profile) throw notFound('El agente ya no existe');
+  return { template: require('./agent-profile-templates').exportTemplate(profile) };
+}
+
+async function templateImport(params = {}) {
+  const templates = require('./agent-profile-templates');
+  let validated;
+  try {
+    validated = templates.validateTemplate(params.template);
+  } catch (error) {
+    throw validation(error.message);
+  }
+  return profileSave(validated);
+}
+
 async function sessionCreate(params) {
   const provider = params && params.provider;
   if (typeof provider !== 'string' || !provider) throw validation('Falta el parámetro provider');
@@ -579,28 +598,69 @@ async function policyState() {
   const doc = await shared.state.harness.snapshot(shared.state.PolicyDoc, ctx());
   return {
     rules: { ...((doc && doc.rules) || {}) },
+    scoped_rules: Array.isArray(doc && doc.scoped_rules) ? doc.scoped_rules.map((rule) => ({ ...rule })) : [],
     audit: Array.isArray(doc && doc.audit) ? doc.audit.slice(-50).map((entry) => ({ ...entry })) : [],
   };
 }
 
-async function policyRulesSet(params) {
-  let rules;
+async function runGraph() {
+  const { pi } = shared.deps;
+  const all = Object.values(await sessions()).filter((session) => !session.deleted);
+  const liveStates = new Map();
+  for (const session of all) {
+    let live = null;
+    let inbox = null;
+    try {
+      live = await shared.state.harness.snapshot(pi.LiveDoc, session.conversationId, ctx());
+      inbox = await shared.state.harness.snapshot(pi.InboxDoc, session.conversationId, ctx());
+    } catch (err) {
+      void err;
+    }
+    liveStates.set(session.id, {
+      run: live && live.run ? live.run : null,
+      inboxPending: !!(inbox && inbox.items && inbox.items.length),
+    });
+  }
+  return require('./agent-run-graph').buildRunGraph(all.map(toPublicSession), liveStates);
+}
+
+function parseScopedRules(params) {
+  if (params.scoped_rules === undefined) return null;
   try {
-    rules = validateRules(params.rules);
+    return require('./agent-policy-engine').validateScopedRules(params.scoped_rules);
   } catch (err) {
     throw validation(String((err && err.message) || err));
   }
+}
+
+async function policyRulesSet(params) {
+  let rules = null;
+  if (params.rules !== undefined) {
+    try {
+      rules = validateRules(params.rules);
+    } catch (err) {
+      throw validation(String((err && err.message) || err));
+    }
+  }
+  const scopedRules = parseScopedRules(params);
+  if (rules === null && scopedRules === null) throw validation('Indica las reglas de canal o las reglas con alcance');
   if ([...shared.live.values()].some((live) => live.run || (live.inbox || []).length)) {
     throw validation('Espera a que terminen los turnos para cambiar las reglas globales');
   }
   const result = await shared.state.harness.commit(async (tx) => {
     const doc = await tx.doc(shared.state.PolicyDoc);
     const before = { ...(doc.rules || {}) };
-    doc.rules = Object.keys(rules).length ? { ...rules } : {};
+    if (rules !== null) doc.rules = Object.keys(rules).length ? { ...rules } : {};
+    if (scopedRules !== null) doc.scoped_rules = scopedRules;
     doc.audit = auditRules(doc.audit, before, doc.rules, 'global');
-    return { rules: { ...doc.rules }, audit: doc.audit.slice(-50).map((entry) => ({ ...entry })) };
+    return {
+      rules: { ...doc.rules },
+      scoped_rules: Array.isArray(doc.scoped_rules) ? doc.scoped_rules.map((rule) => ({ ...rule })) : [],
+      audit: doc.audit.slice(-50).map((entry) => ({ ...entry })),
+    };
   }, ctx());
   shared.globalRules = { ...result.rules };
+  shared.globalScopedRules = result.scoped_rules.map((rule) => ({ ...rule }));
   return result;
 }
 
@@ -635,12 +695,16 @@ async function saveSessionRule(sessionId, channel, rule) {
 
 async function sessionRulesSet(params) {
   const sessionId = _text(params.id, 'la conversación', 120, true);
-  let rules;
-  try {
-    rules = validateRules(params.rules);
-  } catch (err) {
-    throw validation(String((err && err.message) || err));
+  let rules = null;
+  if (params.rules !== undefined) {
+    try {
+      rules = validateRules(params.rules);
+    } catch (err) {
+      throw validation(String((err && err.message) || err));
+    }
   }
+  const scopedRules = parseScopedRules(params);
+  if (rules === null && scopedRules === null) throw validation('Indica las reglas de canal o las reglas con alcance');
   const session = await requireSession(sessionId);
   const { pi } = shared.deps;
   return shared.state.harness.commit(async (tx) => {
@@ -651,11 +715,18 @@ async function sessionRulesSet(params) {
     const current = doc.sessions[sessionId];
     if (!current || current.deleted) throw notFound(`Conversación no encontrada: ${sessionId}`);
     const before = { ...(current.approval_rules || {}) };
-    const savedRules = Object.keys(rules).length ? { ...rules } : null;
-    if (savedRules) current.approval_rules = savedRules;
-    else delete current.approval_rules;
+    let savedRules = null;
+    if (rules !== null) {
+      savedRules = Object.keys(rules).length ? { ...rules } : null;
+      if (savedRules) current.approval_rules = savedRules;
+      else delete current.approval_rules;
+    }
+    if (scopedRules !== null) {
+      if (scopedRules.length) current.scoped_rules = scopedRules;
+      else delete current.scoped_rules;
+    }
     const policy = await tx.doc(shared.state.PolicyDoc);
-    policy.audit = auditRules(policy.audit, before, savedRules || {}, 'session', sessionId);
+    policy.audit = auditRules(policy.audit, before, savedRules || before, 'session', sessionId);
     current.updated_at = Date.now();
     return {
       session: toPublicSession(current),
@@ -1426,6 +1497,58 @@ async function turnCancel(params) {
   return { cancelled: true };
 }
 
+function scopedRuleForApproval(approval) {
+  const engine = require('./agent-policy-engine');
+  const method = String((approval && approval.method) || '');
+  const params = (approval && approval.params) || {};
+  let candidate = null;
+  if (method === 'shell_run' || method === 'shell_job_start') {
+    const command = typeof params.command === 'string' ? params.command.trim() : '';
+    const singleSegment = command && !/&&|\|\||[;|]/.test(command);
+    if (singleSegment) candidate = { scope: 'command', value: command, decision: 'allow' };
+  } else if (typeof params.path === 'string' && params.path.trim() && /^(fs_|spreadsheet_)/.test(method)) {
+    // La regla vive en el mismo espacio que la evaluación: los params crudos.
+    // La unidad útil de recuerdo es la carpeta cuando la hay —una regla de
+    // archivo exacto no cubriría nunca una escritura nueva— y el matching de
+    // paths ya es por prefijo con separadores normalizados. Un archivo suelto
+    // en la raíz del workspace degrada a regla exacta de ese archivo.
+    const trimmed = params.path.trim().replace(/[\\/]+$/, '');
+    const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+    candidate = { scope: 'path', value: cut > 0 ? trimmed.slice(0, cut) : trimmed, decision: 'allow' };
+  } else if (/^mcp2?__/.test(method)) {
+    // Los alias mcp2 llevan hashes irreversibles: la regla se guarda con la
+    // identidad real del contexto verificado, la misma que matchea el motor.
+    const context = (approval && approval.context) || {};
+    const server = typeof context.server_name === 'string' && context.server_name.trim()
+      ? context.server_name.trim() : null;
+    const toolName = typeof context.tool === 'string' && context.tool.trim() ? context.tool.trim() : null;
+    if (server && toolName) candidate = { scope: 'mcp', value: `${server}/${toolName}`, decision: 'allow' };
+    else if (server) candidate = { scope: 'mcp', value: server, decision: 'allow' };
+  }
+  if (!candidate) return null;
+  try {
+    return engine.validateScopedRules([candidate])[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function addSessionScopedRule(sessionId, rule) {
+  const engine = require('./agent-policy-engine');
+  return shared.state.harness.commit(async (tx) => {
+    const doc = await tx.doc(shared.state.SessionsDoc);
+    const current = doc.sessions[sessionId];
+    if (!current || current.deleted) return false;
+    const existing = Array.isArray(current.scoped_rules) ? current.scoped_rules : [];
+    const key = `${rule.scope}:${engine.normalizeScopeValue(rule.scope, rule.value)}`;
+    if (existing.some((item) => `${item.scope}:${item.value}` === key && item.decision === rule.decision)) return true;
+    const merged = [...existing.filter((item) => `${item.scope}:${item.value}` !== key), rule].slice(-engine.MAX_SCOPED_RULES);
+    current.scoped_rules = engine.validateScopedRules(merged);
+    current.updated_at = Date.now();
+    return true;
+  }, ctx());
+}
+
 async function approve(params, approved) {
   const approvalId = String((params && params.approval_id) || '');
   const channel = typeof params.channel === 'string' ? params.channel : '';
@@ -1455,8 +1578,12 @@ async function approve(params, approved) {
       ? String(approval.method || '')
       : null;
   if (remembered !== null && !remembered.startsWith('web_') && !remembered.startsWith('cua_') && approval.channel) {
+    // Recuerdo granular: si la acción tiene un objetivo extraíble (comando, ruta o herramienta MCP)
+    // se guarda una regla con scope exacto; solo cuando no hay objetivo se degrada al canal completo.
+    const scopedRule = scopedRuleForApproval(approval);
     try {
-      await saveSessionRule(String(approval.session_id), String(approval.channel), 'allow');
+      if (scopedRule) await addSessionScopedRule(String(approval.session_id), scopedRule);
+      else await saveSessionRule(String(approval.session_id), String(approval.channel), 'allow');
     } catch {}
   }
   execution.notifyDecision(approvalId);
@@ -1674,6 +1801,7 @@ module.exports = {
     agent_session_rules_set: sessionRulesSet,
     agent_policy_get: policyState,
     agent_policy_rules_set: policyRulesSet,
+    agent_run_graph: runGraph,
     agent_session_reasoning_set: sessionReasoningSet,
     agent_messages_list: messagesList,
     agent_rooms_list: roomsList,
@@ -1690,6 +1818,8 @@ module.exports = {
     agent_profiles_list: profilesList,
     agent_profile_save: profileSave,
     agent_profile_delete: profileDelete,
+    agent_template_export: templateExport,
+    agent_template_import: templateImport,
     agent_approve: (p) => approve(p, true),
     agent_deny: (p) => approve(p, false),
     agent_effect_undo: effectUndo,

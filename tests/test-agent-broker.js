@@ -299,9 +299,9 @@ async function main() {
 
   {
     const { state } = await open([
-      fauxAssistantMessage([fauxToolCall('fs_write', { path: 'remember.txt', content: 'x' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('fs_write', { path: 'out/remember.txt', content: 'x' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('hecho'),
-      fauxAssistantMessage([fauxToolCall('fs_write', { path: 'remember-2.txt', content: 'y' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('fs_write', { path: 'out/remember-2.txt', content: 'y' })], { stopReason: 'toolUse' }),
       fauxAssistantMessage('hecho otra vez'),
     ]);
     const session = await createSession();
@@ -312,16 +312,18 @@ async function main() {
     await runtime.handlers.agent_approve({ approval_id: first.id, remember: true });
     assert(await waitIdle(session.id), 'la aprobación recordada termina');
     const listed = await runtime.handlers.agent_sessions_list({});
-    assert(listed.sessions.find((item) => item.id === session.id).approval_rules.files === 'allow',
-      'recordar guarda la regla de sesión del canal de la herramienta');
+    const remembered = listed.sessions.find((item) => item.id === session.id);
+    assert(!remembered.approval_rules, 'recordar no degrada al canal completo cuando hay objetivo');
+    assert((remembered.scoped_rules || []).some((r) => r.scope === 'path' && r.value === 'out' && r.decision === 'allow'),
+      'recordar guarda una regla acotada a la carpeta de la escritura');
     await runtime.handlers.agent_message_send({ session_id: session.id, content: 'segundo' });
     assert(await waitIdle(session.id), 'el segundo turno termina sin decisión manual');
     const approvals = [...state.approvals.values()];
     assert(approvals.filter((a) => a.source === 'manual').length === 1
       && approvals.every((a) => a.status === 'approved'),
-      'recordar evita una segunda aprobación manual del mismo método');
-    assert(state.dispatches.length === 2 && state.dispatches[1].approval_source === 'rule',
-      'la segunda llamada se ejecuta por la regla recordada');
+      'recordar evita una segunda aprobación manual en la misma carpeta');
+    assert(state.dispatches.length === 2 && state.dispatches[1].approval_source === 'scoped',
+      'la segunda llamada se ejecuta por la regla acotada recordada');
     await runtime.shutdown();
   }
 

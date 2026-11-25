@@ -575,6 +575,44 @@ def resources(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> 
     return [{"path": str(path), "exists": False}]
 
 
+_DIFF_MAX_CHARS = 256 * 1024
+_DIFF_MAX_LINES = 80
+
+
+def write_diff_preview(params: JsonObject, grants: dict[str, JsonObject], root: Path) -> JsonObject | None:
+    """Diff unificado acotado de lo que fs_write reemplazaría, para decidir la aprobación.
+
+    Devuelve None cuando no hay diff útil: archivo nuevo, binario, demasiado
+    grande o contenido idéntico. Nunca rompe la aprobación por no poder medir.
+    """
+    try:
+        target = resolve(params.get("path"), grants, root, write=True)
+        content = params.get("content")
+        if not isinstance(content, str) or not target.is_file() or target.suffix.lower() == ".docx":
+            return None
+        if target.stat().st_size > _DIFF_MAX_CHARS or len(content) > _DIFF_MAX_CHARS:
+            return None
+        try:
+            current = target.read_bytes().decode("utf-8-sig")
+        except (OSError, UnicodeDecodeError):
+            return None
+        if current == content:
+            return {"added_lines": 0, "removed_lines": 0, "unchanged": True, "preview": "", "truncated": False}
+        diff = list(difflib.unified_diff(current.splitlines(), content.splitlines(), lineterm="", n=2))
+        added = sum(1 for line in diff if line.startswith("+") and not line.startswith("+++"))
+        removed = sum(1 for line in diff if line.startswith("-") and not line.startswith("---"))
+        shown = diff[:_DIFF_MAX_LINES]
+        return {
+            "added_lines": added,
+            "removed_lines": removed,
+            "unchanged": False,
+            "preview": "\n".join(shown),
+            "truncated": len(diff) > _DIFF_MAX_LINES,
+        }
+    except (OSError, ValueError):
+        return None
+
+
 def utf16_slice(text: str, start: int, end: int) -> str:
     return text.encode("utf-16-le", errors="surrogatepass")[start * 2:end * 2].decode("utf-16-le", errors="surrogatepass")
 

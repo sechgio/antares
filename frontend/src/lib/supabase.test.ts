@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { createSecureSupabaseStorage } from './supabase';
+
 type Blob = Record<string, string>;
 
 function installBridge(puts: Blob[]): void {
@@ -24,7 +26,6 @@ describe('createSecureSupabaseStorage (sb-011)', () => {
   });
 
   it('devuelve null solo sin bridge: fuera de Electron cae al storage clasico', async () => {
-    const { createSecureSupabaseStorage } = await import('./supabase');
     expect(createSecureSupabaseStorage()).toBeNull();
     (window as unknown as { supabaseSessionSeed?: unknown }).supabaseSessionSeed = { 'sb-seed': 'x' };
     expect(createSecureSupabaseStorage()).toBeNull();
@@ -33,7 +34,6 @@ describe('createSecureSupabaseStorage (sb-011)', () => {
   it('con bridge y sin seed (primer arranque) instala storage seguro con blob vacio', async () => {
     const puts: Blob[] = [];
     installBridge(puts);
-    const { createSecureSupabaseStorage } = await import('./supabase');
     const storage = createSecureSupabaseStorage();
     expect(storage).not.toBeNull();
     expect(storage!.getItem('sb-proyecto-auth-token')).toBeNull();
@@ -49,7 +49,6 @@ describe('createSecureSupabaseStorage (sb-011)', () => {
     const puts: Blob[] = [];
     installBridge(puts);
 
-    const { createSecureSupabaseStorage } = await import('./supabase');
     const storage = createSecureSupabaseStorage();
 
     expect(storage).not.toBeNull();
@@ -72,7 +71,6 @@ describe('createSecureSupabaseStorage (sb-011)', () => {
     const puts: Blob[] = [];
     installBridge(puts);
 
-    const { createSecureSupabaseStorage } = await import('./supabase');
     const storage = createSecureSupabaseStorage();
 
     expect(storage!.getItem('sb-proyecto-auth-token')).toBe('token-cifrado-vigente');
@@ -84,7 +82,6 @@ describe('createSecureSupabaseStorage (sb-011)', () => {
     (window as unknown as { supabaseSessionSeed?: unknown }).supabaseSessionSeed = { 'sb-seed': 'seeded' };
     const puts: Blob[] = [];
     installBridge(puts);
-    const { createSecureSupabaseStorage } = await import('./supabase');
     const storage = createSecureSupabaseStorage();
     expect(storage).not.toBeNull();
     expect(storage!.getItem('sb-seed')).toBe('seeded');

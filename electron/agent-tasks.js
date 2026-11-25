@@ -71,6 +71,62 @@ function completeDelivery(task, current) {
   recordRun(current, { at: Date.now(), due_at: task.due_at, status: 'delivered', silent: !!current.silent });
 }
 
+// Disparo idempotente de encargos encadenados: la escritura en la bandeja de
+// triggers y la creación del encargo en cola ocurren en el mismo commit, así
+// un reinicio a mitad no duplica ni pierde la activación.
+async function fireEvent(event) {
+  const state = shared.state;
+  if (!state) return { fired: 0 };
+  const { matchesTrigger, inboxEntry, inboxAccept } = require('./agent-triggers');
+  const snapshot = await state.harness.snapshot(state.TasksDoc, ctx());
+  const candidates = Object.values(snapshot.tasks || {}).filter(
+    (task) => task.trigger && task.status === 'pending' && matchesTrigger(task.trigger, event),
+  );
+  if (!candidates.length) return { fired: 0 };
+  return state.harness.commit(async (tx) => {
+    const doc = await tx.doc(state.TasksDoc);
+    if (!Array.isArray(doc.trigger_inbox)) doc.trigger_inbox = [];
+    doc.next_queue_seq = Number(doc.next_queue_seq) || 1;
+    doc.queues = doc.queues || {};
+    let fired = 0;
+    const now = Date.now();
+    for (const task of candidates) {
+      const current = doc.tasks[task.id];
+      if (!current || current.status !== 'pending' || !current.trigger) continue;
+      const outcome = inboxAccept(doc.trigger_inbox, inboxEntry(current.trigger, event, current.id));
+      doc.trigger_inbox = outcome.items;
+      if (!outcome.accepted) continue;
+      if (!doc.queues[current.session_id]) doc.queues[current.session_id] = { paused: false, updated_at: now };
+      const queued = {
+        id: crypto.randomUUID(),
+        session_id: current.session_id,
+        kind: 'queue',
+        seq: doc.next_queue_seq++,
+        content: current.content,
+        due_at: 0,
+        interval_ms: 0,
+        status: 'pending',
+        created_at: now,
+        updated_at: now,
+        origin_task_id: current.id,
+        runs: [],
+      };
+      doc.tasks[queued.id] = queued;
+      fired += 1;
+    }
+    return { fired };
+  }, ctx());
+}
+
+async function fireTaskCompleted(sourceTaskId) {
+  const state = shared.state;
+  if (!state) return { fired: 0 };
+  const snapshot = await state.harness.snapshot(state.TasksDoc, ctx());
+  const source = (snapshot.tasks || {})[sourceTaskId];
+  if (!source) return { fired: 0 };
+  return fireEvent({ type: 'task_completed', task_id: sourceTaskId, cycle: (source.runs || []).length, at: Date.now() });
+}
+
 const TOOL = {
   name: 'task_schedule',
   kind: 'meta',
@@ -99,6 +155,17 @@ const TOOL = {
       every_minutes: { type: 'integer', minimum: 1, maximum: 525600 },
       apps: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 40 }, maxItems: 8 },
       id: { type: 'string' },
+      trigger: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['file_changed', 'task_completed'] },
+          path: { type: 'string', maxLength: 500 },
+          pattern: { type: 'string', maxLength: 200 },
+          task_id: { type: 'string', maxLength: 100 },
+        },
+        required: ['type'],
+        additionalProperties: false,
+      },
     },
     required: ['action'],
   },
@@ -1339,10 +1406,20 @@ async function schedule(args, sessionId, api) {
     typeof args.due_at === 'string' && /(?:Z|[+-]\d{2}:\d{2})$/i.test(args.due_at) ? Date.parse(args.due_at) : NaN;
   const hasInterval = Object.prototype.hasOwnProperty.call(args, 'every_minutes');
   const interval = args.every_minutes == null ? null : args.every_minutes;
+  let trigger = null;
+  if (args.trigger !== undefined) {
+    try {
+      trigger = require('./agent-triggers').validateTrigger(args.trigger);
+    } catch (err) {
+      throw validation(String((err && err.message) || err));
+    }
+    if (args.due_at !== undefined || hasInterval)
+      throw validation('Un encargo por evento no admite fecha ni repetición: se activa cuando ocurre el evento');
+  }
   if (
     !content ||
     content.length > 12000 ||
-    !Number.isFinite(dueAt) ||
+    (!trigger && !Number.isFinite(dueAt)) ||
     (hasInterval && interval !== null && (!Number.isInteger(interval) || interval < 1 || interval > 525600))
   ) {
     throw validation('Indica el encargo y una fecha ISO 8601 con zona horaria; la repetición mínima es un minuto');
@@ -1358,7 +1435,7 @@ async function schedule(args, sessionId, api) {
     }
     apps = [...new Set(args.apps.map((app) => app.trim().toLowerCase()))];
   }
-  if (dueAt <= Date.now()) throw validation('La fecha del encargo debe estar en el futuro');
+  if (!trigger && dueAt <= Date.now()) throw validation('La fecha del encargo debe estar en el futuro');
   const timezone = resolveTimezone(args.timezone);
   const silent = args.silent === true;
   const id =
@@ -1397,7 +1474,7 @@ async function schedule(args, sessionId, api) {
       if (task.status !== 'pending') throw validation('Solo puedes editar encargos pendientes');
       if (hasInterval) checkRoutines(doc, task.id);
       task.content = content;
-      task.due_at = dueAt;
+      if (!task.trigger) task.due_at = dueAt;
       if (hasInterval) task.interval_ms = (interval || 0) * 60000;
       task.silent = silent;
       task.timezone = timezone;
@@ -1416,7 +1493,8 @@ async function schedule(args, sessionId, api) {
       id,
       session_id: sessionId,
       content,
-      due_at: dueAt,
+      due_at: trigger ? null : dueAt,
+      ...(trigger ? { trigger } : {}),
       interval_ms: (interval || 0) * 60000,
       status: 'pending',
       created_at: now,
@@ -1428,7 +1506,10 @@ async function schedule(args, sessionId, api) {
     };
     doc.tasks[id] = task;
     return { scheduled: task };
-  }, ctx());
+  }, ctx()).then((result) => {
+    require('./agent-file-watcher').syncWatchers().catch(() => {});
+    return result;
+  });
 }
 
 async function listTasks(params = {}) {
@@ -1465,7 +1546,10 @@ async function cancelTask(params = {}) {
       task.updated_at = Date.now();
     }
     return { cancelled: true, id };
-  }, ctx());
+  }, ctx()).then((result) => {
+    require('./agent-file-watcher').syncWatchers().catch(() => {});
+    return result;
+  });
 }
 
 async function runTaskNow(params = {}) {
@@ -1538,7 +1622,7 @@ async function tick() {
     await ensureReconciled(state);
     const doc = await state.harness.snapshot(state.TasksDoc, ctx());
     for (const task of Object.values(doc?.tasks || {})) {
-      if (task.kind === 'queue' || task.status !== 'pending' || task.due_at > Date.now() || task.retry_at > Date.now())
+      if (task.kind === 'queue' || task.status !== 'pending' || task.trigger || task.due_at > Date.now() || task.retry_at > Date.now())
         continue;
       const sessionDoc = await state.harness.snapshot(state.SessionsDoc, ctx());
       const session = sessionDoc.sessions[task.session_id];
@@ -1607,6 +1691,7 @@ async function tick() {
           delete current.claimed_at;
           completeDelivery(task, current);
         }, ctx());
+        fireTaskCompleted(task.id).catch((err) => console.warn('[agent] trigger task_completed falló:', err?.message));
       } catch (err) {
         const message = require('./agent-execution')
           .sanitizeProviderError(String(err?.message || err))
@@ -1619,6 +1704,7 @@ async function tick() {
             delete current.claimed_at;
             if (submitted) {
               completeDelivery(task, current);
+              fireTaskCompleted(task.id).catch((triggerError) => console.warn('[agent] trigger task_completed falló:', triggerError?.message));
             } else {
               current.status = 'pending';
               current.retry_at = Date.now() + 60000;
@@ -1656,9 +1742,12 @@ function start() {
     tick().catch((err) => console.warn('[agent] scheduled task failed:', err?.message));
   }, 1000);
   timer.unref?.();
+  require('./agent-file-watcher').reset?.();
+  require('./agent-file-watcher').syncWatchers().catch(() => {});
 }
 
 async function stop() {
+  require('./agent-file-watcher').stop();
   clearInterval(timer);
   timer = null;
   if (ticking) await ticking;
@@ -1693,7 +1782,9 @@ module.exports = {
   cancelTask,
   runTaskNow,
   queueControl: queue.queueControl,
+  fireEvent,
   _internal: {
+    fireTaskCompleted,
     delegationBrief,
     delegationReport,
     planBrief,

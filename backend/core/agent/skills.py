@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from backend.core.agent import computer_files
+from backend.core.agent import computer_files, modules
 from backend.core.integrations.types import JsonObject
 from backend.utils.atomic_write import atomic_output_file
 
@@ -67,6 +67,44 @@ class _Skill:
     description: str
     path: Path
     content: str | None = None
+    version: str | None = None
+    requires_tools: tuple[str, ...] = ()
+    requires_modules: tuple[str, ...] = ()
+    author: str | None = None
+
+
+_VERSION_RE = re.compile(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?")
+_MAX_REQUIREMENTS = 20
+
+
+def _str_list(value: object, label: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or len(value) > _MAX_REQUIREMENTS \
+            or not all(isinstance(item, str) and 1 <= len(item) <= 64 for item in value):
+        raise ValueError(f"{label} debe ser una lista de hasta {_MAX_REQUIREMENTS} nombres")
+    return tuple(dict.fromkeys(str(item) for item in value))
+
+
+def _manifest_fields(metadata: dict) -> dict:
+    version = metadata.get("version")
+    if version is not None and (not isinstance(version, str) or not _VERSION_RE.fullmatch(version) or len(version) > 24):
+        raise ValueError("La versión debe ser semver: 1.2.3")
+    author = metadata.get("author")
+    if author is not None and (not isinstance(author, str) or len(author) > 100):
+        raise ValueError("El autor admite hasta 100 caracteres")
+    requires_modules = _str_list(metadata.get("requires_modules"), "requires_modules")
+    if requires_modules:
+        known = modules.catalog()
+        unknown = [name for name in requires_modules if name not in known]
+        if unknown:
+            raise ValueError(f"Módulos requeridos no reconocidos: {', '.join(unknown)}")
+    return {
+        "version": version,
+        "requires_tools": _str_list(metadata.get("requires_tools"), "requires_tools"),
+        "requires_modules": requires_modules,
+        "author": author.strip() if isinstance(author, str) and author.strip() else None,
+    }
 
 
 def _provenance(path: Path, grants: dict[str, JsonObject], workspace: Path, library: Path,
@@ -150,7 +188,7 @@ def _skill(path: Path, grants: dict[str, JsonObject], workspace: Path, library: 
         raise ValueError("El nombre debe coincidir con la carpeta y usar hasta 64 letras minúsculas, números o guiones")
     if not isinstance(description, str) or not description.strip() or len(description) > _MAX_DESCRIPTION:
         raise ValueError(f"La descripción debe contener entre 1 y {_MAX_DESCRIPTION} caracteres")
-    return _Skill(_skill_id(path), name, description.strip(), path)
+    return _Skill(_skill_id(path), name, description.strip(), path, **_manifest_fields(metadata))
 
 
 def _skill_name(value: object) -> str:
@@ -339,10 +377,23 @@ def _catalog(grants: dict[str, JsonObject], workspace: Path, library: Path,
     return sorted(found, key=lambda skill: (skill.name, str(skill.path))), warnings, truncated
 
 
+def _public_entry(skill: _Skill) -> JsonObject:
+    entry: JsonObject = {"id": skill.id, "name": skill.name, "description": skill.description}
+    if skill.version:
+        entry["version"] = skill.version
+    if skill.requires_tools:
+        entry["requires_tools"] = list(skill.requires_tools)
+    if skill.requires_modules:
+        entry["requires_modules"] = list(skill.requires_modules)
+    if skill.author:
+        entry["author"] = skill.author
+    return entry
+
+
 def library_catalog(library: Path) -> JsonObject:
     levels = tuple(dict.fromkeys((library, *_levels(None))))
     catalog, warnings, truncated = _catalog({}, library, library, levels)
-    return {"skills": [{"id": skill.id, "name": skill.name, "description": skill.description} for skill in catalog],
+    return {"skills": [_public_entry(skill) for skill in catalog],
             "library": str(library), "warnings": warnings, "truncated": truncated}
 
 
@@ -403,7 +454,7 @@ def run(name: str, params: JsonObject, grants: dict[str, JsonObject], workspace:
             if all(fold(word) in fold(f"{candidate_skill.name} {candidate_skill.description}") for word in words):
                 matches.append(candidate_skill)
         return computer_files.fit({
-            "skills": [{"id": skill.id, "name": skill.name,
+            "skills": [{**_public_entry(skill),
                         "description": (computer_files.utf16_slice(skill.description, 0, 240)
                                         if skill.id.startswith("profile:") else skill.description[:240]), "location": str(skill.path),
                         "provenance": "profile" if skill.id.startswith("profile:")

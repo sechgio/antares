@@ -7,7 +7,7 @@ import Toggle from '../ui/Toggle';
 import AgentAvatar from './AgentAvatar';
 import BrokerReceipt from './BrokerReceipt';
 import { DiffStats, FileChangeStep, FileDiff } from './FileDiff';
-import { fileChange } from './diffLines';
+import { fileChange, parseUnifiedDiff } from './diffLines';
 import type { FileChange } from './diffLines';
 import CopyButton from './CopyButton';
 import { FileCard } from './ContextChips';
@@ -828,7 +828,10 @@ export function ApprovalCard({
   const Icon = approval.method === 'shell_run' ? Terminal
     : Object.prototype.hasOwnProperty.call(TOOL_ICONS, approval.method) ? TOOL_ICONS[approval.method] : ShieldCheck;
   const ruleButtons = !!(onRule && ruleChannel && channel);
-  const change = fileChange(approval.method, params);
+  const writeDiff = context?.write_diff;
+  const change = approval.method === 'fs_write' && writeDiff && !writeDiff.unchanged
+    ? parseUnifiedDiff(writeDiff)
+    : fileChange(approval.method, params);
   return (
     <div role="group" aria-label="Confirmación de acción" className="agent-approval agent-trace-in">
       <div className="w-full overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">

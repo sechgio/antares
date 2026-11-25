@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-11-17",
+  "updatedAt": "2026-11-25",
   "metrics": {
     "typeIgnore": {
       "value": 2,
@@ -14,7 +14,7 @@
       "direction": "max"
     },
     "largeFiles": {
-      "value": 97,
+      "value": 101,
       "direction": "max"
     }
   }

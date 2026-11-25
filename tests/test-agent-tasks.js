@@ -518,4 +518,104 @@ async function main() {
   }
 }
 
-main().catch((err) => { console.error(err); process.exitCode = 1; });
+main().then(triggerChain).catch((err) => { console.error(err); process.exitCode = 1; });
+
+// Integración del encadenamiento por eventos: el despacho atómico de
+// fireTaskCompleted sobre tareas reales creadas por la vía pública.
+async function triggerChain() {
+  const { fauxProvider, fauxAssistantMessage } = await import('@earendil-works/pi-ai');
+  const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
+  const fs2 = require('node:fs');
+  const os2 = require('node:os');
+  const path2 = require('node:path');
+  const dir = fs2.mkdtempSync(path2.join(os2.tmpdir(), 'antares-triggers-'));
+  const dbPath = path2.join(dir, 'agent.sqlite');
+  const bridge = async (method) => {
+    if (method === 'agent_internal_tools') return { tools: [] };
+    if (method === 'agent_internal_provider') return { style: 'openai_chat', base_url: 'http://unused', api_key: 'test' };
+    if (method === 'agent_internal_approvals_pending') return { approvals: [] };
+    if (method === 'agent_internal_memory_context') return { context: '' };
+    if (method === 'agent_internal_mentions') return { modules: [], unknown: [], ambiguous: [], context: '' };
+    if (method === 'agent_internal_artifacts') return { artifacts: [], questions: [], context: {} };
+    if (method === 'agent_internal_activity') return { attention: {} };
+    if (method === 'agent_internal_profile_usage') return { tokens: 0 };
+    throw new Error(`Puente inesperado: ${method}`);
+  };
+  const open = async () => {
+    const faux = fauxProvider();
+    runtime._internal._providerOverrides.set('faux', faux.provider);
+    await runtime.open({ dir, storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    return faux;
+  };
+  const tasks = require('../electron/agent-tasks');
+  const faux = await open();
+  void faux;
+  void fauxAssistantMessage;
+  try {
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const future = new Date(Date.now() + 3600000).toISOString();
+    const source = await runtime.handlers.agent_tasks_save({ session_id: session.id, content: 'Tarea origen', due_at: future });
+    const sourceId = source.scheduled.id;
+    const chained = await runtime.handlers.agent_tasks_save({
+      session_id: session.id, content: 'Encargo encadenado', trigger: { type: 'task_completed', task_id: sourceId },
+    });
+    assert.ok(chained.scheduled.trigger, 'el trigger queda guardado en la tarea');
+    assert.equal(chained.scheduled.due_at, null, 'un encargo por evento no tiene fecha');
+    await assert.rejects(
+      runtime.handlers.agent_tasks_save({ session_id: session.id, content: 'x', trigger: { type: 'task_completed', task_id: sourceId }, due_at: future }),
+      /no admite fecha/,
+    );
+    await assert.rejects(
+      runtime.handlers.agent_tasks_save({ session_id: session.id, content: 'x', trigger: { type: 'file_changed' } }),
+      /carpeta/,
+    );
+
+    const first = await tasks._internal.fireTaskCompleted(sourceId);
+    assert.equal(first.fired, 1, 'la primera completación dispara el encadenado');
+    const listing = await runtime.handlers.agent_tasks_list({ session_id: session.id });
+    const queued = listing.tasks.find((task) => task.kind === 'queue' && task.content === 'Encargo encadenado');
+    assert.ok(queued, 'el encargo encadenado entra en la cola de la conversación');
+    assert.equal(queued.origin_task_id, chained.scheduled.id, 'la cola referencia la automatización origen');
+
+    const again = await tasks._internal.fireTaskCompleted(sourceId);
+    assert.equal(again.fired, 0, 'el mismo ciclo no se reentrega');
+
+    await runtime.shutdown();
+    await open();
+    const afterRestart = await tasks._internal.fireTaskCompleted(sourceId);
+    assert.equal(afterRestart.fired, 0, 'la bandeja durable sobrevive al reinicio');
+    console.log('[PASS] Encadenamiento task_completed: disparo atómico, dedupe y bandeja durable tras reinicio.');
+
+    const watched = fs2.mkdtempSync(path2.join(os2.tmpdir(), 'antares-watched-'));
+    const fileTask = await runtime.handlers.agent_tasks_save({
+      session_id: session.id, content: 'Procesa el archivo nuevo', trigger: { type: 'file_changed', path: watched, pattern: '*.xlsx' },
+    });
+    assert.equal(fileTask.scheduled.trigger.type, 'file_changed', 'el trigger de archivo ya se acepta');
+    await require('../electron/agent-file-watcher').syncWatchers();
+    assert.ok(require('../electron/agent-file-watcher')._watchers.size >= 1, 'la carpeta queda vigilada');
+    fs2.writeFileSync(path2.join(watched, 'ignorado.txt'), 'no es xlsx');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    fs2.writeFileSync(path2.join(watched, 'ventas.xlsx'), 'datos');
+    const deadline = Date.now() + 8000;
+    let firedListing = null;
+    while (Date.now() < deadline) {
+      firedListing = await runtime.handlers.agent_tasks_list({ session_id: session.id });
+      if (firedListing.tasks.some((task) => task.kind === 'queue' && task.content === 'Procesa el archivo nuevo')) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.ok(
+      firedListing.tasks.some((task) => task.kind === 'queue' && task.content === 'Procesa el archivo nuevo'),
+      'escribir un xlsx en la carpeta vigilada encola el encargo',
+    );
+    assert.equal(
+      firedListing.tasks.filter((task) => task.kind === 'queue' && task.content === 'Procesa el archivo nuevo').length,
+      1,
+      'el txt ignorado y las ráfagas no duplican el encargo',
+    );
+    console.log('[PASS] Trigger file_changed: watcher real, patrón glob y dedupe de ráfagas.');
+  } finally {
+    await runtime.shutdown().catch(() => {});
+  }
+}
+
+

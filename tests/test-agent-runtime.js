@@ -782,6 +782,298 @@ async function main() {
     await runtime.shutdown();
   }
 
+  const shellScopedBridge = async (method, params, bridge) => {
+    const result = await bridge(method, params);
+    if (method === 'agent_internal_tools') {
+      result.tools.push(
+        {
+          name: 'shell_run',
+          kind: 'backend',
+          module: 'computer',
+          gated: true,
+          inputSchema: { type: 'object', properties: {} },
+        },
+        {
+          name: 'notes_read',
+          kind: 'backend',
+          module: 'computer',
+          gated: false,
+          inputSchema: { type: 'object', properties: {} },
+        },
+      );
+    }
+    return result;
+  };
+
+  {
+    const { bridge, state } = makeBridge();
+    await openFaux(
+      [
+        fauxAssistantMessage([fauxToolCall('shell_run', { command: 'rm archivo.txt' })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('no pude ejecutar'),
+      ],
+      (method, params) => shellScopedBridge(method, params, bridge),
+    );
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_rules_set({
+      id: session.id,
+      scoped_rules: [{ scope: 'command', value: 'rm', decision: 'deny' }],
+    });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'borra el archivo' });
+    assert(await waitIdle(session.id), 'el turno con regla deny termina');
+    assert(state.approvals.size === 0, 'una regla deny con scope bloquea sin crear aprobación');
+    assert(state.dispatches.length === 0, 'una regla deny con scope impide la ejecución');
+    const listed = await runtime.handlers.agent_sessions_list();
+    const stored = listed.sessions.find((item) => item.id === session.id);
+    assert(
+      stored && JSON.stringify(stored.scoped_rules) === JSON.stringify([{ scope: 'command', value: 'rm', decision: 'deny' }]),
+      'la regla con scope queda guardada y visible en la conversación',
+    );
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    await openFaux(
+      [
+        fauxAssistantMessage([fauxToolCall('shell_run', { command: 'git status && rm archivo.txt' })], {
+          stopReason: 'toolUse',
+        }),
+        fauxAssistantMessage('no pude ejecutar'),
+      ],
+      (method, params) => shellScopedBridge(method, params, bridge),
+    );
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_rules_set({
+      id: session.id,
+      scoped_rules: [{ scope: 'command', value: 'rm', decision: 'deny' }],
+    });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'revisa y limpia' });
+    assert(await waitIdle(session.id), 'el turno compuesto con deny termina');
+    assert(state.approvals.size === 0, 'el deny amplio cubre cualquier segmento del comando');
+    assert(state.dispatches.length === 0, 'ningún segmento se ejecuta cuando uno está bloqueado');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    await openFaux(
+      [
+        fauxAssistantMessage([fauxToolCall('shell_run', { command: 'git status' })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('comando terminado'),
+      ],
+      (method, params) => shellScopedBridge(method, params, bridge),
+    );
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_rules_set({
+      id: session.id,
+      scoped_rules: [{ scope: 'command', value: 'git status', decision: 'allow' }],
+    });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'revisa el repo' });
+    assert(await waitIdle(session.id), 'el turno con allow terminó');
+    assert(
+      await waitFor(() => state.dispatches.length === 1),
+      'la regla allow con scope ejecuta sin aprobación manual',
+    );
+    const approval = [...state.approvals.values()][0];
+    assert(
+      approval && approval.status === 'approved' && approval.source === 'scoped',
+      'la aprobación queda auto-decidida con origen scoped',
+    );
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    await openFaux(
+      [
+        fauxAssistantMessage([fauxToolCall('shell_run', { command: 'git status && git diff' })], {
+          stopReason: 'toolUse',
+        }),
+        fauxAssistantMessage('revisión terminada'),
+      ],
+      (method, params) => shellScopedBridge(method, params, bridge),
+    );
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_rules_set({
+      id: session.id,
+      scoped_rules: [{ scope: 'command', value: 'git status', decision: 'allow' }],
+    });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'revisa el repo a fondo' });
+    assert(
+      await waitFor(() => state.approvals.size === 1),
+      'el allow estricto no cubre un compuesto con otro subcomando',
+    );
+    assert(state.dispatches.length === 0, 'el compuesto espera aprobación humana');
+    await runtime.handlers.agent_approve({ approval_id: [...state.approvals.values()][0].id });
+    assert(await waitIdle(session.id), 'el compuesto continúa tras aprobar');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    await openFaux(
+      [
+        fauxAssistantMessage([fauxToolCall('shell_run', { command: 'git status' })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('comando terminado'),
+      ],
+      (method, params) => shellScopedBridge(method, params, bridge),
+    );
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    await runtime.handlers.agent_session_rules_set({
+      id: session.id,
+      scoped_rules: [{ scope: 'command', value: 'git status', decision: 'ask' }],
+    });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'revisa el repo' });
+    assert(
+      await waitFor(() => state.approvals.size === 1),
+      'la regla ask con scope fuerza revisión manual incluso en Acceso completo',
+    );
+    assert(state.dispatches.length === 0, 'nada se ejecuta mientras la regla ask espera');
+    await runtime.handlers.agent_approve({ approval_id: [...state.approvals.values()][0].id });
+    assert(await waitIdle(session.id), 'tras aprobar manualmente el turno termina');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    await openFaux(
+      [
+        fauxAssistantMessage([fauxToolCall('shell_run', { command: 'git status' })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('no pude ejecutar'),
+      ],
+      (method, params) => shellScopedBridge(method, params, bridge),
+    );
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_rules_set({
+      id: session.id,
+      rules: { terminal: 'deny' },
+      scoped_rules: [{ scope: 'command', value: 'git status', decision: 'allow' }],
+    });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'revisa el repo' });
+    assert(await waitIdle(session.id), 'el turno con deny de canal termina');
+    assert(state.approvals.size === 0, 'el deny de canal tiene precedencia sobre el allow con scope');
+    assert(state.dispatches.length === 0, 'nada se ejecuta cuando el canal está bloqueado');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    await openFaux(
+      [
+        fauxAssistantMessage([fauxToolCall('shell_run', { command: 'git status' })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('comando terminado'),
+      ],
+      (method, params) => shellScopedBridge(method, params, bridge),
+    );
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'revisa el repo' });
+    assert(await waitFor(() => state.approvals.size === 1), 'sin reglas el shell pide aprobación');
+    await runtime.handlers.agent_approve({ approval_id: [...state.approvals.values()][0].id, remember: true });
+    assert(await waitIdle(session.id), 'el turno recordado termina');
+    const listed = await runtime.handlers.agent_sessions_list();
+    const stored = listed.sessions.find((item) => item.id === session.id);
+    assert(
+      stored && Array.isArray(stored.scoped_rules)
+        && stored.scoped_rules.some(
+          (rule) => rule.scope === 'command' && rule.value === 'git status' && rule.decision === 'allow',
+        ),
+      'recordar una aprobación de shell guarda una regla con scope de comando, no de canal',
+    );
+    assert(
+      !(stored.approval_rules && stored.approval_rules.terminal),
+      'el recuerdo granular no ensucia las reglas de canal',
+    );
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    const fsBridge = async (method, params) => {
+      const result = await bridge(method, params);
+      if (method === 'agent_internal_tools')
+        result.tools.push({
+          name: 'notes_read',
+          kind: 'backend',
+          module: 'computer',
+          gated: false,
+          inputSchema: { type: 'object', properties: {} },
+        });
+      return result;
+    };
+    const denied = process.platform === 'win32' ? 'C:\\secrets' : '/secrets';
+    const target = process.platform === 'win32' ? 'C:\\secrets\\notes.txt' : '/secrets/notes.txt';
+    await openFaux(
+      [
+        fauxAssistantMessage([fauxToolCall('notes_read', { path: target })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('no pude leer'),
+      ],
+      fsBridge,
+    );
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_rules_set({
+      id: session.id,
+      scoped_rules: [{ scope: 'path', value: denied, decision: 'deny' }],
+    });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'lee las notas' });
+    assert(await waitIdle(session.id), 'el turno de lectura bloqueada termina');
+    assert(state.dispatches.length === 0, 'el deny de ruta cubre también lecturas no gated');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge, state } = makeBridge();
+    await openFaux(
+      [
+        fauxAssistantMessage([fauxToolCall('shell_run', { command: 'git status' })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('comando terminado'),
+      ],
+      (method, params) => shellScopedBridge(method, params, bridge),
+    );
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const policy = await runtime.handlers.agent_policy_rules_set({
+      scoped_rules: [{ scope: 'command', value: 'git status', decision: 'allow' }],
+    });
+    assert(
+      JSON.stringify(policy.scoped_rules) === JSON.stringify([{ scope: 'command', value: 'git status', decision: 'allow' }]),
+      'la política global guarda reglas con scope',
+    );
+    const state0 = await runtime.handlers.agent_policy_get();
+    assert(state0.scoped_rules.length === 1, 'agent_policy_get expone las reglas con scope globales');
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'revisa el repo' });
+    assert(
+      await waitFor(() => state.dispatches.length === 1),
+      'la regla global con scope auto-aprueba en cualquier conversación',
+    );
+    let validationError = null;
+    try {
+      await runtime.handlers.agent_policy_rules_set({
+        scoped_rules: [{ scope: 'command', value: 'git status > out', decision: 'allow' }],
+      });
+    } catch (err) {
+      validationError = err;
+    }
+    assert(validationError, 'una regla con redirección se rechaza por IPC');
+    const intact = await runtime.handlers.agent_policy_get();
+    assert(intact.scoped_rules.length === 1 && intact.scoped_rules[0].value === 'git status', 'la regla rechazada no reemplaza la vigente');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    await openFaux([fauxAssistantMessage('Hola')], bridge);
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    const graph = await runtime.handlers.agent_run_graph({});
+    assert(Array.isArray(graph.nodes) && Array.isArray(graph.roots), 'el grafo devuelve nodos y raíces');
+    const node = graph.nodes.find((item) => item.id === session.id);
+    assert(node, 'la conversación creada aparece en el grafo');
+    assert(node.kind === 'session' && node.parent_id === null, 'una conversación nueva es raíz del grafo');
+    assert(graph.roots.includes(session.id), 'la conversación nueva está entre las raíces');
+    assert(typeof node.state === 'string' && node.state.length > 0, 'todo nodo lleva un estado operable');
+    await runtime.shutdown();
+  }
+
   {
     const { bridge, state } = makeBridge();
     const skillsBridge = async (method, params) => {

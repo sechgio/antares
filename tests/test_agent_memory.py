@@ -389,3 +389,74 @@ def test_handlers_list_journal_and_context_never_injects_it(store):
     assert updated["item"]["date"] == "2026-02-03"
     found = agent_tools.run("memory_search", {"query": "expediente"}, store, "s2")["items"]
     assert [item["id"] for item in found] == [journal["id"]]
+
+
+def _remember(store, session_id="s1", **extra):
+    params = {"kind": "fact", "title": "Dato de prueba", "content": "Contenido de prueba", **extra}
+    return memory.memory_for(store).remember(session_id, params)
+
+
+def test_agent_memories_are_inferred_and_user_edits_confirm_them(store):
+    item = _remember(store)
+    assert item["confidence"] == "inferred"
+    mem = memory.memory_for(store)
+    edited = mem.update(item["id"], {"action": "edit", "content": "Corregido por el usuario"})
+    assert edited["confidence"] == "confirmed"
+    reverted = mem.update(item["id"], {"action": "revert", "version": 1})
+    assert reverted["confidence"] == "confirmed"
+
+
+def test_expired_memories_leave_context_and_search(store):
+    mem = memory.memory_for(store)
+    item = _remember(store, title="Dato caducable", expires_in_days=1)
+    assert item["expires_at"] is not None
+    ctx = mem.context("s1", "caducable", dict(VERSIONS))
+    assert "Dato caducable" in ctx["context"]
+    # Fuerza la expiración moviendo el reloj interno del item.
+    mem._items[item["id"]]["expires_at"] = 0
+    assert "Dato caducable" not in mem.context("s1", "caducable", dict(VERSIONS))["context"]
+    assert not any(i["id"] == item["id"] for i in mem.search("caducable", session_id="s1"))
+    # El recuerdo sigue existiendo para que el usuario decida renovarlo o borrarlo.
+    assert any(i["id"] == item["id"] for i in mem.items())
+
+
+def test_expires_in_days_validation(store):
+    with pytest.raises(ValueError, match="vigencia"):
+        _remember(store, expires_in_days=0)
+    with pytest.raises(ValueError, match="vigencia"):
+        _remember(store, expires_in_days=4000)
+
+
+def test_supersede_replaces_and_links_the_old_memory(store):
+    mem = memory.memory_for(store)
+    old = _remember(store, title="Precio viejo", content="100")
+    new = _remember(store, title="Precio nuevo", content="200", supersedes=old["id"])
+    assert new["supersedes"] == old["id"]
+    view = {i["id"]: i for i in mem.items()}
+    assert view[old["id"]]["status"] == "superseded"
+    assert new["id"] in view[old["id"]]["reason"]
+    # El reemplazado ya no se inyecta en contexto ni en búsqueda.
+    assert "Precio viejo" not in mem.context("s1", "precio", dict(VERSIONS))["context"]
+    assert not any(i["id"] == old["id"] for i in mem.search("precio", session_id="s1"))
+    with pytest.raises(ValueError, match="no existe"):
+        _remember(store, title="Otro", supersedes="desconocido")
+
+
+def test_last_used_at_tracks_context_injection(store):
+    mem = memory.memory_for(store)
+    item = _remember(store, title="Dato consultado")
+    assert item["last_used_at"] is None
+    mem.context("s1", "consultado", dict(VERSIONS))
+    view = {i["id"]: i for i in mem.items()}
+    assert view[item["id"]]["last_used_at"] is not None
+    assert view[item["id"]]["uses"] == 1
+
+
+def test_supersede_of_the_same_memory_is_rejected_loudly(store):
+    mem = memory.memory_for(store)
+    created = _remember(store, title="Precio único", content="100")
+    with pytest.raises(ValueError, match="mismo que estás actualizando"):
+        _remember(store, title="Precio único", content="200", supersedes=created["id"])
+    view = {i["id"]: i for i in mem.items()}
+    assert view[created["id"]]["status"] == "active"
+    assert len(view[created["id"]]["versions"]) == 1, "el rechazo no muta el recuerdo"

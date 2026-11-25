@@ -57,6 +57,10 @@ TOOL_SPECS: list[JsonObject] = [
             "title": {"type": "string", "maxLength": MAX_TITLE}, "content": _TEXT,
             "date": {"type": "string", "pattern": _DATE_RE.pattern,
                      "description": "Fecha del diario en formato AAAA-MM-DD; si se omite, hoy"},
+            "expires_in_days": {"type": "integer", "minimum": 1, "maximum": 3650,
+                                "description": "Días de vigencia del recuerdo; si se omite, no expira"},
+            "supersedes": {"type": "string", "maxLength": 24,
+                           "description": "ID del recuerdo que este reemplaza; el anterior queda en estado superseded"},
         }, "required": ["kind", "title", "content"]},
     },
     {
@@ -190,6 +194,8 @@ class MemoryStore:
             raise ValueError(f"La memoria ya tiene {MAX_ITEMS} recuerdos; borra los que no necesites")
         item: JsonObject = {"id": uuid.uuid4().hex[:12], "kind": kind, "title": title, "key": _key(title),
                             "status": "active", "reason": None, "failures": 0, "uses": 0,
+                            "confidence": "confirmed" if source.get("kind") == "user" else "inferred",
+                            "expires_at": None, "supersedes": None, "last_used_at": None,
                             "created_at": _now(), "updated_at": _now(), "version": 0, "versions": []}
         profile_id = self._profiles.get(str(source.get("session_id") or ""))
         if profile_id:
@@ -205,6 +211,11 @@ class MemoryStore:
                      if item["kind"] == kind and item["key"] == key
                      and item.get("profile_id") == profile_id
                      and (kind != "journal" or item["versions"][-1].get("date") == day)), None)
+
+    @staticmethod
+    def _expired(item: JsonObject) -> bool:
+        expires = item.get("expires_at")
+        return isinstance(expires, (int, float)) and not isinstance(expires, bool) and expires <= _now()
 
     def _visible(self, item: JsonObject, session_id: str, *, profile_id: str | None = None,
                  memory_scope: str | None = None) -> bool:
@@ -238,9 +249,26 @@ class MemoryStore:
         data = {"content": content}
         if journal_date:
             data["date"] = journal_date
+        expires_at = None
+        if params.get("expires_in_days") is not None:
+            days = params.get("expires_in_days")
+            if not isinstance(days, int) or isinstance(days, bool) or not 1 <= days <= 3650:
+                raise ValueError("La vigencia debe ser un número entero de días entre 1 y 3650")
+            expires_at = _now() + days * 86400000
+        supersedes = params.get("supersedes")
+        if supersedes is not None and (not isinstance(supersedes, str) or not supersedes.strip()):
+            raise ValueError("supersedes debe ser el id del recuerdo reemplazado")
         with self._lock:
             self._check_writable(session_id)
+            if supersedes:
+                old = self._items.get(str(supersedes).strip())
+                if old is None:
+                    raise ValueError("El recuerdo que quieres reemplazar ya no existe")
+                if old.get("status") != "active":
+                    raise ValueError("El recuerdo que quieres reemplazar no está activo")
             existing = self._same(str(kind), title, session_id, journal_date)
+            if supersedes and existing is not None and str(existing["id"]) == str(supersedes).strip():
+                raise ValueError("El recuerdo reemplazado es el mismo que estás actualizando; quita supersedes y actualízalo directamente")
             if existing is not None and existing["versions"][-1]["source"]["kind"] == "user":
                 raise ValueError("El usuario corrigió este recuerdo; propón el cambio en el chat en lugar de reemplazarlo")
             if existing is None:
@@ -248,6 +276,14 @@ class MemoryStore:
             else:
                 item = existing
                 self._add_version(item, data, source)
+            if expires_at is not None:
+                item["expires_at"] = expires_at
+                item["updated_at"] = _now()
+            if supersedes:
+                old = self._items[str(supersedes).strip()]
+                if str(old["id"]) != str(item["id"]):
+                    old.update(status="superseded", reason=f"Reemplazado por {item['id']}", updated_at=_now())
+                    item["supersedes"] = str(old["id"])
             self._write()
             return self._view(item)
 
@@ -324,14 +360,14 @@ class MemoryStore:
                     item["title"] = _clean(params.get("title"), "un título", MAX_TITLE)
                     item["key"] = _key(str(item["title"]))
                 self._add_version(item, data, {"kind": "user"})
-                item.update(status="active", reason=None, failures=0)
+                item.update(status="active", reason=None, failures=0, confidence="confirmed")
             elif action == "revert":
                 target = next((v for v in item["versions"] if v["version"] == params.get("version")), None)
                 if target is None:
                     raise ValueError("Esa versión ya no se conserva")
                 restored = {k: v for k, v in target.items() if k not in {"version", "source", "created_at"}}
                 self._add_version(item, restored, {"kind": "user", "reverted_to": target["version"]})
-                item.update(status="active", reason=None, failures=0)
+                item.update(status="active", reason=None, failures=0, confidence="confirmed")
             elif action in ("disable", "enable"):
                 item.update(status="disabled" if action == "disable" else "active", reason=None, failures=0)
                 item["updated_at"] = _now()
@@ -355,7 +391,7 @@ class MemoryStore:
         with self._lock:
             scored = []
             for item in self._items.values():
-                if item["status"] != "active" or (session_id is not None and not self._visible(
+                if item["status"] != "active" or self._expired(item) or (session_id is not None and not self._visible(
                         item, session_id, profile_id=profile_id, memory_scope=memory_scope)):
                     continue
                 view = self._view(item)
@@ -405,7 +441,7 @@ class MemoryStore:
             words = _words(text)
             chosen: list[tuple[int, JsonObject]] = []
             for item in self._items.values():
-                if item["status"] != "active" or not self._visible(item, session_id):
+                if item["status"] != "active" or self._expired(item) or not self._visible(item, session_id):
                     continue
                 if item["kind"] == "journal":
                     continue
@@ -437,7 +473,9 @@ class MemoryStore:
                 lines.append(line)
                 used.append(str(view["id"]))
                 size += len(line)
-                self._items[str(view["id"])]["uses"] = int(self._items[str(view["id"])].get("uses") or 0) + 1
+                target = self._items[str(view["id"])]
+                target["uses"] = int(target.get("uses") or 0) + 1
+                target["last_used_at"] = _now()
             procedures = [i for i in used if self._items[i]["kind"] == "procedure"]
             if procedures:
                 self._applied[session_id] = list(dict.fromkeys([*self._applied.pop(session_id, []), *procedures]))[-20:]

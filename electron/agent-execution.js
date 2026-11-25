@@ -28,6 +28,7 @@ const {
   ctx,
 } = require('./agent-shared');
 const { compactMessages, requestBudget } = require('./agent-request-budget');
+const policyEngine = require('./agent-policy-engine');
 const { resolvePortableProfile } = require('./agent-profiles');
 
 const compaction = require('./agent-compaction');
@@ -1270,6 +1271,22 @@ function webAlwaysAllowed(name, context) {
   return !!domain && require('./agent-browser-policy').isAlwaysAllowed(domain);
 }
 
+function scopedRulesFor(session, conversationId) {
+  return [
+    ...(shared.globalScopedRules || []),
+    ...((session && session.scoped_rules) || []),
+    ...policyEngine.turnRulesFor(conversationId),
+  ];
+}
+
+function scopedDenyBlock(match) {
+  return {
+    block:
+      `El usuario bloqueó ${match.reason} en las reglas con alcance. ` +
+      'No repitas esta acción: pide permiso, cambia la regla en Permisos o propone otra vía.',
+  };
+}
+
 async function beforeTool(call, api, context) {
   const spec = shared.toolSpecs.get(call.name);
   const rounds = await toolBudget(api, context);
@@ -1357,6 +1374,15 @@ async function beforeTool(call, api, context) {
   const web = call.name.startsWith('web_');
   const reading = spec.name === 'task_schedule' && (call.arguments || {}).action === 'list';
   const sessionOpen = call.name === 'web_open' && !!require('./agent-browser').sessionOpenContext(call.arguments || {});
+  const scopedRules = scopedRulesFor(session, api.conversationId);
+  const mcpIdentity = typeof spec.mcp_server === 'string' ? { mcp_server: spec.mcp_server, mcp_tool: spec.mcp_tool } : null;
+  if (scopedRules.length) {
+    const early = policyEngine.evaluateScoped(
+      scopedRules,
+      policyEngine.extractTargets(call.name, call.arguments || {}, mcpIdentity || undefined),
+    );
+    if (early && early.decision === 'deny') return scopedDenyBlock(early);
+  }
   if (reading || (!spec.gated && !sessionOpen && !(web && (mode === 'ask' || rule !== undefined)))) return undefined;
   if (rule === 'deny') {
     return {
@@ -1392,6 +1418,13 @@ async function beforeTool(call, api, context) {
       spec.kind === 'native'
         ? await nativeTools().nativeToolContext(spec.name, sessionId, call.arguments || {})
         : undefined;
+    const scoped = scopedRules.length
+      ? policyEngine.evaluateScoped(
+          scopedRules,
+          policyEngine.extractTargets(call.name, call.arguments || {}, { ...approvedContext, ...mcpIdentity }),
+        )
+      : null;
+    if (scoped && scoped.decision === 'deny') return scopedDenyBlock(scoped);
     ({ approval } = await bridge('agent_internal_approval_ensure', {
       session_id: sessionId,
       call_id: callId,
@@ -1401,7 +1434,7 @@ async function beforeTool(call, api, context) {
       ...(approvedContext ? { context: approvedContext } : {}),
       ...(unattendedApps ? { unattended_apps: unattendedApps } : {}),
     }));
-    const autoSource =
+    let autoSource =
       rule === 'allow' && !NEVER_AUTO_APPROVE.has(call.name)
         ? 'rule'
         : mode === 'full' && !NEVER_AUTO_APPROVE.has(call.name) && rule !== 'ask'
@@ -1409,6 +1442,11 @@ async function beforeTool(call, api, context) {
           : rule !== 'ask' && webAlwaysAllowed(call.name, approvedContext)
             ? 'web'
             : null;
+    // Una regla con alcance es más específica que el canal o el modo:
+    // ask fuerza revisión manual; allow auto-aprueba incluso herramientas NEVER_AUTO_APPROVE
+    // porque el usuario acotó exactamente la operación (comando, ruta, app o dominio).
+    if (scoped && scoped.decision === 'ask') autoSource = null;
+    else if (scoped && scoped.decision === 'allow') autoSource = 'scoped';
     if (autoSource && approval.status === 'pending') {
       ({ approval } = await bridge('agent_internal_approval_decide', {
         approval_id: approval.id,

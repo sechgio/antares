@@ -406,3 +406,60 @@ def test_composer_skill_resolves_with_agent_levels_and_rejects_unknown_ids(store
             resolve({"session_id": "skills-session", "skill_id": unknown, "profile_id": "reader"})
     with pytest.raises(ValidationError, match="perfil"):
         resolve({"session_id": "skills-session", "skill_id": listed["informe"], "profile_id": ""})
+
+
+def install_manifest(folder: Path, name: str, manifest: str, body: str = "Instrucciones") -> Path:
+    target = folder / name / "SKILL.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(f"---\nname: {name}\n{manifest}\n---\n{body}", encoding="utf-8")
+    return target
+
+
+def test_manifest_version_and_requirements_are_exposed_in_catalog(store):
+    install(store.base_dir / "skills")
+    install_manifest(
+        store.base_dir / "skills", "informe-mensual",
+        "description: Genera el informe\nversion: 1.2.3\nrequires_tools: [document_generate, artifact_print]\n"
+        "requires_modules: [documents]\nauthor: Equipo Datos",
+    )
+    result = run(store, "skills_list", query="informe")
+    entry = result["skills"][0]
+    assert entry["version"] == "1.2.3"
+    assert entry["requires_tools"] == ["document_generate", "artifact_print"]
+    assert entry["requires_modules"] == ["documents"]
+    assert entry["author"] == "Equipo Datos"
+    # Las skills sin manifiesto no llevan ruido en el catálogo.
+    plain = run(store, "skills_list", query="pdf-review")["skills"][0]
+    assert "version" not in plain and "requires_tools" not in plain
+
+
+def test_manifest_validation_rejects_bad_version_and_requirements(store):
+    install_manifest(store.base_dir / "skills", "mala-version", "description: x\nversion: no-es-semver")
+    install_manifest(store.base_dir / "skills", "mal-requires", "description: x\nrequires_tools: [123]")
+    install_manifest(store.base_dir / "skills", "requerimientos-largos",
+                     "description: x\nrequires_tools: [" + ", ".join(f"herramienta-{i}" for i in range(25)) + "]")
+    result = run(store, "skills_list")
+    names = [skill["name"] for skill in result["skills"]]
+    assert "mala-version" not in names
+    assert "version-corta" not in names, "semver exige tres partes"
+    assert "modulo-inventado" not in names, "requires_modules se valida contra el catálogo real"
+    assert "mal-requires" not in names
+    assert "requerimientos-largos" not in names
+    assert any("versión" in warning or "requires" in warning for warning in result["warnings"])
+
+
+def test_manifest_dedupes_requirements_and_trims_author(store):
+    install_manifest(store.base_dir / "skills", "dedup",
+                     "description: x\nversion: '1.0.0'\nrequires_tools: [fs_read, fs_read]\nauthor: '  '")
+    entry = run(store, "skills_list", query="dedup")["skills"][0]
+    assert entry["version"] == "1.0.0"
+    assert entry["requires_tools"] == ["fs_read"]
+    assert "author" not in entry, "un autor vacío no se publica"
+
+
+def test_library_catalog_exposes_manifest(store):
+    install_manifest(store.base_dir / "skills", "versionada", "description: x\nversion: 2.0.1\nrequires_modules: [documents]")
+    catalog = skills.library_catalog(store.base_dir / "skills")
+    entry = next(skill for skill in catalog["skills"] if skill["name"] == "versionada")
+    assert entry["version"] == "2.0.1"
+    assert entry["requires_modules"] == ["documents"]

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffLines, fileChange, markChanges, snippetStart } from './diffLines';
+import { diffLines, fileChange, markChanges, parseUnifiedDiff, snippetStart } from './diffLines';
 
 describe('markChanges', () => {
   it('resalta solo la palabra que cambió entre una línea borrada y su sustituta', () => {
@@ -68,5 +68,37 @@ describe('fileChange', () => {
     expect(fileChange('fs_edit', { path: 'a', old: 'x' })).toBeNull();
     expect(fileChange('fs_edit', { path: 'a', edits: [] })).toBeNull();
     expect(fileChange('fs_read', { path: 'a' })).toBeNull();
+  });
+});
+
+describe('parseUnifiedDiff', () => {
+  it('convierte el diff verificado del backend en hunks renderizables', () => {
+    const change = parseUnifiedDiff({
+      added_lines: 2, removed_lines: 1, unchanged: false, truncated: false,
+      preview: '--- \n+++ \n@@ -1,3 +1,4 @@\n línea uno\n-línea dos\n+línea cambiada\n línea tres\n+línea cuatro',
+    });
+    const flat = change.hunks[0];
+    expect(flat.filter((line) => line.kind === 'add')).toHaveLength(2);
+    expect(flat.filter((line) => line.kind === 'remove')).toHaveLength(1);
+    expect(flat.find((line) => line.kind === 'remove')?.text).toBe('línea dos');
+    expect(flat.some((line) => line.kind === 'context' && line.text === 'línea uno')).toBe(true);
+    expect(flat.every((line) => !line.text.startsWith('@@'))).toBe(true);
+    expect(change.added).toBe(2);
+    expect(change.removed).toBe(1);
+    expect(change.whole).toBe(false);
+  });
+
+  it('resalta el cambio intralínea entre remove y add emparejados', () => {
+    const change = parseUnifiedDiff({
+      added_lines: 1, removed_lines: 1, unchanged: false, truncated: false,
+      preview: '-total = price * qty\n+total = price * quantity',
+    });
+    expect(change.hunks[0][0].change).toBeTruthy();
+    expect(change.hunks[0][1].change).toBeTruthy();
+  });
+
+  it('un preview vacío produce un hunk vacío sin romperse', () => {
+    const change = parseUnifiedDiff({ added_lines: 0, removed_lines: 0, unchanged: false, preview: '', truncated: false });
+    expect(change.hunks[0]).toHaveLength(0);
   });
 });

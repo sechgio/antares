@@ -15,7 +15,36 @@ export type AgentPermissionMode = 'ask' | 'auto' | 'full';
 export type AgentChannel = 'terminal' | 'files' | 'desktop' | 'cloud' | 'mcp' | 'documents' | 'memory' | 'agenda' | 'other';
 export type AgentChannelRule = 'ask' | 'allow' | 'deny';
 export type AgentApprovalRules = Partial<Record<AgentChannel, AgentChannelRule>>;
-export type AgentApprovalSource = 'manual' | 'rule' | 'full' | 'web' | 'cancel';
+export type AgentApprovalSource = 'manual' | 'rule' | 'full' | 'web' | 'cancel' | 'scoped' | 'smart';
+export type AgentScopedRuleScope = 'path' | 'command' | 'domain' | 'app' | 'mcp';
+
+export interface AgentScopedRule {
+  scope: AgentScopedRuleScope;
+  value: string;
+  decision: AgentChannelRule;
+}
+
+export type AgentRunState = 'queued' | 'running' | 'waiting_approval' | 'blocked' | 'done' | 'failed' | 'cancelled' | 'uncertain';
+
+export interface AgentRunNode {
+  id: string;
+  kind: 'session' | 'delegation';
+  title: string;
+  state: AgentRunState;
+  parent_id: string | null;
+  depth: number;
+  children: string[];
+  created_at?: number | null;
+  updated_at?: number | null;
+  started_at?: number | null;
+  error?: string | null;
+  agent?: { id: string; name: string } | null;
+  role?: string | null;
+  round?: number;
+  task?: string;
+  delivery?: { state: string | null; attempts: number };
+  root_parent_request_id?: string | null;
+}
 
 export interface AgentUndo {
   available: boolean;
@@ -46,6 +75,7 @@ export interface AgentSession {
   last_error: string | null;
   permission_mode?: AgentPermissionMode;
   approval_rules?: AgentApprovalRules;
+  scoped_rules?: AgentScopedRule[];
   reasoning_effort?: AgentReasoningEffort;
   reasoning_levels?: AgentReasoningEffort[];
   profile?: { id: string; name: string };
@@ -173,7 +203,8 @@ export interface AgentApproval {
   risk_reason?: string;
   context?: { account?: string; tool?: string; sheet_id?: string; scopes?: string[]; filename?: string;
     page_url?: string; page_time_origin?: number; domain?: string; policy_blocked?: boolean;
-    computer?: { app?: string; window?: string; element?: string }; subagent?: string; subagent_role?: AgentRole };
+    computer?: { app?: string; window?: string; element?: string }; subagent?: string; subagent_role?: AgentRole;
+    write_diff?: { added_lines: number; removed_lines: number; unchanged: boolean; preview: string; truncated: boolean } };
   resources?: { path: string; sha256?: string }[];
   dispatch?: { status: string; finished_at?: number };
 }
@@ -377,14 +408,19 @@ export const agentApi = {
   agentSessionPermissionsSet: (id: string, permission_mode: AgentPermissionMode) =>
     _invoke<{ session: AgentSession }>('agent_session_permissions_set', { id, permission_mode }),
 
-  agentSessionRulesSet: (id: string, rules: AgentApprovalRules) =>
-    _invoke<{ session: AgentSession; audit?: AgentRuleAudit[] }>('agent_session_rules_set', { id, rules }),
+  agentSessionRulesSet: (id: string, rules: AgentApprovalRules, scoped_rules?: AgentScopedRule[]) =>
+    _invoke<{ session: AgentSession; audit?: AgentRuleAudit[] }>('agent_session_rules_set', { id, rules, ...(scoped_rules ? { scoped_rules } : {}) }),
 
   agentPolicyGet: () =>
-    _invoke<{ rules: AgentApprovalRules; audit: AgentRuleAudit[] }>('agent_policy_get'),
+    _invoke<{ rules: AgentApprovalRules; scoped_rules?: AgentScopedRule[]; audit: AgentRuleAudit[] }>('agent_policy_get'),
 
-  agentPolicyRulesSet: (rules: AgentApprovalRules) =>
-    _invoke<{ rules: AgentApprovalRules; audit: AgentRuleAudit[] }>('agent_policy_rules_set', { rules }),
+  agentPolicyRulesSet: (rules: AgentApprovalRules, scoped_rules?: AgentScopedRule[]) =>
+    _invoke<{ rules: AgentApprovalRules; scoped_rules?: AgentScopedRule[]; audit: AgentRuleAudit[] }>(
+      'agent_policy_rules_set',
+      { rules, ...(scoped_rules ? { scoped_rules } : {}) },
+    ),
+
+  agentRunGraph: () => _invoke<{ nodes: AgentRunNode[]; roots: string[] }>('agent_run_graph'),
 
   agentSessionReasoningSet: (id: string, reasoning_effort: AgentReasoningEffort) =>
     _invoke<{ session: AgentSession }>('agent_session_reasoning_set', { id, reasoning_effort }),
@@ -512,10 +548,12 @@ export const agentApi = {
   agentCanvasApplyLayers: (params: Record<string, unknown>) =>
     _invoke<CanvasLayersResult>('agent_canvas_apply_layers', params),
 
-  agentArtifactAction: (params: { session_id: string; artifact_id: string; file_index: number; action: 'preview' | 'embed' | 'review' | 'open' | 'save' | 'print';
+  agentArtifactAction: (params: { session_id: string; artifact_id: string; file_index: number; action: 'preview' | 'embed' | 'review' | 'open' | 'save' | 'print' | 'versions' | 'restore';
     color_scheme?: 'light' | 'dark';
-    request_id?: string; sha256?: string; page?: number; full_size?: boolean; printer_name?: string; copies?: number; pages?: string; duplex?: string; quality?: string }) =>
-    _invoke<{ png_base64?: string; html?: string; pages?: number; sha256?: string; reviewed?: boolean; approval?: AgentApproval; cancelled?: boolean; opened?: boolean; url?: string }>('agent_artifact_action', params),
+    request_id?: string; sha256?: string; page?: number; full_size?: boolean; printer_name?: string; copies?: number; pages?: string; duplex?: string; quality?: string; revision?: number }) =>
+    _invoke<{ png_base64?: string; html?: string; pages?: number; sha256?: string; reviewed?: boolean; approval?: AgentApproval; cancelled?: boolean; opened?: boolean; url?: string;
+      revisions?: { revision: number; parent_revision: number | null; at?: number; provenance?: Record<string, unknown>; files?: { index?: number; name?: string; sha256?: string; bytes?: number; available?: boolean }[] }[];
+      tombstoned?: boolean; restored?: number }>('agent_artifact_action', params),
 
   agentPrintersList: () => _invoke<{ printers: { name: string; default: boolean }[] }>('printers_list'),
 
@@ -530,6 +568,10 @@ export const agentApi = {
     _invoke<{ profile: AgentProfile }>('agent_profile_save', p),
 
   agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),
+
+  agentTemplateExport: (id: string) => _invoke<{ template: Record<string, unknown> }>('agent_template_export', { id }),
+
+  agentTemplateImport: (template: Record<string, unknown>) => _invoke<{ profile: AgentProfile }>('agent_template_import', { template }),
 
   agentMemoryList: () => _invoke<{ items: AgentMemoryItem[] }>('agent_memory_list'),
   agentSkillsList: () =>
