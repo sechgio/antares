@@ -392,6 +392,7 @@ export default function AgentView({
     .reverse()
     .find((call) => call.status === 'running');
   const artifact = [...artifacts].reverse().find((item) => item.files.length > 0);
+  const artifactKey = artifact ? `artifact:${artifact.id}:${artifact.files.map((file) => file.sha256).join(',')}` : '';
   const turns = useMemo(() => groupTurns(messages), [messages]);
   const turnArtifacts = useMemo(
     () =>
@@ -441,14 +442,6 @@ export default function AgentView({
                     text: 'El agente espera tu respuesta en el panel.',
                     target: `agent-panel-${openPanel.id}`,
                     action: 'Responder',
-                  }
-                : artifact
-                ? {
-                    kind: 'item',
-                    key: `artifact:${artifact.id}:${artifact.files.map((file) => file.sha256).join(',')}`,
-                    text: `Resultado disponible: ${artifact.files[0].name}`,
-                    target: `agent-artifact-${artifact.id}`,
-                    action: 'Ver resultado',
                   }
                 : null;
   const attentionKey = attention ? `${sessionId}:${attention.key}` : '';
@@ -661,7 +654,7 @@ export default function AgentView({
 
   useEffect(() => {
     if (atBottomRef.current) listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [messages.length, messages[messages.length - 1]?.content, pending.length, attentionKey]);
+  }, [messages.length, messages[messages.length - 1]?.content, pending.length, attentionKey, artifactKey]);
 
   useEffect(() => {
     atBottomRef.current = true;

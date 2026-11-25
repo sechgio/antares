@@ -179,6 +179,7 @@ const EMBED_SCRIPT = `<script>(() => {
   const allowed = ['--page-text', '--page-muted', '--page-line', '--page-field', '--page-accent'];
   window.addEventListener('message', (event) => {
     if (event.source !== parent || !event.data || event.data.type !== 'antares-page-theme' || typeof event.data.vars !== 'object') return;
+    if (event.data.colorScheme === 'light' || event.data.colorScheme === 'dark') document.documentElement.style.colorScheme = event.data.colorScheme;
     for (const name of allowed) {
       const value = event.data.vars[name];
       if (typeof value === 'string' && /^[#a-z0-9(),.%\\s-]{1,80}$/i.test(value)) document.documentElement.style.setProperty(name, value);

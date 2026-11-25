@@ -40,6 +40,10 @@ const NUMBER = new Intl.NumberFormat('es', { maximumFractionDigits: 2 });
 const COLLATOR = new Intl.Collator('es', { numeric: true, sensitivity: 'base' });
 const formDrafts = new Map<string, Record<string, string | number | boolean>>();
 
+function currentPageColorScheme(): 'light' | 'dark' {
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+}
+
 type Cell = string | number | null;
 type TableSort = { column: number; dir: 'asc' | 'desc' } | null;
 
@@ -294,11 +298,17 @@ function PageFrame({ url, title, colorScheme, onHeight }: { url: string; title: 
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [onHeight]);
-  const sendTheme = () => {
+  const sendTheme = useCallback(() => {
     const tokens = getComputedStyle(document.documentElement);
     const vars = Object.fromEntries(Object.entries(PAGE_THEME).map(([name, token]) => [name, tokens.getPropertyValue(token).trim()]));
-    frame.current?.contentWindow?.postMessage({ type: 'antares-page-theme', vars }, '*');
-  };
+    frame.current?.contentWindow?.postMessage({ type: 'antares-page-theme', colorScheme, vars }, '*');
+  }, [colorScheme]);
+  useEffect(() => {
+    sendTheme();
+    const observer = new MutationObserver(() => sendTheme());
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
+    return () => observer.disconnect();
+  }, [sendTheme]);
   return <iframe ref={frame} title={title} src={url} sandbox="allow-scripts" referrerPolicy="no-referrer" className={ready ? undefined : 'is-loading'}
     aria-busy={!ready} style={{ height, colorScheme }} onLoad={sendTheme} />;
 }
@@ -309,7 +319,14 @@ function PagePanel({ props, sessionId }: PanelViewProps<z.infer<typeof pageSchem
   const [failed, setFailed] = useState(false);
   const [clipped, setClipped] = useState(false);
   const [full, setFull] = useState(false);
-  const colorScheme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+  const [colorScheme, setColorScheme] = useState<'light' | 'dark'>(() => currentPageColorScheme());
+  useEffect(() => {
+    const update = () => setColorScheme(currentPageColorScheme());
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
   const request = { session_id: sessionId, artifact_id: props.artifact_id, file_index: 0, sha256: props.sha256, color_scheme: colorScheme } as const;
   useEffect(() => {
     let active = true;

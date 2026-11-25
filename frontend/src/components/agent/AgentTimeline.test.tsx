@@ -1118,7 +1118,7 @@ it('embebe un panel page en un iframe aislado con altura por postMessage y vista
   document.documentElement.style.setProperty('--accent-primary', '#7c3aed');
   const post = vi.spyOn(frame.contentWindow!, 'postMessage');
   fireEvent.load(frame);
-  expect(post).toHaveBeenCalledWith({ type: 'antares-page-theme', vars: expect.objectContaining({ '--page-accent': '#7c3aed' }) }, '*');
+  expect(post).toHaveBeenCalledWith({ type: 'antares-page-theme', colorScheme: 'dark', vars: expect.objectContaining({ '--page-accent': '#7c3aed' }) }, '*');
   document.documentElement.style.removeProperty('--accent-primary');
   act(() => { window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: { type: 'antares-page-height', height: 500.2 } })); });
   expect(frame.style.height).toBe('501px');
@@ -1140,6 +1140,38 @@ it('embebe un panel page en un iframe aislado con altura por postMessage y vista
   fireEvent.click(screen.getByRole('button', { name: 'Cerrar vista completa' }));
   expect(screen.queryByRole('dialog')).toBeNull();
   action.mockRestore();
+});
+
+it('actualiza una página embebida cuando cambia la apariencia sin rehacer el embed', async () => {
+  const originalTheme = document.documentElement.dataset.theme;
+  const action = vi.spyOn(agentApi, 'agentArtifactAction').mockImplementation(async (params) =>
+    params.action === 'embed' ? { url: 'http://127.0.0.1:4100/page/abc/content.html', sha256: 'h1' } : { opened: true });
+  try {
+    document.documentElement.dataset.theme = 'dark';
+    renderPanel(makePanel('page', { artifact_id: 'a1', sha256: 'h1', title: 'Avance' }));
+    const frame = await screen.findByTitle('Avance') as HTMLIFrameElement;
+    expect(action).toHaveBeenCalledWith(expect.objectContaining({ action: 'embed', color_scheme: 'dark' }));
+    const post = vi.spyOn(frame.contentWindow!, 'postMessage');
+    fireEvent.load(frame);
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'antares-page-theme', colorScheme: 'dark' }), '*');
+    action.mockClear();
+    await act(async () => {
+      document.documentElement.style.setProperty('--text-primary', '#112233');
+      document.documentElement.dataset.theme = 'light';
+    });
+    await waitFor(() => expect(post).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: 'antares-page-theme', colorScheme: 'light', vars: expect.objectContaining({ '--page-text': '#112233' }),
+    }), '*'));
+    expect(frame.style.colorScheme).toBe('light');
+    expect(action).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => {
+      if (originalTheme) document.documentElement.dataset.theme = originalTheme;
+      else delete document.documentElement.dataset.theme;
+      document.documentElement.style.removeProperty('--text-primary');
+    });
+    action.mockRestore();
+  }
 });
 
 it.each([

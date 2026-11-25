@@ -48,6 +48,7 @@ const page = { version: 1, title: 'Trabajos', html: '<h1>Trabajos</h1><input id=
     const embeddedHtml = await embedded.text();
     assert.match(embeddedHtml, /antares-page-height[\s\S]*<\/script><\/body><\/html>$/);
     assert.match(embeddedHtml, /event\.source !== parent[\s\S]*antares-page-theme/);
+    assert.match(embeddedHtml, /event\.data\.colorScheme[\s\S]*style\.colorScheme/);
     assert.match(embeddedHtml, /display: flow-root/);
     const html = await frame.text();
     assert.match(html, /color-scheme:dark/);
