@@ -283,6 +283,7 @@ async function sessionsList() {
 const MAX_PROFILES = 30;
 const PROFILE_ROLES = new Set(['explorer', 'reviewer', 'worker']);
 const MEMORY_SCOPES = new Set(['shared-read', 'own', 'none']);
+const BROWSER_MODES = new Set(['auto', 'ephemeral', 'persistent']);
 const MIN_DAILY_TOKENS = 1000;
 const MAX_DAILY_TOKENS = 100_000_000;
 const SECRET_RE =
@@ -332,6 +333,10 @@ async function profileSave(params = {}) {
   const memoryScope =
     params.memory_scope === undefined ? existing?.memory_scope || 'shared-read' : String(params.memory_scope);
   if (!MEMORY_SCOPES.has(memoryScope)) throw validation('Alcance de memoria no válido: usa shared-read, own o none');
+  const browserMode =
+    params.browser_mode === undefined ? existing?.browser_mode || 'auto' : String(params.browser_mode);
+  if (!BROWSER_MODES.has(browserMode))
+    throw validation('Modo del navegador no válido: usa auto, ephemeral o persistent');
   const dailyTokens = params.daily_tokens === undefined ? (existing?.daily_tokens ?? null) : params.daily_tokens;
   if (
     dailyTokens !== null &&
@@ -364,6 +369,7 @@ async function profileSave(params = {}) {
     tools: Array.isArray(tools) ? [...new Set(tools)] : null,
     ...(deny.length ? { tools_deny: [...new Set(deny)] } : {}),
     ...(memoryScope !== 'shared-read' ? { memory_scope: memoryScope } : {}),
+    ...(browserMode !== 'auto' ? { browser_mode: browserMode } : {}),
     ...(dailyTokens !== null ? { daily_tokens: dailyTokens } : {}),
     ...(agentModel ? { model: agentModel } : {}),
     created_at: existing ? existing.created_at : now,

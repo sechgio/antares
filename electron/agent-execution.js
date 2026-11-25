@@ -29,6 +29,7 @@ const {
 } = require('./agent-shared');
 const { compactMessages, requestBudget } = require('./agent-request-budget');
 const policyEngine = require('./agent-policy-engine');
+const mcpProxy = require('./agent-mcp-proxy');
 const { resolvePortableProfile } = require('./agent-profiles');
 
 const compaction = require('./agent-compaction');
@@ -59,7 +60,7 @@ const SUBAGENT_MAX_TASKS = 4;
 const TOOLS_LOAD = 'tools_load';
 const requiredSkills = new Map();
 const CORE_MODULES = new Set(['computer', 'documents', 'drafts', 'agent', 'plan']);
-const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD, 'task_schedule']);
+const CORE_TOOLS = new Set([SUBAGENT_TOOL, TOOLS_LOAD, 'task_schedule', ...mcpProxy.META]);
 const MEMORY_TOOLS = ['memory_search', 'memory_remember', 'procedure_learn'];
 const UI_ACTION_TOOLS = new Set([
   'cua_click',
@@ -340,14 +341,31 @@ function capOpenAITools(payload) {
   if (!Array.isArray(tools) || tools.length <= MAX_OPENAI_TOOLS) return payload;
   const nameOf = (tool) => ((tool && (tool.function || tool.custom)) || {}).name;
   const called = new Set((payload.messages || []).flatMap((message) => (message.tool_calls || []).map(nameOf)));
-  const rank = (tool) => (called.has(nameOf(tool)) ? 0 : shared.toolSpecs.get(nameOf(tool))?.gated ? 2 : 1);
+  // Prioridad: llamadas del turno y proxy MCP, nativas sin efecto, nativas con efecto y, al final,
+  // las MCP de la cargada más recientemente a la más antigua.
+  const rank = (tool, index) => {
+    const name = nameOf(tool);
+    const spec = shared.toolSpecs.get(name);
+    if (called.has(name) || mcpProxy.META.has(name)) return [0, index];
+    if (!mcpProxy.isMcp(spec)) return [spec?.gated ? 2 : 1, index];
+    return [3, -index];
+  };
   const kept = new Set(
     tools
-      .map((tool, index) => [rank(tool), index])
+      .map((tool, index) => [...rank(tool, index), index])
       .sort((a, b) => a[0] - b[0] || a[1] - b[1])
       .slice(0, MAX_OPENAI_TOOLS)
-      .map(([, index]) => index),
+      .map(([, , index]) => index),
   );
+  const dropped = tools.filter((_, index) => !kept.has(index)).map(nameOf);
+  try {
+    require('./app-log').appendLogEvent('WARN', 'agent_tools_capped', {
+      limit: MAX_OPENAI_TOOLS,
+      offered: tools.length,
+      dropped: dropped.length,
+      dropped_tools: dropped.slice(0, 40).join(','),
+    });
+  } catch {}
   return { ...payload, tools: tools.filter((_, index) => kept.has(index)) };
 }
 
@@ -475,6 +493,11 @@ async function allToolSpecs() {
       properties: {
         query: { type: 'string', description: 'Qué necesitas hacer o el nombre aproximado de la herramienta' },
         modules: { type: 'array', items: { type: 'string' }, description: 'Módulos cuyas herramientas quieres cargar' },
+        names: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Nombres exactos de herramientas para cargar, por ejemplo los que devuelve mcp_search',
+        },
       },
     },
   });
@@ -496,6 +519,13 @@ async function allToolSpecs() {
       required: ['query'],
     },
   });
+  const proxied = mcpProxy.proxiedServers([...merged.values()]);
+  if (proxied.size) {
+    for (const spec of merged.values()) {
+      if (mcpProxy.isMcp(spec) && proxied.has(spec.mcp_server)) merged.set(spec.name, { ...spec, proxied: true });
+    }
+    for (const spec of mcpProxy.SPECS) merged.set(spec.name, spec);
+  }
   return [...merged.values()].map((spec) => ({ ...spec, channel: channelFor(spec.name, spec.module) }));
 }
 
@@ -560,8 +590,10 @@ async function searchSessions(args, currentSessionId, context) {
 }
 
 function defaultToolNames(specs) {
-  if (specs.length <= MAX_DEFAULT_TOOLS) return null;
-  return specs.filter((spec) => CORE_MODULES.has(spec.module) || CORE_TOOLS.has(spec.name)).map((spec) => spec.name);
+  const visible = specs.filter((spec) => !spec.proxied);
+  if (specs.length <= MAX_DEFAULT_TOOLS && visible.length === specs.length) return null;
+  if (visible.length < specs.length && visible.length <= MAX_DEFAULT_TOOLS) return visible.map((spec) => spec.name);
+  return visible.filter((spec) => CORE_MODULES.has(spec.module) || CORE_TOOLS.has(spec.name)).map((spec) => spec.name);
 }
 
 function budgetWarningText(rounds) {
@@ -697,14 +729,16 @@ async function loadTools(args, sessionId, context) {
           'agent_stop',
           'agent_room',
           'wait_event',
+          ...mcpProxy.META,
         ].includes(spec.name)) &&
       (!allows || allows(spec.name)),
   );
   const modules = Array.isArray(args.modules) ? args.modules.map(String) : [];
+  const names = Array.isArray(args.names) ? args.names.map(String) : [];
   const words = normal(args.query)
     .split(/[^a-z0-9_]+/)
     .filter((word) => word.length > 2);
-  if (!modules.length && !words.length) {
+  if (!modules.length && !words.length && !names.length) {
     const catalog = new Map();
     for (const spec of specs) {
       const id = spec.module || 'otros';
@@ -717,7 +751,9 @@ async function loadTools(args, sessionId, context) {
       text: JSON.stringify({ modules: [...catalog.values()].sort((a, b) => a.module.localeCompare(b.module)) }),
     };
   }
-  const found = rankTools(specs, args);
+  const found = names.length
+    ? specs.filter((spec) => names.includes(spec.name)).slice(0, MAX_LOADED_TOOLS)
+    : rankTools(specs, args);
   const added = found.filter((spec) => !enabled.has(spec.name)).map((spec) => spec.name);
   const text = JSON.stringify({
     loaded: added,
@@ -930,6 +966,17 @@ function toolOutputBlock(toolName, text) {
 function envelopeToolResults(messages) {
   if (!Array.isArray(messages)) return messages;
   let changed = false;
+  let callArgs;
+  const argsOf = (id) => {
+    callArgs ||= new Map(
+      messages.flatMap((message) =>
+        message && message.role === 'assistant' && Array.isArray(message.content)
+          ? message.content.filter((block) => block && block.type === 'toolCall').map((block) => [block.id, block.arguments])
+          : [],
+      ),
+    );
+    return callArgs.get(id);
+  };
   const next = messages.map((message) => {
     if (!message || message.role !== 'toolResult' || CONTROL_TOOL_RESULTS.has(message.toolName)) return message;
     const content = Array.isArray(message.content)
@@ -944,7 +991,13 @@ function envelopeToolResults(messages) {
     return {
       ...message,
       content: [
-        { type: 'text', text: toolOutputBlock(message.toolName, body) },
+        {
+          type: 'text',
+          text: toolOutputBlock(
+            mcpProxy.META.has(message.toolName) ? mcpProxy.origin(argsOf(message.toolCallId)) : message.toolName,
+            body,
+          ),
+        },
         ...content.filter((block) => !block || block.type !== 'text'),
       ],
     };
@@ -1288,6 +1341,13 @@ function scopedDenyBlock(match) {
 }
 
 async function beforeTool(call, api, context) {
+  // mcp_call se evalúa como la herramienta MCP real: mismas reglas, permisos y aprobación que una llamada directa.
+  const enabledName = call.name;
+  if (call.name === mcpProxy.MCP_CALL) {
+    const target = mcpProxy.resolveCall([...shared.toolSpecs.values()], call.arguments);
+    if (target.error) return { block: target.error };
+    call = { ...call, name: target.spec.name, arguments: target.args };
+  }
   const spec = shared.toolSpecs.get(call.name);
   const rounds = await toolBudget(api, context);
   if (rounds >= MAX_TOOL_STEPS) return { block: LIMIT_NOTE };
@@ -1301,8 +1361,12 @@ async function beforeTool(call, api, context) {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   const session = await requireSession(sessionId);
   const childControl = !!session.delegation && CHILD_CONTROL_TOOLS.has(call.name);
-  if (!childControl && !(await toolEnabled(sessionId, call.name, context))) {
-    return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
+  if (!childControl && !(await toolEnabled(sessionId, enabledName, context))) {
+    return { block: `Herramienta deshabilitada en esta conversación: ${enabledName}` };
+  }
+  if (enabledName !== call.name) {
+    const allows = await profileToolFilter(session);
+    if (allows && !allows(call.name)) return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
   }
   const calls = turnState(api.conversationId).calls;
   const signature = callSignature(call.name, call.arguments);
@@ -1363,8 +1427,8 @@ async function beforeTool(call, api, context) {
   const retryDelay = Math.max(repeated.retryAt || 0, failing?.retryAt || 0) - Date.now();
   if (retryDelay > 0) {
     await waitResource(context, clampRetryAfterMs(retryDelay));
-    if (!childControl && !(await toolEnabled(sessionId, call.name, context))) {
-      return { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
+    if (!childControl && !(await toolEnabled(sessionId, enabledName, context))) {
+      return { block: `Herramienta deshabilitada en esta conversación: ${enabledName}` };
     }
   }
   const mode = session.permission_mode || 'auto';
@@ -1469,9 +1533,9 @@ async function beforeTool(call, api, context) {
       current = next || { status: 'expired' };
     }
     if (current.status === 'approved') {
-      return (await toolEnabled(sessionId, call.name, context))
+      return (await toolEnabled(sessionId, enabledName, context))
         ? undefined
-        : { block: `Herramienta deshabilitada en esta conversación: ${call.name}` };
+        : { block: `Herramienta deshabilitada en esta conversación: ${enabledName}` };
     }
     if (current.status === 'denied') return { block: 'El usuario rechazó esta acción' };
     return { block: 'La aprobación expiró; vuelve a pedírselo al agente' };
@@ -1711,6 +1775,15 @@ async function executeTool(spec, args, api, context) {
 async function dispatchTool(spec, args, sessionId, api, context) {
   if (spec.name === SCRIPT_TOOL) return dispatchScript(args, sessionId, api, context);
   const portableProfile = resolvePortableProfile(shared.state.portableProfiles, api.conversationId);
+  if (mcpProxy.META.has(spec.name)) {
+    const allows = await profileToolFilter(await requireSession(sessionId));
+    const catalog = [...shared.toolSpecs.values()].filter((tool) => !allows || allows(tool.name));
+    if (spec.name === mcpProxy.MCP_SEARCH) return { text: JSON.stringify(mcpProxy.search(catalog, args || {})) };
+    const target = mcpProxy.resolveCall(catalog, args);
+    if (target.error) throw validation(target.error);
+    spec = target.spec;
+    args = target.args;
+  }
   if (spec.kind === 'meta') {
     if (spec.name === 'agent_delegate') {
       const profile = await resolveProfile(args?.agent);
@@ -1919,6 +1992,9 @@ async function dispatchNative(spec, request, context) {
     const result = await nativeTools().runNativeTool(spec.name, request.params, {
       sessionId: request.session_id,
       approvedContext: request.context,
+      ...(spec.name.startsWith('web_')
+        ? { browserMode: (await sessionProfile(await requireSession(request.session_id)))?.browser_mode }
+        : {}),
     });
     text = JSON.stringify(result === undefined ? null : result);
   } catch (err) {
