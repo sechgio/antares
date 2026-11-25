@@ -46,6 +46,18 @@ const TASKS = [
       'Usa tools_load para cargar el módulo de reportes de campo y di en una frase qué herramientas quedaron disponibles.',
     seedFiles: [],
   },
+  {
+    id: 'memoria_entre_sesiones',
+    title: 'memoria entre sesiones',
+    prompt:
+      'Primera sesión: «Recuerda que prefiero los reportes en formato PDF con resumen ejecutivo». ' +
+      'Segunda sesión: «¿Qué formato de reportes prefiero?»',
+    seedFiles: [],
+    steps: [
+      { prompt: 'Recuerda que prefiero los reportes en formato PDF con resumen ejecutivo.' },
+      { newSession: true, prompt: '¿Qué formato de reportes prefiero? Responde en una frase.' },
+    ],
+  },
 ];
 
 function parseArgs(argv) {
@@ -183,6 +195,47 @@ async function denyPendingApprovals(handlers, sessionId) {
   return (status.pending_approvals || []).length;
 }
 
+async function sendAndWait(handlers, sessionId, prompt, timeoutMs) {
+  await handlers.agent_message_send({ session_id: sessionId, content: prompt });
+  const sentAt = Date.now();
+  const deadline = sentAt + timeoutMs;
+  let status = { running: true, pending_approvals: [], last_error: null };
+  let outcome = 'timeout';
+  let approvalsDenied = false;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    status = await handlers.agent_turn_status({ session_id: sessionId });
+    if ((status.pending_approvals || []).length) {
+      await denyPendingApprovals(handlers, sessionId).catch(() => {});
+      approvalsDenied = true;
+    }
+    if (!status.running && !status.compacting) {
+      const { messages } = await handlers.agent_messages_list({ session_id: sessionId });
+      if (finalAssistant(messages, sentAt - 2_000)) {
+        outcome = status.last_error ? 'error' : 'completed';
+        break;
+      }
+    }
+  }
+  if (outcome === 'timeout' && approvalsDenied) {
+    for (let i = 0; i < 10 && status.running; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+      status = await handlers.agent_turn_status({ session_id: sessionId });
+    }
+    outcome = status.running ? 'timeout' : 'approval_denied';
+  }
+  if (outcome === 'timeout' && status.running) {
+    try {
+      await handlers.agent_turn_cancel({ session_id: sessionId });
+    } catch {}
+  }
+  try {
+    await denyPendingApprovals(handlers, sessionId);
+  } catch {}
+  const { messages, usage } = await handlers.agent_messages_list({ session_id: sessionId });
+  return { messages, usage, status, outcome };
+}
+
 async function runTask(handlers, task, { provider, model, workspace, timeoutMs }) {
   const startedAt = Date.now();
   const finish = (messages, usage, lastError, status) =>
@@ -195,52 +248,32 @@ async function runTask(handlers, task, { provider, model, workspace, timeoutMs }
       status,
     });
   try {
-    const { session } = await handlers.agent_session_create({ provider, model, title: `eval:${task.id}` });
-    const sessionId = session.id;
+    const steps = task.steps || [{ prompt: task.prompt }];
+    let { session } = await handlers.agent_session_create({
+      provider,
+      model,
+      title: task.title || `eval:${task.id}`,
+    });
+    let sessionId = session.id;
     if (task.seedFiles.length) {
       fs.mkdirSync(workspace, { recursive: true });
       for (const file of task.seedFiles) fs.writeFileSync(path.join(workspace, file.name), file.content);
       await handlers.agent_workspace_set({ session_id: sessionId, path: workspace });
     }
-    await handlers.agent_message_send({ session_id: sessionId, content: task.prompt });
-    const sentAt = Date.now();
-    const deadline = sentAt + timeoutMs;
-
-    let status = { running: true, pending_approvals: [], last_error: null };
-    let outcome = 'timeout';
-    let approvalsDenied = false;
-    while (Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-      status = await handlers.agent_turn_status({ session_id: sessionId });
-      if ((status.pending_approvals || []).length) {
-        await denyPendingApprovals(handlers, sessionId).catch(() => {});
-        approvalsDenied = true;
+    let result = null;
+    for (const step of steps) {
+      if (step.newSession) {
+        ({ session } = await handlers.agent_session_create({
+          provider,
+          model,
+          title: task.title || `eval:${task.id}`,
+        }));
+        sessionId = session.id;
       }
-      if (!status.running && !status.compacting) {
-        const { messages } = await handlers.agent_messages_list({ session_id: sessionId });
-        if (finalAssistant(messages, sentAt - 2_000)) {
-          outcome = status.last_error ? 'error' : 'completed';
-          break;
-        }
-      }
+      result = await sendAndWait(handlers, sessionId, step.prompt, timeoutMs);
+      if (result.outcome !== 'completed') break;
     }
-    if (outcome === 'timeout' && approvalsDenied) {
-      for (let i = 0; i < 10 && status.running; i += 1) {
-        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-        status = await handlers.agent_turn_status({ session_id: sessionId });
-      }
-      outcome = status.running ? 'timeout' : 'approval_denied';
-    }
-    if (outcome === 'timeout' && status.running) {
-      try {
-        await handlers.agent_turn_cancel({ session_id: sessionId });
-      } catch {}
-    }
-    try {
-      await denyPendingApprovals(handlers, sessionId);
-    } catch {}
-    const { messages, usage } = await handlers.agent_messages_list({ session_id: sessionId });
-    return finish(messages, usage, status.last_error, outcome);
+    return finish(result.messages, result.usage, result.status.last_error, result.outcome);
   } catch (error) {
     return finish([], null, error.message, 'error');
   }

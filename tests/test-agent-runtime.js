@@ -40,6 +40,7 @@ const PUBLIC_METHODS = [
   'agent_profile_delete',
   'agent_session_rename',
   'agent_session_model_set',
+  'agent_session_incognito_set',
   'agent_browser',
   'agent_session_permissions_set',
   'agent_session_rules_set',
@@ -4774,7 +4775,7 @@ async function main() {
       if (method === 'agent_internal_memory_context') scopes.push(params.memory_scope);
       if (method !== 'agent_internal_tools') return bridge(method, params);
       const result = await bridge(method, params);
-      for (const name of ['memory_search', 'memory_remember', 'procedure_learn']) {
+      for (const name of ['memory_search', 'memory_explain', 'memory_remember', 'procedure_learn']) {
         result.tools.push({
           name,
           module: 'agent',
@@ -4861,7 +4862,7 @@ async function main() {
     const plainEnabled = (await runtime.handlers.agent_tools_list({ session_id: plain.id })).tools
       .filter((t) => t.enabled)
       .map((t) => t.name);
-    const memoryTools = ['memory_search', 'memory_remember', 'procedure_learn'];
+    const memoryTools = ['memory_search', 'memory_explain', 'memory_remember', 'procedure_learn'];
     assert(
       plainEnabled.includes('memory_search') &&
         JSON.stringify(enabled) === JSON.stringify(plainEnabled.filter((name) => !memoryTools.includes(name))),
@@ -6592,10 +6593,10 @@ async function main() {
   {
     const { spawn } = require('node:child_process');
     const { createInterface } = require('node:readline');
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-delegate-'));
     const script = String.raw`
 import json
 import sys
+import tempfile
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -6604,7 +6605,8 @@ from backend.handlers import agent_internal
 from backend.core.integrations.types import JsonObject
 from backend.ipc_protocol import send_response
 
-store = agent.AgentStore(Path(sys.argv[1]))
+scratch = tempfile.TemporaryDirectory(prefix="agent-delegate-")
+store = agent.AgentStore(Path(scratch.name))
 reads = []
 routes = []
 started = threading.Event()
@@ -6664,7 +6666,6 @@ for line in sys.stdin:
         '-u',
         '-c',
         script,
-        dir,
       ],
       {
         cwd: path.resolve(__dirname, '..'),
@@ -6740,12 +6741,11 @@ for line in sys.stdin:
       ];
       const receipt = async () => {
         const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
-        return JSON.parse(
-          listed.messages
-            .flatMap((message) => message.tool_calls || [])
-            .filter((call) => call.name === 'subagent_run')
-            .at(-1).result,
-        );
+        const result = listed.messages
+          .flatMap((message) => message.tool_calls || [])
+          .filter((call) => call.name === 'subagent_run')
+          .at(-1).result;
+        return JSON.parse(result);
       };
       faux.setResponses(responses('primera lectura'));
       await runtime.handlers.agent_message_send({ session_id: session.id, content: 'delega la revisión' });
@@ -6822,7 +6822,6 @@ for line in sys.stdin:
       await closed;
       clearTimeout(timer);
       lines.close();
-      fs.rmSync(dir, { recursive: true, force: true });
     }
   }
 

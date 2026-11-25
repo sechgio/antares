@@ -984,6 +984,16 @@ export default function AgentView({
     }
   };
 
+  const setIncognito = async (id: string, incognito: boolean) => {
+    try {
+      await agentApi.agentSessionIncognitoSet(id, incognito);
+      await refreshSessions();
+      addToast({ message: incognito ? 'Modo incógnito activado: esta conversación no alimentará la memoria' : 'Modo incógnito desactivado', type: 'success' });
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo cambiar el modo incógnito'), type: 'error' });
+    }
+  };
+
   const renameProfile = async (profile: AgentProfile, name: string) => {
     try {
       const res = await agentApi.agentProfileSave({
@@ -1861,6 +1871,7 @@ export default function AgentView({
                 onRename={(title) => renameSession(session.id, title)}
                 onDelete={() => void removeSession(session.id)}
                 onCopied={() => addToast({ message: 'Conversación copiada', type: 'success' })}
+                onIncognito={(incognito) => setIncognito(session.id, incognito)}
               />
             </header>
           )}

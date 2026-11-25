@@ -48,3 +48,13 @@ it('agrupa las conversaciones por su última actividad', () => {
     ['Hoy', ['d0']], ['Ayer', ['d1']], ['Últimos 7 días', ['d3']], ['Anteriores', ['d30']],
   ]);
 });
+
+it('activa el modo incógnito desde el menú de la conversación', async () => {
+  const onIncognito = vi.fn().mockResolvedValue(undefined);
+  render(<ConversationMenu session={session} messages={messages} view="normal" onView={vi.fn()} onRename={vi.fn()} onDelete={vi.fn()} onCopied={vi.fn()} onIncognito={onIncognito} />);
+  fireEvent.click(screen.getByLabelText('Opciones de la conversación'));
+  const toggle = screen.getByRole('menuitemcheckbox', { name: /Modo incógnito/ });
+  expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await act(async () => { fireEvent.click(toggle); });
+  expect(onIncognito).toHaveBeenCalledWith(true);
+});

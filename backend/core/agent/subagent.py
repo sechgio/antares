@@ -33,7 +33,7 @@ MAX_RESULT_CHARS = 2_600
 MAX_RECEIPT_CHARS = 5_400
 MAX_GROUP_RECEIPT_CHARS = 12_000
 
-_DISALLOWED = {"memory_remember", "procedure_learn", "ask_user"}
+_DISALLOWED = {"memory_search", "memory_explain", "memory_remember", "procedure_learn", "ask_user"}
 _WORKER_DISALLOWED = {"artifact_print"}
 
 _ROLE_PROMPTS = {

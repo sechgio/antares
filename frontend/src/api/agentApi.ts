@@ -78,6 +78,7 @@ export interface AgentSession {
   scoped_rules?: AgentScopedRule[];
   reasoning_effort?: AgentReasoningEffort;
   reasoning_levels?: AgentReasoningEffort[];
+  incognito?: boolean;
   profile?: { id: string; name: string };
 }
 
@@ -100,6 +101,7 @@ export interface AgentProfile {
   browser_mode?: AgentBrowserMode;
   daily_tokens?: number;
   dreaming?: boolean;
+  recency_half_life_days?: number;
   model?: { provider: string; model: string } | null;
   created_at: number;
   updated_at: number;
@@ -374,15 +376,19 @@ export interface AgentMemoryItem {
   id: string;
   kind: 'preference' | 'fact' | 'journal' | 'procedure';
   title: string;
-  status: 'active' | 'disabled' | 'suspended';
+  status: 'active' | 'disabled' | 'suspended' | 'superseded';
   reason: string | null;
+  confidence?: 'inferred' | 'confirmed';
+  expires_at?: number | null;
+  superseded_by?: string | null;
+  supersedes?: string | null;
   version: number;
   updated_at: number;
   content?: string;
   date?: string;
   when?: string;
   steps?: { tool: string; purpose: string }[];
-  source: { kind: 'user' | 'agent'; session_id?: string; op_ids?: string[]; artifact_ids?: string[]; reverted_to?: number };
+  source: { kind: 'user' | 'agent'; session_id?: string; op_ids?: string[]; artifact_ids?: string[]; reverted_to?: number; via?: string; journal_ids?: string[] };
   versions: { version: number; created_at: number; source: AgentMemoryItem['source'] }[];
 }
 
@@ -409,6 +415,9 @@ export const agentApi = {
 
   agentSessionModelSet: (id: string, provider: string, model: string) =>
     _invoke<{ session: AgentSession }>('agent_session_model_set', { id, provider, model }),
+
+  agentSessionIncognitoSet: (id: string, incognito: boolean) =>
+    _invoke<{ session: AgentSession }>('agent_session_incognito_set', { id, incognito }),
 
   agentSessionPermissionsSet: (id: string, permission_mode: AgentPermissionMode) =>
     _invoke<{ session: AgentSession }>('agent_session_permissions_set', { id, permission_mode }),
@@ -569,7 +578,7 @@ export const agentApi = {
 
   agentProfilesList: () => _invoke<{ profiles: AgentProfile[] }>('agent_profiles_list'),
 
-  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; role?: AgentRole; instructions: string; soul?: string; user?: string; starter: string; tools: string[] | null; tools_deny?: string[]; memory_scope?: AgentMemoryScope; browser_mode?: AgentBrowserMode; daily_tokens?: number | null; dreaming?: boolean; model?: { provider: string; model: string } | null }) =>
+  agentProfileSave: (p: { id?: string; name: string; color?: string; description: string; role?: AgentRole; instructions: string; soul?: string; user?: string; starter: string; tools: string[] | null; tools_deny?: string[]; memory_scope?: AgentMemoryScope; browser_mode?: AgentBrowserMode; daily_tokens?: number | null; dreaming?: boolean; recency_half_life_days?: number; model?: { provider: string; model: string } | null }) =>
     _invoke<{ profile: AgentProfile }>('agent_profile_save', p),
 
   agentProfileDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_profile_delete', { id }),
@@ -586,8 +595,11 @@ export const agentApi = {
   agentSkillCreate: (p: AgentSkillCreateParams) =>
     _invoke<{ skill: AgentSkill }>('agent_skill_create', p),
 
-  agentMemoryUpdate: (params: { id: string; action: 'edit' | 'disable' | 'enable' | 'revert'; content?: string; date?: string; when?: string; version?: number }) =>
+  agentMemoryUpdate: (params: { id: string; action: 'edit' | 'disable' | 'enable' | 'revert' | 'confirm' | 'discard'; content?: string; date?: string; when?: string; version?: number }) =>
     _invoke<{ item: AgentMemoryItem }>('agent_memory_update', params),
+
+  agentMemoryExplain: (id: string) =>
+    _invoke<{ item: AgentMemoryItem; explanation: { why: string; evidence?: { date?: string; title?: string; snippet?: string }[]; reason?: string | null } }>('agent_memory_explain', { id }),
 
   agentMemoryDelete: (id: string) => _invoke<{ deleted: boolean }>('agent_memory_delete', { id }),
 };

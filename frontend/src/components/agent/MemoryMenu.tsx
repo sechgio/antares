@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Brain } from 'lucide-react';
 import { agentApi, type AgentMemoryItem } from '../../api/agentApi';
@@ -18,10 +18,20 @@ const KIND_LABELS: Record<AgentMemoryItem['kind'], string> = {
   procedure: 'Procedimiento',
 };
 
+function isPendingConfirmation(item: AgentMemoryItem): boolean {
+  return item.confidence === 'inferred' && item.status === 'active' && (item.kind === 'fact' || item.kind === 'preference');
+}
+
+function sortMemoryItems(items: AgentMemoryItem[]): AgentMemoryItem[] {
+  return [...items].sort((a, b) => Number(isPendingConfirmation(b)) - Number(isPendingConfirmation(a)));
+}
+
 function sourceText(item: AgentMemoryItem): string {
   if (item.source.kind === 'user') {
     return item.source.reverted_to ? `Restaurado a la versión ${item.source.reverted_to}` : 'Corregido por ti';
   }
+  if (item.source.via === 'dreaming') return 'Inferido por la consolidación nocturna';
+  if (item.source.via === 'compaction') return 'Inferido al compactar una conversación';
   const receipts = item.source.op_ids?.length ?? 0;
   return receipts ? `Aprendido de ${receipts} comprobante${receipts === 1 ? '' : 's'}` : 'Indicado en una conversación';
 }
@@ -43,7 +53,7 @@ export default function MemoryMenu() {
   const load = async () => {
     setLoading(true);
     try {
-      setItems((await agentApi.agentMemoryList()).items);
+      setItems(sortMemoryItems((await agentApi.agentMemoryList()).items));
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo leer la memoria del agente'), type: 'error' });
     } finally {
@@ -59,7 +69,7 @@ export default function MemoryMenu() {
   const apply = async (params: Parameters<typeof agentApi.agentMemoryUpdate>[0]) => {
     try {
       const { item } = await agentApi.agentMemoryUpdate(params);
-      setItems((prev) => prev.map((i) => (i.id === item.id ? item : i)));
+      setItems((prev) => sortMemoryItems(prev.map((i) => (i.id === item.id ? item : i))));
       setEditing(null);
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo actualizar el recuerdo'), type: 'error' });
@@ -117,11 +127,24 @@ export default function MemoryMenu() {
             {' '}Tu pedido actual tiene prioridad; después, las indicaciones del agente y, por último, las preferencias de memoria.
           </p>
           <ul className="custom-scrollbar min-h-0 space-y-2 overflow-y-auto">
-            {items.map((item) => {
+            {items.map((item, index) => {
+              const pending = isPendingConfirmation(item);
+              const previousPending = index > 0 && isPendingConfirmation(items[index - 1]);
               const text = item.kind === 'procedure' ? item.when ?? '' : item.content ?? '';
               const older = item.versions.filter((v) => v.version < item.version);
               const previous = older[older.length - 1];
               return (
+                <Fragment key={item.id}>
+                {index === 0 && pending && (
+                  <li key="pending-heading" className="px-1 pt-1 text-[10px] font-medium uppercase tracking-wide text-[var(--accent-yellow)]">
+                    Pendientes de confirmar
+                  </li>
+                )}
+                {index > 0 && !pending && previousPending && (
+                  <li key="rest-heading" className="px-1 pt-1 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                    Confirmados y diario
+                  </li>
+                )}
                 <li key={item.id} className="space-y-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-2 text-[11px]">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[var(--text-muted)]">{KIND_LABELS[item.kind]}</span>
@@ -130,7 +153,7 @@ export default function MemoryMenu() {
                   </div>
                   {item.status !== 'active' && (
                     <p className="text-[var(--accent-yellow)]">
-                      {item.status === 'disabled' ? 'Desactivado' : `Suspendido: ${item.reason ?? 'revísalo antes de reutilizarlo'}`}
+                      {item.status === 'disabled' ? 'Desactivado' : item.status === 'superseded' ? `Reemplazado: ${item.reason ?? 'hay una versión más reciente'}` : `Suspendido: ${item.reason ?? 'revísalo antes de reutilizarlo'}`}
                     </p>
                   )}
                   {item.kind === 'journal' && item.date && (
@@ -165,6 +188,7 @@ export default function MemoryMenu() {
                       ))}
                     </ol>
                   )}
+                  {pending && <p className="text-[10px] text-[var(--accent-yellow)]">Inferido: confírmalo, corrígelo o descártalo.</p>}
                   <p className="text-[10px] text-[var(--text-muted)]">{sourceText(item)}</p>
                   <div className="flex flex-wrap gap-1">
                     {editing?.id === item.id ? (
@@ -182,6 +206,12 @@ export default function MemoryMenu() {
                       </>
                     ) : (
                       <>
+                        {pending && (
+                          <>
+                            <Button size="sm" variant="secondary" onClick={() => void apply({ id: item.id, action: 'confirm' })}>Confirmar</Button>
+                            <Button size="sm" variant="ghost" onClick={() => void apply({ id: item.id, action: 'discard' })}>Descartar</Button>
+                          </>
+                        )}
                         <Button size="sm" variant="ghost" onClick={() => setEditing({ id: item.id, text, ...(item.kind === 'journal' ? { date: item.date } : {}) })}>Corregir</Button>
                         <Button size="sm" variant="ghost" onClick={() => void apply({ id: item.id, action: item.status === 'active' ? 'disable' : 'enable' })}>
                           {item.status === 'active' ? 'Desactivar' : 'Activar'}
@@ -196,6 +226,7 @@ export default function MemoryMenu() {
                     )}
                   </div>
                 </li>
+                </Fragment>
               );
             })}
           </ul>

@@ -79,31 +79,26 @@ def test_subagent_ejecuta_lecturas_y_devuelve_traza(tmp_path, monkeypatch):
     assert offered[0] == ["canvas_list"]
 
 
-@pytest.mark.parametrize(("scope", "expected"), [
-    ("own", {"Memoria del hijo"}),
-    ("shared-read", {"Memoria del hijo", "Memoria general"}),
-    ("none", set()),
-])
-def test_subagent_busca_memoria_del_perfil_sin_cambiar_la_del_padre(tmp_path, monkeypatch, scope, expected):
+def test_subagent_no_recibe_memoria_privada_ni_cambia_la_del_padre(tmp_path, monkeypatch):
     store, session = _session(tmp_path)
     memories = memory.memory_for(store)
-    for sid, profile_id, content in [(session["id"], "padre", "Memoria del padre"),
-                                     ("child", "hijo", "Memoria del hijo"),
-                                     ("global", None, "Memoria general")]:
-        memories.context(sid, "", {}, profile_id=profile_id, memory_scope="own" if profile_id else None)
-        memories.remember(sid, {"kind": "fact", "title": "Datoauditoria", "content": content})
-    observed = []
+    memories.context(session["id"], "", {}, profile_id="padre", memory_scope="own")
+    memories.remember(session["id"], {"kind": "fact", "title": "Datoauditoria", "content": "Memoria del padre"})
+    seen = []
 
     def chat(provider, model, messages, **kwargs):
         if messages[-1]["role"] == "tool_result":
-            observed.extend(json.loads(messages[-1]["content"])["items"])
+            seen.append(json.loads(messages[-1]["content"]))
             return {"text": "Consulta finalizada", "calls": []}
         return {"calls": [{"id": "m1", "name": "memory_search", "params": {"query": "Datoauditoria"}}]}
 
     monkeypatch.setattr(agent_chat, "chat", chat)
     runner = agent.AgentRunner(store, lambda name: None)
-    runner._execute(_call(session, subagent=_profile(id="hijo", memory_scope=scope, tools=["memory_search"])), None)
-    assert {item["content"] for item in observed} == expected
+    receipt = json.loads(runner._execute(_call(session, subagent=_profile(id="hijo", memory_scope="own", tools=["memory_search"])), None))
+    assert seen[-1]["error"].startswith("Herramienta no disponible")
+    assert receipt["steps"][0]["name"] == "memory_search" and receipt["steps"][0]["status"] == "failed"
+    assert "memory_search" not in subagent.allowed_tool_names(None, None)
+    assert "memory_explain" not in subagent.allowed_tool_names(None, None)
     assert {item["content"] for item in memories.search("Datoauditoria", session_id=session["id"])} == {"Memoria del padre"}
 
 
@@ -146,6 +141,7 @@ def test_subagente_no_ejecuta_efectos_ni_se_ofrece_a_si_mismo(tmp_path, monkeypa
     }]
     allowed = subagent.allowed_tool_names(["db_clear", "canvas_save", subagent.TOOL_NAME, "canvas_list"], None)
     assert allowed == ["canvas_list"]
+    assert "memory_search" not in subagent.allowed_tool_names(None, None)
     assert "memory_remember" not in subagent.allowed_tool_names(None, None)
     assert "procedure_learn" not in subagent.allowed_tool_names(None, None)
     assert "ask_user" not in subagent.allowed_tool_names(None, None)

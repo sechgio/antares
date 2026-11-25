@@ -279,7 +279,7 @@ def test_relevant_fact_is_not_starved_by_long_preferences(store):
     assert len(context["context"]) <= memory.CONTEXT_CHARS + 200
 
 
-def test_journal_stores_date_and_source_and_only_appears_in_search(store, tmp_path):
+def test_journal_stores_date_and_source_and_appears_in_context_and_search(store, tmp_path):
     mem = memory.memory_for(store)
     today = date.today().isoformat()
     journal = mem.remember("s1", {"kind": "journal", "title": "Reunión de obra",
@@ -288,7 +288,7 @@ def test_journal_stores_date_and_source_and_only_appears_in_search(store, tmp_pa
     assert journal["source"] == {"kind": "agent", "session_id": "s1"}
     assert journal["version"] == 1 and len(journal["versions"]) == 1
     context = mem.context("s1", "reunión metrado", VERSIONS)
-    assert journal["id"] not in context["items"] and "Reunión de obra" not in context["context"]
+    assert journal["id"] in context["items"] and "Reunión de obra" in context["context"]
     found = mem.search("reunión", session_id="s1")
     assert [item["id"] for item in found] == [journal["id"]]
     assert found[0]["date"] == today
@@ -376,14 +376,14 @@ def test_journal_date_is_optional_and_validated(store):
         mem.update(default["id"], {"action": "edit", "date": "2026-13-01"})
 
 
-def test_handlers_list_journal_and_context_never_injects_it(store):
+def test_handlers_list_journal_and_context_injects_it_with_decay(store):
     mem = memory.memory_for(store)
     journal = mem.remember("s1", {"kind": "journal", "title": "Bitácora", "content": "Se revisó el expediente"})
     listed = agent_internal.HANDLERS["agent_memory_list"]({})["items"]
     assert journal["id"] in [item["id"] for item in listed]
     context = agent_internal.HANDLERS["agent_internal_memory_context"](
         {"session_id": "s2", "text": "bitácora expediente"})
-    assert journal["id"] not in context["items"]
+    assert journal["id"] in context["items"]
     updated = agent_internal.HANDLERS["agent_memory_update"](
         {"id": journal["id"], "action": "edit", "date": "2026-02-03"})
     assert updated["item"]["date"] == "2026-02-03"

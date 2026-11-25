@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Copy, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Check, Copy, EyeOff, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import type { AgentMessage, AgentSession } from '../../api/agentApi';
 import type { TranscriptView } from './AgentTimeline';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
@@ -24,7 +24,7 @@ export function conversationText(title: string, messages: AgentMessage[]): strin
   return lines.join('\n');
 }
 
-export default function ConversationMenu({ session, messages, view, onView, onRename, onDelete, onCopied }: {
+export default function ConversationMenu({ session, messages, view, onView, onRename, onDelete, onCopied, onIncognito }: {
   session: AgentSession;
   messages: AgentMessage[];
   view: TranscriptView;
@@ -32,6 +32,7 @@ export default function ConversationMenu({ session, messages, view, onView, onRe
   onRename: (title: string) => Promise<void>;
   onDelete: () => void;
   onCopied: () => void;
+  onIncognito?: (incognito: boolean) => Promise<void>;
 }) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const menu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
@@ -98,6 +99,14 @@ export default function ConversationMenu({ session, messages, view, onView, onRe
               >
                 <Copy size={14} className="text-[var(--text-secondary)]" /> Copiar conversación
               </button>
+              {onIncognito && (
+                <button type="button" role="menuitemcheckbox" aria-checked={session.incognito === true} className={ITEM}
+                  onClick={() => { void onIncognito(session.incognito !== true); close(); }}>
+                  <EyeOff size={14} className="text-[var(--text-secondary)]" />
+                  <span className="min-w-0 flex-1">Modo incógnito</span>
+                  <span className="text-[11.5px] text-[var(--text-muted)]">{session.incognito === true ? 'activo' : 'inactivo'}</span>
+                </button>
+              )}
               <div role="group" aria-label="Vista del chat" className="my-1 border-y border-[var(--border-subtle)] py-1">
                 <p className="px-2.5 py-1 text-[11.5px] text-[var(--text-muted)]">Vista del chat</p>
                 {VIEWS.map((option) => (

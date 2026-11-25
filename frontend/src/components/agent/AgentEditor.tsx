@@ -48,6 +48,7 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
   const [model, setModel] = useState<{ provider: string; model: string } | null>(profile?.model ?? null);
   const [dailyTokens, setDailyTokens] = useState(profile?.daily_tokens ? String(profile.daily_tokens) : '');
   const [dreaming, setDreaming] = useState(profile?.dreaming ?? false);
+  const [recencyHalfLife, setRecencyHalfLife] = useState(String(profile?.recency_half_life_days ?? 14));
   const [instructions, setInstructions] = useState(profile?.instructions ?? '');
   const [starter, setStarter] = useState(profile?.starter ?? '');
   const [allTools, setAllTools] = useState(profile ? profile.tools === null : true);
@@ -71,6 +72,14 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
 
   const save = async () => {
     if (savingRef.current || !name.trim()) return;
+    const parsedHalfLife = Number(recencyHalfLife);
+    if (dreaming && (!Number.isInteger(parsedHalfLife) || parsedHalfLife < 1 || parsedHalfLife > 365)) {
+      addToast({ message: 'La vida media de recencia debe ser un entero entre 1 y 365 días', type: 'error' });
+      return;
+    }
+    const recencyDays = Number.isInteger(parsedHalfLife) && parsedHalfLife >= 1 && parsedHalfLife <= 365
+      ? parsedHalfLife
+      : (profile?.recency_half_life_days ?? 14);
     savingRef.current = true;
     setSaving(true);
     try {
@@ -79,6 +88,7 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
         name, color, description, role, memory_scope: memoryScope, instructions, starter,
         daily_tokens: dailyTokens.trim() ? Number(dailyTokens) : null,
         dreaming,
+        recency_half_life_days: recencyDays,
         model: model ?? null,
         tools: allTools ? null : [...selected],
         tools_deny: allTools ? [...denied] : [],
@@ -241,9 +251,18 @@ export default function AgentEditor({ profile, canStartChat = true, providers = 
                 <Toggle checked={dreaming} disabled={memoryScope === 'none'} aria-label="Consolidar el diario cada noche"
                   onChange={setDreaming} />
               </div>
+              {dreaming && (
+                <label className="block pt-1">
+                  <span className="mb-1 block text-[11px] text-[var(--text-muted)]">Vida media de recencia (días)</span>
+                  <Input type="number" inputMode="numeric" min={1} max={365} step={1} value={recencyHalfLife}
+                    onChange={(e) => setRecencyHalfLife(e.target.value)} aria-label="Vida media de recencia en días"
+                    className="w-full" />
+                </label>
+              )}
               <span className="block text-[11px] leading-relaxed text-[var(--text-muted)]">
-                A las 3:00 guarda como hechos y preferencias lo que se repite en su diario de los últimos 7 días o lo
-                que afirmaste. Gasta tokens de su presupuesto diario.
+                A las 3:00 consolida el diario en tres fases: agrupa menciones, puntúa recurrencia y recencia
+                (vida media configurable, 14 días por defecto) y usa el modelo solo para verdades duraderas,
+                fusiones y contradicciones. Gasta tokens de su presupuesto diario.
               </span>
             </div>
           </div>
