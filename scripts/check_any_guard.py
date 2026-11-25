@@ -7,6 +7,17 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent / "backend"
 PAT_DICT = re.compile(r"dict\[str,\s*Any\]")
 ALLOW = re.compile(r"#\s*(allowlist|type:\s*ignore|noqa\b)", re.IGNORECASE)
 
+def scan_lines(lines: list[str]) -> list[tuple[int, str, int, bool]]:
+    hits: list[tuple[int, str, int, bool]] = []
+    for i, line in enumerate(lines, 1):
+        occurrences = len(PAT_DICT.findall(line))
+        if occurrences:
+            hits.append((i, line, occurrences, bool(ALLOW.search(line))))
+    return hits
+
+def scan_text(text: str) -> list[tuple[int, str, int, bool]]:
+    return scan_lines(text.splitlines())
+
 def check() -> int:
     violations: list[str] = []
     canvas_violations: list[str] = []
@@ -14,12 +25,9 @@ def check() -> int:
     violation_count = 0
     canvas_violation_count = 0
     for p in ROOT.rglob("*.py"):
-        for i, line in enumerate(p.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
-            occurrences = len(PAT_DICT.findall(line))
-            if not occurrences:
-                continue
+        for i, line, occurrences, allowlisted in scan_text(p.read_text(encoding="utf-8", errors="ignore")):
             total += occurrences
-            if not ALLOW.search(line):
+            if not allowlisted:
                 violation_count += occurrences
                 msg = f"{p.relative_to(ROOT.parent)}:{i}: {line.strip()[:120]}"
                 violations.append(msg)

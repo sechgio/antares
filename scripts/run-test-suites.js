@@ -26,6 +26,7 @@ const CONTRACT_TESTS = [
   'test-tailwind-alpha-utilities.js',
   'test-quality-ratchet.js',
   'test-review-policy.js',
+  'test-changelog-fragments.js',
   'test-admin-create-user-contract.js',
   'test-admin-delete-user-contract.js',
 ];
