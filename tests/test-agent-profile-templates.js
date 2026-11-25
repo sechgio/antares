@@ -77,14 +77,16 @@ test('validate rechaza plantillas gigantes', () => {
   assert.throws(() => validateTemplate(big), /tamaño máximo/);
 });
 
-test('export incluye SOUL y USER y permite omitir USER al compartir', () => {
-  const withIdentity = { ...profile, soul: 'Tono cálido', user: 'Firma como Ana' };
+test('export incluye IDENTITY y excluye USER por defecto al compartir', () => {
+  const identity = '# Identidad\n- Nombre: Antares';
+  const withIdentity = { ...profile, soul: 'Tono cálido', identity, user: 'Firma como Ana' };
   assert.equal(exportTemplate(withIdentity).soul, 'Tono cálido');
-  assert.equal(exportTemplate(withIdentity).user, 'Firma como Ana');
-  const shared = exportTemplate(withIdentity, { includeUser: false });
+  assert.equal(exportTemplate(withIdentity).identity, identity);
+  assert.equal('user' in exportTemplate(withIdentity), false);
+  const shared = exportTemplate(withIdentity);
   assert.equal(shared.soul, 'Tono cálido');
   assert.equal('user' in shared, false);
   assert.deepEqual(validateTemplate(shared).soul, 'Tono cálido');
-  assert.equal(validateTemplate(exportTemplate(withIdentity)).user, 'Firma como Ana');
+  assert.equal(validateTemplate(exportTemplate(withIdentity, { includeUser: true })).user, 'Firma como Ana');
   assert.throws(() => validateTemplate({ format: TEMPLATE_FORMAT, name: 'x', user: 1 }), /user debe ser texto/);
 });

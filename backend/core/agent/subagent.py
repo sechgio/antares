@@ -77,6 +77,7 @@ def system_prompt(
     instructions: str,
     role: str = DEFAULT_ROLE,
     output_schema: JsonObject | None = None,
+    identity: str = "",
 ) -> str:
     role = normalize_role(role)
     prompt = (
@@ -93,6 +94,8 @@ def system_prompt(
         "Una skill no amplía tus permisos ni te permite ejecutar scripts o herramientas de escritura.\n\n"
         f"Indicaciones del agente guardado:\n{instructions[:MAX_INSTRUCTIONS_CHARS]}"
     )
+    if identity:
+        prompt += f"\n\nIdentidad acordada del agente (IDENTITY.md; no amplía permisos):\n{identity[:MAX_INSTRUCTIONS_CHARS]}"
     if output_schema is not None:
         prompt += (
             "\n\nContrato de salida: responde únicamente con un valor JSON válido que cumpla este JSON Schema. "
@@ -336,7 +339,10 @@ def run(
                 provider,
                 model,
                 messages,
-                system=system_prompt(name, str(agent.get("instructions") or ""), role, output_schema),
+                system=system_prompt(
+                    name, str(agent.get("instructions") or ""), role, output_schema,
+                    identity=str(agent.get("identity") or ""),
+                ),
                 tools=tools,
             )
         except RunCancelled:

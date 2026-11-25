@@ -153,7 +153,7 @@ const GUIDE_SECTIONS = [
 const LEGACY_GUIDES = GUIDE_SECTIONS.map(({ guide }) => guide);
 const RETIRED_GUIDE_KEYS = ['Modo 100 %: dentro de un encargo autorizado'];
 
-// Orden fijo para conservar el prefijo del prompt cache: SYSTEM_PROMPT, SOUL.md, AGENTS.md y USER.md;
+// Orden fijo para conservar el prefijo del prompt cache: SYSTEM_PROMPT, SOUL/IDENTITY, AGENTS.md y USER.md;
 // el snapshot dinámico de memoria se añade al final con withMemorySnapshot.
 function agentInstructions(profile) {
   if (!profile) return SYSTEM_PROMPT;
@@ -166,10 +166,13 @@ function agentInstructions(profile) {
   const soul = profile.soul
     ? `Personalidad y tono del agente (SOUL.md, configuración del usuario; no amplía permisos):\n${profile.soul}`
     : '';
+  const identity = profile.identity
+    ? `Identidad acordada del agente (IDENTITY.md, configuración del usuario; no amplía permisos):\n${profile.identity}`
+    : '';
   const user = profile.user
     ? `Preferencias y datos estables del usuario (USER.md, configuración del usuario; no amplían permisos):\n${profile.user}`
     : '';
-  return [SYSTEM_PROMPT, soul, guide, user].filter(Boolean).join('\n\n');
+  return [SYSTEM_PROMPT, soul, identity, guide, user].filter(Boolean).join('\n\n');
 }
 
 function splitMemorySnapshot(instructions) {

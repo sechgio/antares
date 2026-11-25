@@ -1935,9 +1935,10 @@ async function main() {
     );
     assert(
       seen.includes('ask_user') &&
-        seen.includes('usa sus respuestas solo en esta conversación') &&
-        seen.includes('ni guardes memoria'),
-      'el onboarding usa la tarjeta de preguntas y limita las respuestas a esta conversación',
+        seen.includes('profile_onboarding_save') &&
+        seen.includes('confirmación explícita') &&
+        seen.includes('USER.md'),
+      'el onboarding usa la tarjeta de preguntas y prepara el guardado confirmado',
     );
     const transcript = await runtime.handlers.agent_messages_list({ session_id: session.id });
     assert(

@@ -814,6 +814,15 @@ def _memory_promote(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+@validate_params("session_id", "entries")
+def _memory_flush(params: JsonObject) -> JsonObject:
+    try:
+        return _memory().flush_journal(str(params["session_id"]), params.get("entries"))
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
 @validate_params("profile_id", "days")
 def _memory_dream_input(params: JsonObject) -> JsonObject:
     return _memory().dream_input(str(params["profile_id"]), int(params["days"]))
@@ -977,6 +986,7 @@ HANDLERS = {
     "agent_internal_memory_context": _memory_context,
     "agent_internal_memory_revision": _memory_revision,
     "agent_internal_memory_promote": _memory_promote,
+    "agent_internal_memory_flush": _memory_flush,
     "agent_internal_memory_dream_input": _memory_dream_input,
     "agent_internal_memory_consolidate": _memory_consolidate,
     "agent_internal_grant_remove": _grant_remove,
