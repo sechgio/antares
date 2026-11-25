@@ -902,7 +902,7 @@ def test_write_diff_is_none_for_new_binary_or_identical_files(store):
     same = agent_internal._intent("s1", "fs_write", {"path": "igual.txt", "content": "mismo\n", "overwrite": True})
     assert same["context"]["write_diff"]["unchanged"] is True
     assert same["context"]["write_diff"]["added_lines"] == 0
-    docx = pytest.importorskip("docx")
+    pytest.importorskip("docx")
     _run(store, "fs_write", path="carta.docx", content="cuerpo")
     word = agent_internal._intent("s1", "fs_write", {"path": "carta.docx", "content": "otro", "overwrite": True})
     assert "write_diff" not in word["context"], "el docx no se compara como texto plano"
