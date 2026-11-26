@@ -243,13 +243,19 @@ function AppContent() {
       prefetchSettingsModal();
       prefetchCanvasView();
     };
-    const ric = window.requestIdleCallback?.bind(window);
-    if (ric) {
-      const id = ric(prefetch, { timeout: 2500 });
-      return () => window.cancelIdleCallback?.(id);
-    }
-    const t = window.setTimeout(prefetch, 1);
-    return () => window.clearTimeout(t);
+    let idleId: number | undefined;
+    const t = window.setTimeout(() => {
+      const ric = window.requestIdleCallback?.bind(window);
+      if (ric) {
+        idleId = ric(prefetch, { timeout: 2500 });
+      } else {
+        prefetch();
+      }
+    }, 5000);
+    return () => {
+      window.clearTimeout(t);
+      if (idleId !== undefined) window.cancelIdleCallback?.(idleId);
+    };
   }, []);
 
   useEffect(() => bootThemeFromBackend(api.getTheme), []);

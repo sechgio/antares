@@ -2,7 +2,7 @@ const Module = require('module');
 
 const { assert, finish, evictModule } = require('./helpers/harness');
 
-function loadPreload({ packaged = false, nodeEnv, allowedMethods, filePath = '', fileInputNonce = '', seedBlob = null } = {}) {
+function loadPreload({ packaged = false, nodeEnv, allowedMethods, filePath = '', fileInputNonce = '' } = {}) {
   const originalLoad = Module._load;
   const exposures = {};
   const invokeCalls = [];
@@ -25,10 +25,6 @@ function loadPreload({ packaged = false, nodeEnv, allowedMethods, filePath = '',
           send(method, ...args) {
             sendCalls.push([method, ...args]);
           },
-          sendSync(channel) {
-            syncCalls.push(channel);
-            return seedBlob;
-          },
           on() {},
           removeListener() {},
         },
@@ -49,7 +45,7 @@ function loadPreload({ packaged = false, nodeEnv, allowedMethods, filePath = '',
   try {
     evictModule('electron/preload.js');
     require('../electron/preload.js');
-    return { exposedApi: exposures.electronAPI, supabaseSessionSeed: exposures.supabaseSessionSeed, invokeCalls, sendCalls, syncCalls };
+    return { exposedApi: exposures.electronAPI, invokeCalls, sendCalls, syncCalls };
   } finally {
     process.argv = prevArgv;
     Module._load = originalLoad;
@@ -61,9 +57,9 @@ async function run() {
   console.log('Testing preload IPC allowlist...\n');
 
   {
-    const { exposedApi, supabaseSessionSeed, invokeCalls, sendCalls } = loadPreload({ packaged: false });
-    assert(exposedApi && typeof exposedApi.invoke === 'function', 'electronAPI sigue expuesto tras la semilla');
-    assert(supabaseSessionSeed === null, 'sin backend cifrado no se siembra sesion de Supabase');
+    const { exposedApi, invokeCalls, sendCalls, syncCalls } = loadPreload({ packaged: false });
+    assert(exposedApi && typeof exposedApi.invoke === 'function', 'electronAPI sigue expuesto');
+    assert(syncCalls.length === 0, 'el preload no usa canales sincronos');
     await exposedApi.invoke('dialog_files');
     assert(invokeCalls[0][0] === 'ipc-call', 'dialog_files should be forwarded through ipc-call');
     assert(invokeCalls[0][1] === 'dialog_files', 'dialog_files should stay allowlisted');
@@ -84,16 +80,6 @@ async function run() {
     await exposedApi.invoke('totally_unknown_method');
     assert(invokeCalls[0][0] === 'ipc-call', 'unknown methods should still be forwarded in dev');
     assert(invokeCalls[0][1] === 'totally_unknown_method', 'unknown method name should be preserved in dev');
-  }
-
-  {
-    const blob = { 'sb-antares-auth-token': JSON.stringify({ access_token: 'AT', refresh_token: 'RT' }) };
-    const { supabaseSessionSeed, syncCalls } = loadPreload({ packaged: true, seedBlob: blob });
-    assert(
-      JSON.stringify(supabaseSessionSeed) === JSON.stringify(blob),
-      'la semilla de sesion se expone completa y sin rutas',
-    );
-    assert(syncCalls[0] === 'supabase-session-get', 'la semilla llega por el canal cifrado dedicado');
   }
 
   {

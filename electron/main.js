@@ -79,6 +79,7 @@ function _showMainWindow() {
 
 app.on('second-instance', _showMainWindow);
 const { isTrustedRendererFrame } = require('./renderer-trust');
+const AGENT_RUNTIME_OPEN_DELAY_MS = 20_000;
 const CANVAS_ASSET_GC_INITIAL_DELAY_MS = 45_000;
 const CANVAS_ASSET_GC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
@@ -116,7 +117,14 @@ app.whenReady().then(async () => {
   }
   Menu.setApplicationMenu(null);
   startPythonBackend(isDev)
-    .then(() => require('./agent-runtime').open())
+    .then(() => {
+      const timer = setTimeout(() => {
+        require('./agent-runtime')
+          .open()
+          .catch((err) => console.warn('[main] deferred agent runtime open failed:', err && err.message));
+      }, AGENT_RUNTIME_OPEN_DELAY_MS);
+      if (timer.unref) timer.unref();
+    })
     .catch((err) => {
       console.error('[main] startPythonBackend threw:', err);
     });

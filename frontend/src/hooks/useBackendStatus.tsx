@@ -67,7 +67,7 @@ export function useBackendStatus(): BackendStatusResult {
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
-      const minDelay = backendStateRef.current === 'ready' ? 5000 : 2000;
+      const minDelay = backendStateRef.current === 'ready' ? 15000 : 2000;
       if (now - lastPollAtRef.current < minDelay) return;
       lastPollAtRef.current = now;
       pollStatus();
