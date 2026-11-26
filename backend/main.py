@@ -102,6 +102,24 @@ _method_heavy_lock = threading.Lock()
 _method_heavy_inflight: dict[str, int] = {}
 
 
+_heavy_deps_warm_started = False
+
+
+def _trigger_heavy_deps_warm() -> None:
+    global _heavy_deps_warm_started
+    if _heavy_deps_warm_started:
+        return
+    _heavy_deps_warm_started = True
+
+    def _warm() -> None:
+        try:
+            HANDLERS.warm_heavy_deps()
+        except Exception:
+            logger.exception("heavy deps warm failed")
+
+    threading.Thread(target=_warm, name="heavy-deps-warm", daemon=True).start()
+
+
 def _method_heavy_limit(scheduler: Any) -> int:
     return max(_METHOD_HEAVY_MIN_LIMIT, int(getattr(scheduler, "heavy_workers", 1) or 1))
 
@@ -370,6 +388,7 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
                     _reject_submit(msg_id, method_name, lane, busy_error, rejected="method_busy")
                     return None
                 _method_heavy_inflight[method_name] = in_flight + 1
+            _trigger_heavy_deps_warm()
             future = scheduler.submit_heavy(_dispatch, handler, params, msg_id, method_name)
         else:
             future = scheduler.submit_light(_dispatch, handler, params, msg_id, method_name)

@@ -12,8 +12,6 @@ from backend.core.ipc_catalog import BACKEND_HANDLER_MODULES, handler_module_for
 from backend.core.observability import log_event
 from backend.core.state import process_state, reset_state
 
-HEAVY_DEPS_WARM_DELAY_SECONDS = 8.0
-
 logger = logging.getLogger(__name__)
 
 WARM_CRITICAL_DONE = threading.Event()
@@ -110,32 +108,32 @@ class HandlerRegistry:
                 except Exception:
                     log_event(logger, logging.ERROR, "handlers.warm_history_schema", outcome="failed", message="history schema background warm failed", exc_info=True)
 
-            def _warm_heavy_deps() -> None:
-                warmed = []
-                for module_name in ("pandas", "openpyxl", "pymupdf", "docx", "weasyprint"):
-                    try:
-                        with serialized_import():
-                            importlib.import_module(module_name)
-                        warmed.append(module_name)
-                    except Exception:
-                        logger.debug("Post-ready heavy-dep warm skipped: %s", module_name, exc_info=True)
-                log_event(
-                    logger, logging.INFO, "handlers.warm_heavy_deps", outcome="success",
-                    count=len(warmed), message=f"heavy deps post-ready warm complete: {','.join(warmed)}",
-                )
-
             executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="history-warm")
             executor.submit(_warm_history_bg)
             executor.shutdown(wait=False)
-
-            timer = threading.Timer(HEAVY_DEPS_WARM_DELAY_SECONDS, _warm_heavy_deps)
-            timer.daemon = True
-            timer.start()
         except Exception:
             logger.exception("history schema background warm submission failed")
 
     def warm_deferred(self) -> None:
         self.warm(_DEFERRED_HANDLER_MODULES)
+
+    def warm_heavy_deps(self) -> None:
+        with self._lock:
+            if getattr(self, "_heavy_deps_warmed", False):
+                return
+            self._heavy_deps_warmed = True
+        warmed = []
+        for module_name in ("pandas", "openpyxl", "pymupdf", "docx", "weasyprint"):
+            try:
+                with serialized_import():
+                    importlib.import_module(module_name)
+                warmed.append(module_name)
+            except Exception:
+                logger.debug("Heavy-dep warm skipped: %s", module_name, exc_info=True)
+        log_event(
+            logger, logging.INFO, "handlers.warm_heavy_deps", outcome="success",
+            count=len(warmed), message=f"heavy deps warm complete: {','.join(warmed)}",
+        )
 
     def _warm_formatos_core(self) -> None:
         try:

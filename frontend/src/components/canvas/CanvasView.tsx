@@ -547,20 +547,23 @@ export default function CanvasView({ active = true }: { active?: boolean }) {
     };
   }, []);
   useEffect(() => {
-    const live = collectImageRefsFromLayers(history.document.layers);
-    for (const ref of collectImageRefsFromHistory(history.past)) live.add(ref);
-    for (const ref of collectImageRefsFromHistory(history.future)) live.add(ref);
-    for (const layer of clipboard) {
-      if (layer.type === 'image' || layer.type === 'logo') trackImageRef(live, layer.value);
-    }
-    const conflict = syncConflictRef.current;
-    if (conflict) {
-      for (const ref of collectImageRefsFromLayers(conflict.localDoc.layers)) live.add(ref);
-      if (conflict.remoteDoc) {
-        for (const ref of collectImageRefsFromLayers(conflict.remoteDoc.layers)) live.add(ref);
+    const timer = window.setTimeout(() => {
+      const live = collectImageRefsFromLayers(history.document.layers);
+      for (const ref of collectImageRefsFromHistory(history.past)) live.add(ref);
+      for (const ref of collectImageRefsFromHistory(history.future)) live.add(ref);
+      for (const layer of clipboard) {
+        if (layer.type === 'image' || layer.type === 'logo') trackImageRef(live, layer.value);
       }
-    }
-    sweepOrphanBlobs(live);
+      const conflict = syncConflictRef.current;
+      if (conflict) {
+        for (const ref of collectImageRefsFromLayers(conflict.localDoc.layers)) live.add(ref);
+        if (conflict.remoteDoc) {
+          for (const ref of collectImageRefsFromLayers(conflict.remoteDoc.layers)) live.add(ref);
+        }
+      }
+      sweepOrphanBlobs(live);
+    }, 1500);
+    return () => window.clearTimeout(timer);
   }, [history.document, history.past, history.future, clipboard]);
 
   const onBeforeUnload = useCallback(() => {

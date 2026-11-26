@@ -332,9 +332,14 @@ function _estimateStringJsonBytes(value) {
   return bytes;
 }
 
+const _ESTIMATE_NODE_BUDGET = 20000;
+
 function _estimatePayloadBytes(value) {
   const ancestors = new Set();
+  let nodesLeft = _ESTIMATE_NODE_BUDGET;
   const estimate = (entry, inArray = false) => {
+    if (nodesLeft <= 0) return 64;
+    nodesLeft -= 1;
     if (entry === null) return 4;
     if (typeof entry === 'string') return _estimateStringJsonBytes(entry);
     if (typeof entry === 'number') return Number.isFinite(entry) ? Buffer.byteLength(String(entry), 'utf8') : 4;
