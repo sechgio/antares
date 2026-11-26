@@ -175,7 +175,7 @@ jobs:
       - name: Setup Electron test toolchain
         uses: ./.github/actions/setup-ci
         with:
-          frontend: 'false'
+          frontend: 'true'
         timeout-minutes: 3
 
       - name: Run Electron and turns suites
