@@ -1348,6 +1348,29 @@ def test_store_index_reuses_unchanged_metadata(tmp_path: Path, monkeypatch: pyte
     assert store.get("inner-d") is None
 
 
+def test_store_sorts_paths_only_when_signatures_change(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for stem in ("z", "a"):
+        (tmp_path / f"{stem}.json").write_text(json.dumps({"id": stem, "name": stem}), encoding="utf-8")
+    store = CanvasStore(tmp_path)
+    comparisons = []
+    original_lt = Path.__lt__
+
+    def counted(left: Path, right: Path) -> bool:
+        comparisons.append((left, right))
+        return original_lt(left, right)
+
+    monkeypatch.setattr(Path, "__lt__", counted)
+    assert [item["id"] for item in store.list_documents()] == ["a", "z"]
+    assert comparisons
+    comparisons.clear()
+    assert [item["id"] for item in store.list_documents()] == ["a", "z"]
+    assert comparisons == []
+
+    (tmp_path / "z.json").write_text(json.dumps({"id": "z", "name": "Renamed elsewhere"}), encoding="utf-8")
+    assert [item["name"] for item in store.list_documents()] == ["a", "Renamed elsewhere"]
+    assert comparisons
+
+
 def test_store_index_preserves_alias_precedence_and_retries_unreadable_metadata(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -359,7 +359,7 @@ class CanvasStore:
                     logger.warning("Could not remove stale canvas tmp %s: %s", tmp_path, exc)
 
     def _rebuild_index_if_stale(self) -> None:
-        paths = sorted(self.docs_dir.glob("*.json"))
+        paths = list(self.docs_dir.glob("*.json"))
         current_signatures: dict[str, _FileSignature] = {}
         for path in paths:
             signature = _file_signature(path)
@@ -374,7 +374,7 @@ class CanvasStore:
         self._index_signatures = current_signatures
         self._inner_id_index = {}
         self._listing_cache = []
-        for path in paths:
+        for path in sorted(paths):
             if path.stem not in current_signatures:
                 continue
             meta = self._metadata_cache.get(path.stem)
