@@ -90,7 +90,7 @@ export default function AgentBrowserPanel({
   useEffect(() => {
     if (userTab || !state.busy_until || state.user_control) return undefined;
     setNow(Date.now());
-    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [state.busy_until, state.user_control, userTab]);
 

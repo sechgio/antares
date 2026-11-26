@@ -11,6 +11,7 @@ import {
   Pencil,
   Pin,
   PinOff,
+  Plus,
   Trash2,
 } from 'lucide-react';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
@@ -79,6 +80,7 @@ export default function SidebarItemMenu({
   onUnread,
   onHidden,
   onSection,
+  onNewConversation,
   onRename,
   onDelete,
   onCopied,
@@ -97,6 +99,7 @@ export default function SidebarItemMenu({
   onUnread: (on: boolean) => void;
   onHidden: (on: boolean) => void;
   onSection: (section: string | null) => void;
+  onNewConversation?: () => void;
   onRename: (name: string) => Promise<void>;
   onDelete: () => void;
   onCopied: () => void;
@@ -203,6 +206,11 @@ export default function SidebarItemMenu({
               </form>
             ) : (
               <>
+                {onNewConversation && (
+                  <button type="button" role="menuitem" className={ITEM} onClick={act(onNewConversation)}>
+                    <Plus size={15} /> Nueva conversación
+                  </button>
+                )}
                 <button type="button" role="menuitem" className={ITEM} onClick={act(() => onPin(!pinned))}>
                   {pinned ? <PinOff size={15} /> : <Pin size={15} />} {pinned ? 'Desfijar' : 'Fijar'}
                 </button>

@@ -253,6 +253,8 @@ export default function AgentView({
   const toolsVersionRef = useRef(0);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [sessionId, setSessionId] = useState('');
+  const sessionSelectionRef = useRef(0);
+  const profileCreationsRef = useRef(new Map<string, Promise<AgentSession | null>>());
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [transcriptView, setTranscriptView] = useLocalStorageState<TranscriptView>(VIEW_KEY, {
     parse: parseView,
@@ -550,7 +552,7 @@ export default function AgentView({
       return res.sessions;
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudieron cargar las conversaciones'), type: 'error' });
-      return [];
+      return null;
     }
   }, [addToast]);
 
@@ -569,7 +571,7 @@ export default function AgentView({
       }
       const restored = await refreshSessions();
       const saved = localStorage.getItem(SESSION_KEY);
-      if (restored.some((s) => s.id === saved)) setSessionId(saved || '');
+      if (sessionSelectionRef.current === 0 && saved && restored?.some((s) => s.id === saved)) setSessionId(saved);
     })();
   }, [addToast, refreshSessions]);
 
@@ -924,28 +926,47 @@ export default function AgentView({
     });
   };
 
-  const newSession = async (profile?: AgentProfile) => {
-    if (!provider) {
-      addToast({ message: 'Elige un proveedor IA', type: 'error' });
-      return null;
-    }
+  const createSession = async (profile?: AgentProfile) => {
     try {
       const res = await agentApi.agentSessionCreate({
         provider,
         model: model || undefined,
         ...(profile ? { profile_id: profile.id } : {}),
       });
-      await refreshSessions();
-      setSessionId(res.session.id);
-      if (profile?.starter) {
-        draftVersionRef.current += 1;
-        setDraft(profile.starter);
+      const listed = await refreshSessions();
+      if (profile && !listed?.some((s) => s.id === res.session.id)) {
+        setSessions((list) => [res.session, ...list.filter((s) => s.id !== res.session.id)]);
       }
-      return res.session.id;
+      return res.session;
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo crear la conversación'), type: 'error' });
       return null;
     }
+  };
+
+  const newSession = async (profile?: AgentProfile) => {
+    const selection = ++sessionSelectionRef.current;
+    const draftVersion = draftVersionRef.current;
+    let creation = profile && profileCreationsRef.current.get(profile.id);
+    if (!creation) {
+      if (!provider) {
+        addToast({ message: 'Elige un proveedor IA', type: 'error' });
+        return null;
+      }
+      creation = createSession(profile);
+      if (profile) profileCreationsRef.current.set(profile.id, creation);
+    }
+    const created = await creation;
+    if (profile) profileCreationsRef.current.delete(profile.id);
+    if (!created) return null;
+    if (selection === sessionSelectionRef.current) {
+      setSessionId(created.id);
+      if (profile?.starter && draftVersion === draftVersionRef.current) {
+        draftVersionRef.current += 1;
+        setDraft(profile.starter);
+      }
+    }
+    return created.id;
   };
 
   const removeSession = async (id: string) => {
@@ -1034,17 +1055,32 @@ export default function AgentView({
     if (sidebarPrefs.unread.includes(id)) setSidebarPrefs((p) => ({ ...p, unread: toggleId(p.unread, id, false) }));
   };
 
-  const openProfileSession = (profile: AgentProfile) => {
+  const selectSession = (id: string) => {
+    sessionSelectionRef.current += 1;
+    markRead(id);
+    setSessionId(id);
+  };
+
+  const openProfileSession = async (profile: AgentProfile) => {
+    const selection = ++sessionSelectionRef.current;
     markRead(profile.id);
-    const existing = sessions
-      .filter((item) => item.profile?.id === profile.id)
-      .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))[0];
-    if (!existing) {
-      void newSession(profile);
+    const active = sessions.find((item) => item.id === sessionId && item.profile?.id === profile.id);
+    const latest = (list: AgentSession[]) =>
+      list.filter((item) => item.profile?.id === profile.id).sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))[0];
+    const existing = active ?? latest(sessions);
+    if (existing) {
+      selectSession(existing.id);
       return;
     }
-    markRead(existing.id);
-    setSessionId(existing.id);
+    if (profileCreationsRef.current.has(profile.id)) {
+      await newSession(profile);
+      return;
+    }
+    const listed = await refreshSessions();
+    if (!listed || selection !== sessionSelectionRef.current) return;
+    const restored = latest(listed);
+    if (restored && !profileCreationsRef.current.has(profile.id)) selectSession(restored.id);
+    else await newSession(profile);
   };
 
   const sidebarMenu = (id: string, name: string, noun: 'conversación' | 'agente') => ({
@@ -1546,7 +1582,7 @@ export default function AgentView({
             </div>
           )}
 
-          <div className="custom-scrollbar mt-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1">
+          <div className="mt-1 flex min-h-0 flex-1 flex-col gap-0.5 px-1">
             {(() => {
               const query = search.trim();
               const arrangedProfiles = arrangeSidebar(visibleProfiles, sidebarPrefs, showHidden || Boolean(query));
@@ -1587,7 +1623,7 @@ export default function AgentView({
                       type="button"
                       className="flex min-w-0 flex-1 flex-col text-left"
                       title={`Abrir conversación con ${profile.name}`}
-                      onClick={() => openProfileSession(profile)}
+                      onClick={() => void openProfileSession(profile)}
                     >
                       <span
                         className={`truncate text-[13px] leading-5 text-[var(--text-primary)] ${menu.unread ? 'font-semibold' : 'font-medium'}`}
@@ -1635,6 +1671,10 @@ export default function AgentView({
                   <SidebarItemMenu
                     key={profile.id}
                     {...menu}
+                    onNewConversation={() => {
+                      markRead(profile.id);
+                      void newSession(profile);
+                    }}
                     onRename={(name) => renameProfile(profile, name)}
                     onDelete={() => void removeProfile(profile)}
                     className={`group relative flex min-w-0 flex-col items-center rounded-2xl px-1 pb-2 pt-2.5 transition-colors ${active ? 'bg-[var(--bg-input)]' : 'hover:bg-[color:color-mix(in_srgb,var(--text-primary)_5%,transparent)]'} ${menu.hidden ? 'opacity-60' : ''}`}
@@ -1642,11 +1682,8 @@ export default function AgentView({
                     <button
                       type="button"
                       className="flex w-full min-w-0 flex-col items-center gap-1.5"
-                      title={`Nueva conversación con ${profile.name}`}
-                      onClick={() => {
-                        markRead(profile.id);
-                        void newSession(profile);
-                      }}
+                      title={`Abrir conversación con ${profile.name}`}
+                      onClick={() => void openProfileSession(profile)}
                     >
                       <span className="relative">
                         <AgentAvatar
@@ -1686,10 +1723,7 @@ export default function AgentView({
                   key={s.id}
                   session={s}
                   active={s.id === sessionId}
-                  onSelect={() => {
-                    markRead(s.id);
-                    setSessionId(s.id);
-                  }}
+                  onSelect={() => selectSession(s.id)}
                   menu={{
                     ...sidebarMenu(s.id, s.title || 'Conversación', 'conversación'),
                     onRename: (title) => renameSession(s.id, title),
@@ -1699,7 +1733,7 @@ export default function AgentView({
               );
               return (
                 <>
-                  <section aria-label="Agentes" className="flex flex-col gap-0.5">
+                  <section aria-label="Agentes" className="custom-scrollbar flex max-h-[60%] shrink-0 flex-col gap-0.5 overflow-y-auto">
                     <div className="flex items-center justify-between px-1.5 pb-1 pt-2">
                       <span className="text-[12px] font-medium text-[var(--text-muted)]">Agentes</span>
                       <button
@@ -1752,59 +1786,61 @@ export default function AgentView({
                       </button>
                     )}
                   </section>
-                  <div aria-hidden="true" className="mx-1.5 mt-3 border-t border-[var(--border-subtle)]" />
-                  <section aria-label="Conversaciones" className="flex flex-col gap-0.5">
-                    <div className="flex items-center justify-between px-1.5 pb-1 pt-2">
-                      <span className="text-[12px] font-medium text-[var(--text-muted)]">Conversaciones</span>
-                      <span className="flex items-center gap-0.5">
-                        <button
-                          type="button"
-                          className="flex size-6 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
-                          aria-label="Buscar agentes y conversaciones"
-                          title="Buscar agentes y conversaciones (Ctrl+K)"
-                          onClick={() => setSearchOpen(true)}
-                        >
-                          <Search size={13} />
-                        </button>
-                        <button
-                          type="button"
-                          className="flex size-6 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
-                          aria-label="Nueva conversación"
-                          title="Nueva conversación"
-                          onClick={() => void newSession()}
-                        >
-                          <Plus size={14} />
-                        </button>
-                      </span>
-                    </div>
-                    {sessions.length === 0 && (
-                      <p className="px-2.5 py-2 text-[12px] text-[var(--text-muted)]">Tus chats aparecerán aquí.</p>
+                  <div aria-hidden="true" className="mx-1.5 mt-3 shrink-0 border-t border-[var(--border-subtle)]" />
+                  <div className="custom-scrollbar flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
+                    <section aria-label="Conversaciones" className="flex flex-col gap-0.5">
+                      <div className="flex items-center justify-between px-1.5 pb-1 pt-2">
+                        <span className="text-[12px] font-medium text-[var(--text-muted)]">Conversaciones</span>
+                        <span className="flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            className="flex size-6 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+                            aria-label="Buscar agentes y conversaciones"
+                            title="Buscar agentes y conversaciones (Ctrl+K)"
+                            onClick={() => setSearchOpen(true)}
+                          >
+                            <Search size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            className="flex size-6 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+                            aria-label="Nueva conversación"
+                            title="Nueva conversación"
+                            onClick={() => void newSession()}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </span>
+                      </div>
+                      {sessions.length === 0 && (
+                        <p className="px-2.5 py-2 text-[12px] text-[var(--text-muted)]">Tus chats aparecerán aquí.</p>
+                      )}
+                      {sessions.length > 0 && visibleSessions.length === 0 && (
+                        <p className="px-2.5 py-2 text-[11px] leading-relaxed text-[var(--text-muted)]">
+                          Sin resultados para «{query}».
+                        </p>
+                      )}
+                      {[
+                        ...(arrangedSessions.pinned.length ? [{ label: 'Fijados', items: arrangedSessions.pinned }] : []),
+                        ...arrangedSessions.sections,
+                        ...groupSessions(arrangedSessions.rest),
+                      ].map((group) => (
+                        <section key={group.label} aria-label={group.label} className="flex flex-col gap-0.5">
+                          <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+                          {group.items.map(sessionRow)}
+                        </section>
+                      ))}
+                    </section>
+                    {hiddenCount > 0 && !query && (
+                      <button
+                        type="button"
+                        onClick={() => setShowHidden((v) => !v)}
+                        className="mt-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-secondary)]"
+                      >
+                        {showHidden ? 'Ocultar elementos ocultos' : `Mostrar ocultos (${hiddenCount})`}
+                      </button>
                     )}
-                    {sessions.length > 0 && visibleSessions.length === 0 && (
-                      <p className="px-2.5 py-2 text-[11px] leading-relaxed text-[var(--text-muted)]">
-                        Sin resultados para «{query}».
-                      </p>
-                    )}
-                    {[
-                      ...(arrangedSessions.pinned.length ? [{ label: 'Fijados', items: arrangedSessions.pinned }] : []),
-                      ...arrangedSessions.sections,
-                      ...groupSessions(arrangedSessions.rest),
-                    ].map((group) => (
-                      <section key={group.label} aria-label={group.label} className="flex flex-col gap-0.5">
-                        <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-                        {group.items.map(sessionRow)}
-                      </section>
-                    ))}
-                  </section>
-                  {hiddenCount > 0 && !query && (
-                    <button
-                      type="button"
-                      onClick={() => setShowHidden((v) => !v)}
-                      className="mt-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-secondary)]"
-                    >
-                      {showHidden ? 'Ocultar elementos ocultos' : `Mostrar ocultos (${hiddenCount})`}
-                    </button>
-                  )}
+                  </div>
                 </>
               );
             })()}
@@ -1832,7 +1868,7 @@ export default function AgentView({
           >
             <ThemedSelect
               value={sessionId}
-              onChange={setSessionId}
+              onChange={selectSession}
               placeholder="Elegir conversación"
               options={sessions.map((item) => ({ value: item.id, label: item.title || 'Conversación' }))}
               aria-label="Conversación activa"
@@ -1846,7 +1882,7 @@ export default function AgentView({
                 options={profiles.map((item) => ({ value: item.id, label: item.name }))}
                 onChange={(id) => {
                   const chosen = profiles.find((item) => item.id === id);
-                  if (chosen) void newSession(chosen);
+                  if (chosen) void openProfileSession(chosen);
                 }}
                 className="min-w-0"
               />

@@ -34,6 +34,34 @@ def test_catalog_discovers_metadata_without_loading_instructions(store):
     assert "skills_list" in agent_chat.readonly_methods() and "skills_read" in agent_chat.readonly_methods()
 
 
+def test_library_catalog_reuses_yaml_and_reads_edited_manifest(store, monkeypatch):
+    library = store.base_dir / "skills"
+    target = install(library, description="Descripción inicial de la auditoría")
+    original_load = skills.yaml.safe_load
+    parsed = []
+
+    def track_parse(header):
+        parsed.append(header)
+        return original_load(header)
+
+    monkeypatch.setattr(skills.yaml, "safe_load", track_parse)
+    first = skills.library_catalog(library)
+    assert first["skills"][0]["description"] == "Descripción inicial de la auditoría"
+    assert skills.library_catalog(library) == first
+    assert len(parsed) == 1
+
+    target.write_text(
+        "---\nname: pdf-review\ndescription: Descripción editada\n---\nNuevo cuerpo",
+        encoding="utf-8",
+    )
+    edited = skills.library_catalog(library)
+    assert edited["skills"][0]["description"] == "Descripción editada"
+    assert edited["skills"][0]["id"] == first["skills"][0]["id"]
+    assert len(parsed) == 2
+    target.unlink()
+    assert skills.library_catalog(library)["skills"] == []
+
+
 @pytest.mark.parametrize("relative", ["SKILL.md", "references/check.txt"])
 def test_read_opens_only_selected_skill_and_requested_file(store, monkeypatch, relative):
     target = install(store.base_dir / "skills", body="Página elegida.\n" * 800)

@@ -6,7 +6,9 @@ import budgets from '../shared/budgets.json';
 import { STATIC_CSS_TESTS } from './vitest.static.config.ts';
 import DurationSequencer from './vitest.sequencer.ts';
 
-const sharedHtmlSanitizerPath = path.resolve(import.meta.dirname, '../shared/html-sanitizer.js');
+const sharedCjsModulePaths = ['../shared/html-sanitizer.js', '../shared/chart-spec.js'].map((file) =>
+  path.resolve(import.meta.dirname, file),
+);
 
 const configuredSupabaseOrigin = (() => {
   try {
@@ -37,11 +39,11 @@ const productionCspPlugin = (enabled: boolean) => ({
   },
 });
 
-const sharedHtmlSanitizerPlugin = {
-  name: 'shared-html-sanitizer',
+const sharedCjsModulePlugin = {
+  name: 'shared-cjs-module',
   enforce: 'pre' as const,
   transform(code: string, id: string) {
-    if (path.normalize(id.split('?')[0]) !== path.normalize(sharedHtmlSanitizerPath)) return null;
+    if (!sharedCjsModulePaths.some((file) => path.normalize(id.split('?')[0]) === path.normalize(file))) return null;
 
     const match = code.match(/module\.exports\s*=\s*\{([\s\S]*?)\}\s*;/);
     if (!match) {
@@ -66,7 +68,7 @@ const sharedHtmlSanitizerPlugin = {
 export default defineConfig(({ mode }) => ({
   plugins: [
     productionCspPlugin(mode !== 'development'),
-    sharedHtmlSanitizerPlugin,
+    sharedCjsModulePlugin,
     react(),
     mode === 'analyze' && visualizer({ open: true, gzipSize: true, brotliSize: true }),
   ],

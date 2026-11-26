@@ -3,7 +3,7 @@ import { expect, it, vi } from 'vitest';
 
 vi.mock('html-to-image', () => ({ toBlob: vi.fn(async () => new Blob(['png'], { type: 'image/png' })) }));
 import MessageMarkdown, { cachedBlocks, parseBlocks, splitMarkdownBlocks, tableClipboard } from './MessageMarkdown';
-import { donutSlices, horizontal, niceTicks } from './ChatChart';
+import { chartToMermaid, horizontalChart, niceTicks, parseChartSpec, pieSlices } from '../../../../shared/chart-spec.js';
 import { mermaidTitle } from './ChatMermaid';
 import { FilePreviewContext, localPreviewResource } from './filePreviewContext';
 
@@ -89,32 +89,38 @@ it('reconoce el lenguaje del bloque y marca los que siguen abiertos', () => {
   expect(parseBlocks('```svg\n<svg>')[0]).toMatchObject({ lang: 'svg', open: true });
 });
 
-it('dibuja un bloque chart como gráfico SVG y permite ver su código', async () => {
+it('dibuja un bloque chart como gráfico SVG con Pele y permite ver su código', async () => {
   const { container } = render(<MessageMarkdown text={chart} />);
-  expect(await screen.findByRole('img', { name: 'Ventas' })).toBeInTheDocument();
-  expect(container.querySelectorAll('[data-bar]')).toHaveLength(2);
+  expect(await screen.findByRole('region', { name: 'Ventas' })).toBeInTheDocument();
+  await waitFor(() => expect(container.querySelector('.pele-xychart')).not.toBeNull());
+  expect(container.querySelectorAll('.pele-series.pele-bars rect')).toHaveLength(2);
   expect(container.querySelector('pre')).toBeNull();
-  fireEvent.mouseEnter(container.querySelectorAll('rect[fill="transparent"]')[1]);
-  expect(screen.getByRole('tooltip')).toHaveTextContent('Feb20265');
-  expect(screen.getByRole('table')).toHaveTextContent('Ene3');
+  fireEvent.mouseEnter(container.querySelectorAll('.pele-series.pele-bars rect')[1]);
+  expect(screen.getByRole('tooltip')).toHaveTextContent('Feb');
+  expect(screen.getByRole('tooltip')).toHaveTextContent('2026');
+  expect(screen.getByRole('table', { hidden: true })).toHaveTextContent('Ene3');
   fireEvent.click(screen.getByRole('button', { name: 'Código' }));
   expect(container.querySelector('pre')?.textContent).toContain('"Ventas"');
 });
 
-it('dibuja un chart pie como dona con total y porcentajes', async () => {
+it('dibuja un chart pie con Pele y muestra valor y porcentaje al pasar por una porción', async () => {
   const { container } = render(<MessageMarkdown text={'```chart\n{"type":"pie","labels":["A","B"],"series":[{"data":[3,1]}]}\n```'} />);
-  expect(await screen.findByRole('img', { name: 'Gráfico' })).toBeInTheDocument();
-  expect(container.querySelectorAll('[data-slice]')).toHaveLength(2);
-  expect(screen.getByText('Total')).toBeInTheDocument();
-  expect(screen.getByText('75 %')).toBeInTheDocument();
+  expect(await screen.findByRole('region', { name: 'Gráfico' })).toBeInTheDocument();
+  await waitFor(() => expect(container.querySelector('.pele-pie')).not.toBeNull());
+  expect(container.querySelectorAll('.pele-slice')).toHaveLength(2);
+  fireEvent.mouseEnter(container.querySelector('.pele-slice[data-id="A"]')!);
+  const tooltip = screen.getByRole('tooltip');
+  expect(tooltip).toHaveTextContent('A');
+  expect(tooltip).toHaveTextContent('75 %');
 });
 
 it('amplía un gráfico en un diálogo y lo cierra', async () => {
-  render(<MessageMarkdown text={chart} />);
-  await screen.findByRole('img', { name: 'Ventas' });
+  const { container } = render(<MessageMarkdown text={chart} />);
+  await screen.findByRole('region', { name: 'Ventas' });
+  await waitFor(() => expect(container.querySelector('.pele-xychart')).not.toBeNull());
   fireEvent.click(screen.getByRole('button', { name: 'Ampliar' }));
   const dialog = screen.getByRole('dialog', { name: 'Ventas' });
-  expect(within(dialog).getByRole('img', { name: 'Ventas' })).toBeInTheDocument();
+  await waitFor(() => expect(dialog.querySelector('.pele-xychart')).not.toBeNull());
   fireEvent.click(within(dialog).getByRole('button', { name: 'Cerrar vista ampliada' }));
   expect(screen.queryByRole('dialog')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Código' }));
@@ -141,36 +147,32 @@ it('titula un diagrama mermaid con su title o con su tipo', () => {
   expect(mermaidTitle('quadrantChart\n  x-axis a --> b')).toBe('Diagrama');
 });
 
-it('mantiene visible la última etiqueta del eje cuando salta etiquetas', async () => {
+it('convierte todas las marcas de una serie larga sin recortar los datos', async () => {
   const labels = Array.from({ length: 40 }, (_, i) => `D${i + 1}`);
   const source = JSON.stringify({ type: 'line', title: 'Caudal', labels, series: [{ name: 'Q', data: labels.map((_, i) => i) }] });
   const { container } = render(<MessageMarkdown text={'```chart\n' + source + '\n```'} />);
-  await screen.findByRole('img', { name: 'Caudal' });
-  const axis = [...container.querySelectorAll('svg text[text-anchor="middle"]')].map((text) => text.textContent);
-  expect(axis.length).toBeLessThan(labels.length);
-  expect(axis.at(-1)).toBe('D40');
+  await screen.findByRole('region', { name: 'Caudal' });
+  await waitFor(() => expect(container.querySelector('.pele-xychart')).not.toBeNull());
+  expect(container.querySelectorAll('.pele-series.pele-line circle')).toHaveLength(40);
 });
 
-it('ajusta el eje de una línea al rango de sus datos y el de barras al cero', async () => {
-  const axis = (container: HTMLElement) =>
-    [...container.querySelectorAll('svg text[text-anchor="end"]')].map((text) => text.textContent);
-  const line = render(<MessageMarkdown text={'```chart\n{"type":"line","title":"pH","labels":["a","b","c"],"series":[{"name":"pH","data":[7.12,6.98,7.21]}]}\n```'} />);
-  await screen.findByRole('img', { name: 'pH' });
-  expect(axis(line.container)[0]).not.toBe('0');
-  line.unmount();
-  const bars = render(<MessageMarkdown text={'```chart\n{"type":"bar","title":"pH","labels":["a","b","c"],"series":[{"name":"pH","data":[7.12,6.98,7.21]}]}\n```'} />);
-  await screen.findByRole('img', { name: 'pH' });
-  expect(axis(bars.container)[0]).toBe('0');
+it('ajusta el eje de una línea al rango de sus datos y el de barras al cero', () => {
+  const line = parseChartSpec('{"type":"line","title":"pH","labels":["a","b","c"],"series":[{"name":"pH","data":[7.12,6.98,7.21]}]}')!;
+  expect(chartToMermaid(line)).toContain('y-axis 6.9 --> 7.3');
+  const bars = parseChartSpec('{"type":"bar","title":"pH","labels":["a","b","c"],"series":[{"name":"pH","data":[7.12,6.98,7.21]}]}')!;
+  expect(chartToMermaid(bars)).toContain('y-axis 0 --> 8');
+  const negative = parseChartSpec('{"type":"line","title":"n","labels":["a","b"],"series":[{"name":"n","data":[-3,8]}]}')!;
+  expect(chartToMermaid(negative)).toContain('y-axis -5 --> 10');
 });
 
 it('agrupa en "Otros" las porciones que repetirían color', () => {
   const labels = Array.from({ length: 10 }, (_, i) => `C${i + 1}`);
   const spec = { type: 'pie' as const, title: '', labels, series: [{ name: 'n', data: [30, 2, 20, 12, 9, 8, 7, 5, 4, 3] }] };
-  expect(donutSlices(spec)).toEqual({
+  expect(pieSlices(spec)).toEqual({
     labels: ['C1', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'Otros'],
     data: [30, 20, 12, 9, 8, 7, 5, 9],
   });
-  expect(donutSlices({ ...spec, labels: labels.slice(0, 3), series: [{ name: 'n', data: [1, 2, 3] }] }).labels).toEqual(['C1', 'C2', 'C3']);
+  expect(pieSlices({ ...spec, labels: labels.slice(0, 3), series: [{ name: 'n', data: [1, 2, 3] }] }).labels).toEqual(['C1', 'C2', 'C3']);
 });
 
 it('redondea los ejes a pasos legibles', () => {
@@ -293,16 +295,17 @@ it('dibuja separadores, tachado, tareas, numeración inicial y citas de varias l
   expect(container.querySelector('ol')).toHaveAttribute('start', '2');
 });
 
-it('pasa a barras horizontales cuando las etiquetas son largas', async () => {
+it('convierte a barras horizontales cuando las etiquetas son largas', async () => {
   const source = '{"type":"bar","title":"Metrado por actividad","labels":["Excavación de zanjas","Relleno compactado"],"series":[{"name":"m3","data":[120,80]}]}';
+  const spec = parseChartSpec(source)!;
+  expect(horizontalChart(spec)).toBe(true);
+  expect(chartToMermaid(spec)).toContain('xychart-beta horizontal');
+  expect(horizontalChart({ type: 'bar', title: '', labels: ['Excavación de zanjas'], series: [{ name: 'a', data: [-1] }] })).toBe(false);
+  expect(horizontalChart({ type: 'bar', title: '', labels: ['Ene'], series: [{ name: 'a', data: [1] }] })).toBe(false);
   const { container } = render(<MessageMarkdown text={'```chart\n' + source + '\n```'} />);
-  expect(await screen.findByRole('img', { name: 'Metrado por actividad' })).toBeInTheDocument();
-  expect(container.querySelector('svg[role="img"]')).toBeNull();
-  expect(screen.getByTitle('Excavación de zanjas')).toBeInTheDocument();
-  const bars = container.querySelectorAll<HTMLElement>('[data-bar]');
-  expect([...bars].map((bar) => bar.style.width)).toEqual(['100%', `${(80 / 120) * 100}%`]);
-  expect(horizontal({ type: 'bar', title: '', labels: ['Excavación de zanjas'], series: [{ name: 'a', data: [-1] }] })).toBe(false);
-  expect(horizontal({ type: 'bar', title: '', labels: ['Ene'], series: [{ name: 'a', data: [1] }] })).toBe(false);
+  expect(await screen.findByRole('region', { name: 'Metrado por actividad' })).toBeInTheDocument();
+  await waitFor(() => expect(container.querySelector('.pele-xychart')).not.toBeNull());
+  expect(container.querySelectorAll('.pele-series.pele-bars rect')).toHaveLength(2);
 });
 
 class FakeClipboardItem {
@@ -345,11 +348,17 @@ it('copia un gráfico como imagen PNG y oculta la opción en la vista de código
   const write = stubClipboard();
   try {
     const { toBlob } = await import('html-to-image');
-    render(<MessageMarkdown text={chart} />);
-    await screen.findByRole('img', { name: 'Ventas' });
+    const { container } = render(<MessageMarkdown text={chart} />);
+    await screen.findByRole('region', { name: 'Ventas' });
+    await waitFor(() => expect(container.querySelector('.pele-xychart')).not.toBeNull());
     fireEvent.click(screen.getByRole('button', { name: 'Copiar imagen' }));
     await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
     expect(toBlob).toHaveBeenCalledWith(expect.any(HTMLElement), expect.objectContaining({ pixelRatio: 2 }));
+    const options = vi.mocked(toBlob).mock.calls[0][1] as { filter?: (element: Node) => boolean };
+    const zoom = document.createElement('div');
+    zoom.classList.add('pele-zoom');
+    expect(options.filter?.(zoom)).toBe(false);
+    expect(options.filter?.(document.createElement('svg'))).toBe(true);
     expect(Object.keys(write.mock.calls[0][0][0].items)).toEqual(['image/png']);
     expect(await screen.findByRole('button', { name: 'Imagen copiada' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Código' }));

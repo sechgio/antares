@@ -58,6 +58,7 @@ async function instance(owner = true) {
     },
   });
   const intervals = new Map();
+  const timeouts = new Map();
   const handlers = new Map();
   class Tray extends EventEmitter {
     constructor() {
@@ -129,7 +130,10 @@ async function instance(owner = true) {
     require: (id) => deps[id] || require(id.startsWith('.') ? path.resolve(__dirname, '../electron', id) : id),
     console,
     process: Object.assign(new EventEmitter(), { platform: 'win32', exit: noop }),
-    setTimeout: (fn, delay) => ({ fn, delay, unref: noop }),
+    setTimeout: (fn, delay) => {
+      timeouts.set(delay, fn);
+      return { unref: noop };
+    },
     clearTimeout: noop,
     setInterval: (fn, delay) => {
       intervals.set(delay, fn);
@@ -137,13 +141,18 @@ async function instance(owner = true) {
     },
   });
   await new Promise((resolve) => setImmediate(resolve));
-  return { state, app, win, handlers, intervals };
+  return { state, app, win, handlers, intervals, timeouts };
 }
 async function main() {
-  const { state, app, win, handlers, intervals } = await instance();
+  const { state, app, win, handlers, intervals, timeouts } = await instance();
   assert.equal(state.started, 1);
   assert.equal(state.windowCreatedAfterStart, 1, 'el backend se lanza antes de crear la ventana');
-  assert.equal(state.agentOpened, true);
+  assert.equal(state.agentOpened, undefined, 'el runtime del agente no abre durante el arranque');
+  const deferredOpen = timeouts.get(20000);
+  assert.equal(typeof deferredOpen, 'function', 'la apertura diferida del agente queda programada');
+  deferredOpen();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(state.agentOpened, true, 'la apertura diferida abre el runtime del agente');
   const event = {
     prevented: false,
     preventDefault() {

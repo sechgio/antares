@@ -199,7 +199,7 @@ function setupAutoUpdater(isDev) {
         message: err && err.message ? err.message : String(err),
       });
     });
-  }, 8_000);
+  }, 30_000);
 
   _periodicCheckTimer = setInterval(() => {
     if (_updateInProgress) return;

@@ -127,10 +127,14 @@ def _create_indexes(cursor: sqlite3.Cursor, fields: list[dict[str, Any]]) -> Non
 
     for f in data_fields:
         name = _validate_identifier(f["name"])
-        unique_clause = "UNIQUE" if f.get("unique") else ""
-        cursor.execute(
-            f"CREATE {unique_clause} INDEX IF NOT EXISTS idx_imagenes_{name} ON imagenes({_qi(name)})"
-        )
+        if f.get("unique"):
+            cursor.execute(
+                f"CREATE UNIQUE INDEX IF NOT EXISTS idx_imagenes_{name} ON imagenes({_qi(name)})"
+            )
+        else:
+            # Las búsquedas del catálogo usan lower(campo) IN (...): el índice directo
+            # no las cubre y solo amplifica escrituras en importaciones.
+            cursor.execute(f"DROP INDEX IF EXISTS idx_imagenes_{name}")
         cursor.execute(
             f"CREATE INDEX IF NOT EXISTS idx_imagenes_lower_{name} "
             f"ON imagenes(lower({_qi(name)}))"

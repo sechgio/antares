@@ -184,7 +184,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }, 5000);
 
-    void (async () => {
+    const startAuth = () => {
+      void (async () => {
       const { supabase } = await loadSupabaseModule();
       if (cancelled || !mountedRef.current) return;
       clientRef.current = supabase;
@@ -220,10 +221,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         clearTimeout(timeout);
       }
-    })();
+      })();
+    };
+    let idleId: number | null = null;
+    let fallbackId: ReturnType<typeof setTimeout> | null = null;
+    if (typeof requestIdleCallback === 'function') {
+      idleId = requestIdleCallback(() => startAuth(), { timeout: 1500 });
+    } else {
+      fallbackId = setTimeout(startAuth, 0);
+    }
 
     return () => {
       cancelled = true;
+      if (idleId !== null && typeof cancelIdleCallback === 'function') cancelIdleCallback(idleId);
+      if (fallbackId !== null) clearTimeout(fallbackId);
       clearTimeout(timeout);
       for (const timer of deferredProfileFetches) clearTimeout(timer);
       deferredProfileFetches.clear();

@@ -8,6 +8,7 @@ import ntpath
 import os
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
@@ -170,6 +171,11 @@ def _skill_id(path: Path) -> str:
     return hashlib.sha256(os.path.normcase(str(path)).encode("utf-8")).hexdigest()[:24]
 
 
+@lru_cache(maxsize=_MAX_CANDIDATES)
+def _load_frontmatter(header: str) -> object:
+    return yaml.safe_load(header)
+
+
 def _skill(path: Path, grants: dict[str, JsonObject], workspace: Path, library: Path,
            levels: tuple[Path, ...] = ()) -> _Skill:
     text = _read(path, grants, workspace, library, levels)
@@ -177,7 +183,7 @@ def _skill(path: Path, grants: dict[str, JsonObject], workspace: Path, library: 
     if header is None or len(header[1]) > 8192:
         raise ValueError("La skill necesita frontmatter YAML con name y description de hasta 8192 caracteres")
     try:
-        metadata = yaml.safe_load(header[1])
+        metadata = _load_frontmatter(header[1])
     except (yaml.YAMLError, RecursionError):
         raise ValueError("El encabezado YAML de la skill no es válido") from None
     if not isinstance(metadata, dict):

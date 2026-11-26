@@ -332,9 +332,14 @@ function _estimateStringJsonBytes(value) {
   return bytes;
 }
 
+const _ESTIMATE_NODE_BUDGET = 20000;
+
 function _estimatePayloadBytes(value) {
   const ancestors = new Set();
+  let nodesLeft = _ESTIMATE_NODE_BUDGET;
   const estimate = (entry, inArray = false) => {
+    if (nodesLeft <= 0) return 64;
+    nodesLeft -= 1;
     if (entry === null) return 4;
     if (typeof entry === 'string') return _estimateStringJsonBytes(entry);
     if (typeof entry === 'number') return Number.isFinite(entry) ? Buffer.byteLength(String(entry), 'utf8') : 4;
@@ -983,16 +988,6 @@ function registerIpcHandlers() {
       return _maybeTokenizeResultPaths(method, result, win);
     } catch (err) {
       throw _toRendererIpcError(err);
-    }
-  });
-
-  ipcMain.on('supabase-session-get', (event) => {
-    try {
-      _requireTrustedSender(event, 'supabase-session-get');
-      const handled = _NATIVE_CALLS.session('supabase_session_get', {});
-      event.returnValue = handled && handled.handled ? handled.result.blob : null;
-    } catch {
-      event.returnValue = null;
     }
   });
 
