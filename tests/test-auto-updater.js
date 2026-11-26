@@ -173,7 +173,7 @@ async function run() {
     assert(fakeUpdater.autoInstallOnAppQuit === false, 'autoInstallOnAppQuit disabled');
     assert(typeof fakeUpdater.logger?.info === 'function', 'updater logger installed');
     assert(
-      timers.timeouts.some((t) => t.delay === 8000),
+      timers.timeouts.some((t) => t.delay === 30000),
       'initial update check is scheduled',
     );
     assert(
@@ -181,7 +181,7 @@ async function run() {
       'periodic 6h check is scheduled',
     );
 
-    const initialCheck = timers.timeouts.find((t) => t.delay === 8000);
+    const initialCheck = timers.timeouts.find((t) => t.delay === 30000);
     fakeUpdater.checkResult = Promise.resolve({ version: null });
     initialCheck.fn();
     assert(fakeUpdater.checkCalls.length === 1, 'initial check calls checkForUpdates once');
