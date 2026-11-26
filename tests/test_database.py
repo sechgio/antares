@@ -469,7 +469,7 @@ class TestLowerExpressionIndexes:
             conn.close()
 
         assert "idx_imagenes_codigo" in names
-        assert "idx_imagenes_nombre" in names
+        assert "idx_imagenes_nombre" not in names
         assert "idx_imagenes_lower_codigo" in names
         assert "idx_imagenes_lower_nombre" in names
 
