@@ -1,6 +1,8 @@
 import { lazy, memo, Suspense, useContext, type ReactNode } from 'react';
 import CopyButton from './CopyButton';
 import Button from '../ui/Button';
+import MarkdownCodeBlock from './MarkdownCodeBlock';
+import MarkdownList, { type MarkdownListItem } from './MarkdownList';
 import { FilePreviewContext, localPreviewResource } from './filePreviewContext';
 
 const ChatVisual = lazy(() => import('./ChatVisual'));
@@ -130,7 +132,7 @@ export function tableClipboard(headers: string[], rows: string[][]): { text: str
 type Block =
   | { kind: 'p'; text: string }
   | { kind: 'h'; level: number; text: string }
-  | { kind: 'ul' | 'ol'; items: string[]; start?: number }
+  | { kind: 'ul' | 'ol'; items: MarkdownListItem[] }
   | { kind: 'hr' }
   | { kind: 'code'; text: string; lang?: string; open?: true }
   | { kind: 'table'; headers: string[]; align: ('left' | 'center' | 'right')[]; rows: string[][] }
@@ -207,8 +209,8 @@ export function parseBlocks(source: string): Block[] {
       continue;
     }
     const heading = /^(#{1,4})\s+(.+)$/.exec(line);
-    const bullet = /^\s*[-*•]\s+(.+)$/.exec(line);
-    const numbered = /^\s*(\d+)[.)]\s+(.+)$/.exec(line);
+    const bullet = /^(\s*)[-*•]\s+(.+)$/.exec(line);
+    const numbered = /^(\s*)(\d+)[.)]\s+(.+)$/.exec(line);
     const previous = blocks[blocks.length - 1];
     if (!line.trim()) {
       flush();
@@ -220,12 +222,17 @@ export function parseBlocks(source: string): Block[] {
       blocks.push({ kind: 'h', level: heading[1].length, text: heading[2] });
     } else if (bullet || numbered) {
       flush();
-      const kind = bullet ? 'ul' : 'ol';
-      const text = bullet ? bullet[1] : numbered![2];
+      const kind: 'ul' | 'ol' = bullet ? 'ul' : 'ol';
+      const indent = bullet ? bullet[1] : numbered![1];
+      const item = {
+        text: bullet ? bullet[2] : numbered![3],
+        depth: [...indent].reduce((width, char) => width + (char === '\t' ? 2 : 1), 0),
+        kind,
+        ...(numbered ? { start: Number(numbered[2]) } : {}),
+      };
       const latest = blocks[blocks.length - 1];
-      if (latest && latest.kind === kind) latest.items.push(text);
-      else if (numbered && Number(numbered[1]) !== 1) blocks.push({ kind, items: [text], start: Number(numbered[1]) });
-      else blocks.push({ kind, items: [text] });
+      if (latest && (latest.kind === 'ul' || latest.kind === 'ol') && (latest.kind === kind || item.depth > 0)) latest.items.push(item);
+      else blocks.push({ kind, items: [item] });
     } else if (line.startsWith('>')) {
       const text = line.replace(/^>\s?/, '');
       if (previous?.kind === 'quote' && lines[i - 1].startsWith('>')) previous.text += `\n${text}`;
@@ -266,12 +273,41 @@ export function cachedBlocks(text: string, streaming: boolean): Block[] {
   return blocks;
 }
 
-function MessageMarkdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
+const LIST_CONTINUATION = /^(?:[ \t]|[-*•](?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$))/;
+
+export function splitMarkdownBlocks(text: string): string[] | null {
+  if (text.includes('\r')) return null;
+  const blocks: string[] = [];
+  let blockStart = 0;
+  let lineStart = 0;
+  let fence = false;
+  let afterBlank = false;
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (fence) {
+      if (trimmed.startsWith('```')) fence = false;
+    } else if (!trimmed) {
+      afterBlank = true;
+    } else {
+      if (afterBlank && lineStart > blockStart && !LIST_CONTINUATION.test(line)) {
+        blocks.push(text.slice(blockStart, lineStart));
+        blockStart = lineStart;
+      }
+      afterBlank = false;
+      if (trimmed.startsWith('```')) fence = true;
+    }
+    lineStart += line.length + 1;
+  }
+  blocks.push(text.slice(blockStart));
+  return blocks.length > 1 ? blocks : null;
+}
+
+function MarkdownPart({ text, streaming }: { text: string; streaming: boolean }) {
   const onPreview = useContext(FilePreviewContext);
   const renderInline = (value: string, key: string) => inline(value, key, onPreview);
   const blocks = cachedBlocks(text, streaming);
   return (
-    <div className="agent-markdown min-w-0">
+    <>
       {blocks.map((block, index) => {
         const key = `b${index}`;
         const cursor =
@@ -334,27 +370,16 @@ function MessageMarkdown({ text, streaming = false }: { text: string; streaming?
             );
           }
           case 'ul':
-          case 'ol': {
-            const List = block.kind;
+          case 'ol':
             return (
-              <List key={key} start={block.start} className={`space-y-1 pl-5 ${block.kind === 'ul' ? 'list-disc' : 'list-decimal'}`}>
-                {block.items.map((item, n) => {
-                  const task = block.kind === 'ul' ? /^\[([ xX])\]\s+(.*)$/.exec(item) : null;
-                  return task ? (
-                    <li key={n} className="-ml-5 flex list-none items-start gap-2">
-                      <input type="checkbox" checked={task[1] !== ' '} readOnly disabled className="mt-[5px] shrink-0" />
-                      <span className={task[1] !== ' ' ? 'text-[var(--text-muted)] line-through' : undefined}>
-                        {renderInline(task[2], `${key}-${n}`)}
-                      </span>
-                    </li>
-                  ) : (
-                    <li key={n}>{renderInline(item, `${key}-${n}`)}</li>
-                  );
-                })}
-                {cursor}
-              </List>
+              <MarkdownList
+                key={key}
+                items={block.items}
+                renderInline={renderInline}
+                itemKey={key}
+                cursor={cursor}
+              />
             );
-          }
           case 'code': {
             const framed = !block.lang || !VISUAL_LABELS[block.lang];
             const pre = (
@@ -367,20 +392,7 @@ function MessageMarkdown({ text, streaming = false }: { text: string; streaming?
               </pre>
             );
             if (!block.lang || !VISUAL_LABELS[block.lang]) {
-              return (
-                <div
-                  key={key}
-                  className="group/code overflow-hidden rounded-xl bg-[color:color-mix(in_srgb,var(--text-primary)_7%,transparent)]"
-                >
-                  <div className="flex h-7 items-center justify-between border-b border-[var(--border-subtle)] pl-2.5 pr-1.5 font-mono text-[11px] text-[var(--text-muted)]">
-                    {block.lang || 'código'}
-                    {!block.open && (
-                      <CopyButton text={block.text} label="Copiar código" className="group-hover/code:opacity-100" />
-                    )}
-                  </div>
-                  {pre}
-                </div>
-              );
+              return <MarkdownCodeBlock key={key} lang={block.lang} text={block.text} open={block.open} cursor={cursor} />;
             }
             if (block.open) return streaming ? <VisualPlaceholder key={key} lang={block.lang} /> : pre;
             return (
@@ -407,6 +419,21 @@ function MessageMarkdown({ text, streaming = false }: { text: string; streaming?
             );
         }
       })}
+    </>
+  );
+}
+
+const MemoMarkdownPart = memo(MarkdownPart);
+
+function MessageMarkdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
+  const parts = splitMarkdownBlocks(text);
+  return (
+    <div className="agent-markdown min-w-0">
+      {parts
+        ? parts.map((part, index) => (
+          <MemoMarkdownPart key={index} text={part} streaming={streaming && index === parts.length - 1} />
+        ))
+        : <MemoMarkdownPart text={text} streaming={streaming} />}
     </div>
   );
 }
