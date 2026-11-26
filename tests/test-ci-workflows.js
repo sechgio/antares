@@ -70,6 +70,10 @@ function run() {
   const ciJobs = ci.split(/^jobs:\s*$/m)[1] || '';
   const job = (name) =>
     ciJobs.match(new RegExp(`^  ${name}:\\s*\\r?\\n([\\s\\S]*?)(?=^  [\\w-]+:|$(?![\\s\\S]))`, 'm'))?.[1] || '';
+  assert(
+    job('electron').includes("frontend: 'true'"),
+    'Electron tests install frontend dependencies so Agent pages can load Pele',
+  );
   const workerJobs = [
     'lint',
     'typecheck',

@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
 const { sanitizeHtmlForPreview, PREVIEW_CSP_META } = require('../shared/html-sanitizer');
 
 const CSP =
@@ -24,6 +26,24 @@ const PAGE_STYLES = `
   --page-series-3: color-mix(in srgb, var(--page-accent) 36%, var(--page-background));
   --page-series-4: color-mix(in srgb, var(--page-text) 40%, var(--page-background));
   --page-series-5: color-mix(in srgb, var(--page-text) 18%, var(--page-background));
+  --pele-bg: transparent;
+  --pele-fg: var(--page-text);
+  --pele-muted: var(--page-muted);
+  --pele-line: var(--page-muted);
+  --pele-surface: var(--page-field);
+  --pele-surface-alt: color-mix(in srgb, var(--page-text) 9%, transparent);
+  --pele-border: color-mix(in srgb, var(--page-text) 28%, transparent);
+  --pele-accent: var(--page-accent);
+  --pele-critical: #d64545;
+  --pele-error: #d64545;
+  --pele-series-1: var(--page-series-1);
+  --pele-series-2: var(--page-series-2);
+  --pele-series-3: var(--page-series-3);
+  --pele-series-4: var(--page-series-4);
+  --pele-series-5: var(--page-series-5);
+  --pele-series-6: color-mix(in srgb, var(--page-accent) 78%, var(--page-text));
+  --pele-series-7: color-mix(in srgb, var(--page-text) 52%, var(--page-background));
+  --pele-series-8: color-mix(in srgb, var(--page-accent) 24%, var(--page-text));
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -88,6 +108,8 @@ svg text { font-family: inherit; font-size: 11px; font-variant-numeric: tabular-
 .page-chart { min-width: 0; color: var(--page-accent); }
 .page-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
 .page-chart svg .grid { stroke: var(--page-line); }
+.pele { max-width: 100%; color: var(--page-text); }
+pre.pele-diagram { margin: 0; padding: 0; border: 0; background: transparent; font-family: inherit; white-space: normal; }
 .page-bars { display: grid; gap: 4px; }
 .page-bar { display: grid; grid-template-columns: minmax(90px, 168px) minmax(0, 1fr) minmax(48px, auto); align-items: center; gap: 16px; min-height: 34px; font-size: 13px; }
 button.page-bar { width: calc(100% + 16px); margin: 0 -8px; padding: 4px 8px; border: 0; border-radius: 8px; background: transparent; text-align: left; }
@@ -125,7 +147,65 @@ function encoded(value) {
     .replace(/\u2029/g, '\\u2029');
 }
 
-function documents(page, colorScheme) {
+// Pele y el contrato ```chart se inyectan en cada página para que los paneles
+// rendericen diagramas y gráficos con el mismo motor que el chat, sin red ni imports.
+const CHART_BOOTSTRAP = `
+;(function () {
+  if (typeof pele === 'undefined') return;
+  var module = { exports: {} };
+  var exports = module.exports;
+  __CHART_SPEC__
+  var ChartSpec = module.exports;
+  function mountDiagram(el, source) {
+    if (!(el instanceof Element)) throw new Error('El diagrama necesita un elemento del documento');
+    if (typeof source !== 'string' || !source.trim()) throw new Error('El diagrama necesita código Mermaid');
+    return pele.mount(el, source, {
+      links: false,
+      images: false,
+      fontSize: 13,
+      zoom: { labels: { zoomIn: 'Acercar', zoomOut: 'Alejar', reset: 'Restablecer' } },
+    });
+  }
+  window.AntaresPageCharts = Object.freeze({
+    diagram: mountDiagram,
+    chart(el, spec) {
+      var parsed = ChartSpec.parseChartSpec(typeof spec === 'string' ? spec : JSON.stringify(spec));
+      if (!parsed) throw new Error('El gráfico necesita {type,title,labels,series} válido');
+      return mountDiagram(el, ChartSpec.chartToMermaid(parsed));
+    },
+  });
+  function scan() {
+    document.querySelectorAll('pre.pele-diagram').forEach((el) => {
+      if (el.dataset.peleDone) return;
+      el.dataset.peleDone = '1';
+      try {
+        mountDiagram(el, el.textContent || '');
+      } catch {}
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scan);
+  else scan();
+})();`;
+
+function escapeInlineScript(source) {
+  return source.replace(/<\/script/gi, '<\\/script').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+}
+
+let chartInjection = null;
+function chartScripts() {
+  if (chartInjection !== null) return chartInjection;
+  chartInjection = '';
+  try {
+    const pele = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'node_modules', 'pele', 'dist', 'pele.global.js'), 'utf8');
+    const spec = fs.readFileSync(path.join(__dirname, '..', 'shared', 'chart-spec.js'), 'utf8');
+    chartInjection = `<script>${escapeInlineScript(pele)}${escapeInlineScript(CHART_BOOTSTRAP.replace('__CHART_SPEC__', () => spec))}</script>`;
+  } catch {
+    chartInjection = '';
+  }
+  return chartInjection;
+}
+
+function documents(page, colorScheme, { charts = true } = {}) {
   if (
     !page ||
     page.version !== 1 ||
@@ -148,7 +228,7 @@ function documents(page, colorScheme) {
     (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[character],
   );
   const context = encoded(JSON.stringify({ data: page.data, rows: page.rows, columns: page.columns }));
-  const script = `window.AntaresPage = Object.freeze(JSON.parse(${context}));
+  const script = `window.AntaresPage = Object.freeze(Object.assign(JSON.parse(${context}), window.AntaresPageCharts || {}));
 window.addEventListener('error', () => { document.documentElement.dataset.pageError = 'true'; });
 window.addEventListener('unhandledrejection', () => { document.documentElement.dataset.pageError = 'true'; });
 const source = URL.createObjectURL(new Blob([${encoded(page.script)}], {type: 'text/javascript'}));
@@ -168,6 +248,7 @@ import(source).catch(() => {
       `<meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>` +
       `<style>${PAGE_STYLES}</style></head><body>` +
       html +
+      (charts ? chartScripts() : '') +
       `<script type="module">${script}</script></body></html>`,
   };
 }
@@ -212,7 +293,7 @@ function embedded(page, colorScheme) {
 }
 
 function preview(page, colorScheme) {
-  const html = documents(page, colorScheme).content.replace('</head>', '<style>html{overflow:hidden}</style></head>');
+  const html = documents(page, colorScheme, { charts: false }).content.replace('</head>', '<style>html{overflow:hidden}</style></head>');
   return sanitizeHtmlForPreview(html);
 }
 

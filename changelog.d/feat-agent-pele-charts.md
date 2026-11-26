@@ -1,0 +1,3 @@
+### Added
+
+- Los gráficos ```chart del chat y los diagramas de las páginas de Agent se renderizan con el motor Pele: las barras y líneas usan `xychart` con leyenda y eje ajustado (las barras largas pasan a horizontales), el pie agrupa en «Otros» lo que repetiría color, los puntos y porciones muestran valor y porcentaje al pasar el cursor y las series se atenúan al resaltar una. Las páginas incluyen `AntaresPage.chart`/`AntaresPage.diagram` para dibujar gráficos y diagramas Mermaid (sankey, radar, treemap, gantt…) sin red, y el agente recibe una guía de selección de tipo de gráfico según el objetivo.
