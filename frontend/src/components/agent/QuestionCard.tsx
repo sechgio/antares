@@ -1,60 +1,80 @@
 import { useState } from 'react';
-import { Check, MessageCircleQuestion } from 'lucide-react';
-import { agentApi, type AgentQuestion } from '../../api/agentApi';
+import { Check } from 'lucide-react';
+import { z } from 'zod';
+import { agentApi, type AgentQuestion, type AgentToolCall } from '../../api/agentApi';
 import { errorMessage } from '../../utils/errors';
 import { useToast } from '../../hooks/useToast';
 import Button from '../ui/Button';
 
+const questionItems = z.array(z.object({ id: z.string(), prompt: z.string() })).min(1).max(3);
+const questionResult = z.object({ answers: z.record(z.string(), z.string()) });
+
+export function answeredQuestion(call: AgentToolCall) {
+  if (call.name !== 'ask_user' || call.status !== 'done' || !call.result) return null;
+  const items = questionItems.safeParse(call.params.questions);
+  if (!items.success) return null;
+  try {
+    const result = questionResult.safeParse(JSON.parse(call.result));
+    if (!result.success) return null;
+    const { answers } = result.data;
+    if (items.data.some(({ id }) => !Object.prototype.hasOwnProperty.call(answers, id) || !answers[id].trim())) return null;
+    return items.data.map(({ id, prompt }) => ({ id, prompt, answer: answers[id] }));
+  } catch {
+    return null;
+  }
+}
+
+export function AnsweredQuestion({ items }: { items: NonNullable<ReturnType<typeof answeredQuestion>> }) {
+  return <section aria-label="Pregunta respondida" className="agent-question space-y-3">
+    {items.map(({ id, prompt, answer }) => <div key={id}>
+      <p className="font-medium text-[var(--text-primary)]">{prompt}</p>
+      <p className="mt-1 flex items-baseline gap-2 whitespace-pre-wrap text-[var(--text-secondary)]">
+        <Check size={14} className="shrink-0 self-start mt-1" aria-hidden="true" />{answer}
+      </p>
+    </div>)}
+  </section>;
+}
+
+type DraftAnswer = { kind: 'option' | 'text'; value: string };
+
 export default function QuestionCard({ question, onAnswered }: { question: AgentQuestion; onAnswered: () => void }) {
   const { addToast } = useToast();
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [draft, setDraft] = useState<Record<string, DraftAnswer>>({});
   const [busy, setBusy] = useState(false);
-  const setAnswer = (id: string, value: string) => setAnswers((current) => ({ ...current, [id]: value }));
-  const submit = async () => {
+  const single = question.questions.length === 1;
+  const answers = Object.fromEntries(Object.entries(draft).map(([id, answer]) => [id, answer.value]));
+  const complete = (values: Record<string, string>) => question.questions.every(({ id }) => Object.prototype.hasOwnProperty.call(values, id) && values[id].trim());
+  const setAnswer = (id: string, answer: DraftAnswer) => setDraft((current) => ({ ...current, [id]: answer }));
+  const submit = async (values: Record<string, string>) => {
+    if (busy || !complete(values)) return;
     setBusy(true);
     try {
-      await agentApi.agentQuestionAnswer(question.session_id, question.id, answers);
+      await agentApi.agentQuestionAnswer(question.session_id, question.id, values);
       onAnswered();
-    } catch (err) { addToast({ message: errorMessage(err, 'No se pudo guardar tu respuesta'), type: 'error' }); }
-    finally { setBusy(false); }
+    } catch (err) {
+      setBusy(false);
+      addToast({ message: errorMessage(err, 'No se pudo guardar tu respuesta'), type: 'error' });
+    }
   };
-  return <form className="max-w-2xl overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]"
-    onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-    <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] px-3 py-2">
-      <MessageCircleQuestion size={13} className="text-[var(--text-muted)]" aria-hidden="true" />
-      <p className="text-[12px] font-medium text-[var(--text-primary)]">Faltan datos para continuar</p>
-    </div>
-    <div className="space-y-3 px-3 py-2.5">
+  return <form id={`agent-question-${question.id}`} aria-label="Pregunta del agente" aria-busy={busy}
+    className="agent-question space-y-3.5" onSubmit={(event) => { event.preventDefault(); void submit(answers); }}>
       {question.questions.map((item) => {
-        const answer = answers[item.id] || '';
-        const options = item.options ?? [];
-        const custom = options.includes(answer) ? '' : answer;
-        return <div key={item.id} className="space-y-1.5">
-          <label htmlFor={`question-${question.id}-${item.id}`} className="block text-[12px] leading-5 text-[var(--text-primary)]">{item.prompt}</label>
-          {options.length ? <div className="space-y-0.5">{options.map((option, index) => {
-            const selected = answer === option;
-            return <button key={option} type="button" aria-pressed={selected} disabled={busy}
-              onClick={() => setAnswer(item.id, option)}
-              className={`flex w-full items-center gap-2.5 rounded-md border px-2 py-1 text-left text-[12px] transition-colors disabled:opacity-50 ${selected
-                ? 'border-[var(--accent-primary)] bg-[var(--bg-elevated)] text-[var(--text-primary)]'
-                : 'border-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'}`}>
-              <span aria-hidden="true" className={`flex h-4 w-4 shrink-0 items-center justify-center rounded text-[10px] tabular-nums ${selected
-                ? 'bg-[var(--accent-primary)] text-[var(--bg-base)]'
-                : 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'}`}>
-                {selected ? <Check size={10} strokeWidth={2.5} /> : index + 1}
-              </span>
-              <span className="min-w-0 flex-1">{option}</span>
-            </button>;
-          })}</div> : null}
-          <input id={`question-${question.id}-${item.id}`} value={custom} disabled={busy}
+        const answer = Object.prototype.hasOwnProperty.call(draft, item.id) ? draft[item.id] : undefined;
+        const options = [...new Set(item.options?.filter((option) => option.trim()))];
+        return <div key={item.id} className="space-y-2">
+          <label htmlFor={`question-${question.id}-${item.id}`} className="block font-medium text-[var(--text-primary)]">{item.prompt}</label>
+          {options.map((option) => <Button key={option} variant="none" size="none" disabled={busy}
+            aria-pressed={single ? undefined : answer?.kind === 'option' && answer.value === option}
+            onClick={() => single ? void submit({ [item.id]: option }) : setAnswer(item.id, { kind: 'option', value: option })}
+            className="agent-question-option">{option}</Button>)}
+          <input id={`question-${question.id}-${item.id}`} value={answer?.kind === 'text' ? answer.value : ''} disabled={busy} maxLength={12000}
             placeholder={options.length ? 'Otra respuesta…' : 'Escribe tu respuesta…'}
-            onChange={(event) => setAnswer(item.id, event.target.value)}
-            className="w-full rounded-md border border-[var(--border-subtle)] bg-transparent px-2 py-1 text-[12px] text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-muted)] focus:border-[var(--accent-primary)] disabled:opacity-50" />
+            onChange={(event) => setAnswer(item.id, { kind: 'text', value: event.target.value })}
+            className="agent-panel__input" />
         </div>;
       })}
-    </div>
-    <div className="flex justify-end border-t border-[var(--border-subtle)] px-3 py-2">
-      <Button type="submit" size="sm" disabled={busy || question.questions.some((item) => !answers[item.id]?.trim())}>Responder y continuar</Button>
+    <div className="flex justify-end">
+      <Button type="submit" size="sm" disabled={busy || !complete(answers)}>{busy ? 'Enviando…' : 'Responder'}</Button>
     </div>
   </form>;
 }

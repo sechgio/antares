@@ -25,6 +25,7 @@ Qué superficies automatizadas existen, qué cubren y —con la misma importanci
 | Arranque y ciclo de vida del backend | `tests/test_backend_main.py`, `tests/test_backend_bootstrap.py`, `tests/test_handler_registry_lazy.py`, la familia `tests/test-backend-spawner-*.js` |
 | Ventana, CSP y política de archivos | `tests/test-window-manager-permissions.js`, `tests/test-window-manager-csp.js`, `tests/test-path-allowlist.js`, `tests/test-file-staging.js`, `tests/test-ipc-write-read-path-blocklist.js` |
 | Agente: grants, tools y aceptación | `tests/test_agent_acceptance_inventory.py`, `tests/test_agent_resource_grants.py`, `tests/test_agent_skills.py`, `tests/test_approval_guard.py`, la familia `tests/test_agent_*.py` y `tests/test-agent-*.js` |
+| Agente: preguntas en el chat | `frontend/src/components/agent/AgentView.test.tsx` cubre ubicación, selección y texto libre, recuperación de errores e historial |
 | Agente: navegador y computer-use | `tests/test-agent-browser-*.js`, `tests/test_computer_use_guard.py`, `tests/test_computer_use_policy.py` |
 | Canvas | `tests/test_canvas.py`, `tests/test_canvas_schema_parity.py`, `tests/test_canvas_ipc_e2e.py`, `tests/test-canvas-assets.js` y las suites Vitest de `frontend/src/components/canvas/` |
 | Persistencia y migraciones | `tests/test_json_store_migration.py`, `tests/test_history_migrations.py`, `tests/test_database.py`, `tests/test_dev_persistence_isolation.py` |
