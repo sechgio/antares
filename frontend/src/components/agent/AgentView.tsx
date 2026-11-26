@@ -4,6 +4,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -386,6 +387,9 @@ export default function AgentView({
   const atBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
+  const [composerOptionsOpen, setComposerOptionsOpen] = useState(false);
+  const composerOptionsId = useId();
+  const composerOptionsRef = useRef<HTMLButtonElement>(null);
   const suggestionsRef = useRef<HTMLDivElement | null>(null);
   const announcedRef = useRef(new Set<string>());
   const [announcement, setAnnouncement] = useState<{ key: string; text: string } | null>(null);
@@ -704,14 +708,6 @@ export default function AgentView({
       behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
     });
   };
-
-  useEffect(() => {
-    const ta = draftRef.current;
-    if (ta) {
-      ta.style.height = '0px';
-      ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`;
-    }
-  }, [draft]);
 
   const session = sessions.find((s) => s.id === sessionId) ?? null;
   const changePermissions = async (mode: AgentPermissionMode) => {
@@ -2270,7 +2266,7 @@ export default function AgentView({
             <div
               role="group"
               aria-label="Redactar mensaje"
-              className={`agent-composer relative rounded-[26px] border bg-[var(--bg-elevated)] transition-[border-color,box-shadow] ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-subtle)]'}`}
+              className={`agent-composer relative rounded-[26px] border bg-[var(--bg-elevated)] transition-[border-color,box-shadow] ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
               onDragOver={(event) => {
                 if (!sessionId || !event.dataTransfer.types.includes('Files')) return;
                 event.preventDefault();
@@ -2450,7 +2446,30 @@ export default function AgentView({
                   })}
                 </div>
               )}
-              <div className="px-4 pt-3">
+              <div className="agent-composer-row flex min-w-0 items-end gap-1.5 p-1.5">
+                <Button
+                  ref={composerOptionsRef}
+                  variant="none"
+                  size="none"
+                  className="relative mb-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--bg-input)] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                  aria-label="Opciones del mensaje"
+                  aria-expanded={composerOptionsOpen}
+                  aria-controls={composerOptionsId}
+                  aria-description={pending.length > 0 ? `${pending.length} por aprobar` : session?.permission_mode === 'full' ? 'Permisos: Acceso completo' : undefined}
+                  title="Opciones del mensaje"
+                  onClick={() => setComposerOptionsOpen((open) => !open)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape' && composerOptionsOpen) {
+                      event.stopPropagation();
+                      setComposerOptionsOpen(false);
+                    }
+                  }}
+                >
+                  <Plus size={16} aria-hidden="true" />
+                  {(pending.length > 0 || session?.permission_mode === 'full') && (
+                    <span className="absolute right-0.5 top-0.5 size-2 rounded-full bg-[var(--accent-yellow)]" aria-hidden="true" />
+                  )}
+                </Button>
                 <textarea
                   ref={draftRef}
                   rows={1}
@@ -2481,101 +2500,24 @@ export default function AgentView({
                       void send();
                     }
                   }}
-                  placeholder={running || pending.length > 0 ? 'Añade una indicación…' : 'Cuéntame qué necesitas…'}
+                  placeholder={running || pending.length > 0 ? 'Añade una indicación…' : 'Mensaje…'}
                   aria-label="Mensaje para el agente"
                   title="Intro para enviar · Mayús+Intro para otra línea · @ para mencionar · / para usar una skill"
-                  className="block max-h-36 min-h-9 w-full min-w-0 resize-none bg-transparent py-0.5 text-[14px] leading-[22px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] disabled:opacity-50"
+                  className="agent-composer-input block min-w-0 flex-1 resize-none bg-transparent text-[14px] leading-5 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)]"
                 />
-              </div>
-              <div className="agent-composer-toolbar flex min-w-0 items-center gap-1 px-2.5 pb-2.5">
-                <button
-                  type="button"
-                  className="flex size-8 shrink-0 items-center justify-center rounded-full border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
-                  onClick={() => void attach()}
-                  disabled={!sessionId}
-                  aria-label="Adjuntar archivos"
-                  title="Adjuntar archivos (solo lectura para el agente)"
-                >
-                  <Plus size={16} />
-                </button>
-                <Button
-                  variant="none"
-                  size="none"
-                  className={`flex h-8 min-w-8 max-w-44 shrink items-center justify-center gap-1.5 rounded-full text-xs text-[var(--text-secondary)] ${context?.workspace || selectingWorkspace ? 'px-2.5' : 'px-0'} transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50`}
-                  onClick={() => void selectWorkspace()}
-                  disabled={!sessionId || running || sending || selectingWorkspace}
-                  aria-label="Seleccionar carpeta de trabajo"
-                  title={
-                    context?.workspace
-                      ? `Trabajar en ${context.workspace}. Haz clic para cambiar de carpeta`
-                      : 'Elegir dónde el agente leerá, creará y editará archivos y ejecutará comandos'
-                  }
-                >
-                  <FolderOpen size={14} className="shrink-0" />
-                  <span className={context?.workspace || selectingWorkspace ? 'truncate' : 'sr-only'}>
-                    {selectingWorkspace
-                      ? 'Seleccionando…'
-                      : context?.workspace?.split(/[\\/]/).filter(Boolean).pop() || 'Carpeta de trabajo'}
+                {readyProviders.length > 0 ? (
+                  <ModelPicker
+                    providers={readyProviders}
+                    value={{ provider: session?.provider ?? provider, model: session?.model ?? model }}
+                    onChange={(next) => void changeModel(next)}
+                    disabled={sending || modelBusy || reasoningBusy || running || stopping || pending.length > 0}
+                    className="agent-composer-model min-w-0 shrink-0"
+                  />
+                ) : (
+                  <span className="agent-composer-model shrink-0 px-2 text-xs text-[var(--text-secondary)]">
+                    <span className="truncate">{session?.model || model || providerLabel || 'Proveedor IA'}</span>
                   </span>
-                </Button>
-                {context?.workspace && (
-                  <button
-                    type="button"
-                    className="-ml-1 flex size-6 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
-                    onClick={() => {
-                      if (context.workspace) void removeFile(context.workspace);
-                    }}
-                    disabled={!sessionId || selectingWorkspace}
-                    aria-label="Quitar la carpeta de trabajo"
-                    title="Quitar la carpeta de trabajo y volver a los borradores"
-                  >
-                    <X size={12} />
-                  </button>
                 )}
-                {session && (
-                  <PermissionPicker
-                    key={session.id}
-                    value={session.permission_mode ?? 'auto'}
-                    onChange={(mode) => void changePermissions(mode)}
-                    disabled={permissionsBusy || modelBusy || running || stopping || pending.length > 0}
-                    pending={pending.length}
-                    rules={session.approval_rules ?? {}}
-                    globalRules={globalRules}
-                  />
-                )}
-                <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1">
-                  {readyProviders.length > 0 ? (
-                    <ModelPicker
-                      providers={readyProviders}
-                      value={{ provider: session?.provider ?? provider, model: session?.model ?? model }}
-                      onChange={(next) => void changeModel(next)}
-                      disabled={sending || modelBusy || reasoningBusy || running || stopping || pending.length > 0}
-                      className="min-w-0 max-w-[min(40vw,240px)]"
-                    />
-                  ) : (
-                    <span className="hidden h-7 max-w-56 items-center gap-1.5 truncate px-2 sm:flex">
-                      <Sparkles size={11} className="shrink-0 text-[var(--accent-primary-hover)]" />
-                      {session?.model || model || providerLabel || 'Proveedor IA'}
-                    </span>
-                  )}
-                  {!!session?.reasoning_levels?.length && (
-                    <ReasoningPicker
-                      key={session.id}
-                      levels={session.reasoning_levels}
-                      value={session.reasoning_effort ?? 'low'}
-                      model={session.model}
-                      onChange={(effort) => void changeReasoning(effort)}
-                      disabled={sending || reasoningBusy || modelBusy || running || stopping || pending.length > 0}
-                    />
-                  )}
-                  <ContextUsage
-                    usage={usage}
-                    model={session?.model ?? model}
-                    contextWindow={contextWindow}
-                    thresholds={compactionThresholds}
-                    compacting={compacting}
-                  />
-                </div>
                 {(running || pending.length > 0) && (
                   <div className="agent-turn-actions flex shrink-0 items-center gap-0.5">
                     <Button
@@ -2626,6 +2568,94 @@ export default function AgentView({
                     <ArrowUp size={18} strokeWidth={2.25} aria-hidden="true" />
                   </button>
                 )}
+              </div>
+              <div
+                id={composerOptionsId}
+                hidden={!composerOptionsOpen}
+                role="group"
+                aria-label="Opciones del mensaje"
+                className="agent-composer-options flex flex-wrap items-center gap-1 border-t border-[var(--border-medium)] px-2 pb-2 pt-1.5"
+                onKeyDown={(event) => {
+                  if (event.key !== 'Escape' || !(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
+                  event.stopPropagation();
+                  setComposerOptionsOpen(false);
+                  composerOptionsRef.current?.focus();
+                }}
+              >
+                <Button
+                  variant="none"
+                  size="none"
+                  className="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                  onClick={() => void attach()}
+                  disabled={!sessionId}
+                  aria-label="Adjuntar archivos"
+                  title="Adjuntar archivos (solo lectura para el agente)"
+                >
+                  <Paperclip size={14} aria-hidden="true" />
+                  <span>Adjuntar</span>
+                </Button>
+                <Button
+                  variant="none"
+                  size="none"
+                  className="flex h-8 min-w-8 max-w-44 shrink items-center justify-center gap-1.5 rounded-full px-2.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                  onClick={() => void selectWorkspace()}
+                  disabled={!sessionId || running || sending || selectingWorkspace}
+                  aria-label="Seleccionar carpeta de trabajo"
+                  title={
+                    context?.workspace
+                      ? `Trabajar en ${context.workspace}. Haz clic para cambiar de carpeta`
+                      : 'Elegir dónde el agente leerá, creará y editará archivos y ejecutará comandos'
+                  }
+                >
+                  <FolderOpen size={14} className="shrink-0" />
+                  <span className="truncate">
+                    {selectingWorkspace
+                      ? 'Seleccionando…'
+                      : context?.workspace?.split(/[\\/]/).filter(Boolean).pop() || 'Carpeta de trabajo'}
+                  </span>
+                </Button>
+                {context?.workspace && (
+                  <button
+                    type="button"
+                    className="-ml-1 flex size-6 shrink-0 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                    onClick={() => {
+                      if (context.workspace) void removeFile(context.workspace);
+                    }}
+                    disabled={!sessionId || selectingWorkspace}
+                    aria-label="Quitar la carpeta de trabajo"
+                    title="Quitar la carpeta de trabajo y volver a los borradores"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+                {session && (
+                  <PermissionPicker
+                    key={session.id}
+                    value={session.permission_mode ?? 'auto'}
+                    onChange={(mode) => void changePermissions(mode)}
+                    disabled={permissionsBusy || modelBusy || running || stopping || pending.length > 0}
+                    pending={pending.length}
+                    rules={session.approval_rules ?? {}}
+                    globalRules={globalRules}
+                  />
+                )}
+                {!!session?.reasoning_levels?.length && (
+                  <ReasoningPicker
+                    key={session.id}
+                    levels={session.reasoning_levels}
+                    value={session.reasoning_effort ?? 'low'}
+                    model={session.model}
+                    onChange={(effort) => void changeReasoning(effort)}
+                    disabled={sending || reasoningBusy || modelBusy || running || stopping || pending.length > 0}
+                  />
+                )}
+                <ContextUsage
+                  usage={usage}
+                  model={session?.model ?? model}
+                  contextWindow={contextWindow}
+                  thresholds={compactionThresholds}
+                  compacting={compacting}
+                />
               </div>
             </div>
             {visibleReceipts.length > 0 && (

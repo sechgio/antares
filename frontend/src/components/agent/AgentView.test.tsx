@@ -35,6 +35,11 @@ const session: AgentSession = {
 };
 const empty: Snapshot = { messages: [], running: false, pending_approvals: [] };
 
+function openComposerOptions() {
+  const options = screen.getByRole('button', { name: 'Opciones del mensaje' });
+  if (options.getAttribute('aria-expanded') === 'false') fireEvent.click(options);
+}
+
 it('abre adjuntos y referencias en el visor sin enviar mensajes al agente', async () => {
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
     messages: [{ role: 'assistant', content: '[Notas](notas.txt)', ts: 1 }],
@@ -53,6 +58,7 @@ it('abre adjuntos y referencias en el visor sin enviar mensajes al agente', asyn
   fireEvent.click(within(screen.getByRole('dialog', { name: 'Archivos y accesos' })).getByRole('button', { name: 'Previsualizar datos.xlsx' }));
   await waitFor(() => expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'resource', resource: 'C:\\datos.xlsx' }, 0, 0));
   fireEvent.click(screen.getByRole('button', { name: 'Cerrar archivos y accesos' }));
+  openComposerOptions();
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
   fireEvent.click(screen.getByRole('button', { name: 'Previsualizar informe.pdf' }));
   await waitFor(() => expect(preview).toHaveBeenLastCalledWith('s1', { kind: 'attachment', id: 'a1', name: 'informe.pdf' }, 0, 0));
@@ -569,6 +575,7 @@ it('regula el razonamiento con los niveles del modelo y lo guarda al soltar', as
     .mockResolvedValueOnce({ session: { ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'medium' } });
   render(<AgentView />);
   await act(async () => {});
+  openComposerOptions();
   fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Alto' }));
   expect(within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByText(session.model)).toBeVisible();
   const slider = within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByRole('slider', { name: 'Nivel de razonamiento' });
@@ -592,6 +599,7 @@ it('ofrece el nivel máximo cuando el modelo lo admite', async () => {
     .mockResolvedValueOnce({ session: { ...session, reasoning_levels: [...reasoning_levels], reasoning_effort: 'max' } });
   render(<AgentView />);
   await act(async () => {});
+  openComposerOptions();
   fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Alto' }));
   const slider = within(screen.getByRole('dialog', { name: 'Nivel de razonamiento' })).getByRole('slider', { name: 'Nivel de razonamiento' });
   fireEvent.change(slider, { target: { value: '2' } });
@@ -611,6 +619,7 @@ it('bloquea ambos selectores mientras guarda el esfuerzo y conserva el valor si 
   const save = vi.spyOn(agentApi, 'agentSessionReasoningSet').mockReturnValueOnce(saving.promise);
   render(<AgentView />);
   await act(async () => {});
+  openComposerOptions();
   fireEvent.click(screen.getByRole('button', { name: 'Razonamiento: Bajo' }));
   const slider = screen.getByRole('slider');
   fireEvent.change(slider, { target: { value: '2' } });
@@ -637,6 +646,7 @@ it('cambia los permisos por conversación y conserva el modo si falla el guardad
     .mockRejectedValueOnce(new Error('No se pudieron guardar los permisos'));
   render(<AgentView />);
   await act(async () => {});
+  openComposerOptions();
   fireEvent.click(screen.getByRole('button', { name: 'Permisos: Aprobar por mí' }));
   const menu = screen.getByRole('menu', { name: 'Permisos del agente' });
   expect(within(menu).getByRole('menuitemradio', { name: /Aprobar por mí/ })).toHaveAttribute('aria-checked', 'true');
@@ -678,6 +688,7 @@ it.each([
   const decided = choice === 'allow' ? approve : deny;
   expect(decided).toHaveBeenCalledExactlyOnceWith('a1', { channel: 'cloud', rule });
   expect(choice === 'allow' ? deny : approve).not.toHaveBeenCalled();
+  openComposerOptions();
   expect(screen.getByRole('button', { name: /1 regla por canal/ })).toBeInTheDocument();
 });
 
@@ -722,6 +733,7 @@ it('permite navegar los permisos con el teclado y cierra con Escape o un clic fu
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   render(<AgentView />);
   await act(async () => {});
+  openComposerOptions();
   const trigger = screen.getByRole('button', { name: 'Permisos: Aprobar por mí' });
   fireEvent.keyDown(trigger, { key: 'ArrowUp' });
   const selected = screen.getByRole('menuitemradio', { name: /Aprobar por mí/ });
@@ -745,6 +757,7 @@ it.each(['running', 'approval'])('impide cambiar permisos durante un turno en %s
   });
   render(<AgentView />);
   await act(async () => {});
+  openComposerOptions();
   const trigger = screen.getByRole('button', { name: 'Permisos: Aprobar por mí' });
   expect(trigger).toBeDisabled();
   fireEvent.click(trigger);
@@ -770,6 +783,7 @@ it.each<{ mode: AgentPermissionMode; label: string }>([
   const saveMode = vi.spyOn(agentApi, 'agentSessionPermissionsSet');
   render(<AgentView />);
   await act(async () => {});
+  openComposerOptions();
   expect(screen.getByRole('button', { name: `Permisos: ${label}` })).toBeDisabled();
   const card = within(screen.getByRole('group', { name: 'Confirmación de acción' }));
   expect(card.getByText('Subir un borrador a Google Drive')).toBeInTheDocument();
@@ -958,6 +972,7 @@ it('activa la carpeta de trabajo antes de enviar y mantiene solo archivos en los
   render(<AgentView />);
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  openComposerOptions();
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
   await act(async () => { fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo')); });
   expect(select).toHaveBeenCalledExactlyOnceWith('s1');
@@ -985,6 +1000,7 @@ it('conserva la carpeta y el borrador al cancelar o fallar su selección', async
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Revisa el proyecto' } });
+  openComposerOptions();
   await act(async () => { fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo')); });
   await act(async () => { fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo')); });
   expect(select).toHaveBeenCalledTimes(2);
@@ -1051,6 +1067,7 @@ it.each([false, true])('el reintento conserva la identidad solo con los mismos a
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Revisa los datos' } });
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Revisa los datos');
+  openComposerOptions();
   if (changed) await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   const [first, second] = vi.mocked(agentApi.agentMessageSend).mock.calls;
@@ -1090,6 +1107,7 @@ it('presenta la cola en orden y permite quitar un pendiente sin perder el borrad
   const input = composer.getByRole('textbox', { name: 'Mensaje para el agente' });
   fireEvent.change(input, { target: { value: 'Primero revisa las firmas' } });
   await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Dejar para después' })); });
+  openComposerOptions();
   await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Adjuntar archivos' })); });
   fireEvent.change(input, { target: { value: 'Después compara el informe' } });
   await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Dejar para después' })); });
@@ -1384,6 +1402,7 @@ it.each(['rechazo', 'sin aceptación'])('una indicación con %s conserva borrado
   render(<AgentView />);
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  openComposerOptions();
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa esta plantilla' } });
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Indicar ahora' })); });
@@ -1411,6 +1430,7 @@ it('muestra el contexto de la conversación y permite retirar un archivo concedi
   expect(screen.queryByText('informe.pdf')).toBeNull();
   expect(screen.getByText('Sellador')).toBeInTheDocument();
   expect(screen.getByText('ana@example.com')).toBeInTheDocument();
+  openComposerOptions();
   const usage = screen.getByRole('button', { name: 'Contexto usado' });
   fireEvent.mouseEnter(usage);
   expect(screen.getByRole('tooltip')).toHaveTextContent('Entrada1,5 kSalida200');
@@ -1433,6 +1453,7 @@ it('permite quitar la carpeta de trabajo desde el compositor', async () => {
   render(<AgentView />);
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  openComposerOptions();
   expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('proyecto');
   await act(async () => { fireEvent.click(screen.getByLabelText('Quitar la carpeta de trabajo')); });
   expect(remove).toHaveBeenCalledWith('s1', 'C:\\proyecto');
@@ -1658,7 +1679,7 @@ it('muestra la bienvenida sin sugerencias de mensajes predefinidos', async () =>
   render(<AgentView />);
   await act(async () => {});
   expect(screen.getByText(/^Puedo ayudarte a preparar informes/)).toBeVisible();
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveAttribute('placeholder', 'Cuéntame qué necesitas…');
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveAttribute('placeholder', 'Mensaje…');
   expect(screen.queryByRole('group', { name: 'Sugerencias' })).not.toBeInTheDocument();
 });
 
@@ -1922,14 +1943,50 @@ it('confirma la recepción solo tras la admisión y conserva ese recibo si falla
   expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText(/El estado mostrado puede estar desactualizado/)).toBeVisible();
 });
 
-it('el composer muestra los permisos en su barra y sin pista de teclado', async () => {
+it('muestra modelo y envío en la cápsula y despliega las opciones con el botón más', async () => {
   localStorage.setItem('antares-agent-session', session.id);
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.spyOn(aiProvidersApi, 'aiProviderStatus').mockResolvedValue({
+    provider: { ...suggestionProvider, reachable: true, models_count: 2, models: ['prueba', 'otro-modelo'], error: null },
+  });
+  const saveModel = vi.spyOn(agentApi, 'agentSessionModelSet')
+    .mockResolvedValueOnce({ session: { ...session, model: 'otro-modelo' } })
+    .mockResolvedValueOnce({ session });
   render(<AgentView />);
   await act(async () => {});
   const composer = within(screen.getByRole('group', { name: 'Redactar mensaje' }));
-  expect(composer.getByRole('button', { name: 'Permisos: Aprobar por mí' })).toBeVisible();
+  const trigger = composer.getByRole('button', { name: 'Opciones del mensaje' });
+  const model = composer.getByRole('button', { name: 'Elegir proveedor y modelo' });
+  expect(model).toBeVisible();
+  expect(composer.getByRole('button', { name: 'Enviar' })).toBeVisible();
+  expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  expect(composer.queryByRole('button', { name: 'Adjuntar archivos' })).not.toBeInTheDocument();
+
+  fireEvent.click(trigger);
+  expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  const options = within(composer.getByRole('group', { name: 'Opciones del mensaje' }));
+  const attach = options.getByRole('button', { name: 'Adjuntar archivos' });
+  expect(attach).toBeVisible();
+  expect(options.getByRole('button', { name: 'Seleccionar carpeta de trabajo' })).toBeVisible();
+  expect(options.getByRole('button', { name: 'Permisos: Aprobar por mí' })).toBeVisible();
+  attach.focus();
+  fireEvent.keyDown(attach, { key: 'Escape' });
+  expect(trigger).toHaveFocus();
+  expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  expect(composer.queryByRole('group', { name: 'Opciones del mensaje' })).not.toBeInTheDocument();
+  expect(model).toBeVisible();
   expect(screen.queryByText('Mayús + Intro para una nueva línea')).not.toBeInTheDocument();
+
+  fireEvent.click(model);
+  fireEvent.click(await screen.findByRole('option', { name: 'otro-modelo' }));
+  await waitFor(() => expect(model).toHaveTextContent('otro-modelo'));
+  expect(saveModel).toHaveBeenLastCalledWith(session.id, session.provider, 'otro-modelo');
+
+  fireEvent.click(model);
+  fireEvent.click(await screen.findByRole('option', { name: 'prueba' }));
+  await waitFor(() => expect(model).toHaveTextContent('prueba'));
+  expect(saveModel).toHaveBeenLastCalledWith(session.id, session.provider, 'prueba');
 });
 
 it('un mensaje sin aceptación conserva su borrador y ofrece recuperar la misma petición', async () => {
@@ -1979,6 +2036,7 @@ it.each(['texto nuevo', 'texto idéntico editado', 'adjunto nuevo', 'adjunto qui
   vi.mocked(agentApi.agentMessageSend).mockRejectedValueOnce(new Error('Respuesta perdida')).mockReturnValueOnce(admitted.promise);
   render(<AgentView />);
   await act(async () => {});
+  openComposerOptions();
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
   const input = screen.getByLabelText('Mensaje para el agente');
   fireEvent.change(input, { target: { value: 'Encargo original' } });
@@ -2011,6 +2069,7 @@ it.each(['aceptado', 'sin confirmar'])('conserva la edición y adjuntos hechos d
   vi.mocked(agentApi.agentMessageSend).mockReturnValue(admitted.promise);
   render(<AgentView />);
   await act(async () => {});
+  openComposerOptions();
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
   const input = screen.getByLabelText('Mensaje para el agente');
   fireEvent.change(input, { target: { value: 'Primero' } });
@@ -2053,6 +2112,7 @@ it.each(['aceptado', 'sin confirmar'])('mantiene el recibo de un envío %s en su
   render(<AgentView />);
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
+  openComposerOptions();
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
   fireEvent.change(input, { target: { value: 'Encargo del primer chat' } });
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
@@ -2128,6 +2188,7 @@ it.each([
   vi.mocked(agentApi.agentMessageSend).mockReturnValueOnce(admitted.promise);
   const first = render(<AgentView />);
   await act(async () => {});
+  openComposerOptions();
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Encargo original' } });
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: correction ? 'Indicar ahora' : 'Enviar', exact: true })); });
