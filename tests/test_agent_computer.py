@@ -757,6 +757,52 @@ def test_task_plan_resolves_dependencies_and_ready_steps():
         ]})
 
 
+def test_task_plan_validates_evidence_ref():
+    with pytest.raises(ValueError, match="objeto"):
+        task_plan.update({"goal": "g", "steps": [
+            {"title": "a", "status": "done", "evidence": "visto", "evidence_ref": "tool_call"},
+        ]})
+    with pytest.raises(ValueError, match="kind"):
+        task_plan.update({"goal": "g", "steps": [
+            {"title": "a", "status": "done", "evidence": "visto", "evidence_ref": {"kind": "magia", "ref": "x"}},
+        ]})
+    with pytest.raises(ValueError, match="ref"):
+        task_plan.update({"goal": "g", "steps": [
+            {"title": "a", "status": "done", "evidence": "visto", "evidence_ref": {"kind": "tool_call", "ref": "  "}},
+        ]})
+    out = task_plan.update({"goal": "g", "steps": [
+        {"title": "a", "status": "done", "evidence": "visto",
+         "evidence_ref": {"kind": "tool_call", "ref": " call-1 "}},
+    ]})
+    assert out["plan"]["steps"][0]["evidence_ref"] == {"kind": "tool_call", "ref": "call-1"}
+    long_ref = task_plan.update({"goal": "g", "steps": [
+        {"title": "a", "status": "done", "evidence": "visto",
+         "evidence_ref": {"kind": "file", "ref": "r" * (task_plan._MAX_EVIDENCE_REF_CHARS + 20)}},
+    ]})
+    assert len(long_ref["plan"]["steps"][0]["evidence_ref"]["ref"]) == task_plan._MAX_EVIDENCE_REF_CHARS
+
+
+def test_task_plan_reports_failed_steps_as_unresolved():
+    out = task_plan.update({"goal": "g", "steps": [
+        {"title": "Leer", "status": "done", "evidence": "visto"},
+        {"title": "Publicar", "status": "failed"},
+    ]})
+    assert out["failed"] == ["Publicar"]
+    assert out["remaining"] == []
+    assert out["next_step"] == "Publicar"
+    assert "fallidos" in out["next"]
+    clean = task_plan.update({"goal": "g", "steps": [
+        {"title": "a", "status": "done", "evidence": "visto"},
+    ]})
+    assert "failed" not in clean
+
+
+def test_task_plan_contract_covers_evidence_ref():
+    contract = json.loads(resource_path("shared/agent-plan.json").read_text(encoding="utf-8"))
+    assert contract["max_evidence_ref_chars"] == task_plan._MAX_EVIDENCE_REF_CHARS
+    assert list(contract["evidence_ref_kinds"]) == list(task_plan._EVIDENCE_REF_KINDS)
+
+
 def test_desktop_keys_and_coordinates_are_validated():
     assert computer_desktop._vk_for("Enter") == 0x0D and computer_desktop._vk_for("a") == ord("A")
     assert computer_desktop._vk_for("F5") == 0x74

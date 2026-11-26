@@ -17,6 +17,7 @@ const TASKS = [
     prompt:
       'Sin usar herramientas, resume en tres frases qué tipo de trabajo puedes hacer en Antares y qué límites de seguridad respetas.',
     seedFiles: [],
+    expect: ['no_tools'],
   },
   {
     id: 'lectura_espacio',
@@ -33,6 +34,20 @@ const TASKS = [
     prompt:
       'Prepara con task_plan un plan de tres pasos para generar el volante mensual de ventas y deja el primer paso en progreso.',
     seedFiles: [],
+    expect: ['plan'],
+  },
+  {
+    id: 'multistep_verificado',
+    prompt:
+      'En tu espacio de trabajo hay un README.md: léelo, escribe un archivo resumen.txt con una frase que lo resuma, ' +
+      'vuelve a leer resumen.txt para comprobar el contenido y dime en una frase qué escribiste.',
+    seedFiles: [
+      {
+        name: 'README.md',
+        content: '# Reporte mensual\n\nLas ventas de abril subieron un 12 % respecto a marzo.',
+      },
+    ],
+    expect: ['plan', 'evidence_done', 'no_repeats'],
   },
   {
     id: 'memoria',
@@ -158,6 +173,66 @@ function stepsOf(messages) {
   return steps;
 }
 
+function stableSignature(call) {
+  return call.name + ':' + JSON.stringify(call.params || {});
+}
+
+const ASSERTIONS = {
+  // El encargo multi-paso produce un plan durable.
+  plan(messages) {
+    return messages.some((message) => (message.tool_calls || []).some((call) => call.name === 'task_plan'));
+  },
+  // Los pasos marcados done en el último plan llevan evidencia o evidence_ref.
+  evidence_done(messages) {
+    const plans = [];
+    for (const message of messages) {
+      for (const call of message.tool_calls || []) {
+        if (call.name === 'task_plan' && call.status === 'done') plans.push(call);
+      }
+    }
+    if (!plans.length) return false;
+    const last = plans[plans.length - 1];
+    const steps = (last.params && last.params.steps) || [];
+    const done = steps.filter((step) => step && step.status === 'done');
+    return (
+      done.length > 0 &&
+      done.every((step) => String(step.evidence || '').trim() || (step.evidence_ref && String(step.evidence_ref.ref || '').trim()))
+    );
+  },
+  // Ninguna llamada idéntica se repite tres veces o más.
+  no_repeats(messages) {
+    const counts = new Map();
+    for (const message of messages) {
+      for (const call of message.tool_calls || []) {
+        const signature = stableSignature(call);
+        counts.set(signature, (counts.get(signature) || 0) + 1);
+      }
+    }
+    return [...counts.values()].every((count) => count < 3);
+  },
+  // La respuesta no afirma verificación sin ninguna lectura ejecutada.
+  no_empty_verify(messages) {
+    const answer = finalAssistant(messages, 0);
+    if (!answer) return false;
+    const claimsVerify = /verific|comprob|confirm/i.test(String(answer.content || ''));
+    if (!claimsVerify) return true;
+    return messages.some((message) =>
+      (message.tool_calls || []).some((call) => call.status === 'done' && call.gated === false),
+    );
+  },
+  // El encargo no usa herramientas (para preguntas directas).
+  no_tools(messages) {
+    return !messages.some((message) => (message.tool_calls || []).length);
+  },
+};
+
+function evaluateAssertions(task, messages) {
+  return (task.expect || []).map((id) => ({
+    id,
+    pass: typeof ASSERTIONS[id] === 'function' ? !!ASSERTIONS[id](messages) : false,
+  }));
+}
+
 function usageOf(rawUsage) {
   if (!rawUsage) return null;
   return {
@@ -174,11 +249,19 @@ function traceOf(task, { startedAt, elapsedMs, messages, usage, lastError, statu
   const answer = finalAssistant(messages, startedAt - 2_000);
   const steps = stepsOf(messages);
   const visibleAnswer = (answer && String(answer.content || '').trim()) || '';
+  const assertions = evaluateAssertions(task, messages);
+  const assertionsPassed = assertions.filter((item) => item.pass).length;
   return {
     id: task.id,
     prompt: task.prompt,
     status,
-    success: status === 'completed' && !lastError && visibleAnswer.length > 0,
+    success:
+      status === 'completed' &&
+      !lastError &&
+      visibleAnswer.length > 0 &&
+      assertions.every((item) => item.pass),
+    assertions,
+    assertion_score: assertions.length ? assertionsPassed / assertions.length : null,
     error: lastError || null,
     duration_ms: elapsedMs,
     steps,
@@ -343,6 +426,9 @@ async function main() {
             `en ${Math.round(trace.duration_ms / 100) / 10}s, ${trace.step_count} pasos, ` +
             `${trace.usage ? `${trace.usage.input + trace.usage.output} tokens` : 'sin uso'}`,
         );
+        for (const item of trace.assertions || []) {
+          if (!item.pass) console.log(`[agent-eval]   aserción conductual fallida: ${item.id}`);
+        }
       }
     } finally {
       meta.finished_at = new Date().toISOString();
@@ -374,4 +460,4 @@ if (require.main === module)
     console.error(`[agent-eval] ${error.message}`);
     process.exitCode = 1;
   });
-module.exports = { TASKS, parseArgs, finalAssistant, stepsOf, traceOf, usageOf };
+module.exports = { TASKS, parseArgs, finalAssistant, stepsOf, traceOf, usageOf, evaluateAssertions, ASSERTIONS };

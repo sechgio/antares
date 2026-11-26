@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { TASKS, parseArgs, finalAssistant, stepsOf, traceOf, usageOf } = require('../scripts/agent-eval');
+const { TASKS, parseArgs, finalAssistant, stepsOf, traceOf, usageOf, evaluateAssertions, ASSERTIONS } = require('../scripts/agent-eval');
 
 const NOW = 1_000_000;
 const assistantMsg = (text, ts, extra = {}) => ({ ...extra, role: 'assistant', content: text, ts });
@@ -84,6 +84,91 @@ const cases = {
       messages: [assistantMsg('x'.repeat(5_000), NOW + 1_000)],
     });
     assert(trace.answer.length <= 4_000 && trace.answer.length > 3_500, 'la respuesta de la traza debe acotarse');
+  },
+  'las aserciones conductuales evalúan planificación, evidencia y repeticiones': () => {
+    const planMessages = [
+      {
+        role: 'assistant',
+        content: '',
+        ts: NOW,
+        tool_calls: [
+          {
+            id: 'c1',
+            name: 'task_plan',
+            status: 'done',
+            params: { goal: 'g', steps: [{ title: 'Leer', status: 'done', evidence: 'fs_read muestra el archivo' }] },
+          },
+        ],
+      },
+      assistantMsg('Listo, verificado.', NOW + 1_000),
+    ];
+    assert.equal(ASSERTIONS.plan(planMessages), true, 'el plan se detecta');
+    assert.equal(ASSERTIONS.evidence_done(planMessages), true, 'la evidencia del paso done cuenta');
+    assert.equal(ASSERTIONS.no_repeats(planMessages), true);
+    assert.equal(ASSERTIONS.no_empty_verify(planMessages), false, 'afirmar verificación sin lecturas no cuela');
+    assert.equal(ASSERTIONS.plan([]), false);
+    assert.equal(ASSERTIONS.evidence_done([]), false, 'sin plan no hay evidencia válida');
+    const withoutEvidence = [
+      {
+        role: 'assistant',
+        content: '',
+        ts: NOW,
+        tool_calls: [
+          { id: 'c1', name: 'task_plan', status: 'done', params: { goal: 'g', steps: [{ title: 'Leer', status: 'done' }] } },
+        ],
+      },
+    ];
+    assert.equal(ASSERTIONS.evidence_done(withoutEvidence), false, 'un done sin evidencia no supera la aserción');
+    const repeated = [
+      {
+        role: 'assistant',
+        content: '',
+        ts: NOW,
+        tool_calls: [1, 2, 3].map((n) => ({ id: `c${n}`, name: 'web_click', params: { ref: '1' } })),
+      },
+    ];
+    assert.equal(ASSERTIONS.no_repeats(repeated), false, 'tres llamadas idénticas rompen la aserción');
+    const withRef = [
+      {
+        role: 'assistant',
+        content: '',
+        ts: NOW,
+        tool_calls: [
+          {
+            id: 'c1',
+            name: 'task_plan',
+            status: 'done',
+            params: { goal: 'g', steps: [{ title: 'Leer', status: 'done', evidence_ref: { kind: 'tool_call', ref: 'c0' } }] },
+          },
+        ],
+      },
+    ];
+    assert.equal(ASSERTIONS.evidence_done(withRef), true, 'evidence_ref también satisface la evidencia');
+  },
+  'evaluateAssertions puntúa solo las expectativas declaradas': () => {
+    const task = { id: 'x', expect: ['plan', 'no_such_assertion'] };
+    const result = evaluateAssertions(task, []);
+    assert.deepEqual(result, [
+      { id: 'plan', pass: false },
+      { id: 'no_such_assertion', pass: false },
+    ]);
+    assert.deepEqual(evaluateAssertions({ id: 'y' }, []), [], 'sin expectativas no hay aserciones');
+  },
+  'traceOf exige las aserciones conductuales declaradas para el éxito': () => {
+    const task = { id: 'multi', prompt: 'trabajo multi-paso', expect: ['plan'] };
+    const base = { startedAt: NOW, elapsedMs: 900, usage: null, lastError: null, status: 'completed' };
+    const noPlan = traceOf(task, { ...base, messages: [assistantMsg('Listo.', NOW + 1_000)] });
+    assert.equal(noPlan.success, false, 'completar sin planificar no es éxito cuando se exige plan');
+    assert.equal(noPlan.assertion_score, 0);
+    const withPlan = traceOf(task, {
+      ...base,
+      messages: [
+        { role: 'assistant', content: '', ts: NOW, tool_calls: [{ id: 'c1', name: 'task_plan', status: 'done', params: {} }] },
+        assistantMsg('Listo.', NOW + 1_000),
+      ],
+    });
+    assert.equal(withPlan.success, true, 'con plan y respuesta la tarea es éxito');
+    assert.equal(withPlan.assertion_score, 1);
   },
   'parseArgs acepta los flags de la CLI y rechaza desconocidos': () => {
     const args = parseArgs(['--provider', 'openai', '--tasks', 'a, b', '--timeout', '5', '--dry-run']);

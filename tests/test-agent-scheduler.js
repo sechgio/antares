@@ -153,6 +153,86 @@ async function main() {
     assert.equal((await list()).find((task) => task.id === created.scheduled.id).status, 'cancelled');
     await assert.rejects(runtime.handlers.agent_tasks_run({ id: created.scheduled.id }), /cancelado/);
 
+    const slowTask = await runtime.handlers.agent_tasks_save({
+      session_id: session.id, content: 'Encargo lento de verificación', due_at: future,
+    });
+    let releaseSlow;
+    let slowStarted = false;
+    faux.setResponses([
+      () => new Promise((resolve) => {
+        slowStarted = true;
+        releaseSlow = () => resolve(fauxAssistantMessage('Verificación lenta terminada'));
+      }),
+    ]);
+    await runtime.handlers.agent_tasks_run({ id: slowTask.scheduled.id });
+    await until(() => slowStarted);
+    const midFlight = (await list()).find((task) => task.id === slowTask.scheduled.id);
+    assert.equal(midFlight.status, 'delivering', 'el encargo sigue en entrega mientras el turno trabaja');
+    assert.equal(midFlight.runs.length, 0, 'no se registra entrega antes de terminar el trabajo');
+    releaseSlow();
+    await until(async () => (await list()).find((task) => task.id === slowTask.scheduled.id)?.status === 'delivered');
+    const slowDone = (await list()).find((task) => task.id === slowTask.scheduled.id);
+    assert.equal(slowDone.runs.at(-1).status, 'delivered', 'la entrega se registra cuando el turno termina, no al encolar');
+
+    const contTask = await runtime.handlers.agent_tasks_save({
+      session_id: session.id, content: 'Encargo que se interrumpe a mitad', due_at: future,
+    });
+    let contContext = '';
+    let contHanging = false;
+    faux.setResponses([
+      () => new Promise(() => {
+        contHanging = true;
+      }),
+      (context) => {
+        contContext = JSON.stringify(context.messages);
+        return fauxAssistantMessage('Encargo reanudado y terminado');
+      },
+    ]);
+    await runtime.handlers.agent_tasks_run({ id: contTask.scheduled.id });
+    await until(() => contHanging);
+    const stateForContinuation = runtime._internal.state();
+    await stateForContinuation.harness.commit(async (tx) => {
+      const sdoc = await tx.doc(stateForContinuation.SessionsDoc);
+      const current = sdoc.sessions[session.id];
+      current.continuation = { reason: 'tool_budget', rounds: 40, pending_steps: ['Verificar el resultado'], created_at: Date.now() };
+    }, ctx());
+    await runtime.handlers.agent_turn_cancel({ session_id: session.id });
+    await until(() => !!contContext);
+    assert.match(contContext, /Encargo que se interrumpe a mitad/, 'la continuación conserva el encargo original');
+    assert.match(contContext, /Checkpoint registrado por Antares/, 'la continuación inyecta el checkpoint estructurado');
+    assert.match(contContext, /Verificar el resultado/, 'el checkpoint nombra los pasos pendientes');
+    await until(async () => (await list()).find((task) => task.id === contTask.scheduled.id)?.status === 'delivered');
+    const contDone = (await list()).find((task) => task.id === contTask.scheduled.id);
+    assert.equal(contDone.runs.at(-1).status, 'delivered', 'la continuación automática completa el encargo');
+    assert.equal(contDone.current_request_id, undefined, 'el seguimiento de la entrega se limpia al terminar');
+
+    const capTask = await runtime.handlers.agent_tasks_save({
+      session_id: session.id, content: 'Encargo que agota sus continuaciones', due_at: future,
+    });
+    let capHanging = false;
+    faux.setResponses([
+      () => new Promise(() => {
+        capHanging = true;
+      }),
+    ]);
+    await runtime.handlers.agent_tasks_run({ id: capTask.scheduled.id });
+    await until(() => capHanging);
+    await stateForContinuation.harness.commit(async (tx) => {
+      const sdoc = await tx.doc(stateForContinuation.SessionsDoc);
+      sdoc.sessions[session.id].continuation = { reason: 'tool_budget', rounds: 40, pending_steps: [], created_at: Date.now() };
+      const tdoc = await tx.doc(stateForContinuation.TasksDoc);
+      tdoc.tasks[capTask.scheduled.id].continuation_rounds = 3;
+    }, ctx());
+    await runtime.handlers.agent_turn_cancel({ session_id: session.id });
+    await until(async () => (await list()).find((task) => task.id === capTask.scheduled.id)?.status === 'uncertain');
+    const capDone = (await list()).find((task) => task.id === capTask.scheduled.id);
+    assert.match(capDone.last_error, /se detuvo antes de completar/, 'agotadas las continuaciones el encargo queda incierto');
+    assert.equal(capDone.runs.at(-1).status, 'uncertain');
+    await stateForContinuation.harness.commit(async (tx) => {
+      const sdoc = await tx.doc(stateForContinuation.SessionsDoc);
+      delete sdoc.sessions[session.id].continuation;
+    }, ctx());
+
     await scheduler.stop();
     const state = runtime._internal.state();
     const now = Date.now();

@@ -23,4 +23,31 @@ function recordRun(task, entry) {
   else if (entry.status === 'delivered') delete task.last_error;
 }
 
-module.exports = { MAX_RUNS, isActiveTask, pruneTasks, recordRun };
+const MAX_TASK_CONTINUATIONS = 3;
+
+async function submitContinuation(state, session, task, requestId) {
+  const { shared, ctx, conversation, continuationContext } = require('./agent-shared');
+  try {
+    const conv = await conversation(session.id);
+    const checkpoint = (await continuationContext(session)) ||
+      'El turno anterior se interrumpió antes de completar el encargo.';
+    const placed = await conv.submit(
+      {
+        type: 'input',
+        content:
+          shared.CONTEXT_MARKER + '\n' +
+          'Continuación automática del encargo retenido: reanuda el trabajo donde quedó. ' +
+          checkpoint,
+        requestId,
+        whenBusy: 'followUp',
+      },
+      ctx(),
+    );
+    return !!placed;
+  } catch (err) {
+    console.warn('[agent] continuación automática falló:', require('./agent-execution').sanitizeProviderError(String((err && err.message) || err)));
+    return false;
+  }
+}
+
+module.exports = { MAX_RUNS, MAX_TASK_CONTINUATIONS, isActiveTask, pruneTasks, recordRun, submitContinuation };

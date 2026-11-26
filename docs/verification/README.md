@@ -15,7 +15,7 @@ Qué superficies automatizadas existen, qué cubren y —con la misma importanci
 | Backend pytest | `uv run --locked --extra dev python -m pytest ../tests/test_<x>.py` desde `backend/` | `python -m pytest` y no el launcher `pytest.exe`: en algunos entornos Windows el launcher no puede escribir en `%LOCALAPPDATA%\Temp` y `gettempdir()` cae al cwd, contaminando `backend/` |
 | Test Node de shell/scripts | `node tests/test-<x>.js` | Cada archivo es autocontenido, usa `tests/helpers/harness.js` y sale con código no-cero al fallar |
 | Frontend Vitest | `bun run test` en `frontend/` | Higiene de la suite en [AGENTS.md](../../AGENTS.md#limpieza-en-pruebas-frontend-vitest) |
-| Eval conductual del agente | `node scripts/agent-eval.js --provider <p> [--tasks id,...] [--dry-run]` | Ejercita un provider real con las credenciales del entorno; no corre en CI |
+| Eval conductual del agente | `node scripts/agent-eval.js --provider <p> [--tasks id,...] [--dry-run]` | Ejercita un provider real con las credenciales del entorno y puntúa aserciones conductuales (planificación, evidencia, repeticiones); no corre en CI |
 
 ## Cobertura automatizada
 
@@ -38,7 +38,7 @@ Qué superficies automatizadas existen, qué cubren y —con la misma importanci
 Nada de esto tiene cobertura automatizada hoy; verificar un cambio en estas áreas es manual y se reporta como tal:
 
 - **El instalador de Windows de principio a fin**: instalación NSIS en una máquina limpia, updater firmado aplicando una release real y arranque de la build empaquetada con el store del usuario.
-- **La calidad de las respuestas del modelo**: `scripts/agent-eval.js` muestrea comportamiento contra un provider real, pero no hay aserciones de calidad ni cobertura en CI.
+- **La calidad de las respuestas del modelo**: `scripts/agent-eval.js` puntúa aserciones conductuales contra un provider real (crear plan en trabajo multi-paso, evidencia en pasos `done`, no repetir llamadas idénticas), pero no corre en CI ni cubre la corrección semántica del contenido.
 - **Supabase real**: RLS contra un proyecto vivo, Realtime y Edge Functions desplegadas; solo hay contratos locales (`tests/test_supabase_edge_cors.py`, `test_supabase_schema_audit.py`).
 - **Google OAuth y Drive reales**: el flujo de consentimiento y la sincronización contra la API viva se prueban con fakes (`tests/test-autoimg-*.js`).
 - **El shell Electron real**: los tests de `electron/` ejercitan los módulos contra fakes de procesos y ventanas, no una instancia Electron viva; el recorrido visual de la UI se verifica a mano (la skill `smoke`, si está instalada, describe el formato).
