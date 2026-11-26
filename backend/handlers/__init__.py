@@ -12,6 +12,8 @@ from backend.core.ipc_catalog import BACKEND_HANDLER_MODULES, handler_module_for
 from backend.core.observability import log_event
 from backend.core.state import process_state, reset_state
 
+HEAVY_DEPS_WARM_DELAY_SECONDS = 8.0
+
 logger = logging.getLogger(__name__)
 
 WARM_CRITICAL_DONE = threading.Event()
@@ -110,7 +112,7 @@ class HandlerRegistry:
 
             def _warm_heavy_deps() -> None:
                 warmed = []
-                for module_name in ("weasyprint", "pandas", "openpyxl", "pymupdf", "docx"):
+                for module_name in ("pandas", "openpyxl", "pymupdf", "docx", "weasyprint"):
                     try:
                         with serialized_import():
                             importlib.import_module(module_name)
@@ -124,8 +126,11 @@ class HandlerRegistry:
 
             executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="history-warm")
             executor.submit(_warm_history_bg)
-            executor.submit(_warm_heavy_deps)
             executor.shutdown(wait=False)
+
+            timer = threading.Timer(HEAVY_DEPS_WARM_DELAY_SECONDS, _warm_heavy_deps)
+            timer.daemon = True
+            timer.start()
         except Exception:
             logger.exception("history schema background warm submission failed")
 
