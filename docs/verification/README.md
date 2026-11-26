@@ -26,6 +26,7 @@ Qué superficies automatizadas existen, qué cubren y —con la misma importanci
 | Ventana, CSP y política de archivos | `tests/test-window-manager-permissions.js`, `tests/test-window-manager-csp.js`, `tests/test-path-allowlist.js`, `tests/test-file-staging.js`, `tests/test-ipc-write-read-path-blocklist.js` |
 | Agente: grants, tools y aceptación | `tests/test_agent_acceptance_inventory.py`, `tests/test_agent_resource_grants.py`, `tests/test_agent_skills.py`, `tests/test_approval_guard.py`, la familia `tests/test_agent_*.py` y `tests/test-agent-*.js` |
 | Agente: navegador y computer-use | `tests/test-agent-browser-*.js`, `tests/test_computer_use_guard.py`, `tests/test_computer_use_policy.py` |
+| Agente: apertura y creación de conversaciones | `frontend/src/components/agent/AgentView.test.tsx`: reabre el historial desde la tarjeta fijada y el selector compacto, limita a una la primera creación simultánea y verifica la acción explícita para iniciar otra |
 | Canvas | `tests/test_canvas.py`, `tests/test_canvas_schema_parity.py`, `tests/test_canvas_ipc_e2e.py`, `tests/test-canvas-assets.js` y las suites Vitest de `frontend/src/components/canvas/` |
 | Persistencia y migraciones | `tests/test_json_store_migration.py`, `tests/test_history_migrations.py`, `tests/test_database.py`, `tests/test_dev_persistence_isolation.py` |
 | Dominios de reportes y conversión | las familias `tests/test_technical_reports_*.py`, `tests/test_informes_v2_*.py`, `tests/test_conversion_*.py`, `tests/test_renamer*.py` |
