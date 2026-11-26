@@ -266,7 +266,7 @@ it('conserva el bot seleccionado en la cola restaurada aunque cambie su nombre',
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Consulta @bot:bot-original', expect.any(String), []);
 });
 
-it('muestra agentes y conversaciones en una sola lista con un buscador común', async () => {
+it('separa el desplazamiento de agentes y conversaciones y conserva el buscador común', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [{
@@ -277,8 +277,15 @@ it('muestra agentes y conversaciones en una sola lista con un buscador común', 
   await act(async () => {});
   const sidebar = within(screen.getByRole('complementary', { name: 'Agentes y conversaciones' }));
   expect(sidebar.queryByRole('group', { name: 'Vistas del agente' })).not.toBeInTheDocument();
-  expect(within(sidebar.getByRole('region', { name: 'Agentes' })).getByTitle('Abrir conversación con Revisor de PDFs')).toBeInTheDocument();
-  expect(within(sidebar.getByRole('region', { name: 'Conversaciones' })).getByRole('button', { name: 'Primera' })).toBeInTheDocument();
+  const agents = sidebar.getByRole('region', { name: 'Agentes' });
+  const conversations = sidebar.getByRole('region', { name: 'Conversaciones' });
+  expect(within(agents).getByTitle('Abrir conversación con Revisor de PDFs')).toBeInTheDocument();
+  expect(within(conversations).getByRole('button', { name: 'Primera' })).toBeInTheDocument();
+  expect(agents).toHaveClass('overflow-y-auto');
+  const conversationScroll = conversations.closest('.overflow-y-auto');
+  expect(conversationScroll).toBeInTheDocument();
+  expect(conversationScroll).not.toContainElement(agents);
+  expect(agents.parentElement?.closest('.overflow-y-auto')).toBeNull();
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador pendiente' } });
   fireEvent.click(sidebar.getByRole('button', { name: 'Buscar agentes y conversaciones' }));
   fireEvent.change(sidebar.getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), { target: { value: 'firmas' } });

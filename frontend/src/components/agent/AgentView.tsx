@@ -1579,7 +1579,7 @@ export default function AgentView({
             </div>
           )}
 
-          <div className="custom-scrollbar mt-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1">
+          <div className="mt-1 flex min-h-0 flex-1 flex-col gap-0.5 px-1">
             {(() => {
               const query = search.trim();
               const arrangedProfiles = arrangeSidebar(visibleProfiles, sidebarPrefs, showHidden || Boolean(query));
@@ -1730,7 +1730,7 @@ export default function AgentView({
               );
               return (
                 <>
-                  <section aria-label="Agentes" className="flex flex-col gap-0.5">
+                  <section aria-label="Agentes" className="custom-scrollbar flex max-h-[60%] shrink-0 flex-col gap-0.5 overflow-y-auto">
                     <div className="flex items-center justify-between px-1.5 pb-1 pt-2">
                       <span className="text-[12px] font-medium text-[var(--text-muted)]">Agentes</span>
                       <button
@@ -1783,59 +1783,61 @@ export default function AgentView({
                       </button>
                     )}
                   </section>
-                  <div aria-hidden="true" className="mx-1.5 mt-3 border-t border-[var(--border-subtle)]" />
-                  <section aria-label="Conversaciones" className="flex flex-col gap-0.5">
-                    <div className="flex items-center justify-between px-1.5 pb-1 pt-2">
-                      <span className="text-[12px] font-medium text-[var(--text-muted)]">Conversaciones</span>
-                      <span className="flex items-center gap-0.5">
-                        <button
-                          type="button"
-                          className="flex size-6 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
-                          aria-label="Buscar agentes y conversaciones"
-                          title="Buscar agentes y conversaciones (Ctrl+K)"
-                          onClick={() => setSearchOpen(true)}
-                        >
-                          <Search size={13} />
-                        </button>
-                        <button
-                          type="button"
-                          className="flex size-6 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
-                          aria-label="Nueva conversación"
-                          title="Nueva conversación"
-                          onClick={() => void newSession()}
-                        >
-                          <Plus size={14} />
-                        </button>
-                      </span>
-                    </div>
-                    {sessions.length === 0 && (
-                      <p className="px-2.5 py-2 text-[12px] text-[var(--text-muted)]">Tus chats aparecerán aquí.</p>
+                  <div aria-hidden="true" className="mx-1.5 mt-3 shrink-0 border-t border-[var(--border-subtle)]" />
+                  <div className="custom-scrollbar flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
+                    <section aria-label="Conversaciones" className="flex flex-col gap-0.5">
+                      <div className="flex items-center justify-between px-1.5 pb-1 pt-2">
+                        <span className="text-[12px] font-medium text-[var(--text-muted)]">Conversaciones</span>
+                        <span className="flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            className="flex size-6 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+                            aria-label="Buscar agentes y conversaciones"
+                            title="Buscar agentes y conversaciones (Ctrl+K)"
+                            onClick={() => setSearchOpen(true)}
+                          >
+                            <Search size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            className="flex size-6 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
+                            aria-label="Nueva conversación"
+                            title="Nueva conversación"
+                            onClick={() => void newSession()}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </span>
+                      </div>
+                      {sessions.length === 0 && (
+                        <p className="px-2.5 py-2 text-[12px] text-[var(--text-muted)]">Tus chats aparecerán aquí.</p>
+                      )}
+                      {sessions.length > 0 && visibleSessions.length === 0 && (
+                        <p className="px-2.5 py-2 text-[11px] leading-relaxed text-[var(--text-muted)]">
+                          Sin resultados para «{query}».
+                        </p>
+                      )}
+                      {[
+                        ...(arrangedSessions.pinned.length ? [{ label: 'Fijados', items: arrangedSessions.pinned }] : []),
+                        ...arrangedSessions.sections,
+                        ...groupSessions(arrangedSessions.rest),
+                      ].map((group) => (
+                        <section key={group.label} aria-label={group.label} className="flex flex-col gap-0.5">
+                          <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+                          {group.items.map(sessionRow)}
+                        </section>
+                      ))}
+                    </section>
+                    {hiddenCount > 0 && !query && (
+                      <button
+                        type="button"
+                        onClick={() => setShowHidden((v) => !v)}
+                        className="mt-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-secondary)]"
+                      >
+                        {showHidden ? 'Ocultar elementos ocultos' : `Mostrar ocultos (${hiddenCount})`}
+                      </button>
                     )}
-                    {sessions.length > 0 && visibleSessions.length === 0 && (
-                      <p className="px-2.5 py-2 text-[11px] leading-relaxed text-[var(--text-muted)]">
-                        Sin resultados para «{query}».
-                      </p>
-                    )}
-                    {[
-                      ...(arrangedSessions.pinned.length ? [{ label: 'Fijados', items: arrangedSessions.pinned }] : []),
-                      ...arrangedSessions.sections,
-                      ...groupSessions(arrangedSessions.rest),
-                    ].map((group) => (
-                      <section key={group.label} aria-label={group.label} className="flex flex-col gap-0.5">
-                        <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-                        {group.items.map(sessionRow)}
-                      </section>
-                    ))}
-                  </section>
-                  {hiddenCount > 0 && !query && (
-                    <button
-                      type="button"
-                      onClick={() => setShowHidden((v) => !v)}
-                      className="mt-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-secondary)]"
-                    >
-                      {showHidden ? 'Ocultar elementos ocultos' : `Mostrar ocultos (${hiddenCount})`}
-                    </button>
-                  )}
+                  </div>
                 </>
               );
             })()}
