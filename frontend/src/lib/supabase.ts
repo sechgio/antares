@@ -31,26 +31,6 @@ function electronBridge(): ElectronBridge | null {
   return bridge && typeof bridge.invoke === 'function' ? bridge : null;
 }
 
-function seedBlob(): SessionBlob | null {
-  const seed = (globalThis as unknown as { window?: { supabaseSessionSeed?: unknown } }).window?.supabaseSessionSeed;
-  return seed && typeof seed === 'object' && !Array.isArray(seed) ? (seed as SessionBlob) : null;
-}
-
-// El seed llega en claro a la ventana via preload; una vez copiado al blob en memoria
-// se elimina del global para que no quede legible por cualquier script del renderer.
-function clearSessionSeed(): void {
-  try {
-    const win = (globalThis as unknown as { window?: { supabaseSessionSeed?: unknown } }).window;
-    if (!win || win.supabaseSessionSeed === undefined) return;
-    delete win.supabaseSessionSeed;
-    if (win.supabaseSessionSeed !== undefined) {
-      win.supabaseSessionSeed = null;
-    }
-  } catch {
-    // best-effort: si la propiedad no es configurable queda el valor expuesto por preload
-  }
-}
-
 function migrateLegacyLocalStorageKeys(blob: SessionBlob, persist: () => void): void {
   try {
     const legacyKeys: string[] = [];
@@ -75,27 +55,43 @@ function migrateLegacyLocalStorageKeys(blob: SessionBlob, persist: () => void): 
   }
 }
 
+async function loadSeedBlob(bridge: ElectronBridge): Promise<SessionBlob> {
+  try {
+    const result = (await bridge.invoke('supabase_session_get')) as { blob?: unknown } | null;
+    const seed = result && typeof result === 'object' ? result.blob : null;
+    return seed && typeof seed === 'object' && !Array.isArray(seed) ? { ...(seed as SessionBlob) } : {};
+  } catch {
+    return {};
+  }
+}
+
 export function createSecureSupabaseStorage(): {
-  getItem: (key: string) => string | null;
-  setItem: (key: string, value: string) => void;
-  removeItem: (key: string) => void;
+  getItem: (key: string) => Promise<string | null>;
+  setItem: (key: string, value: string) => Promise<void>;
+  removeItem: (key: string) => Promise<void>;
 } | null {
-  const seeded = seedBlob();
   const bridge = electronBridge();
   if (!bridge) return null;
-  const blob: SessionBlob = { ...(seeded ?? {}) };
-  if (seeded) clearSessionSeed();
+  let blob: SessionBlob = {};
   const persist = () => {
     void bridge.invoke('supabase_session_put', { blob: { ...blob } }).catch(() => {});
   };
-  migrateLegacyLocalStorageKeys(blob, persist);
+  const ready: Promise<void> = (async () => {
+    blob = await loadSeedBlob(bridge);
+    migrateLegacyLocalStorageKeys(blob, persist);
+  })();
   return {
-    getItem: (key) => (Object.prototype.hasOwnProperty.call(blob, key) ? blob[key] : null),
-    setItem: (key, value) => {
+    getItem: async (key) => {
+      await ready;
+      return Object.prototype.hasOwnProperty.call(blob, key) ? blob[key] : null;
+    },
+    setItem: async (key, value) => {
+      await ready;
       blob[key] = value;
       persist();
     },
-    removeItem: (key) => {
+    removeItem: async (key) => {
+      await ready;
       delete blob[key];
       persist();
     },

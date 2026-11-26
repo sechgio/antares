@@ -63,14 +63,6 @@ function resolveIsPackaged() {
 
 const isDev = !resolveIsPackaged();
 
-function loadSupabaseSessionSeed() {
-  try {
-    return ipcRenderer.sendSync('supabase-session-get');
-  } catch {
-    return null;
-  }
-}
-
 try {
   contextBridge.exposeInMainWorld('electronAPI', {
     invoke: (method, params = {}) => {
@@ -132,7 +124,6 @@ try {
     canvasAssetGet: (ref) => ipcRenderer.invoke('ipc-call', 'canvas_asset_get', { ref }),
     canvasAssetInfo: (ref) => ipcRenderer.invoke('ipc-call', 'canvas_asset_info', { ref }),
   });
-  contextBridge.exposeInMainWorld('supabaseSessionSeed', loadSupabaseSessionSeed());
 } catch (err) {
   if (isDev) {
     console.error('[preload] Failed to expose electronAPI:', err);

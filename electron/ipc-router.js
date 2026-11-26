@@ -986,16 +986,6 @@ function registerIpcHandlers() {
     }
   });
 
-  ipcMain.on('supabase-session-get', (event) => {
-    try {
-      _requireTrustedSender(event, 'supabase-session-get');
-      const handled = _NATIVE_CALLS.session('supabase_session_get', {});
-      event.returnValue = handled && handled.handled ? handled.result.blob : null;
-    } catch {
-      event.returnValue = null;
-    }
-  });
-
   ipcMain.handle('backend-status', async (event) => {
     _requireTrustedSender(event, 'backend-status');
     const isPackaged = _isPackaged();
