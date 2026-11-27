@@ -850,10 +850,6 @@ const _NATIVE_CALLS = {
     const { handleAgentCall } = require('./agent-handlers');
     return handleAgentCall(method, params);
   },
-  editor: (method, params, win) => {
-    const { handleEditorCall } = require('./editor-handlers');
-    return handleEditorCall(method, params, dialog, win);
-  },
   session: (method, params) => {
     const { handleSupabaseSessionCall } = require('./supabase-session-handlers');
     return handleSupabaseSessionCall(method, params);

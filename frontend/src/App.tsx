@@ -45,7 +45,6 @@ const EspaciosView = React.lazy(() => import('./components/espacios'));
 const CanvasView = React.lazy(() => import('./components/canvas'));
 const AgentView = React.lazy(() => import('./components/agent'));
 const ComplementosView = React.lazy(() => import('./components/complementos/ComplementosView'));
-const EditorView = React.lazy(() => import('./components/editor/EditorView').then((m) => ({ default: m.EditorView })));
 const DesignView = React.lazy(() => import('./components/design'));
 
 const CANVAS_KEEPALIVE_MS = 60 * 1000;
@@ -85,7 +84,6 @@ const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType<{ activ
   evidenciaVolanteo: EvidenciaVolanteoView,
   autoimg: AutoIMGView,
   fichasTecnicas: FichasTecnicasView,
-  editor: EditorView,
   design: DesignView,
 };
 

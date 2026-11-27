@@ -108,18 +108,6 @@ async function main() {
   }
 
   {
-    evict(path.join(__dirname, '..', 'electron', 'editor-recorder'));
-    const { RecordingSessionManager } = require('../electron/editor-recorder');
-    const os = require('os');
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-rec-cap-'));
-    const manager = new RecordingSessionManager({ directory: dir });
-    for (let i = 0; i < 8; i++) manager.create(`sess_${i}`);
-    assert.throws(() => manager.create('sess_8'), /demasiadas sesiones de grabación/, 'novena grabación se rechaza');
-    for (let i = 0; i < 8; i++) manager.abort(`sess_${i}`);
-    manager.create('sess_despues');
-  }
-
-  {
     const policy = require('../electron/ipc-file-policy');
     const source = fs.readFileSync(path.join(__dirname, '..', 'electron', 'ipc-file-policy.js'), 'utf8');
     for (const ext of ['.py', '.pyw', '.xlsm', '.docm', '.chm', '.pif', '.gadget']) {

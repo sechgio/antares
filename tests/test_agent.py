@@ -21,7 +21,7 @@ def test_gated_methods_exclude_readonly_and_denied():
     from backend.core.agent import agent_tools
 
     assert gated <= set(backend_methods()) | set(agent_tools.SPECS)
-    for banned in ("ai_provider_save", "connections_token_put", "db_clear", "editor_project_save"):
+    for banned in ("ai_provider_save", "connections_token_put", "db_clear"):
         assert banned not in gated
     assert len(gated) > 0
 

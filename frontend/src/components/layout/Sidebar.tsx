@@ -10,7 +10,6 @@ import {
   FileBarChart2,
   FileStack,
   FileText,
-  Film,
   FolderKanban,
   Grid2X2,
   House,
@@ -82,7 +81,6 @@ const ICONS: Record<TabId, IconComponent> = {
   evidenciaVolanteo: Grid2X2,
   autoimg: RefreshCw,
   fichasTecnicas: FileText,
-  editor: Film,
   design: Presentation,
 };
 
@@ -114,7 +112,7 @@ const NAV_GROUPS: { id: string; label: string; icon: IconComponent; tabs: TabId[
     id: 'herramientas',
     label: 'Herramientas',
     icon: Wrench,
-    tabs: ['imageOptimizer', 'ubicaciones', 'autoimg', 'editor'],
+    tabs: ['imageOptimizer', 'ubicaciones', 'autoimg'],
   },
   {
     id: 'agent',

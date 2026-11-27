@@ -9,7 +9,7 @@ vi.mock('../auth/AuthContext', () => ({
   useAuth: () => ({ user: null, loading: false, signOut: vi.fn() }),
 }));
 vi.mock('../components/agent', () => ({ default: () => <p>Agent abierto</p> }));
-vi.mock('../components/editor/EditorView', () => ({ EditorView: () => <p>Editor abierto</p> }));
+vi.mock('../components/design', () => ({ default: () => <p>Design abierto</p> }));
 
 it('retira un navegador nativo que quedó acoplado al iniciar fuera de Agent y al cambiar de pestaña', async () => {
   const state: AgentBrowserState = {
@@ -33,8 +33,8 @@ it('retira un navegador nativo que quedó acoplado al iniciar fuera de Agent y a
     expect(browser).toHaveBeenCalledWith('bounds', { bounds: null });
     state.docked = true;
 
-    fireEvent.click(await findSidebarTab('Editor'));
-    await screen.findByText('Editor abierto');
+    fireEvent.click(await findSidebarTab('Design'));
+    await screen.findByText('Design abierto');
     await waitFor(() => expect(state.docked).toBe(false));
     expect(browser).toHaveBeenLastCalledWith('bounds', { bounds: null });
     expect(state.open).toBe(true);

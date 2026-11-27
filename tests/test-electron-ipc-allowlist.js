@@ -12,7 +12,7 @@ if (memoryShare.agent_memory_share.handler !== 'native:agent' || memoryShare.age
   throw new Error('Compartir memoria valida los perfiles en Electron y reserva la escritura para el backend interno');
 }
 
-const VALID_HANDLERS = /^(backend:[a-z0-9_]+|native:(dialog|autoimg|ubicaciones|spotify|connections|agent|editor|session))$/;
+const VALID_HANDLERS = /^(backend:[a-z0-9_]+|native:(dialog|autoimg|ubicaciones|spotify|connections|agent|session))$/;
 const VALID_TIMEOUTS = new Set(['normal', 'long', 'heavy']);
 const VALID_LANES = new Set(['sync', 'light', 'heavy']);
 
