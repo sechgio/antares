@@ -113,12 +113,11 @@
   color: var(--text-muted);
 }
 .agent-workspace .agent-stop {
-  background: var(--text-primary);
-  color: var(--bg-base);
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
 .agent-workspace .agent-stop:hover:not(:disabled) {
-  background: var(--text-secondary);
-  color: var(--bg-base);
+  background: color-mix(in srgb, var(--bg-input), var(--text-primary) 8%);
 }
 .agent-workspace .agent-queue {
   background: color-mix(in srgb, var(--bg-elevated) 45%, var(--agent-panel));

@@ -27,7 +27,6 @@ import {
   PanelLeftOpen,
   Paperclip,
   Pencil,
-  Play,
   Plug,
   Plus,
   Search,
@@ -124,8 +123,6 @@ const VIEW_KEY = 'antares-agent-transcript-view';
 const SIDEBAR_KEY = 'antares-agent-sidebar';
 const AGENT_LIMIT = 6;
 const parseView = (raw: string): TranscriptView => (raw === 'thinking' || raw === 'verbose' ? raw : 'normal');
-const RESUME_TEXT =
-  'Reanuda el encargo donde lo dejaste: revisa el plan y los últimos resultados antes de repetir cualquier acción.';
 
 type SendIntent = Readonly<{
   session: string;
@@ -286,7 +283,6 @@ export default function AgentView({
   const [delegations, setDelegations] = useState<AgentDelegation[]>([]);
   const [rooms, setRooms] = useState<AgentRoom[]>([]);
   const [plan, setPlan] = useState<AgentPlan | null>(null);
-  const [resumable, setResumable] = useState(false);
   const [tokenBudget, setTokenBudget] = useState<{ limit: number; used: number } | null>(null);
   const [provider, setProvider] = useState('');
   const [model, setModel] = useState('');
@@ -532,7 +528,6 @@ export default function AgentView({
           setPending(res.pending_approvals);
           setRunning(res.running);
           setPlan(res.plan ?? null);
-          setResumable(!!res.resumable);
           setTokenBudget(res.token_budget ?? null);
         }
       } catch (err) {
@@ -625,7 +620,6 @@ export default function AgentView({
     setDelegations([]);
     setRooms([]);
     setPlan(null);
-    setResumable(false);
     setMessagesStale(false);
     if (sessionId) void loadMessages(sessionId, false);
     else setRunning(false);
@@ -1415,11 +1409,6 @@ export default function AgentView({
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo enviar tu respuesta'), type: 'error' });
     }
-  };
-
-  const sendSuggestion = async (text: string) => {
-    if (running || pending.length > 0) return;
-    await send(false, text);
   };
 
   const cancelTurn = async () => {
@@ -2569,7 +2558,7 @@ export default function AgentView({
                     disabled={stopping}
                     title="Detener el turno"
                   >
-                    <Square size={11} fill="currentColor" />
+                    <Square size={15} fill="currentColor" aria-hidden="true" />
                   </button>
                 )}
                 {!running && pending.length === 0 && (
@@ -2731,20 +2720,6 @@ export default function AgentView({
                   : `Este agente usó el ${Math.floor((tokenBudget.used / tokenBudget.limit) * 100)} % de su presupuesto diario`}
                 {` (${tokenBudget.used.toLocaleString('es')} de ${tokenBudget.limit.toLocaleString('es')} tokens).`}
               </p>
-            )}
-            {resumable && !running && pending.length === 0 && (
-              <div className="mt-1.5 flex min-w-0 items-center justify-end gap-2 text-[12px] text-[var(--text-muted)]">
-                <button
-                  type="button"
-                  className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
-                  onClick={() => void sendSuggestion(RESUME_TEXT)}
-                  disabled={sending || modelBusy || stopping}
-                  title="Continuar el encargo desde el último paso verificado"
-                >
-                  <Play size={11} aria-hidden="true" />
-                  Reanudar
-                </button>
-              </div>
             )}
           </div>
         </main>
