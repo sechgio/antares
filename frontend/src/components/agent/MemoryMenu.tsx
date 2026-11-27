@@ -189,6 +189,7 @@ export default function MemoryMenu({ profiles = [], sessionId, onTrialQueued }: 
                 <li key={item.id} className="space-y-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-2 text-[11px]">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[var(--text-muted)]">{KIND_LABELS[item.kind]}</span>
+                    {!!item.essential && <span className="rounded bg-[var(--bg-input)] px-1 text-[9px] uppercase tracking-wide text-[var(--text-secondary)]" title="Se inyecta en cada conversación aunque no mencione el tema">Fijado</span>}
                     <span className="min-w-0 flex-1 truncate font-medium text-[var(--text-primary)]">{item.title}</span>
                     <span className="tabular-nums text-[var(--text-muted)]">v{item.version}</span>
                   </div>
@@ -289,6 +290,12 @@ export default function MemoryMenu({ profiles = [], sessionId, onTrialQueued }: 
                         {sessionId && item.kind === 'procedure' && item.status === 'active' && trial?.id !== item.id && (
                           <Button size="sm" variant="ghost" onClick={() => setTrial({ id: item.id, sample: '' })}>
                             Probar procedimiento
+                          </Button>
+                        )}
+                        {(item.kind === 'fact' || item.kind === 'preference') && (
+                          <Button size="sm" variant="ghost" aria-pressed={!!item.essential}
+                            onClick={() => void apply({ id: item.id, action: item.essential ? 'unpin' : 'pin' })}>
+                            {item.essential ? 'Desfijar' : 'Fijar'}
                           </Button>
                         )}
                         <Button size="sm" variant="ghost" onClick={() => setEditing({ id: item.id, text, ...(item.kind === 'journal' ? { date: item.date } : {}) })}>Corregir</Button>

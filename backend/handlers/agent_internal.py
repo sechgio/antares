@@ -840,6 +840,23 @@ def _memory_dream_input(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+@validate_params("session_id")
+def _memory_capture_input(params: JsonObject) -> JsonObject:
+    return _memory().capture_input(str(params["session_id"]), params.get("memory_scope"))
+
+
+@with_locale
+@validate_params("session_id", "up_to_ts")
+def _memory_capture(params: JsonObject) -> JsonObject:
+    try:
+        return _memory().capture(str(params["session_id"]), params.get("memory_scope"),
+                                 list(params.get("facts") or []), list(params.get("preferences") or []),
+                                 int(params["up_to_ts"]))
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
 @validate_params("profile_id", "journal_ids")
 def _memory_consolidate(params: JsonObject) -> JsonObject:
     try:
@@ -1022,6 +1039,8 @@ HANDLERS = {
     "agent_internal_memory_revision": _memory_revision,
     "agent_internal_memory_promote": _memory_promote,
     "agent_internal_memory_flush": _memory_flush,
+    "agent_internal_memory_capture_input": _memory_capture_input,
+    "agent_internal_memory_capture": _memory_capture,
     "agent_internal_memory_dream_input": _memory_dream_input,
     "agent_internal_memory_consolidate": _memory_consolidate,
     "agent_internal_grant_remove": _grant_remove,

@@ -354,7 +354,41 @@ function TerminalStep({ call, verbose }: { call: AgentToolCall; verbose?: boolea
   );
 }
 
+const MEMORY_WRITE_KIND: Record<string, string> = { preference: 'Preferencia', fact: 'Hecho', journal: 'Diario', procedure: 'Procedimiento' };
+
+function memoryWriteItem(call: AgentToolCall): { kind: string; title: string; essential: boolean } | null {
+  if (call.status !== 'done' || !call.result) return null;
+  try {
+    const parsed = JSON.parse(call.result) as { remembered?: { kind?: string; title?: string; essential?: boolean }; learned?: { kind?: string; title?: string } };
+    const item = parsed.remembered ?? parsed.learned;
+    if (!item || typeof item.title !== 'string' || !item.title) return null;
+    const kind = typeof item.kind === 'string' && MEMORY_WRITE_KIND[item.kind] ? item.kind : call.name === 'procedure_learn' ? 'procedure' : 'fact';
+    return { kind, title: item.title, essential: (parsed.remembered as { essential?: boolean } | undefined)?.essential === true };
+  } catch {
+    return null;
+  }
+}
+
+function MemoryChangeStep({ call }: { call: AgentToolCall }) {
+  const item = memoryWriteItem(call);
+  if (!item) return null;
+  const verb = call.name === 'procedure_learn' ? 'Procedimiento aprendido' : 'Recuerdo guardado';
+  return (
+    <div className="flex min-w-0 items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-[12px]" aria-label={`${verb}: ${item.title}`}>
+      <BookOpen size={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden="true" />
+      <span className="shrink-0 text-[var(--text-muted)]">{verb}</span>
+      <span className="shrink-0 text-[var(--text-muted)]">·</span>
+      <span className="shrink-0 text-[var(--text-secondary)]">{MEMORY_WRITE_KIND[item.kind]}</span>
+      {item.essential && <span className="shrink-0 rounded bg-[var(--bg-input)] px-1 text-[9px] uppercase tracking-wide text-[var(--text-secondary)]">Fijado</span>}
+      <span className="min-w-0 truncate font-medium text-[var(--text-primary)]" title={item.title}>{item.title}</span>
+    </div>
+  );
+}
+
 function ToolCallStep({ call, verbose }: { call: AgentToolCall; verbose?: boolean }) {
+  if ((call.name === 'memory_remember' || call.name === 'procedure_learn') && memoryWriteItem(call)) {
+    return <MemoryChangeStep call={call} />;
+  }
   if (call.name === 'subagent_run' || call.name === 'agent_delegate') return <SubagentTrace call={call} />;
   if (call.name === 'shell_run') return <TerminalStep call={call} verbose={verbose} />;
   if (fileChange(call.name, call.params)) {

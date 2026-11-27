@@ -584,16 +584,13 @@ def test_cloud_native_tools_pass_the_dispatch_prefix_gate(store, method):
     assert out["execute"] == "native"
 
 
-def test_memory_write_is_gated_and_keeps_its_receipt(store):
+def test_memory_write_is_ungated_and_keeps_its_receipt(store):
+    """Sin aprobación previa (decisión del desarrollador): la escritura arranca directo y
+    conserva su comprobante para trazabilidad y control posterior del usuario."""
     params = {"kind": "fact", "title": "Papel", "content": "El usuario usa A4"}
-    blocked = _dispatch(session_id="s1", call_id="mem1", name="memory_remember", params=params)
-    assert "aprobación" in json.loads(blocked["result"])["error"]
-    assert store.get_dispatch("s1", "mem1") is None
-
-    approval_id = _approve("s1", "mem1", "memory_remember", params)
-    started = _dispatch(session_id="s1", call_id="mem1", name="memory_remember", params=params,
-                        approval_id=approval_id)
+    started = _dispatch(session_id="s1", call_id="mem1", name="memory_remember", params=params)
     assert started["result"] is None
+    assert store.get_dispatch("s1", "mem1") is not None
     receipt = json.loads(_wait_result("mem1")["result"])
     assert receipt["remembered"]["title"] == "Papel"
     assert store.get_dispatch("s1", "mem1")["status"] == "succeeded"

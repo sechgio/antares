@@ -33,14 +33,16 @@ def test_tool_specs_cover_readonly_and_gated():
     assert by_name[agent_chat.gated_methods()[0]]["gated"] is True
 
 
-def test_memory_writes_are_gated_effects():
+def test_memory_writes_are_ungated_effects():
+    """La escritura de memoria no pide aprobación (decisión del desarrollador): se compensa con
+    visibilidad de cada cambio en la conversación y control posterior del usuario (editar,
+    desactivar, borrar, fijar). Sigue siendo un efecto trazable con comprobante."""
     from backend.core.agent import agent_tools
 
     gated = set(agent_chat.gated_methods())
     for name in ("memory_remember", "procedure_learn"):
-        assert agent_tools.SPECS[name]["gated"] is True
-        assert name in agent_tools.EFFECT_TOOLS
-        assert name in gated
+        assert agent_tools.SPECS[name]["gated"] is False
+        assert name not in gated
     assert "memory_search" in agent_tools.READ_TOOLS
     assert "memory_search" not in gated
 
