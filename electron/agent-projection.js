@@ -303,7 +303,7 @@ async function transcriptEntries(conv, before) {
   do {
     const page = await conv.entries(query, TRANSCRIPT_PAGE_SIZE, cursor, ctx());
     entries.push(...page.items);
-    cursor = page.nextCursor;
+    cursor = page.next;
     const boundary = entries.findLastIndex(visibleUser);
     if (boundary >= 0 && (cursor || boundary < entries.length - 1)) {
       return { entries: entries.slice(0, boundary + 1).reverse(), before: entries[boundary].id };
@@ -323,7 +323,7 @@ async function transcriptAround(conv, id) {
       const page = await conv.entries({ minEntryId, maxEntryId }, TRANSCRIPT_PAGE_SIZE, cursor, ctx());
       const user = page.items.findLast(visibleUser);
       if (user) nextTurn = user.id;
-      cursor = page.nextCursor;
+      cursor = page.next;
     } while (cursor);
     if (nextTurn !== undefined) return transcriptEntries(conv, nextTurn);
     minEntryId = maxEntryId + 1;
@@ -346,7 +346,7 @@ async function searchTranscript(conv, query) {
       matches.push({ id: entry.id, text: content.slice(start, start + 220), ts: entryTs(entry, message) });
       if (matches.length === 30) return { matches, truncated: true };
     }
-    cursor = page.nextCursor;
+    cursor = page.next;
     if (!cursor) break;
   }
   return { matches, truncated: !!cursor };
@@ -374,7 +374,7 @@ async function transcriptOrigin(conv, kind, ref) {
         // The same tool result channel also carries ordinary text.
       }
     }
-    cursor = page.nextCursor;
+    cursor = page.next;
   } while (cursor);
   return null;
 }
