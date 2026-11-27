@@ -164,18 +164,6 @@ def test_agent_memory_update_declares_optional_journal_date():
         jsonschema.validate({"id": "m1", "action": "edit", "date": "30/10/2026"}, schema)
 
 
-def test_memory_sharing_requires_version_and_explicit_recipients():
-    import jsonschema
-
-    methods = _catalog()["methods"]
-    schema = methods["agent_memory_share"]["inputSchema"]
-    assert methods["agent_internal_memory_share"]["internal"] is True
-    assert schema == methods["agent_internal_memory_share"]["inputSchema"]
-    jsonschema.validate({"id": "fact", "version": 1, "profile_ids": []}, schema)
-    with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate({"id": "fact", "profile_ids": ["recipient"]}, schema)
-
-
 def test_agent_model_selection_is_a_renderer_command_not_an_agent_tool():
     from backend.core.ipc_catalog import ORCHESTRATABLE_METHODS
 

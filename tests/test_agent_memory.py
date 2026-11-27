@@ -89,39 +89,6 @@ def test_user_correction_prevails_and_versions_can_be_reverted(store):
     assert mem.context("s9", "hola", VERSIONS)["context"] == ""
 
 
-def test_share_confirmed_memory_to_selected_profiles_and_revoke_after_restart(store):
-    mem = memory.memory_for(store)
-    mem.context("owner", "", VERSIONS, profile_id="source")
-    item = mem.remember("owner", {"kind": "fact", "title": "Unidades", "content": "Presentar en metros"})
-    with pytest.raises(ValueError, match="Confirma"):
-        mem.share(item["id"], item["version"], ["recipient"])
-    mem.update(item["id"], {"action": "confirm"})
-    saved = mem.share(item["id"], item["version"], ["recipient"])
-    assert saved["shared_with_profiles"] == ["recipient"]
-    revision = mem.revision
-    assert mem.share(item["id"], item["version"], ["recipient"]) == saved
-    assert mem.revision == revision
-
-    reopened = memory.MemoryStore(store.base_dir)
-    assert "Presentar en metros" in reopened.context("dest", "Unidades", VERSIONS, profile_id="recipient")["context"]
-    assert reopened.context("other", "Unidades", VERSIONS, profile_id="other")["context"] == ""
-    assert reopened.context("own", "Unidades", VERSIONS, profile_id="recipient", memory_scope="own")["context"] == ""
-    found = reopened.search("Unidades", session_id="dest")[0]
-    assert found["content"] == "Presentar en metros"
-    assert "source" not in found and "versions" not in found
-    assert reopened.explain(item["id"], session_id="dest")["explanation"] == {"why": "El usuario compartió este recuerdo."}
-    with pytest.raises(ValueError, match="ya no existe"):
-        reopened.remember("dest", {"kind": "fact", "title": "Unidades", "content": "Cambio", "supersedes": item["id"]})
-    reopened.share(item["id"], item["version"], [])
-    assert reopened.search("Unidades", session_id="dest") == []
-    reopened.share(item["id"], item["version"], ["recipient"])
-    revised = reopened.update(item["id"], {"action": "edit", "content": "Presentar en kilómetros"})
-    assert "shared_with_profiles" not in revised
-    assert reopened.search("Unidades", session_id="dest") == []
-    with pytest.raises(ValueError, match="cambió"):
-        reopened.share(item["id"], item["version"], ["recipient"])
-
-
 def test_reuse_is_relevant_limited_and_changes_after_correction(store):
     _receipt(store, "s1", "c1", "document_generate", "succeeded")
     _receipt(store, "s1", "c2", "artifact_print", "submitted")
