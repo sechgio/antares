@@ -149,61 +149,9 @@ class AgentStore:
              else dispatch_key(str(rec["session_id"]), str(rec.get("call_id") or key))): rec
             for key, rec in loaded.items()
         }
-        dirty = self._dispatches.keys() != loaded.keys()
-        for record in self._dispatches.values():
-            if record.get("status") == "running":
-                record["status"] = "uncertain"
-                record["result"] = _INTERRUPTED_RESULT
-                record["summary"] = _INTERRUPTED_RESULT
-                if record.get("method") == "artifact_print":
-                    from backend.core.printing import printer_job_status
-
-                    print_approval = self._approvals.get(str(record.get("approval_id"))) or {}
-                    printer = record.get("printer_name") or (print_approval.get("params") or {}).get("printer_name")
-                    try:
-                        receipt = printer_job_status(str(printer or ""), f"Antares-{record['op_id']}")
-                        record["status"] = "submitted" if receipt.get("submitted") else "uncertain"
-                        record["result"] = json.dumps({**receipt, "recovered": True, "interrupted": not receipt.get("submitted")}, ensure_ascii=False)
-                        record["summary"] = record["result"]
-                    except Exception:
-                        logger.warning("No se pudo verificar el trabajo de impresión %s", record.get("op_id"), exc_info=True)
-                dirty = True
-        self._undo.prune()
-        for record in self._dispatches.values():
-            undo = record.get("undo")
-            if not isinstance(undo, dict) or not undo.get("available"):
-                continue
-            directory = undo.get("dir")
-            if not isinstance(directory, str) or not Path(directory).is_dir():
-                undo["available"] = False
-                undo["reason"] = "La copia de seguridad expiró"
-                dirty = True
-        for record in self._dispatches.values():
-            if record.get("status") != "uncertain":
-                continue
-            undo = record.get("undo")
-            if not isinstance(undo, dict) or not undo.get("available"):
-                continue
-            if self._undo.matches_after(undo):
-                record["status"] = "succeeded"
-                recovered_result = json.dumps(
-                    {"recovered": True, "detail": "La escritura terminó antes de que la aplicación se cerrara"},
-                    ensure_ascii=False,
-                )
-                record["result"] = recovered_result
-                record["summary"] = recovered_result
-                record.setdefault("finished_at", _now_ms())
-                dirty = True
-            else:
-                undo["available"] = False
-                undo["reason"] = (
-                    "La escritura quedó sin confirmar; no hay un resultado verificado que deshacer"
-                    if not undo.get("after_sha256")
-                    else "El archivo no coincide con el resultado esperado; no se puede deshacer con seguridad"
-                )
-                dirty = True
-        if dirty:
+        if self._dispatches.keys() != loaded.keys():
             self._write_dispatches()
+        self.reconcile_stale_dispatches()
         consumed = False
         for record in self._dispatches.values():
             approval = self._approvals.get(str(record.get("approval_id") or ""))
@@ -677,6 +625,71 @@ class AgentStore:
             if denied:
                 self._write_approvals()
             return denied
+
+    def reconcile_stale_dispatches(self) -> None:
+        """Reconcilia los dispatches ``running`` heredados de un proceso anterior.
+
+        Llamada desde ``__init__`` antes de aceptar ejecuciones nuevas: todo
+        registro ``running`` leído de disco pertenece a una ejecución que ya no
+        puede terminar y pasa a ``uncertain``, salvo que el recibo verifique el
+        efecto (escritura aplicada o impresión enviada).
+        """
+        with self._lock:
+            dirty = False
+            for record in self._dispatches.values():
+                if record.get("status") == "running":
+                    record["status"] = "uncertain"
+                    record["result"] = _INTERRUPTED_RESULT
+                    record["summary"] = _INTERRUPTED_RESULT
+                    if record.get("method") == "artifact_print":
+                        from backend.core.printing import printer_job_status
+
+                        print_approval = self._approvals.get(str(record.get("approval_id"))) or {}
+                        printer = record.get("printer_name") or (print_approval.get("params") or {}).get("printer_name")
+                        try:
+                            receipt = printer_job_status(str(printer or ""), f"Antares-{record['op_id']}")
+                            record["status"] = "submitted" if receipt.get("submitted") else "uncertain"
+                            record["result"] = json.dumps({**receipt, "recovered": True, "interrupted": not receipt.get("submitted")}, ensure_ascii=False)
+                            record["summary"] = record["result"]
+                        except Exception:
+                            logger.warning("No se pudo verificar el trabajo de impresión %s", record.get("op_id"), exc_info=True)
+                    dirty = True
+            self._undo.prune()
+            for record in self._dispatches.values():
+                undo = record.get("undo")
+                if not isinstance(undo, dict) or not undo.get("available"):
+                    continue
+                directory = undo.get("dir")
+                if not isinstance(directory, str) or not Path(directory).is_dir():
+                    undo["available"] = False
+                    undo["reason"] = "La copia de seguridad expiró"
+                    dirty = True
+            for record in self._dispatches.values():
+                if record.get("status") != "uncertain":
+                    continue
+                undo = record.get("undo")
+                if not isinstance(undo, dict) or not undo.get("available"):
+                    continue
+                if self._undo.matches_after(undo):
+                    record["status"] = "succeeded"
+                    recovered_result = json.dumps(
+                        {"recovered": True, "detail": "La escritura terminó antes de que la aplicación se cerrara"},
+                        ensure_ascii=False,
+                    )
+                    record["result"] = recovered_result
+                    record["summary"] = recovered_result
+                    record.setdefault("finished_at", _now_ms())
+                    dirty = True
+                else:
+                    undo["available"] = False
+                    undo["reason"] = (
+                        "La escritura quedó sin confirmar; no hay un resultado verificado que deshacer"
+                        if not undo.get("after_sha256")
+                        else "El archivo no coincide con el resultado esperado; no se puede deshacer con seguridad"
+                    )
+                    dirty = True
+            if dirty:
+                self._write_dispatches()
 
     def dispatches_for(self, session_id: str) -> list[JsonObject]:
         with self._lock:
