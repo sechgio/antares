@@ -137,9 +137,9 @@ async function tabsTest() {
   assert(leaseBlocked?.code === 'BROWSER_BUSY' && leaseBlocked.recoverable === true,
     'otra conversación no puede usar la pestaña del agente');
   browser.release('conversation-a');
-  const readB = await browser.run('web_read', {}, { sessionId: 'conversation-b' });
-  assert(readB.url === 'https://agent-2.example', 'al liberar, otra conversación puede continuar');
-  browser.release('conversation-b');
+  const readB = await browser.run('web_read', {}, { sessionId: 'conversation-b' }).catch((err) => err);
+  assert(/no tiene ninguna página abierta/.test(readB.message),
+    'al liberar, otra conversación debe abrir su propia página');
 
   current = browser.newTab();
   assert(current.active_tab === 'tab-1' && current.tabs.map((tab) => tab.id).join() === 'agent,user,tab-1'
