@@ -305,10 +305,12 @@ export interface AgentPageArtifact extends Omit<AgentDocumentArtifact, 'kind' | 
 
 export type AgentArtifact = AgentDocumentArtifact | AgentPageArtifact | AgentImageArtifact;
 
+export type AgentQuestionOption = string | { label: string; description?: string };
+
 export interface AgentQuestion {
   id: string;
   session_id: string;
-  questions: { id: string; prompt: string; options?: string[] }[];
+  questions: { id: string; prompt: string; header?: string; multiSelect?: boolean; options?: AgentQuestionOption[] }[];
 }
 
 export interface AgentPanel {

@@ -1967,6 +1967,35 @@ it('permite cambiar una opción, escribir una respuesta propia y reintentar el e
   expect(answer).toHaveBeenLastCalledWith('s1', 'q1', { format: 'CSV', title: 'Entregas' });
 });
 
+it('responde preguntas multiSelect con encabezado y descripciones uniendo las opciones elegidas', async () => {
+  localStorage.setItem('antares-agent-session', 's1');
+  const question = { id: 'q1', session_id: 's1', questions: [
+    { id: 'extras', prompt: '¿Qué incluyo?', header: 'Contenido', multiSelect: true,
+      options: [{ label: 'Gráficos', description: 'Tendencias del trimestre' }, { label: 'Anexos' }, { label: 'Portada' }] },
+  ] };
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, questions: [question] });
+  const answer = vi.spyOn(agentApi, 'agentQuestionAnswer').mockImplementation(async () => {
+    list.mockResolvedValue(empty);
+    return { question };
+  });
+  render(<AgentView />);
+  const form = within(await screen.findByRole('form', { name: 'Pregunta del agente' }));
+  expect(form.getByText('Contenido')).toBeInTheDocument();
+  expect(form.getByText('Tendencias del trimestre')).toBeInTheDocument();
+  const submit = form.getByRole('button', { name: 'Responder', exact: true });
+  expect(submit).toBeDisabled();
+  fireEvent.click(form.getByRole('button', { name: /Gráficos/ }));
+  fireEvent.click(form.getByRole('button', { name: 'Anexos' }));
+  expect(form.getByRole('button', { name: /Gráficos/ })).toHaveAttribute('aria-pressed', 'true');
+  expect(submit).not.toBeDisabled();
+  fireEvent.click(form.getByRole('button', { name: /Gráficos/ }));
+  expect(form.getByRole('button', { name: /Gráficos/ })).toHaveAttribute('aria-pressed', 'false');
+  fireEvent.click(form.getByRole('button', { name: /Gráficos/ }));
+  fireEvent.click(submit);
+  await waitFor(() => expect(screen.queryByRole('form', { name: 'Pregunta del agente' })).not.toBeInTheDocument());
+  expect(answer).toHaveBeenCalledExactlyOnceWith('s1', 'q1', { extras: 'Gráficos; Anexos' });
+});
+
 it.each([false, true])('muestra el resultado sin arrastrar el historial cuando se lee arriba: %s', async (readingAbove) => {
   const update = agentUpdates();
   const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,

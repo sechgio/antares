@@ -23,6 +23,6 @@
     "chunkSizeWarningKb": 500
   },
   "agentPrompt": {
-    "maxTokens": 18100
+    "maxTokens": 18200
   }
 }
