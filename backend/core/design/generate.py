@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 
 from backend.core.agent import agent_chat
@@ -60,7 +61,7 @@ def _user_message(prompt: str, attempt: int, last_error: str | None) -> str:
     )
 
 
-def _review_turn(provider: str, model: str, document: JsonObject, system: str) -> str:
+def _review_turn(provider: str, model: str, document: JsonObject, system: str) -> tuple[str, list[JsonObject]]:
     from backend.core.design.render import render_html
     from backend.utils.pdf_html import write_pdf_sanitized
 
@@ -68,9 +69,9 @@ def _review_turn(provider: str, model: str, document: JsonObject, system: str) -
         images = _slide_images(write_pdf_sanitized(render_html(document)), _MAX_REVIEW_IMAGES)
     except Exception as err:
         logger.info("[design.generate] no se pudo rasterizar para revisar: %s", err)
-        return ""
+        return "", []
     if not images:
-        return ""
+        return "", []
 
     try:
         reply = agent_chat.chat(
@@ -99,12 +100,12 @@ def _review_turn(provider: str, model: str, document: JsonObject, system: str) -
         )
     except Exception as err:
         logger.info("[design.generate] revision no soportada: %s", err)
-        return ""
+        return "", []
 
     critique = str(reply.get("text") or "").strip()
     if not critique or "SIN_OBSERVACIONES" in critique:
-        return ""
-    return critique[:4_000]
+        return "", []
+    return critique[:4_000], images
 
 
 def generate_design(
@@ -125,48 +126,61 @@ def generate_design(
     instruction = f"{text}\n\nUsa el formato de página `{page_preset}`." if page_preset else text
     spec = tool_spec()
     system = SYSTEM_PROMPT + design_memory.render_block(design_memory.get_design_memory().load())
-    messages: list[JsonObject] = [{"role": "user", "content": instruction}]
     last_error: str | None = None
-    critique = ""
+    candidate: JsonObject | None = None
+    correction: JsonObject | None = None
 
     for attempt in range(_REPAIR_TURNS):
-        messages[0] = {"role": "user", "content": _user_message(text, attempt, last_error)}
-        if critique:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "Estas son las diapositivas que acabas de generar, ya renderizadas. "
-                        + critique
-                        + "\n\nVuelve a llamar a `create_design` con la versión corregida completa."
-                    ),
-                }
+        messages: list[JsonObject] = [
+            {"role": "user", "content": instruction if correction else _user_message(instruction, attempt, last_error)}
+        ]
+        if correction:
+            messages.append(correction)
+        try:
+            reply = agent_chat.chat(
+                provider,
+                resolved_model,
+                messages,
+                with_tools=True,
+                system=system,
+                extra_tools=[spec],
+                max_tokens=_MAX_TOKENS,
             )
-        reply = agent_chat.chat(
-            provider,
-            resolved_model,
-            messages,
-            with_tools=True,
-            system=system,
-            extra_tools=[spec],
-            max_tokens=_MAX_TOKENS,
-        )
+        except Exception:
+            if candidate is None:
+                raise
+            logger.info("[design.generate] no se pudo corregir el diseño; se conserva el original")
+            return candidate
         calls = [c for c in reply.get("calls") or [] if str(c.get("name") or "") == spec["name"]]
         if calls:
             payload = calls[0].get("params")
-            if isinstance(payload, dict):
+            slides = payload.get("slides") if isinstance(payload, dict) else None
+            if isinstance(payload, dict) and isinstance(slides, list) and any(isinstance(slide, dict) for slide in slides):
                 document = models.normalize_document(payload)
                 document["prompt"] = text
                 if page_preset:
                     document["page"] = models.normalize_page({"preset": page_preset})
                 if not str(document.get("name") or "").strip():
                     document["name"] = "Diseño"
-                critique = _review_turn(provider, resolved_model, document, system)
-                if critique:
-                    logger.info("[design.generate] revision turn: %s", critique[:200])
-                    continue
-                return document
-            last_error = "los argumentos de la herramienta no eran un objeto"
+                if attempt == _REPAIR_TURNS - 1:
+                    return document
+                critique, images = _review_turn(provider, resolved_model, document, system)
+                if not critique:
+                    return document
+                candidate = document
+                correction = {
+                    "role": "user",
+                    "content": (
+                        "Corrige solo los hallazgos de la revisión. Los renderizados adjuntos están en orden.\n"
+                        + critique
+                        + "\n\nDocumento original:\n"
+                        + json.dumps(payload, ensure_ascii=False)
+                        + "\n\nLlama a `create_design` con el documento corregido completo."
+                    ),
+                    "images": images,
+                }
+                continue
+            last_error = "los argumentos de la herramienta no contenían diapositivas"
         elif str(reply.get("text") or "").strip():
             last_error = "respondiste con texto en vez de llamar a la herramienta"
         else:
@@ -174,6 +188,8 @@ def generate_design(
 
         logger.info("[design.generate] invalid turn %s/%s: %s", attempt + 1, _REPAIR_TURNS, last_error)
 
+    if candidate is not None:
+        return candidate
     raise DesignGenerationError(
         "El modelo no devolvió un diseño válido. "
         f"({last_error or 'motivo desconocido'}) "

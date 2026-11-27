@@ -151,10 +151,10 @@ def normalize_slide(raw: Any) -> JsonObject | None:
         "bullets": _bullets(raw.get("bullets")),
         "left": left,
         "right": right,
-        "statValue": _text(stat.get("value"), MAX_TITLE_CHARS),
-        "statLabel": _text(stat.get("label"), MAX_SUBTITLE_CHARS),
-        "quoteText": _text(quote.get("text"), MAX_BODY_CHARS),
-        "quoteAuthor": _text(quote.get("author"), MAX_SUBTITLE_CHARS),
+        "statValue": _text(stat.get("value", raw.get("statValue")), MAX_TITLE_CHARS),
+        "statLabel": _text(stat.get("label", raw.get("statLabel")), MAX_SUBTITLE_CHARS),
+        "quoteText": _text(quote.get("text", raw.get("quoteText")), MAX_BODY_CHARS),
+        "quoteAuthor": _text(quote.get("author", raw.get("quoteAuthor")), MAX_SUBTITLE_CHARS),
         "notes": _text(raw.get("notes"), MAX_NOTES_CHARS),
     }
 

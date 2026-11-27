@@ -104,6 +104,16 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
 
   const slideCount = document?.slides?.length ?? 0;
   const currentSlide = document?.slides?.[slideIndex];
+  const activeSlideHtml = useMemo(() => {
+    if (!previewHtml) return '';
+    const preview = new DOMParser().parseFromString(previewHtml, 'text/html');
+    const slides = preview.querySelectorAll('body > section.slide');
+    if (slides.length <= 1) return previewHtml;
+    slides.forEach((slide, index) => {
+      if (index !== slideIndex) slide.remove();
+    });
+    return `<!doctype html>${preview.documentElement.outerHTML}`;
+  }, [previewHtml, slideIndex]);
 
   const loadPreview = useCallback(async (doc: DesignDocument) => {
     const res = await api.designRenderHtml({ document: doc });
@@ -188,7 +198,7 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
     } finally {
       setExporting(false);
     }
-  }, [addToast, document]);
+  }, [addToast, document, withNotes]);
 
   const providerOptions = useMemo<ProviderOption[]>(
     () => providers.map((p) => ({ value: p.provider, label: p.label })),
@@ -399,7 +409,7 @@ export default function DesignApp({ active = true }: { active?: boolean }) {
             )}
             <div className="min-h-0 flex-1 overflow-auto p-3">
               <iframe
-                srcDoc={previewHtml}
+                srcDoc={activeSlideHtml}
                 sandbox="allow-same-origin"
                 title={`Vista previa del diseño: ${document?.name ?? ''}`}
                 className="h-full min-h-[420px] w-full rounded border border-[var(--border-subtle)] bg-white"
