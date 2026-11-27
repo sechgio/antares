@@ -5,6 +5,9 @@
 .agent-workspace .agent-conversation {
   background: var(--agent-panel);
 }
+.agent-workspace .agent-transcript-turn--panel {
+  max-width: 1120px;
+}
 .agent-workspace .agent-sidebar {
   background: var(--bg-base);
 }
@@ -1029,8 +1032,7 @@ textarea.agent-panel__input {
   scrollbar-gutter: stable;
 }
 .agent-panel-viewer__content {
-  max-width: 1280px;
-  margin: 0 auto;
+  max-width: none;
   padding: 16px clamp(16px, 4vw, 48px) 64px;
 }
 .agent-panel-viewer .agent-panel__head {

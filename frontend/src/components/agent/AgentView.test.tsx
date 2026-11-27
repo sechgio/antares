@@ -2677,6 +2677,26 @@ it('invoca una skill con «/»: filtra el catálogo, elige con el teclado y env�
   expect(screen.queryByLabelText('Skill activa')).not.toBeInTheDocument();
 });
 
+it('ensancha turnos con paneles de tabla o página sin ensanchar paneles de elección', async () => {
+  const tablePanel: AgentPanel = { id: 'p-table', session_id: 's1', call_id: 'table-call', type: 'table',
+    props: { title: 'Órdenes', columns: ['OT'], rows: [[1603]] }, status: 'open', response: null, created_at: 1 };
+  const choicePanel: AgentPanel = { id: 'p-choice', session_id: 's1', call_id: 'choice-call', type: 'choice',
+    props: { prompt: '¿Qué formato?', options: ['PDF', 'Excel'] }, status: 'open', response: null, created_at: 1 };
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, panels: [tablePanel, choicePanel], messages: [
+    { role: 'user', content: 'Exporta el informe', ts: 1 },
+    { role: 'assistant', content: '', ts: 2, tool_calls: [{ id: 'table-call', name: 'panel_show', params: {}, gated: false, status: 'done' }] },
+    { role: 'user', content: 'Sigue', ts: 3 },
+    { role: 'assistant', content: '', ts: 4, tool_calls: [{ id: 'choice-call', name: 'panel_show', params: {}, gated: false, status: 'done' }] },
+  ] });
+  render(<AgentView />);
+  await act(async () => {});
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  const table = await screen.findByRole('region', { name: 'Órdenes' });
+  const choice = await screen.findByRole('region', { name: '¿Qué formato?' });
+  expect(table.closest('.agent-transcript-turn')).toHaveClass('agent-transcript-turn--panel');
+  expect(choice.closest('.agent-transcript-turn')).not.toHaveClass('agent-transcript-turn--panel');
+});
+
 it('responde un panel del chat como mensaje de usuario con referencia al panel', async () => {
   const panel: AgentPanel = { id: 'p1', session_id: 's1', call_id: 'show', type: 'choice', props: { prompt: '¿Qué formato?', options: ['PDF', 'Excel'] },
     status: 'open', response: null, created_at: 1 };

@@ -2367,6 +2367,8 @@ export default function AgentView({
                   before && (before.role === 'user' ? before.message : before.messages[before.messages.length - 1]);
                 const newDay = !!label && (!previous?.ts || dayLabel(previous.ts) !== label);
                 const results = turnArtifacts.get(turn.key);
+                const panels = turnPanels.get(turn.key);
+                const widePanel = panels?.some((panel) => panel.type === 'page' || panel.type === 'table') === true;
                 const entryIds = (turn.role === 'user' ? [turn.message] : turn.messages)
                   .flatMap((message) => message.id === undefined ? [] : [message.id]);
                 const stableKey = turn.role === 'assistant' && before?.role === 'user' && before.message.id !== undefined
@@ -2374,7 +2376,7 @@ export default function AgentView({
                 return (
                   <div key={`${sessionId}-${turn.role}-${stableKey}`} id={`agent-turn-${turn.key}`}
                     data-entry-ids={entryIds.join(' ')} tabIndex={-1}
-                    className="agent-transcript-turn space-y-4">
+                    className={`agent-transcript-turn space-y-4${widePanel ? ' agent-transcript-turn--panel' : ''}`}>
                     {newDay && <DaySeparator label={label} />}
                     {first.handoff ? (
                       <div className="space-y-1 text-sm text-[var(--text-secondary)]">
@@ -2399,7 +2401,7 @@ export default function AgentView({
                         onUndo={messagesSessionId === sessionId ? undoEffect : undefined}
                         view={visibleTranscriptView}
                         hideReasoning={hideReasoning}
-                        panels={turnPanels.get(turn.key)}
+                        panels={panels}
                         pendingQuestions={turn.key === questionTurn ? { items: questions, onAnswered: reloadVisibleMessages } : undefined}
                         sessionId={sessionId}
                         onPanelRespond={respondPanelStable}

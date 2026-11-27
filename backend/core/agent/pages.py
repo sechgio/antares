@@ -22,15 +22,13 @@ TOOL_SPECS: list[JsonObject] = [{
     "name": "page_create", "module": "documents", "gated": False,
     "description": (
         "Crea una página interactiva como borrador de esta conversación, con tarjeta para abrirla. "
-        "html contiene marcado y estilos; script contiene JavaScript que enlaza controles con addEventListener. "
-        "No hay red, imports externos, Node ni bridge. AntaresPage.data contiene data; AntaresPage.rows y "
-        "AntaresPage.columns contienen TODAS las filas y columnas de spreadsheet_path (Excel/CSV autorizado), "
-        "sin el recorte de file_read. Calcula indicadores, gráficos y tabla desde las mismas filas filtradas. "
-        "Los gráficos se renderizan con AntaresPage.chart(elemento, spec) con un spec {type:bar|line|pie,title,labels,series} "
-        "y los diagramas Mermaid con AntaresPage.diagram(elemento, fuente); ambos devuelven un manejador con update(fuente) "
-        "para redibujar, y un <pre class=\"pele-diagram\"> se renderiza solo. "
-        "No fijes colores ni fondos: usa las clases page-* y las variables --page-* para que "
-        "la página siga el tema claro u oscuro del chat. "
+        "html contiene marcado/estilos y script JavaScript con addEventListener; no hay red, imports, Node ni bridge. "
+        "AntaresPage.data contiene data; AntaresPage.rows/columns contienen TODAS las filas/columnas de spreadsheet_path "
+        "(Excel/CSV autorizado), no la muestra de file_read. Calcula indicadores, gráficos y tabla desde las mismas filas filtradas. "
+        "Usa AntaresPage.chart(elemento, {type:bar|line|pie,title,labels,series}) o AntaresPage.diagram(elemento, fuente); "
+        "ambos devuelven un manejador con update(fuente), y un <pre class=\"pele-diagram\"> se renderiza solo. "
+        "Compón en flujo con grid/flex: la composición principal no usa absolute/fixed; usa el ancho disponible y la tipografía incluida. "
+        "No fijes colores ni fondos: usa clases page-* y variables --page-* para seguir el tema claro u oscuro. "
         "Para modificar una página usa artifact_id y expected_revision de artifacts_list; conserva su identidad."
     ),
     "inputSchema": {"type": "object", "additionalProperties": False, "properties": {
