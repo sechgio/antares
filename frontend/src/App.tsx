@@ -18,6 +18,7 @@ import { reportFrontendError } from './utils/observability';
 import { errorMessage } from '@/utils/errors';
 import { bootThemeFromBackend } from './utils/themeApplier';
 import { usePluginEnabled } from './plugins';
+import { KEEP_ALIVE_VIEWS, useKeepAliveViews } from './hooks/useKeepAliveViews';
 
 const LoginScreen = React.lazy(() => import('./auth/LoginScreen'));
 const SettingsModal = React.lazy(() => import('./components/settings/SettingsModal'));
@@ -369,11 +370,12 @@ function AppContent() {
     });
   }, []);
 
+  const keepAliveOrder = useKeepAliveViews(activeTab);
   const needsCloudAuth = CLOUD_AUTH_TABS.has(activeTab);
   const cloudAuthBlocked = needsCloudAuth && !user;
   const isFullBleed = FULL_BLEED_TABS.has(activeTab);
   const showCanvas = activeTab === 'canvas';
-  const ActiveView = showCanvas ? null : VIEWS[activeTab];
+  const ActiveView = showCanvas || KEEP_ALIVE_VIEWS.has(activeTab) ? null : VIEWS[activeTab];
   const CanvasKeepAlive = VIEWS.canvas;
 
   return (
@@ -416,6 +418,24 @@ function AppContent() {
                       </ErrorBoundary>
                     </div>
                   )}
+                  {[...KEEP_ALIVE_VIEWS].map((tab) => {
+                    if (tab !== activeTab && !keepAliveOrder.includes(tab)) return null;
+                    const isActive = tab === activeTab;
+                    const KeepAliveView = VIEWS[tab];
+                    return (
+                      <div
+                        key={tab}
+                        data-testid={`keep-alive-${tab}`}
+                        className={`h-full min-h-0 ${FULL_BLEED_TABS.has(tab) ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4 [scrollbar-gutter:stable]'} ${isActive ? '' : 'hidden'}`}
+                        aria-hidden={!isActive}
+                        inert={!isActive ? true : undefined}
+                      >
+                        <ErrorBoundary view={tab}>
+                          <KeepAliveView active={isActive} />
+                        </ErrorBoundary>
+                      </div>
+                    );
+                  })}
                   {ActiveView && (
                     <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4 [scrollbar-gutter:stable]'}`}>
                       <ErrorBoundary key={activeTab} view={activeTab}>

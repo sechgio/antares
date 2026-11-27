@@ -109,7 +109,6 @@ export default defineConfig(({ mode }) => ({
           if (id.includes('\0vite/preload-helper')) return 'vite-preload';
           const n = id.replace(/\\/g, '/');
           if (n.includes('/node_modules/framer-motion/')) return 'vendor-framer';
-          if (n.includes('/node_modules/lucide-react/')) return 'vendor-icons';
           if (n.includes('/node_modules/react-dom/') || n.includes('/node_modules/scheduler/')) {
             return 'vendor-react';
           }
