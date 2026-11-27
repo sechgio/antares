@@ -1865,6 +1865,24 @@ it('recarga la conversación en cuanto el motor avisa de un cambio, sin esperar 
   expect(await screen.findByText('Respuesta en vivo')).toBeInTheDocument();
 });
 
+it('aplica los deltas de streaming sin recargar la conversación completa', async () => {
+  const update = agentUpdates();
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  localStorage.setItem('antares-agent-session', 's1');
+  render(<AgentView />);
+  await waitFor(() => expect(list).toHaveBeenCalled());
+  const before = list.mock.calls.length;
+  await act(async () => {
+    update('agent.changed', { session_id: 's1', stream: { partial: 'Hola' } });
+  });
+  expect(await screen.findByText(/Hola/)).toBeInTheDocument();
+  await act(async () => {
+    update('agent.changed', { session_id: 's1', stream: { partial: 'Hola mundo' } });
+  });
+  expect(await screen.findByText(/Hola mundo/)).toBeInTheDocument();
+  expect(list.mock.calls.length).toBe(before);
+});
+
 it('prioriza la aprobación y la pregunta, y anuncia cada pregunta una sola vez', async () => {
   const update = agentUpdates();
   const question = { id: 'q1', session_id: 's1', questions: [{ id: 'name', prompt: '¿Qué nombre uso?' }] };

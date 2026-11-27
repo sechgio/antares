@@ -2,7 +2,7 @@
 
 const { assert, finish } = require('./helpers/harness');
 const { shared } = require('../electron/agent-shared');
-const { projectMessages } = require('../electron/agent-projection');
+const { projectMessages, notifyChanged } = require('../electron/agent-projection');
 
 shared.deps = {
   chord: { BACKGROUND_CONTEXT: {} }, pi: { UsageDoc: {} },
@@ -43,6 +43,39 @@ async function main() {
     'los recuerdos y los historiales anteriores sin metadatos no fabrican adjuntos');
   assert(JSON.stringify(await project(contents)) === JSON.stringify(messages),
     'reconstruir el historial conserva los adjuntos sin usar el staging temporal');
+
+  const notices = [];
+  shared.notify = (method, params) => notices.push([method, params]);
+  shared.convToSession.set('conversation-stream', 'session-stream');
+  shared.live.set('conversation-stream', {
+    generation: { message: { role: 'assistant', content: [{ type: 'text', text: 'Hola parcial' }] } },
+    tools: [],
+    inbox: [],
+  });
+  notifyChanged('conversation-stream', [{ type: 'message_update' }]);
+  await new Promise((resolve) => setTimeout(resolve, 130));
+  const streamed = notices.find(([, params]) => params.session_id === 'session-stream')?.[1];
+  assert(
+    streamed?.stream?.partial === 'Hola parcial',
+    'un delta de texto se notifica con el parcial sin exigir otra proyección completa',
+  );
+
+  notices.length = 0;
+  notifyChanged('conversation-stream', [{ type: 'message_update' }]);
+  notifyChanged('conversation-stream', [{ type: 'tool_execution_start' }]);
+  await new Promise((resolve) => setTimeout(resolve, 130));
+  assert(
+    notices.some(([, params]) => params.session_id === 'session-stream' && !params.stream),
+    'mezclar un cambio estructural degrada la notificación a recarga completa',
+  );
+
+  notices.length = 0;
+  notifyChanged('conversation-stream', [{ type: 'message_start' }]);
+  await new Promise((resolve) => setTimeout(resolve, 130));
+  assert(
+    notices.some(([, params]) => params.session_id === 'session-stream' && !params.stream),
+    'el inicio de una respuesta sigue recargando para cerrar el mensaje anterior',
+  );
   finish();
 }
 

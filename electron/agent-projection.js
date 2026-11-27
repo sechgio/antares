@@ -16,27 +16,43 @@ const COMPACTION_REASONS = {
 const NOTIFY_MS = 90;
 const notifyTimers = new Map();
 
-function emitChanged(sessionId) {
+function emitChanged(sessionId, stream) {
+  const params = { session_id: sessionId, ...(stream ? { stream } : {}) };
   if (shared.notify) {
-    shared.notify('agent.changed', { session_id: sessionId });
+    shared.notify('agent.changed', params);
     return;
   }
   try {
     const win = require('./window-manager').getMainWindow();
-    if (win && !win.isDestroyed()) win.webContents.send('ipc-notify', 'agent.changed', { session_id: sessionId });
+    if (win && !win.isDestroyed()) win.webContents.send('ipc-notify', 'agent.changed', params);
   } catch {}
 }
 
-function notifyChanged(convId) {
-  if (notifyTimers.has(convId)) return;
-  notifyTimers.set(
-    convId,
-    setTimeout(() => {
-      notifyTimers.delete(convId);
-      const sessionId = shared.convToSession.get(convId);
-      if (sessionId) emitChanged(sessionId);
-    }, NOTIFY_MS),
-  );
+const STREAM_EVENT_TYPES = new Set(['message_update']);
+
+function notifyChanged(convId, events = []) {
+  if (!convId) return;
+  const streamOnly = events.length > 0 && events.every((event) => STREAM_EVENT_TYPES.has(event.type));
+  const pending = notifyTimers.get(convId);
+  if (pending) {
+    pending.streamOnly = pending.streamOnly && streamOnly;
+    return;
+  }
+  const next = { streamOnly, timer: null };
+  next.timer = setTimeout(() => {
+    notifyTimers.delete(convId);
+    const sessionId = shared.convToSession.get(convId);
+    if (!sessionId) return;
+    const reasoning = next.streamOnly ? partialReasoning(convId) : '';
+    emitChanged(sessionId, next.streamOnly
+      ? {
+          partial: partialText(convId),
+          partial_reasoning: reasoning,
+          partial_reasoning_ms: timing.partialReasoningMs(convId, reasoning),
+        }
+      : null);
+  }, NOTIFY_MS);
+  notifyTimers.set(convId, next);
 }
 
 async function ensureWatcher(session, context) {
@@ -48,7 +64,7 @@ async function ensureWatcher(session, context) {
   applySnapshot(convId, stream.snapshot);
   stream.start(async (events) => {
     for (const event of events) applyEvent(convId, event);
-    if (events.length) notifyChanged(convId);
+    if (events.length) notifyChanged(convId, events);
     if (events.some((event) => event.type === 'message_end' && event.entry?.kind === 'pi.compaction')) {
       await require('./agent-runtime').regenerateMemorySnapshot(session.id);
     }
