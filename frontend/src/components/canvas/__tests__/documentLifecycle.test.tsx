@@ -28,6 +28,9 @@ vi.mock('../../../api', async (importOriginal) => {
 vi.mock('../sync/cloudQueue', () => ({
   queueCanvasCloudPush: vi.fn(),
   queueCanvasCloudDelete: vi.fn(),
+}));
+
+vi.mock('../sync/pendingCloudOperations', () => ({
   recordPendingCanvasDelete: vi.fn(),
 }));
 
@@ -49,7 +52,8 @@ vi.mock('../utils/imageBlobStore', () => ({
 
 import { api } from '../../../api';
 import { reportFrontendEvent } from '../../../utils/observability';
-import { queueCanvasCloudDelete, queueCanvasCloudPush, recordPendingCanvasDelete } from '../sync/cloudQueue';
+import { queueCanvasCloudDelete, queueCanvasCloudPush } from '../sync/cloudQueue';
+import { recordPendingCanvasDelete } from '../sync/pendingCloudOperations';
 import { hydrateHistorySteps } from '../utils/imageBlobStore';
 
 function makeDoc(id: string, name = id): CanvasDocument {

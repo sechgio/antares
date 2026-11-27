@@ -16,8 +16,8 @@ import {
   recordPendingCanvasDelete,
   clearPendingCanvasDelete,
   pendingCanvasPushes,
-  queueCanvasCloudPush as queuePushBeforeImport,
-} from './cloudQueue';
+} from './pendingCloudOperations';
+import { queueCanvasCloudPush as queuePushBeforeImport } from './cloudQueue';
 
 const supabaseMock = vi.hoisted(() => {
   const responses: Array<

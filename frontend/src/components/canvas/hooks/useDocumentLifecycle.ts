@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 import { api, apiRetryAfterMs } from '../../../api';
-import { queueCanvasCloudDelete, queueCanvasCloudPush, recordPendingCanvasDelete } from '../sync/cloudQueue';
+import { queueCanvasCloudDelete, queueCanvasCloudPush } from '../sync/cloudQueue';
+import { recordPendingCanvasDelete } from '../sync/pendingCloudOperations';
 import { isNewer } from '../sync/syncCompare';
 import { normalizeDocument, type CanvasDocument, type CanvasDocumentSummary } from '../types';
 import {

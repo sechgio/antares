@@ -21,7 +21,7 @@ import {
   pendingCanvasPushes,
   recordPendingCanvasPush,
   clearPendingCanvasPush,
-} from './cloudQueue';
+} from './pendingCloudOperations';
 
 type LocalSummary = { id: string; name: string; updatedAt?: string };
 
