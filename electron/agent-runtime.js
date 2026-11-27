@@ -385,7 +385,6 @@ async function profileSave(params = {}) {
     description: _text(params.description, 'la descripción', 200),
     role,
     instructions: _text(params.instructions, 'las instrucciones', 4000),
-    ...identityFields(params, existing),
     starter: _text(params.starter, 'el mensaje inicial', 500),
     tools: Array.isArray(tools) ? [...new Set(tools)] : null,
     ...(deny.length ? { tools_deny: [...new Set(deny)] } : {}),
@@ -395,15 +394,18 @@ async function profileSave(params = {}) {
     ...(dreaming ? { dreaming: true } : {}),
     ...(recencyHalfLife !== 14 ? { recency_half_life_days: recencyHalfLife } : {}),
     ...(agentModel ? { model: agentModel } : {}),
-    ...(existing && existing.onboarded_at ? { onboarded_at: existing.onboarded_at } : {}),
     created_at: existing ? existing.created_at : now,
     updated_at: now,
   };
   await shared.state.harness.commit(async (tx) => {
     const doc = await tx.doc(shared.state.ProfilesDoc);
+    const current = doc.profiles[profile.id];
+    if (existing && !current) throw notFound('El agente ya no existe');
     if (!existing && Object.keys(doc.profiles).length >= MAX_PROFILES) {
       throw validation(`Ya tienes ${MAX_PROFILES} agentes; borra alguno antes de crear otro`);
     }
+    Object.assign(profile, identityFields(params, current));
+    if (current?.onboarded_at) profile.onboarded_at = current.onboarded_at;
     doc.profiles[profile.id] = profile;
   }, ctx());
   return { profile };
@@ -418,8 +420,10 @@ async function profileDelete(params = {}) {
     delete doc.profiles[id];
     if (doc.usage) delete doc.usage[id];
     if (doc.dreaming) delete doc.dreaming[id];
+    if (removed) await require('./agent-tasks').cancelOrphanedRoutines(shared.state, tx);
   }, ctx());
   if (!removed) throw notFound('El agente ya no existe');
+  require('./agent-file-watcher').syncWatchers().catch(() => {});
   return { deleted: true, id };
 }
 
@@ -457,7 +461,9 @@ async function sessionCreate(params) {
   await execution.ensureProvider(provider, model);
   const levels = await execution.reasoningLevels(provider, model);
   const needsOnboarding = Boolean(
-    savedProfile ? !savedProfile.instructions && !savedProfile.onboarded_at : portableProfile && !portableProfile.onboarded_at,
+    savedProfile
+      ? !savedProfile.instructions && !(savedProfile.onboarded_at && savedProfile.identity && savedProfile.user)
+      : portableProfile && !portableProfile.onboarded_at,
   );
   const instructions = agentInstructions(profile);
   const conv = await shared.state.harness.createConversation(
@@ -505,16 +511,6 @@ async function sessionCreate(params) {
         },
         ctx(),
       );
-      if (savedProfile) {
-        await shared.state.harness.commit(async (tx) => {
-          const doc = await tx.doc(shared.state.ProfilesDoc);
-          if (doc.profiles[savedProfile.id] && !doc.profiles[savedProfile.id].onboarded_at) {
-            doc.profiles[savedProfile.id].onboarded_at = Date.now();
-          }
-        }, ctx());
-      } else if (portableProfile) {
-        require('./agent-profiles').markPortableOnboarded(portableProfile.slug);
-      }
     } catch (error) {
       console.error(
         `[agent] no se pudo iniciar el onboarding: ${execution.sanitizeProviderError(String(error?.message || error))}`,
@@ -1377,14 +1373,17 @@ async function memoryContext(session, initialText) {
 }
 
 async function _writeMemorySnapshot(session, initialText, checkpoint) {
-  const { harness, SessionsDoc } = shared.state;
+  const { harness, SessionsDoc, ProfilesDoc } = shared.state;
   const { AgentDoc, configure } = shared.deps.pi;
+  const profileId = !session.profile?.portable ? session.profile?.id : null;
+  const profile = await execution.sessionProfile(session);
+  const scope = profile ? profile.memory_scope || 'shared-read' : null;
+  const scopeChanged = scope !== (session.memory_snapshot_scope ?? null);
   let revision = null;
   let context;
   try {
     ({ revision = null } = await bridge('agent_internal_memory_revision', {}));
-    if (!checkpoint && revision !== null && revision === session.memory_revision) return false;
-    const profile = await execution.sessionProfile(session);
+    if (!checkpoint && !scopeChanged && revision !== null && revision === session.memory_revision) return false;
     ({ context } = await bridge('agent_internal_memory_context', {
       session_id: session.id,
       text: initialText,
@@ -1398,24 +1397,34 @@ async function _writeMemorySnapshot(session, initialText, checkpoint) {
     if (checkpoint && profile?.memory_scope !== 'none' && !session.incognito && !session.delegation) await _promoteCandidates(session, initialText);
   } catch (error) {
     if (checkpoint) throw error;
-    return false;
+    if (!scopeChanged) return false;
+    revision = null;
+    context = '';
   }
   return harness.commit(async (tx) => {
     const current = (await tx.doc(SessionsDoc)).sessions[session.id];
     if (!current || current.deleted) return false;
+    const currentProfile = profileId ? (await tx.doc(ProfilesDoc)).profiles[profileId] : null;
+    const currentScope = currentProfile ? currentProfile.memory_scope || 'shared-read' : null;
+    if (currentScope !== scope || !!current.incognito !== !!session.incognito) return false;
     if (
       checkpoint &&
       (current.memory_checkpoint === checkpoint.id || (await tx.latestHeadMarker(session.conversationId))?.id !== checkpoint.id)
     ) return false;
-    const staleRevision = revision === null
-      ? current.memory_revision !== session.memory_revision
-      : current.memory_revision > revision || (!checkpoint && current.memory_revision === revision);
+    const storedScope = current.memory_snapshot_scope ?? null;
+    const staleRevision =
+      revision === null
+        ? current.memory_revision !== session.memory_revision || storedScope !== (session.memory_snapshot_scope ?? null)
+        : storedScope === scope &&
+          (current.memory_revision > revision || (!checkpoint && current.memory_revision === revision));
     if (staleRevision) return false;
     const stored = (await tx.doc(AgentDoc, session.conversationId)).instructions || '';
     const instructions = withMemorySnapshot(stored, context);
     if (instructions !== stored) await configure(tx, session.conversationId, { instructions });
     if (revision === null) delete current.memory_revision;
     else current.memory_revision = revision;
+    if (scope === null) delete current.memory_snapshot_scope;
+    else current.memory_snapshot_scope = scope;
     if (checkpoint) current.memory_checkpoint = checkpoint.id;
     return true;
   }, ctx());

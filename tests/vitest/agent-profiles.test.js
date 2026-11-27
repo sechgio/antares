@@ -431,14 +431,14 @@ describe('perfiles portables', () => {
 
 describe('integración con el arranque del agente', () => {
   const runtime = require('../../electron/agent-runtime');
-  const { conversation, ctx } = require('../../electron/agent-shared');
+  const { conversation, ctx, shared } = require('../../electron/agent-shared');
 
   afterEach(async () => {
     await runtime.shutdown();
     runtime._internal._providerOverrides.delete('faux');
   });
 
-  async function fixture(catalog = []) {
+  async function fixture(catalog = [], memoryContext = () => '') {
     const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
     const { fauxProvider, fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai');
     const faux = fauxProvider();
@@ -458,7 +458,9 @@ describe('integración con el arranque del agente', () => {
         return { provider: params.provider, style: 'openai_chat', default_model: 'faux-2' };
       if (method === 'agent_internal_approvals_pending') return { approvals: [] };
       if (method === 'agent_internal_mentions') return { modules: [], unknown: [], ambiguous: [] };
-      if (method === 'agent_internal_memory_context') return { context: '' };
+      if (method === 'agent_internal_memory_revision') return { revision: 1 };
+      if (method === 'agent_internal_memory_context') return { context: memoryContext(params) };
+      if (method === 'agent_internal_profile_usage') return { tokens: 0 };
       if (method === 'agent_internal_artifacts') return { artifacts: [], questions: [], context: {} };
       if (method === 'agent_internal_dispatch') {
         return {
@@ -486,6 +488,111 @@ describe('integración con el arranque del agente', () => {
     await open();
     return { open, bridge, faux, fauxAssistantMessage, fauxToolCall };
   }
+
+  it('aplica el alcance de memoria del perfil en el mismo chat, también al revertirlo y reiniciar', async () => {
+    const memory = 'Recuerdo privado de prueba';
+    const f = await fixture([], ({ memory_scope }) => (memory_scope === 'own' ? memory : ''));
+    const { profile: saved } = await runtime.handlers.agent_profile_save({
+      name: 'Perfil con memoria', instructions: 'Ayuda al usuario.', tools: [], memory_scope: 'own',
+    });
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1', profile_id: saved.id });
+    async function send(content) {
+      let seen;
+      f.faux.setResponses([(context) => {
+        seen = JSON.stringify(context.messages);
+        return f.fauxAssistantMessage('Listo');
+      }]);
+      await runtime.handlers.agent_message_send({ session_id: session.id, content });
+      await (await conversation(session.id)).waitForIdle(ctx());
+      await vi.waitFor(() => expect(seen).toContain(content));
+      return seen;
+    }
+    expect(await send('Consulta la memoria')).toContain(memory);
+    await runtime.handlers.agent_profile_save({ ...saved, memory_scope: 'none' });
+    await runtime.shutdown();
+    await f.open();
+    expect(await send('Trabaja sin memoria')).not.toContain(memory);
+    await runtime.handlers.agent_profile_save(saved);
+    expect(await send('Vuelve a consultar la memoria')).toContain(memory);
+  });
+
+  it.each(['actual', 'anterior'])('detiene las rutinas si el agente se borró en la versión %s', async (version) => {
+    const f = await fixture();
+    const handlers = runtime.handlers;
+    const { profile: saved } = await handlers.agent_profile_save({ name: 'Agente', instructions: 'Revisa.', tools: [] });
+    const { session } = await handlers.agent_session_create({ provider: 'faux', profile_id: saved.id });
+    const dueAt = new Date(Date.now() + 3_600_000).toISOString();
+    const task = { session_id: session.id, content: 'Revisa.', due_at: dueAt };
+    const { scheduled: routine } = await handlers.agent_tasks_save({ ...task, every_minutes: 60 });
+    const { scheduled: once } = await handlers.agent_tasks_save(task);
+    const pastRun = { at: 1, due_at: 1, status: 'needs_input', silent: false };
+    await shared.state.harness.commit(async (tx) => {
+      const current = (await tx.doc(shared.state.TasksDoc)).tasks[routine.id];
+      current.status = 'needs_input';
+      current.question = '¿Qué periodo reviso?';
+      current.runs = [pastRun];
+    }, ctx());
+    if (version === 'actual') {
+      await handlers.agent_profile_delete({ id: saved.id });
+    } else {
+      await shared.state.harness.commit(async (tx) => {
+        delete (await tx.doc(shared.state.ProfilesDoc)).profiles[saved.id];
+      }, ctx());
+    }
+    await runtime.shutdown();
+    await f.open();
+    expect((await handlers.agent_sessions_list()).sessions.map(({ id }) => id)).toContain(session.id);
+    expect((await handlers.agent_tasks_list({})).tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: routine.id, status: 'cancelled', runs: [pastRun] }),
+      expect.objectContaining({ id: once.id, status: 'pending' }),
+    ]));
+    await expect(handlers.agent_tasks_run({ id: routine.id })).rejects.toThrow(/cancelado/);
+    await expect(handlers.agent_tasks_respond({ id: routine.id, response: 'Junio' })).rejects.toThrow(/no está esperando/);
+    await expect(handlers.agent_tasks_save({ ...task, every_minutes: 60 })).rejects.toThrow(/ya no existe/);
+  });
+
+  it.each(['owner', 'target'])('cancela una rutina dirigida si se borra el perfil %s', async (side) => {
+    await fixture();
+    const handlers = runtime.handlers;
+    const model = { provider: 'faux', model: 'faux-1' };
+    const owner = (await handlers.agent_profile_save({ name: 'Origen', instructions: 'Organiza.', tools: [] })).profile;
+    const target = (await handlers.agent_profile_save({ name: 'Destino', instructions: 'Revisa.', tools: [] })).profile;
+    const { session } = await handlers.agent_session_create({ ...model, profile_id: owner.id });
+    const { session: destination } = await handlers.agent_session_create({ ...model, profile_id: target.id });
+    const { scheduled } = await handlers.agent_tasks_save({
+      session_id: session.id,
+      agent: target.id,
+      content: 'Revisa el informe.',
+      due_at: new Date(Date.now() + 3_600_000).toISOString(),
+      every_minutes: 60,
+    });
+    expect(scheduled.target_session_id).toBe(destination.id);
+    await handlers.agent_profile_delete({ id: side === 'owner' ? owner.id : target.id });
+    await expect(handlers.agent_tasks_run({ id: scheduled.id })).rejects.toThrow(/cancelado/);
+  });
+
+  it('retoma la presentación de un perfil portable hasta que se confirma', async () => {
+    profile('reviewer', { model: 'faux-1', onboarded_at: undefined });
+    const f = await fixture();
+    const handlers = runtime.handlers;
+    f.faux.setResponses([f.fauxAssistantMessage('¿Para qué me necesitas?'), f.fauxAssistantMessage('¿Me cuentas el objetivo?')]);
+    const { session: first } = await handlers.agent_session_create({ provider: 'faux', profile_id: 'reviewer' });
+    await (await conversation(first.id)).waitForIdle(ctx());
+    expect(loadAgentProfile('reviewer').onboarded_at).toBeUndefined();
+    const { session: retry } = await handlers.agent_session_create({ provider: 'faux', profile_id: 'reviewer' });
+    await (await conversation(retry.id)).waitForIdle(ctx());
+    expect((await handlers.agent_messages_list({ session_id: retry.id })).messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'assistant', content: '¿Me cuentas el objetivo?' }),
+    ]));
+    await require('../../electron/agent-profiles').saveSessionOnboarding(retry.id, {
+      confirmed: true, identity: { name: 'Revisor', role: 'Revisa entregas', tone: 'Claro' }, user: 'Prefiere respuestas breves.',
+    });
+    await runtime.shutdown();
+    await f.open();
+    expect(loadAgentProfile('reviewer').onboarded_at).toEqual(expect.any(Number));
+    const { session: next } = await handlers.agent_session_create({ provider: 'faux', profile_id: 'reviewer' });
+    expect((await handlers.agent_messages_list({ session_id: next.id })).messages).toHaveLength(0);
+  });
 
   it('inicia por profile_id, usa su modelo y sirve skills del perfil junto al catálogo base, también tras reiniciar', async () => {
     profile('reviewer', { model: 'faux-1' });
