@@ -342,13 +342,17 @@ def test_artifacts_expose_the_effect_receipt(store):
     assert artifact["receipt"] == {"channel": "documents", "approval_source": "none", "status": "succeeded"}
 
 
-def test_dispatch_running_at_restart_becomes_uncertain(store, tmp_path):
+def test_dispatch_running_at_restart_becomes_uncertain(store, tmp_path, monkeypatch):
     outcome, record = store.dispatch_claim("s1", "c9", "db_clear", {}, None)
     assert outcome == "new" and record["status"] == "running"
     reloaded = agent.AgentStore(tmp_path)
     record = reloaded.get_dispatch("s1", "c9")
     assert record["status"] == "uncertain"
     assert "incierto" in json.loads(record["result"])["error"]
+    monkeypatch.setattr(agent, "get_agent_store", lambda: reloaded)
+    observed = _dispatch_result("c9")
+    assert observed["dispatch"]["status"] == "uncertain"
+    assert "incierto" in json.loads(observed["result"])["error"]
 
 
 def test_interrupted_idempotent_read_restarts_once_and_keeps_effects_uncertain(store, tmp_path, monkeypatch):

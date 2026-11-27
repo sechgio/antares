@@ -47,6 +47,10 @@ const MAX_REPEATS = 3;
 const MAX_PLAN_CHECKS = 2;
 const PLAN_REMINDER_STEPS = 10;
 const MAX_RECOVERABLE_FAILURES = 6;
+const DISPATCH_POLL_INTERVAL_MS = 400;
+const DISPATCH_POLL_MAX_FAILURES = 8;
+const DISPATCH_POLL_ERROR_BACKOFF_MAX_MS = 4000;
+const DISPATCH_POLL_DEADLINE_MS = require('../shared/ipc-method-catalog').TIMEOUTS.heavy;
 const PLAN_CHECK_TEXT =
   'Tu plan de este encargo aún tiene pasos sin verificar: {steps}. Antes de terminar, retómalo: ' +
   'mantén un solo paso in_progress y atiende {next}; comprueba el resultado y, si el paso no puede completarse, ' +
@@ -2296,12 +2300,18 @@ function waitResource(context, delayMs = 400) {
   });
 }
 
+function dispatchLost(err) {
+  return !!err && (err.code === -32004 || err.category === 'NOT_FOUND');
+}
+
 function pollDispatch(sessionId, callId, context, onOutput) {
   const signal = context && context.abortSignal;
   return new Promise((resolve, reject) => {
     if (signal && signal.aborted) return reject(aborted());
     let settled = false;
     let timer;
+    let failures = 0;
+    const deadline = Date.now() + DISPATCH_POLL_DEADLINE_MS;
     const done = (error, result) => {
       if (settled) return false;
       settled = true;
@@ -2321,16 +2331,24 @@ function pollDispatch(sessionId, callId, context, onOutput) {
       try {
         const next = await bridge('agent_internal_dispatch_result', { session_id: sessionId, call_id: callId });
         if (settled) return;
+        failures = 0;
         if (onOutput && typeof next.output === 'string') onOutput(next.output);
         if (settled) return;
-        if (next.result === null || next.result === undefined) timer = setTimeout(poll, 400);
-        else done(null, next.result);
+        if (next.result !== null && next.result !== undefined) return void done(null, next.result);
+        if (Date.now() >= deadline) return void done(null, INTERRUPTED_RESULT);
+        timer = setTimeout(poll, DISPATCH_POLL_INTERVAL_MS);
       } catch (err) {
-        done(null, INTERRUPTED_RESULT);
+        failures += 1;
+        if (dispatchLost(err) || failures >= DISPATCH_POLL_MAX_FAILURES || Date.now() >= deadline) {
+          done(null, INTERRUPTED_RESULT);
+        } else {
+          const backoff = Math.min(DISPATCH_POLL_INTERVAL_MS * 2 ** failures, DISPATCH_POLL_ERROR_BACKOFF_MAX_MS);
+          timer = setTimeout(poll, backoff);
+        }
       }
     };
     if (signal) signal.addEventListener('abort', onAbort, { once: true });
-    timer = setTimeout(poll, 400);
+    timer = setTimeout(poll, DISPATCH_POLL_INTERVAL_MS);
   });
 }
 

@@ -45,8 +45,21 @@ async function main() {
         return { result: state.holdRead ? null : state.result
           ?? (state.changing ? JSON.stringify({ tick: state.reads }) : JSON.stringify({ page: params.params.page })) };
       }
-      if (method === 'agent_internal_dispatch_result') return { result: state.holdRead ? null : '{}' };
-      if (method === 'agent_internal_dispatch_cancel') return { cancelled: true };
+      if (method === 'agent_internal_dispatch_result') {
+        state.resultCalls = (state.resultCalls || 0) + 1;
+        if (state.resultCalls <= (state.failResultCalls || 0)) {
+          throw new Error('IPC timeout: agent_internal_dispatch_result');
+        }
+        if (state.lostDispatch) {
+          const err = new Error(`Dispatch no encontrado: ${params.call_id}`);
+          err.code = -32004;
+          err.category = 'NOT_FOUND';
+          throw err;
+        }
+        if (state.result !== undefined) return { result: state.result };
+        return { result: state.holdRead ? null : '{}' };
+      }
+      if (method === 'agent_internal_dispatch_cancel') { state.cancelCalls = (state.cancelCalls || 0) + 1; return { cancelled: true }; }
       if (method === 'agent_internal_approvals_pending') return { approvals: [] };
       if (method === 'agent_internal_mentions') return { modules: [], unknown: [], ambiguous: [] };
       if (method === 'agent_internal_memory_context') return { context: '' };
@@ -382,6 +395,49 @@ async function main() {
           assert.doesNotMatch(result.result, /interrupted|interrumpida/);
         } finally { await f.close(); }
       }
+    },
+    async poll_aborted_mid_wait() {
+      const f = await fixture();
+      try {
+        f.state.holdRead = true;
+        f.faux.setResponses([f.read(1)]);
+        await f.send('Consulta Canvas');
+        await until(() => f.state.resultCalls > 0);
+        await runtime.handlers.agent_turn_cancel({ session_id: f.session.id });
+        await f.idle();
+        const call = (await f.messages()).messages.flatMap((m) => m.tool_calls || []).find((c) => c.name === 'canvas_list');
+        assert.equal(call.status, 'interrupted', 'el sondeo abortado termina la tool call en vez de colgar');
+        assert.match(String(call.result), /interrumpida|incierto/);
+        assert.ok(f.state.cancelCalls > 0, 'el aborto avisa al backend de que cancele el dispatch');
+      } finally { await f.close(); }
+    },
+    async poll_retries_transient_errors() {
+      const f = await fixture();
+      try {
+        f.state.holdRead = true;
+        f.state.failResultCalls = 2;
+        f.state.result = JSON.stringify({ page: 1 });
+        f.faux.setResponses([f.read(1), fauxAssistantMessage('Resultado entregado')]);
+        await f.send('Consulta Canvas');
+        await f.idle();
+        const call = (await f.messages()).messages.flatMap((m) => m.tool_calls || []).find((c) => c.name === 'canvas_list');
+        assert.equal(f.state.resultCalls, 3, 'los fallos transitorios se reintentan antes de declarar incierto');
+        assert.equal(call.status, 'done');
+        assert.match(String(call.result), /"page":1/);
+      } finally { await f.close(); }
+    },
+    async poll_dispatch_lost() {
+      const f = await fixture();
+      try {
+        f.state.holdRead = true;
+        f.state.lostDispatch = true;
+        f.faux.setResponses([f.read(1), fauxAssistantMessage('Cierre')]);
+        await f.send('Consulta Canvas');
+        await f.idle();
+        const call = (await f.messages()).messages.flatMap((m) => m.tool_calls || []).find((c) => c.name === 'canvas_list');
+        assert.equal(f.state.resultCalls, 1, 'un dispatch inexistente no se reintenta');
+        assert.match(String(call.result), /interrumpida|incierto/);
+      } finally { await f.close(); }
     },
     async recovered_activity() {
       const f = await fixture();
