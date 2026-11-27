@@ -42,7 +42,7 @@ Qué superficies automatizadas existen, qué cubren y —con la misma importanci
 | Direcciones de dependencia | `tests/test_spreadsheet_layering.py` controla imports de sintaxis desde core y utils hacia el handler de hojas. `tests/test-canvas-cloud-layering.js` controla imports directos entre el registro, la entrada diferida y el sincronizador de Canvas. Ambos comprueban casos permitidos y prohibidos. |
 | Compatibilidad de filas y colas | `tests/test_spreadsheet_parse.py` cubre la precedencia de delimitadores y el corte de UTF-8 en el límite del muestreo. Las pruebas de modelos y paridad de reportes cubren coerción, orden y formatos antiguos. `canvasCloudSync.test.ts` cubre intención de push antes de cargar el runtime y reproducción de borrados después de reiniciar la cola. |
 | Pipeline de PR, release y calidad | `tests/test-push-loop.js`, `tests/test-release-loop.js`, `tests/test-review-policy.js`, `tests/test-quality-ratchet.js`, `tests/test-changelog-fragments.js` |
-| Empaquetado del backend | `tests/test_lazy_handlers_packaged.py`, `tests/test_editor_packaged.py`, `scripts/verify-frozen-backend.js`, `scripts/verify-backend-manifest.js` |
+| Empaquetado del backend | `tests/test_lazy_handlers_packaged.py`, `scripts/verify-frozen-backend.js`, `scripts/verify-backend-manifest.js` |
 
 ## Límites declarados
 

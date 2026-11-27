@@ -38,7 +38,7 @@ _ERR_MSG_MAX_CHARS = 300
 
 logger = logging.getLogger(__name__)
 
-_DENIED_PREFIXES = ("ai_provider_", "ai_providers_", "connections_token_", "agent_", "editor_", "mcp_server")
+_DENIED_PREFIXES = ("ai_provider_", "ai_providers_", "connections_token_", "agent_", "mcp_server")
 _DENIED_METHODS = frozenset({"db_clear", "mcp_tool_call", "telemetry", "canvas_save", "canvas_save_history", "print_pdf"})
 
 

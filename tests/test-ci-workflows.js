@@ -18,7 +18,6 @@ const NODE_VERSION_PATH = path.join(ROOT, '.node-version');
 const VITE_CONFIG_PATH = path.join(ROOT, 'frontend', 'vite.config.ts');
 const STATIC_VITEST_CONFIG_PATH = path.join(ROOT, 'frontend', 'vitest.static.config.ts');
 const PANGO_SETUP_PATH = path.join(ROOT, 'scripts', 'install-ci-pango.ps1');
-const EDITOR_MEDIA_SETUP_PATH = path.join(ROOT, 'scripts', 'install-ci-editor-media.ps1');
 const PREPUSH_HOOK_PATH = path.join(ROOT, '.githooks', 'pre-push');
 const PREPUSH_CHECK_PATH = path.join(ROOT, 'scripts', 'pre-push-check.js');
 
@@ -44,7 +43,6 @@ function run() {
   const viteConfig = fs.readFileSync(VITE_CONFIG_PATH, 'utf8');
   const staticVitestConfig = fs.readFileSync(STATIC_VITEST_CONFIG_PATH, 'utf8');
   const pangoSetup = fs.readFileSync(PANGO_SETUP_PATH, 'utf8');
-  const editorMediaSetup = fs.readFileSync(EDITOR_MEDIA_SETUP_PATH, 'utf8');
   const pyproject = fs.readFileSync(PYPROJECT_PATH, 'utf8');
   const minimumPython = pyproject.match(/^requires-python\s*=\s*">=(\d+\.\d+)"/m)?.[1];
 
@@ -276,39 +274,6 @@ function run() {
       ci.includes("hashFiles('scripts/install-ci-pango.ps1')") &&
       !job('backend').includes('restore-keys:'),
     'Pango cache cannot cross runner images or installer versions',
-  );
-  assert(
-    editorMediaSetup.includes('node scripts/prepare-editor-media.js install') &&
-      editorMediaSetup.includes('node scripts/prepare-editor-media.js verify'),
-    'Editor media provisioning verifies the binaries against media/manifest.json on install and on every cache hit',
-  );
-  assert(
-    editorMediaSetup.includes('releases/download/autobuild-2026-08-31-13-27/') &&
-      editorMediaSetup.includes('ec9db2cda1f5894ab95446076ad8bf49379db4b53c02e778ad3b49adf91fec83'),
-    'Editor media provisioning pins a dated BtbN autobuild and validates the downloaded archive SHA-256',
-  );
-  assert(
-    editorMediaSetup.includes('ANTARES_FFMPEG_DIR=') && editorMediaSetup.includes('$env:GITHUB_ENV'),
-    'Editor media provisioning exports ANTARES_FFMPEG_DIR to the backend tests',
-  );
-  assert(
-    editorMediaSetup.includes('if ($LASTEXITCODE -ne 0)') && editorMediaSetup.includes('exit $LASTEXITCODE'),
-    'Editor media provisioning failures stop the backend branch',
-  );
-  assert(
-    job('backend').includes('Install and validate editor media') &&
-      job('backend').indexOf('Install and validate editor media') < job('backend').indexOf('Run backend tests'),
-    'Editor media provisioning precedes backend tests',
-  );
-  assert(
-    job('backend').includes('editor-media-') && job('backend').includes("hashFiles('media/manifest.json')"),
-    'Editor media cache is keyed by the media manifest, runner OS, architecture and image version',
-  );
-  assert(
-    !job('lint').includes('install-ci-editor-media') &&
-      !job('frontend').includes('install-ci-editor-media') &&
-      !job('build').includes('install-ci-editor-media'),
-    'Only the backend runner provisions editor media',
   );
   for (const suite of ['contracts', 'backend', 'electron', 'turns']) {
     const calls = ciJobs.match(new RegExp(`node scripts/run-test-suites\\.js ${suite}\\b`, 'g')) || [];

@@ -17,7 +17,6 @@ const RULES = [
   { re: /^frontend\//, areas: ['typecheck', 'build', 'frontend', 'contracts', 'electron'] },
   { re: /^backend\//, areas: ['typecheck', 'backend', 'electron', 'contracts'] },
   { re: /^(?:pyproject\.toml|uv\.lock)$/, areas: ['typecheck', 'backend', 'electron', 'contracts'] },
-  { re: /^media\//, areas: ['backend', 'electron'] },
   { re: /^tests\/[^/]*\.py$/, areas: ['backend', 'electron'] },
   { re: /^tests\/.*\.py$/, areas: ['backend', 'electron'] },
   { re: /^tests\/.*\.(?:js|mjs|cjs|ts)$/, areas: ['contracts', 'electron'] },
