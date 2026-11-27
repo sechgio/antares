@@ -82,6 +82,7 @@ import Textarea from '../ui/Textarea';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import { ProviderGlyph } from '../connections/connectionIcons';
 import AgentAvatar from './AgentAvatar';
+import AgentComposerInput, { type AgentComposerInputHandle } from './AgentComposerInput';
 import ModelPicker from './ModelPicker';
 import PermissionPicker from './PermissionPicker';
 import ReasoningPicker from './ReasoningPicker';
@@ -486,7 +487,7 @@ export default function AgentView({
   const listRef = useRef<HTMLDivElement | null>(null);
   const atBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
-  const draftRef = useRef<HTMLTextAreaElement | null>(null);
+  const draftRef = useRef<AgentComposerInputHandle>(null);
   const [composerOptionsOpen, setComposerOptionsOpen] = useState(false);
   const composerOptionsId = useId();
   const composerOptionsRef = useRef<HTMLButtonElement>(null);
@@ -1149,15 +1150,12 @@ export default function AgentView({
     const token =
       option.kind === 'bot' ? `@bot:${option.profile.id} ` : option.kind === 'connector' ? `@${option.mention} ` : '';
     const caret = active.start + token.length;
+    draftRef.current?.replace(active.start, active.end, token);
     drafts.update(sessionId, (current) => ({
       text: `${draft.slice(0, active.start)}${token}${draft.slice(active.end)}`,
       skill: option.kind === 'skill' ? option.skill : current.skill,
     }), true);
     composer.close(caret);
-    window.requestAnimationFrame(() => {
-      draftRef.current?.focus();
-      draftRef.current?.setSelectionRange(caret, caret);
-    });
   };
 
   const createSession = async (profile?: AgentProfile) => {
@@ -2854,15 +2852,15 @@ export default function AgentView({
                   })}
                 </div>
               )}
-              <textarea
+              <AgentComposerInput
                 ref={draftRef}
-                rows={1}
                 value={draft}
-                onChange={(event) => {
-                  drafts.update(sessionId, () => ({ text: event.target.value }), true);
-                  composer.edited(event.target.selectionStart);
+                profiles={profiles}
+                onEdit={(text, caret) => {
+                  drafts.update(sessionId, () => ({ text }), true);
+                  composer.edited(caret);
                 }}
-                onSelect={(event) => composer.moved(event.currentTarget.selectionStart)}
+                onMove={composer.moved}
                 onPaste={(event) => {
                   const files = Array.from(event.clipboardData.files ?? []);
                   if (!files.length) {
@@ -2875,7 +2873,6 @@ export default function AgentView({
                   event.preventDefault();
                   void attachFiles(files);
                 }}
-                aria-autocomplete="list"
                 aria-controls={autocomplete ? listboxId : undefined}
                 aria-activedescendant={selectedOptionId}
                 onKeyDown={(e) => {
@@ -2891,9 +2888,6 @@ export default function AgentView({
                   }
                 }}
                 placeholder={running || pending.length > 0 ? 'Añade una indicación…' : 'Escribe un mensaje · @ para mencionar · / para usar una skill'}
-                aria-label="Mensaje para el agente"
-                title="Intro para enviar · Mayús+Intro para otra línea · @ para mencionar · / para usar una skill"
-                className="agent-composer-input block w-full resize-none bg-transparent text-[14px] leading-5 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)]"
               />
               <div className="flex min-w-0 items-center gap-1.5 px-2.5 pb-2.5">
                 <Button
