@@ -1,14 +1,14 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const runtime = require('../../electron/agent-runtime');
+const { handlers } = require('../../electron/agent-runtime');
 const scheduler = require('../../electron/agent-tasks');
 
-async function verifyTaskHandoff({ faux, fauxAssistantMessage, future, until }) {
-  const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
-  const list = async () => (await runtime.handlers.agent_tasks_list({ session_id: session.id })).tasks;
+module.exports = async function verifyHandoff({ faux, fauxAssistantMessage, until, future }) {
+  const { session } = await handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+  const list = async () => (await handlers.agent_tasks_list({ session_id: session.id })).tasks;
 
-  const askTask = await runtime.handlers.agent_tasks_save({
+  const askTask = await handlers.agent_tasks_save({
     session_id: session.id,
     content: 'Encargo que necesita un dato del usuario',
     due_at: future,
@@ -24,17 +24,17 @@ async function verifyTaskHandoff({ faux, fauxAssistantMessage, future, until }) 
       return fauxAssistantMessage('Informe de marzo terminado');
     },
   ]);
-  await runtime.handlers.agent_tasks_run({ id: askTask.scheduled.id });
+  await handlers.agent_tasks_run({ id: askTask.scheduled.id });
   await until(async () => (await list()).find((task) => task.id === askTask.scheduled.id)?.status === 'needs_input');
   const asking = (await list()).find((task) => task.id === askTask.scheduled.id);
   assert.equal(asking.question, '¿A qué mes corresponde el informe?', 'la pregunta queda registrada en el encargo');
   assert.match(asking.output, /Preparé el borrador/, 'el resultado parcial queda visible sin abrir la sesión');
   assert.equal(asking.runs.at(-1).status, 'needs_input');
   await assert.rejects(
-    runtime.handlers.agent_tasks_respond({ id: askTask.scheduled.id, response: '' }),
+    handlers.agent_tasks_respond({ id: askTask.scheduled.id, response: '' }),
     /Indica el encargo y tu respuesta/,
   );
-  await runtime.handlers.agent_tasks_respond({ id: askTask.scheduled.id, response: 'Marzo' });
+  await handlers.agent_tasks_respond({ id: askTask.scheduled.id, response: 'Marzo' });
   await until(async () => (await list()).find((task) => task.id === askTask.scheduled.id)?.status === 'to_verify');
   assert.match(
     replyContext,
@@ -51,19 +51,19 @@ async function verifyTaskHandoff({ faux, fauxAssistantMessage, future, until }) 
     ['delivering', 'needs_input', 'delivering', 'to_verify'],
     'el log de eventos registra cada transición',
   );
-  await runtime.handlers.agent_tasks_verify({ id: askTask.scheduled.id });
+  await handlers.agent_tasks_verify({ id: askTask.scheduled.id });
   const verified = (await list()).find((task) => task.id === askTask.scheduled.id);
   assert.equal(verified.status, 'delivered', 'la verificación humana cierra el encargo');
   assert.equal(verified.events.at(-1).to, 'delivered');
-  const reverified = await runtime.handlers.agent_tasks_verify({ id: askTask.scheduled.id });
+  const reverified = await handlers.agent_tasks_verify({ id: askTask.scheduled.id });
   assert.equal(reverified.verified, true, 'verificar un encargo ya entregado es idempotente');
   await assert.rejects(
-    runtime.handlers.agent_tasks_respond({ id: askTask.scheduled.id, response: 'Otra cosa' }),
+    handlers.agent_tasks_respond({ id: askTask.scheduled.id, response: 'Otra cosa' }),
     /no está esperando una respuesta/,
     'responder un encargo que ya no espera es un error de validación',
   );
 
-  const blockedTask = await runtime.handlers.agent_tasks_save({
+  const blockedTask = await handlers.agent_tasks_save({
     session_id: session.id,
     content: 'Encargo que no puede continuar',
     due_at: future,
@@ -71,13 +71,13 @@ async function verifyTaskHandoff({ faux, fauxAssistantMessage, future, until }) 
   faux.setResponses([
     () => fauxAssistantMessage('Lo intenté de dos formas.\nBLOQUEADO: Falta la credencial del servicio externo.'),
   ]);
-  await runtime.handlers.agent_tasks_run({ id: blockedTask.scheduled.id });
+  await handlers.agent_tasks_run({ id: blockedTask.scheduled.id });
   await until(async () => (await list()).find((task) => task.id === blockedTask.scheduled.id)?.status === 'blocked');
   const blockedDone = (await list()).find((task) => task.id === blockedTask.scheduled.id);
   assert.match(blockedDone.last_error, /Falta la credencial/, 'el bloqueo lleva el motivo');
   assert.equal(blockedDone.runs.at(-1).status, 'blocked');
   faux.setResponses([() => fauxAssistantMessage('Credencial aplicada, encargo terminado')]);
-  await runtime.handlers.agent_tasks_run({ id: blockedTask.scheduled.id });
+  await handlers.agent_tasks_run({ id: blockedTask.scheduled.id });
   await until(async () => (await list()).find((task) => task.id === blockedTask.scheduled.id)?.status === 'to_verify');
   assert.equal(
     (await list()).find((task) => task.id === blockedTask.scheduled.id).output,
@@ -109,18 +109,10 @@ async function verifyTaskHandoff({ faux, fauxAssistantMessage, future, until }) 
     async () => (await list()).find((task) => task.id === queuedQuestion.scheduled.id)?.status === 'needs_input',
   );
   await until(async () => (await list()).find((task) => task.id === queuedAfter.scheduled.id)?.status === 'to_verify');
-  assert.equal(
-    (await list()).find((task) => task.id === queuedAfter.scheduled.id)?.status,
-    'to_verify',
-    'una pregunta sin responder no frena el siguiente encargo de la cola',
-  );
-  await runtime.handlers.agent_tasks_respond({ id: queuedQuestion.scheduled.id, response: 'Sí' });
+  await handlers.agent_tasks_respond({ id: queuedQuestion.scheduled.id, response: 'Sí' });
   await until(
     async () => (await list()).find((task) => task.id === queuedQuestion.scheduled.id)?.status === 'to_verify',
   );
-  await runtime.handlers.agent_tasks_verify({ id: queuedQuestion.scheduled.id });
+  await handlers.agent_tasks_verify({ id: queuedQuestion.scheduled.id });
   assert.equal((await list()).find((task) => task.id === queuedQuestion.scheduled.id)?.status, 'delivered');
-  console.log('[PASS] Handoff: pregunta, respuesta, verificación, bloqueo, reintento y avance de la cola.');
-}
-
-module.exports = { verifyTaskHandoff };
+};

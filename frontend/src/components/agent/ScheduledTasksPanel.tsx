@@ -14,7 +14,7 @@ import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import ThemedSelect from '../ui/ThemedSelect';
 import AgentQueuePanel, { TaskReplyBox, type AgentQueueGroup } from './AgentQueuePanel';
-import ScheduledTaskHistory, { SCHEDULED_TASK_STATUS_LABELS } from './ScheduledTaskHistory';
+import ScheduledTaskHistory, { STATUS_LABELS } from './ScheduledTaskHistory';
 
 const STATUS_CLASSES: Record<AgentTaskStatus, string> = {
   pending: 'bg-[color-mix(in_srgb,var(--accent-primary)_10%,transparent)] text-[var(--accent-primary)]',
@@ -422,7 +422,7 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
                       <li key={task.id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
                         <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
                           <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${STATUS_CLASSES[task.status]}`}>
-                            {SCHEDULED_TASK_STATUS_LABELS[task.status]}
+                            {STATUS_LABELS[task.status]}
                           </span>
                           <span className="min-w-0 flex-1 break-words text-[13px] font-medium text-[var(--text-primary)]">{task.content}</span>
                           <span className="max-w-48 truncate text-[11px] text-[var(--text-muted)]">
@@ -472,10 +472,12 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
                           <span className="flex-1" />
                           <Button variant="ghost" size="sm" aria-label={`Historial de ejecuciones: ${task.content.slice(0, 60)}`}
                             onClick={() => setExpanded((current) => current === task.id ? null : task.id)}>
-                            {expanded === task.id ? 'Ocultar historial' : `Historial (${task.runs?.length ?? 0})`}
+                            {expanded === task.id ? 'Ocultar historial' : `Historial (${task.runs?.length || 0})`}
                           </Button>
                         </div>
-                        {expanded === task.id && <ScheduledTaskHistory task={task} />}
+                        {expanded === task.id && (
+                          <ScheduledTaskHistory task={task} />
+                        )}
                       </li>
                     );
                   })}

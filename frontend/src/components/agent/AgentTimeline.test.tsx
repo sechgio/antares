@@ -373,6 +373,25 @@ it('oculta la cadena de un agente y conserva solo el estado genérico mientras p
   expect(screen.getByRole('status')).toHaveTextContent(thinkingPhrase('reasoning-0'));
 });
 
+it('omite las trazas ocultas al agrupar la actividad del agente', () => {
+  const history = ['Primera traza', 'Segunda traza', 'Tercera traza'].map((reasoning, index) => ({
+    role: 'assistant' as const, content: '', reasoning, ts: index + 1,
+  }));
+  const { rerender } = render(<AssistantTurn hideReasoning view="verbose" messages={[
+    ...history, { role: 'assistant', content: '', reasoning: 'Traza en curso', partial: true, ts: 4 },
+  ]} />);
+  expect(screen.queryByRole('button', { expanded: true })).not.toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent(thinkingPhrase('reasoning-3'));
+  expect(screen.queryByText('Traza en curso')).not.toBeInTheDocument();
+
+  rerender(<AssistantTurn hideReasoning view="verbose" startedAt={1} messages={[
+    ...history, { role: 'assistant', content: 'Listo', ts: 2_001 },
+  ]} />);
+  expect(screen.queryByText('2 s')).not.toBeInTheDocument();
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  expect(screen.getByText('Listo')).toBeVisible();
+});
+
 it('pinta los avisos del sistema aparte sin quitar la respuesta ni mezclarse con el trabajo', () => {
   const turns = groupTurns([
     { role: 'user', content: 'Revisa', ts: 1 },

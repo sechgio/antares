@@ -7,7 +7,7 @@ const path = require('node:path');
 const runtime = require('../electron/agent-runtime');
 const scheduler = require('../electron/agent-tasks');
 const { ctx } = require('../electron/agent-shared');
-const { verifyTaskHandoff } = require('./helpers/agent-scheduler-handoff');
+const verifyHandoff = require('./helpers/agent-scheduler-handoff');
 
 async function until(check, timeout = 12000) {
   const deadline = Date.now() + timeout;
@@ -16,6 +16,14 @@ async function until(check, timeout = 12000) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error('La comprobación del planificador no terminó a tiempo');
+}
+
+function waitForAbort(signal, onStart) {
+  signal.throwIfAborted();
+  return new Promise((_, reject) => {
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    onStart();
+  });
 }
 
 async function main() {
@@ -83,8 +91,6 @@ async function main() {
     const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     const future = new Date(Date.now() + 5 * 60000).toISOString();
     const list = async () => (await runtime.handlers.agent_tasks_list({ session_id: session.id })).tasks;
-
-    await verifyTaskHandoff({ faux, fauxAssistantMessage, future, until });
 
     await assert.rejects(
       runtime.handlers.agent_tasks_save({ session_id: session.id, content: 'Zona inválida', due_at: future, timezone: 'Marte/Olimpo' }),
@@ -188,9 +194,7 @@ async function main() {
     let contContext = '';
     let contHanging = false;
     faux.setResponses([
-      () => new Promise(() => {
-        contHanging = true;
-      }),
+      (_, { signal }) => waitForAbort(signal, () => { contHanging = true; }),
       (context) => {
         contContext = JSON.stringify(context.messages);
         return fauxAssistantMessage('Encargo reanudado y terminado');
@@ -219,9 +223,7 @@ async function main() {
     });
     let capHanging = false;
     faux.setResponses([
-      () => new Promise(() => {
-        capHanging = true;
-      }),
+      (_, { signal }) => waitForAbort(signal, () => { capHanging = true; }),
     ]);
     await runtime.handlers.agent_tasks_run({ id: capTask.scheduled.id });
     await until(() => capHanging);
@@ -467,12 +469,22 @@ async function main() {
       /no puede encolar más de 5/,
     );
 
+    await verifyHandoff({ faux, fauxAssistantMessage, until, future });
+
     console.log('[PASS] Planificador: validación, edición, silencio, historial y entrega única tras reiniciar.');
     console.log('[PASS] Cola FIFO: pausa, reanudación, orden, cancelación, persistencia y pausa automática tras fallo.');
+    console.log('[PASS] Handoff: respuesta, verificación, re-ejecución y continuidad de la cola.');
   } finally {
     await runtime.shutdown();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
 
-main().catch((err) => { console.error(err); process.exitCode = 1; });
+let completed = false;
+process.once('beforeExit', () => {
+  if (!completed && !process.exitCode) {
+    console.error('El planificador terminó antes de completar las comprobaciones.');
+    process.exitCode = 1;
+  }
+});
+main().then(() => { completed = true; }).catch((err) => { console.error(err); process.exitCode = 1; });

@@ -118,6 +118,7 @@ import { PlanCard } from './AgentPlanCard';
 const AgentFilePreview = lazy(() => import('./AgentFilePreview'));
 const POLL_MS = 1500;
 const SESSION_KEY = 'antares-agent-session';
+const SESSION_ENTRY_KEY = 'antares-agent-session-entry';
 const QUEUE_KEY = 'antares-agent-queue';
 const VIEW_KEY = 'antares-agent-transcript-view';
 const SIDEBAR_KEY = 'antares-agent-sidebar';
@@ -254,6 +255,11 @@ export default function AgentView({
   const toolsVersionRef = useRef(0);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [sessionId, setSessionId] = useState('');
+  const [sessionEntry, setSessionEntry] = useLocalStorageState<'agent' | 'conversation' | null>(SESSION_ENTRY_KEY, {
+    parse: (value) => (value === 'agent' || value === 'conversation' ? value : null),
+    fallback: null,
+    serialize: (entry) => entry,
+  });
   const sessionSelectionRef = useRef(0);
   const profileCreationsRef = useRef(new Map<string, Promise<AgentSession | null>>());
   const [messages, setMessages] = useState<AgentMessage[]>([]);
@@ -713,6 +719,8 @@ export default function AgentView({
   };
 
   const session = sessions.find((s) => s.id === sessionId) ?? null;
+  const hideReasoning = sessionEntry === 'agent' || (sessionEntry === null && !!session?.profile);
+  const visibleTranscriptView = hideReasoning && transcriptView === 'thinking' ? 'normal' : transcriptView;
   const changePermissions = async (mode: AgentPermissionMode) => {
     if (!sessionId || permissionsBusy) return;
     setPermissionsBusy(true);
@@ -956,6 +964,7 @@ export default function AgentView({
     if (profile) profileCreationsRef.current.delete(profile.id);
     if (!created) return null;
     if (selection === sessionSelectionRef.current) {
+      setSessionEntry(profile ? 'agent' : 'conversation');
       setSessionId(created.id);
       if (profile?.starter && draftVersion === draftVersionRef.current) {
         draftVersionRef.current += 1;
@@ -978,6 +987,7 @@ export default function AgentView({
       await agentApi.agentSessionDelete(id);
       setQueued((q) => q.filter((i) => i.session !== id));
       if (sessionId === id) {
+        setSessionEntry(null);
         setSessionId('');
         localStorage.removeItem(SESSION_KEY);
       }
@@ -1051,9 +1061,10 @@ export default function AgentView({
     if (sidebarPrefs.unread.includes(id)) setSidebarPrefs((p) => ({ ...p, unread: toggleId(p.unread, id, false) }));
   };
 
-  const selectSession = (id: string) => {
+  const selectSession = (id: string, entry: 'agent' | 'conversation' = 'conversation') => {
     sessionSelectionRef.current += 1;
     markRead(id);
+    setSessionEntry(entry);
     setSessionId(id);
   };
 
@@ -1065,7 +1076,7 @@ export default function AgentView({
       list.filter((item) => item.profile?.id === profile.id).sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))[0];
     const existing = active ?? latest(sessions);
     if (existing) {
-      selectSession(existing.id);
+      selectSession(existing.id, 'agent');
       return;
     }
     if (profileCreationsRef.current.has(profile.id)) {
@@ -1075,7 +1086,7 @@ export default function AgentView({
     const listed = await refreshSessions();
     if (!listed || selection !== sessionSelectionRef.current) return;
     const restored = latest(listed);
-    if (restored && !profileCreationsRef.current.has(profile.id)) selectSession(restored.id);
+    if (restored && !profileCreationsRef.current.has(profile.id)) selectSession(restored.id, 'agent');
     else await newSession(profile);
   };
 
@@ -1973,7 +1984,8 @@ export default function AgentView({
               <ConversationMenu
                 session={session}
                 messages={messages}
-                view={transcriptView}
+                view={visibleTranscriptView}
+                hideReasoning={hideReasoning}
                 onView={setTranscriptView}
                 onRename={(title) => renameSession(session.id, title)}
                 onDelete={() => void removeSession(session.id)}
@@ -2036,8 +2048,8 @@ export default function AgentView({
                         startedAt={turn.startedAt}
                         agent={agentIdentity}
                         onUndo={undoEffect}
-                        view={transcriptView}
-                        hideReasoning={!!session?.profile}
+                        view={visibleTranscriptView}
+                        hideReasoning={hideReasoning}
                         panels={turnPanels.get(turn.key)}
                         pendingQuestions={turn.key === questionTurn ? { items: questions, onAnswered: () => void loadMessages(sessionId, false) } : undefined}
                         sessionId={sessionId}

@@ -1,7 +1,7 @@
 import type { AgentTask, AgentTaskRun, AgentTaskStatus } from '../../api/agentApi';
 import { formatMoment } from '../../utils/dates';
 
-export const SCHEDULED_TASK_STATUS_LABELS: Record<AgentTaskStatus, string> = {
+export const STATUS_LABELS: Record<AgentTaskStatus, string> = {
   pending: 'Programado',
   delivering: 'Entregando',
   delivered: 'Entregado',
@@ -59,7 +59,7 @@ export default function ScheduledTaskHistory({ task }: { task: AgentTask }) {
               className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-secondary)]"
             >
               <span className="text-[var(--text-muted)]">{formatMoment(event.at, task.timezone)}</span>
-              <span>{SCHEDULED_TASK_STATUS_LABELS[event.to] || event.to}</span>
+              <span>{STATUS_LABELS[event.to] || event.to}</span>
               {event.reason && <span className="min-w-0 flex-1 break-all">{event.reason}</span>}
             </li>
           ))}
