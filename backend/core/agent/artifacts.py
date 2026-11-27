@@ -145,16 +145,35 @@ def action(store: AgentStore, session_id: str, params: JsonObject) -> JsonObject
         artifact_versions.record(store.base_dir, session_id, record, store.drafts_dir(session_id),
                                  {"session_id": session_id, "restored_from": revision})
         return {**outcome, "revision": revision}
+    index = params.get("file_index", 0)
+    if operation == "file" and type(index) is int and index == 0 and isinstance(params.get("sha256"), str):
+        from backend.core.agent import pages
+
+        artifact = next((item for item in store.artifacts_for(session_id) if item["id"] == params.get("artifact_id")), None)
+        if artifact is not None and artifact.get("kind") == "page" and artifact["files"][0]["sha256"] != params["sha256"]:
+            historical = artifact_versions.read_file(store.base_dir, session_id, artifact["id"], params["sha256"], pages.MAX_BYTES)
+            if historical is not None:
+                content, name = historical
+                page = json.loads(content)
+                if pages.is_design(page):
+                    return pages.artifact_response(page, name, params["sha256"], current=False)
     artifact, file, path = verified_file(store, session_id, params)
     if artifact.get("kind") == "page":
-        if operation != "file":
+        if operation not in ("file", "save_design_adjustments"):
             raise ValueError("Abre la página interactiva para consultar sus controles")
-        from backend.core.agent.pages import MAX_BYTES
+        from backend.core.agent import pages
 
         content = path.read_bytes()
-        if len(content) > MAX_BYTES or hashlib.sha256(content).hexdigest() != file["sha256"]:
+        if len(content) > pages.MAX_BYTES or hashlib.sha256(content).hexdigest() != file["sha256"]:
             raise ValueError("La página cambió; vuelve a generarla antes de abrirla")
-        return {"page": json.loads(content), "name": file["name"], "sha256": file["sha256"]}
+        page = json.loads(content)
+        if operation == "save_design_adjustments":
+            if params.get("sha256") != file["sha256"]:
+                raise ValueError("Abre la revisión actual del diseño antes de guardar")
+            return pages.save_design_adjustments(store, session_id, params, page)
+        return pages.artifact_response(page, file["name"], file["sha256"], current=True)
+    if operation == "save_design_adjustments":
+        raise ValueError("Solo puedes guardar ajustes en un lienzo de diseño")
     if artifact.get("kind") == "image":
         if operation == "file":
             return {"path": str(path), "name": file["name"], "sha256": file["sha256"], "mime": file["mime"]}

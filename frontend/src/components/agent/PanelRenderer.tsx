@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ComponentType, type KeyboardEvent, type ReactNode } from 'react';
-import { AppWindow, ArrowDown, ArrowRight, ArrowUp, Check, Copy, ExternalLink, Maximize2, Search, Table2, X, type LucideIcon } from 'lucide-react';
+import { AppWindow, ArrowDown, ArrowRight, ArrowUp, Check, Copy, ExternalLink, Maximize2, Save, Search, Table2, X, type LucideIcon } from 'lucide-react';
 import { z } from 'zod';
 import { agentApi, type AgentPanel, type AgentPanelResponse } from '../../api/agentApi';
 import { useToast } from '../../hooks/useToast';
@@ -281,13 +281,25 @@ function TablePanel({ props }: PanelViewProps<z.infer<typeof tableSchema>>) {
   </section>;
 }
 
-function PageFrame({ url, title, colorScheme, onHeight }: { url: string; title: string; colorScheme: 'light' | 'dark'; onHeight?: (height: number) => void }) {
+const adjustmentsSchema = z.record(z.string(), z.record(z.string(), z.union([z.string().max(2000), z.number()])));
+type Adjustments = z.infer<typeof adjustmentsSchema>;
+
+function PageFrame({ url, title, colorScheme, onHeight, onAdjustments }: {
+  url: string; title: string; colorScheme: 'light' | 'dark';
+  onHeight?: (height: number) => void; onAdjustments?: (values: Adjustments) => void;
+}) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(PAGE_HEIGHT.initial);
   const [ready, setReady] = useState(false);
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      if (event.source !== frame.current?.contentWindow || event.data?.type !== 'antares-page-height') return;
+      const frameWindow = frame.current?.contentWindow;
+      if (!frameWindow || event.source !== frameWindow) return;
+      if (event.data?.type === 'antares-design-adjustments' && onAdjustments) {
+        const parsed = adjustmentsSchema.safeParse(event.data.adjustments);
+        if (parsed.success) onAdjustments(parsed.data);
+      }
+      if (event.data?.type !== 'antares-page-height') return;
       const next = Number(event.data.height);
       if (!Number.isFinite(next)) return;
       const clamped = Math.min(PAGE_HEIGHT.max, Math.max(PAGE_HEIGHT.min, Math.ceil(next)));
@@ -297,7 +309,7 @@ function PageFrame({ url, title, colorScheme, onHeight }: { url: string; title: 
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [onHeight]);
+  }, [onHeight, onAdjustments]);
   const sendTheme = useCallback(() => {
     const tokens = getComputedStyle(document.documentElement);
     const vars = Object.fromEntries(Object.entries(PAGE_THEME).map(([name, token]) => [name, tokens.getPropertyValue(token).trim()]));
@@ -315,7 +327,11 @@ function PageFrame({ url, title, colorScheme, onHeight }: { url: string; title: 
 
 function PagePanel({ props, sessionId }: PanelViewProps<z.infer<typeof pageSchema>>) {
   const { addToast } = useToast();
-  const [url, setUrl] = useState<string | null>(null);
+  const [page, setPage] = useState<{ url: string; sha256?: string; design_current?: boolean }>();
+  const [selectedRevision, setSelectedRevision] = useState<{ original: string; sha256?: string }>();
+  const [inlineAdjustments, setInlineAdjustments] = useState<Adjustments>({});
+  const [fullAdjustments, setFullAdjustments] = useState<Adjustments>({});
+  const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
   const [clipped, setClipped] = useState(false);
   const [full, setFull] = useState(false);
@@ -327,15 +343,39 @@ function PagePanel({ props, sessionId }: PanelViewProps<z.infer<typeof pageSchem
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     return () => observer.disconnect();
   }, []);
-  const request = { session_id: sessionId, artifact_id: props.artifact_id, file_index: 0, sha256: props.sha256, color_scheme: colorScheme } as const;
+  const sha256 = selectedRevision?.original === props.sha256 ? selectedRevision.sha256 : props.sha256;
+  const request = { session_id: sessionId, artifact_id: props.artifact_id, file_index: 0, sha256, color_scheme: colorScheme } as const;
   useEffect(() => {
     let active = true;
+    setPage(undefined);
+    setFailed(false);
+    setInlineAdjustments({});
+    setFullAdjustments({});
     void agentApi.agentArtifactAction({ ...request, action: 'embed' }).then(
-      (result) => { if (active) { if (result.url) setUrl(result.url); else setFailed(true); } },
+      (result) => { if (active) { if (result.url) setPage({ ...result, url: result.url }); else setFailed(true); } },
       () => { if (active) setFailed(true); });
     return () => { active = false; };
-  }, [sessionId, props.artifact_id, props.sha256]);
+  }, [sessionId, props.artifact_id, sha256]);
+  const url = page?.url;
   const onHeight = useCallback((height: number) => setClipped(height > PAGE_INLINE_MAX), []);
+  const saveAdjustments = async (adjustments: Adjustments) => {
+    if (!page?.design_current || !page.sha256) return;
+    setSaving(true);
+    try {
+      const result = await agentApi.agentArtifactAction({ ...request, sha256: page.sha256, action: 'save_design_adjustments', adjustments });
+      if (!result.sha256) throw new Error('El guardado no devolvió la revisión del diseño');
+      setSelectedRevision({ original: props.sha256, sha256: result.sha256 });
+      addToast({ message: 'Ajustes de diseño guardados', type: 'success' });
+    } catch (error) {
+      addToast({ message: errorMessage(error, 'No se pudieron guardar los ajustes de diseño'), type: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+  const saveButton = (adjustments: Adjustments) => page?.design_current && Object.keys(adjustments).length > 0 && (
+    <button type="button" className="agent-panel__tool" aria-label="Guardar ajustes" title="Guardar ajustes" disabled={saving}
+      onClick={() => void saveAdjustments(adjustments)}><Save size={14} aria-hidden="true" /></button>
+  );
   const openWindow = async () => {
     try { await agentApi.agentArtifactAction({ ...request, action: 'open' }); } catch (error) {
       addToast({ message: errorMessage(error, 'No se pudo abrir la página'), type: 'error' });
@@ -343,6 +383,9 @@ function PagePanel({ props, sessionId }: PanelViewProps<z.infer<typeof pageSchem
   };
   return <section aria-label={`Página ${props.title}`} className="agent-panel agent-panel__page">
     {url && <div className="agent-panel__toolbar">
+      {saveButton(inlineAdjustments)}
+      {page?.design_current === false && <button type="button" className="agent-panel__more"
+        onClick={() => setSelectedRevision({ original: props.sha256 })}>Abrir versión actual</button>}
       <button type="button" className="agent-panel__tool" aria-label={`Abrir página ${props.title} en vista completa`} title="Pantalla completa"
         onClick={() => setFull(true)}><Maximize2 size={14} aria-hidden="true" /></button>
     </div>}
@@ -350,16 +393,18 @@ function PagePanel({ props, sessionId }: PanelViewProps<z.infer<typeof pageSchem
       ? <p role="status" className="agent-panel__note">Esta versión de la página ya no está disponible.</p>
       : url
         ? <div className={`agent-panel__clip${clipped ? ' is-clipped' : ''}`} style={{ maxHeight: PAGE_INLINE_MAX }}>
-          <PageFrame url={url} title={props.title} colorScheme={colorScheme} onHeight={onHeight} />
+          <PageFrame url={url} title={props.title} colorScheme={colorScheme} onHeight={onHeight}
+            onAdjustments={page?.design_current ? setInlineAdjustments : undefined} />
           {clipped && <button type="button" className="agent-panel__more is-floating" onClick={() => setFull(true)}>
             Ver todo<Maximize2 size={12} aria-hidden="true" />
           </button>}
         </div>
         : <div className="agent-panel__skeleton" aria-busy="true" />}
-    {full && url && <PanelViewer title={props.title} icon={AppWindow} onClose={() => setFull(false)}
-      actions={<button type="button" className="agent-panel__tool" aria-label="Abrir en una ventana aparte" title="Abrir en una ventana aparte"
-        onClick={() => void openWindow()}><ExternalLink size={15} aria-hidden="true" /></button>}>
-      <div className="agent-panel-viewer__content"><PageFrame url={url} title={`${props.title} (pantalla completa)`} colorScheme={colorScheme} /></div>
+    {full && url && <PanelViewer title={props.title} icon={AppWindow} onClose={() => { setFull(false); setFullAdjustments({}); }}
+      actions={<>{saveButton(fullAdjustments)}<button type="button" className="agent-panel__tool" aria-label="Abrir en una ventana aparte" title="Abrir en una ventana aparte"
+        onClick={() => void openWindow()}><ExternalLink size={15} aria-hidden="true" /></button></>}>
+      <div className="agent-panel-viewer__content"><PageFrame url={url} title={`${props.title} (pantalla completa)`} colorScheme={colorScheme}
+        onAdjustments={page?.design_current ? setFullAdjustments : undefined} /></div>
     </PanelViewer>}
   </section>;
 }

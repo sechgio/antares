@@ -27,6 +27,38 @@ if (!process.versions.electron) {
 } else {
   const { app, BrowserWindow, webContents } = require('electron');
   app.setPath('userData', process.env.ANTARES_PAGES_TEST_DIR);
+  async function verifyDesignNavigation(window) {
+    const source = fs.readFileSync(path.join(__dirname, '../backend/core/agent/design_canvas.py'), 'utf8');
+    const script = source.match(/_SCRIPT = r"""([\s\S]*?)"""/)?.[1];
+    assert(script, 'El fixture necesita el script del lienzo de Design');
+    const preview = require('../electron/agent-preview');
+    const boards = ['a', 'b'].map((id, index) => ({ id, w: 390, h: 844, x: index * 470, y: 0,
+      html: `<button data-goto="${index === 0 ? 'b' : 'a'}">${id}</button>` }));
+    await window.loadURL(await preview.embedPage({
+      version: 1, title: 'Prototipo', html: '<div id="design-canvas"></div>', script, rows: [], columns: [],
+      data: { design_canvas: { title: 'Prototipo', boards, notes: [] } },
+    }, 'dark'));
+    const contents = window.webContents;
+    const run = (code) => contents.executeJavaScript(code);
+    const deadline = Date.now() + 5000;
+    while (!await run('!!document.querySelector(".dc-host")') && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await run('const jump = document.querySelector(".dc-bar select"); jump.value = "a"; jump.dispatchEvent(new Event("change"));');
+    contents.debugger.attach('1.3');
+    for (const [index, target] of ['b', 'a'].entries()) {
+      const point = await run(`(() => {
+        const button = document.querySelectorAll('.dc-host')[${index}].shadowRoot.querySelector('button');
+        const box = button.getBoundingClientRect();
+        return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+      })()`);
+      for (const type of ['mousePressed', 'mouseReleased']) {
+        await contents.debugger.sendCommand('Input.dispatchMouseEvent', { type, ...point, button: 'left', clickCount: 1 });
+      }
+      assert.equal(await run('document.querySelector(".dc-bar select").value'), target);
+    }
+    console.log('Electron real: los enlaces de Design navegan con clic en ambos sentidos.');
+  }
   app.whenReady().then(async () => {
     const main = new BrowserWindow({ width: 1100, height: 850, show: false });
     const { stubModule } = require('./helpers/harness');
@@ -87,8 +119,11 @@ render(); window.ready = true;`,
       while (!navigationFailure && Date.now() < navigationDeadline) await new Promise((resolve) => setTimeout(resolve, 50));
       assert(['ERR_BLOCKED_BY_CSP', 'ERR_BLOCKED_BY_CLIENT'].includes(navigationFailure), 'la navegación externa debe bloquearse');
       console.log('Electron real: 235 filas, filtros, tabla, reset, recarga, datos escapados y aislamiento aprobados.');
+      browser.close();
+      await verifyDesignNavigation(main);
     } finally {
       browser.close();
+      require('../electron/agent-preview').close();
       main.destroy();
     }
   }).then(() => app.exit(0), (error) => { console.error(error); app.exit(1); });
