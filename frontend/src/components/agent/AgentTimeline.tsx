@@ -537,26 +537,31 @@ function Activity({ entries, agent, working, answering, duration, onUndo, view, 
 }) {
   const [expanded, setExpanded] = useState<boolean | null>(null);
   const [showEarlier, setShowEarlier] = useState(false);
-  const calls = entries.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []));
-  const notes = entries.filter((entry) => entry.kind === 'note');
+  const compact = hideReasoning && view !== 'verbose';
+  const visibleEntries = compact
+    ? entries.filter((entry) => entry.kind === 'call' || (entry.kind === 'reasoning' && entry.streaming))
+    : entries;
+  const calls = visibleEntries.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []));
+  const notes = visibleEntries.filter((entry) => entry.kind === 'note');
   const latestNote = notes[notes.length - 1];
-  const leadNote = view === 'normal' && calls.length > 0 && !calls.some((call) => call.name === 'subagent_run')
+  const leadNote = view === 'normal' && !compact && calls.length > 0 && !calls.some((call) => call.name === 'subagent_run')
     ? latestNote : undefined;
-  const detailEntries = leadNote ? entries.filter((entry) => entry !== leadNote) : entries;
+  const detailEntries = leadNote ? visibleEntries.filter((entry) => entry !== leadNote) : visibleEntries;
   const live = working && !answering;
-  const open = expanded ?? (view === 'verbose' || (live && !leadNote)
-    || calls.some((call) => NEEDS_REVIEW.includes(call.status) || (live && call.gated)));
+  const needsAttention = calls.some((call) => NEEDS_REVIEW.includes(call.status) || (live && call.gated));
+  const open = expanded ?? (view === 'verbose' || (!compact && live && !leadNote) || needsAttention);
   const firstReview = detailEntries.findIndex((entry) => entry.kind === 'call' && (NEEDS_REVIEW.includes(entry.call.status) || entry.call.gated));
   const earlier = live && view !== 'verbose' && detailEntries.length > LIVE_TAIL + 1
     ? Math.min(detailEntries.length - LIVE_TAIL, firstReview === -1 ? Infinity : firstReview) : 0;
-  if (entries.length <= 2 && !leadNote) {
+  const review = calls.filter((call) => call.status === 'failed' || call.status === 'interrupted').length;
+  if (compact && !live && review === 0) return null;
+  if (!compact && visibleEntries.length <= 2 && !leadNote) {
     return (
       <div className="w-full space-y-0.5">
-        {entries.map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />)}
+        {visibleEntries.map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />)}
       </div>
     );
   }
-  const review = calls.filter((call) => call.status === 'failed' || call.status === 'interrupted').length;
   const icons = [...new Set(calls.map((call) => (call.name === 'shell_run' ? Terminal : toolIcon(call.name))))].slice(0, 4);
   const steps = [stepsSummary(calls), notes.length > 0 ? count(notes.length, 'nota', 'notas') : ''].filter(Boolean).join(' · ');
   return (
