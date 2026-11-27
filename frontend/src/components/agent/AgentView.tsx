@@ -214,7 +214,7 @@ function sameMessage(left: AgentMessage, right: AgentMessage): boolean {
     && sameJsonValue(left.handoff, right.handoff);
 }
 
-function reuseMessages(previous: AgentMessage[], next: AgentMessage[]): AgentMessage[] {
+export function reuseMessages(previous: AgentMessage[], next: AgentMessage[]): AgentMessage[] {
   let reused = 0;
   const messages = next.map((message, index) => {
     const current = previous[index];
