@@ -11,7 +11,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
 };
 
 const { assert, finish, stubModule, installInertTimers } = require('./helpers/harness');
-const { nativeToolSpecs } = require('../electron/agent-native-tools');
+const { nativeToolSpecs, nativeToolContext, runNativeTool } = require('../electron/agent-native-tools');
 const browser = require('../electron/agent-browser');
 
 const specs = nativeToolSpecs();
@@ -43,6 +43,7 @@ async function main() {
   let fillKinds = ['text'];
   let pageText = 'Contenido';
   let onPress = () => {};
+  let onWaitCheck = () => {};
   let canGoForward = false;
   let forwards = 0;
   let reloads = 0;
@@ -54,9 +55,9 @@ async function main() {
   const contents = Object.assign(new Emitter(), {
     isDestroyed: () => false, getURL: () => 'https://files.example.com', getTitle: () => 'Archivos', isLoading: () => false,
     getZoomFactor: () => 1, setZoomFactor: () => {}, setWindowOpenHandler: () => {}, loadURL: async () => {},
-    reload: () => { reloads += 1; },
+    reload: () => { reloads += 1; contents.emit('did-stop-loading'); },
     navigationHistory: { canGoBack: () => false, canGoForward: () => canGoForward,
-      goForward: () => { forwards += 1; } },
+      goForward: () => { forwards += 1; contents.emit('did-stop-loading'); } },
     close: () => contents.emit('destroyed'),
     executeJavaScript: async (script) => {
       const guard = script.match(/performance\.timeOrigin !== (\S+)\)/);
@@ -67,7 +68,10 @@ async function main() {
       if (script.includes('document.activeElement')) return focusedSecret;
       if (script.includes('const wanted')) return { selected: ['Perú'] };
       if (script.includes("'missing'")) return fillKinds;
-      if (script.includes('gone:')) return { text: pageText.includes('listo'), gone: true, url: true };
+      if (script.includes('gone:')) {
+        onWaitCheck();
+        return { text: pageText.includes('listo'), gone: true, url: true };
+      }
       if (script.includes('scrollBy')) return { moved: 800, at_end: false, at_start: false };
       return { url: 'https://files.example.com', title: 'Archivos', text: pageText, elements: [], time_origin: documentOrigin };
     },
@@ -110,6 +114,14 @@ async function main() {
   });
   const timers = installInertTimers();
   try {
+    const url = 'https://reports.example.com/informe.pdf?token=secreto-de-prueba';
+    const downloadApproval = await nativeToolContext('web_download', 's1', { url });
+    assert(downloadApproval.domain === 'reports.example.com' && !JSON.stringify(downloadApproval).includes('secreto-de-prueba'),
+      'la aprobación de descarga describe el destino sin abrir una página ni exponer su token');
+    const changed = await runNativeTool('web_download', { url: url.replace('secreto-de-prueba', 'otro') },
+      { sessionId: 's1', approvedContext: downloadApproval }).catch((error) => error.message);
+    assert(/destino de la descarga cambió/.test(changed) && downloads.length === 0,
+      'un destino cambiado tras aprobar exige otra aprobación');
     await browser.navigate('open', 'https://files.example.com');
     assert(downloadHandler, 'la sesión del navegador registra el interceptor de descargas');
     let forwardError = null;
@@ -385,6 +397,13 @@ async function main() {
     assert(met.met === true && met.waited_ms === 0, 'web_wait termina en cuanto se cumple la condición');
     const noCondition = await failure('web_wait', {});
     assert(noCondition && noCondition.message === 'Indica text, gone o url', 'web_wait exige una condición');
+    const controller = new AbortController();
+    pageText = 'cargando';
+    const waitChecked = new Promise((resolve) => { onWaitCheck = resolve; });
+    const interrupted = browser.run('web_wait', { text: 'Pendiente' }, { signal: controller.signal }).catch((error) => error);
+    await waitChecked;
+    controller.abort();
+    assert((await interrupted).name === 'AbortError', 'detener el turno interrumpe la espera en el navegador');
 
     const { JSDOM } = require('jsdom');
     const dom = new JSDOM('<iframe></iframe><div id="overlay">Aceptar cookies</div>',
@@ -453,6 +472,14 @@ async function main() {
       assert(headings.matches.length === 1 && headings.matches[0].endsWith('h2 «Enviar pedido»'), 'web_find lista por rol sin texto');
       const linkRef = exactLink.matches[0].split(' ')[0];
       assert(doc.querySelector(`a[data-antares-ref="${linkRef}"]`), 'web_find marca la ref en el elemento encontrado');
+      doc.body.innerHTML = '<button>Fuera de vista</button>'.repeat(450) + '<button>Último control visible</button>';
+      for (const el of doc.querySelectorAll('button')) {
+        el.getBoundingClientRect = () => ({ left: 0, top: el === doc.body.lastElementChild ? 0 : -100, width: 50, height: 20 });
+      }
+      const longPage = await browser.run('web_read', {});
+      assert(longPage.elements[0].endsWith('button «Último control visible»') && longPage.elements_more > 400
+        && longPage.elements_note.includes('web_find'),
+        'web_read prioriza un control visible incluso después de 450 controles fuera de vista');
     } finally { dom.window.close(); }
   } finally { timers.restore(); browser.close(); }
 }

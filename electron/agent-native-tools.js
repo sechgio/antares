@@ -267,9 +267,11 @@ async function nativeToolContext(name, sessionId, params = {}) {
   if (selected.gated && RENDERER_TOOLS[name] && params && Object.keys(params).length) {
     context.params_digest = hash(params);
   }
-  if (WEB[name] && selected.gated) {
+  if (name === 'web_download') {
+    Object.assign(context, require('./agent-browser').downloadContext(params.url));
+  } else if (WEB[name] && selected.gated) {
     const policy = require('./agent-browser-policy');
-    const browserContext = await require('./agent-browser').approvalContext();
+    const browserContext = await require('./agent-browser').approvalContext(undefined, sessionId);
     const domain = policy.hostOf(browserContext.page_url);
     Object.assign(context, browserContext, { domain, policy_blocked: policy.isBlocked(domain) });
   }
@@ -384,13 +386,14 @@ async function generateDocument(params, sessionId) {
   return { generated: true, saved_paths: saved, artifact_metadata: plan.metadata };
 }
 
-async function runNativeTool(name, params, { sessionId, approvedContext, browserMode } = {}) {
+async function runNativeTool(name, params, { sessionId, approvedContext, browserMode, signal } = {}) {
   if (!SPECS.some((s) => s.name === name)) throw new Error(`Herramienta nativa no disponible: ${name}`);
   if (name === SCRIPT_TOOL) throw new Error('script_run se ejecuta en el motor del agente, no en el backend');
   if (REPORT_EXPORTS[name]) return exportReportPdf(REPORT_EXPORTS[name], params || {}, sessionId);
   if (SPECS.find((s) => s.name === name).gated) {
     const current = await nativeToolContext(name, sessionId, params || {});
     if (!approvedContext || JSON.stringify(current) !== JSON.stringify(approvedContext)) {
+      if (name === 'web_download') throw new Error('El destino de la descarga cambió; solicita una nueva aprobación');
       if (WEB[name]) throw new Error('La página cambió después de aprobar; vuelve a leerla con web_read y solicita una nueva aprobación');
       if (CUA.has(name)) throw new Error('La ventana o el elemento cambiaron después de aprobar; vuelve a leerla y solicita una nueva aprobación');
       throw new Error('La cuenta, los permisos o la hoja cambiaron después de aprobar; solicita una nueva aprobación');
@@ -401,7 +404,7 @@ async function runNativeTool(name, params, { sessionId, approvedContext, browser
   if (CUA.has(name)) return require('./agent-cua').run(name, params || {}, { sessionId, dir: `${draftsDir(sessionId)}.screens` });
   if (WEB[name]) {
     return require('./agent-browser').run(name, params || {},
-      { dir: `${draftsDir(sessionId)}.screens`, drafts: draftsDir(sessionId), approvedContext, sessionId, browserMode,
+      { dir: `${draftsDir(sessionId)}.screens`, drafts: draftsDir(sessionId), approvedContext, sessionId, browserMode, signal,
         resolvePath: sessionId
           ? (target) => require('./ipc-router')._callBackend('agent_internal_path_status', { session_id: sessionId, path: target })
           : null });
