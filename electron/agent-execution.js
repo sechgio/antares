@@ -52,6 +52,35 @@ const PLAN_CHECK_TEXT =
   'mantén un solo paso in_progress y atiende {next}; comprueba el resultado y, si el paso no puede completarse, ' +
   'replantea el plan o márcalo como failed con la causa y di qué necesitas. ' +
   shared.PLAN_TITLE_TRUST;
+const FAILED_PLAN_CHECK_TEXT =
+  'Tu plan de este encargo tiene pasos marcados como fallidos: {steps}. Antes de terminar, corrige la causa y ' +
+  'replantea esos pasos con task_plan, o explica concretamente por qué no existe una vía segura y qué necesita ' +
+  'el usuario. No des el encargo por cerrado sin resolver ni explicar los pasos fallidos. ' +
+  shared.PLAN_TITLE_TRUST;
+const VERIFY_CHECK_TEXT =
+  'Antes de cerrar el encargo comprueba con una lectura u observación reciente que el estado real coincide con ' +
+  'lo que vas a reportar: lee el archivo, observa la pantalla o consulta el estado modificado. Si ya lo verificaste ' +
+  'o no hay forma de comprobarlo, cierra explicando la evidencia concreta. Si queda trabajo por hacer, publícalo ' +
+  'en task_plan en lugar de darlo por terminado.';
+const OBSERVE_EXCLUDED_MODULES = new Set(['agent', 'plan', 'agenda']);
+const OBSERVE_TOOL_NAMES = new Set([
+  'desktop_observe',
+  'script_run',
+  'web_read',
+  'web_find',
+  'web_screenshot',
+  'web_text',
+  'web_console',
+  'web_network',
+  'web_wait',
+]);
+
+function countsAsObservation(spec) {
+  if (!spec) return false;
+  if (OBSERVE_TOOL_NAMES.has(spec.name)) return true;
+  if (spec.gated || spec.kind === 'meta' || spec.replay_safe !== true) return false;
+  return !OBSERVE_EXCLUDED_MODULES.has(spec.module);
+}
 const INTERRUPTED_RESULT = shared.INTERRUPTED_RESULT;
 const SUBAGENT_TOOL = 'subagent_run';
 const SCRIPT_TOOL = script.SCRIPT_TOOL;
@@ -390,6 +419,9 @@ function cappedOpenAIApi(api) {
 
 async function allToolSpecs() {
   const { tools } = await bridge('agent_internal_tools', {});
+  for (const tool of tools) {
+    if (tool.delegable === undefined) tool.delegable = tool.kind === 'backend' && tool.replay_safe === true;
+  }
   const merged = new Map(tools.map((tool) => [tool.name, tool]));
   const scheduleTool = require('./agent-tasks').TOOL;
   merged.set(scheduleTool.name, scheduleTool);
@@ -856,7 +888,17 @@ async function refreshTools() {
       name: 'antares.agent',
       tools: registrations,
       hooks: [
-        pi.hook(pi.ToolTask, { beforeTool }),
+        pi.hook(pi.ToolTask, {
+          beforeTool,
+          afterTool: (call, _result, api) => {
+            const turn = turnState(api.conversationId);
+            if (!turn.toolCallIds) turn.toolCallIds = new Map();
+            if (!turn.toolCallIds.has(call.id)) {
+              if (turn.toolCallIds.size >= 300) turn.toolCallIds.delete(turn.toolCallIds.keys().next().value);
+              turn.toolCallIds.set(call.id, String(call.name || ''));
+            }
+          },
+        }),
         pi.hook(pi.CompactionTask, { beforeCompact: (c, r, context) => compaction.beforeCompact(c, r, context) }),
         pi.hook(pi.GenerationTask, {
           beforeRequest: async ({ messages }, api, context) => {
@@ -1153,11 +1195,19 @@ function turnState(conversationId) {
       calls: new Map(),
       failures: new Map(),
       remaining: null,
+      failed: null,
       checks: 0,
       lastCheck: null,
+      lastVerifyCheck: null,
       planNext: null,
+      planPublished: false,
+      toolSeq: 0,
+      lastEffectSeq: 0,
+      lastObserveSeq: 0,
+      effects: 0,
       sincePlan: 0,
       planReminderAt: 0,
+      toolCallIds: new Map(),
       checked: false,
       silentTurns: 0,
       pendingSilent: false,
@@ -1312,18 +1362,36 @@ function planCheck(answer, api) {
         'Si no puedes completarlo, explica el bloqueo concreto.',
     };
   }
-  if (!turn || !turn.remaining || !turn.remaining.length) return undefined;
+  if (!turn) return undefined;
   if ((turn.checks || 0) >= MAX_PLAN_CHECKS) return undefined;
   if (answer.errorMessage || answer.stopReason === 'aborted' || answer.stopReason === 'error') return undefined;
   if ((shared.rounds.get(api.conversationId) || 0) >= MAX_TOOL_STEPS) return undefined;
-  const signature = JSON.stringify(turn.remaining.slice().sort());
-  if (turn.lastCheck === signature) return undefined;
+  const remaining = turn.remaining || [];
+  const failed = turn.failed || [];
+  if (remaining.length || failed.length) {
+    const signature = JSON.stringify([...remaining].sort()) + '|' + JSON.stringify([...failed].sort());
+    if (turn.lastCheck === signature) return undefined;
+    turn.checks = (turn.checks || 0) + 1;
+    turn.lastCheck = signature;
+    if (failed.length && !remaining.length) {
+      const steps = failed.map((title) => `«${title}»`).join(', ');
+      return { continue: `${shared.CHECK_MARKER} ${FAILED_PLAN_CHECK_TEXT.replace('{steps}', () => steps)}` };
+    }
+    const steps = remaining.map((title) => `«${title}»`).join(', ');
+    const next = turn.planNext ? `«${turn.planNext}»` : 'el siguiente paso';
+    const notice = PLAN_CHECK_TEXT.replace('{steps}', () => steps).replace('{next}', () => next);
+    return { continue: `${shared.CHECK_MARKER} ${notice}` };
+  }
+  const needsVerification =
+    turn.lastEffectSeq > 0 &&
+    (turn.lastObserveSeq || 0) < turn.lastEffectSeq &&
+    (turn.planPublished || (turn.effects || 0) >= 2);
+  if (!needsVerification) return undefined;
+  const verifySignature = `verify:${turn.lastEffectSeq}`;
+  if (turn.lastVerifyCheck === verifySignature) return undefined;
   turn.checks = (turn.checks || 0) + 1;
-  turn.lastCheck = signature;
-  const steps = turn.remaining.map((title) => `«${title}»`).join(', ');
-  const next = turn.planNext ? `«${turn.planNext}»` : 'el siguiente paso';
-  const notice = PLAN_CHECK_TEXT.replace('{steps}', () => steps).replace('{next}', () => next);
-  return { continue: `${shared.CHECK_MARKER} ${notice}` };
+  turn.lastVerifyCheck = verifySignature;
+  return { continue: `${shared.CHECK_MARKER} ${VERIFY_CHECK_TEXT}` };
 }
 
 const WEB_AUTO_APPROVE = new Set([
@@ -1447,7 +1515,7 @@ async function beforeTool(call, api, context) {
         'o informa al usuario de qué te bloquea, qué comprobaste y qué necesitas.',
     };
   }
-  if (session.delegation && !childControl && (spec.kind !== 'backend' || spec.replay_safe !== true)) {
+  if (session.delegation && !childControl && spec.delegable !== true) {
     return { block: 'El agente delegado solo puede usar lecturas idempotentes autorizadas' };
   }
   const retryDelay = Math.max(repeated.retryAt || 0, failing?.retryAt || 0) - Date.now();
@@ -1639,6 +1707,26 @@ async function dispatchAndWait(request, context, api) {
   return String(result);
 }
 
+function validateEvidenceRefs(args, turn) {
+  const steps = Array.isArray(args && args.steps) ? args.steps : [];
+  const missing = [];
+  for (const step of steps) {
+    if (!step || step.status !== 'done' || !step.evidence_ref || typeof step.evidence_ref !== 'object') continue;
+    const ref = step.evidence_ref;
+    if (ref.kind !== 'tool_call') continue;
+    const id = typeof ref.ref === 'string' ? ref.ref : '';
+    if (!id || !(turn.toolCallIds && turn.toolCallIds.has(id))) {
+      missing.push(`«${String(step.title || '').slice(0, 80)}» referencia ${id || 'vacío'}`);
+    }
+  }
+  if (!missing.length) return '';
+  return (
+    `La evidencia de ${missing.join(', ')} no corresponde a ninguna herramienta ejecutada en este turno. ` +
+    'Verifica primero con una herramienta de lectura y referencia en evidence_ref el id de la llamada que la produjo, ' +
+    'o usa evidence de texto explicando qué observaste.'
+  );
+}
+
 async function executeTool(spec, args, api, context) {
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   const session = await requireSession(sessionId);
@@ -1679,6 +1767,13 @@ async function executeTool(spec, args, api, context) {
         ? parsed.window.rect
         : null);
   if (rect) turnState(api.conversationId).uiRect = rect;
+  if (spec.name === 'task_plan' && parsed && !script.toolFailure(parsed)) {
+    const refError = validateEvidenceRefs(args, turnState(api.conversationId));
+    if (refError) {
+      parsed = { error: refError };
+      text = JSON.stringify(parsed);
+    }
+  }
   const isError = script.toolFailure(parsed);
   if (spec.name === 'skills_read' && !isError && requiredSkills.get(api.conversationId) === (args || {}).skill_id) {
     requiredSkills.delete(api.conversationId);
@@ -1686,7 +1781,9 @@ async function executeTool(spec, args, api, context) {
   if (spec.name === 'task_plan' && !isError && parsed && Array.isArray(parsed.remaining)) {
     const turn = turnState(api.conversationId);
     turn.remaining = parsed.remaining.map(String);
+    turn.failed = Array.isArray(parsed.failed) ? parsed.failed.map(String) : [];
     turn.planNext = typeof parsed.next_step === 'string' ? parsed.next_step : null;
+    turn.planPublished = true;
   }
   if (spec.name === 'task_plan' && !isError) {
     const plan = planFromParams(parsed && parsed.plan) || planFromParams(args);
@@ -1701,6 +1798,20 @@ async function executeTool(spec, args, api, context) {
       ? null
       : await resultImage(parsed);
   const turn = turnState(api.conversationId);
+  turn.toolSeq = (turn.toolSeq || 0) + 1;
+  if (!isError) {
+    if (spec.gated) {
+      turn.lastEffectSeq = turn.toolSeq;
+      turn.effects = (turn.effects || 0) + 1;
+    }
+    const selfObserves =
+      parsed &&
+      typeof parsed === 'object' &&
+      (parsed.page || parsed.observation || parsed.image || parsed.screenshot);
+    if (countsAsObservation(spec) || selfObserves) {
+      turn.lastObserveSeq = turn.toolSeq;
+    }
+  }
   const calls = turn.calls;
   const signature = callSignature(spec.name, args);
   let repeated = calls.get(signature);

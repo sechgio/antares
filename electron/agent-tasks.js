@@ -2,7 +2,7 @@
 
 const crypto = require('node:crypto');
 const { shared, ctx, conversation, requireSession, sessions, validation, wakeWaiters, bridge } = require('./agent-shared');
-const { isActiveTask, pruneTasks, recordRun } = require('./agent-task-utils');
+const { isActiveTask, pruneTasks, recordRun, MAX_TASK_CONTINUATIONS, submitContinuation } = require('./agent-task-utils');
 const queue = require('./agent-queue');
 const { promotable } = require('./agent-compaction');
 
@@ -522,8 +522,7 @@ async function delegate(profile, args, sessionId, api, context) {
     const allows = execution.profileFilter(profile);
     const tools = [...shared.toolSpecs.values()].filter(
       (tool) =>
-        tool.kind === 'backend' &&
-        tool.replay_safe === true &&
+        tool.delegable === true &&
         !tool.name.startsWith('memory_') &&
         tool.name !== 'procedure_learn' &&
         enabled.has(tool.name) &&
@@ -1579,8 +1578,6 @@ async function cancelTask(params = {}) {
     const doc = await tx.doc(state.TasksDoc);
     const task = doc.tasks[id];
     if (!task) throw validation('El encargo programado no existe');
-    if (task.status === 'delivering')
-      throw validation('El encargo ya se está entregando; detén el turno para interrumpirlo');
     if (task.status !== 'cancelled') {
       task.status = 'cancelled';
       task.updated_at = Date.now();
@@ -1601,29 +1598,119 @@ async function runTaskNow(params = {}) {
     const task = doc.tasks[id];
     if (!task) throw validation('El encargo programado no existe');
     if (task.kind === 'queue') throw validation('Un encargo en cola se ejecuta en orden; no se puede adelantar');
-    if (task.status === 'delivering')
-      throw validation('El encargo ya se está entregando; detén el turno para interrumpirlo');
     if (task.status === 'cancelled') throw validation('El encargo está cancelado');
     if (task.status === 'delivered') throw validation('El encargo ya se entregó');
+    if (task.status === 'delivering') throw validation('El encargo ya se está entregando; espera a que termine o cancélalo');
     task.status = 'pending';
     task.due_at = Date.now();
     task.retry_at = 0;
     task.updated_at = Date.now();
     delete task.claim_id;
     delete task.claimed_at;
+    delete task.current_request_id;
+    delete task.continuation_rounds;
     return { scheduled: { ...task } };
   }, ctx());
   void tick().catch((err) => console.warn('[agent] scheduled run failed:', err?.message));
   return result;
 }
 
+async function settleScheduledTask(state, session, task) {
+  const execution = require('./agent-execution');
+  const requestId = String(task.current_request_id || 'schedule:' + task.id + ':' + task.due_at);
+  let submission;
+  try {
+    submission = await state.harness.commit(
+      (tx) => tx.submissionByRequest(session.conversationId, requestId),
+      ctx(),
+    );
+  } catch (err) {
+    console.warn('[agent] scheduled task status failed:', execution.sanitizeProviderError(String((err && err.message) || err)));
+    return;
+  }
+  if (!submission) return;
+  if (submission.status === 'queued' || submission.status === 'placed') return;
+  const at = Date.now();
+  if (submission.status === 'done') {
+    await state.harness.commit(async (tx) => {
+      const current = (await tx.doc(state.TasksDoc)).tasks[task.id];
+      if (!current || current.status !== 'delivering') return;
+      delete current.claim_id;
+      delete current.claimed_at;
+      delete current.current_request_id;
+      delete current.continuation_rounds;
+      delete current.last_error;
+      completeDelivery(task, current);
+    }, ctx());
+    fireTaskCompleted(task.id).catch((err) => console.warn('[agent] trigger task_completed falló:', err && err.message));
+    return;
+  }
+  const aborted = submission.status === 'unanswered' && String(submission.reason) === 'aborted';
+  const rounds = Number(task.continuation_rounds) || 0;
+  const resumable =
+    aborted &&
+    session.continuation &&
+    session.continuation.reason !== 'token_budget' &&
+    rounds < MAX_TASK_CONTINUATIONS;
+  if (resumable) {
+    const nextRequestId = requestId + ':cont' + String(rounds + 1);
+    const placed = await submitContinuation(state, session, task, nextRequestId);
+    if (placed) {
+      await state.harness.commit(async (tx) => {
+        const current = (await tx.doc(state.TasksDoc)).tasks[task.id];
+        if (!current || current.status !== 'delivering') return;
+        current.current_request_id = nextRequestId;
+        current.continuation_rounds = rounds + 1;
+        current.updated_at = Date.now();
+      }, ctx());
+      return;
+    }
+  }
+  const error = aborted
+    ? 'El turno se detuvo antes de completar el encargo.'
+    : execution
+        .sanitizeProviderError(String(submission.detail || submission.reason || 'El turno no produjo respuesta'))
+        .slice(0, 300);
+  await state.harness.commit(async (tx) => {
+    const current = (await tx.doc(state.TasksDoc)).tasks[task.id];
+    if (!current || current.status !== 'delivering') return;
+    const dueAt = Number(current.due_at) || current.created_at;
+    if (current.interval_ms) {
+      current.due_at = nextOccurrence(current, current.due_at, at);
+      current.status = 'pending';
+    } else {
+      current.status = 'uncertain';
+    }
+    delete current.claim_id;
+    delete current.claimed_at;
+    delete current.retry_at;
+    delete current.current_request_id;
+    delete current.continuation_rounds;
+    current.last_error = error;
+    current.updated_at = at;
+    recordRun(current, { at, due_at: dueAt, status: 'uncertain', silent: !!current.silent, error });
+  }, ctx());
+}
+
 async function reconcileStale(state) {
   const now = Date.now();
   await state.harness.commit(async (tx) => {
     const doc = await tx.doc(state.TasksDoc);
+    const sessionDoc = await tx.doc(state.SessionsDoc);
     for (const task of Object.values(doc.tasks)) {
       if (task.kind === 'queue' || task.status !== 'delivering' || (claimToken && task.claim_id === claimToken))
         continue;
+      const session = (sessionDoc.sessions || {})[task.session_id];
+      let submission = null;
+      if (session && session.conversationId) {
+        try {
+          submission = await tx.submissionByRequest(
+            session.conversationId,
+            String(task.current_request_id || 'schedule:' + task.id + ':' + task.due_at),
+          );
+        } catch {}
+      }
+      if (submission) continue;
       const dueAt = Number(task.due_at) || now;
       const error = 'La entrega se interrumpió al cerrar Antares; no se repite automáticamente.';
       if (task.interval_ms) {
@@ -1637,6 +1724,8 @@ async function reconcileStale(state) {
       delete task.claim_id;
       delete task.claimed_at;
       delete task.retry_at;
+      delete task.current_request_id;
+      delete task.continuation_rounds;
     }
   }, ctx());
 }
@@ -1661,6 +1750,13 @@ async function tick() {
   ticking = (async () => {
     await ensureReconciled(state);
     const doc = await state.harness.snapshot(state.TasksDoc, ctx());
+    for (const task of Object.values(doc?.tasks || {})) {
+      if (task.kind === 'queue' || task.status !== 'delivering' || task.trigger) continue;
+      const sessionDoc = await state.harness.snapshot(state.SessionsDoc, ctx());
+      const session = sessionDoc.sessions[task.session_id];
+      if (!session || session.deleted) continue;
+      await settleScheduledTask(state, session, task);
+    }
     for (const task of Object.values(doc?.tasks || {})) {
       if (task.kind === 'queue' || task.status !== 'pending' || task.trigger || task.due_at > Date.now() || task.retry_at > Date.now())
         continue;
@@ -1729,9 +1825,10 @@ async function tick() {
           if (current.status !== 'delivering' || current.claim_id !== claimToken) return;
           delete current.claim_id;
           delete current.claimed_at;
-          completeDelivery(task, current);
+          current.current_request_id = 'schedule:' + task.id + ':' + task.due_at;
+          current.continuation_rounds = 0;
+          current.updated_at = Date.now();
         }, ctx());
-        fireTaskCompleted(task.id).catch((err) => console.warn('[agent] trigger task_completed falló:', err?.message));
       } catch (err) {
         const message = require('./agent-execution')
           .sanitizeProviderError(String(err?.message || err))
@@ -1743,8 +1840,9 @@ async function tick() {
             delete current.claim_id;
             delete current.claimed_at;
             if (submitted) {
-              completeDelivery(task, current);
-              fireTaskCompleted(task.id).catch((triggerError) => console.warn('[agent] trigger task_completed falló:', triggerError?.message));
+              current.current_request_id = 'schedule:' + task.id + ':' + task.due_at;
+              current.continuation_rounds = Number(current.continuation_rounds) || 0;
+              current.updated_at = Date.now();
             } else {
               current.status = 'pending';
               current.retry_at = Date.now() + 60000;

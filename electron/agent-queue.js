@@ -2,7 +2,7 @@
 
 const crypto = require('node:crypto');
 const { shared, bridge, ctx, conversation, requireSession, validation } = require('./agent-shared');
-const { MAX_RUNS, isActiveTask, pruneTasks, recordRun } = require('./agent-task-utils');
+const { MAX_RUNS, isActiveTask, pruneTasks, recordRun, MAX_TASK_CONTINUATIONS, submitContinuation } = require('./agent-task-utils');
 
 const MAX_QUEUE_ITEMS = 50;
 const MAX_QUEUE_ITEMS_PER_TURN = 5;
@@ -132,7 +132,7 @@ async function settleQueueTask(state, session, task, claimToken) {
   let submission;
   try {
     submission = await state.harness.commit(
-      (tx) => tx.submissionByRequest(session.conversationId, queueRequestId(task)),
+      (tx) => tx.submissionByRequest(session.conversationId, String(task.current_request_id || queueRequestId(task))),
       ctx(),
     );
   } catch (err) {
@@ -158,6 +158,27 @@ async function settleQueueTask(state, session, task, claimToken) {
   if (submission.status === 'queued' || submission.status === 'placed') return;
   const at = Date.now();
   const aborted = submission.status === 'unanswered' && String(submission.reason) === 'aborted';
+  const rounds = Number(task.continuation_rounds) || 0;
+  const resumable =
+    aborted &&
+    !!session.continuation &&
+    session.continuation.reason !== 'token_budget' &&
+    rounds < MAX_TASK_CONTINUATIONS;
+  if (resumable) {
+    const baseRequestId = String(task.current_request_id || queueRequestId(task));
+    const nextRequestId = baseRequestId + ':cont' + String(rounds + 1);
+    const placed = await submitContinuation(state, session, task, nextRequestId);
+    if (placed) {
+      await state.harness.commit(async (tx) => {
+        const current = (await tx.doc(state.TasksDoc)).tasks[task.id];
+        if (!current || current.status !== 'delivering') return;
+        current.current_request_id = nextRequestId;
+        current.continuation_rounds = rounds + 1;
+        current.updated_at = Date.now();
+      }, ctx());
+      return;
+    }
+  }
   const needsContinuation = aborted && !!session.continuation;
   const cancelled = aborted && !needsContinuation;
   const error =
@@ -179,6 +200,8 @@ async function settleQueueTask(state, session, task, claimToken) {
     delete current.claim_id;
     delete current.claimed_at;
     delete current.retry_at;
+    delete current.current_request_id;
+    delete current.continuation_rounds;
     if (error) current.last_error = error;
     else delete current.last_error;
     recordRun(current, {
@@ -247,6 +270,12 @@ async function startQueueTask(state, session, task, claimToken) {
       ctx(),
     );
     submitted = true;
+    await state.harness.commit(async (tx) => {
+      const current = (await tx.doc(state.TasksDoc)).tasks[task.id];
+      if (!current || current.status !== 'delivering') return;
+      current.current_request_id = queueRequestId(task);
+      current.continuation_rounds = 0;
+    }, ctx());
   } catch (err) {
     if (submitted) return;
     const message = require('./agent-execution')

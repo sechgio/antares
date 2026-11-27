@@ -54,4 +54,30 @@ assert.equal(capped.steps[0].dependencies.length, contract.max_step_dependencies
 assert.equal('id' in planFromParams({ goal: 'g', steps: [{ title: 'x' }] }).steps[0], false,
   'sin id estable no se inventa uno');
 
+assert.ok(Array.isArray(contract.evidence_ref_kinds) && contract.evidence_ref_kinds.includes('tool_call'),
+  'el contrato declara los tipos de evidence_ref');
+assert.equal(typeof contract.max_evidence_ref_chars, 'number', 'el contrato limita la referencia de evidencia');
+
+const withRef = planFromParams({ goal: 'g', steps: [
+  { title: 'Verificar', status: 'done', evidence: 'visto', evidence_ref: { kind: 'tool_call', ref: '  call-1  ' } },
+] });
+assert.deepEqual(withRef.steps[0].evidence_ref, { kind: 'tool_call', ref: 'call-1' },
+  'una evidence_ref válida se conserva recortada');
+
+const badKind = planFromParams({ goal: 'g', steps: [
+  { title: 'Verificar', status: 'done', evidence: 'visto', evidence_ref: { kind: 'magia', ref: 'x' } },
+] });
+assert.equal('evidence_ref' in badKind.steps[0], false, 'un kind desconocido se descarta');
+
+const emptyRef = planFromParams({ goal: 'g', steps: [
+  { title: 'Verificar', status: 'done', evidence: 'visto', evidence_ref: { kind: 'file', ref: '  ' } },
+] });
+assert.equal('evidence_ref' in emptyRef.steps[0], false, 'una referencia vacía se descarta');
+
+const longRef = planFromParams({ goal: 'g', steps: [
+  { title: 'v', status: 'done', evidence: 'visto', evidence_ref: { kind: 'file', ref: 'r'.repeat(contract.max_evidence_ref_chars + 20) } },
+] });
+assert.equal(longRef.steps[0].evidence_ref.ref.length, contract.max_evidence_ref_chars,
+  'la referencia se recorta al tope del contrato');
+
 console.log('[PASS] contrato del plan: estados, límites y normalización compartidos coinciden.');

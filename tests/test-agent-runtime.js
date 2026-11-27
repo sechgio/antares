@@ -5413,6 +5413,131 @@ async function main() {
   {
     const { bridge } = makeBridge();
     const schema = { type: 'object', properties: {} };
+    const verifyBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push(
+          { name: 'write_effect', gated: true, kind: 'backend', module: 'computer', inputSchema: schema },
+          { name: 'read_check', gated: false, kind: 'backend', module: 'computer', replay_safe: true, inputSchema: schema },
+        );
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'write_effect') {
+        return { result: JSON.stringify({ written: true }) };
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'read_check') {
+        return { result: JSON.stringify({ content: 'datos verificados' }) };
+      }
+      return bridge(method, params);
+    };
+    const faux = await openFaux(
+      [
+        fauxAssistantMessage([fauxToolCall('write_effect', { path: 'informe.txt' })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage([fauxToolCall('write_effect', { path: 'anexo.txt' })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('Listo, informe escrito.'),
+        fauxAssistantMessage([fauxToolCall('read_check', { path: 'informe.txt' })], { stopReason: 'toolUse' }),
+        fauxAssistantMessage('Verificado: el informe contiene los datos.'),
+      ],
+      verifyBridge,
+    );
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: session.id, permission_mode: 'full' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'escribe el informe' });
+    assert(await waitIdle(session.id), 'el turno con verificación de cierre termina');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const texts = listed.messages.filter((m) => m.role === 'assistant').map((m) => m.content);
+    assert(
+      texts.includes('Listo, informe escrito.') && texts.at(-1).startsWith('Verificado:'),
+      'un cierre con efectos sin observar exige verificación antes de terminar',
+    );
+    assert(
+      listed.messages.filter((m) => m.role === 'user').length === 1,
+      'la verificación de cierre no aparece como mensaje del usuario',
+    );
+    assert(faux.getPendingResponseCount() === 0, 'la verificación de cierre se pide una sola vez');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
+    const failedBridge = async (method, params) => {
+      if (method === 'agent_internal_tools') {
+        const result = await bridge(method, params);
+        result.tools.push(
+          { name: 'task_plan', gated: false, kind: 'backend', module: 'plan', inputSchema: schema },
+        );
+        return result;
+      }
+      if (method === 'agent_internal_dispatch' && params.name === 'task_plan') {
+        const steps = params.params.steps || [];
+        const remaining = steps
+          .filter((step) => step.status === 'pending' || step.status === 'in_progress')
+          .map((step) => step.title);
+        const failed = steps.filter((step) => step.status === 'failed').map((step) => step.title);
+        return {
+          result: JSON.stringify({
+            recorded: true,
+            remaining,
+            ...(failed.length ? { failed } : {}),
+          }),
+        };
+      }
+      return bridge(method, params);
+    };
+    const faux = await openFaux(
+      [
+        fauxAssistantMessage(
+          [fauxToolCall('task_plan', {
+            goal: 'Publicar',
+            steps: [{ title: 'Subir', status: 'done', evidence: 'visto', evidence_ref: { kind: 'tool_call', ref: 'inexistente' } }],
+          })],
+          { stopReason: 'toolUse' },
+        ),
+        fauxAssistantMessage(
+          [fauxToolCall('task_plan', {
+            goal: 'Publicar',
+            steps: [{ title: 'Subir', status: 'failed' }],
+          })],
+          { stopReason: 'toolUse' },
+        ),
+        fauxAssistantMessage('No pude subirlo, pero lo dejo así.'),
+        fauxAssistantMessage(
+          [fauxToolCall('task_plan', {
+            goal: 'Publicar',
+            steps: [{ title: 'Subir', status: 'done', evidence: 'reintentado con otro enfoque' }],
+          })],
+          { stopReason: 'toolUse' },
+        ),
+        fauxAssistantMessage('Replanteado y completado con otro enfoque.'),
+      ],
+      failedBridge,
+    );
+    const { session } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_message_send({ session_id: session.id, content: 'publica el archivo' });
+    assert(await waitIdle(session.id), 'el turno con paso fallido termina');
+    const listed = await runtime.handlers.agent_messages_list({ session_id: session.id });
+    const planCalls = listed.messages.flatMap((m) => m.tool_calls || []).filter((c) => c.name === 'task_plan');
+    assert(
+      /no corresponde a ninguna herramienta ejecutada/.test(String(planCalls[0].result || '')),
+      'una evidence_ref inventada se rechaza con la causa',
+    );
+    const texts = listed.messages.filter((m) => m.role === 'assistant').map((m) => m.content);
+    assert(
+      texts.includes('No pude subirlo, pero lo dejo así.') && texts.at(-1).startsWith('Replanteado'),
+      'un paso fallido cuenta como trabajo sin resolver y continúa el encargo',
+    );
+    assert(
+      listed.messages.filter((m) => m.role === 'user').length === 1,
+      'la comprobación de pasos fallidos no aparece como mensaje del usuario',
+    );
+    assert(faux.getPendingResponseCount() === 0, 'la comprobación de fallidos se pide una sola vez');
+    await runtime.shutdown();
+  }
+
+  {
+    const { bridge } = makeBridge();
+    const schema = { type: 'object', properties: {} };
     const probeBridge = async (method, params) => {
       if (method === 'agent_internal_tools') {
         const result = await bridge(method, params);

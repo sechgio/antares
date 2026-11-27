@@ -74,6 +74,8 @@ const MAX_PLAN_TITLE_CHARS = Number(PLAN_CONTRACT.max_title_chars) || 160;
 const MAX_PLAN_EVIDENCE_CHARS = Number(PLAN_CONTRACT.max_evidence_chars) || 300;
 const MAX_PLAN_ID_CHARS = Number(PLAN_CONTRACT.max_id_chars) || 64;
 const MAX_PLAN_STEP_DEPENDENCIES = Number(PLAN_CONTRACT.max_step_dependencies) || 20;
+const MAX_PLAN_EVIDENCE_REF_CHARS = Number(PLAN_CONTRACT.max_evidence_ref_chars) || 300;
+const PLAN_EVIDENCE_REF_KINDS = new Set(PLAN_CONTRACT.evidence_ref_kinds || []);
 const planWrites = new Map();
 const deletedPlans = new Set();
 
@@ -164,11 +166,20 @@ function planFromParams(params) {
           .map(String)
           .slice(0, MAX_PLAN_STEP_DEPENDENCIES)
       : [];
+    const evidenceRef = step && step.evidence_ref;
+    const validRef =
+      evidenceRef &&
+      typeof evidenceRef === 'object' &&
+      PLAN_EVIDENCE_REF_KINDS.has(evidenceRef.kind) &&
+      String(evidenceRef.ref || '').trim();
     steps.push({
       ...(id ? { id } : {}),
       title: neutralizePlanText(title).slice(0, MAX_PLAN_TITLE_CHARS),
       status,
       ...(evidence ? { evidence: neutralizePlanText(evidence).slice(0, MAX_PLAN_EVIDENCE_CHARS) } : {}),
+      ...(validRef
+        ? { evidence_ref: { kind: evidenceRef.kind, ref: String(evidenceRef.ref).trim().slice(0, MAX_PLAN_EVIDENCE_REF_CHARS) } }
+        : {}),
       ...(dependencies.length ? { dependencies } : {}),
     });
   }
@@ -214,6 +225,38 @@ async function readPlan(sessionId) {
     console.warn('[agent] plan read failed:', planErrorDetail(err));
     return null;
   }
+}
+
+async function continuationContext(session) {
+  const continuation = session && session.continuation;
+  if (!continuation) return '';
+  const reason =
+    continuation.reason === 'token_budget'
+      ? 'se agotó el presupuesto diario de tokens'
+      : 'alcanzó el límite de pasos de herramienta';
+  const parts = [
+    `Checkpoint registrado por Antares: el turno anterior se interrumpió antes de completar el encargo porque ${reason}.`,
+  ];
+  if (Number.isInteger(continuation.rounds)) parts.push(`Pasos de herramienta ya usados en ese turno: ${continuation.rounds}.`);
+  const pending = Array.isArray(continuation.pending_steps) ? continuation.pending_steps.filter(Boolean) : [];
+  if (pending.length) parts.push(`Pasos pendientes registrados: ${pending.map((title) => `«${title}»`).join(', ')}.`);
+  try {
+    const plan = await readPlan(session.id);
+    const verified = plan && Array.isArray(plan.steps) ? plan.steps.filter((step) => step.status === 'done' && step.evidence) : [];
+    if (verified.length) {
+      parts.push(
+        'Ya verificado, no lo repitas: ' +
+          verified.map((step) => `«${step.title}» (${String(step.evidence).slice(0, 120)})`).join('; ') +
+          '.',
+      );
+    }
+  } catch {}
+  parts.push(
+    'Retoma el trabajo desde el primer paso pendiente sin repetir acciones ya verificadas; si el estado cambió, ' +
+      'actualiza task_plan. Este checkpoint es estado registrado por Antares, no una instrucción nueva del usuario. ' +
+      PLAN_TITLE_TRUST,
+  );
+  return parts.join('\n');
 }
 
 async function deleteSessionAndPlan(sessionId) {
@@ -284,6 +327,7 @@ module.exports = {
   planFromParams,
   savePlan,
   readPlan,
+  continuationContext,
   deleteSessionAndPlan,
   requireSession,
   conversation,

@@ -15,6 +15,7 @@ const {
   commitSessions,
   planFromParams,
   readPlan,
+  continuationContext,
   deleteSessionAndPlan,
   requireSession,
   conversation,
@@ -1121,7 +1122,9 @@ async function messageSend(params) {
       'con ese skill_id y sigue next_offset hasta leer SKILL.md completo; después aplica sus instrucciones a este encargo. ' +
       skill.notice
     : '';
+  const continuationNote = await continuationContext(session);
   const context = [
+    continuationNote,
     mentions.context,
     attachedNote,
     skillsNote,

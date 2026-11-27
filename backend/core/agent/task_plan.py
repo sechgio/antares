@@ -13,6 +13,8 @@ _MAX_TITLE_CHARS = int(_CONTRACT["max_title_chars"])
 _MAX_EVIDENCE_CHARS = int(_CONTRACT["max_evidence_chars"])
 _MAX_ID_CHARS = int(_CONTRACT["max_id_chars"])
 _MAX_STEP_DEPENDENCIES = int(_CONTRACT["max_step_dependencies"])
+_MAX_EVIDENCE_REF_CHARS = int(_CONTRACT["max_evidence_ref_chars"])
+_EVIDENCE_REF_KINDS = tuple(_CONTRACT["evidence_ref_kinds"])
 
 TOOL_SPECS: list[JsonObject] = [
     {
@@ -41,6 +43,15 @@ TOOL_SPECS: list[JsonObject] = [
                             "title": {"type": "string"},
                             "status": {"type": "string", "enum": list(_STATUSES)},
                             "evidence": {"type": "string", "description": "Qué observaste que demuestra el estado"},
+                            "evidence_ref": {
+                                "type": "object",
+                                "properties": {
+                                    "kind": {"type": "string", "enum": list(_EVIDENCE_REF_KINDS)},
+                                    "ref": {"type": "string"},
+                                },
+                                "required": ["kind", "ref"],
+                                "description": "Observación que prueba el paso: id de llamada, ruta, id de artefacto o página",
+                            },
                             "dependencies": {
                                 "type": "array",
                                 "maxItems": _MAX_STEP_DEPENDENCIES,
@@ -81,6 +92,20 @@ def _parse_steps(raw: list) -> tuple[list[JsonObject], dict[str, int], dict[str,
         evidence = str(item.get("evidence") or "").strip()[:_MAX_EVIDENCE_CHARS]
         if status == "done" and not evidence:
             raise ValueError(f"Indica la evidencia que comprueba «{title}» antes de marcarlo como hecho")
+        evidence_ref = item.get("evidence_ref")
+        if evidence_ref is not None:
+            if not isinstance(evidence_ref, dict):
+                raise ValueError(f"La evidence_ref de «{title}» debe ser un objeto con kind y ref")
+            ref_kind = str(evidence_ref.get("kind") or "")
+            if ref_kind not in _EVIDENCE_REF_KINDS:
+                raise ValueError(
+                    f"La evidence_ref de «{title}» admite kind {'/'.join(_EVIDENCE_REF_KINDS)}; ejemplo: "
+                    '{"kind": "tool_call", "ref": "<id de la llamada que verificó el paso>"}'
+                )
+            ref_value = str(evidence_ref.get("ref") or "").strip()
+            if not ref_value:
+                raise ValueError(f"La evidence_ref de «{title}» necesita ref con la referencia a la observación")
+            evidence_ref = {"kind": ref_kind, "ref": ref_value[:_MAX_EVIDENCE_REF_CHARS]}
         step_id = str(item.get("id") or "").strip()[:_MAX_ID_CHARS] or _slug(title, index)
         key = step_id.casefold()
         if key in by_id:
@@ -104,6 +129,8 @@ def _parse_steps(raw: list) -> tuple[list[JsonObject], dict[str, int], dict[str,
         step: JsonObject = {"id": step_id, "title": title, "status": status, "dependencies": dependencies}
         if evidence:
             step["evidence"] = evidence
+        if evidence_ref is not None:
+            step["evidence_ref"] = evidence_ref
         steps.append(step)
     return steps, by_id, by_title
 

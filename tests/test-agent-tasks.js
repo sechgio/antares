@@ -188,6 +188,10 @@ async function main() {
     }]);
     await until(() => delivered === 1);
     await idle(session.id);
+    await until(async () => {
+      const listed = await runtime.handlers.agent_tasks_list({ session_id: session.id });
+      return listed.tasks.some((task) => task.status === 'delivered');
+    });
     assert.equal(granted.length, 0, 'un encargo del modelo no autoriza las rutas que contiene');
     await runtime.shutdown();
     faux = await open();

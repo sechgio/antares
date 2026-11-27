@@ -129,6 +129,7 @@ def _tools(params: JsonObject) -> JsonObject:
                 **spec,
                 "kind": "mcp" if _mcp_servers.parse_agent_tool(name) is not None else "backend",
                 "replay_safe": _agent_chat.replay_safe(name),
+                "delegable": _agent_chat.replay_safe(name),
             }
         )
     return {"tools": tools}
