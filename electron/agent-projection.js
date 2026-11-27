@@ -16,27 +16,36 @@ const COMPACTION_REASONS = {
 const NOTIFY_MS = 90;
 const notifyTimers = new Map();
 
-function emitChanged(sessionId) {
+function emitChanged(payload) {
   if (shared.notify) {
-    shared.notify('agent.changed', { session_id: sessionId });
+    shared.notify('agent.changed', payload);
     return;
   }
   try {
     const win = require('./window-manager').getMainWindow();
-    if (win && !win.isDestroyed()) win.webContents.send('ipc-notify', 'agent.changed', { session_id: sessionId });
+    if (win && !win.isDestroyed()) win.webContents.send('ipc-notify', 'agent.changed', payload);
   } catch {}
 }
 
-function notifyChanged(convId) {
-  if (notifyTimers.has(convId)) return;
-  notifyTimers.set(
-    convId,
-    setTimeout(() => {
-      notifyTimers.delete(convId);
-      const sessionId = shared.convToSession.get(convId);
-      if (sessionId) emitChanged(sessionId);
-    }, NOTIFY_MS),
-  );
+function notifyChanged(convId, partialOnly = false) {
+  const pending = notifyTimers.get(convId);
+  if (pending) {
+    pending.partialOnly &&= partialOnly;
+    return;
+  }
+  const batch = { partialOnly };
+  notifyTimers.set(convId, batch);
+  setTimeout(() => {
+    notifyTimers.delete(convId);
+    const sessionId = shared.convToSession.get(convId);
+    if (!sessionId) return;
+    const live = liveFor(convId);
+    const revision = (live.transcriptRevision ?? 0) + 1;
+    live.transcriptRevision = revision;
+    shared.live.set(convId, live);
+    const partial = batch.partialOnly ? projectPartial(convId) : null;
+    emitChanged({ session_id: sessionId, revision, ...(partial ? { partial } : {}) });
+  }, NOTIFY_MS);
 }
 
 async function ensureWatcher(session, context) {
@@ -48,7 +57,7 @@ async function ensureWatcher(session, context) {
   applySnapshot(convId, stream.snapshot);
   stream.start(async (events) => {
     for (const event of events) applyEvent(convId, event);
-    if (events.length) notifyChanged(convId);
+    if (events.length) notifyChanged(convId, events.every((event) => event.type === 'message_update'));
     if (events.some((event) => event.type === 'message_end' && event.entry?.kind === 'pi.compaction')) {
       await require('./agent-runtime').regenerateMemorySnapshot(session.id);
     }
@@ -57,14 +66,14 @@ async function ensureWatcher(session, context) {
 }
 
 function applySnapshot(convId, snapshot) {
-  shared.live.set(convId, { ...snapshot });
+  shared.live.set(convId, { ...snapshot, transcriptRevision: liveFor(convId).transcriptRevision ?? 0 });
 }
 
 function applyEvent(convId, event) {
   const live = shared.live.get(convId) || { tools: [], inbox: [] };
   switch (event.type) {
     case 'snapshot':
-      shared.live.set(convId, { ...event });
+      applySnapshot(convId, event);
       return;
     case 'run_start':
       shared.rounds.delete(convId);
@@ -95,11 +104,11 @@ function applyEvent(convId, event) {
     case 'message_update': {
       const message = live.generation && live.generation.message;
       if (!message) break;
-      const next = { ...message, content: [...(message.content || [])] };
+      let next = { ...message, content: [...(message.content || [])] };
       for (const change of event.changes || []) {
         if (change.type === 'message') {
-          live.generation.message = change.message;
-          break;
+          next = { ...change.message, content: [...(change.message.content || [])] };
+          continue;
         }
         if (
           change.type === 'text_start' ||
@@ -214,6 +223,19 @@ function partialReasoning(convId) {
   return timing.reasoningOf(live.generation && live.generation.message);
 }
 
+function projectPartial(convId) {
+  const content = partialText(convId);
+  const reasoning = partialReasoning(convId);
+  if (!content && !reasoning) return null;
+  const reasoningMs = timing.partialReasoningMs(convId, reasoning);
+  return {
+    role: 'assistant', content, partial: true,
+    ts: liveFor(convId).generation?.message?.timestamp ?? Date.now(),
+    ...(reasoning ? { reasoning } : {}),
+    ...(reasoningMs === undefined ? {} : { reasoning_ms: reasoningMs }),
+  };
+}
+
 function textOf(message) {
   if (!message) return '';
   if (typeof message.content === 'string') return message.content;
@@ -268,6 +290,95 @@ async function allEntries(conv) {
   return entries.reverse();
 }
 
+const TRANSCRIPT_PAGE_SIZE = 100;
+
+function visibleUser(entry) {
+  return entry.kind === 'pi.user' && !textOf(entry.model?.[0]).startsWith(shared.CHECK_MARKER);
+}
+
+async function transcriptEntries(conv, before) {
+  const query = before === undefined ? {} : { maxEntryId: before - 1 };
+  const entries = [];
+  let cursor;
+  do {
+    const page = await conv.entries(query, TRANSCRIPT_PAGE_SIZE, cursor, ctx());
+    entries.push(...page.items);
+    cursor = page.nextCursor;
+    const boundary = entries.findLastIndex(visibleUser);
+    if (boundary >= 0 && (cursor || boundary < entries.length - 1)) {
+      return { entries: entries.slice(0, boundary + 1).reverse(), before: entries[boundary].id };
+    }
+  } while (cursor);
+  return { entries: entries.reverse(), before: null };
+}
+
+async function transcriptAround(conv, id) {
+  const newest = (await conv.entries({}, 1, undefined, ctx())).items[0]?.id ?? id;
+  let minEntryId = id + 1;
+  for (let width = 200; minEntryId <= newest; width *= 2) {
+    const maxEntryId = Math.min(minEntryId + width - 1, newest);
+    let cursor;
+    let nextTurn;
+    do {
+      const page = await conv.entries({ minEntryId, maxEntryId }, TRANSCRIPT_PAGE_SIZE, cursor, ctx());
+      const user = page.items.findLast(visibleUser);
+      if (user) nextTurn = user.id;
+      cursor = page.nextCursor;
+    } while (cursor);
+    if (nextTurn !== undefined) return transcriptEntries(conv, nextTurn);
+    minEntryId = maxEntryId + 1;
+  }
+  return transcriptEntries(conv);
+}
+
+async function searchTranscript(conv, query) {
+  const words = query.toLocaleLowerCase('es').split(/\s+/);
+  const matches = [];
+  let cursor;
+  for (let index = 0; index < 20; index += 1) {
+    const page = await conv.entries({}, 200, cursor, ctx());
+    for (const entry of page.items) {
+      const message = entry.model?.[0];
+      const content = visibleUser(entry) ? userTextOf(message) : entry.kind === 'pi.assistant' ? textOf(message) : '';
+      const normalized = content.toLocaleLowerCase('es');
+      if (!content || !words.every((word) => normalized.includes(word))) continue;
+      const start = Math.max(0, normalized.indexOf(words[0]) - 45);
+      matches.push({ id: entry.id, text: content.slice(start, start + 220), ts: entryTs(entry, message) });
+      if (matches.length === 30) return { matches, truncated: true };
+    }
+    cursor = page.nextCursor;
+    if (!cursor) break;
+  }
+  return { matches, truncated: !!cursor };
+}
+
+async function transcriptOrigin(conv, kind, ref) {
+  let cursor;
+  let callId;
+  do {
+    const page = await conv.entries({}, 500, cursor, ctx());
+    for (const entry of page.items) {
+      if (kind === 'task') {
+        if (entry.kind === NOTICE_KIND && entry.data?.handoff?.task_id === ref) return entry.id;
+        continue;
+      }
+      const message = entry.model?.[0];
+      if (entry.kind === 'pi.assistant' && callId &&
+          message?.content?.some?.((block) => block.type === 'toolCall' && block.id === callId)) return entry.id;
+      if (entry.kind !== 'pi.tool-result' || callId || !message?.toolCallId) continue;
+      const content = textOf(message);
+      if (!content.includes(ref)) continue;
+      try {
+        if (JSON.parse(content)?.artifact?.id === ref) callId = message.toolCallId;
+      } catch {
+        // The same tool result channel also carries ordinary text.
+      }
+    }
+    cursor = page.nextCursor;
+  } while (cursor);
+  return null;
+}
+
 function contextTokens(usage) {
   return ['input', 'output', 'cacheRead', 'cacheWrite'].reduce((sum, key) => sum + (Number(usage[key]) || 0), 0);
 }
@@ -285,9 +396,9 @@ async function conversationSpend(convId) {
   return totals;
 }
 
-async function projectMessages(conv, session) {
+async function projectMessages(conv, session, entriesOverride, historical = false) {
   const convId = session.conversationId;
-  const live = liveFor(convId);
+  const live = historical ? {} : liveFor(convId);
   const pending = (await bridge('agent_internal_approvals_pending', { session_id: session.id })).approvals;
   const pendingByCall = new Map(pending.map((a) => [providerCallId(a.call_id), a]));
   let effects = [];
@@ -303,7 +414,8 @@ async function projectMessages(conv, session) {
     else effectByCall.set(id, effect);
   }
   for (const id of ambiguousEffects) effectByCall.delete(id);
-  const entries = await allEntries(conv);
+  const entries = entriesOverride ?? await allEntries(conv);
+  const entryId = (entry) => entriesOverride ? { id: entry.id } : {};
   const handoffTasks = entries.some((entry) => entry.kind === NOTICE_KIND && entry.data?.handoff)
     ? (await shared.state.harness.snapshot(shared.state.TasksDoc, ctx()))?.tasks
     : undefined;
@@ -347,6 +459,7 @@ async function projectMessages(conv, session) {
       if (content || attachments.length)
         messages.push({
           role: 'user',
+          ...entryId(entry),
           content,
           ...(attachments.length ? { attachments } : {}),
           ts: entryTs(entry, msg),
@@ -358,6 +471,7 @@ async function projectMessages(conv, session) {
       const task = handoff && handoffTasks?.[handoff.task_id];
       messages.push({
         role: 'assistant',
+        ...entryId(entry),
         content: String((entry.data && entry.data.text) || ''),
         notice: true,
         ...(handoff ? { handoff: { ...handoff, ...(task ? { status: task.status } : {}) } } : {}),
@@ -372,6 +486,7 @@ async function projectMessages(conv, session) {
         const reason = COMPACTION_REASONS[entry.data && entry.data.reason] || 'contexto comprimido';
         messages.push({
           role: 'assistant',
+          ...entryId(entry),
           content:
             `⚠ Contexto compactado con un resumen de emergencia — ${reason}. ` +
             'El modelo no pudo resumir y se conservó un extracto mecánico; puede faltar detalle de lo anterior.',
@@ -382,8 +497,10 @@ async function projectMessages(conv, session) {
       continue;
     }
     if (entry.kind === 'pi.tool-result' && msg) {
+      if (entriesOverride) continue;
       messages.push({
         role: 'tool_result',
+        ...entryId(entry),
         tool_use_id: msg.toolCallId,
         name: msg.toolName,
         content: textOf(msg),
@@ -401,6 +518,7 @@ async function projectMessages(conv, session) {
       const reasoningMs = timing.partialReasoningMs(convId, reasoning);
       messages.push({
         role: 'assistant',
+        ...entryId(entry),
         content: textOf(msg),
         ...(reasoning ? { reasoning } : {}),
         ...(reasoningMs !== undefined ? { reasoning_ms: reasoningMs } : {}),
@@ -527,6 +645,11 @@ module.exports = {
   partialText,
   partialReasoning,
   partialReasoningMs: timing.partialReasoningMs,
+  projectPartial,
+  transcriptEntries,
+  transcriptAround,
+  searchTranscript,
+  transcriptOrigin,
   allEntries,
   projectMessages,
 };

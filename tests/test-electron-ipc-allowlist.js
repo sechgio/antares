@@ -21,6 +21,12 @@ if (transcript.handler !== 'native:agent' || !transcript.idempotent
   || transcript.outputSchema.properties.messages.items.properties.attachments.items.required.join(',') !== 'path,folder') {
   throw new Error('El historial debe conservar adjuntos por mensaje sin ampliar permisos ni cambiar su ruta IPC');
 }
+for (const method of ['agent_messages_page', 'agent_messages_search', 'agent_message_origin']) {
+  const spec = require('../shared/ipc-method-catalog.json').methods[method];
+  if (spec.handler !== 'native:agent' || !spec.idempotent || !spec.inputSchema.required.includes('session_id')) {
+    throw new Error(`${method} debe ser una lectura del historial limitada a una conversación`);
+  }
+}
 
 const pageAction = require('../shared/ipc-method-catalog.json').methods.agent_artifact_action;
 if (pageAction.handler !== 'native:agent' || !pageAction.inputSchema.properties.action.enum.includes('open')) {

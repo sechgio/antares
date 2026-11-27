@@ -7,7 +7,7 @@ import { chartToMermaid, horizontalChart, niceTicks, parseChartSpec, pieSlices }
 import { mermaidTitle } from './ChatMermaid';
 import { FilePreviewContext, localPreviewResource } from './filePreviewContext';
 
-it('abre referencias locales con espacios y rechaza enlaces remotos o ejecutables', () => {
+it('distingue el visor de archivos local de una fuente web', () => {
   const open = vi.fn();
   render(<FilePreviewContext.Provider value={open}><MessageMarkdown text={'[Excel](<C:/datos/mi archivo.xlsx>) y `resumen.pdf` [web](https://example.com/doc.pdf)'} /></FilePreviewContext.Provider>);
   fireEvent.click(screen.getByRole('button', { name: 'Previsualizar Excel' }));
@@ -15,6 +15,7 @@ it('abre referencias locales con espacios y rechaza enlaces remotos o ejecutable
   fireEvent.click(screen.getByRole('button', { name: 'Previsualizar resumen.pdf' }));
   expect(open).toHaveBeenLastCalledWith('resumen.pdf');
   expect(screen.queryByRole('button', { name: 'Previsualizar web' })).toBeNull();
+  expect(screen.getByRole('link', { name: 'web' })).toHaveAttribute('href', 'https://example.com/doc.pdf');
   expect(localPreviewResource('file:///C:/mis%20datos/acta.docx')).toBe('C:/mis datos/acta.docx');
   for (const value of ['javascript:alert(1).pdf', 'file://servidor/a.pdf', '//servidor/a.pdf', 'mal.exe', '%00.pdf', '%invalid.pdf']) {
     expect(localPreviewResource(value)).toBeNull();
@@ -28,14 +29,34 @@ it('agrupa párrafos, listas, encabezados y bloques de código', () => {
   expect(blocks[4]).toEqual({ kind: 'code', text: 'const x = 1;' });
 });
 
-it('muestra negritas, código y listas sin interpretar HTML ni abrir enlaces', () => {
+it('muestra HTML como texto y limita la navegación a fuentes HTTPS', () => {
   const { container } = render(<MessageMarkdown text={'**Total**: `42` filas\n\n- <img src=x onerror=alert(1)>\n- [panel](https://evil.example.com)'} />);
   expect(screen.getByText('Total').tagName).toBe('STRONG');
   expect(screen.getByText('42').tagName).toBe('CODE');
   expect(container.querySelector('img')).toBeNull();
-  expect(container.querySelector('a')).toBeNull();
+  expect(screen.getByRole('link', { name: 'panel' })).toHaveAttribute('target', '_blank');
+  expect(screen.getByRole('link', { name: 'panel' })).toHaveAttribute('rel', 'noopener noreferrer');
   expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument();
   expect(screen.getByText('panel')).toHaveAttribute('title', 'https://evil.example.com');
+});
+
+it('resuelve referencias cuando su destino completo llega y conserva otros protocolos como texto', () => {
+  const text = '[Publicación][fuente], [insegura](http://example.com), [privada](https://a:b@example.com) y [archivo](javascript:prompt%281%29)';
+  const { rerender } = render(<MessageMarkdown text={text} streaming />);
+  expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  rerender(<MessageMarkdown text={text + '\n\n[fuente]: <https://example.com/mi fuente>'} />);
+  expect(screen.getAllByRole('link')).toHaveLength(1);
+  expect(screen.getByRole('link', { name: 'Publicación' })).toHaveAttribute('href', 'https://example.com/mi%20fuente');
+});
+
+it('reconoce cercas largas, tildes y énfasis anidado en ambos estados del stream', () => {
+  const input = '**Un *detalle***\n\n~~~~text\n~~~\nliteral\n';
+  const { container, rerender } = render(<MessageMarkdown text={input} streaming />);
+  expect(container.querySelector('strong em')).toHaveTextContent('detalle');
+  expect(parseBlocks(input)[1]).toMatchObject({ open: true, text: '~~~\nliteral\n' });
+  rerender(<MessageMarkdown text={input + '~~~~\n\nListo'} />);
+  expect(screen.getByText('Listo')).toBeVisible();
+  expect(parseBlocks(input + '~~~~')[1]).not.toHaveProperty('open');
 });
 
 it('no abre cursiva con guiones bajos dentro de palabras', () => {
@@ -73,6 +94,17 @@ it('espera el separador de tabla y conserva celdas incompletas al recibir texto'
   rerender(<MessageMarkdown text={'Nombre | Estado\n--- | ---\nInforme | Listo\n\nSiguiente paso.'} />);
   expect(screen.getByRole('cell', { name: 'Listo' })).toBeVisible();
   expect(screen.getByText('Siguiente paso.')).toBeVisible();
+});
+
+it('amplía una tabla Markdown y permite filtrar, ordenar y copiar sus filas', () => {
+  const lines = ['Nombre | Estado', '--- | ---', ...Array.from({ length: 12 }, (_, i) => `Fila ${i + 1} | Listo`)];
+  render(<MessageMarkdown text={lines.join('\n')} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Ampliar tabla' }));
+  const viewer = within(screen.getByRole('dialog', { name: 'Tabla de la respuesta' }));
+  fireEvent.change(viewer.getByRole('textbox', { name: 'Filtrar filas' }), { target: { value: 'Fila 12' } });
+  expect(viewer.getByRole('cell', { name: 'Fila 12' })).toBeVisible();
+  expect(viewer.queryByRole('cell', { name: 'Fila 1' })).not.toBeInTheDocument();
+  expect(viewer.getByRole('button', { name: 'Copiar filas para Excel' })).toBeEnabled();
 });
 
 it('conserva las barras de texto ordinario y las tablas dentro de código', () => {
