@@ -1209,7 +1209,7 @@ it('detener pausa la cola y conserva las tareas pendientes para un envío explí
   localStorage.setItem('antares-agent-session', session.id);
   const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
   vi.spyOn(agentApi, 'agentTurnCancel').mockImplementation(async () => {
-    list.mockResolvedValue(empty);
+    list.mockResolvedValue({ ...empty, resumable: true });
     return { cancelled: true };
   });
   render(<AgentView />);
@@ -1217,8 +1217,12 @@ it('detener pausa la cola y conserva las tareas pendientes para un envío explí
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Siguiente tarea' } });
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' })); });
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
-  await act(async () => { fireEvent.click(screen.getByLabelText('Detener')); });
+  const composer = within(screen.getByRole('group', { name: 'Redactar mensaje' }));
+  await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Detener' })); });
   expect(agentApi.agentTurnCancel).toHaveBeenCalledWith(session.id);
+  expect(composer.queryByRole('button', { name: 'Detener' })).not.toBeInTheDocument();
+  expect(composer.getByRole('button', { name: 'Enviar' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Reanudar', exact: true })).not.toBeInTheDocument();
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([
     { session: session.id, text: 'Siguiente tarea', requestId: expect.any(String), attachments: [], failed: true },
@@ -1690,7 +1694,7 @@ it('muestra la bienvenida sin sugerencias de mensajes predefinidos', async () =>
   render(<AgentView />);
   await act(async () => {});
   expect(screen.getByText(/^Puedo ayudarte a preparar informes/)).toBeVisible();
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveAttribute('placeholder', 'Mensaje…');
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveAttribute('placeholder', 'Escribe un mensaje · @ para mencionar · / para usar una skill');
   expect(screen.queryByRole('group', { name: 'Sugerencias' })).not.toBeInTheDocument();
 });
 
@@ -2012,7 +2016,7 @@ it('confirma la recepción solo tras la admisión y conserva ese recibo si falla
   expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText(/El estado mostrado puede estar desactualizado/)).toBeVisible();
 });
 
-it('muestra modelo y envío en la cápsula y despliega las opciones con el botón más', async () => {
+it('pone el campo de escritura antes de los controles y despliega las opciones con el botón más', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
@@ -2025,8 +2029,10 @@ it('muestra modelo y envío en la cápsula y despliega las opciones con el botó
   render(<AgentView />);
   await act(async () => {});
   const composer = within(screen.getByRole('group', { name: 'Redactar mensaje' }));
+  const input = composer.getByRole('textbox', { name: 'Mensaje para el agente' });
   const trigger = composer.getByRole('button', { name: 'Opciones del mensaje' });
   const model = composer.getByRole('button', { name: 'Elegir proveedor y modelo' });
+  expect(input.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(model).toBeVisible();
   expect(composer.getByRole('button', { name: 'Enviar' })).toBeVisible();
   expect(trigger).toHaveAttribute('aria-expanded', 'false');

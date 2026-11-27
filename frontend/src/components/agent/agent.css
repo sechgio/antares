@@ -90,7 +90,6 @@
   border-bottom: 0;
 }
 .agent-workspace .agent-composer {
-  container-type: inline-size;
   box-shadow:
     0 1px 2px rgb(0 0 0 / 0.04),
     0 6px 20px rgb(0 0 0 / 0.06);
@@ -113,12 +112,11 @@
   color: var(--text-muted);
 }
 .agent-workspace .agent-stop {
-  background: var(--text-primary);
-  color: var(--bg-base);
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
 .agent-workspace .agent-stop:hover:not(:disabled) {
-  background: var(--text-secondary);
-  color: var(--bg-base);
+  background: color-mix(in srgb, var(--bg-input), var(--text-primary) 8%);
 }
 .agent-workspace .agent-queue {
   background: color-mix(in srgb, var(--bg-elevated) 45%, var(--agent-panel));
@@ -128,15 +126,17 @@
 }
 .agent-workspace .agent-composer-input {
   field-sizing: content;
-  min-height: 36px;
+  min-height: 46px;
   max-height: 140px;
-  padding: 8px 3px;
+  padding: 12px 14px 8px;
 }
 .agent-workspace .agent-composer-input:placeholder-shown {
   overflow: hidden;
 }
 .agent-workspace .agent-composer-model {
-  max-width: min(38cqw, 240px);
+  min-width: 0;
+  max-width: 18rem;
+  margin-inline-start: auto;
   display: flex;
   align-items: center;
   height: 36px;
@@ -146,11 +146,6 @@
 }
 .agent-workspace .agent-composer-options[hidden] {
   display: none;
-}
-@container (max-width: 340px) {
-  .agent-workspace .agent-composer-row:has(.agent-turn-actions) .agent-composer-model {
-    max-width: 28cqw;
-  }
 }
 @media (max-height: 640px) {
   .agent-workspace .agent-queue ol {
