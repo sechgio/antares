@@ -9,20 +9,24 @@ function key(spec: TestSpecification): string {
   return at >= 0 ? id.slice(at + '/frontend/'.length) : id;
 }
 
+const FILE_COST_FLOOR_SECONDS = 0.1;
+
+function cost(spec: TestSpecification): number {
+  return Math.max(DURATIONS[key(spec)] ?? 0, FILE_COST_FLOOR_SECONDS);
+}
+
 export default class DurationSequencer extends BaseSequencer {
   override async shard(files: TestSpecification[]): Promise<TestSpecification[]> {
     const shard = this.ctx.config.shard;
     if (!shard) return files;
     const bins = Array.from({ length: shard.count }, () => ({ total: 0, specs: [] as TestSpecification[] }));
-    const sorted = [...files].sort(
-      (a, b) => (DURATIONS[key(b)] ?? 0) - (DURATIONS[key(a)] ?? 0) || key(a).localeCompare(key(b)),
-    );
+    const sorted = [...files].sort((a, b) => cost(b) - cost(a) || key(a).localeCompare(key(b)));
     for (const spec of sorted) {
       let target = bins[0];
       for (const bin of bins) {
         if (bin.total < target.total) target = bin;
       }
-      target.total += DURATIONS[key(spec)] ?? 0;
+      target.total += cost(spec);
       target.specs.push(spec);
     }
     return bins[shard.index - 1]?.specs ?? [];
