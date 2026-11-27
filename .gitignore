@@ -81,10 +81,6 @@ docs/*
 !docs/verification/
 !docs/verification/**
 
-media/*
-!media/manifest.json
-!media/LICENSE-THIRD-PARTY.txt
-
 cua-driver/*
 !cua-driver/manifest.json
 !cua-driver/LICENSE.txt

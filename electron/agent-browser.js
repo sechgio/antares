@@ -31,7 +31,6 @@ const CONSOLE_KEEP = 200;
 const NET_KEEP = 300;
 const MAX_PAGE_TEXT = 12_000;
 const LOAD_TIMEOUT_MS = 30_000;
-const SETTLE_MS = 700;
 const READY_GRACE_MS = 1_500;
 const KEY_CODES = {
   enter: 'Enter',
@@ -393,10 +392,12 @@ function busyRemaining(tab) {
   return tab ? Math.max(0, tab.lastUserInputAt + USER_INPUT_GRACE_MS - Date.now()) : 0;
 }
 
-function acquireAgent(sessionId) {
+function acquireAgent(sessionId, usesCurrentTab) {
   if (!sessionId) return;
   const now = Date.now();
   if (!agentOwner || agentOwner.sessionId === sessionId || now - agentOwner.at >= AGENT_LEASE_MS) {
+    const tab = tabs.get(AGENT_TAB);
+    if (usesCurrentTab && tab?.sessionId && tab.sessionId !== sessionId) current(AGENT_TAB, sessionId);
     agentOwner = { sessionId, at: now };
     return;
   }
@@ -413,6 +414,7 @@ function acquireAgent(sessionId) {
 
 function release(sessionId) {
   disposeEphemeral(sessionId);
+  if (downloadSlot && downloadSlot.sessionId === sessionId) downloadSlot.cancel();
   if (!agentOwner || !sessionId || agentOwner.sessionId !== sessionId) return;
   agentOwner = null;
 }
@@ -488,9 +490,7 @@ function disposeEphemeral(sessionId, force = false) {
     tab.userControl = false;
     tab.lastUserInputAt = 0;
   }
-  if (downloadSlot && downloadSlot.partition === partition) {
-    downloadSlot.settle(new Error('La tarea terminó antes de completar la descarga'), null);
-  }
+  if (downloadSlot?.partition === partition) downloadSlot.cancel();
   const ses = sessionCache.get(partition);
   sessionCache.delete(partition);
   barrierSessions.delete(partition);
@@ -652,12 +652,13 @@ function prepareSession(electron, partition = PARTITION) {
   );
   ses.on('will-download', (event, item) => {
     const slot = downloadSlot;
-    if (!slot || item.getURLChain()[0] !== slot.url) {
+    if (!slot || slot.partition !== partition || slot.item || item.getURLChain()[0] !== slot.url) {
       event.preventDefault();
       item.cancel();
       return;
     }
-    downloadSlot = null;
+    slot.item = item;
+    clearTimeout(slot.timeout);
     const name = downloadName(item.getFilename());
     const target = path.join(slot.dir, `${require('node:crypto').randomUUID().slice(0, 8)}-${name}`);
     item.setSavePath(target);
@@ -692,10 +693,28 @@ function downloadName(value) {
   return name && name !== '.' && name !== '..' ? name : 'archivo';
 }
 
-async function startDownload(url, drafts, partition = PARTITION) {
-  if (!drafts) throw new Error('Los borradores requieren una conversación');
+function downloadTarget(raw) {
+  const url = String(raw || '').trim();
   if (!isWeb(url)) throw new Error('Indica la dirección http(s) del archivo');
   publicWebUrl(url);
+  const target = new URL(url);
+  target.hash = '';
+  return target;
+}
+
+function downloadContext(raw) {
+  const target = downloadTarget(raw);
+  const targetDigest = require('node:crypto').createHash('sha256').update(target.href).digest('hex');
+  target.username = '';
+  target.password = '';
+  const policy = require('./agent-browser-policy');
+  const domain = policy.hostOf(target.href);
+  return { page_url: redactUrlSecrets(target.href), domain, policy_blocked: policy.isBlocked(domain), target_digest: targetDigest };
+}
+
+async function startDownload(raw, drafts, partition, sessionId, signal) {
+  if (!drafts) throw new Error('Los borradores requieren una conversación');
+  const url = downloadTarget(raw).href;
   const policy = require('./agent-browser-policy');
   if (policy.isBlocked(policy.hostOf(url))) {
     throw new Error('Dominio bloqueado por la política del navegador del agente');
@@ -703,17 +722,23 @@ async function startDownload(url, drafts, partition = PARTITION) {
   if (!(await isPublicResolution(url))) {
     throw new Error('El navegador de Agent no accede a direcciones locales ni de la red privada');
   }
-  const requested = new URL(url);
-  requested.hash = '';
-  const slot = { dir: drafts, url: requested.href, partition };
+  signal?.throwIfAborted();
+  if (downloadSlot) throw browserError('Ya hay una descarga en curso en el navegador del agente', 'BROWSER_BUSY');
+  const slot = { dir: drafts, url, partition, sessionId };
   slot.wait = new Promise((resolve, reject) => {
     slot.settle = (error, saved) => {
       clearTimeout(slot.timeout);
+      signal?.removeEventListener('abort', slot.cancel);
       if (downloadSlot === slot) downloadSlot = null;
       error ? reject(error) : resolve(saved);
     };
+    slot.cancel = () => {
+      slot.settle(new Error('La tarea terminó antes de completar la descarga'), null);
+      slot.item?.cancel();
+    };
   });
   downloadSlot = slot;
+  signal?.addEventListener('abort', slot.cancel, { once: true });
   slot.timeout = setTimeout(() => {
     if (downloadSlot === slot) slot.settle(new Error('La descarga no comenzó; comprueba la dirección'), null);
   }, LOAD_TIMEOUT_MS);
@@ -1224,11 +1249,12 @@ async function openPage(page, colorScheme) {
   }
 }
 
-function delay(ms) {
+function delay(ms, signal) {
+  if (signal) return require('node:timers/promises').setTimeout(ms, undefined, { signal });
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForHumanIdle(name, tab) {
+async function waitForHumanIdle(name, tab, signal) {
   if (tab && tab.userControl) throw userControlError();
   if (READ_TOOLS.has(name)) return;
   if (!NAVIGATION_TOOLS.has(name)) {
@@ -1241,7 +1267,7 @@ async function waitForHumanIdle(name, tab) {
   while (remaining > 0) {
     if (tab && tab.userControl) throw userControlError();
     if (Date.now() + remaining > deadline) throw userBusyError(remaining);
-    await delay(Math.min(remaining, 200));
+    await delay(Math.min(remaining, 200), signal);
     remaining = busyRemaining(tab);
   }
   if (tab && tab.userControl) throw userControlError();
@@ -1249,24 +1275,52 @@ async function waitForHumanIdle(name, tab) {
 
 const domReadyAt = new WeakMap();
 
-async function settle(contents) {
-  await delay(SETTLE_MS);
-  const started = Date.now();
-  while (contents.isLoading() && Date.now() - started < LOAD_TIMEOUT_MS) {
-    const ready = domReadyAt.get(contents);
-    if (ready && Date.now() - ready >= READY_GRACE_MS) return;
-    await delay(150);
-  }
+async function settle(contents, signal, navigate) {
+  signal?.throwIfAborted();
+  if (!navigate && !contents.isLoading()) return;
+  return new Promise((resolve, reject) => {
+    let readyTimer;
+    const finish = (error) => {
+      clearTimeout(timeout);
+      clearTimeout(readyTimer);
+      for (const [event, listener] of listeners) contents.removeListener(event, listener);
+      signal?.removeEventListener('abort', abort);
+      if (error) reject(error);
+      else resolve();
+    };
+    const complete = () => finish();
+    const abort = () => finish(signal.reason);
+    const onReady = () => {
+      clearTimeout(readyTimer);
+      readyTimer = setTimeout(complete, Math.max(0, READY_GRACE_MS - (Date.now() - domReadyAt.get(contents))));
+    };
+    const listeners = [
+      ['did-start-loading', () => clearTimeout(readyTimer)],
+      ['dom-ready', onReady],
+      ['did-stop-loading', complete],
+      ['did-navigate-in-page', (_event, _url, isMainFrame) => { if (isMainFrame !== false) complete(); }],
+      ['destroyed', () => finish(new Error('La pestaña del agente se cerró durante la carga'))],
+    ];
+    const timeout = setTimeout(complete, LOAD_TIMEOUT_MS);
+    for (const [event, listener] of listeners) contents.on(event, listener);
+    signal?.addEventListener('abort', abort, { once: true });
+    if (!navigate) {
+      if (domReadyAt.has(contents)) onReady();
+      return;
+    }
+    try {
+      const loading = navigate();
+      loading?.then(complete, (error) => {
+        if (!/ERR_ABORTED/.test(String(error?.message))) finish(error);
+      });
+    } catch (error) {
+      finish(error);
+    }
+  });
 }
 
-async function load(contents, url) {
-  const loading = contents.loadURL(url).catch((err) => {
-    if (!/ERR_ABORTED/.test(String(err && err.message))) throw err;
-  });
-  const settled = settle(contents);
-  loading.catch(() => {});
-  await Promise.race([loading, settled]);
-  await settled;
+function load(contents, url, signal) {
+  return settle(contents, signal, () => contents.loadURL(url));
 }
 
 const DEEP_JS = `
@@ -1303,10 +1357,10 @@ const DEEP_JS = `
 
 const ELEMENT_JS = `
   const secret = ${SECRET_FIELD_JS};
-  const visible = (el) => {
-    const r = el.getBoundingClientRect();
+  const visible = (el, r = el.getBoundingClientRect()) => {
+    if (r.width <= 1 || r.height <= 1) return false;
     const s = getComputedStyle(el);
-    return r.width > 1 && r.height > 1 && s.visibility !== 'hidden' && s.display !== 'none';
+    return s.visibility !== 'hidden' && s.display !== 'none';
   };
   const selector = 'a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=tab],[role=menuitem],'
     + '[role=menuitemcheckbox],[role=menuitemradio],[role=checkbox],[role=radio],[role=switch],[role=option],[role=combobox],'
@@ -1338,8 +1392,7 @@ const ELEMENT_JS = `
     if (el.readOnly) out.push('solo lectura');
     return out;
   };
-  const inViewport = (el, item) => {
-    const r = el.getBoundingClientRect();
+  const inViewport = (el, item, r = el.getBoundingClientRect()) => {
     const top = item.dy + r.top;
     const left = item.dx + r.left;
     return top < innerHeight && top + r.height > 0 && left < innerWidth && left + r.width > 0;
@@ -1373,8 +1426,10 @@ const SNAPSHOT = `(() => {
   ${ELEMENT_JS}
   const all = roots(document);
   const candidates = [];
+  const outside = [];
   const seen = new Set();
   let pointerScan = ${POINTER_SCAN};
+  let total = 0;
   for (const item of all) {
     const nodes = [...item.root.querySelectorAll(selector)];
     for (const node of item.root.querySelectorAll('div,span,li,img,svg,td,p')) {
@@ -1384,21 +1439,25 @@ const SNAPSHOT = `(() => {
       if (getComputedStyle(node).cursor === 'pointer' && !(parent && getComputedStyle(parent).cursor === 'pointer')) nodes.push(node);
     }
     for (const el of nodes) {
-      if (candidates.length >= ${MAX_CANDIDATES}) break;
+      if (seen.size >= 20000) break;
       if (seen.has(el)) continue;
       seen.add(el);
-      if (!visible(el) || el.closest('[aria-hidden=true]')) continue;
-      candidates.push({ el, root: item.root, frame: item.root !== document && item.root.nodeType === 9, inView: inViewport(el, item) });
+      const rect = el.getBoundingClientRect();
+      if (!visible(el, rect) || el.closest('[aria-hidden=true]')) continue;
+      total++;
+      const inView = inViewport(el, item, rect);
+      const bucket = inView ? candidates : outside;
+      if (bucket.length < ${MAX_ELEMENTS})
+        bucket.push({ el, root: item.root, frame: item.root !== document && item.root.nodeType === 9, inView });
     }
   }
-  candidates.sort((a, b) => Number(b.inView) - Number(a.inView));
-  const elements = candidates.slice(0, ${MAX_ELEMENTS}).map(itemOf);
+  const elements = candidates.concat(outside).slice(0, ${MAX_ELEMENTS}).map(itemOf);
   let text = document.body ? document.body.innerText : '';
   for (const item of all) {
     if (item.root !== document && item.root.nodeType === 9 && item.root.body) text += '\\n\\n[marco]\\n' + item.root.body.innerText;
   }
   text = text.replace(/\\n{3,}/g, '\\n\\n');
-  return { url: location.href, title: document.title, text, elements, elements_total: candidates.length,
+  return { url: location.href, title: document.title, text, elements, elements_total: total,
     time_origin: performance.timeOrigin };
 })()`;
 
@@ -1450,7 +1509,7 @@ async function snapshot(contents, offset = 0, budget = RESULT_BUDGET) {
     ...(more > 0
       ? {
           elements_more: more,
-          elements_note: 'Hay más elementos interactivos: desplázate con web_scroll y vuelve a leer',
+          elements_note: 'Hay más elementos interactivos: localízalos con web_find o desplázate con web_scroll',
         }
       : {}),
   };
@@ -1545,8 +1604,9 @@ function refId(ref) {
   return String(ref || '').replace(/[^0-9]/g, '');
 }
 
-function current(id = AGENT_TAB) {
-  const contents = tabContents(tabs.get(id));
+function current(id = AGENT_TAB, sessionId) {
+  const tab = tabs.get(id);
+  const contents = sessionId && tab?.sessionId && tab.sessionId !== sessionId ? null : tabContents(tab);
   if (!contents)
     throw new Error(
       id === AGENT_TAB
@@ -1575,7 +1635,8 @@ async function pageText(contents, offset = 0) {
   return { ...result, text_offset: start, text_total: text.length, ...(end < text.length ? { next_offset: end } : {}) };
 }
 
-async function approvalContext(contents = current()) {
+async function approvalContext(contents, sessionId) {
+  contents ??= current(AGENT_TAB, sessionId);
   const page = await contents.executeJavaScriptInIsolatedWorld(
     1001,
     [
@@ -1626,7 +1687,7 @@ async function locate(contents, ref, { scroll = true } = {}) {
     contents,
     id,
     () => `
-    if (${scroll}) found.el.scrollIntoView({ block: 'center', inline: 'center' });
+    if (${scroll}) found.el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
     found = byRef('${id}') || found;
     const el = found.el;
     const r = el.getBoundingClientRect();
@@ -1668,11 +1729,13 @@ async function locate(contents, ref, { scroll = true } = {}) {
       'COVERED',
     );
   }
-  await delay(120);
   return rect;
 }
 
 async function assertInteraction(input) {
+  if (input.signal?.aborted) {
+    throw browserError('La tarea se detuvo', 'ABORTED', { uncertain: input.sent });
+  }
   const agent = tabs.get(AGENT_TAB);
   let samePage = false;
   try {
@@ -1918,12 +1981,13 @@ async function previewUrl(file, resolvePath) {
   return (await preview.open(status.path, { onReload: reloadPreview })).url;
 }
 
-async function observeAfter(contents) {
-  await settle(contents);
+async function observeAfter(contents, signal, navigate) {
+  await settle(contents, signal, navigate);
   return snapshot(contents, 0, RESULT_BUDGET - 400);
 }
 
-async function run(name, params = {}, { dir, drafts, approvedContext, sessionId, resolvePath, browserMode } = {}) {
+async function run(name, params = {}, { dir, drafts, approvedContext, sessionId, resolvePath, browserMode, signal } = {}) {
+  signal?.throwIfAborted();
   const file = name === 'web_open' ? localTarget(params.url) : null;
   if (name === 'web_open' && file === null) {
     assertAgentTarget(params.url);
@@ -1939,30 +2003,29 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
       { recoverable: true },
     );
   }
-  acquireAgent(sessionId);
-  const mark = { console: consoleSeq, net: netSeq };
   let tab = tabs.get(AGENT_TAB);
-  if (tab && tab.userControl) throw userControlError();
-  await waitForHumanIdle(name, tab);
-  if (!engineChoice && sessionId) {
-    const partition = tab && tab.partition;
-    if (name === 'web_open') switchAgentPartition(agentPartition(sessionId, params.mode, browserMode));
-    else if (partition && partition.startsWith(EPHEMERAL_PREFIX) && ephemeral.get(sessionId) !== partition) {
-      switchAgentPartition(PARTITION);
-    }
-  }
-  if (name === 'web_handover') {
-    setUserControl(true, AGENT_TAB);
-    return { handed_over: true, ...state() };
-  }
+  acquireAgent(sessionId, name !== 'web_open' && name !== 'web_download');
+  const mark = { console: consoleSeq, net: netSeq };
+  await waitForHumanIdle(name, tab, signal);
+  signal?.throwIfAborted();
   if (name === 'web_download') {
     return startDownload(
-      String(params.url || '').trim(),
+      params.url,
       drafts,
       !engineChoice && sessionId ? agentPartition(sessionId, undefined, browserMode) : PARTITION,
+      sessionId,
+      signal,
     );
   }
   if (name === 'web_open') {
+    const partition = !engineChoice && sessionId ? agentPartition(sessionId, params.mode, browserMode) : null;
+    if (tab?.sessionId && sessionId && tab.sessionId !== sessionId) {
+      dropAgentView(tab);
+      if (alive(tab.external)) tab.external.close();
+      tab.external = null;
+    }
+    if (partition) switchAgentPartition(partition);
+    if (sessionId) tabEntry(AGENT_TAB).sessionId = sessionId;
     if (!docked) activeTab = AGENT_TAB;
     const target = file !== null ? await previewUrl(file, resolvePath) : normalizeUrl(params.url);
     tab = await agentTab();
@@ -1971,25 +2034,27 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
     if (file === null && !(await isPublicResolution(target))) {
       throw new Error('El navegador de Agent no accede a direcciones locales ni de la red privada');
     }
-    await load(contents, target);
+    await load(contents, target, signal);
     return snapshot(contents);
   }
-  const contents = current(AGENT_TAB);
+  if (tab && sessionId) tab.sessionId ||= sessionId;
+  if (name === 'web_handover') {
+    setUserControl(true, AGENT_TAB);
+    return { handed_over: true, ...state() };
+  }
+  const contents = current(AGENT_TAB, sessionId);
   if (name === 'web_read') return snapshot(contents, params.offset);
   if (name === 'web_screenshot') return screenshot(contents, dir, params.full_page === true);
   if (name === 'web_back') {
     if (!contents.navigationHistory.canGoBack()) throw new Error('No hay una página anterior');
-    contents.navigationHistory.goBack();
-    return observeAfter(contents);
+    return observeAfter(contents, signal, () => contents.navigationHistory.goBack());
   }
   if (name === 'web_forward') {
     if (!contents.navigationHistory.canGoForward()) throw new Error('No hay una página siguiente');
-    contents.navigationHistory.goForward();
-    return observeAfter(contents);
+    return observeAfter(contents, signal, () => contents.navigationHistory.goForward());
   }
   if (name === 'web_reload') {
-    contents.reload();
-    return observeAfter(contents);
+    return observeAfter(contents, signal, () => contents.reload());
   }
   if (name === 'web_text') return pageText(contents, params.offset);
   if (name === 'web_console') {
@@ -2008,10 +2073,10 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
       ),
     });
   }
-  if (name === 'web_wait') return waitFor(contents, params);
-  if (name === 'web_scroll') return scrollPage(contents, params);
+  if (name === 'web_wait') return waitFor(contents, params, signal);
+  if (name === 'web_scroll') return scrollPage(contents, params, signal);
   if (name === 'web_find') return findElements(contents, params);
-  const input = { contents, expected: approvedContext || (await approvalContext(contents)), sent: false };
+  const input = { contents, expected: approvedContext || (await approvalContext(contents)), sent: false, signal };
   if (name === 'web_hover') {
     const point = await locate(contents, params.ref);
     await send(input, 'Input.dispatchMouseEvent', {
@@ -2019,19 +2084,19 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
       x: Math.round(point.x),
       y: Math.round(point.y),
     });
-    return { hovered: String(params.ref), page: await observeAfter(contents) };
+    return { hovered: String(params.ref), page: await observeAfter(contents, signal) };
   }
   if (name === 'web_click') {
     await clickAt(input, await locate(contents, params.ref), params.double === true ? 2 : 1);
     return {
       clicked: String(params.ref),
       ...(params.double === true ? { double: true } : {}),
-      page: await observeAfter(contents),
+      page: await observeAfter(contents, signal),
       ...pageReported(mark),
     };
   }
   if (name === 'web_drag')
-    return { ...(await dragTo(input, params)), page: await observeAfter(contents), ...pageReported(mark) };
+    return { ...(await dragTo(input, params)), page: await observeAfter(contents, signal), ...pageReported(mark) };
   if (name === 'web_select') return { ...(await selectOptions(input, params)), ...pageReported(mark) };
   if (name === 'web_check') return { ...(await setChecked(input, params)), ...pageReported(mark) };
   if (name === 'web_fill') return { ...(await fillFields(input, params)), ...pageReported(mark) };
@@ -2047,7 +2112,7 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
     }
     await send(input, 'Input.insertText', { text });
     if (params.submit === true) await pressCombo(input, 'enter');
-    return { typed: text.length, page: await observeAfter(contents), ...pageReported(mark) };
+    return { typed: text.length, page: await observeAfter(contents, signal), ...pageReported(mark) };
   }
   if (name === 'web_key') {
     const keys = String(params.keys || '').trim();
@@ -2073,7 +2138,7 @@ async function run(name, params = {}, { dir, drafts, approvedContext, sessionId,
       await pressCombo(input, combo);
       await delay(80);
     }
-    return { pressed: keys, page: await observeAfter(contents), ...pageReported(mark) };
+    return { pressed: keys, page: await observeAfter(contents, signal), ...pageReported(mark) };
   }
   if (name === 'web_upload')
     return { ...(await uploadFile(input, params.ref, String(params.path || '').trim())), ...pageReported(mark) };
@@ -2090,7 +2155,7 @@ function selectAllScript(id) {
   })()`;
 }
 
-async function waitFor(contents, params) {
+async function waitFor(contents, params, signal) {
   const text = String(params.text || '').toLowerCase();
   const gone = String(params.gone || '').toLowerCase();
   const url = String(params.url || '');
@@ -2104,22 +2169,25 @@ async function waitFor(contents, params) {
   })()`;
   let met = false;
   let waited = 0;
+  const started = Date.now();
   for (;;) {
+    signal?.throwIfAborted();
     const state = await contents.executeJavaScript(check, true).catch(() => null);
     met = !!(state && state.text && state.gone && state.url);
     if (met || waited >= timeout) break;
-    await delay(WAIT_STEP_MS);
-    waited += WAIT_STEP_MS;
+    await delay(Math.min(WAIT_STEP_MS, timeout - waited), signal);
+    waited = Date.now() - started;
   }
+  signal?.throwIfAborted();
   return {
     met,
     waited_ms: waited,
     ...(met ? {} : { note: `La condición no se cumplió en ${timeout} ms; no la des por hecha` }),
-    page: await observeAfter(contents),
+    page: await snapshot(contents, 0, RESULT_BUDGET - 400),
   };
 }
 
-async function scrollPage(contents, params) {
+async function scrollPage(contents, params, signal) {
   const id = refId(params.ref);
   const pages = Math.min(10, Math.max(0.25, Number(params.pages) || 1)) * (params.direction === 'up' ? -1 : 1);
   const scroll = `
@@ -2138,7 +2206,7 @@ async function scrollPage(contents, params) {
     ...(moved.moved === 0
       ? { note: 'No se desplazó: ya estás en el borde o el contenedor no tiene desplazamiento propio' }
       : {}),
-    page: await observeAfter(contents),
+    page: await observeAfter(contents, signal),
   };
 }
 
@@ -2319,6 +2387,7 @@ async function uploadFile(input, ref, filePath) {
 }
 
 function close() {
+  downloadSlot?.cancel();
   for (const sessionId of [...ephemeral.keys()]) disposeEphemeral(sessionId, true);
   for (const tab of tabs.values()) {
     if (tab.view && alive(tab.view.webContents)) tab.view.webContents.close();
@@ -2378,4 +2447,5 @@ module.exports = {
   clampBounds,
   siteUserAgent,
   approvalContext,
+  downloadContext,
 };

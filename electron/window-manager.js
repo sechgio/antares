@@ -79,7 +79,7 @@ function createWindow(isDev) {
     });
   });
 
-  const allowedPermissions = new Set(['media', 'display-capture', 'clipboard-sanitized-write']);
+  const allowedPermissions = new Set(['media', 'clipboard-sanitized-write']);
   const { isTrustedRendererUrl } = require('./renderer-trust');
   const isTrustedMainFrame = (webContents) => {
     if (!webContents || webContents.isDestroyed?.()) return false;

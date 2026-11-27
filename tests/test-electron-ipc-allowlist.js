@@ -12,14 +12,26 @@ if (memoryShare.agent_memory_share.handler !== 'native:agent' || memoryShare.age
   throw new Error('Compartir memoria valida los perfiles en Electron y reserva la escritura para el backend interno');
 }
 
-const VALID_HANDLERS = /^(backend:[a-z0-9_]+|native:(dialog|autoimg|ubicaciones|spotify|connections|agent|editor|session))$/;
+const VALID_HANDLERS = /^(backend:[a-z0-9_]+|native:(dialog|autoimg|ubicaciones|spotify|connections|agent|session))$/;
 const VALID_TIMEOUTS = new Set(['normal', 'long', 'heavy']);
 const VALID_LANES = new Set(['sync', 'light', 'heavy']);
+
+const browserTab = new RegExp(memoryShare.agent_browser.inputSchema.properties.tab.pattern);
+if (!['agent', 'user', 'tab-1', 'tab-27'].every((id) => browserTab.test(id))
+  || ['', 'tab-0', 'tab-other', 'tab-1\n'].some((id) => browserTab.test(id))) {
+  throw new Error('El catálogo del navegador debe admitir las pestañas que crea Electron');
+}
 
 const transcript = require('../shared/ipc-method-catalog.json').methods.agent_messages_list;
 if (transcript.handler !== 'native:agent' || !transcript.idempotent
   || transcript.outputSchema.properties.messages.items.properties.attachments.items.required.join(',') !== 'path,folder') {
   throw new Error('El historial debe conservar adjuntos por mensaje sin ampliar permisos ni cambiar su ruta IPC');
+}
+for (const method of ['agent_messages_page', 'agent_messages_search', 'agent_message_origin']) {
+  const spec = require('../shared/ipc-method-catalog.json').methods[method];
+  if (spec.handler !== 'native:agent' || !spec.idempotent || !spec.inputSchema.required.includes('session_id')) {
+    throw new Error(`${method} debe ser una lectura del historial limitada a una conversación`);
+  }
 }
 
 const pageAction = require('../shared/ipc-method-catalog.json').methods.agent_artifact_action;

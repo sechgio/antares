@@ -2171,7 +2171,10 @@ async function dispatchNative(spec, request, context) {
       sessionId: request.session_id,
       approvedContext: request.context,
       ...(spec.name.startsWith('web_')
-        ? { browserMode: (await sessionProfile(await requireSession(request.session_id)))?.browser_mode }
+        ? {
+            browserMode: (await sessionProfile(await requireSession(request.session_id)))?.browser_mode,
+            signal: context?.abortSignal,
+          }
         : {}),
     });
     text = JSON.stringify(result === undefined ? null : result);

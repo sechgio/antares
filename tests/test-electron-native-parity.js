@@ -29,7 +29,6 @@ function main() {
   const { SPOTIFY_METHODS } = require('../electron/spotify-ipc-methods');
   const { CONNECTIONS_METHODS } = require('../electron/connections-ipc-methods');
   const { AGENT_METHODS } = require('../electron/agent-handlers');
-  const { EDITOR_METHODS } = require('../electron/editor-handlers');
   const { SESSION_METHODS } = require('../electron/supabase-session-handlers');
 
   assert(
@@ -72,7 +71,6 @@ function main() {
     ['SPOTIFY_METHODS', SPOTIFY_METHODS, byHandler('native:spotify')],
     ['CONNECTIONS_METHODS', CONNECTIONS_METHODS, byHandler('native:connections')],
     ['AGENT_METHODS', AGENT_METHODS, byHandler('native:agent')],
-    ['EDITOR_METHODS', EDITOR_METHODS, byHandler('native:editor')],
     ['SESSION_METHODS', SESSION_METHODS, byHandler('native:session')],
   ];
   for (const [name, exported, expected] of buckets) {

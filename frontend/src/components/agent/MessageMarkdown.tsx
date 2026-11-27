@@ -1,8 +1,12 @@
-import { lazy, memo, Suspense, useContext, type ReactNode } from 'react';
+import { lazy, memo, Suspense, useContext, useMemo, useState, type ReactNode } from 'react';
+import { Maximize2 } from 'lucide-react';
 import CopyButton from './CopyButton';
 import Button from '../ui/Button';
 import MarkdownCodeBlock from './MarkdownCodeBlock';
 import MarkdownList, { type MarkdownListItem } from './MarkdownList';
+import { TablePanel } from './PanelRenderer';
+import ErrorBoundary from '../ui/ErrorBoundary';
+import { closesFence, FENCE, httpsSource, REFERENCE, referencesIn } from './markdownSyntax';
 import { FilePreviewContext, localPreviewResource } from './filePreviewContext';
 
 const ChatVisual = lazy(() => import('./ChatVisual'));
@@ -31,9 +35,12 @@ function VisualPlaceholder({ lang }: { lang: string }) {
 }
 
 const INLINE =
-  /(`[^`\n]+`|~~[^~\n]+~~|\*\*[^*\n]+\*\*|(?<![\p{L}\p{N}_])__[^_\n]+__(?![\p{L}\p{N}_])|\*[^*\n]+\*|(?<![\p{L}\p{N}_])_[^_\n]+_(?![\p{L}\p{N}_])|\[[^\]\n]+\]\((?:<[^>\n]+>|[^)\s]+)\))/gu;
+  /(`[^`\n]+`|~~[^~\n]+~~|\*\*(?:\*[^*\n]+\*|[^*\n])+\*\*|(?<![\p{L}\p{N}_])__[^_\n]+__(?![\p{L}\p{N}_])|\*[^*\n]+\*|(?<![\p{L}\p{N}_])_[^_\n]+_(?![\p{L}\p{N}_])|\[[^\]\n]+\](?:\((?:<[^>\n]+>|[^)\s]+)\)|\[[^\]\n]*\]))/gu;
 
-function inline(text: string, keyPrefix: string, onPreview: ((resource: string) => void) | null): ReactNode[] {
+const LINK_REFERENCE = /\[([^\]\n]+)\]\[([^\]\n]*)\]/;
+
+function inline(text: string, keyPrefix: string, onPreview: ((resource: string) => void) | null,
+  references: ReadonlyMap<string, string>): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   let index = 0;
@@ -75,13 +82,20 @@ function inline(text: string, keyPrefix: string, onPreview: ((resource: string) 
     } else if (token.startsWith('**') || token.startsWith('__')) {
       out.push(
         <strong key={key} className="font-semibold">
-          {token.slice(2, -2)}
+          {inline(token.slice(2, -2), key, onPreview, references)}
         </strong>,
       );
     } else if (token.startsWith('[')) {
       const label = token.slice(1, token.indexOf(']'));
-      const href = token.slice(token.indexOf('(') + 1, -1);
+      const reference = LINK_REFERENCE.exec(token);
+      const href = reference ? references.get((reference[2] || reference[1]).toLowerCase()) : token.slice(token.indexOf('(') + 1, -1);
+      if (!href) {
+        out.push(token);
+        last = start + token.length;
+        continue;
+      }
       const resource = localPreviewResource(href);
+      const external = httpsSource(href);
       out.push(
         resource && onPreview ? (
           <Button
@@ -95,6 +109,9 @@ function inline(text: string, keyPrefix: string, onPreview: ((resource: string) 
           >
             {label}
           </Button>
+        ) : external ? (
+          <a key={key} href={external} target="_blank" rel="noopener noreferrer" title={href}
+            className="underline decoration-dotted underline-offset-2">{label}</a>
         ) : (
           <span key={key} className="underline decoration-dotted underline-offset-2" title={href}>
             {label}
@@ -102,7 +119,7 @@ function inline(text: string, keyPrefix: string, onPreview: ((resource: string) 
         ),
       );
     } else {
-      out.push(<em key={key}>{token.slice(1, -1)}</em>);
+      out.push(<em key={key}>{inline(token.slice(1, -1), key, onPreview, references)}</em>);
     }
     last = start + token.length;
   }
@@ -194,18 +211,23 @@ export function parseBlocks(source: string): Block[] {
         continue;
       }
     }
-    if (line.trim().startsWith('```')) {
+    const opening = FENCE.exec(line);
+    if (opening) {
       flush();
-      const lang = line.trim().slice(3).trim().toLowerCase();
+      const lang = opening[2].trim().toLowerCase();
       const code: string[] = [];
       i += 1;
-      while (i < lines.length && !lines[i].trim().startsWith('```')) code.push(lines[i++]);
+      while (i < lines.length && !closesFence(lines[i], opening[1])) code.push(lines[i++]);
       blocks.push({
         kind: 'code',
         text: code.join('\n'),
         ...(lang ? { lang } : {}),
         ...(i >= lines.length ? { open: true as const } : {}),
       });
+      continue;
+    }
+    if (REFERENCE.test(line)) {
+      flush();
       continue;
     }
     const heading = /^(#{1,4})\s+(.+)$/.exec(line);
@@ -280,12 +302,12 @@ export function splitMarkdownBlocks(text: string): string[] | null {
   const blocks: string[] = [];
   let blockStart = 0;
   let lineStart = 0;
-  let fence = false;
+  let fence = '';
   let afterBlank = false;
   for (const line of text.split('\n')) {
     const trimmed = line.trim();
     if (fence) {
-      if (trimmed.startsWith('```')) fence = false;
+      if (closesFence(line, fence)) fence = '';
     } else if (!trimmed) {
       afterBlank = true;
     } else {
@@ -294,7 +316,7 @@ export function splitMarkdownBlocks(text: string): string[] | null {
         blockStart = lineStart;
       }
       afterBlank = false;
-      if (trimmed.startsWith('```')) fence = true;
+      fence = FENCE.exec(line)?.[1] ?? '';
     }
     lineStart += line.length + 1;
   }
@@ -302,9 +324,10 @@ export function splitMarkdownBlocks(text: string): string[] | null {
   return blocks.length > 1 ? blocks : null;
 }
 
-function MarkdownPart({ text, streaming }: { text: string; streaming: boolean }) {
+function MarkdownPart({ text, streaming, references }: { text: string; streaming: boolean; references: ReadonlyMap<string, string> }) {
   const onPreview = useContext(FilePreviewContext);
-  const renderInline = (value: string, key: string) => inline(value, key, onPreview);
+  const [expandedTable, setExpandedTable] = useState<number | null>(null);
+  const renderInline = (value: string, key: string) => inline(value, key, onPreview, references);
   const blocks = cachedBlocks(text, streaming);
   return (
     <>
@@ -366,6 +389,15 @@ function MarkdownPart({ text, streaming }: { text: string; streaming: boolean })
                   </table>
                   {cursor}
                 </div>
+                {clipboard && block.rows.length > 8 && (
+                  <Button size="sm" variant="ghost" onClick={() => setExpandedTable(index)}>
+                    <Maximize2 size={13} /> Ampliar tabla
+                  </Button>
+                )}
+                {expandedTable === index && (
+                  <TablePanel props={{ title: 'Tabla de la respuesta', columns: block.headers.map(plainCell), rows: block.rows.map((row) => row.map(plainCell)) }}
+                    onCloseFull={() => setExpandedTable(null)} />
+                )}
               </div>
             );
           }
@@ -397,7 +429,9 @@ function MarkdownPart({ text, streaming }: { text: string; streaming: boolean })
             if (block.open) return streaming ? <VisualPlaceholder key={key} lang={block.lang} /> : pre;
             return (
               <Suspense key={key} fallback={<VisualPlaceholder lang={block.lang} />}>
-                <ChatVisual lang={block.lang} source={block.text} fallback={pre} />
+                <ErrorBoundary key={block.text} view="agent-chat-visual" fallback={pre}>
+                  <ChatVisual lang={block.lang} source={block.text} fallback={pre} />
+                </ErrorBoundary>
               </Suspense>
             );
           }
@@ -426,14 +460,15 @@ function MarkdownPart({ text, streaming }: { text: string; streaming: boolean })
 const MemoMarkdownPart = memo(MarkdownPart);
 
 function MessageMarkdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
+  const references = useMemo(() => referencesIn(text), [text]);
   const parts = splitMarkdownBlocks(text);
   return (
     <div className="agent-markdown min-w-0">
       {parts
         ? parts.map((part, index) => (
-          <MemoMarkdownPart key={index} text={part} streaming={streaming && index === parts.length - 1} />
+          <MemoMarkdownPart key={index} text={part} references={references} streaming={streaming && index === parts.length - 1} />
         ))
-        : <MemoMarkdownPart text={text} streaming={streaming} />}
+        : <MemoMarkdownPart text={text} references={references} streaming={streaming} />}
     </div>
   );
 }

@@ -229,6 +229,14 @@ async function main() {
       !persistent.webContents.isDestroyed() && persistentSession.cleared === 0 && persistentSession.cookies.size === 1,
       'terminar una tarea persistente conserva la vista, las cookies y el almacenamiento',
     );
+    assert((await browser.run('web_read', {}, { sessionId: 'tarea-4' })).text === 'Hola',
+      'la misma conversación puede seguir leyendo en el siguiente turno');
+    browser.release('tarea-4');
+    const foreignPersistent = await rejects(browser.run('web_read', {}, { sessionId: 'tarea-5' }));
+    assert(foreignPersistent && /no tiene ninguna página abierta/.test(foreignPersistent.message),
+      'otra conversación no puede leer la pestaña persistente tras liberarse el turno');
+    assert(await rejects(browser.approvalContext(undefined, 'tarea-5')),
+      'la aprobación tampoco puede usar el contexto de la pestaña de otra conversación');
 
     await browser.run(
       'web_open',
@@ -236,8 +244,9 @@ async function main() {
       { sessionId: 'tarea-5', browserMode: 'persistent' },
     );
     assert(
-      views[views.length - 1].partition === browser.PARTITION && views.length === 4,
-      'un perfil persistent conserva el navegador persistente por defecto',
+      views[views.length - 1].partition === browser.PARTITION && persistent.webContents.isDestroyed()
+        && persistentSession.cleared === 0 && persistentSession.cookies.size === 1,
+      'otra conversación abre una vista nueva y conserva la partición persistente',
     );
     browser.release('tarea-5');
 
@@ -281,7 +290,7 @@ async function main() {
     const foreign = await rejects(browser.run('web_read', {}, { sessionId: 'simultanea-0' }));
     assert(
       foreign && opened[1].webContents.isDestroyed(),
-      'otra sesión no lee la página efímera ajena: la vista se cierra antes de leer',
+      'otra sesión no lee la página efímera ajena',
     );
     for (let index = 0; index < browser.MAX_EPHEMERAL_SESSIONS; index += 1) browser.release(`simultanea-${index}`);
     assert(

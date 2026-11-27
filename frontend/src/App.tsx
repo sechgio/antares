@@ -44,7 +44,6 @@ const loadEspaciosView = () => import('./components/espacios');
 const loadCanvasView = () => import('./components/canvas');
 const loadAgentView = () => import('./components/agent');
 const loadComplementosView = () => import('./components/complementos/ComplementosView');
-const loadEditorView = () => import('./components/editor/EditorView');
 const loadDesignView = () => import('./components/design');
 
 const ConversionView = React.lazy(loadConversionView);
@@ -68,7 +67,6 @@ const EspaciosView = React.lazy(loadEspaciosView);
 const CanvasView = React.lazy(loadCanvasView);
 const AgentView = React.lazy(loadAgentView);
 const ComplementosView = React.lazy(loadComplementosView);
-const EditorView = React.lazy(() => loadEditorView().then((m) => ({ default: m.EditorView })));
 const DesignView = React.lazy(loadDesignView);
 
 type ViewLoader = () => Promise<unknown>;
@@ -92,7 +90,6 @@ const VIEW_LOADERS: Record<TabId, ViewLoader> = {
   evidenciaVolanteo: loadEvidenciaVolanteoView,
   autoimg: loadAutoIMGView,
   fichasTecnicas: loadFichasTecnicasView,
-  editor: loadEditorView,
   design: loadDesignView,
 };
 
@@ -137,7 +134,6 @@ const VIEWS: Record<TabId, React.LazyExoticComponent<React.ComponentType<{ activ
   evidenciaVolanteo: EvidenciaVolanteoView,
   autoimg: AutoIMGView,
   fichasTecnicas: FichasTecnicasView,
-  editor: EditorView,
   design: DesignView,
 };
 

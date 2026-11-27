@@ -1,4 +1,4 @@
-import { _invoke } from './core';
+import { _invoke, AntaresAPIError } from './core';
 import type { AgentDelegation, AgentRole, AgentRoom } from './agentDelegation';
 import type { AgentPlanStatus } from './agentPlan';
 import type { CanvasDocument } from '../components/canvas/types';
@@ -126,6 +126,7 @@ export interface AgentToolCall {
 }
 
 export interface AgentMessage {
+  id?: number;
   role: 'user' | 'assistant' | 'tool_result';
   content: string;
   attachments?: AgentContext['files'];
@@ -138,6 +139,28 @@ export interface AgentMessage {
   partial?: boolean;
   notice?: boolean;
   handoff?: { task_id: string; peer_session_id: string; status?: AgentTaskStatus };
+}
+
+export type AgentTranscriptMatch = { id: number; text: string; ts: number };
+
+interface AgentTranscript {
+  messages: AgentMessage[];
+  running: boolean;
+  delegations?: AgentDelegation[];
+  plan?: AgentPlan | null;
+  resumable?: boolean;
+  pending_approvals: AgentApproval[];
+  artifacts?: AgentArtifact[];
+  questions?: AgentQuestion[];
+  panels?: AgentPanel[];
+  context?: AgentContext;
+  usage?: AgentUsage | null;
+  context_window?: number;
+  compaction_thresholds?: { warn: number; compact: number } | null;
+  compacting?: boolean;
+  token_budget?: { limit: number; used: number };
+  before?: number | null;
+  revision?: number;
 }
 export interface AgentUsageTurn {
   input: number;
@@ -470,24 +493,26 @@ export const agentApi = {
   agentSessionDelete: (id: string) =>
     _invoke<{ deleted: boolean; id: string }>('agent_session_delete', { id }),
 
-  agentMessagesList: (session_id: string) =>
-    _invoke<{
-      messages: AgentMessage[];
-      running: boolean;
-      delegations?: AgentDelegation[];
-      plan?: AgentPlan | null;
-      resumable?: boolean;
-      pending_approvals: AgentApproval[];
-      artifacts?: AgentArtifact[];
-      questions?: AgentQuestion[];
-      panels?: AgentPanel[];
-      context?: AgentContext;
-      usage?: AgentUsage | null;
-      context_window?: number;
-      compaction_thresholds?: { warn: number; compact: number } | null;
-      compacting?: boolean;
-      token_budget?: { limit: number; used: number };
-    }>('agent_messages_list', { session_id }),
+  agentMessagesList: async (session_id: string) => {
+    try {
+      return await _invoke<AgentTranscript>('agent_messages_page', { session_id });
+    } catch (error) {
+      if (!(error instanceof AntaresAPIError) || error.category !== 'METHOD_NOT_FOUND') throw error;
+      return _invoke<AgentTranscript>('agent_messages_list', { session_id });
+    }
+  },
+
+  agentMessagesBefore: (session_id: string, before: number) =>
+    _invoke<{ messages: AgentMessage[]; before: number | null }>('agent_messages_page', { session_id, before }),
+
+  agentMessagesAround: (session_id: string, around: number) =>
+    _invoke<{ messages: AgentMessage[]; before: number | null }>('agent_messages_page', { session_id, around }),
+
+  agentMessagesSearch: (session_id: string, query: string) =>
+    _invoke<{ matches: AgentTranscriptMatch[]; truncated: boolean }>('agent_messages_search', { session_id, query }),
+
+  agentMessageOrigin: (session_id: string, kind: 'artifact' | 'task', ref: string) =>
+    _invoke<{ id: number | null }>('agent_message_origin', { session_id, kind, ref }),
 
   agentRoomsList: (session_id: string) => _invoke<{ rooms: AgentRoom[] }>('agent_rooms_list', { session_id }),
 

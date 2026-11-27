@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppWindow, ArrowLeft, ArrowRight, Ban, BookOpen, Camera, ChevronDown, ChevronRight, CircleCheck, Download, FilePen, FileText, FolderOpen, Globe, Hand, Keyboard, ListChecks, Loader2, Monitor, Mouse, Move, MousePointerClick, Network, Package, Plug, RotateCw, Search, ShieldCheck, Terminal, TriangleAlert, Upload, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { agentApi, AgentApproval, AgentArtifact, AgentChannel, AgentMessage, AgentPanel, AgentQuestion, AgentToolCall } from '../../api/agentApi';
@@ -537,26 +537,31 @@ function Activity({ entries, agent, working, answering, duration, onUndo, view, 
 }) {
   const [expanded, setExpanded] = useState<boolean | null>(null);
   const [showEarlier, setShowEarlier] = useState(false);
-  const calls = entries.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []));
-  const notes = entries.filter((entry) => entry.kind === 'note');
+  const compact = hideReasoning && view !== 'verbose';
+  const visibleEntries = compact
+    ? entries.filter((entry) => entry.kind === 'call' || (entry.kind === 'reasoning' && entry.streaming))
+    : entries;
+  const calls = visibleEntries.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []));
+  const notes = visibleEntries.filter((entry) => entry.kind === 'note');
   const latestNote = notes[notes.length - 1];
-  const leadNote = view === 'normal' && calls.length > 0 && !calls.some((call) => call.name === 'subagent_run')
+  const leadNote = view === 'normal' && !compact && calls.length > 0 && !calls.some((call) => call.name === 'subagent_run')
     ? latestNote : undefined;
-  const detailEntries = leadNote ? entries.filter((entry) => entry !== leadNote) : entries;
+  const detailEntries = leadNote ? visibleEntries.filter((entry) => entry !== leadNote) : visibleEntries;
   const live = working && !answering;
-  const open = expanded ?? (view === 'verbose' || (live && !leadNote)
-    || calls.some((call) => NEEDS_REVIEW.includes(call.status) || (live && call.gated)));
+  const needsAttention = calls.some((call) => NEEDS_REVIEW.includes(call.status) || (live && call.gated));
+  const open = expanded ?? (view === 'verbose' || (!compact && live && !leadNote) || needsAttention);
   const firstReview = detailEntries.findIndex((entry) => entry.kind === 'call' && (NEEDS_REVIEW.includes(entry.call.status) || entry.call.gated));
   const earlier = live && view !== 'verbose' && detailEntries.length > LIVE_TAIL + 1
     ? Math.min(detailEntries.length - LIVE_TAIL, firstReview === -1 ? Infinity : firstReview) : 0;
-  if (entries.length <= 2 && !leadNote) {
+  const review = calls.filter((call) => call.status === 'failed' || call.status === 'interrupted').length;
+  if (compact && !live && review === 0) return null;
+  if (!compact && visibleEntries.length <= 2 && !leadNote) {
     return (
       <div className="w-full space-y-0.5">
-        {entries.map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />)}
+        {visibleEntries.map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />)}
       </div>
     );
   }
-  const review = calls.filter((call) => call.status === 'failed' || call.status === 'interrupted').length;
   const icons = [...new Set(calls.map((call) => (call.name === 'shell_run' ? Terminal : toolIcon(call.name))))].slice(0, 4);
   const steps = [stepsSummary(calls), notes.length > 0 ? count(notes.length, 'nota', 'notas') : ''].filter(Boolean).join(' · ');
   return (
@@ -637,7 +642,7 @@ function resultArtifactId(result?: string | null): string | null {
   return null;
 }
 
-export function placeArtifacts(turns: TimelineTurn[], artifacts: AgentArtifact[]): Map<number, AgentArtifact[]> {
+export function placeArtifacts(turns: TimelineTurn[], artifacts: AgentArtifact[], showUnlinked = true): Map<number, AgentArtifact[]> {
   const latest = new Map<string, AgentArtifact>();
   for (const artifact of artifacts) {
     if (artifact.files.length === 0) continue;
@@ -656,6 +661,7 @@ export function placeArtifacts(turns: TimelineTurn[], artifacts: AgentArtifact[]
   const fallback = [...turns].reverse().find((turn) => turn.role === 'assistant')?.key ?? -1;
   const placed = new Map<number, AgentArtifact[]>();
   for (const artifact of latest.values()) {
+    if (!showUnlinked && !owner.has(artifact.id)) continue;
     const key = owner.get(artifact.id) ?? fallback;
     placed.set(key, [...(placed.get(key) ?? []), artifact]);
   }
@@ -709,7 +715,7 @@ function TurnChanges({ calls }: { calls: AgentToolCall[] }) {
   );
 }
 
-export function AssistantTurn({ messages, agent, onUndo, startedAt, results, view = 'normal', panels = [], pendingQuestions, sessionId, onPanelRespond, hideReasoning = false }: {
+type AssistantTurnProps = {
   messages: AgentMessage[];
   panels?: AgentPanel[];
   pendingQuestions?: { items: AgentQuestion[]; onAnswered: () => void };
@@ -721,7 +727,9 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
   startedAt?: number;
   results?: ReactNode;
   hideReasoning?: boolean;
-}) {
+};
+
+function AssistantTurnView({ messages, agent, onUndo, startedAt, results, view = 'normal', panels = [], pendingQuestions, sessionId, onPanelRespond, hideReasoning = false }: AssistantTurnProps) {
   const last = messages[messages.length - 1];
   const answer = last?.content && (!last.tool_calls?.length || last.tool_calls.some((call) => call.name === 'ask_user')) ? last : null;
   const entries: ActivityEntry[] = [];
@@ -771,7 +779,34 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
   );
 }
 
-export function MessageRow({ msg, agent, onUndo }: {
+function sameItems<T>(left: readonly T[] | undefined, right: readonly T[] | undefined): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((item, index) => item === right[index]);
+}
+
+function sameAgent(left: AgentIdentity | undefined, right: AgentIdentity | undefined): boolean {
+  return left === right || (!!left && !!right && left.seed === right.seed && left.name === right.name && left.color === right.color);
+}
+
+function sameAssistantTurn(prev: AssistantTurnProps, next: AssistantTurnProps): boolean {
+  return sameItems(prev.messages, next.messages)
+    && sameItems(prev.panels, next.panels)
+    && sameItems(prev.pendingQuestions?.items, next.pendingQuestions?.items)
+    && prev.pendingQuestions?.onAnswered === next.pendingQuestions?.onAnswered
+    && prev.sessionId === next.sessionId
+    && prev.onPanelRespond === next.onPanelRespond
+    && prev.view === next.view
+    && sameAgent(prev.agent, next.agent)
+    && prev.onUndo === next.onUndo
+    && prev.startedAt === next.startedAt
+    && prev.results === next.results
+    && prev.hideReasoning === next.hideReasoning;
+}
+
+export const AssistantTurn = memo(AssistantTurnView, sameAssistantTurn);
+
+function MessageRowView({ msg, agent, onUndo }: {
   msg: AgentMessage;
   agent?: AgentIdentity;
   onUndo?: (callId: string) => Promise<void>;
@@ -779,6 +814,9 @@ export function MessageRow({ msg, agent, onUndo }: {
   if (msg.role === 'tool_result') return null;
   return msg.role === 'user' ? <UserBubble msg={msg} /> : <AssistantTurn messages={[msg]} agent={agent} onUndo={onUndo} />;
 }
+
+export const MessageRow = memo(MessageRowView, (prev, next) =>
+  prev.msg === next.msg && sameAgent(prev.agent, next.agent) && prev.onUndo === next.onUndo);
 
 export function ApprovalCard({
   approval,
