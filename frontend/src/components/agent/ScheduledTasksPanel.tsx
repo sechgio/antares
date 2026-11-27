@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarClock, Pause, Pencil, Play, Plus, RefreshCw, X } from 'lucide-react';
+import { CalendarClock, Check, Pause, Pencil, Play, Plus, RefreshCw, X } from 'lucide-react';
 import {
   agentApi, type AgentQueueState, type AgentSession, type AgentTask,
-  type AgentTaskKind, type AgentTaskRun, type AgentTaskStatus,
+  type AgentTaskKind, type AgentTaskStatus,
 } from '../../api/agentApi';
 import { formatMoment } from '../../utils/dates';
 import { errorMessage } from '../../utils/errors';
@@ -13,15 +13,8 @@ import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import ThemedSelect from '../ui/ThemedSelect';
-import AgentQueuePanel, { type AgentQueueGroup } from './AgentQueuePanel';
-
-const STATUS_LABELS: Record<AgentTaskStatus, string> = {
-  pending: 'Programado',
-  delivering: 'Entregando',
-  delivered: 'Entregado',
-  cancelled: 'Cancelado',
-  uncertain: 'Incierto',
-};
+import AgentQueuePanel, { TaskReplyBox, type AgentQueueGroup } from './AgentQueuePanel';
+import ScheduledTaskHistory, { STATUS_LABELS } from './ScheduledTaskHistory';
 
 const STATUS_CLASSES: Record<AgentTaskStatus, string> = {
   pending: 'bg-[color-mix(in_srgb,var(--accent-primary)_10%,transparent)] text-[var(--accent-primary)]',
@@ -29,12 +22,9 @@ const STATUS_CLASSES: Record<AgentTaskStatus, string> = {
   delivered: 'bg-[color-mix(in_srgb,var(--accent-green)_12%,transparent)] text-[var(--accent-green)]',
   cancelled: 'bg-[var(--bg-input)] text-[var(--text-muted)]',
   uncertain: 'bg-[color-mix(in_srgb,var(--accent-red)_10%,transparent)] text-[var(--accent-red)]',
-};
-
-const RUN_LABELS: Record<AgentTaskRun['status'], string> = {
-  delivered: 'Entregado',
-  failed: 'Falló',
-  uncertain: 'Incierto',
+  needs_input: 'bg-[color-mix(in_srgb,var(--accent-yellow)_14%,transparent)] text-[var(--accent-yellow)]',
+  blocked: 'bg-[color-mix(in_srgb,var(--accent-red)_10%,transparent)] text-[var(--accent-red)]',
+  to_verify: 'bg-[color-mix(in_srgb,var(--accent-green)_12%,transparent)] text-[var(--accent-green)]',
 };
 
 type TaskForm = {
@@ -250,6 +240,32 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
     }
   };
 
+  const respond = async (task: AgentTask, response: string) => {
+    setBusy(task.id);
+    try {
+      await agentApi.agentTasksRespond(task.id, response);
+      await load();
+      addToast({ message: 'Respuesta enviada al encargo', type: 'success' });
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo enviar la respuesta'), type: 'error' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const verify = async (task: AgentTask) => {
+    setBusy(task.id);
+    try {
+      await agentApi.agentTasksVerify(task.id);
+      await load();
+      addToast({ message: 'Encargo verificado', type: 'success' });
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo verificar el encargo'), type: 'error' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const cancel = async (task: AgentTask) => {
     const ok = await confirm({
       title: 'Cancelar encargo',
@@ -393,6 +409,8 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
                   onToggle={(next) => void toggleQueue(next)}
                   onCancel={(task) => void cancel(task)}
                   onStop={(target) => void stopQueueTurn(target)}
+                  onRespond={(task, response) => void respond(task, response)}
+                  onVerify={(task) => void verify(task)}
                 />
               )}
               {scheduled.length === 0 && queueGroups.length === 0 ? (
@@ -400,7 +418,6 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
               ) : scheduled.length > 0 ? (
                 <ul className="space-y-2" aria-label="Lista de encargos programados">
                   {scheduled.map((task) => {
-                    const runs = [...(task.runs || [])].reverse();
                     return (
                       <li key={task.id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
                         <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
@@ -418,6 +435,15 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
                           {task.silent && <span className="text-[var(--accent-yellow)]">Silencioso</span>}
                           {task.last_error && <span className="break-all text-[var(--accent-red)]">{task.last_error}</span>}
                         </div>
+                        {task.output && task.status !== 'pending' && (
+                          <p className="line-clamp-3 break-words px-3 pb-2 text-[12px] text-[var(--text-secondary)]">{task.output}</p>
+                        )}
+                        {task.status === 'needs_input' && (
+                          <div className="px-3 pb-2">
+                            <TaskReplyBox question={task.question} busy={busy !== null}
+                              onSubmit={(response) => void respond(task, response)} />
+                          </div>
+                        )}
                         <div className="flex flex-wrap items-center gap-1 border-t border-[var(--border-subtle)] px-2 py-1.5">
                           {task.status !== 'delivering' && task.status !== 'cancelled' && task.status !== 'delivered' && (
                             <Button variant="ghost" size="sm" aria-label={`Ejecutar ahora: ${task.content.slice(0, 60)}`}
@@ -431,6 +457,12 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
                               <Pencil size={12} /> Editar
                             </Button>
                           )}
+                          {task.status === 'to_verify' && (
+                            <Button variant="ghost" size="sm" aria-label={`Marcar verificado: ${task.content.slice(0, 60)}`}
+                              disabled={busy !== null} onClick={() => void verify(task)}>
+                              <Check size={12} /> Verificado
+                            </Button>
+                          )}
                           {task.status !== 'cancelled' && task.status !== 'delivered' && (
                             <Button variant="ghost" size="sm" aria-label={`Cancelar encargo: ${task.content.slice(0, 60)}`}
                               disabled={busy !== null} onClick={() => void cancel(task)}>
@@ -440,26 +472,11 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
                           <span className="flex-1" />
                           <Button variant="ghost" size="sm" aria-label={`Historial de ejecuciones: ${task.content.slice(0, 60)}`}
                             onClick={() => setExpanded((current) => current === task.id ? null : task.id)}>
-                            {expanded === task.id ? 'Ocultar historial' : `Historial (${runs.length})`}
+                            {expanded === task.id ? 'Ocultar historial' : `Historial (${task.runs?.length || 0})`}
                           </Button>
                         </div>
                         {expanded === task.id && (
-                          <div className="border-t border-[var(--border-subtle)] px-3 py-2">
-                            {runs.length === 0 ? <p className="text-[12px] text-[var(--text-secondary)]">Todavía no se ejecutó.</p> : (
-                              <ul className="space-y-1">
-                                {runs.map((run, index) => (
-                                  <li key={`${run.at}-${index}`} className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-secondary)]">
-                                    <span className={run.status === 'delivered' ? 'text-[var(--accent-green)]'
-                                      : run.status === 'uncertain' ? 'text-[var(--accent-red)]' : 'text-[var(--accent-yellow)]'}>
-                                      {RUN_LABELS[run.status]}
-                                    </span>
-                                    <span>{formatMoment(run.at, task.timezone)}</span>
-                                    {run.error && <span className="min-w-0 flex-1 break-all">{run.error}</span>}
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
+                          <ScheduledTaskHistory task={task} />
                         )}
                       </li>
                     );

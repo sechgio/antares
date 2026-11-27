@@ -2,7 +2,7 @@
 
 const crypto = require('node:crypto');
 const { shared, ctx, conversation, requireSession, sessions, validation, wakeWaiters, bridge } = require('./agent-shared');
-const { isActiveTask, pruneTasks, recordRun, MAX_TASK_CONTINUATIONS, submitContinuation } = require('./agent-task-utils');
+const { isActiveTask, pruneTasks, recordRun, transition, NEEDS_INPUT, unmarked, lastAnswerText, taskOutcome, MAX_QUESTION_CHARS, MAX_TASK_CONTINUATIONS, submitContinuation } = require('./agent-task-utils');
 const queue = require('./agent-queue');
 const { promotable } = require('./agent-compaction');
 
@@ -19,7 +19,6 @@ const MAX_DELEGATION_DEPTH = 1;
 const DONE_WHEN_MAX = 1000;
 const ORIGIN_MAX = 400;
 const REPORT_TOOLS_SHOWN = 8;
-const NEEDS_INPUT = /NECESITA ENTRADA:\s*([\s\S]+)$/i;
 const MAX_TRANSCRIPT_TURNS = 8;
 const TRANSCRIPT_CHARS = 800;
 const MAX_ROUTINES = 3;
@@ -101,8 +100,8 @@ function nextOccurrence(task, dueAt, now) {
 function completeDelivery(task, current) {
   if (current.interval_ms) {
     current.due_at = nextOccurrence(current, task.due_at, Date.now());
-    current.status = 'pending';
-  } else current.status = 'delivered';
+    transition(current, 'pending');
+  } else transition(current, 'to_verify');
   delete current.retry_at;
   recordRun(current, { at: Date.now(), due_at: task.due_at, status: 'delivered', silent: !!current.silent });
 }
@@ -132,10 +131,11 @@ async function fireEvent(event) {
       const outcome = inboxAccept(doc.trigger_inbox, inboxEntry(current.trigger, event, current.id));
       doc.trigger_inbox = outcome.items;
       if (!outcome.accepted) continue;
-      if (!doc.queues[current.session_id]) doc.queues[current.session_id] = { paused: false, updated_at: now };
+      const spawnId = current.target_session_id || current.session_id;
+      if (!doc.queues[spawnId]) doc.queues[spawnId] = { paused: false, updated_at: now };
       const queued = {
         id: crypto.randomUUID(),
-        session_id: current.session_id,
+        session_id: spawnId,
         kind: 'queue',
         seq: doc.next_queue_seq++,
         content: current.content,
@@ -181,6 +181,7 @@ const TOOL = {
     'action=enqueue añade content a una cola FIFO por conversación que se ejecuta en orden, un encargo a la vez, ' +
     'cuando el turno actual termina. action=pause y action=resume pausan o reanudan esa cola entre encargos. ' +
     'action=list consulta encargos y estado de la cola; action=cancel cancela uno por id. ' +
+    'agent dirige el encargo o el trigger a otro agente (id o nombre único): corre con sus reglas y permisos. ' +
     'No encoles trabajo por iniciativa propia ni para sortear aprobaciones.',
   inputSchema: {
     type: 'object',
@@ -202,6 +203,7 @@ const TOOL = {
         required: ['type'],
         additionalProperties: false,
       },
+      agent: { type: 'string', maxLength: 120 },
     },
     required: ['action'],
   },
@@ -689,12 +691,6 @@ function quoted(text, max) {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
-function unmarked(text) {
-  return String(text || '')
-    .replaceAll(shared.CONTEXT_MARKER, '(Contexto de Antares)')
-    .replaceAll(shared.CHECK_MARKER, '(Comprobación de Antares)');
-}
-
 function userRequest(entries) {
   const last = entries.findLast((entry) => entry.kind === 'pi.user' && entry.model?.[0]);
   const content = last?.model[0].content;
@@ -789,23 +785,6 @@ async function delegationSnapshot(child) {
     awaiting_user: !child.last_error && NEEDS_INPUT.test(text),
     question: child.last_error ? '' : NEEDS_INPUT.exec(text)?.[1] || '',
   };
-}
-
-function lastAnswerText(entries) {
-  const answer = entries.findLast(
-    (entry) =>
-      entry.kind === 'pi.assistant' &&
-      entry.model?.[0] &&
-      !entry.model[0].content.some((block) => block.type === 'toolCall'),
-  )?.model[0];
-  return unmarked(
-    require('./agent-execution').sanitizeProviderError(
-      (answer?.content || [])
-        .filter((block) => block.type === 'text')
-        .map((block) => block.text)
-        .join('\n'),
-    ),
-  ).trim();
 }
 
 function delegationReport(child, entries) {
@@ -1422,7 +1401,11 @@ async function cancelDelegations(sessionId) {
 async function schedule(args, sessionId, api) {
   const session = await requireSession(sessionId);
   const state = shared.state;
-  if (args.action === 'enqueue') return queue.enqueue(args.content, sessionId, api?.taskId);
+  if (args.action === 'enqueue') {
+    const target =
+      args.agent !== undefined ? await require('./agent-profiles').resolveTargetSession(args.agent) : null;
+    return queue.enqueue(args.content, target ? target.id : sessionId, api?.taskId, session.conversationId);
+  }
   if (args.action === 'pause') return queue.setQueuePaused(sessionId, true);
   if (args.action === 'resume') return queue.setQueuePaused(sessionId, false);
   if (args.action === 'list') return listTasks({ session_id: sessionId });
@@ -1433,8 +1416,7 @@ async function schedule(args, sessionId, api) {
       if (!task || task.session_id !== sessionId) throw validation('El encargo programado no existe');
       if (task.status === 'delivering')
         throw validation('El encargo ya se está entregando; detén el turno para interrumpirlo');
-      task.status = 'cancelled';
-      task.updated_at = Date.now();
+      transition(task, 'cancelled', 'Cancelado por el agente');
       return { cancelled: true, id: task.id };
     }, ctx());
   }
@@ -1481,7 +1463,13 @@ async function schedule(args, sessionId, api) {
     args.action === 'update'
       ? String(args.id || '')
       : crypto.createHash('sha256').update(`${sessionId}:${api?.taskId}`).digest('hex').slice(0, 24);
-  const profileId = session.profile && !session.profile.portable ? session.profile.id : null;
+  // Un encargo dirigido (agent) conserva session_id de quien lo crea — lo lista,
+  // edita y cancela — pero se entrega a la conversación destino: el ejecutor es
+  // target_session_id || session_id en el disparo, la entrega y las respuestas.
+  const target =
+    args.agent !== undefined ? await require('./agent-profiles').resolveTargetSession(args.agent) : null;
+  const executor = target || session;
+  const profileId = executor.profile && !executor.profile.portable ? executor.profile.id : null;
   if (profileId && interval && !api?.byUser && interval < ROUTINE_MIN_MINUTES) {
     throw validation(`Un agente no puede programarse rutinas cada menos de ${ROUTINE_MIN_MINUTES} minutos`);
   }
@@ -1500,7 +1488,7 @@ async function schedule(args, sessionId, api) {
         task.kind !== 'queue' &&
         isActiveTask(task) &&
         task.interval_ms > 0 &&
-        botSessions.has(task.session_id),
+        botSessions.has(task.target_session_id || task.session_id),
     );
     if (active.length >= MAX_ROUTINES)
       throw validation(`Este agente ya tiene ${MAX_ROUTINES} rutinas; cancela alguna antes de crear otra`);
@@ -1517,6 +1505,7 @@ async function schedule(args, sessionId, api) {
       if (hasInterval) task.interval_ms = (interval || 0) * 60000;
       task.silent = silent;
       task.timezone = timezone;
+      if (args.agent !== undefined) task.target_session_id = target.id;
       if (args.apps !== undefined) task.apps = apps;
       task.updated_at = Date.now();
       delete task.retry_at;
@@ -1542,6 +1531,7 @@ async function schedule(args, sessionId, api) {
       silent,
       runs: [],
       ...(apps ? { apps } : {}),
+      ...(target ? { target_session_id: target.id } : {}),
     };
     doc.tasks[id] = task;
     return { scheduled: task };
@@ -1557,10 +1547,12 @@ async function listTasks(params = {}) {
 
 async function saveTask(params = {}) {
   const sessionId = String(params.session_id || '');
-  await requireSession(sessionId);
+  const session = await requireSession(sessionId);
   if (params.kind === 'queue') {
     if (params.id) throw validation('Un encargo en cola no se puede editar; cancélalo y crea otro');
-    return queue.enqueue(params.content, sessionId, crypto.randomUUID());
+    const target =
+      params.agent !== undefined ? await require('./agent-profiles').resolveTargetSession(params.agent) : null;
+    return queue.enqueue(params.content, target ? target.id : sessionId, crypto.randomUUID(), session.conversationId);
   }
   if (params.kind !== undefined && params.kind !== 'schedule') throw validation('Tipo de encargo no válido');
   const id = typeof params.id === 'string' && params.id ? params.id.slice(0, 64) : undefined;
@@ -1578,10 +1570,7 @@ async function cancelTask(params = {}) {
     const doc = await tx.doc(state.TasksDoc);
     const task = doc.tasks[id];
     if (!task) throw validation('El encargo programado no existe');
-    if (task.status !== 'cancelled') {
-      task.status = 'cancelled';
-      task.updated_at = Date.now();
-    }
+    if (task.status !== 'cancelled') transition(task, 'cancelled', 'Cancelado por el usuario');
     return { cancelled: true, id };
   }, ctx()).then((result) => {
     require('./agent-file-watcher').syncWatchers().catch(() => {});
@@ -1601,18 +1590,96 @@ async function runTaskNow(params = {}) {
     if (task.status === 'cancelled') throw validation('El encargo está cancelado');
     if (task.status === 'delivered') throw validation('El encargo ya se entregó');
     if (task.status === 'delivering') throw validation('El encargo ya se está entregando; espera a que termine o cancélalo');
-    task.status = 'pending';
+    transition(task, 'pending', 'Ejecutar ahora');
     task.due_at = Date.now();
     task.retry_at = 0;
-    task.updated_at = Date.now();
     delete task.claim_id;
     delete task.claimed_at;
     delete task.current_request_id;
     delete task.continuation_rounds;
+    delete task.question;
     return { scheduled: { ...task } };
   }, ctx());
   void tick().catch((err) => console.warn('[agent] scheduled run failed:', err?.message));
   return result;
+}
+
+async function respondToTask(params = {}) {
+  const state = shared.state;
+  const id = String(params.id || '');
+  const response = typeof params.response === 'string' ? params.response.trim() : '';
+  if (!id || !response) throw validation('Indica el encargo y tu respuesta');
+  if (response.length > MAX_MESSAGE_CHARS) throw validation('La respuesta supera el máximo permitido');
+  const snapshot = await state.harness.snapshot(state.TasksDoc, ctx());
+  const task = snapshot?.tasks?.[id];
+  if (!task) throw validation('El encargo programado no existe');
+  if (task.status !== 'needs_input') throw validation('El encargo no está esperando una respuesta');
+  const session = await requireSession(task.target_session_id || task.session_id);
+  const reply = (Number(task.reply_count) || 0) + 1;
+  const baseRequestId = task.kind === 'queue' ? `queue:${task.id}` : `schedule:${task.id}:${task.due_at}`;
+  const requestId = `${baseRequestId}:reply${reply}`;
+  const claimed = await state.harness.commit(async (tx) => {
+    const current = (await tx.doc(state.TasksDoc)).tasks[id];
+    if (!current || current.status !== 'needs_input') return false;
+    transition(current, 'delivering', 'El usuario respondió a tu pregunta');
+    current.current_request_id = requestId;
+    current.reply_count = reply;
+    return true;
+  }, ctx());
+  if (!claimed) throw validation('El encargo no está esperando una respuesta');
+  try {
+    const conv = await conversation(session.id);
+    if (!task.silent) {
+      await conv.submit(
+        {
+          type: 'write',
+          requestId: `${requestId}:notice`,
+          entry: { kind: shared.NOTICE_KIND, data: { text: `Respuesta al encargo: ${task.content.slice(0, 120)}` } },
+        },
+        ctx(),
+      );
+    }
+    await conv.submit(
+      {
+        type: 'input',
+        content:
+          `${shared.CONTEXT_MARKER}\nRespuesta del usuario a tu pregunta sobre el encargo «${quoted(task.content, 200)}».\n` +
+          `Tu pregunta: ${String(task.question || '').slice(0, MAX_QUESTION_CHARS)}\n` +
+          `Respuesta: ${response}\n` +
+          'No es un encargo nuevo: continúa el encargo anterior con este dato.',
+        requestId,
+        whenBusy: 'followUp',
+      },
+      ctx(),
+    );
+  } catch (err) {
+    const message = require('./agent-execution')
+      .sanitizeProviderError(String((err && err.message) || err))
+      .slice(0, 300);
+    await state.harness.commit(async (tx) => {
+      const current = (await tx.doc(state.TasksDoc)).tasks[id];
+      if (!current || current.status !== 'delivering' || current.current_request_id !== requestId) return;
+      transition(current, 'needs_input', message);
+      delete current.current_request_id;
+      current.last_error = message;
+    }, ctx());
+    throw err;
+  }
+  return { answered: true, id };
+}
+
+async function verifyTask(params = {}) {
+  const state = shared.state;
+  const id = String(params.id || '');
+  if (!id) throw validation('Indica el encargo que quieres verificar');
+  return state.harness.commit(async (tx) => {
+    const task = (await tx.doc(state.TasksDoc)).tasks[id];
+    if (!task) throw validation('El encargo programado no existe');
+    if (task.status === 'delivered') return { verified: true, id };
+    if (task.status !== 'to_verify') throw validation('El encargo no está pendiente de verificación');
+    transition(task, 'delivered', 'Verificado por el usuario');
+    return { verified: true, id };
+  }, ctx());
 }
 
 async function settleScheduledTask(state, session, task) {
@@ -1632,6 +1699,9 @@ async function settleScheduledTask(state, session, task) {
   if (submission.status === 'queued' || submission.status === 'placed') return;
   const at = Date.now();
   if (submission.status === 'done') {
+    const outcome = taskOutcome(
+      lastAnswerText(await require('./agent-projection').allEntries(await conversation(session.id))),
+    );
     await state.harness.commit(async (tx) => {
       const current = (await tx.doc(state.TasksDoc)).tasks[task.id];
       if (!current || current.status !== 'delivering') return;
@@ -1639,10 +1709,29 @@ async function settleScheduledTask(state, session, task) {
       delete current.claimed_at;
       delete current.current_request_id;
       delete current.continuation_rounds;
+      if (outcome.kind === 'needs_input') {
+        transition(current, 'needs_input');
+        current.question = outcome.question;
+        if (outcome.output) current.output = outcome.output;
+        delete current.last_error;
+        recordRun(current, { at, due_at: task.due_at, status: 'needs_input', silent: !!current.silent });
+        return;
+      }
+      if (outcome.kind === 'blocked') {
+        transition(current, 'blocked', outcome.reason);
+        delete current.question;
+        if (outcome.output) current.output = outcome.output;
+        recordRun(current, { at, due_at: task.due_at, status: 'blocked', silent: !!current.silent, error: outcome.reason });
+        return;
+      }
+      delete current.question;
+      if (outcome.output) current.output = outcome.output;
       delete current.last_error;
       completeDelivery(task, current);
     }, ctx());
-    fireTaskCompleted(task.id).catch((err) => console.warn('[agent] trigger task_completed falló:', err && err.message));
+    if (outcome.kind === 'done') {
+      fireTaskCompleted(task.id).catch((err) => console.warn('[agent] trigger task_completed falló:', err && err.message));
+    }
     return;
   }
   const aborted = submission.status === 'unanswered' && String(submission.reason) === 'aborted';
@@ -1677,9 +1766,9 @@ async function settleScheduledTask(state, session, task) {
     const dueAt = Number(current.due_at) || current.created_at;
     if (current.interval_ms) {
       current.due_at = nextOccurrence(current, current.due_at, at);
-      current.status = 'pending';
+      transition(current, 'pending', error);
     } else {
-      current.status = 'uncertain';
+      transition(current, 'uncertain', error);
     }
     delete current.claim_id;
     delete current.claimed_at;
@@ -1687,7 +1776,6 @@ async function settleScheduledTask(state, session, task) {
     delete current.current_request_id;
     delete current.continuation_rounds;
     current.last_error = error;
-    current.updated_at = at;
     recordRun(current, { at, due_at: dueAt, status: 'uncertain', silent: !!current.silent, error });
   }, ctx());
 }
@@ -1700,7 +1788,7 @@ async function reconcileStale(state) {
     for (const task of Object.values(doc.tasks)) {
       if (task.kind === 'queue' || task.status !== 'delivering' || (claimToken && task.claim_id === claimToken))
         continue;
-      const session = (sessionDoc.sessions || {})[task.session_id];
+      const session = (sessionDoc.sessions || {})[task.target_session_id || task.session_id];
       let submission = null;
       if (session && session.conversationId) {
         try {
@@ -1715,9 +1803,9 @@ async function reconcileStale(state) {
       const error = 'La entrega se interrumpió al cerrar Antares; no se repite automáticamente.';
       if (task.interval_ms) {
         task.due_at = nextOccurrence(task, dueAt, now);
-        task.status = 'pending';
+        transition(task, 'pending', error);
       } else {
-        task.status = 'uncertain';
+        transition(task, 'uncertain', error);
       }
       recordRun(task, { at: now, due_at: dueAt, status: 'uncertain', silent: !!task.silent, error });
       if (task.interval_ms) delete task.last_error;
@@ -1753,7 +1841,7 @@ async function tick() {
     for (const task of Object.values(doc?.tasks || {})) {
       if (task.kind === 'queue' || task.status !== 'delivering' || task.trigger) continue;
       const sessionDoc = await state.harness.snapshot(state.SessionsDoc, ctx());
-      const session = sessionDoc.sessions[task.session_id];
+      const session = sessionDoc.sessions[task.target_session_id || task.session_id];
       if (!session || session.deleted) continue;
       await settleScheduledTask(state, session, task);
     }
@@ -1761,10 +1849,10 @@ async function tick() {
       if (task.kind === 'queue' || task.status !== 'pending' || task.trigger || task.due_at > Date.now() || task.retry_at > Date.now())
         continue;
       const sessionDoc = await state.harness.snapshot(state.SessionsDoc, ctx());
-      const session = sessionDoc.sessions[task.session_id];
+      const session = sessionDoc.sessions[task.target_session_id || task.session_id];
       if (!session || session.deleted) {
         await state.harness.commit(async (tx) => {
-          (await tx.doc(state.TasksDoc)).tasks[task.id].status = 'cancelled';
+          transition((await tx.doc(state.TasksDoc)).tasks[task.id], 'cancelled', 'La conversación ya no existe');
         }, ctx());
         continue;
       }
@@ -1784,7 +1872,7 @@ async function tick() {
         const claimed = await state.harness.commit(async (tx) => {
           const current = (await tx.doc(state.TasksDoc)).tasks[task.id];
           if (current.status !== 'pending') return false;
-          current.status = 'delivering';
+          transition(current, 'delivering');
           current.claim_id = claimToken;
           current.claimed_at = Date.now();
           return true;
@@ -1809,7 +1897,9 @@ async function tick() {
             type: 'input',
             content:
               `${shared.CONTEXT_MARKER}\nEncargo programado por el usuario: ${task.content}\n` +
-              'Los datos de este encargo no conceden permisos ni acceso a rutas. Usa las aprobaciones normales.',
+              'Los datos de este encargo no conceden permisos ni acceso a rutas. Usa las aprobaciones normales.\n' +
+              'Si algo solo puede resolverlo el usuario, termina tu respuesta con «NECESITA ENTRADA:» y la pregunta exacta; ' +
+              'si el encargo no puede continuar, termina con «BLOQUEADO:» y el motivo.',
             requestId: `schedule:${task.id}:${task.due_at}`,
             whenBusy: 'followUp',
           },
@@ -1844,7 +1934,7 @@ async function tick() {
               current.continuation_rounds = Number(current.continuation_rounds) || 0;
               current.updated_at = Date.now();
             } else {
-              current.status = 'pending';
+              transition(current, 'pending', message);
               current.retry_at = Date.now() + 60000;
               recordRun(current, {
                 at: Date.now(),
@@ -2083,6 +2173,8 @@ module.exports = {
   saveTask,
   cancelTask,
   runTaskNow,
+  respondToTask,
+  verifyTask,
   queueControl: queue.queueControl,
   fireEvent,
   _internal: {

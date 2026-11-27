@@ -218,7 +218,16 @@ export interface AgentApproval {
   dispatch?: { status: string; finished_at?: number };
 }
 
-export type AgentTaskStatus = 'pending' | 'delivering' | 'delivered' | 'cancelled' | 'uncertain';
+export type AgentTaskStatus =
+  'pending' | 'delivering' | 'delivered' | 'cancelled' | 'uncertain' |
+  'needs_input' | 'blocked' | 'to_verify';
+
+export interface AgentTaskEvent {
+  at: number;
+  from?: AgentTaskStatus;
+  to: AgentTaskStatus;
+  reason?: string;
+}
 export type AgentTaskKind = 'schedule' | 'queue';
 export type AgentQueuePauseReason = 'manual' | 'continuation' | 'failed' | 'cancelled';
 
@@ -233,7 +242,7 @@ export interface AgentQueueState {
 export interface AgentTaskRun {
   at: number;
   due_at: number;
-  status: 'delivered' | 'failed' | 'uncertain';
+  status: 'delivered' | 'failed' | 'uncertain' | 'needs_input' | 'blocked';
   silent?: boolean;
   error?: string;
 }
@@ -252,11 +261,16 @@ export interface AgentTask {
   timezone?: string;
   silent?: boolean;
   origin_task_id?: string;
+  target_session_id?: string;
   runs?: AgentTaskRun[];
   last_run_at?: number;
   last_status?: AgentTaskRun['status'];
   last_error?: string;
   retry_at?: number;
+  output?: string;
+  question?: string;
+  events?: AgentTaskEvent[];
+  reply_count?: number;
 }
 
 export interface AgentDocumentArtifact {
@@ -544,7 +558,7 @@ export const agentApi = {
 
   agentTasksSave: (p: {
     session_id: string; id?: string; kind?: AgentTaskKind; content: string; due_at?: string;
-    every_minutes?: number | null; silent?: boolean; timezone?: string;
+    every_minutes?: number | null; silent?: boolean; timezone?: string; agent?: string;
   }) => _invoke<{ scheduled: AgentTask }>('agent_tasks_save', p),
 
   agentTasksCancel: (id: string) =>
@@ -555,6 +569,12 @@ export const agentApi = {
 
   agentTasksQueue: (session_id: string, action: 'pause' | 'resume') =>
     _invoke<{ queue: AgentQueueState }>('agent_tasks_queue', { session_id, action }),
+
+  agentTasksRespond: (id: string, response: string) =>
+    _invoke<{ answered: boolean; id: string }>('agent_tasks_respond', { id, response }),
+
+  agentTasksVerify: (id: string) =>
+    _invoke<{ verified: boolean; id: string }>('agent_tasks_verify', { id }),
 
   agentRendererResult: (id: string, result?: unknown, error?: string, uncertain = false) =>
     _invoke<{ accepted: boolean }>('agent_renderer_result', { id, result, error, ...(uncertain ? { uncertain: true } : {}) }),
