@@ -597,10 +597,11 @@ export const agentApi = {
   agentCanvasApplyLayers: (params: Record<string, unknown>) =>
     _invoke<CanvasLayersResult>('agent_canvas_apply_layers', params),
 
-  agentArtifactAction: (params: { session_id: string; artifact_id: string; file_index: number; action: 'preview' | 'embed' | 'review' | 'open' | 'save' | 'print' | 'versions' | 'restore';
+  agentArtifactAction: (params: { session_id: string; artifact_id: string; file_index: number; action: 'preview' | 'embed' | 'review' | 'open' | 'save' | 'print' | 'versions' | 'restore' | 'save_design_adjustments';
     color_scheme?: 'light' | 'dark';
+    adjustments?: Record<string, Record<string, string | number>>;
     request_id?: string; sha256?: string; page?: number; full_size?: boolean; printer_name?: string; copies?: number; pages?: string; duplex?: string; quality?: string; revision?: number }) =>
-    _invoke<{ png_base64?: string; html?: string; pages?: number; sha256?: string; reviewed?: boolean; approval?: AgentApproval; cancelled?: boolean; opened?: boolean; url?: string;
+    _invoke<{ png_base64?: string; html?: string; pages?: number; sha256?: string; reviewed?: boolean; approval?: AgentApproval; cancelled?: boolean; opened?: boolean; url?: string; design_current?: boolean;
       revisions?: { revision: number; parent_revision: number | null; at?: number; provenance?: Record<string, unknown>; files?: { index?: number; name?: string; sha256?: string; bytes?: number; available?: boolean }[] }[];
       tombstoned?: boolean; restored?: number }>('agent_artifact_action', params),
 

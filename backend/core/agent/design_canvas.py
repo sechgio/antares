@@ -124,6 +124,11 @@ const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ '&': '
 const escapeCss = (value) => String(value).replace(/[<>{};\\]/g, '');
 const defaults = (board) => Object.fromEntries(Object.entries(board.props || {}).map(([name, prop]) => [name, prop.default]));
 const values = new Map(canvas.boards.map((board) => [board.id, defaults(board)]));
+const reportAdjustments = () => parent.postMessage({ type: 'antares-design-adjustments', adjustments: Object.fromEntries(
+  canvas.boards.map((board) => [board.id, Object.fromEntries(Object.entries(values.get(board.id))
+    .filter(([name, value]) => value !== board.props[name].default))])
+    .filter(([, changes]) => Object.keys(changes).length)
+) }, '*');
 const byId = new Map(canvas.boards.map((board) => [board.id, board]));
 const fill = (source, board, escape) => source.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, (hole, name) => (name in values.get(board.id) ? escape(values.get(board.id)[name]) : hole));
 const paint = (board) => {
@@ -173,15 +178,16 @@ const renderPanel = () => {
     input.addEventListener('input', () => {
       values.get(board.id)[name] = prop.type === 'number' ? Number(input.value) : input.value;
       paint(board);
+      reportAdjustments();
     });
     label.append(input);
     panel.append(label);
   }
-  panel.append(make('small', '', 'Los ajustes son una vista previa; pide al agente que los fije.'));
+  panel.append(make('small', '', 'Guarda los ajustes desde la barra del lienzo en el chat.'));
   const actions = make('div', 'dc-props-actions');
   const reset = button('Restablecer');
   reset.disabled = !props.length;
-  reset.addEventListener('click', () => { values.set(board.id, defaults(board)); paint(board); renderPanel(); });
+  reset.addEventListener('click', () => { values.set(board.id, defaults(board)); paint(board); renderPanel(); reportAdjustments(); });
   const close = button('Cerrar');
   close.addEventListener('click', () => togglePanel(false));
   actions.append(reset, close);
@@ -284,27 +290,31 @@ viewport.addEventListener('keydown', (event) => {
 let drag = null;
 const boardAt = (target) => [...frames].find(([, frame]) => frame.host === target.closest('.dc-host'))?.[0];
 viewport.addEventListener('pointerdown', (event) => {
-  if (event.button !== 0 || event.target.closest('.dc-label')) return;
-  drag = { x: event.clientX, y: event.clientY, tx, ty, moved: false, board: boardAt(event.target) };
-  viewport.setPointerCapture(event.pointerId);
+  if (event.button !== 0 || drag ||
+      event.composedPath()[0].closest?.('.dc-label, [data-goto], a, button, input, textarea, select, label, [contenteditable]')) return;
+  drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, tx, ty, moved: false, board: boardAt(event.target) };
 });
 viewport.addEventListener('pointermove', (event) => {
-  if (!drag) return;
+  if (drag?.pointerId !== event.pointerId) return;
   const dx = event.clientX - drag.x;
   const dy = event.clientY - drag.y;
   if (!drag.moved && Math.hypot(dx, dy) < 4) return;
-  drag.moved = true;
-  viewport.classList.add('is-panning');
+  if (!drag.moved) {
+    drag.moved = true;
+    viewport.setPointerCapture(event.pointerId);
+    viewport.classList.add('is-panning');
+  }
   tx = drag.tx + dx;
   ty = drag.ty + dy;
   apply();
 });
-const release = () => {
-  if (drag && !drag.moved) select(drag.board || null);
+const release = (event) => {
+  if (drag?.pointerId !== event.pointerId || (event.type === 'pointerleave' && drag.moved)) return;
+  if (event.type === 'pointerup' && !drag.moved) select(drag.board || null);
   drag = null;
   viewport.classList.remove('is-panning');
 };
-viewport.addEventListener('pointerup', release); viewport.addEventListener('pointercancel', release);
+for (const type of ['pointerup', 'pointercancel', 'pointerleave', 'lostpointercapture']) viewport.addEventListener(type, release);
 viewport.addEventListener('dblclick', (event) => { const id = boardAt(event.target); if (id) focusBoard(id); });
 // Reajusta mientras el iframe cambia de alto, hasta que el usuario mueva la vista.
 let touched = false;

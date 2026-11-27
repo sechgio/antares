@@ -120,9 +120,15 @@ describe('DesignApp', () => {
     await waitFor(() => expect(designRenderHtml).toHaveBeenCalled());
     expect(screen.getByText(/1 \/ 2/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Exportar PDF/i }));
-    await waitFor(() => expect(designExportPdf).toHaveBeenCalled());
+    const notes = screen.getByRole('checkbox', { name: 'Notas' });
+    const exportPdf = screen.getByRole('button', { name: /Exportar PDF/i });
+    fireEvent.click(notes);
+    fireEvent.click(exportPdf);
+    await waitFor(() => expect(designExportPdf).toHaveBeenLastCalledWith(expect.objectContaining({ notes: true })));
     await waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' })));
+    fireEvent.click(notes);
+    fireEvent.click(exportPdf);
+    await waitFor(() => expect(designExportPdf).toHaveBeenLastCalledWith(expect.objectContaining({ notes: false })));
   });
 
   it('no exporta si el usuario cancela el diálogo', async () => {
@@ -171,18 +177,28 @@ describe('DesignApp', () => {
 
   it('navega con la tira de diapositivas y recarga bajo demanda', async () => {
     designGenerate.mockResolvedValue({ document: document_ });
+    designRenderHtml.mockResolvedValue({
+      html: '<section class="slide">Portada</section><section class="slide">Cierre</section>',
+      slideCount: 2,
+      page: document_.page,
+    });
     render(<DesignApp />);
     await waitFor(() => expect(aiProvidersList).toHaveBeenCalled());
     fireEvent.change(screen.getByPlaceholderText(/Ej\.: resultados/i), { target: { value: 'x' } });
     fireEvent.click(screen.getByRole('button', { name: /Generar diseño/i }));
-    await screen.findByTitle('Vista previa del diseño: Plan Q3');
+    const frame = await screen.findByTitle('Vista previa del diseño: Plan Q3');
     await waitFor(() => expect(designRenderHtml).toHaveBeenCalledTimes(1));
 
+    expect(frame.getAttribute('srcdoc')).toContain('Portada');
+    expect(frame.getAttribute('srcdoc')).not.toContain('Cierre');
     fireEvent.click(screen.getByRole('button', { name: /Diapositiva 2/i }));
     expect(screen.getByText(/2 \/ 2/)).toBeInTheDocument();
+    expect(frame.getAttribute('srcdoc')).toContain('Cierre');
+    expect(frame.getAttribute('srcdoc')).not.toContain('Portada');
 
     fireEvent.click(screen.getByRole('button', { name: /Recargar vista previa/i }));
     await waitFor(() => expect(designRenderHtml).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(frame.getAttribute('srcdoc')).toContain('Portada'));
   });
 
   it('aplica la memoria en cada generacion y permite borrarla', async () => {

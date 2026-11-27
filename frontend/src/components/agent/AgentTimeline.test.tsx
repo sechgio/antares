@@ -1213,6 +1213,32 @@ it('actualiza una página embebida cuando cambia la apariencia sin rehacer el em
   }
 });
 
+it('guarda los ajustes de Design solo con una acción del usuario sobre el iframe actual', async () => {
+  const action = vi.spyOn(agentApi, 'agentArtifactAction').mockImplementation(async (params) =>
+    params.action === 'embed'
+      ? { url: `http://127.0.0.1:4100/page/${params.sha256}/content.html`, sha256: params.sha256, design_current: true }
+      : { sha256: 'h2' });
+  try {
+    renderPanel(makePanel('page', { artifact_id: 'a1', sha256: 'h1', title: 'Borrador' }));
+    const frame = await screen.findByTitle('Borrador') as HTMLIFrameElement;
+    const adjustments = { portada: { text: 'Revisado' } };
+    const data = { type: 'antares-design-adjustments', adjustments };
+    const send = (source: MessageEventSource | null) => act(() =>
+      window.dispatchEvent(new MessageEvent('message', { source, data })));
+    send(window);
+    expect(screen.queryByRole('button', { name: 'Guardar ajustes' })).toBeNull();
+    send(frame.contentWindow);
+    expect(action).toHaveBeenCalledTimes(1);
+    fireEvent.click(await screen.findByRole('button', { name: 'Guardar ajustes' }));
+    await waitFor(() => expect(action).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'save_design_adjustments', sha256: 'h1', adjustments, artifact_id: 'a1', session_id: 's1',
+    })));
+    expect(await screen.findByTitle('Borrador')).toHaveAttribute('src', 'http://127.0.0.1:4100/page/h2/content.html');
+  } finally {
+    action.mockRestore();
+  }
+});
+
 it.each([
   ['props inválidas', makePanel('choice', { prompt: '¿Formato?' })],
   ['tipo desconocido', makePanel('chart', { series: [1, 2] })],

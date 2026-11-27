@@ -361,7 +361,7 @@ def test_review_turn_returns_empty_without_critique(monkeypatch):
         generate_module.agent_chat, "chat", lambda *a, **k: {"text": "SIN_OBSERVACIONES", "calls": []}
     )
     document = normalize_document({"page": {"preset": "16x9"}, "slides": [{"layout": "title", "title": "P"}]})
-    assert generate_module._review_turn("openai", "gpt-4o", document, "system") == ""
+    assert generate_module._review_turn("openai", "gpt-4o", document, "system") == ("", [])
 
 
 def test_review_turn_survives_a_provider_without_vision(monkeypatch):
@@ -372,7 +372,7 @@ def test_review_turn_survives_a_provider_without_vision(monkeypatch):
 
     monkeypatch.setattr(generate_module.agent_chat, "chat", boom)
     document = normalize_document({"page": {"preset": "16x9"}, "slides": [{"layout": "title", "title": "P"}]})
-    assert generate_module._review_turn("ollama", "llava", document, "system") == ""
+    assert generate_module._review_turn("ollama", "llava", document, "system") == ("", [])
 
 
 def test_review_turn_returns_the_critique_when_there_are_defects(monkeypatch):
@@ -384,8 +384,9 @@ def test_review_turn_returns_the_critique_when_there_are_defects(monkeypatch):
         lambda *a, **k: {"text": "3: el título se sale por la derecha\n5: contraste bajo", "calls": []},
     )
     document = normalize_document({"page": {"preset": "16x9"}, "slides": [{"layout": "title", "title": "P"}]})
-    critique = generate_module._review_turn("openai", "gpt-4o", document, "system")
+    critique, images = generate_module._review_turn("openai", "gpt-4o", document, "system")
     assert "el título se sale" in critique
+    assert len(images) == 1
 
 
 def test_slide_images_rasterizes_every_page(tmp_path):

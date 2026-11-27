@@ -149,6 +149,28 @@ def versions(base: Path, session_id: str, artifact_id: str) -> dict:
         return {"revisions": revisions, "tombstoned": bool(entry.get("tombstoned")), "tombstoned_at": entry.get("tombstoned_at")}
 
 
+def read_file(base: Path, session_id: str, artifact_id: str, digest: str, limit: int) -> tuple[bytes, str] | None:
+    with _lock:
+        safe_id = _safe(artifact_id)
+        entry = (_read_index(base).get(session_id) or {}).get(safe_id) or {}
+        for revision in reversed(entry.get("revisions", [])):
+            for file in revision.get("files", []):
+                if file.get("index") != 0 or not file.get("available") or file.get("sha256") != digest:
+                    continue
+                root = _content_root(base)
+                blob = drafts.inside(root, str(root / safe_id / str(revision["revision"]) / "0"))
+                if blob is None:
+                    continue
+                try:
+                    with blob.open("rb") as stream:
+                        content = stream.read(limit + 1)
+                except OSError:
+                    continue
+                if len(content) <= limit and hashlib.sha256(content).hexdigest() == digest:
+                    return content, str(file.get("name") or "")
+        return None
+
+
 def restore(base: Path, session_id: str, artifact_id: str, revision: int, drafts_dir: Path) -> dict:
     """Copia los bytes de una revisión de vuelta a los borradores.
 

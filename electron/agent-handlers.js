@@ -91,12 +91,13 @@ async function artifactAction(params) {
   await require('./agent-runtime').open();
   await require('./agent-shared').requireSession(String(params.session_id || ''));
   const { _callBackend } = require('./ipc-router');
-  if (params.action === 'review' || params.action === 'versions' || params.action === 'restore')
+  if (['review', 'versions', 'restore', 'save_design_adjustments'].includes(params.action))
     return _callBackend('agent_internal_artifact_action', params);
   const file = await _callBackend('agent_internal_artifact_action', { ...params, action: 'file' });
   if (file.page) {
     if (params.action === 'preview') return { html: require('./agent-pages').preview(file.page, params.color_scheme), sha256: file.sha256 };
-    if (params.action === 'embed') return { url: await require('./agent-preview').embedPage(file.page, params.color_scheme), sha256: file.sha256 };
+    if (params.action === 'embed') return { url: await require('./agent-preview').embedPage(file.page, params.color_scheme),
+      sha256: file.sha256, ...(typeof file.design_current === 'boolean' ? { design_current: file.design_current } : {}) };
     if (params.action !== 'open') throw new Error('Las páginas interactivas se abren dentro de Agent');
     await require('./agent-browser').openPage(file.page, params.color_scheme);
     return { opened: true };

@@ -90,6 +90,11 @@ const page = { version: 1, title: 'Trabajos', html: '<h1>Trabajos</h1><input id=
     stubModule('electron/agent-shared', { requireSession: async (id) => assert.equal(id, 's1') });
     stubModule('electron/ipc-router', { _callBackend: async (method, params) => {
       assert.equal(method, 'agent_internal_artifact_action');
+      if (params.action === 'save_design_adjustments') {
+        assert.deepEqual(params.adjustments, { board: { accent: '#123456' } });
+        assert.equal(params.sha256, 'h1');
+        return { sha256: 'h2' };
+      }
       assert.equal(params.action, 'file');
       assert.equal(params.artifact_id, 'p1');
       return { page };
@@ -111,6 +116,11 @@ const page = { version: 1, title: 'Trabajos', html: '<h1>Trabajos</h1><input id=
     assert.deepEqual(result, { handled: true, result: { opened: true } });
     assert.equal(opened, 1);
     assert.equal(shellOpens, 0);
+    const saved = await handleAgentCall('agent_artifact_action', {
+      session_id: 's1', artifact_id: 'p1', action: 'save_design_adjustments', sha256: 'h1',
+      adjustments: { board: { accent: '#123456' } },
+    });
+    assert.deepEqual(saved, { handled: true, result: { sha256: 'h2' } });
     await assert.rejects(handleAgentCall('agent_artifact_action', { session_id: 's1', artifact_id: 'p1', action: 'save' }), /dentro de Agent/);
     assert.equal(opened, 1);
     const pdfActions = [];

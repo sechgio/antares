@@ -14,6 +14,10 @@ if TYPE_CHECKING:
 
 MIME = "application/vnd.antares.page+json"
 MAX_BYTES = 5 * 1024 * 1024
+_LEGACY_DESIGN_SCRIPTS = frozenset({
+    "2b6e9a3aa3fa8f3edb5f3ccafca87ba9c98ce7a23c8a29ce3f56e722559a723c",
+    "28e1550b676022f84e02dcc20e2c8387543e5fdafde7d74711c62a733c1dda78",
+})
 TOOL_SPECS: list[JsonObject] = [{
     "name": "page_create", "module": "documents", "gated": False,
     "description": (
@@ -39,6 +43,50 @@ TOOL_SPECS: list[JsonObject] = [{
         "expected_revision": {"type": "string"},
     }, "required": ["title", "html", "script"]},
 }]
+
+
+def is_design(page: JsonObject) -> bool:
+    from backend.core.agent.design_canvas import _SCRIPT
+
+    data = page.get("data")
+    canvas = data.get("design_canvas") if isinstance(data, dict) else None
+    script = page.get("script")
+    return isinstance(canvas, dict) and canvas.get("version") == 1 and isinstance(script, str) and (
+        script == _SCRIPT or hashlib.sha256(script.encode()).hexdigest() in _LEGACY_DESIGN_SCRIPTS
+    )
+
+
+def artifact_response(page: JsonObject, name: str, digest: str, *, current: bool) -> JsonObject:
+    from backend.core.agent.design_canvas import _SCRIPT
+
+    response: JsonObject = {"page": page, "name": name, "sha256": digest}
+    if is_design(page):
+        response.update(page={**page, "script": _SCRIPT}, design_current=current)
+    return response
+
+
+def save_design_adjustments(store: AgentStore, session_id: str, params: JsonObject, page: JsonObject) -> JsonObject:
+    from backend.core.agent.design_canvas import MAX_BOARDS, write
+
+    if not is_design(page):
+        raise ValueError("Solo puedes guardar ajustes en un lienzo de diseño")
+    changes = params.get("adjustments")
+    if not isinstance(changes, dict) or not 0 < len(changes) <= MAX_BOARDS:
+        raise ValueError("Indica los ajustes de al menos un artboard")
+    boards = {board["id"]: board for board in page["data"]["design_canvas"]["boards"]}
+    updates = []
+    for board_id, values in changes.items():
+        props = boards.get(board_id, {}).get("props", {})
+        if not isinstance(values, dict) or not values or values.keys() - props.keys():
+            raise ValueError(f"El artboard {board_id} contiene ajustes desconocidos")
+        updated = {name: {**prop, "default": values.get(name, prop["default"])} for name, prop in props.items()}
+        if any(value != props[name]["default"] or type(value) is not type(props[name]["default"]) for name, value in values.items()):
+            updates.append({"id": board_id, "props": updated})
+    if not updates:
+        return {"sha256": params["sha256"]}
+    result = write({"artifact_id": params["artifact_id"], "expected_revision": params["sha256"], "boards": updates},
+                   store, session_id)
+    return {"sha256": result["artifact"]["template_revision"]}
 
 
 def create(params: JsonObject, store: AgentStore, session_id: str) -> JsonObject:

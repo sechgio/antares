@@ -108,6 +108,10 @@ function main() {
   }
   const imagePreview = catalog.METHODS.agent_artifact_action;
   const internalImagePreview = catalog.METHODS.agent_internal_artifact_action;
+  if (!imagePreview.inputSchema.properties.action.enum.includes('save_design_adjustments')
+    || JSON.stringify(imagePreview.inputSchema.properties.adjustments) !== JSON.stringify(internalImagePreview.inputSchema.properties.adjustments)) {
+    throw new Error('El guardado de ajustes de Design debe conservar el mismo contrato hasta el backend privado');
+  }
   if (!apiMethods.has('agent_artifact_action') || imagePreview.handler !== 'native:agent'
     || internalImagePreview.internal !== true
     || JSON.stringify(imagePreview.inputSchema.properties.full_size) !== JSON.stringify(internalImagePreview.inputSchema.properties.full_size)
