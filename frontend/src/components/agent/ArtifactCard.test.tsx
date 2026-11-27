@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { agentApi, type AgentArtifact } from '../../api/agentApi';
 import ArtifactCard, { ArtifactList } from './ArtifactCard';
@@ -72,6 +72,24 @@ it('las respuestas se envían a la conversación y pregunta originales', async (
   fireEvent.click(screen.getByRole('button', { name: 'B' }));
   await waitFor(() => expect(onAnswered).toHaveBeenCalledTimes(1));
   expect(answer).toHaveBeenCalledExactlyOnceWith('s1', 'q1', { template: 'B' });
+});
+
+it('reserva los atajos de las opciones y permite escribir sus letras en la respuesta libre', async () => {
+  const question = { id: 'q1', session_id: 's1', questions: [{ id: 'template', prompt: 'Plantilla', options: ['A', 'B'] }] };
+  const answer = vi.spyOn(agentApi, 'agentQuestionAnswer').mockResolvedValue({ question });
+  render(<QuestionCard question={question} onAnswered={vi.fn()} />);
+  const group = within(screen.getByRole('group', { name: 'Plantilla' }));
+  const input = group.getByRole('textbox', { name: 'Plantilla' });
+  const option = group.getByRole('button', { name: 'B' });
+  expect(option).toHaveAttribute('aria-keyshortcuts', 'B');
+  option.focus();
+  fireEvent.keyDown(option, { key: 'b', ctrlKey: true });
+  input.focus();
+  fireEvent.keyDown(input, { key: 'b' });
+  expect(answer).not.toHaveBeenCalled();
+  fireEvent.change(input, { target: { value: 'borrador' } });
+  fireEvent.click(group.getByRole('button', { name: 'Responder' }));
+  await waitFor(() => expect(answer).toHaveBeenCalledExactlyOnceWith('s1', 'q1', { template: 'borrador' }));
 });
 
 it('abre una página con su conversación y revisión sin acciones de PDF', async () => {
