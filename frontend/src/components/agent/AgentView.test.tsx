@@ -98,28 +98,39 @@ afterEach(() => {
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
 });
 
-it.each([
-  { withProfile: true },
-  { withProfile: false },
-])('oculta la cadena solo cuando la conversación pertenece a un agente: $withProfile', async ({ withProfile }) => {
+it('distingue el acceso desde Agentes del acceso a la misma sesión desde Conversaciones', async () => {
+  const profile = { id: 'revisor', name: 'Revisor', description: '', instructions: '', starter: '', tools: null, created_at: 1, updated_at: 1 };
   localStorage.setItem('antares-agent-session', session.id);
   localStorage.setItem('antares-agent-transcript-view', 'thinking');
-  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [] });
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [profile] });
   vi.spyOn(agentApi, 'agentSessionsList').mockResolvedValue({
-    sessions: [withProfile ? { ...session, profile: { id: 'revisor', name: 'Revisor' } } : session],
+    sessions: [{ ...session, profile: { id: profile.id, name: profile.name } }],
   });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
     messages: [{ role: 'assistant', content: 'Listo', reasoning: 'Cadena interna', ts: 1 }],
   });
-  render(<AgentView />);
+  const { unmount } = render(<AgentView />);
   expect(await screen.findByText('Listo')).toBeVisible();
-  if (withProfile) {
-    expect(screen.queryByText('Cadena interna')).toBeNull();
-    expect(screen.queryByRole('button', { name: /Pensó/ })).toBeNull();
-  } else {
-    expect(screen.getByText('Cadena interna')).toBeVisible();
-    expect(screen.getByRole('button', { name: /Pensó/ })).toBeInTheDocument();
-  }
+  expect(screen.queryByText('Cadena interna')).not.toBeInTheDocument();
+
+  const conversations = within(screen.getByRole('region', { name: 'Conversaciones' }));
+  fireEvent.click(conversations.getByRole('button', { name: 'Primera' }));
+  expect(screen.getByText('Cadena interna')).toBeVisible();
+
+  fireEvent.click(screen.getByTitle('Abrir conversación con Revisor'));
+  expect(screen.queryByText('Cadena interna')).not.toBeInTheDocument();
+  expect(screen.getByText('Listo')).toBeVisible();
+  const menu = screen.getByRole('button', { name: 'Opciones de la conversación' });
+  fireEvent.click(menu);
+  expect(screen.queryByRole('menuitemradio', { name: /Pensamiento/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('menuitemradio', { name: /Normal/ })).toHaveAttribute('aria-checked', 'true');
+  fireEvent.click(menu);
+
+  fireEvent.click(conversations.getByRole('button', { name: 'Primera' }));
+  expect(screen.getByText('Cadena interna')).toBeVisible();
+  unmount();
+  render(<AgentView />);
+  expect(await screen.findByText('Cadena interna')).toBeVisible();
 });
 
 it('crea el agente y abre su conversación sin enviar mensajes ni duplicarla al editar', async () => {

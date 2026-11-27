@@ -24,10 +24,11 @@ export function conversationText(title: string, messages: AgentMessage[]): strin
   return lines.join('\n');
 }
 
-export default function ConversationMenu({ session, messages, view, onView, onRename, onDelete, onCopied, onIncognito }: {
+export default function ConversationMenu({ session, messages, view, onView, onRename, onDelete, onCopied, onIncognito, hideReasoning = false }: {
   session: AgentSession;
   messages: AgentMessage[];
   view: TranscriptView;
+  hideReasoning?: boolean;
   onView: (view: TranscriptView) => void;
   onRename: (title: string) => Promise<void>;
   onDelete: () => void;
@@ -109,7 +110,7 @@ export default function ConversationMenu({ session, messages, view, onView, onRe
               )}
               <div role="group" aria-label="Vista del chat" className="my-1 border-y border-[var(--border-subtle)] py-1">
                 <p className="px-2.5 py-1 text-[11.5px] text-[var(--text-muted)]">Vista del chat</p>
-                {VIEWS.map((option) => (
+                {VIEWS.filter((option) => !hideReasoning || option.value !== 'thinking').map((option) => (
                   <button key={option.value} type="button" role="menuitemradio" aria-checked={view === option.value} className={ITEM}
                     onClick={() => { onView(option.value); close(); }}>
                     <Check size={14} className={view === option.value ? 'text-[var(--text-secondary)]' : 'invisible'} aria-hidden="true" />

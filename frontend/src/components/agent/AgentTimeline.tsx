@@ -739,7 +739,8 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
   const working = messages.some((message) => message.partial)
     || entries.some((entry) => entry.kind === 'call' && ['running', 'queued'].includes(entry.call.status));
   const duration = !working && startedAt && last && last.ts > startedAt ? last.ts - startedAt : undefined;
-  const thought = steps.length === 1 && steps[0].kind === 'reasoning' ? steps[0] : null;
+  const activitySteps = hideReasoning ? steps.filter((entry) => entry.kind !== 'reasoning' || entry.streaming) : steps;
+  const thought = activitySteps.length === 1 && activitySteps[0].kind === 'reasoning' ? activitySteps[0] : null;
   return (
     <div className="agent-trace-in agent-turn group min-w-0 space-y-2">
       <div className="flex items-center gap-1.5">
@@ -751,7 +752,7 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
         ? (hideReasoning || view === 'normal'
           ? (thought.streaming ? <ThinkingStatus seed={thought.key} /> : null)
           : <Reasoning text={thought.text} streaming={thought.streaming} ms={thought.ms} defaultOpen />)
-        : steps.length > 0 && <Activity entries={steps} working={working} answering={!!answer} duration={duration} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />}
+        : activitySteps.length > 0 && <Activity entries={activitySteps} working={working} answering={!!answer} duration={duration} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />}
       {sessionId && onPanelRespond && panelEntries.map((panel) => <PanelRenderer key={panel.id} panel={panel} sessionId={sessionId} onRespond={onPanelRespond} />)}
       {answer && (
         <div className="agent-message-answer w-fit min-w-0 max-w-full rounded-2xl rounded-tl-md px-3.5 py-2.5 text-[15px] leading-6 text-[var(--text-primary)]">
