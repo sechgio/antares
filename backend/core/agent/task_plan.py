@@ -15,6 +15,7 @@ _MAX_ID_CHARS = int(_CONTRACT["max_id_chars"])
 _MAX_STEP_DEPENDENCIES = int(_CONTRACT["max_step_dependencies"])
 _MAX_EVIDENCE_REF_CHARS = int(_CONTRACT["max_evidence_ref_chars"])
 _EVIDENCE_REF_KINDS = tuple(_CONTRACT["evidence_ref_kinds"])
+_DELEGATED_REF_KINDS = tuple(_CONTRACT["delegated_evidence_ref_kinds"])
 
 TOOL_SPECS: list[JsonObject] = [
     {
@@ -48,6 +49,7 @@ TOOL_SPECS: list[JsonObject] = [
                                 "properties": {
                                     "kind": {"type": "string", "enum": list(_EVIDENCE_REF_KINDS)},
                                     "ref": {"type": "string"},
+                                    "session_id": {"type": "string", "description": "Delegación asignada al paso"},
                                 },
                                 "required": ["kind", "ref"],
                                 "description": "Observación que prueba el paso: id de llamada, ruta, id de artefacto o página",
@@ -106,6 +108,13 @@ def _parse_steps(raw: list) -> tuple[list[JsonObject], dict[str, int], dict[str,
             if not ref_value:
                 raise ValueError(f"La evidence_ref de «{title}» necesita ref con la referencia a la observación")
             evidence_ref = {"kind": ref_kind, "ref": ref_value[:_MAX_EVIDENCE_REF_CHARS]}
+            source_session = item["evidence_ref"].get("session_id")
+            if source_session is not None:
+                if not isinstance(source_session, str) or not 0 < len(source_session.strip()) <= 120:
+                    raise ValueError(f"La evidence_ref de «{title}» necesita un session_id válido")
+                if ref_kind not in _DELEGATED_REF_KINDS or not item.get("id"):
+                    raise ValueError("La evidencia delegada requiere id del paso y un tool_call o artifact")
+                evidence_ref["session_id"] = source_session.strip()
         step_id = str(item.get("id") or "").strip()[:_MAX_ID_CHARS] or _slug(title, index)
         key = step_id.casefold()
         if key in by_id:

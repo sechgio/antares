@@ -889,6 +889,14 @@ async function roomsList(params) {
   return require('./agent-rooms').listRooms(String((params && params.session_id) || ''));
 }
 
+async function memoryShare(params) {
+  const profiles = await _profiles();
+  if (params.profile_ids.some((id) => !Object.hasOwn(profiles, id) || ['own', 'none'].includes(profiles[id].memory_scope))) {
+    throw validation('Elige perfiles con acceso a memoria compartida');
+  }
+  return bridge('agent_internal_memory_share', params);
+}
+
 function _latestPlan(messages, saved) {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const calls = messages[i].tool_calls || [];
@@ -1899,6 +1907,7 @@ module.exports = {
     agent_session_reasoning_set: sessionReasoningSet,
     agent_messages_list: messagesList,
     agent_rooms_list: roomsList,
+    agent_memory_share: memoryShare,
     agent_message_send: messageSend,
     agent_tools_list: toolsList,
     agent_tools_set: toolsSet,

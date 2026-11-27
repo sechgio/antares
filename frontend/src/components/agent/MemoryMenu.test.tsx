@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { agentApi, type AgentMemoryItem } from '../../api/agentApi';
 import MemoryMenu from './MemoryMenu';
@@ -119,4 +119,30 @@ it('confirma o descarta recuerdos inferidos pendientes', async () => {
   expect(update).toHaveBeenLastCalledWith({ id: 'i1', action: 'confirm' });
   await act(async () => { fireEvent.click(screen.getAllByText('Descartar')[0]); });
   expect(update).toHaveBeenLastCalledWith({ id: 'i2', action: 'discard' });
+});
+
+it('guarda los perfiles elegidos y puede revocar el acceso', async () => {
+  const fact: AgentMemoryItem = {
+    ...journal, id: 'fact', kind: 'fact', title: 'Unidades', content: 'Usa metros',
+    profile_id: 'owner', confidence: 'confirmed',
+  };
+  vi.mocked(agentApi.agentMemoryList).mockResolvedValue({ items: [fact] });
+  const share = vi.spyOn(agentApi, 'agentMemoryShare').mockImplementation(async (_id, _version, ids) => ({
+    item: { ...fact, shared_with_profiles: ids },
+  }));
+  render(<MemoryMenu profiles={[{
+    id: 'recipient', name: 'Revisor', description: '', instructions: '', starter: '',
+    tools: null, created_at: 1, updated_at: 1,
+  }]} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Memoria del agente' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Compartir' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Revisor' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar acceso' }));
+  expect(await screen.findByText('Compartido con Revisor')).toBeVisible();
+  expect(share).toHaveBeenLastCalledWith(fact.id, fact.version, ['recipient']);
+  fireEvent.click(screen.getByRole('button', { name: 'Compartir' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Revisor' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar acceso' }));
+  await waitFor(() => expect(screen.queryByText('Compartido con Revisor')).toBeNull());
+  expect(share).toHaveBeenLastCalledWith(fact.id, fact.version, []);
 });

@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Brain } from 'lucide-react';
-import { agentApi, type AgentMemoryItem } from '../../api/agentApi';
+import { agentApi, type AgentMemoryItem, type AgentProfile } from '../../api/agentApi';
 import { errorMessage } from '../../utils/errors';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import { useDialog } from '../../hooks/useDialog';
@@ -36,12 +36,18 @@ function sourceText(item: AgentMemoryItem): string {
   return receipts ? `Aprendido de ${receipts} comprobante${receipts === 1 ? '' : 's'}` : 'Indicado en una conversación';
 }
 
-export default function MemoryMenu() {
+export default function MemoryMenu({ profiles = [], sessionId, onTrialQueued }: {
+  profiles?: AgentProfile[]; sessionId?: string; onTrialQueued?: () => void;
+}) {
   const { addToast } = useToast();
   const { confirm } = useDialog();
   const [items, setItems] = useState<AgentMemoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<{ id: string; text: string; date?: string } | null>(null);
+  const [sharing, setSharing] = useState<{ id: string; profileIds: string[] } | null>(null);
+  const [savingShare, setSavingShare] = useState(false);
+  const [trial, setTrial] = useState<{ id: string; sample: string } | null>(null);
+  const [startingTrial, setStartingTrial] = useState(false);
   const menu = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
     align: 'end',
     estimatedWidth: 340,
@@ -92,6 +98,36 @@ export default function MemoryMenu() {
     }
   };
 
+  const saveSharing = async (item: AgentMemoryItem, profileIds: string[]) => {
+    setSavingShare(true);
+    try {
+      const result = await agentApi.agentMemoryShare(item.id, item.version, profileIds);
+      setItems((prev) => prev.map((entry) => entry.id === item.id ? result.item : entry));
+      setSharing(null);
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo compartir el recuerdo'), type: 'error' });
+    } finally {
+      setSavingShare(false);
+    }
+  };
+
+  const queueTrial = async (item: AgentMemoryItem, sample: string) => {
+    if (!sessionId || !sample.trim()) return;
+    setStartingTrial(true);
+    try {
+      await agentApi.agentTasksSave({
+        session_id: sessionId, kind: 'queue', procedure_id: item.id, procedure_version: item.version, content: sample.trim(),
+      });
+      setTrial(null);
+      menu.close();
+      onTrialQueued?.();
+    } catch (err) {
+      addToast({ message: errorMessage(err, 'No se pudo iniciar la prueba'), type: 'error' });
+    } finally {
+      setStartingTrial(false);
+    }
+  };
+
   return (
     <>
       <Button
@@ -133,6 +169,11 @@ export default function MemoryMenu() {
               const text = item.kind === 'procedure' ? item.when ?? '' : item.content ?? '';
               const older = item.versions.filter((v) => v.version < item.version);
               const previous = older[older.length - 1];
+              const targets = profiles.filter((profile) =>
+                profile.id !== item.profile_id && (!profile.memory_scope || profile.memory_scope === 'shared-read'));
+              const shared = item.shared_with_profiles ?? [];
+              const canShare = !!item.profile_id && (item.kind === 'preference' || item.kind === 'fact') &&
+                (shared.length > 0 || (item.status === 'active' && !pending && targets.length > 0));
               return (
                 <Fragment key={item.id}>
                 {index === 0 && pending && (
@@ -190,6 +231,34 @@ export default function MemoryMenu() {
                   )}
                   {pending && <p className="text-[10px] text-[var(--accent-yellow)]">Inferido: confírmalo, corrígelo o descártalo.</p>}
                   <p className="text-[10px] text-[var(--text-muted)]">{sourceText(item)}</p>
+                  {shared.length > 0 && <p className="text-[10px] text-[var(--text-secondary)]">
+                    Compartido con {shared.map((id) => profiles.find((profile) => profile.id === id)?.name ?? 'perfil no disponible').join(', ')}
+                  </p>}
+                  {sharing?.id === item.id && (
+                    <fieldset className="space-y-1" disabled={savingShare}>
+                      <legend className="text-[var(--text-secondary)]">Perfiles que podrán usar este recuerdo</legend>
+                      {targets.map((profile) => (
+                        <label key={profile.id} className="flex items-center gap-2">
+                          <input type="checkbox" checked={sharing.profileIds.includes(profile.id)}
+                            onChange={(event) => setSharing({ id: item.id, profileIds: event.target.checked
+                              ? [...sharing.profileIds, profile.id] : sharing.profileIds.filter((id) => id !== profile.id) })} />
+                          {profile.name}
+                        </label>
+                      ))}
+                      <Button size="sm" variant="secondary" onClick={() => void saveSharing(item, sharing.profileIds)}>Guardar acceso</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setSharing(null)}>Cancelar</Button>
+                    </fieldset>
+                  )}
+                  {trial?.id === item.id && (
+                    <div className="space-y-1">
+                      <Textarea aria-label="Caso de prueba" rows={2} value={trial.sample} maxLength={4000}
+                        placeholder="Ejemplo con el que quieres probar el procedimiento"
+                        onChange={(event) => setTrial({ id: item.id, sample: event.target.value })} />
+                      <Button size="sm" variant="secondary" disabled={startingTrial || !trial.sample.trim()}
+                        onClick={() => void queueTrial(item, trial.sample)}>Probar con lecturas</Button>
+                      <Button size="sm" variant="ghost" disabled={startingTrial} onClick={() => setTrial(null)}>Cancelar</Button>
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-1">
                     {editing?.id === item.id ? (
                       <>
@@ -211,6 +280,16 @@ export default function MemoryMenu() {
                             <Button size="sm" variant="secondary" onClick={() => void apply({ id: item.id, action: 'confirm' })}>Confirmar</Button>
                             <Button size="sm" variant="ghost" onClick={() => void apply({ id: item.id, action: 'discard' })}>Descartar</Button>
                           </>
+                        )}
+                        {canShare && sharing?.id !== item.id && (
+                          <Button size="sm" variant="ghost" onClick={() => setSharing({
+                            id: item.id, profileIds: targets.filter((profile) => shared.includes(profile.id)).map((profile) => profile.id),
+                          })}>Compartir</Button>
+                        )}
+                        {sessionId && item.kind === 'procedure' && item.status === 'active' && trial?.id !== item.id && (
+                          <Button size="sm" variant="ghost" onClick={() => setTrial({ id: item.id, sample: '' })}>
+                            Probar procedimiento
+                          </Button>
                         )}
                         <Button size="sm" variant="ghost" onClick={() => setEditing({ id: item.id, text, ...(item.kind === 'journal' ? { date: item.date } : {}) })}>Corregir</Button>
                         <Button size="sm" variant="ghost" onClick={() => void apply({ id: item.id, action: item.status === 'active' ? 'disable' : 'enable' })}>

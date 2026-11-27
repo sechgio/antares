@@ -422,6 +422,8 @@ class MemoryStore:
         version = max((v["version"] for v in item["versions"]), default=0) + 1
         item["versions"] = [*item["versions"], {**data, "version": version, "source": source, "created_at": _now()}][-MAX_VERSIONS:]
         item["version"] = version
+        item.pop("shared_with_profiles", None)
+        item.pop("shared_version", None)
         item["updated_at"] = _now()
 
     def _create(self, kind: str, title: str, data: JsonObject, source: JsonObject) -> JsonObject:
@@ -466,6 +468,42 @@ class MemoryStore:
         if scope == "own":
             return bool(profile_id) and item.get("profile_id") == profile_id
         return not item.get("profile_id") or item["profile_id"] == profile_id
+
+    def _shared_for(self, item: JsonObject, session_id: str, profile_id: str | None = None,
+                    memory_scope: str | None = None) -> bool:
+        if profile_id is None:
+            profile_id = self._profiles.get(session_id)
+            memory_scope = self._scopes.get(session_id)
+        return (bool(profile_id) and memory_scope not in ("own", "none") and item["status"] == "active"
+                and item.get("shared_version") == item["version"]
+                and not self._expired(item) and profile_id in (item.get("shared_with_profiles") or []))
+
+    @staticmethod
+    def _shared_view(item: JsonObject) -> JsonObject:
+        view = MemoryStore._view(item)
+        return {key: view[key] for key in ("id", "kind", "title", "content", "status", "confidence") if key in view}
+
+    def share(self, item_id: str, version: int, profile_ids: list[str]) -> JsonObject:
+        with self._lock:
+            item = self._items.get(item_id)
+            if item is None or item["version"] != version:
+                raise ValueError("El recuerdo cambió. Vuelve a abrirlo antes de compartir.")
+            owner = item.get("profile_id")
+            if not owner or item["kind"] not in ("fact", "preference"):
+                raise ValueError("Solo se comparten hechos y preferencias de un perfil.")
+            targets = sorted(set(profile_ids) - {owner})
+            if targets and (item["status"] != "active" or self._expired(item) or not self._user_confirmed(item)):
+                raise ValueError("Confirma el recuerdo antes de compartirlo.")
+            current = item.get("shared_with_profiles") or []
+            if targets != current or (targets and item.get("shared_version") != version):
+                if targets:
+                    item["shared_with_profiles"] = targets
+                    item["shared_version"] = version
+                else:
+                    item.pop("shared_with_profiles", None)
+                    item.pop("shared_version", None)
+                self._write(user_change=True)
+            return self._view(item)
 
     def _check_writable(self, session_id: str) -> None:
         if session_id in self._incognito:
@@ -596,7 +634,7 @@ class MemoryStore:
             self._check_writable(session_id)
             if supersedes:
                 old = self._items.get(str(supersedes).strip())
-                if old is None:
+                if old is None or not self._visible(old, session_id):
                     raise ValueError("El recuerdo que quieres reemplazar ya no existe")
                 if old.get("status") != "active":
                     raise ValueError("El recuerdo que quieres reemplazar no está activo")
@@ -880,6 +918,10 @@ class MemoryStore:
     ) -> JsonObject:
         with self._lock:
             item = self._items.get(item_id)
+            if item is not None and session_id is not None and self._shared_for(
+                item, session_id, profile_id, memory_scope,
+            ):
+                return {"item": self._shared_view(item), "explanation": {"why": "El usuario compartió este recuerdo."}}
             if item is None or (session_id is not None and not self._visible(
                 item, session_id, profile_id=profile_id, memory_scope=memory_scope,
             )):
@@ -1008,17 +1050,22 @@ class MemoryStore:
                profile_id: str | None = None, memory_scope: str | None = None) -> list[JsonObject]:
         words = _words(query)
         with self._lock:
+            def shared_for(item: JsonObject) -> bool:
+                return session_id is not None and self._shared_for(item, session_id, profile_id, memory_scope)
+
             eligible = [item for item in self._items.values()
-                        if item["status"] == "active" and not self._expired(item) and (session_id is None or self._visible(
-                            item, session_id, profile_id=profile_id, memory_scope=memory_scope))]
+                        if item["status"] == "active" and not self._expired(item) and (
+                            session_id is None or self._visible(item, session_id, profile_id=profile_id,
+                                                               memory_scope=memory_scope) or shared_for(item))]
             ranked = self._ranked(query, {str(item["id"]) for item in eligible}) if words else None
             if ranked is not None:
                 order = sorted(ranked, key=lambda i: (-ranked[i][0], -int(self._items[i]["updated_at"])))[:limit]
-                return [{**self._view(self._items[i]), **({"snippet": ranked[i][1]} if ranked[i][1] else {})}
+                return [(self._shared_view(self._items[i]) if shared_for(self._items[i]) else
+                         {**self._view(self._items[i]), **({"snippet": ranked[i][1]} if ranked[i][1] else {})})
                         for i in order]
             scored = []
             for item in eligible:
-                view = self._view(item)
+                view = self._shared_view(item) if shared_for(item) else self._view(item)
                 text = " ".join(str(view.get(k) or "") for k in ("title", "content", "when", "date"))
                 text += " " + " ".join(f"{s['tool']} {s['purpose']}" for s in view.get("steps") or [])
                 matches = len(words & _words(text))
@@ -1070,7 +1117,9 @@ class MemoryStore:
             words = _words(text)
             eligible: list[JsonObject] = []
             for item in self._items.values():
-                if item["status"] != "active" or self._expired(item) or not self._visible(item, session_id):
+                if item["status"] != "active" or self._expired(item) or not (
+                    self._visible(item, session_id) or self._shared_for(item, session_id)
+                ):
                     continue
                 if not private_memory and item["kind"] in ("fact", "preference", "journal"):
                     continue

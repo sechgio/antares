@@ -110,6 +110,7 @@ async function main() {
       { stopReason: 'toolUse' },
     ),
     fauxAssistantMessage('Plan anotado'),
+    fauxAssistantMessage([fauxToolCall('canvas_list', {}, { id: 'evidencia-anexo' })], { stopReason: 'toolUse' }),
     fauxAssistantMessage('Informe del hijo'),
     fauxAssistantMessage('Informe del hijo'),
   ]);
@@ -177,13 +178,20 @@ async function main() {
       console.warn = warn;
     }
 
+    await assert.rejects(tasks.delegate(
+      profile, { task: 'Repite el contrato', step_id: 'revisar' }, parent.id, apiFor('plan-cerrado', 'call-0'), {},
+    ), /paso sin completar/, 'un paso ya verificado no se vuelve a asignar');
     const delegated = await tasks.delegate(
       profile,
-      { agent: profile.id, task: 'Revisa el contrato' },
+      { agent: profile.id, task: 'Contrasta el anexo', step_id: 'contrastar' },
       parent.id,
       apiFor('plan-turno-1', 'call-1'),
       {},
     );
+    assert.equal(delegated.step_id, 'contrastar');
+    await assert.rejects(tasks.delegate(
+      profile, { task: 'Encargo duplicado', step_id: 'contrastar' }, parent.id, apiFor('plan-duplicado', 'call-0'), {},
+    ), /ya tiene una delegación en curso/, 'un segundo delegado no toma el mismo paso en paralelo');
     const child = (await sessions())[delegated.session_id];
     await tasks.startChild(child);
     const brief = JSON.stringify(await projection.allEntries(await conversation(child.id)));
@@ -192,6 +200,7 @@ async function main() {
     assert.match(brief, /1\. \[hecho\] Revisar el contrato/);
     assert.match(brief, /2\. \[en curso\] Contrastar el anexo/);
     assert.match(brief, /Sitúa tu encargo dentro de ese plan/);
+    assert.match(brief, /Tu paso asignado es «contrastar»/);
     await until(async () => !(await runtime.handlers.agent_turn_status({ session_id: child.id })).running);
 
     await state.harness.commit(async (tx) => {
@@ -251,6 +260,23 @@ async function main() {
     } finally {
       reopenedState.PlanDoc = planDoc;
     }
+    const evidencePlan = (sessionId) => ({
+      goal: 'Cerrar el trimestre',
+      steps: [{ id: 'contrastar', title: 'Contrastar el anexo', status: 'done', evidence: 'Contrato observado',
+        evidence_ref: { kind: 'tool_call', ref: 'evidencia-anexo', session_id: sessionId } }],
+    });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall('task_plan', evidencePlan(parent.id))], { stopReason: 'toolUse' }),
+      fauxAssistantMessage([fauxToolCall('task_plan', evidencePlan(child.id))], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('Evidencia incorporada'),
+    ]);
+    await runtime.handlers.agent_message_send({ session_id: parent.id, content: 'Comprueba la evidencia de la delegación' });
+    await until(async () => !(await runtime.handlers.agent_turn_status({ session_id: parent.id })).running);
+    const verifiedPlan = await messages(parent.id);
+    const evidenceCalls = verifiedPlan.messages.flatMap((message) => message.tool_calls || []).filter((call) => call.name === 'task_plan');
+    assert.equal(evidenceCalls.at(-2).status, 'failed', 'rechaza evidencia de una conversación distinta a la delegación asignada');
+    assert.equal(evidenceCalls.at(-1).status, 'done', 'puede citar una llamada observada en el delegado tras reiniciar');
+    assert.equal(verifiedPlan.plan.steps[0].evidence_ref.session_id, child.id);
 
     await runtime.handlers.agent_session_delete({ id: parent.id });
     const afterDelete = await reopenedState.harness.snapshot(reopenedState.PlanDoc, reopenedState.ctx);

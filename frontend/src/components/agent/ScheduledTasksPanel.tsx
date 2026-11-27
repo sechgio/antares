@@ -35,6 +35,7 @@ type TaskForm = {
   due: string;
   every: string;
   silent: boolean;
+  trialId?: string;
 };
 
 function pad(value: number): string {
@@ -182,6 +183,7 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
           every_minutes: every,
           silent: form.silent,
           timezone: localTimezone(),
+          ...(form.trialId ? { trial_id: form.trialId } : {}),
         });
       setForm(null);
       await load();
@@ -411,6 +413,11 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
                   onStop={(target) => void stopQueueTurn(target)}
                   onRespond={(task, response) => void respond(task, response)}
                   onVerify={(task) => void verify(task)}
+                  onScheduleTrial={(task) => setForm({
+                    kind: 'schedule', sessionId: task.session_id, trialId: task.id,
+                    content: `Ejecuta ${task.procedure_trial?.title ?? 'el procedimiento comprobado'}.`,
+                    due: toLocalInput(Date.now() + 10 * 60000), every: '1440', silent: false,
+                  })}
                 />
               )}
               {scheduled.length === 0 && queueGroups.length === 0 ? (

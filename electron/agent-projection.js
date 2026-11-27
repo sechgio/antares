@@ -304,6 +304,9 @@ async function projectMessages(conv, session) {
   }
   for (const id of ambiguousEffects) effectByCall.delete(id);
   const entries = await allEntries(conv);
+  const handoffTasks = entries.some((entry) => entry.kind === NOTICE_KIND && entry.data?.handoff)
+    ? (await shared.state.harness.snapshot(shared.state.TasksDoc, ctx()))?.tasks
+    : undefined;
   const spend = await conversationSpend(convId);
 
   const resultByCall = new Map();
@@ -351,10 +354,13 @@ async function projectMessages(conv, session) {
       continue;
     }
     if (entry.kind === NOTICE_KIND) {
+      const handoff = entry.data?.handoff;
+      const task = handoff && handoffTasks?.[handoff.task_id];
       messages.push({
         role: 'assistant',
         content: String((entry.data && entry.data.text) || ''),
         notice: true,
+        ...(handoff ? { handoff: { ...handoff, ...(task ? { status: task.status } : {}) } } : {}),
         ts: entryTs(entry, msg),
       });
       continue;

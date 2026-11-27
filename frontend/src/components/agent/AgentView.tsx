@@ -93,6 +93,7 @@ import SidebarItemMenu, {
 } from './SidebarItemMenu';
 import AgentBrowserPanel from './AgentBrowserPanel';
 import ScheduledTasksPanel from './ScheduledTasksPanel';
+import { STATUS_LABELS } from './ScheduledTaskHistory';
 import SubagentRoster from './SubagentRoster';
 import RoomRoster from './RoomRoster';
 import AgentProgress from './AgentProgress';
@@ -112,7 +113,7 @@ import {
   type TranscriptView,
 } from './AgentTimeline';
 import { activityText } from './statusPhrase';
-import { PlanCard } from './AgentPlanCard';
+import { PlanCard, type PlanEvidence } from './AgentPlanCard';
 
 const AgentFilePreview = lazy(() => import('./AgentFilePreview'));
 const POLL_MS = 1500;
@@ -295,6 +296,7 @@ export default function AgentView({
   const [sending, setSending] = useState(false);
   const sendInFlightRef = useRef(false);
   const [messagesStale, setMessagesStale] = useState(false);
+  const [pendingEvidence, setPendingEvidence] = useState<PlanEvidence | null>(null);
   const [draft, setDraft] = useState('');
   const [skills, setSkills] = useState<AgentSkill[] | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
@@ -661,8 +663,11 @@ export default function AgentView({
     [],
   );
 
+  const handoffPending = messages.some(({ handoff }) =>
+    handoff?.status === 'pending' || handoff?.status === 'delivering' ||
+    handoff?.status === 'needs_input' || handoff?.status === 'to_verify');
   useEffect(() => {
-    const active = Boolean(sessionId) && (running || pending.length > 0 || delegations.length > 0);
+    const active = Boolean(sessionId) && (running || pending.length > 0 || delegations.length > 0 || handoffPending);
     if (active && timerRef.current == null) {
       timerRef.current = window.setInterval(() => {
         void loadMessages(sessionId);
@@ -678,7 +683,7 @@ export default function AgentView({
         timerRef.current = null;
       }
     };
-  }, [sessionId, running, pending.length, delegations.length, loadMessages]);
+  }, [sessionId, running, pending.length, delegations.length, handoffPending, loadMessages]);
 
   useEffect(() => {
     if (atBottomRef.current) listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -1528,6 +1533,42 @@ export default function AgentView({
     },
     [sessionId],
   );
+  const evidenceTurn = useCallback((evidence: PlanEvidence) => (
+    evidence.kind === 'tool_call'
+      ? turns.find((turn) => turn.role === 'assistant' && turn.messages.some((message) =>
+        message.tool_calls?.some((call) => call.id === evidence.ref && call.status === 'done')))?.key
+      : [...turnArtifacts].find(([, items]) => items.some((item) => item.id === evidence.ref))?.[0]
+  ), [turns, turnArtifacts]);
+  const revealEvidence = useCallback((evidence: PlanEvidence, turnKey: number) => {
+    const turn = document.getElementById(`agent-turn-${turnKey}`);
+    const artifact = evidence.kind === 'artifact' && document.getElementById(`agent-artifact-${evidence.ref}`);
+    (artifact || turn)?.scrollIntoView({ block: 'nearest' });
+    turn?.focus({ preventScroll: true });
+  }, []);
+  useEffect(() => {
+    if (!pendingEvidence || pendingEvidence.session_id !== sessionId || messagesStale) return;
+    const turnKey = evidenceTurn(pendingEvidence);
+    if (turnKey === undefined) return;
+    revealEvidence(pendingEvidence, turnKey);
+    setPendingEvidence(null);
+  }, [pendingEvidence, sessionId, messagesStale, evidenceTurn, revealEvidence]);
+
+  const planEvidenceAction = (evidence: PlanEvidence) => {
+    const source = evidence.session_id;
+    if (source && source !== sessionId) {
+      if ((evidence.kind !== 'tool_call' && evidence.kind !== 'artifact') ||
+        !sessions.some((item) => item.id === source)) return undefined;
+      return () => {
+        setPendingEvidence(evidence);
+        selectSession(source);
+      };
+    }
+    if (evidence.kind === 'file') return () => previewResource(evidence.ref);
+    if (evidence.kind === 'url') return undefined;
+    const turnKey = evidenceTurn(evidence);
+    if (turnKey === undefined) return undefined;
+    return () => revealEvidence(evidence, turnKey);
+  };
 
   return (
     <FilePreviewContext.Provider value={previewResource}>
@@ -1970,7 +2011,7 @@ export default function AgentView({
               >
                 <Globe size={14} />
               </button>
-              <MemoryMenu />
+              <MemoryMenu profiles={profiles} sessionId={sessionId} onTrialQueued={() => setTasksOpen(true)} />
               <Button
                 ref={toolsMenu.triggerRef}
                 variant="none"
@@ -2054,9 +2095,23 @@ export default function AgentView({
                 const newDay = !!label && (!previous?.ts || dayLabel(previous.ts) !== label);
                 const results = turnArtifacts.get(turn.key);
                 return (
-                  <div key={`${sessionId}-${turn.role}-${turn.key}`} className="agent-transcript-turn space-y-4">
+                  <div key={`${sessionId}-${turn.role}-${turn.key}`} id={`agent-turn-${turn.key}`} tabIndex={-1}
+                    className="agent-transcript-turn space-y-4">
                     {newDay && <DaySeparator label={label} />}
-                    {turn.role === 'user' ? (
+                    {first.handoff ? (
+                      <div className="space-y-1 text-sm text-[var(--text-secondary)]">
+                        <p className="break-words">{first.content}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {first.handoff.status && <span className="text-xs">
+                            {first.handoff.status === 'pending' ? 'En cola' : STATUS_LABELS[first.handoff.status]}
+                          </span>}
+                          {sessions.some((item) => item.id === first.handoff?.peer_session_id) &&
+                            <Button variant="ghost" size="sm" onClick={() => {
+                              if (first.handoff) selectSession(first.handoff.peer_session_id);
+                            }}>Abrir conversación</Button>}
+                        </div>
+                      </div>
+                    ) : turn.role === 'user' ? (
                       <MessageRow msg={turn.message} />
                     ) : (
                       <AssistantTurn
@@ -2086,7 +2141,7 @@ export default function AgentView({
                 );
               })
             )}
-            {!showHero && plan && <PlanCard plan={plan} running={running && !messagesStale} />}
+            {!showHero && plan && <PlanCard plan={plan} running={running && !messagesStale} evidenceAction={planEvidenceAction} />}
             {pending.map((a) => (
               <div key={a.id} id={`agent-approval-${a.id}`}>
                 <ApprovalCard
@@ -2099,12 +2154,14 @@ export default function AgentView({
               </div>
             ))}
             {turnArtifacts.has(-1) && (
-              <ArtifactList
-                artifacts={turnArtifacts.get(-1) ?? []}
-                sessionId={sessionId}
-                onRefresh={() => void loadMessages(sessionId, false)}
-                onOpenModule={onOpenModule}
-              />
+              <div id="agent-turn--1" tabIndex={-1}>
+                <ArtifactList
+                  artifacts={turnArtifacts.get(-1) ?? []}
+                  sessionId={sessionId}
+                  onRefresh={() => void loadMessages(sessionId, false)}
+                  onOpenModule={onOpenModule}
+                />
+              </div>
             )}
             {questionTurn === null && questions.map((question) => (
               <div key={question.id}>

@@ -1,8 +1,8 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const { shared, ctx, conversation, requireSession, sessions, validation, wakeWaiters, bridge } = require('./agent-shared');
-const { isActiveTask, pruneTasks, recordRun, transition, NEEDS_INPUT, unmarked, lastAnswerText, taskOutcome, MAX_QUESTION_CHARS, MAX_TASK_CONTINUATIONS, submitContinuation } = require('./agent-task-utils');
+const { shared, ctx, conversation, requireSession, sessions, validation, wakeWaiters, bridge, readPlan } = require('./agent-shared');
+const { isActiveTask, pruneTasks, recordRun, transition, unmarked, latestTaskOutcome, submissionOutcome, MAX_QUESTION_CHARS, MAX_TASK_CONTINUATIONS, submitContinuation, TASK_REPORT_TOOL, TASK_REPORT_PROMPT } = require('./agent-task-utils');
 const queue = require('./agent-queue');
 const { promotable } = require('./agent-compaction');
 
@@ -170,19 +170,14 @@ const TOOL = {
   gated: true,
   replay_safe: true,
   description:
-    'Gestiona encargos propios de esta conversación solo cuando el usuario lo pide. Antares debe seguir ' +
-    'abierto, incluida la bandeja; al volver a abrir recupera los pendientes. No concede permisos ni acceso a archivos. ' +
-    'Sus acciones con efecto requieren aprobación; action=list es solo lectura. ' +
-    'action=create requiere content y due_at ISO 8601 con zona horaria; every_minutes permite repetición. ' +
-    'Si el encargo operará apps de Windows, declara apps con los alias permitidos (notepad, calc, mspaint, ' +
-    'explorer, cmd, powershell, control, taskmgr; máximo 8): mientras se ejecuta solo, solo esas apps se manejan ' +
-    '(hasta 25 acciones con efecto) y las concesiones de app de la conversación no aplican; sin apps declaradas, ' +
-    'las acciones sobre apps esperan la aprobación humana como siempre. ' +
-    'action=enqueue añade content a una cola FIFO por conversación que se ejecuta en orden, un encargo a la vez, ' +
-    'cuando el turno actual termina. action=pause y action=resume pausan o reanudan esa cola entre encargos. ' +
-    'action=list consulta encargos y estado de la cola; action=cancel cancela uno por id. ' +
-    'agent dirige el encargo o el trigger a otro agente (id o nombre único): corre con sus reglas y permisos. ' +
-    'No encoles trabajo por iniciativa propia ni para sortear aprobaciones.',
+    'Gestiona encargos solicitados por el usuario. Requiere Antares abierto (bandeja incluida) y recupera pendientes al abrir. ' +
+    'No concede permisos ni acceso a archivos. list consulta encargos y cola; las demás acciones requieren aprobación. ' +
+    'create: content y due_at ISO 8601 con zona horaria, o trigger; every_minutes repite. ' +
+    'enqueue: content, cola FIFO por conversación tras el turno actual; pause/resume entre encargos; cancel por id. ' +
+    'agent (id o nombre único) dirige el encargo al agente destino, con sus reglas y permisos. ' +
+    'apps limita la ejecución autónoma a notepad, calc, mspaint, explorer, cmd, powershell, control o taskmgr ' +
+    '(hasta 8 apps y 25 efectos). Ignora concesiones previas de apps. Sin apps, pide aprobación. ' +
+    'Nunca encoles por iniciativa propia ni para eludir aprobaciones.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -238,6 +233,7 @@ const DELEGATE_TOOL = {
     properties: {
       agent: { type: 'string' },
       task: { type: 'string', minLength: 1, maxLength: 4000 },
+      step_id: { type: 'string', description: 'ID del paso asignado en el plan principal, si existe' },
       exclude_tools: { type: 'array', items: { type: 'string' }, description: 'Herramientas que el hijo no debe usar' },
       done_when: {
         type: 'string',
@@ -409,13 +405,24 @@ function lineageOf(api, parent, previous) {
   };
 }
 
-async function resumeDelegation({ profile, role, task, resumeId, sessionId, parent, doneWhen, continuation, api }) {
+function assertStepAvailable(map, parentId, stepId, childId) {
+  if (!stepId) return;
+  const assigned = Object.values(map).some((session) =>
+    !session.deleted && session.id !== childId && session.delegation?.parent_session_id === parentId &&
+    session.delegation.step_id === stepId && ACTIVE_DELEGATION.has(session.delegation.status));
+  if (assigned) throw validation(`El paso «${stepId}» ya tiene una delegación en curso`);
+}
+
+async function resumeDelegation({ profile, role, task, resumeId, sessionId, parent, doneWhen, continuation, api, stepId }) {
   const child = await requireDelegation(sessionId, resumeId);
   if (ACTIVE_DELEGATION.has(child.delegation.status)) {
     throw validation('La delegación sigue en marcha; usa agent_message para ampliar su encargo');
   }
   if (!child.profile || child.profile.id !== profile.id) {
     throw validation('Solo puedes retomar la delegación con el mismo agente que la recibió');
+  }
+  if (stepId && child.delegation.step_id !== stepId) {
+    throw validation('Crea otra delegación para asignar un paso diferente');
   }
   const previous = child.delegation.continuation;
   const next =
@@ -435,11 +442,13 @@ async function resumeDelegation({ profile, role, task, resumeId, sessionId, pare
   const live = await state.harness.snapshot(shared.deps.pi.LiveDoc, parent.conversationId, ctx());
   const batch = live?.run?.taskId ? String(live.run.taskId) : '';
   const status = await state.harness.commit(async (tx) => {
-    const current = (await tx.doc(state.SessionsDoc)).sessions[child.id];
+    const doc = await tx.doc(state.SessionsDoc);
+    const current = doc.sessions[child.id];
     if (!current || current.deleted || !current.delegation || current.delegation.parent_session_id !== sessionId)
       return 'missing';
     if (ACTIVE_DELEGATION.has(current.delegation.status)) return 'active';
     if (!current.profile || current.profile.id !== profile.id) return 'agent';
+    assertStepAvailable(doc.sessions, sessionId, current.delegation.step_id, child.id);
     current.delegation = {
       ...current.delegation,
       content: task,
@@ -476,6 +485,7 @@ async function resumeDelegation({ profile, role, task, resumeId, sessionId, pare
     role,
     depth: Number(child.delegation.depth ?? MAX_DELEGATION_DEPTH),
     status: 'pending',
+    ...(child.delegation.step_id ? { step_id: child.delegation.step_id } : {}),
     ...lineage,
   };
 }
@@ -505,9 +515,20 @@ async function delegate(profile, args, sessionId, api, context) {
     throw validation('Indica la conversación de la delegación que quieres retomar');
   }
   const resumeId = typeof args.resume === 'string' ? args.resume.trim() : '';
+  const stepId = typeof args.step_id === 'string' ? args.step_id.trim() : '';
+  if (args.step_id !== undefined) {
+    const steps = (await readPlan(sessionId))?.steps || [];
+    const step = stepId && steps.find((item) => item.id === stepId);
+    if (!step || step.status === 'done') throw validation('Indica el ID de un paso sin completar del plan principal');
+    const completed = new Set(steps.filter((item) => item.status === 'done')
+      .flatMap((item) => [item.id, item.title].filter(Boolean).map((key) => key.toLowerCase())));
+    if (step.dependencies?.some((dependency) => !completed.has(dependency.toLowerCase()))) {
+      throw validation(`Completa primero las dependencias del paso «${stepId}»`);
+    }
+  }
   if (resumeId && args.fork === true) throw validation('resume ya conserva el contexto; no lo combines con fork');
   if (resumeId) {
-    return resumeDelegation({ profile, role, task, resumeId, sessionId, parent, doneWhen, continuation, api });
+    return resumeDelegation({ profile, role, task, resumeId, sessionId, parent, doneWhen, continuation, api, stepId });
   }
   const parentDepth = parent.delegation ? Number(parent.delegation.depth ?? MAX_DELEGATION_DEPTH) : 0;
   const depth = parentDepth + 1;
@@ -531,7 +552,7 @@ async function delegate(profile, args, sessionId, api, context) {
         (!allows || allows(tool.name)) &&
         !excluded.has(tool.name),
     );
-    tools.push(WAKE_TOOL, require('./agent-rooms').TOOL);
+    tools.push(WAKE_TOOL, require('./agent-rooms').TOOL, TASK_REPORT_TOOL);
     const now = Date.now();
     const origin = userRequest(await require('./agent-projection').allEntries(await conversation(sessionId)));
     const live = await state.harness.snapshot(shared.deps.pi.LiveDoc, parent.conversationId, ctx());
@@ -576,6 +597,7 @@ async function delegate(profile, args, sessionId, api, context) {
       init: async (tx, conversationId) => {
         const doc = await tx.doc(state.SessionsDoc);
         if (doc.sessions[id]) throw validation('El encargo ya está registrado');
+        assertStepAvailable(doc.sessions, sessionId, stepId, id);
         doc.sessions[id] = {
           id,
           conversationId,
@@ -596,6 +618,7 @@ async function delegate(profile, args, sessionId, api, context) {
             depth,
             delivery: { state: 'pending', attempts: 0 },
             ...lineage,
+            ...(stepId ? { step_id: stepId } : {}),
             ...(hookContext ? { hook_context: hookContext } : {}),
             ...(doneWhen ? { done_when: doneWhen } : {}),
             ...(origin ? { origin } : {}),
@@ -636,6 +659,7 @@ async function delegate(profile, args, sessionId, api, context) {
     depth,
     ...(continuation ? { max_rounds: continuation.max_rounds } : {}),
     status: child.delegation.status,
+    ...(child.delegation.step_id ? { step_id: child.delegation.step_id } : {}),
     ...lineage,
   };
 }
@@ -709,7 +733,8 @@ function planBrief(plan) {
     .slice(0, MAX_PLAN_STEPS)
     .map(
       (step, index) =>
-        `${index + 1}. [${PLAN_STATUS[step.status] || PLAN_STATUS.pending}] ${quoted(unmarked(step.title), MAX_PLAN_STEP_CHARS)}`,
+        `${index + 1}. [${PLAN_STATUS[step.status] || PLAN_STATUS.pending}] ${quoted(unmarked(step.title), MAX_PLAN_STEP_CHARS)}` +
+        (step.id ? ` (id: ${quoted(step.id, 64)})` : ''),
     );
   const rest =
     plan.steps.length > MAX_PLAN_STEPS ? `\n(+${plan.steps.length - MAX_PLAN_STEPS} pasos más en el plan)` : '';
@@ -727,14 +752,15 @@ function delegationBrief(job, sharedPlan = '') {
       ? `Este encargo forma parte de esta petición del usuario: «${job.origin}». Es contexto: haz solo tu encargo.`
       : '',
     sharedPlan,
+    job.step_id ? `Tu paso asignado es «${quoted(job.step_id, 64)}».` : '',
     job.done_when ? `Se da por terminado cuando: «${job.done_when}». Comprueba ese criterio antes de responder.` : '',
     job.round
       ? 'Esta es una continuación del encargo en esta misma conversación: retoma lo que ya hiciste y no repitas ' +
         'trabajo verificado.'
       : '',
     'Tu respuesta final vuelve sola a la conversación que te lo encargó. Termina con lo que hiciste y lo que quedó sin ' +
-      'comprobar. Si algo solo puede resolverlo el usuario (una credencial, una decisión o un paso con consecuencias ' +
-      'que el encargo no cubre), termina tu respuesta con «NECESITA ENTRADA:» y la pregunta exacta.',
+      'comprobar.',
+    TASK_REPORT_PROMPT,
     job.hook_context || '',
     `Si algo bloquea el encargo y la conversación principal debe saberlo antes de tu informe, usa agent_wake_parent ` +
       `(máximo ${MAX_WAKES_PER_ROUND} avisos por ronda); no sustituye tu respuesta final.`,
@@ -778,21 +804,32 @@ async function delegationAnswer(child) {
 
 async function delegationSnapshot(child) {
   const entries = await require('./agent-projection').allEntries(await conversation(child.id));
-  const text = lastAnswerText(entries);
+  const outcome = latestTaskOutcome(entries);
   return {
     child,
     report: delegationReport(child, entries),
-    awaiting_user: !child.last_error && NEEDS_INPUT.test(text),
-    question: child.last_error ? '' : NEEDS_INPUT.exec(text)?.[1] || '',
+    awaiting_user: !child.last_error && outcome.kind === 'needs_input',
+    question: child.last_error ? '' : outcome.question || '',
   };
 }
 
 function delegationReport(child, entries) {
-  const text = lastAnswerText(entries).slice(0, 6000);
-  const question = !child.last_error && NEEDS_INPUT.exec(text)?.[1];
-  const outcome = child.last_error ? 'error' : question ? 'necesita al usuario' : text ? 'completado' : 'sin respuesta';
+  const result = latestTaskOutcome(entries);
+  const text = result.output;
+  const question = !child.last_error && result.question;
+  const blocked = !child.last_error && result.reason;
+  const outcome = child.last_error ? 'error' : question ? 'necesita al usuario' : blocked ? 'bloqueado' : text ? 'completado' : 'sin respuesta';
   const name = child.profile?.name || 'delegado';
   const lines = [`Informe de «${name}»: ${outcome}.`, delegationEvidence(entries)];
+  if (child.delegation?.step_id) {
+    const ids = entries.flatMap((entry) => {
+      const result = entry.model?.[0];
+      return entry.kind === 'pi.tool-result' && result && !result.isError && result.toolName !== TASK_REPORT_TOOL.name
+        ? [quoted(result.toolCallId, 120)] : [];
+    }).slice(-REPORT_TOOLS_SHOWN);
+    lines.push(`Paso asignado: «${quoted(child.delegation.step_id, 64)}».`);
+    if (ids.length) lines.push(`Llamadas observadas: ${ids.join(', ')}. Al citarlas en el plan, usa session_id=${child.id}.`);
+  }
   if (child.delegation?.done_when)
     lines.push(`Criterio de terminado pedido: «${child.delegation.done_when}»; compruébalo con la evidencia.`);
   if (question) {
@@ -801,6 +838,7 @@ function delegationReport(child, entries) {
         `responde en la conversación ${child.id} y nada de ese encargo avanza mientras tanto.`,
     );
   }
+  if (blocked) lines.push(`Motivo: ${quoted(blocked, ORIGIN_MAX)}`);
   lines.push(
     child.last_error
       ? `Error: ${unmarked(child.last_error)}`
@@ -937,7 +975,7 @@ async function readTranscript(args, sessionId) {
     agent: child.profile?.name || 'delegado',
     status: child.delegation?.status || '',
     messages: recent,
-    awaiting_user: NEEDS_INPUT.test(turns.at(-1) || ''),
+    awaiting_user: latestTaskOutcome(entries).kind === 'needs_input',
     truncated: turns.length > recent.length,
   };
 }
@@ -1404,7 +1442,7 @@ async function schedule(args, sessionId, api) {
   if (args.action === 'enqueue') {
     const target =
       args.agent !== undefined ? await require('./agent-profiles').resolveTargetSession(args.agent) : null;
-    return queue.enqueue(args.content, target ? target.id : sessionId, api?.taskId, session.conversationId);
+    return queue.enqueue(args.content, target ? target.id : sessionId, api?.taskId, session);
   }
   if (args.action === 'pause') return queue.setQueuePaused(sessionId, true);
   if (args.action === 'resume') return queue.setQueuePaused(sessionId, false);
@@ -1506,6 +1544,7 @@ async function schedule(args, sessionId, api) {
       if (!task || task.session_id !== sessionId) throw validation('El encargo programado no existe');
       if (task.status !== 'pending') throw validation('Solo puedes editar encargos pendientes');
       if (hasInterval) checkRoutines(doc, task.id);
+      if (task.trial_id && task.content !== content) delete task.trial_id;
       task.content = content;
       if (!task.trigger) task.due_at = dueAt;
       if (hasInterval) task.interval_ms = (interval || 0) * 60000;
@@ -1538,6 +1577,7 @@ async function schedule(args, sessionId, api) {
       runs: [],
       ...(apps ? { apps } : {}),
       ...(target ? { target_session_id: target.id } : {}),
+      ...(api?.byUser && args.trial_id ? { trial_id: args.trial_id } : {}),
     };
     doc.tasks[id] = task;
     return { scheduled: task };
@@ -1551,16 +1591,50 @@ async function listTasks(params = {}) {
   return queue.listTasks(params, ensureReconciled);
 }
 
+async function procedureFor(session, id, version) {
+  const profile = await require('./agent-execution').sessionProfile(session);
+  if (session.incognito || profile?.memory_scope === 'none') throw validation('Esta conversación no usa memoria');
+  const { item } = await bridge('agent_memory_explain', { id });
+  if (item.kind !== 'procedure' || item.status !== 'active' || item.version !== version ||
+      (item.profile_id ? item.profile_id !== session.profile?.id : profile?.memory_scope === 'own')) {
+    throw validation('El procedimiento cambió o no está disponible para este agente');
+  }
+  const steps = item.steps.map((step, index) => `${index + 1}. ${quoted(step.tool, 120)}: ${quoted(step.purpose, 500)}`);
+  return {
+    receipt: { id: item.id, version: item.version, title: item.title },
+    text: [`Procedimiento «${quoted(item.title, 120)}» (v${item.version}).`, `Cuándo: ${quoted(item.when, 500)}`, ...steps].join('\n'),
+  };
+}
+
 async function saveTask(params = {}) {
   const sessionId = String(params.session_id || '');
   const session = await requireSession(sessionId);
   if (params.kind === 'queue') {
     if (params.id) throw validation('Un encargo en cola no se puede editar; cancélalo y crea otro');
+    if (params.trial_id) throw validation('Usa una prueba verificada al programar una rutina');
+    if (params.procedure_id) {
+      if (params.agent !== undefined) throw validation('Prueba el procedimiento en su conversación');
+      const sample = typeof params.content === 'string' ? params.content.trim() : '';
+      if (!sample) throw validation('Indica un caso concreto para la prueba');
+      const procedure = await procedureFor(session, params.procedure_id, params.procedure_version);
+      return queue.enqueue(`${procedure.text}\nCaso de prueba: ${sample}`, sessionId, crypto.randomUUID(), session, procedure.receipt);
+    }
     const target =
       params.agent !== undefined ? await require('./agent-profiles').resolveTargetSession(params.agent) : null;
-    return queue.enqueue(params.content, target ? target.id : sessionId, crypto.randomUUID(), session.conversationId);
+    return queue.enqueue(params.content, target ? target.id : sessionId, crypto.randomUUID(), session);
   }
   if (params.kind !== undefined && params.kind !== 'schedule') throw validation('Tipo de encargo no válido');
+  if (params.procedure_id || params.procedure_version) throw validation('Primero añade la prueba a la cola');
+  if (params.trial_id) {
+    const { harness, TasksDoc } = shared.state;
+    const trial = (await harness.snapshot(TasksDoc, ctx()))?.tasks?.[params.trial_id];
+    if (params.id || params.agent !== undefined || trial?.session_id !== sessionId ||
+        trial.status !== 'delivered' || !trial.procedure_trial) {
+      throw validation('Verifica la prueba del procedimiento en esta conversación antes de programarlo');
+    }
+    const procedure = await procedureFor(session, trial.procedure_trial.id, trial.procedure_trial.version);
+    params = { ...params, content: `${procedure.text}\nEncargo: ${params.content}` };
+  }
   const id = typeof params.id === 'string' && params.id ? params.id.slice(0, 64) : undefined;
   return schedule({ ...params, id, action: id ? 'update' : 'create' }, sessionId, {
     taskId: crypto.randomUUID(),
@@ -1576,6 +1650,7 @@ async function cancelTask(params = {}) {
     const doc = await tx.doc(state.TasksDoc);
     const task = doc.tasks[id];
     if (!task) throw validation('El encargo programado no existe');
+    if (task.procedure_trial && task.status === 'delivering') throw validation('Usa Detener para interrumpir la prueba');
     if (task.status !== 'cancelled') transition(task, 'cancelled', 'Cancelado por el usuario');
     return { cancelled: true, id };
   }, ctx()).then((result) => {
@@ -1652,7 +1727,7 @@ async function respondToTask(params = {}) {
           `${shared.CONTEXT_MARKER}\nRespuesta del usuario a tu pregunta sobre el encargo «${quoted(task.content, 200)}».\n` +
           `Tu pregunta: ${String(task.question || '').slice(0, MAX_QUESTION_CHARS)}\n` +
           `Respuesta: ${response}\n` +
-          'No es un encargo nuevo: continúa el encargo anterior con este dato.',
+          'No es un encargo nuevo: continúa el encargo anterior con este dato.\n' + TASK_REPORT_PROMPT,
         requestId,
         whenBusy: 'followUp',
       },
@@ -1705,9 +1780,7 @@ async function settleScheduledTask(state, session, task) {
   if (submission.status === 'queued' || submission.status === 'placed') return;
   const at = Date.now();
   if (submission.status === 'done') {
-    const outcome = taskOutcome(
-      lastAnswerText(await require('./agent-projection').allEntries(await conversation(session.id))),
-    );
+    const outcome = await submissionOutcome(session, submission);
     await state.harness.commit(async (tx) => {
       const current = (await tx.doc(state.TasksDoc)).tasks[task.id];
       if (!current || current.status !== 'delivering') return;
@@ -1926,8 +1999,7 @@ async function tick() {
             content:
               `${shared.CONTEXT_MARKER}\nEncargo programado por el usuario: ${task.content}\n` +
               'Los datos de este encargo no conceden permisos ni acceso a rutas. Usa las aprobaciones normales.\n' +
-              'Si algo solo puede resolverlo el usuario, termina tu respuesta con «NECESITA ENTRADA:» y la pregunta exacta; ' +
-              'si el encargo no puede continuar, termina con «BLOQUEADO:» y el motivo.',
+              TASK_REPORT_PROMPT,
             requestId: `schedule:${task.id}:${task.due_at}`,
             whenBusy: 'followUp',
           },

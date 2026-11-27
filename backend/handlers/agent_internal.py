@@ -901,6 +901,15 @@ def _memory_update(params: JsonObject) -> JsonObject:
 
 
 @with_locale
+@validate_params("id", "version", "profile_ids")
+def _memory_share(params: JsonObject) -> JsonObject:
+    try:
+        return {"item": _memory().share(str(params["id"]), params["version"], params["profile_ids"])}
+    except ValueError as err:
+        raise ValidationError(str(err)) from err
+
+
+@with_locale
 @validate_params("id")
 def _memory_explain(params: JsonObject) -> JsonObject:
     try:
@@ -1022,6 +1031,7 @@ HANDLERS = {
     "agent_skill_create": _skill_create,
     "agent_internal_skill_resolve": _skill_resolve,
     "agent_memory_update": _memory_update,
+    "agent_internal_memory_share": _memory_share,
     "agent_memory_explain": _memory_explain,
     "agent_memory_delete": _memory_delete,
 }

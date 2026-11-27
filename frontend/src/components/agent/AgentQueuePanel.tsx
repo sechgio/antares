@@ -77,7 +77,7 @@ export function TaskReplyBox({ question, busy, onSubmit }: {
   );
 }
 
-export default function AgentQueuePanel({ groups, sessions, busy, onToggle, onCancel, onStop, onRespond, onVerify }: {
+export default function AgentQueuePanel({ groups, sessions, busy, onToggle, onCancel, onStop, onRespond, onVerify, onScheduleTrial }: {
   groups: AgentQueueGroup[];
   sessions: AgentSession[];
   busy: string | null;
@@ -86,6 +86,7 @@ export default function AgentQueuePanel({ groups, sessions, busy, onToggle, onCa
   onStop: (sessionId: string) => void;
   onRespond: (task: AgentTask, response: string) => void;
   onVerify: (task: AgentTask) => void;
+  onScheduleTrial?: (task: AgentTask) => void;
 }) {
   return (
     <section className="mb-4 space-y-2" aria-label="Cola de trabajo">
@@ -147,6 +148,10 @@ export default function AgentQueuePanel({ groups, sessions, busy, onToggle, onCa
                         onClick={() => onVerify(task)}>
                         <Check size={11} /> Verificado
                       </Button>
+                    )}
+                    {task.status === 'delivered' && task.procedure_trial && onScheduleTrial && (
+                      <Button variant="ghost" size="sm" disabled={busy !== null}
+                        onClick={() => onScheduleTrial(task)}>Programar rutina</Button>
                     )}
                     {task.status === 'needs_input' && (
                       <TaskReplyBox question={task.question} busy={busy !== null}

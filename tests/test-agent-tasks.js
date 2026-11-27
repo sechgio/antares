@@ -879,14 +879,23 @@ async function routedEncargos() {
       /no tiene una conversación abierta/,
     );
 
-    const queued = await runtime.handlers.agent_tasks_save({
-      session_id: origin.id, kind: 'queue', content: 'En cola al destino', agent: 'Destino',
-    });
+    const enqueue = { action: 'enqueue', content: 'En cola al destino', agent: 'Destino' };
+    const call = { taskId: 'routed-handoff' };
+    const queued = await tasks.schedule(enqueue, origin.id, call);
+    const retried = await tasks.schedule(enqueue, origin.id, call);
+    assert.equal(retried.scheduled.id, queued.scheduled.id, 'reintentar conserva el mismo encargo');
     assert.equal(queued.scheduled.session_id, dest.id, 'el encargo en cola aterriza en la cola del destino');
     const destListing = await runtime.handlers.agent_tasks_list({ session_id: dest.id });
     assert.ok(destListing.tasks.some((task) => task.kind === 'queue' && task.content === 'En cola al destino'));
     const originListing = await runtime.handlers.agent_tasks_list({ session_id: origin.id });
     assert.ok(!originListing.tasks.some((task) => task.kind === 'queue'), 'la cola del origen no recibe el encargo dirigido');
+    for (const [current, peer] of [[origin, dest], [dest, origin]]) {
+      const { messages } = await runtime.handlers.agent_messages_list({ session_id: current.id });
+      const notices = messages.filter((message) => message.handoff?.task_id === queued.scheduled.id);
+      assert.equal(notices.length, 1, 'cada historial muestra una referencia al mismo encargo');
+      assert.equal(notices[0].handoff.peer_session_id, peer.id);
+      assert.ok(notices[0].handoff.status);
+    }
 
     const fuente = await runtime.handlers.agent_tasks_save({ session_id: origin.id, content: 'Tarea origen', due_at: future });
     const chained = await runtime.handlers.agent_tasks_save({
