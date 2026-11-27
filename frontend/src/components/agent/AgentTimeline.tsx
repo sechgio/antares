@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppWindow, ArrowLeft, ArrowRight, Ban, BookOpen, Camera, ChevronDown, ChevronRight, CircleCheck, Download, FilePen, FileText, FolderOpen, Globe, Hand, Keyboard, ListChecks, Loader2, Monitor, Mouse, Move, MousePointerClick, Network, Package, Plug, RotateCw, Search, ShieldCheck, Terminal, TriangleAlert, Upload, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { agentApi, AgentApproval, AgentArtifact, AgentChannel, AgentMessage, AgentPanel, AgentQuestion, AgentToolCall } from '../../api/agentApi';
@@ -715,7 +715,7 @@ function TurnChanges({ calls }: { calls: AgentToolCall[] }) {
   );
 }
 
-export function AssistantTurn({ messages, agent, onUndo, startedAt, results, view = 'normal', panels = [], pendingQuestions, sessionId, onPanelRespond, hideReasoning = false }: {
+type AssistantTurnProps = {
   messages: AgentMessage[];
   panels?: AgentPanel[];
   pendingQuestions?: { items: AgentQuestion[]; onAnswered: () => void };
@@ -727,7 +727,9 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
   startedAt?: number;
   results?: ReactNode;
   hideReasoning?: boolean;
-}) {
+};
+
+function AssistantTurnView({ messages, agent, onUndo, startedAt, results, view = 'normal', panels = [], pendingQuestions, sessionId, onPanelRespond, hideReasoning = false }: AssistantTurnProps) {
   const last = messages[messages.length - 1];
   const answer = last?.content && (!last.tool_calls?.length || last.tool_calls.some((call) => call.name === 'ask_user')) ? last : null;
   const entries: ActivityEntry[] = [];
@@ -777,7 +779,34 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
   );
 }
 
-export function MessageRow({ msg, agent, onUndo }: {
+function sameItems<T>(left: readonly T[] | undefined, right: readonly T[] | undefined): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((item, index) => item === right[index]);
+}
+
+function sameAgent(left: AgentIdentity | undefined, right: AgentIdentity | undefined): boolean {
+  return left === right || (!!left && !!right && left.seed === right.seed && left.name === right.name && left.color === right.color);
+}
+
+function sameAssistantTurn(prev: AssistantTurnProps, next: AssistantTurnProps): boolean {
+  return sameItems(prev.messages, next.messages)
+    && sameItems(prev.panels, next.panels)
+    && sameItems(prev.pendingQuestions?.items, next.pendingQuestions?.items)
+    && prev.pendingQuestions?.onAnswered === next.pendingQuestions?.onAnswered
+    && prev.sessionId === next.sessionId
+    && prev.onPanelRespond === next.onPanelRespond
+    && prev.view === next.view
+    && sameAgent(prev.agent, next.agent)
+    && prev.onUndo === next.onUndo
+    && prev.startedAt === next.startedAt
+    && prev.results === next.results
+    && prev.hideReasoning === next.hideReasoning;
+}
+
+export const AssistantTurn = memo(AssistantTurnView, sameAssistantTurn);
+
+function MessageRowView({ msg, agent, onUndo }: {
   msg: AgentMessage;
   agent?: AgentIdentity;
   onUndo?: (callId: string) => Promise<void>;
@@ -785,6 +814,9 @@ export function MessageRow({ msg, agent, onUndo }: {
   if (msg.role === 'tool_result') return null;
   return msg.role === 'user' ? <UserBubble msg={msg} /> : <AssistantTurn messages={[msg]} agent={agent} onUndo={onUndo} />;
 }
+
+export const MessageRow = memo(MessageRowView, (prev, next) =>
+  prev.msg === next.msg && sameAgent(prev.agent, next.agent) && prev.onUndo === next.onUndo);
 
 export function ApprovalCard({
   approval,

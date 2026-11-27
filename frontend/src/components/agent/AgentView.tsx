@@ -182,6 +182,52 @@ type ConversationAttention = { key: string; text: string } & (
   | { kind: 'item'; target: string; action: string }
 );
 
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right)
+      && left.length === right.length
+      && left.every((item, index) => sameJsonValue(item, right[index]));
+  }
+  if (left && right && typeof left === 'object' && typeof right === 'object') {
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    return leftKeys.length === rightKeys.length
+      && leftKeys.every((key) =>
+        Object.prototype.hasOwnProperty.call(right, key)
+        && sameJsonValue((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key]));
+  }
+  return false;
+}
+
+function sameMessage(left: AgentMessage, right: AgentMessage): boolean {
+  return left.id === right.id
+    && left.role === right.role
+    && left.content === right.content
+    && left.reasoning === right.reasoning
+    && left.reasoning_ms === right.reasoning_ms
+    && left.tool_use_id === right.tool_use_id
+    && left.name === right.name
+    && left.ts === right.ts
+    && left.partial === right.partial
+    && left.notice === right.notice
+    && sameJsonValue(left.attachments, right.attachments)
+    && sameJsonValue(left.tool_calls, right.tool_calls)
+    && sameJsonValue(left.handoff, right.handoff);
+}
+
+export function reuseMessages(previous: AgentMessage[], next: AgentMessage[]): AgentMessage[] {
+  let reused = 0;
+  const messages = next.map((message, index) => {
+    const current = previous[index];
+    if (current && sameMessage(current, message)) {
+      reused += 1;
+      return current;
+    }
+    return message;
+  });
+  return reused === next.length && previous.length === next.length ? previous : messages;
+}
 
 function newRequestId(): string {
   return crypto.randomUUID();
@@ -578,7 +624,7 @@ export default function AgentView({
             const historical = first !== undefined && loadedEarlier.current
               ? previous.filter((message) => message.id !== undefined && message.id < first)
               : [];
-            return [...historical, ...res.messages];
+            return reuseMessages(previous, [...historical, ...res.messages]);
           });
           if (!loadedEarlier.current) setBefore(res.before ?? null);
           transcriptRevision.current = res.revision ?? null;
@@ -616,6 +662,10 @@ export default function AgentView({
     },
     [addToast],
   );
+
+  const reloadVisibleMessages = useCallback(() => {
+    if (sessionId) void loadMessages(sessionId, false);
+  }, [sessionId, loadMessages]);
 
   const {
     items: progress,
@@ -912,7 +962,7 @@ export default function AgentView({
       setPermissionsBusy(false);
     }
   };
-  const undoEffect = async (callId: string) => {
+  const undoEffect = useCallback(async (callId: string) => {
     const id = sessionId;
     if (!id) return;
     try {
@@ -922,7 +972,7 @@ export default function AgentView({
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo deshacer la acción'), type: 'error' });
     }
-  };
+  }, [sessionId, addToast, loadMessages]);
   const changeReasoning = async (effort: AgentReasoningEffort) => {
     if (!sessionId || reasoningBusy) return;
     setReasoningBusy(true);
@@ -1632,6 +1682,14 @@ export default function AgentView({
       addToast({ message: errorMessage(err, 'No se pudo enviar tu respuesta'), type: 'error' });
     }
   };
+  const respondPanelRef = useRef(respondPanel);
+  useEffect(() => {
+    respondPanelRef.current = respondPanel;
+  }, [respondPanel]);
+  const respondPanelStable = useCallback(
+    (panel: AgentPanel, response: AgentPanelResponse) => respondPanelRef.current(panel, response),
+    [],
+  );
 
   const cancelTurn = async () => {
     if (!sessionId) return;
@@ -1694,9 +1752,12 @@ export default function AgentView({
 
   const showHero = !sessionId || (messagesSessionId === sessionId && messages.length === 0);
   const activeProfile = session?.profile ? (profiles.find((item) => item.id === session.profile?.id) ?? null) : null;
-  const agentIdentity = session
-    ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? 'Antares', color: activeProfile?.color }
-    : undefined;
+  const agentIdentity = useMemo(
+    () => (session
+      ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? 'Antares', color: activeProfile?.color }
+      : undefined),
+    [session, activeProfile],
+  );
 
   const changeModel = async (next: { provider: string; model: string }) => {
     if (modelBusy || running || pending.length > 0) return;
@@ -2350,15 +2411,15 @@ export default function AgentView({
                         view={visibleTranscriptView}
                         hideReasoning={hideReasoning}
                         panels={turnPanels.get(turn.key)}
-                        pendingQuestions={turn.key === questionTurn ? { items: questions, onAnswered: () => void loadMessages(sessionId, false) } : undefined}
+                        pendingQuestions={turn.key === questionTurn ? { items: questions, onAnswered: reloadVisibleMessages } : undefined}
                         sessionId={sessionId}
-                        onPanelRespond={respondPanel}
+                        onPanelRespond={respondPanelStable}
                         results={
                           results && (
                             <ArtifactList
                               artifacts={results}
                               sessionId={sessionId}
-                              onRefresh={() => void loadMessages(sessionId, false)}
+                              onRefresh={reloadVisibleMessages}
                               onOpenModule={onOpenModule}
                             />
                           )
@@ -2386,14 +2447,14 @@ export default function AgentView({
                 <ArtifactList
                   artifacts={turnArtifacts.get(-1) ?? []}
                   sessionId={sessionId}
-                  onRefresh={() => void loadMessages(sessionId, false)}
+                  onRefresh={reloadVisibleMessages}
                   onOpenModule={onOpenModule}
                 />
               </div>
             )}
             {questionTurn === null && questions.map((question) => (
               <div key={question.id}>
-                <QuestionCard question={question} onAnswered={() => void loadMessages(sessionId, false)} />
+                <QuestionCard question={question} onAnswered={reloadVisibleMessages} />
               </div>
             ))}
           </div>

@@ -1,9 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { agentApi, type AgentApproval, type AgentPanel, type AgentPermissionMode, type AgentReasoningEffort, type AgentSession } from '../../api/agentApi';
+import { agentApi, type AgentApproval, type AgentMessage, type AgentPanel, type AgentPermissionMode, type AgentReasoningEffort, type AgentSession } from '../../api/agentApi';
 import { aiProvidersApi, type AiProviderSpec } from '../../api/aiProvidersApi';
 import { mcpApi } from '../../api/mcpApi';
-import AgentView from './AgentView';
+import AgentView, { reuseMessages } from './AgentView';
 import { thinkingPhrase } from './statusPhrase';
 
 const { addToast, confirm } = vi.hoisted(() => ({ addToast: vi.fn(), confirm: vi.fn() }));
@@ -1070,17 +1070,45 @@ it('aplica un tramo consecutivo en vivo y reconcilia al perder una revisión', a
   const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValueOnce({
     ...empty, revision: 10, running: true, messages: [{ id: 1, role: 'user', content: 'Hola', ts: 1 }],
   }).mockResolvedValue({
-    ...empty, revision: 13, messages: [{ id: 2, role: 'assistant', content: 'Terminada', ts: 2 }],
+    ...empty, revision: 14, messages: [
+      { id: 2, role: 'user', content: 'Hola', ts: 1 },
+      { id: 3, role: 'assistant', content: 'Terminada', ts: 2 },
+    ],
   });
   render(<AgentView />);
   await screen.findByText('Hola');
   const partial = { role: 'assistant', content: 'En vivo', partial: true, ts: 2 };
   await act(async () => notify('agent.changed', { session_id: session.id, revision: 11, partial }));
   expect(screen.getByText('En vivo')).toBeInTheDocument();
-  expect(list).toHaveBeenCalledTimes(1);
-  await act(async () => notify('agent.changed', { session_id: session.id, revision: 13, partial }));
-  expect(await screen.findByText('Terminada')).toBeInTheDocument();
+  await act(async () => notify('agent.changed', {
+    session_id: session.id, revision: 12, partial: { ...partial, content: 'En vivo, actualizado' },
+  }));
+  expect(screen.getByText('En vivo, actualizado')).toBeInTheDocument();
   expect(screen.queryByText('En vivo')).not.toBeInTheDocument();
+  expect(list).toHaveBeenCalledTimes(1);
+  await act(async () => notify('agent.changed', { session_id: session.id, revision: 14, partial }));
+  expect(await screen.findByText('Terminada')).toBeInTheDocument();
+  expect(screen.queryByText('En vivo, actualizado')).not.toBeInTheDocument();
+  expect(screen.getByText('Hola').closest('[data-entry-ids]')).toHaveAttribute('data-entry-ids', '2');
+});
+
+it('reutiliza la identidad de los mensajes que no cambian entre snapshots', () => {
+  const before: AgentMessage[] = [
+    { id: 1, role: 'user', content: 'Hola', ts: 1 },
+    { id: 2, role: 'assistant', content: 'Respuesta', ts: 2 },
+  ];
+  const snapshot = (): AgentMessage[] => before.map((message) => ({ ...message }));
+  expect(reuseMessages(before, snapshot())).toBe(before);
+  const grown: AgentMessage[] = [...snapshot(), { id: 3, role: 'assistant', content: 'Nueva', ts: 3 }];
+  const merged = reuseMessages(before, grown);
+  expect(merged).not.toBe(before);
+  expect(merged[0]).toBe(before[0]);
+  expect(merged[1]).toBe(before[1]);
+  expect(merged[2]).toBe(grown[2]);
+  const edited = snapshot().map((message, index) => (index === 1 ? { ...message, content: 'Editada' } : message));
+  const partial = reuseMessages(before, edited);
+  expect(partial[0]).toBe(before[0]);
+  expect(partial[1]).not.toBe(before[1]);
 });
 
 it('busca mensajes fuera de la última página, navega al resultado y vuelve', async () => {

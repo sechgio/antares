@@ -16,6 +16,12 @@ const VALID_HANDLERS = /^(backend:[a-z0-9_]+|native:(dialog|autoimg|ubicaciones|
 const VALID_TIMEOUTS = new Set(['normal', 'long', 'heavy']);
 const VALID_LANES = new Set(['sync', 'light', 'heavy']);
 
+const browserTab = new RegExp(memoryShare.agent_browser.inputSchema.properties.tab.pattern);
+if (!['agent', 'user', 'tab-1', 'tab-27'].every((id) => browserTab.test(id))
+  || ['', 'tab-0', 'tab-other', 'tab-1\n'].some((id) => browserTab.test(id))) {
+  throw new Error('El catálogo del navegador debe admitir las pestañas que crea Electron');
+}
+
 const transcript = require('../shared/ipc-method-catalog.json').methods.agent_messages_list;
 if (transcript.handler !== 'native:agent' || !transcript.idempotent
   || transcript.outputSchema.properties.messages.items.properties.attachments.items.required.join(',') !== 'path,folder') {

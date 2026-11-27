@@ -1,8 +1,9 @@
 'use strict';
 
+const { EventEmitter, once } = require('node:events');
 const { assert, finish } = require('./helpers/harness');
 const { shared } = require('../electron/agent-shared');
-const { projectMessages, transcriptEntries, transcriptAround, searchTranscript, transcriptOrigin } = require('../electron/agent-projection');
+const { notifyChanged, projectMessages, transcriptEntries, transcriptAround, searchTranscript, transcriptOrigin } = require('../electron/agent-projection');
 
 shared.deps = {
   chord: { BACKGROUND_CONTEXT: {} }, pi: { UsageDoc: {} },
@@ -84,6 +85,35 @@ async function main() {
     : { items: history.slice(0, 2), next: { after: 4 } } };
   assert(await transcriptOrigin(records, 'artifact', 'a1') === 3, 'el entregable apunta al asistente que llamó la herramienta');
   assert(await transcriptOrigin(records, 'task', 't1') === 5, 'el encargo apunta a su aviso de derivación');
+
+  const notices = new EventEmitter();
+  shared.notify = (method, payload) => notices.emit(method, payload);
+  shared.convToSession.set('conversation-stream', 'session-stream');
+  shared.live.set('conversation-stream', {
+    generation: { message: { role: 'assistant', content: [{ type: 'text', text: 'Hola parcial' }] } },
+    tools: [],
+    inbox: [],
+  });
+
+  const deadline = new AbortController();
+  const timeout = setTimeout(() => deadline.abort(), 2000);
+  try {
+    let change = once(notices, 'agent.changed', { signal: deadline.signal });
+    notifyChanged('conversation-stream', true);
+    const [streamed] = await change;
+    assert(streamed.session_id === 'session-stream' && streamed.revision === 1 && streamed.partial?.content === 'Hola parcial',
+      'un tramo de streaming notifica el parcial con su revisión');
+
+    change = once(notices, 'agent.changed', { signal: deadline.signal });
+    notifyChanged('conversation-stream', true);
+    notifyChanged('conversation-stream');
+    notifyChanged('conversation-stream', true);
+    const [structural] = await change;
+    assert(structural.revision === 2 && !('partial' in structural),
+      'un cambio estructural dentro del debounce exige recarga aunque lleguen más tramos');
+  } finally {
+    clearTimeout(timeout);
+  }
   finish();
 }
 
