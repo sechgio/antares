@@ -637,7 +637,7 @@ function resultArtifactId(result?: string | null): string | null {
   return null;
 }
 
-export function placeArtifacts(turns: TimelineTurn[], artifacts: AgentArtifact[]): Map<number, AgentArtifact[]> {
+export function placeArtifacts(turns: TimelineTurn[], artifacts: AgentArtifact[], showUnlinked = true): Map<number, AgentArtifact[]> {
   const latest = new Map<string, AgentArtifact>();
   for (const artifact of artifacts) {
     if (artifact.files.length === 0) continue;
@@ -656,6 +656,7 @@ export function placeArtifacts(turns: TimelineTurn[], artifacts: AgentArtifact[]
   const fallback = [...turns].reverse().find((turn) => turn.role === 'assistant')?.key ?? -1;
   const placed = new Map<number, AgentArtifact[]>();
   for (const artifact of latest.values()) {
+    if (!showUnlinked && !owner.has(artifact.id)) continue;
     const key = owner.get(artifact.id) ?? fallback;
     placed.set(key, [...(placed.get(key) ?? []), artifact]);
   }

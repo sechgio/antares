@@ -1063,6 +1063,97 @@ it('un envío pendiente en otra sesión no descarta los mensajes de la sesión s
   expect(screen.getByText('Mensaje de segunda')).toBeInTheDocument();
 });
 
+it('aplica un tramo consecutivo en vivo y reconcilia al perder una revisión', async () => {
+  const notify = agentUpdates();
+  localStorage.setItem('antares-agent-session', session.id);
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValueOnce({
+    ...empty, revision: 10, running: true, messages: [{ id: 1, role: 'user', content: 'Hola', ts: 1 }],
+  }).mockResolvedValue({
+    ...empty, revision: 13, messages: [{ id: 2, role: 'assistant', content: 'Terminada', ts: 2 }],
+  });
+  render(<AgentView />);
+  await screen.findByText('Hola');
+  const partial = { role: 'assistant', content: 'En vivo', partial: true, ts: 2 };
+  await act(async () => notify('agent.changed', { session_id: session.id, revision: 11, partial }));
+  expect(screen.getByText('En vivo')).toBeInTheDocument();
+  expect(list).toHaveBeenCalledTimes(1);
+  await act(async () => notify('agent.changed', { session_id: session.id, revision: 13, partial }));
+  expect(await screen.findByText('Terminada')).toBeInTheDocument();
+  expect(screen.queryByText('En vivo')).not.toBeInTheDocument();
+});
+
+it('busca mensajes fuera de la última página, navega al resultado y vuelve', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+    ...empty, before: 25, messages: [{ id: 25, role: 'user', content: 'Reciente', ts: 25 }],
+  });
+  const history = vi.spyOn(agentApi, 'agentMessagesAround').mockResolvedValue({
+    before: null, messages: [{ id: 12, role: 'assistant', content: 'Respuesta antigua', ts: 12 }],
+  });
+  vi.spyOn(agentApi, 'agentMessagesSearch').mockResolvedValue({
+    matches: [{ id: 12, ts: 12, text: 'Resultado de búsqueda' }], truncated: false,
+  });
+  render(<AgentView />);
+  await screen.findByText('Reciente');
+  fireEvent.click(screen.getByRole('button', { name: 'Buscar mensajes' }));
+  fireEvent.change(screen.getByLabelText('Texto que buscas'), { target: { value: 'antigua' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Resultado de búsqueda' }));
+  expect(await screen.findByText('Respuesta antigua')).toBeInTheDocument();
+  expect(history).toHaveBeenCalledWith('s1', 12);
+  fireEvent.click(screen.getByRole('button', { name: 'Volver a mensajes recientes' }));
+  expect(screen.getByText('Reciente')).toBeInTheDocument();
+  expect(screen.queryByText('Respuesta antigua')).not.toBeInTheDocument();
+});
+
+it('salta desde Entregables al turno que produjo el archivo', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+    ...empty, before: 25, messages: [{ id: 25, role: 'user', content: 'Último turno', ts: 25 }],
+    artifacts: [{
+      id: 'r1', family: 'informe', template_id: 'i', template_revision: '1',
+      files: [{ name: 'entrega.pdf', sha256: 'hash', pages: 1, mime: 'application/pdf', size: 99 }],
+    }],
+  });
+  const origin = vi.spyOn(agentApi, 'agentMessageOrigin').mockResolvedValue({ id: 12 });
+  vi.spyOn(agentApi, 'agentMessagesAround').mockResolvedValue({
+    before: null, messages: [{ id: 12, role: 'assistant', content: 'Preparé la entrega', ts: 12 }],
+  });
+  render(<AgentView />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Entregables' }));
+  const shelf = screen.getByRole('dialog', { name: 'Entregables de la conversación' });
+  fireEvent.click(within(shelf).getByRole('button', { name: 'entrega.pdf' }));
+  expect(await screen.findByText('Preparé la entrega')).toBeVisible();
+  expect(origin).toHaveBeenCalledWith('s1', 'artifact', 'r1');
+});
+
+it('aísla borrador y selector de archivos tardío al alternar conversaciones', async () => {
+  const second = { ...session, id: 's2', title: 'Segunda' };
+  const picked = deferred<Awaited<ReturnType<typeof agentApi.agentAttach>>>();
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, second] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.spyOn(agentApi, 'agentAttach').mockReturnValue(picked.promise);
+  const { unmount } = render(<AgentView />);
+  const first = await screen.findByText('Primera');
+  await act(async () => { fireEvent.click(first); });
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador de Primera' } });
+  openComposerOptions();
+  fireEvent.click(screen.getByLabelText('Adjuntar archivos'));
+  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
+  await act(async () => picked.resolve({ attachments: [{ id: 'a1', name: 'primera.pdf', kind: 'files' }] }));
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('');
+  expect(screen.queryByText('primera.pdf')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador de Segunda' } });
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador de Primera');
+  expect(screen.getByText('primera.pdf')).toBeInTheDocument();
+  unmount();
+  render(<AgentView />);
+  await waitFor(() => expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador de Primera'));
+  expect(screen.queryByText('primera.pdf')).not.toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador de Segunda');
+});
+
 it('activa la carpeta de trabajo antes de enviar y mantiene solo archivos en los adjuntos', async () => {
   const messages = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   const select = vi.spyOn(agentApi, 'agentWorkspaceSelect').mockImplementation(async () => {
@@ -1230,6 +1321,33 @@ it('presenta la cola en orden y permite quitar un pendiente sin perder el borrad
   expect(input).toHaveValue('Borrador que sigo escribiendo');
   expect(composer.getByLabelText('Adjuntos')).toHaveTextContent('informe.pdf');
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+});
+
+it('pausa y reordena la cola, cancela una edición y envía el texto guardado al reanudar', async () => {
+  const notify = agentUpdates();
+  localStorage.setItem('antares-agent-session', session.id);
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true });
+  render(<AgentView />);
+  const later = await screen.findByRole('button', { name: 'Dejar para después' });
+  const input = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
+  for (const value of ['Primero', 'Segundo']) {
+    fireEvent.change(input, { target: { value } });
+    await act(async () => fireEvent.click(later));
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'Pausar mensajes en cola' }));
+  fireEvent.click(screen.getAllByRole('button', { name: 'Subir en la cola' })[1]);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Editar en cola' })[0]);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Editar mensaje en cola' }), { target: { value: 'Descartar' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar edición' }));
+  expect(screen.getByText('Segundo')).toBeVisible();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Editar en cola' })[0]);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Editar mensaje en cola' }), { target: { value: 'Segundo editado' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar mensaje' }));
+  list.mockResolvedValue(empty);
+  await act(async () => notify());
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Reanudar mensajes en cola' }));
+  await waitFor(() => expect(agentApi.agentMessageSend).toHaveBeenNthCalledWith(1, 's1', 'Segundo editado', expect.any(String), []));
 });
 
 it('permite desplegar un mensaje largo en cola sin enviarlo ni alterar el borrador', async () => {
@@ -2307,13 +2425,17 @@ it.each(['aceptado', 'sin confirmar'])('mantiene el recibo de un envío %s en su
   await act(async () => { admitted.resolve({ accepted: result === 'aceptado' }); });
   expect(input).toHaveValue('Borrador del segundo chat');
   expect(screen.getByText('otro-chat.pdf')).toBeVisible();
-  if (result === 'aceptado') expect(screen.queryByText('original.pdf')).not.toBeInTheDocument();
+  expect(screen.queryByText('original.pdf')).not.toBeInTheDocument();
   expect(screen.queryByRole('region', { name: 'Estado de los envíos' })).not.toBeInTheDocument();
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
   const receipts = screen.getByRole('region', { name: 'Estado de los envíos' });
   expect(receipts).toHaveTextContent('Encargo del primer chat');
   expect(receipts).toHaveTextContent(result === 'aceptado' ? 'Mensaje recibido.' : 'Recepción sin confirmar.');
+  expect(input).toHaveValue(result === 'aceptado' ? '' : 'Encargo del primer chat');
+  expect(screen.queryByText('otro-chat.pdf')).not.toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
   expect(input).toHaveValue('Borrador del segundo chat');
+  expect(screen.getByText('otro-chat.pdf')).toBeVisible();
 });
 
 it('conserva varios envíos no confirmados y muestra la recepción del que se acaba de recuperar', async () => {

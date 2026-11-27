@@ -829,12 +829,14 @@ async function sessionDelete(params) {
   return { deleted: true, id: sessionId };
 }
 
-async function messagesList(params) {
+async function messagesList(params, paged = false) {
   const sessionId = String((params && params.session_id) || '');
   const session = await requireSession(sessionId);
   const conv = await conversation(sessionId);
   await projection.ensureWatcher(session);
-  const { messages, pending, usage } = await projection.projectMessages(conv, session);
+  const revision = projection.liveFor(session.conversationId).transcriptRevision ?? 0;
+  const page = paged ? await projection.transcriptEntries(conv) : null;
+  const { messages, pending, usage } = await projection.projectMessages(conv, session, page?.entries);
   const { artifacts, questions, panels, context } = await bridge('agent_internal_artifacts', { session_id: sessionId });
   const partial = projection.partialText(session.conversationId);
   const partialReasoning = projection.partialReasoning(session.conversationId);
@@ -857,6 +859,7 @@ async function messagesList(params) {
   const budget = await execution.profileBudget(await execution.sessionProfile(session));
   return {
     messages,
+    ...(page ? { before: page.before, revision } : {}),
     running,
     delegations,
     plan,
@@ -883,6 +886,34 @@ async function messagesList(params) {
     compacting: (projection.liveFor(session.conversationId).compactions || []).length > 0,
     ...(budget ? { token_budget: { limit: budget.limit, used: budget.used } } : {}),
   };
+}
+
+async function messagesPage(params) {
+  const { before, around } = params;
+  if (before === undefined && around === undefined) return messagesList(params, true);
+  const cursor = before ?? around;
+  if ((before !== undefined && around !== undefined) || !Number.isSafeInteger(cursor) || cursor < 1)
+    throw validation('Indica un cursor válido');
+  const session = await requireSession(params.session_id);
+  const conv = await conversation(session.id);
+  const page = around === undefined ? await projection.transcriptEntries(conv, before) : await projection.transcriptAround(conv, around);
+  const { messages } = await projection.projectMessages(conv, session, page.entries, true);
+  return { messages, before: page.before };
+}
+
+async function messagesSearch(params) {
+  const query = typeof params.query === 'string' ? params.query.trim() : '';
+  if (!query || query.length > 200) throw validation('La búsqueda admite de 1 a 200 caracteres');
+  const session = await requireSession(params.session_id);
+  return projection.searchTranscript(await conversation(session.id), query);
+}
+
+async function messageOrigin(params) {
+  const { kind, ref } = params;
+  if (!['artifact', 'task'].includes(kind) || typeof ref !== 'string' || !ref || ref.length > 200)
+    throw validation('Indica un origen de conversación válido');
+  const session = await requireSession(params.session_id);
+  return { id: await projection.transcriptOrigin(await conversation(session.id), kind, ref) };
 }
 
 async function roomsList(params) {
@@ -1906,6 +1937,9 @@ module.exports = {
     agent_run_graph: runGraph,
     agent_session_reasoning_set: sessionReasoningSet,
     agent_messages_list: messagesList,
+    agent_messages_page: messagesPage,
+    agent_messages_search: messagesSearch,
+    agent_message_origin: messageOrigin,
     agent_rooms_list: roomsList,
     agent_memory_share: memoryShare,
     agent_message_send: messageSend,

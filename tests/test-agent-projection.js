@@ -2,7 +2,7 @@
 
 const { assert, finish } = require('./helpers/harness');
 const { shared } = require('../electron/agent-shared');
-const { projectMessages } = require('../electron/agent-projection');
+const { projectMessages, transcriptEntries, transcriptAround, searchTranscript, transcriptOrigin } = require('../electron/agent-projection');
 
 shared.deps = {
   chord: { BACKGROUND_CONTEXT: {} }, pi: { UsageDoc: {} },
@@ -43,6 +43,47 @@ async function main() {
     'los recuerdos y los historiales anteriores sin metadatos no fabrican adjuntos');
   assert(JSON.stringify(await project(contents)) === JSON.stringify(messages),
     'reconstruir el historial conserva los adjuntos sin usar el staging temporal');
+  const entries = Array.from({ length: 250 }, (_, index) => ({
+    id: index + 1, kind: index % 3 === 0 ? 'pi.user' : 'pi.assistant',
+    model: [{ content: index === 11 ? 'Buscar entrega antigua' : 'Otro mensaje' }],
+  })).reverse();
+  let reads = 0;
+  const conv = { entries: async ({ minEntryId = 0, maxEntryId = Infinity }, limit, cursor) => {
+    reads += 1;
+    const eligible = entries.filter((entry) =>
+      entry.id >= minEntryId && entry.id <= maxEntryId && (!cursor || entry.id < cursor.after));
+    const items = eligible.slice(0, limit);
+    return eligible.length > limit ? { items, next: { after: items.at(-1).id } } : { items };
+  } };
+  const latest = await transcriptEntries(conv);
+  const previous = await transcriptEntries(conv, latest.before);
+  assert(reads === 2 && latest.entries[0].kind === 'pi.user' && previous.entries[0].kind === 'pi.user',
+    'carga páginas acotadas sin empezar en mitad de un turno');
+  assert(previous.entries.at(-1).id + 1 === latest.entries[0].id, 'el cursor no repite ni omite entradas');
+  const found = await searchTranscript(conv, 'entrega antigua');
+  assert(found.matches.length === 1 && found.matches[0].id === 12 && !found.truncated,
+    'busca una respuesta fuera de la página reciente');
+  const around = await transcriptAround(conv, 11);
+  assert(around.entries.at(-1).id === 12 && around.entries[0].id === 1, 'el salto incluye todo el turno del resultado');
+  const longTurn = entries.map((entry) => ({ ...entry, kind: entry.id === 1 ? 'pi.user' : 'pi.assistant' }));
+  const long = { entries: async (_query, limit, cursor) => {
+    const eligible = longTurn.filter((entry) => !cursor || entry.id < cursor.after);
+    const items = eligible.slice(0, limit);
+    return eligible.length > limit ? { items, next: { after: items.at(-1).id } } : { items };
+  } };
+  const wholeTurn = await transcriptEntries(long);
+  assert(wholeTurn.entries.length === longTurn.length && wholeTurn.before === null,
+    'sigue el cursor de SQLite hasta encontrar el inicio de un turno largo');
+  const history = [
+    { id: 5, kind: shared.NOTICE_KIND, data: { handoff: { task_id: 't1' } } },
+    { id: 4, kind: 'pi.tool-result', model: [{ toolCallId: 'call', content: '{"artifact":{"id":"a1"}}' }] },
+    { id: 3, kind: 'pi.assistant', model: [{ content: [{ type: 'toolCall', id: 'call' }] }] },
+  ];
+  const records = { entries: async (_query, _limit, cursor) => cursor
+    ? { items: history.slice(2) }
+    : { items: history.slice(0, 2), next: { after: 4 } } };
+  assert(await transcriptOrigin(records, 'artifact', 'a1') === 3, 'el entregable apunta al asistente que llamó la herramienta');
+  assert(await transcriptOrigin(records, 'task', 't1') === 5, 'el encargo apunta a su aviso de derivación');
   finish();
 }
 
