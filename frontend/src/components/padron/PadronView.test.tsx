@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import PadronView, { getRenderableExportSheets, paginateLuriganchoItems } from './PadronView';
 import { MAX_PADRON_ITEMS, createInitialItems } from './data';
+import { clearImageBase64Cache } from './pdfHelpers';
 
 describe('PadronView output formats', () => {
   it('switches to the volante lurigancho layout while keeping padron controls', async () => {
@@ -170,6 +171,57 @@ describe('padron count safeguards', () => {
 });
 
 describe('padron PDF export guards', () => {
+  it('uses a unique image alias for each exported sheet across batches', async () => {
+    const addImage = vi.fn<(...args: unknown[]) => void>();
+    const save = vi.fn();
+    vi.doMock('jspdf', () => ({
+      default: class {
+        addImage = addImage;
+        addPage() {}
+        save = save;
+      },
+    }));
+    vi.doMock('html-to-image', () => ({
+      getFontEmbedCSS: async () => '',
+      toCanvas: async () => ({
+        toBlob(callback: (blob: { arrayBuffer: () => Promise<ArrayBuffer> }) => void) {
+          callback({ arrayBuffer: async () => new ArrayBuffer(1) });
+        },
+      }),
+    }));
+    const width = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(1123);
+    const invoke = vi.spyOn(window.electronAPI, 'invoke').mockResolvedValue({});
+    const images = vi.spyOn(globalThis, 'Image').mockImplementation(function () {
+      const image = document.createElement('img');
+      queueMicrotask(() => image.dispatchEvent(new Event('error')));
+      return image;
+    });
+    clearImageBase64Cache();
+
+    try {
+      render(<PadronView />);
+      fireEvent.change(screen.getByLabelText('Total ítems'), { target: { value: '198' } });
+      fireEvent.change(screen.getByLabelText('Item final'), { target: { value: '198' } });
+      const download = screen.getByRole('button', { name: 'Descargar PDF' });
+      await waitFor(() => expect(download).toBeEnabled());
+      fireEvent.click(download);
+      await waitFor(() => expect(save).toHaveBeenCalledWith('padron-1-198.pdf'));
+      await waitFor(() => expect(download).toBeEnabled());
+
+      const aliases = addImage.mock.calls.map((args) => args[6]);
+      expect(aliases).toHaveLength(11);
+      expect(aliases).toEqual(Array.from({ length: 11 }, () => expect.any(String)));
+      expect(new Set(aliases).size).toBe(11);
+    } finally {
+      vi.doUnmock('jspdf');
+      vi.doUnmock('html-to-image');
+      width.mockRestore();
+      invoke.mockRestore();
+      images.mockRestore();
+      clearImageBase64Cache();
+    }
+  });
+
   it('only returns export sheets that have a measurable width', () => {
     const wrapper = document.createElement('div');
     const hiddenSheet = document.createElement('div');
