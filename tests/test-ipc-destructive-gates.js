@@ -182,19 +182,28 @@ async function main() {
     };
 
     let handlers = loadAgentHandlers(1);
+    await handlers.handleAgentCall('agent_session_permissions_set', { id: 's1', permission_mode: 'full' });
+    await handlers.handleAgentCall('agent_session_permissions_set', { id: 's1', permission_mode: 'ask' });
+    assert.deepStrictEqual(calls, [
+      ['permissions', { id: 's1', permission_mode: 'full' }],
+      ['permissions', { id: 's1', permission_mode: 'ask' }],
+    ]);
+    assert.strictEqual(dialogs.length, 0, 'seleccionar Acceso completo y volver a Solicitar aprobación no abre diálogos');
+
+    handlers = loadAgentHandlers(1);
     await assert.rejects(
-      () => handlers.handleAgentCall('agent_session_permissions_set', { id: 's1', permission_mode: 'full' }),
+      () => handlers.handleAgentCall('agent_session_permissions_set', { id: 's1', permission_mode: 'auto' }),
       /cancelada/,
-      'cancelar la confirmación nativa bloquea elevar la sesión a acceso completo',
+      'cancelar la confirmación nativa bloquea elevar la sesión a Aprobar por mí',
     );
     assert.strictEqual(calls.length, 0, 'la elevación cancelada no llega al runtime');
-    assert.strictEqual(dialogs.length, 1, 'elevar a full pide confirmación nativa');
+    assert.strictEqual(dialogs.length, 1, 'elevar a auto pide confirmación nativa');
     assert.strictEqual(dialogs[0].noLink, true, 'el diálogo usa botones estándar, no enlaces de comando');
-    assert.match(dialogs[0].message, /«Acceso completo»/, 'el diálogo nombra el modo con su etiqueta visible');
+    assert.match(dialogs[0].message, /«Aprobar por mí»/, 'el diálogo nombra el modo con su etiqueta visible');
     assert.match(dialogs[0].detail, /Modo actual: Solicitar aprobación/, 'el diálogo muestra el modo actual legible');
 
     handlers = loadAgentHandlers(0);
-    await handlers.handleAgentCall('agent_session_permissions_set', { id: 's1', permission_mode: 'full' });
+    await handlers.handleAgentCall('agent_session_permissions_set', { id: 's1', permission_mode: 'auto' });
     assert.strictEqual(calls.length, 1, 'aceptar la confirmación nativa permite elevar la sesión');
 
     handlers = loadAgentHandlers(1);
