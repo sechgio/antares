@@ -293,6 +293,45 @@ function resolvePortableProfile(registry, conversationId) {
   return profile;
 }
 
+// Destino de un encargo dirigido: perfil guardado por id o nombre único, o el
+// perfil de una sesión viva (cubre agentes portables). Devuelve la sesión viva
+// más reciente del perfil destino: el encargo corre con las reglas, tools y
+// permisos de esa conversación y nada del perfil origen se hereda.
+async function resolveTargetSession(agent) {
+  const { sessions, profiles, validation } = require('./agent-shared');
+  const wanted = String(agent || '').trim();
+  if (!wanted) throw validation('Indica el agente destino del encargo');
+  const saved = await profiles();
+  const exact = saved[wanted] || null;
+  const named = Object.values(saved).filter(
+    (profile) => String(profile.name || '').trim().toLowerCase() === wanted.toLowerCase(),
+  );
+  const profileId = exact ? exact.id : named.length === 1 ? named[0].id : null;
+  const live = Object.values(await sessions()).filter((item) => !item.deleted && item.profile);
+  let candidates;
+  if (profileId) {
+    candidates = live.filter((item) => item.profile.id === profileId);
+  } else {
+    if (named.length > 1) throw validation(`«${wanted}» coincide con varios agentes; usa su identificador`);
+    candidates = live.filter(
+      (item) =>
+        item.profile.id === wanted ||
+        String(item.profile.name || '').trim().toLowerCase() === wanted.toLowerCase(),
+    );
+    if (new Set(candidates.map((item) => item.profile.id)).size > 1) {
+      throw validation(`«${wanted}» coincide con varios agentes; usa su identificador`);
+    }
+    if (!candidates.length) throw validation(`No se encontró un agente único con esa referencia: «${wanted}»`);
+  }
+  const target = candidates
+    .slice()
+    .sort((a, b) => (Number(b.updated_at) || 0) - (Number(a.updated_at) || 0))[0];
+  if (!target) {
+    throw validation(`El agente «${(exact || named[0] || {}).name || wanted}» no tiene una conversación abierta`);
+  }
+  return target;
+}
+
 module.exports = {
   loadAgentProfile,
   resolvePortableProfile,
@@ -300,4 +339,5 @@ module.exports = {
   validateOnboarding,
   markPortableOnboarded,
   savePortableOnboarding,
+  resolveTargetSession,
 };

@@ -532,7 +532,7 @@ async function main() {
   }
 }
 
-main().then(triggerChain).then(dreamingRoutine).catch((err) => { console.error(err); process.exitCode = 1; });
+main().then(triggerChain).then(dreamingRoutine).then(routedEncargos).catch((err) => { console.error(err); process.exitCode = 1; });
 
 // Integración del encadenamiento por eventos: el despacho atómico de
 // fireTaskCompleted sobre tareas reales creadas por la vía pública.
@@ -787,6 +787,151 @@ async function dreamingRoutine() {
     console.log('[PASS] Consolidación nocturna de memoria del agente.');
   } finally {
     appLog.logInfo = originalLogInfo;
+    await runtime.shutdown().catch(() => {});
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Encargos dirigidos a otro agente: la sesión que crea el encargo lo administra
+// (lo lista, edita y cancela), pero la ejecución corre en la conversación del
+// agente destino con sus reglas y permisos; los triggers también encadenan a
+// otro perfil.
+async function routedEncargos() {
+  const { fauxProvider, fauxAssistantMessage, fauxToolCall } = await import('@earendil-works/pi-ai');
+  const { openNodeSqliteStorage } = await import('@earendil-works/pi-durable/storage/sqlite/node');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'antares-routed-'));
+  const dbPath = path.join(dir, 'agent.sqlite');
+  const granted = [];
+  const bridge = async (method, params) => {
+    if (method === 'agent_internal_tools') return { tools: [
+      { name: 'canvas_list', kind: 'backend', gated: false, replay_safe: true, inputSchema: { type: 'object', properties: {} } },
+      { name: 'fs_write', kind: 'backend', gated: true, inputSchema: { type: 'object', properties: {} } },
+    ] };
+    if (method === 'agent_internal_approval_ensure') {
+      return { approval: { id: `ap-${params.call_id}`, session_id: params.session_id, call_id: params.call_id,
+        method: params.method, params: params.params, status: 'pending', channel: params.channel || null } };
+    }
+    if (method === 'agent_internal_approval_decide') {
+      return { approval: { id: params.approval_id, session_id: params.session_id, call_id: params.call_id,
+        status: params.approve ? 'approved' : 'denied', source: params.source || 'manual' } };
+    }
+    if (method === 'agent_internal_dispatch') {
+      if (params.meta) return { execute: 'meta', dispatch: { op_id: `op-${params.call_id}`, status: 'running' } };
+      return { result: JSON.stringify({ documents: ['Comprobante'] }) };
+    }
+    if (method === 'agent_internal_dispatch_finish') return { result: params.result };
+    if (method === 'agent_internal_dispatch_result') return { result: JSON.stringify({ documents: ['Comprobante'] }) };
+    if (method === 'agent_internal_provider') return { style: 'openai_chat', base_url: 'http://unused', api_key: 'test' };
+    if (method === 'agent_internal_approvals_pending') return { approvals: [] };
+    if (method === 'agent_internal_memory_context') return { context: '' };
+    if (method === 'agent_internal_mentions') return { modules: [], unknown: [], ambiguous: [], context: '' };
+    if (method === 'agent_internal_artifacts') return { artifacts: [], questions: [], context: {} };
+    if (method === 'agent_internal_activity') return { attention: {} };
+    if (method === 'agent_internal_profile_usage') return { tokens: 0 };
+    if (method === 'agent_internal_grants_add') { granted.push(params); return { granted: [], rejected: [] }; }
+    throw new Error(`Puente inesperado: ${method}`);
+  };
+  const open = async () => {
+    const faux = fauxProvider();
+    runtime._internal._providerOverrides.set('faux', faux.provider);
+    await runtime.open({ dir, storage: await openNodeSqliteStorage(dbPath), bridge, skipImport: true });
+    return faux;
+  };
+  const tasks = require('../electron/agent-tasks');
+  try {
+    const faux = await open();
+    await tasks.stop();
+    const { profile: destProfile } = await runtime.handlers.agent_profile_save({
+      name: 'Destino', instructions: 'Solo lectura', tools: null,
+    });
+    const { session: dest } = await runtime.handlers.agent_session_create({
+      provider: 'faux', model: 'faux-1', profile_id: destProfile.id,
+    });
+    await runtime.handlers.agent_session_rules_set({ id: dest.id, rules: { files: 'deny' } });
+    await runtime.handlers.agent_tools_set({ session_id: dest.id, names: ['fs_write'] });
+    await runtime.handlers.agent_tasks_queue({ session_id: dest.id, action: 'pause' });
+    const { session: origin } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
+    await runtime.handlers.agent_session_permissions_set({ id: origin.id, permission_mode: 'full' });
+    const future = new Date(Date.now() + 3600000).toISOString();
+
+    const routed = await runtime.handlers.agent_tasks_save({
+      session_id: origin.id, content: 'Encargo dirigido', due_at: future, agent: destProfile.id,
+    });
+    assert.equal(routed.scheduled.session_id, origin.id, 'quien crea el encargo sigue administrándolo');
+    assert.equal(routed.scheduled.target_session_id, dest.id, 'el encargo queda dirigido a la conversación del destino');
+    const byName = await runtime.handlers.agent_tasks_save({
+      session_id: origin.id, content: 'Dirigido por nombre', due_at: future, agent: 'Destino',
+    });
+    assert.equal(byName.scheduled.target_session_id, dest.id, 'el nombre único del agente también dirige');
+    await assert.rejects(
+      runtime.handlers.agent_tasks_save({ session_id: origin.id, content: 'x', due_at: future, agent: '  ' }),
+      /agente destino/,
+    );
+    await assert.rejects(
+      runtime.handlers.agent_tasks_save({ session_id: origin.id, content: 'x', due_at: future, agent: 'Fantasma' }),
+      /No se encontró/,
+    );
+    const { profile: sinSesion } = await runtime.handlers.agent_profile_save({
+      name: 'SinSesion', instructions: 'x', tools: null,
+    });
+    await assert.rejects(
+      runtime.handlers.agent_tasks_save({ session_id: origin.id, content: 'x', due_at: future, agent: sinSesion.id }),
+      /no tiene una conversación abierta/,
+    );
+
+    const queued = await runtime.handlers.agent_tasks_save({
+      session_id: origin.id, kind: 'queue', content: 'En cola al destino', agent: 'Destino',
+    });
+    assert.equal(queued.scheduled.session_id, dest.id, 'el encargo en cola aterriza en la cola del destino');
+    const destListing = await runtime.handlers.agent_tasks_list({ session_id: dest.id });
+    assert.ok(destListing.tasks.some((task) => task.kind === 'queue' && task.content === 'En cola al destino'));
+    const originListing = await runtime.handlers.agent_tasks_list({ session_id: origin.id });
+    assert.ok(!originListing.tasks.some((task) => task.kind === 'queue'), 'la cola del origen no recibe el encargo dirigido');
+
+    const fuente = await runtime.handlers.agent_tasks_save({ session_id: origin.id, content: 'Tarea origen', due_at: future });
+    const chained = await runtime.handlers.agent_tasks_save({
+      session_id: origin.id, content: 'Encadenado al destino',
+      trigger: { type: 'task_completed', task_id: fuente.scheduled.id }, agent: 'Destino',
+    });
+    assert.equal(chained.scheduled.session_id, origin.id, 'la automatización la administra su creador');
+    assert.equal(chained.scheduled.target_session_id, dest.id, 'el trigger queda dirigido al destino');
+    const fired = await tasks._internal.fireTaskCompleted(fuente.scheduled.id);
+    assert.equal(fired.fired, 1, 'el trigger dirigido dispara su encargo');
+    const spawned = (await runtime.handlers.agent_tasks_list({ session_id: dest.id })).tasks
+      .find((task) => task.kind === 'queue' && task.content === 'Encadenado al destino');
+    assert.ok(spawned, 'la cadena salta a la cola del agente destino');
+    assert.equal(spawned.session_id, dest.id);
+    assert.equal(spawned.origin_task_id, chained.scheduled.id, 'la cadena referencia la automatización origen');
+    assert.ok(!(await runtime.handlers.agent_tasks_list({ session_id: origin.id })).tasks
+      .some((task) => task.kind === 'queue' && task.content === 'Encadenado al destino'),
+      'la cadena no vuelve a la cola del origen');
+
+    // Ejecución real: el turno corre en la conversación destino con sus reglas
+    // (files: deny) aunque el origen tenga acceso completo.
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall('fs_write', { path: 'fuera.txt', content: 'nope' })], { stopReason: 'toolUse' }),
+      fauxAssistantMessage('No pude escribir'),
+    ]);
+    tasks.start();
+    await runtime.handlers.agent_tasks_run({ id: routed.scheduled.id });
+    await until(async () => {
+      const listing = await runtime.handlers.agent_tasks_list({ session_id: origin.id });
+      return listing.tasks.find((task) => task.id === routed.scheduled.id)?.status === 'to_verify';
+    });
+    const destMessages = await runtime.handlers.agent_messages_list({ session_id: dest.id });
+    assert.ok(destMessages.messages.some((message) => String(message.content || '').includes('Encargo dirigido')),
+      'la entrega llega a la conversación del agente destino');
+    const blocked = destMessages.messages
+      .flatMap((message) => message.tool_calls || [])
+      .find((call) => call.name === 'fs_write');
+    assert.equal(blocked.status, 'denied', 'el encargo dirigido corre con los permisos del destino, nunca los del origen');
+    const originMessages = await runtime.handlers.agent_messages_list({ session_id: origin.id });
+    assert.ok(!originMessages.messages.some((message) => String(message.content || '').includes('Encargo dirigido')),
+      'el origen no ejecuta el encargo que dirigió');
+    assert.equal(granted.length, 0, 'dirigir un encargo no concede permisos al destino');
+    console.log('[PASS] Encargos dirigidos a otro agente: cola, triggers y permisos del destino.');
+  } finally {
+    await tasks.stop().catch(() => {});
     await runtime.shutdown().catch(() => {});
     fs.rmSync(dir, { recursive: true, force: true });
   }
