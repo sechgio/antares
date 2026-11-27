@@ -1262,6 +1262,53 @@ it('adjunta archivos soltados por ruta y capturas pegadas por contenido', async 
   vi.unstubAllGlobals();
 });
 
+it('permite quitar y volver a adjuntar archivos antes de enviar el primer mensaje sin texto', async () => {
+  vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const create = vi.spyOn(agentApi, 'agentSessionCreate').mockResolvedValue({ session });
+  const pdf = { id: 'pdf', name: 'informe.pdf', kind: 'files' as const };
+  const pending = deferred<{ attachments: typeof pdf[] }>();
+  const attach = vi.spyOn(agentApi, 'agentAttach')
+    .mockResolvedValueOnce({ attachments: [pdf] })
+    .mockReturnValueOnce(pending.promise)
+    .mockResolvedValueOnce({ attachments: [{ ...pdf, id: 'png', name: 'captura.png' }] });
+  const preview = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:captura');
+  render(<AgentView />);
+  const input = await screen.findByLabelText('Mensaje para el agente');
+  fireEvent.click(screen.getByRole('button', { name: 'Opciones del mensaje' }));
+  const picker = screen.getByRole('button', { name: 'Adjuntar archivos' });
+  expect(picker).toBeEnabled();
+  fireEvent.click(picker);
+  await screen.findByText('informe.pdf');
+  fireEvent.click(screen.getByRole('button', { name: 'Quitar informe.pdf' }));
+  const send = screen.getByRole('button', { name: 'Enviar' });
+  expect(send).toBeDisabled();
+  const composer = screen.getByRole('group', { name: 'Redactar mensaje' });
+  const file = new File(['%PDF'], 'informe.pdf', { type: 'application/pdf' });
+  const dataTransfer = { files: [file], types: ['Files'] };
+  expect(fireEvent.dragOver(composer, { dataTransfer })).toBe(false);
+  fireEvent.drop(composer, { dataTransfer });
+  fireEvent.change(input, { target: { value: 'Espera el archivo' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(send).toBeDisabled();
+  expect(create).not.toHaveBeenCalled();
+  await waitFor(() => expect(attach).toHaveBeenCalledTimes(2));
+  await act(async () => pending.resolve({ attachments: [pdf] }));
+  fireEvent.change(input, { target: { value: '' } });
+  const shot = new File(['png'], 'captura.png', { type: 'image/png' });
+  fireEvent.paste(input, { clipboardData: { files: [], items: [{ kind: 'file', getAsFile: () => shot }] } });
+  await screen.findByText('captura.png');
+  expect(attach).toHaveBeenLastCalledWith('files', { paths: [], data: [{ name: 'captura.png', data: btoa('png') }] });
+  expect(create).not.toHaveBeenCalled();
+  expect(send).toBeEnabled();
+  await act(async () => { fireEvent.click(send); });
+  expect(create).toHaveBeenCalledOnce();
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', '', expect.any(String), ['pdf', 'png']);
+  expect(screen.queryByLabelText('Adjuntos')).not.toBeInTheDocument();
+  preview.mockRestore();
+});
+
 it('avisa de las rutas escritas que no se autorizaron', async () => {
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   vi.mocked(agentApi.agentMessageSend).mockResolvedValue({

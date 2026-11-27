@@ -1010,7 +1010,8 @@ async function messageSend(params) {
   const content = String(params.content || '')
     .trim()
     .slice(0, MAX_MESSAGE_CHARS);
-  if (!content) throw validation('El mensaje está vacío');
+  if (!content && (!Array.isArray(params.attachments) || !params.attachments.length))
+    throw validation('El mensaje está vacío');
   const requestId =
     typeof params.request_id === 'string' && params.request_id
       ? params.request_id.slice(0, MAX_REQUEST_ID_CHARS)
@@ -1181,7 +1182,7 @@ async function messageSend(params) {
   const input =
     context || images.length
       ? [
-          { type: 'text', text: content },
+          ...(content ? [{ type: 'text', text: content }] : []),
           ...images,
           ...(context ? [{ type: 'text', text: `${shared.CONTEXT_MARKER}\n${context}` }] : []),
         ]
