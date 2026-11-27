@@ -54,6 +54,13 @@ def _read_frontend_const(path: pathlib.Path, name: str) -> str:
     return m.group(1)
 
 
+def test_report_validation_sets_match_type_definitions() -> None:
+    from backend.core.report_types import REPORT_STATUS_VALUES, RESERVOIR_TYPES, ReportStatus, ReservoirType
+
+    assert frozenset(get_args(ReportStatus)) == REPORT_STATUS_VALUES
+    assert frozenset(get_args(ReservoirType)) == RESERVOIR_TYPES
+
+
 def test_ficha_schema_parity() -> None:
     frontend = REPO_ROOT / "frontend" / "src" / "components" / "fichas-tecnicas" / "types.ts"
     backend = REPO_ROOT / "backend" / "core" / "fichas_tecnicas" / "types.py"

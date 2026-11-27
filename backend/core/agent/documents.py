@@ -146,9 +146,9 @@ def _sheet_rows(path: Path) -> list[JsonObject]:
     if path.suffix.lower() == ".csv":
         import csv
 
-        from backend.handlers.spreadsheet import _sniff_csv
+        from backend.utils.text_decoding import sniff_csv
 
-        encoding, delimiter = _sniff_csv(path)
+        encoding, delimiter = sniff_csv(path)
         with path.open("r", encoding=encoding, newline="") as handle:
             return [dict(row) for row in csv.DictReader(handle, delimiter=delimiter) if any(row.values())][:5000]
     from backend.core.panel_aviso_corte import parse_excel_bytes

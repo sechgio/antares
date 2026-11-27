@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import codecs
 import contextlib
 import csv
 import io
@@ -20,6 +19,7 @@ from typing import Any
 from backend.core.spreadsheet_spill import SpreadsheetResultBuilder, is_indexed_sheet_cache, load_indexed_sheet_page
 from backend.handlers.common import with_locale
 from backend.utils.atomic_write import atomic_output_file
+from backend.utils.text_decoding import sniff_csv
 
 MAX_SPREADSHEET_BYTES = 100 * 1024 * 1024
 _INLINE_TEMP_PREFIX = "antares_inline_"
@@ -31,7 +31,6 @@ INLINE_RESULT_MAX_BYTES = 512 * 1024
 DEFAULT_GET_ROWS_LIMIT = 500
 MAX_GET_ROWS_LIMIT = 5_000
 _SUPPORTED_FORMATS = frozenset({"xlsx", "xls", "csv"})
-_CSV_SNIFF_BYTES = 64 * 1024
 
 _SPILL_CACHE_MAX_ENTRIES = 2
 _SPILL_CACHE_MAX_ENTRY_BYTES = 32 * 1024 * 1024
@@ -320,35 +319,10 @@ def _parse_xls(path: Path, result: SpreadsheetResultBuilder) -> list[str]:
     return warnings
 
 
-def _head_decodes(chunk: bytes, encoding: str) -> bool:
-    try:
-        codecs.getincrementaldecoder(encoding)().decode(chunk, final=False)
-    except UnicodeDecodeError:
-        return False
-    return True
-
-
-def _sniff_csv(path: Path) -> tuple[str, str]:
-    """Excel en español exporta con ';' y en ANSI de Windows, y el encabezado
-    suele ser ASCII aunque el cuerpo traiga tildes: la codificación se decide
-    sobre un muestreo, no sobre la primera línea, y sin leer el archivo entero
-    para conservar el streaming. La coma mantiene la precedencia para no cambiar
-    los CSV que ya se leían bien."""
-    with path.open("rb") as fh:
-        head = fh.read(_CSV_SNIFF_BYTES)
-    encoding = next(
-        (candidate for candidate in ("utf-8-sig", "utf-8", "cp1252") if _head_decodes(head, candidate)),
-        "latin-1",
-    )
-    first_line = head.partition(b"\n")[0]
-    delimiter = next((d for d in (",", ";", "\t") if d.encode() in first_line), ",")
-    return encoding, delimiter
-
-
 def _parse_csv(path: Path, result: SpreadsheetResultBuilder) -> list[str]:
     warnings: list[str] = []
     sheet_index = result.start_sheet(path.stem)
-    encoding, delimiter = _sniff_csv(path)
+    encoding, delimiter = sniff_csv(path)
     row_count = 0
     total_cells = 0
     with path.open("r", encoding=encoding, newline="") as f:

@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any, cast
 
+from backend.core.report_diameters import normalize_diameter_counts
 from backend.core.report_types import REPORT_STATUS_VALUES, RESERVOIR_TYPES
 from backend.core.technical_reports.types import (
     TechnicalCanastillas,
@@ -61,11 +62,6 @@ def report_id_from_number(value: int) -> str:
     return f"RPT-{int(value):04d}"
 
 
-def _diameter_map(diameters: list[str], source: dict[str, Any] | None = None) -> dict[str, int]:
-    source = source if isinstance(source, dict) else {}
-    return {diameter: _safe_int(source.get(diameter), 0) for diameter in diameters}
-
-
 def default_metadata(informe_id: int) -> TechnicalMetadata:
     now = datetime.now()
     return {
@@ -103,11 +99,11 @@ def default_inspeccion() -> TechnicalInspection:
 
 def default_valvulas() -> TechnicalValvulas:
     data: dict[str, Any] = {
-        "diametros": _diameter_map(VALVULA_DIAMETERS),
-        "impulsion": _diameter_map(VALVULA_DIAMETERS),
-        "aduccion": _diameter_map(VALVULA_DIAMETERS),
-        "bypass": _diameter_map(VALVULA_DIAMETERS),
-        "desague": _diameter_map(VALVULA_DIAMETERS),
+        "diametros": normalize_diameter_counts(VALVULA_DIAMETERS),
+        "impulsion": normalize_diameter_counts(VALVULA_DIAMETERS),
+        "aduccion": normalize_diameter_counts(VALVULA_DIAMETERS),
+        "bypass": normalize_diameter_counts(VALVULA_DIAMETERS),
+        "desague": normalize_diameter_counts(VALVULA_DIAMETERS),
         "operativas": 0,
         "no_operativas": 0,
     }
@@ -119,10 +115,10 @@ def default_valvulas() -> TechnicalValvulas:
 
 def default_canastillas() -> TechnicalCanastillas:
     data: dict[str, Any] = {
-        "diametros": _diameter_map(CANASTILLA_DIAMETERS),
-        "aduccion": _diameter_map(CANASTILLA_DIAMETERS),
-        "succion": _diameter_map(CANASTILLA_DIAMETERS),
-        "desague": _diameter_map(CANASTILLA_DIAMETERS),
+        "diametros": normalize_diameter_counts(CANASTILLA_DIAMETERS),
+        "aduccion": normalize_diameter_counts(CANASTILLA_DIAMETERS),
+        "succion": normalize_diameter_counts(CANASTILLA_DIAMETERS),
+        "desague": normalize_diameter_counts(CANASTILLA_DIAMETERS),
         "operativas": 0,
         "no_operativas": 0,
     }
@@ -253,7 +249,7 @@ def _normalize_valvulas(source: Any) -> dict[str, Any]:
     if not isinstance(source, dict):
         return data
     for section in ["diametros", "impulsion", "aduccion", "bypass", "desague"]:
-        data[section] = _diameter_map(VALVULA_DIAMETERS, source.get(section))
+        data[section] = normalize_diameter_counts(VALVULA_DIAMETERS, source.get(section))
     data["operativas"] = _safe_int(source.get("operativas"), 0)
     data["no_operativas"] = _safe_int(source.get("no_operativas"), 0)
     for key in ["conduccion", "impulsion", "aduccion", "bypass", "desague"]:
@@ -267,7 +263,7 @@ def _normalize_canastillas(source: Any) -> dict[str, Any]:
     if not isinstance(source, dict):
         return data
     for section in ["diametros", "aduccion", "succion", "desague"]:
-        data[section] = _diameter_map(CANASTILLA_DIAMETERS, source.get(section))
+        data[section] = normalize_diameter_counts(CANASTILLA_DIAMETERS, source.get(section))
     data["operativas"] = _safe_int(source.get("operativas"), 0)
     data["no_operativas"] = _safe_int(source.get("no_operativas"), 0)
     for key in ["aduccion", "succion", "desague"]:

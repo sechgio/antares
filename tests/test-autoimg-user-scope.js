@@ -1,13 +1,14 @@
 const fs = require('fs');
 const Module = require('module');
-const os = require('os');
 const path = require('path');
+const { assertOrExit: assert, makeTempDir } = require('./helpers/harness');
 
+const userData = makeTempDir('antares-autoimg-user-scope-');
 const originalLoad = Module._load;
 Module._load = function patchedLoad(request, parent, isMain) {
   if (request === 'electron') {
     return {
-      app: { getName: () => 'antares', getPath: () => path.join(os.tmpdir(), 'antares-autoimg') },
+      app: { getName: () => 'antares', getPath: () => userData },
       safeStorage: {
         isEncryptionAvailable: () => true,
         encryptString: (text) => Buffer.from(text, 'utf8'),
@@ -17,8 +18,6 @@ Module._load = function patchedLoad(request, parent, isMain) {
   }
   return originalLoad.call(this, request, parent, isMain);
 };
-
-const { assertOrExit: assert } = require('./helpers/harness');
 
 const {
   userKeyFromEmail,

@@ -375,9 +375,9 @@ def prepare(params: JsonObject) -> JsonObject:
         if sheet.stat().st_size > 100 * 1024 * 1024:
             raise ValueError("El Excel excede el máximo de 100 MiB")
         if sheet.suffix.lower() == ".csv":
-            from backend.handlers.spreadsheet import _sniff_csv
+            from backend.utils.text_decoding import sniff_csv
 
-            encoding, delimiter = _sniff_csv(sheet)
+            encoding, delimiter = sniff_csv(sheet)
             with sheet.open("r", encoding=encoding, newline="") as handle:
                 rows = []
                 for row in csv.DictReader(handle, delimiter=delimiter):

@@ -70,9 +70,9 @@ def create(params: JsonObject, store: AgentStore, session_id: str) -> JsonObject
         if not source.is_file() or source.stat().st_size > 100 * 1024 * 1024:
             raise ValueError("La hoja no está disponible o supera 100 MiB")
         if source.suffix.lower() == ".csv":
-            from backend.handlers.spreadsheet import _sniff_csv
+            from backend.utils.text_decoding import sniff_csv
 
-            encoding, delimiter = _sniff_csv(source)
+            encoding, delimiter = sniff_csv(source)
             with source.open(encoding=encoding, newline="") as stream:
                 rows = [dict(row) for row in csv.DictReader(stream, delimiter=delimiter) if any(row.values())]
         elif source.suffix.lower() in {".xlsx", ".xlsm", ".xls"}:

@@ -11,6 +11,7 @@ from backend.core.informes_v2.types import (
     Reservorios2Row,
     Reservorios2Totals,
 )
+from backend.core.report_diameters import normalize_diameter_counts
 from backend.core.report_types import REPORT_STATUS_VALUES, RESERVOIR_TYPES
 from backend.utils.coercion import safe_int as _safe_int
 from backend.utils.coercion import safe_str as _safe_str
@@ -72,17 +73,9 @@ def report_id_from_number(value: int) -> str:
     return f"IV2-{int(value):04d}"
 
 
-def _diameter_map(
-    source: dict[str, Any] | None = None,
-    diameters: list[str] = DIAMETERS,
-) -> dict[str, int]:
-    source = source if isinstance(source, dict) else {}
-    return {diameter: _safe_int(source.get(diameter), 0) for diameter in diameters}
-
-
 def default_diameter_row() -> dict[str, Any]:
     return {
-        "diametros": _diameter_map(),
+        "diametros": normalize_diameter_counts(DIAMETERS),
         "oper": 0,
         "no_op": 0,
         "observaciones": "",
@@ -95,11 +88,11 @@ def _normalize_diameter_row(source: Any) -> dict[str, Any]:
         return row
     diam_src = source.get("diametros")
     if isinstance(diam_src, dict):
-        row["diametros"] = _diameter_map(diam_src)
+        row["diametros"] = normalize_diameter_counts(DIAMETERS, diam_src)
     else:
         flat = {d: source.get(d) for d in DIAMETERS if d in source}
         if flat:
-            row["diametros"] = _diameter_map(flat)
+            row["diametros"] = normalize_diameter_counts(DIAMETERS, flat)
     row["oper"] = _safe_int(source.get("oper"), 0)
     row["no_op"] = _safe_int(source.get("no_op"), 0)
     row["observaciones"] = _safe_str(source.get("observaciones"), "")
@@ -121,7 +114,7 @@ def _normalize_table(source: Any, rows: list[str]) -> dict[str, dict[str, Any]]:
 
 def default_r2_row(diameters: list[str]) -> Reservorios2Row:
     return {
-        "diametros": _diameter_map({}, diameters),
+        "diametros": normalize_diameter_counts(diameters),
         "oper": 0,
         "no_op": 0,
         "observaciones": "",
@@ -135,11 +128,11 @@ def _normalize_r2_row(source: Any, diameters: list[str]) -> Reservorios2Row:
         return row
     diam_src = source.get("diametros")
     if isinstance(diam_src, dict):
-        row["diametros"] = _diameter_map(diam_src, diameters)
+        row["diametros"] = normalize_diameter_counts(diameters, diam_src)
     else:
         flat = {d: source.get(d) for d in diameters if d in source}
         if flat:
-            row["diametros"] = _diameter_map(flat, diameters)
+            row["diametros"] = normalize_diameter_counts(diameters, flat)
     row["oper"] = _safe_int(source.get("oper"), 0)
     row["no_op"] = _safe_int(source.get("no_op"), 0)
     row["observaciones"] = _safe_str(source.get("observaciones"), "")

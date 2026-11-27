@@ -50,6 +50,16 @@ def test_sum_diameter_and_oper() -> None:
     assert no_op == 1
 
 
+def test_normalize_classic_diameters_accepts_legacy_flat_rows() -> None:
+    report = InformeV2.normalize({
+        "valvulas": {"conduccion": {"2": "3", "4": "bad", "16": -2, "3": 20}},
+    })
+
+    assert list(report["valvulas"]["conduccion"]["diametros"].items()) == [
+        ("2", 3), ("4", 0), ("6", 0), ("8", 0), ("10", 0), ("12", 0), ("14", 0), ("16", -2),
+    ]
+
+
 def test_create_empty_report_defaults_to_clasica_with_reservorios2_block() -> None:
     report = create_empty_report(4)
     assert report["plantilla"] == "clasica"

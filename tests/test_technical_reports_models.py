@@ -39,6 +39,21 @@ def test_normalize_report_patches_legacy_canastillas() -> None:
     assert report["medidas"]["etiqueta_diametro"] == DEFAULT_MEDIDA_LABEL_DIAMETRO
 
 
+def test_normalize_preserves_diameter_order_and_coercion() -> None:
+    report = TechnicalReport.normalize({
+        "valvulas": {"impulsion": {"2": "3", "3": "bad", "4": -2, "14": 20}, "aduccion": []},
+        "canastillas": {"aduccion": {"14": "5", "12": 20}},
+    })
+
+    assert list(report["valvulas"]["impulsion"].items()) == [
+        ("2", 3), ("3", 0), ("4", -2), ("6", 0), ("8", 0), ("10", 0), ("12", 0),
+    ]
+    assert list(report["canastillas"]["aduccion"].items()) == [
+        ("2", 0), ("3", 0), ("4", 0), ("6", 0), ("8", 0), ("10", 0), ("14", 5),
+    ]
+    assert not any(report["valvulas"]["aduccion"].values())
+
+
 def test_normalize_report_preserves_custom_medida_labels() -> None:
     report = TechnicalReport.normalize({
         "metadata": {"informe_id": 8},
