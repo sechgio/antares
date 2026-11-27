@@ -5,6 +5,7 @@ import { agentApi, type AgentPanel, type AgentPanelResponse } from '../../api/ag
 import { useToast } from '../../hooks/useToast';
 import { errorMessage } from '../../utils/errors';
 import { DialogSurface } from '../ui/Dialog';
+import ErrorBoundary from '../ui/ErrorBoundary';
 import ThemedSelect from '../ui/ThemedSelect';
 import Toggle from '../ui/Toggle';
 
@@ -226,7 +227,7 @@ function DataTable({ columns, rows, numeric, limit, sort, onSort }: {
   </table>;
 }
 
-function TablePanel({ props }: PanelViewProps<z.infer<typeof tableSchema>>) {
+export function TablePanel({ props, onCloseFull }: { props: z.infer<typeof tableSchema>; onCloseFull?: () => void }) {
   const [query, setQuery] = useState('');
   const [full, setFull] = useState(false);
   const [sort, setSort] = useState<TableSort>(null);
@@ -257,6 +258,15 @@ function TablePanel({ props }: PanelViewProps<z.infer<typeof tableSchema>>) {
   </label>;
   const empty = rows.length === 0 && <p className="agent-panel__note">Ninguna fila coincide con «{query.trim()}».</p>;
   const count = <span className="agent-panel__meta">{rows.length} de {props.rows.length}</span>;
+  const viewer = (full || onCloseFull) && <PanelViewer title={title} icon={Table2} onClose={onCloseFull ?? (() => setFull(false))}>
+    <div className="agent-panel-viewer__content">
+      <div className="agent-panel__head"><p className="agent-panel__title">{title}{count}</p>{search}{copy}</div>
+      <div className="agent-panel__table is-full"><DataTable columns={props.columns} rows={rows} numeric={numeric} limit={TABLE_ROW_LIMIT} sort={sort} onSort={onSort} /></div>
+      {empty}
+      {rows.length > TABLE_ROW_LIMIT && <p className="agent-panel__note">Mostrando {TABLE_ROW_LIMIT} de {rows.length} filas; filtra para acotar.</p>}
+    </div>
+  </PanelViewer>;
+  if (onCloseFull) return viewer;
   return <section aria-label={title} data-panel-state="open" className="agent-panel">
     <div className="agent-panel__head">
       <p className="agent-panel__title">{title}{count}</p>
@@ -270,14 +280,7 @@ function TablePanel({ props }: PanelViewProps<z.infer<typeof tableSchema>>) {
     {rows.length > TABLE_PREVIEW_ROWS && <button type="button" className="agent-panel__more" onClick={() => setFull(true)}>
       Ver las {rows.length} filas<ArrowRight size={13} aria-hidden="true" />
     </button>}
-    {full && <PanelViewer title={title} icon={Table2} onClose={() => setFull(false)}>
-      <div className="agent-panel-viewer__content">
-        <div className="agent-panel__head"><p className="agent-panel__title">{title}{count}</p>{search}{copy}</div>
-        <div className="agent-panel__table is-full"><DataTable columns={props.columns} rows={rows} numeric={numeric} limit={TABLE_ROW_LIMIT} sort={sort} onSort={onSort} /></div>
-        {empty}
-        {rows.length > TABLE_ROW_LIMIT && <p className="agent-panel__note">Mostrando {TABLE_ROW_LIMIT} de {rows.length} filas; filtra para acotar.</p>}
-      </div>
-    </PanelViewer>}
+    {viewer}
   </section>;
 }
 
@@ -424,9 +427,14 @@ const PANELS: Record<string, ReturnType<typeof entry>> = {
 };
 
 export default function PanelRenderer({ panel, sessionId, onRespond }: { panel: AgentPanel; sessionId: string; onRespond: PanelRespond }) {
+  const [attempt, setAttempt] = useState(0);
   const render = Object.prototype.hasOwnProperty.call(PANELS, panel.type) ? PANELS[panel.type] : undefined;
   const view = render?.(panel, { sessionId, onRespond });
-  if (view) return <div id={`agent-panel-${panel.id}`}>{view}</div>;
+  if (view) return <div id={`agent-panel-${panel.id}`}><ErrorBoundary key={attempt} view="agent-panel" fallback={
+    <PanelFrame title="No se pudo mostrar el panel">
+      <button className="agent-panel__more" type="button" onClick={() => setAttempt((current) => current + 1)}>Reintentar</button>
+    </PanelFrame>
+  }>{view}</ErrorBoundary></div>;
   return <PanelFrame title="No se pudo mostrar el panel">
     <details className="agent-panel__fallback">
       <summary>El agente envió datos con un formato no compatible. Ver datos</summary>

@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -26,8 +27,10 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Paperclip,
+  Pause,
   Pencil,
   Plug,
+  Play,
   Plus,
   Search,
   Settings2,
@@ -52,7 +55,6 @@ import {
   type AgentQuestion,
   type AgentPanel,
   type AgentPanelResponse,
-  type AgentAttachment,
   type AgentApproval,
   type AgentMessage,
   type AgentSession,
@@ -67,10 +69,15 @@ import { useDialog } from '../../hooks/useDialog';
 import { useToast } from '../../hooks/useToast';
 import { useAnchoredPopover } from '../../hooks/useAnchoredPopover';
 import { useLocalStorageState } from '../../hooks/useLocalStorageState';
+import { useConversationDrafts } from './useConversationDrafts';
+import TranscriptSearch from './TranscriptSearch';
+import ArtifactShelf from './ArtifactShelf';
+import AgentAttentionInbox from './AgentAttentionInbox';
 import Button from '../ui/Button';
 import { WithHoverTooltip } from '../ui/HoverTooltip';
 import ThemedSelect from '../ui/ThemedSelect';
 import Input from '../ui/Input';
+import Textarea from '../ui/Textarea';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import { ProviderGlyph } from '../connections/connectionIcons';
 import AgentAvatar from './AgentAvatar';
@@ -121,6 +128,7 @@ const CHAT_CACHE_LIMIT = 6;
 const SESSION_KEY = 'antares-agent-session';
 const SESSION_ENTRY_KEY = 'antares-agent-session-entry';
 const QUEUE_KEY = 'antares-agent-queue';
+const PAUSED_QUEUES_KEY = 'antares-agent-paused-message-queues';
 const VIEW_KEY = 'antares-agent-transcript-view';
 const SIDEBAR_KEY = 'antares-agent-sidebar';
 const AGENT_LIMIT = 6;
@@ -172,42 +180,6 @@ type ConversationAttention = { key: string; text: string } & (
   | { kind: 'item'; target: string; action: string }
 );
 
-type AgentStreamChange = {
-  partial?: unknown;
-  partial_reasoning?: unknown;
-  partial_reasoning_ms?: unknown;
-};
-
-function applyStreamToMessages(messages: AgentMessage[], stream: AgentStreamChange): AgentMessage[] {
-  const partial = typeof stream.partial === 'string' ? stream.partial : '';
-  const reasoning = typeof stream.partial_reasoning === 'string' ? stream.partial_reasoning : '';
-  const reasoningMs = typeof stream.partial_reasoning_ms === 'number' ? stream.partial_reasoning_ms : undefined;
-  if (!partial && !reasoning) return messages;
-  const patch = (message?: AgentMessage): AgentMessage => {
-    const next: AgentMessage = {
-      ...(message ?? { role: 'assistant', content: '', ts: Date.now() }),
-      content: partial,
-      partial: true,
-    };
-    if (reasoning) next.reasoning = reasoning;
-    else delete next.reasoning;
-    if (reasoningMs !== undefined) next.reasoning_ms = reasoningMs;
-    else delete next.reasoning_ms;
-    return next;
-  };
-  const last = messages[messages.length - 1];
-  if (last?.role === 'assistant' && last.partial) {
-    const next = patch(last);
-    if (
-      next.content === last.content &&
-      next.reasoning === last.reasoning &&
-      next.reasoning_ms === last.reasoning_ms
-    ) return messages;
-    return [...messages.slice(0, -1), next];
-  }
-  return [...messages, patch()];
-}
-
 function sameJsonValue(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) return true;
   if (Array.isArray(left) || Array.isArray(right)) {
@@ -227,7 +199,8 @@ function sameJsonValue(left: unknown, right: unknown): boolean {
 }
 
 function sameMessage(left: AgentMessage, right: AgentMessage): boolean {
-  return left.role === right.role
+  return left.id === right.id
+    && left.role === right.role
     && left.content === right.content
     && left.reasoning === right.reasoning
     && left.reasoning_ms === right.reasoning_ms
@@ -256,6 +229,14 @@ function reuseMessages(previous: AgentMessage[], next: AgentMessage[]): AgentMes
 
 function newRequestId(): string {
   return crypto.randomUUID();
+}
+
+function isPartialMessage(value: unknown): value is AgentMessage {
+  return typeof value === 'object' && value !== null &&
+    'role' in value && value.role === 'assistant' && 'partial' in value && value.partial === true &&
+    'content' in value && typeof value.content === 'string' && 'ts' in value && typeof value.ts === 'number' &&
+    (!('reasoning' in value) || typeof value.reasoning === 'string') &&
+    (!('reasoning_ms' in value) || typeof value.reasoning_ms === 'number');
 }
 
 export function groupSessions(list: AgentSession[], now = Date.now()): { label: string; items: AgentSession[] }[] {
@@ -343,6 +324,18 @@ export default function AgentView({
   const sessionSelectionRef = useRef(0);
   const profileCreationsRef = useRef(new Map<string, Promise<AgentSession | null>>());
   const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [earlier, setEarlier] = useState<{ messages: AgentMessage[]; before: number | null } | null>(null);
+  const [before, setBefore] = useState<number | null>(null);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyTarget, setHistoryTarget] = useState<number | null>(null);
+  const [historySearchOpen, setHistorySearchOpen] = useState(false);
+  const [artifactShelfOpen, setArtifactShelfOpen] = useState(false);
+  const [pendingTaskOrigin, setPendingTaskOrigin] = useState<{ session: string; id: string } | null>(null);
+  const historyRequest = useRef(0);
+  const loadedEarlier = useRef(false);
+  const prependAnchor = useRef<{ node: HTMLElement; top: number } | null>(null);
+  const transcriptRevision = useRef<number | null>(null);
+  const lastLiveUpdate = useRef(0);
   const [messagesSessionId, setMessagesSessionId] = useState('');
   const [transcriptView, setTranscriptView] = useLocalStorageState<TranscriptView>(VIEW_KEY, {
     parse: parseView,
@@ -378,10 +371,10 @@ export default function AgentView({
   const sendInFlightRef = useRef(false);
   const [messagesStale, setMessagesStale] = useState(false);
   const [pendingEvidence, setPendingEvidence] = useState<PlanEvidence | null>(null);
-  const [draft, setDraft] = useState('');
+  const drafts = useConversationDrafts(sessionId, sessions);
+  const { text: draft, attachments, skill: activeSkill } = drafts.current;
   const [skills, setSkills] = useState<AgentSkill[] | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
-  const [activeSkill, setActiveSkill] = useState<AgentSkill | null>(null);
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [agentsExpanded, setAgentsExpanded] = useState(false);
@@ -419,7 +412,6 @@ export default function AgentView({
   }, []);
   const [deciding, setDeciding] = useState<{ id: string; approved: boolean } | null>(null);
   const decisionRef = useRef<string | null>(null);
-  const [attachments, setAttachments] = useState<(AgentAttachment & { preview?: string })[]>([]);
   const [filePreview, setFilePreview] = useState<{ sessionId: string; target: AgentFilePreviewTarget } | null>(null);
   useEffect(() => {
     setFilePreview(null);
@@ -428,6 +420,7 @@ export default function AgentView({
   const [dragging, setDragging] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const [attentionInboxOpen, setAttentionInboxOpen] = useState(false);
   const [queued, setQueued] = useState<
     {
       session: string;
@@ -436,6 +429,7 @@ export default function AgentView({
       attachments?: string[];
       failed?: boolean;
       correction?: boolean;
+      needsFiles?: boolean;
     }[]
   >(() => {
     try {
@@ -451,6 +445,8 @@ export default function AgentView({
                 ? item.attachments.filter((a: unknown) => typeof a === 'string')
                 : [],
               failed: true,
+              needsFiles: item.needsFiles === true ||
+                (item.failed !== true && Array.isArray(item.attachments) && item.attachments.some((value: unknown) => typeof value === 'string')),
               ...(item.correction === true ? { correction: true } : {}),
             }))
         : [];
@@ -458,10 +454,19 @@ export default function AgentView({
       return [];
     }
   });
+  const [pausedQueues, setPausedQueues] = useLocalStorageState<string[]>(PAUSED_QUEUES_KEY, {
+    fallback: [],
+    parse: (raw) => {
+      const value: unknown = JSON.parse(raw);
+      return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
+    },
+    serialize: JSON.stringify,
+  });
+  const [queueEdit, setQueueEdit] = useState<{ session: string; id: string; text: string } | null>(null);
+  const queuePaused = pausedQueues.includes(sessionId) || queueEdit?.session === sessionId;
   const [sendReceipts, setSendReceipts] = useState<SendReceipt[]>([]);
   const requestsInFlightRef = useRef(new Set<string>());
-  const draftVersionRef = useRef(0);
-  const restoredDraftRef = useRef<{ session: string; requestId: string; version: number } | null>(null);
+  const restoredDrafts = useRef(new Map<string, { requestId: string; version: number }>());
   const correctionInFlightRef = useRef(false);
   const [sendingCorrection, setSendingCorrection] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -488,7 +493,7 @@ export default function AgentView({
     .find((call) => call.status === 'running');
   const artifact = [...artifacts].reverse().find((item) => item.files.length > 0);
   const artifactKey = artifact ? `artifact:${artifact.id}:${artifact.files.map((file) => file.sha256).join(',')}` : '';
-  const turns = useMemo(() => groupTurns(messages), [messages]);
+  const turns = useMemo(() => groupTurns(earlier?.messages ?? messages), [earlier, messages]);
   const turnArtifacts = useMemo(
     () =>
       placeArtifacts(
@@ -498,8 +503,9 @@ export default function AgentView({
             artifact.kind !== 'page' ||
             !panels.some((panel) => panel.type === 'page' && panel.props.artifact_id === artifact.id),
         ),
+        before === null && !earlier,
       ),
-    [turns, artifacts, panels],
+    [turns, artifacts, panels, before, earlier],
   );
   const turnPanels = useMemo(() => placePanels(turns, panels), [turns, panels]);
   const lastTurn = turns[turns.length - 1];
@@ -607,7 +613,15 @@ export default function AgentView({
           }
           setMessagesSessionId(id);
           setMessagesStale(false);
-          setMessages((current) => reuseMessages(current, res.messages));
+          const first = res.messages.find((message) => message.id !== undefined)?.id;
+          setMessages((previous) => {
+            const historical = first !== undefined && loadedEarlier.current
+              ? previous.filter((message) => message.id !== undefined && message.id < first)
+              : [];
+            return reuseMessages(previous, [...historical, ...res.messages]);
+          });
+          if (!loadedEarlier.current) setBefore(res.before ?? null);
+          transcriptRevision.current = res.revision ?? null;
           setArtifacts(res.artifacts ?? []);
           setQuestions(res.questions ?? []);
           setPanels(res.panels ?? []);
@@ -644,8 +658,8 @@ export default function AgentView({
   );
 
   const reloadVisibleMessages = useCallback(() => {
-    if (sessionIdRef.current) void loadMessages(sessionIdRef.current, false);
-  }, [loadMessages]);
+    if (sessionId) void loadMessages(sessionId, false);
+  }, [sessionId, loadMessages]);
 
   const {
     items: progress,
@@ -711,6 +725,15 @@ export default function AgentView({
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
+    historyRequest.current += 1;
+    loadedEarlier.current = false;
+    transcriptRevision.current = null;
+    lastLiveUpdate.current = 0;
+    setEarlier(null);
+    setBefore(null);
+    setHistoryBusy(false);
+    setHistoryTarget(null);
+    setArtifactShelfOpen(false);
     if (sessionId) localStorage.setItem(SESSION_KEY, sessionId);
     setMessages(messageCacheRef.current.get(sessionId) ?? []);
     setMessagesSessionId('');
@@ -734,15 +757,23 @@ export default function AgentView({
   useEffect(() => {
     if (!sessionId) return undefined;
     return onNotify((method, params) => {
-      const change = params as ({ session_id?: string; stream?: AgentStreamChange } | null);
-      if (method !== 'agent.changed' || change?.session_id !== sessionId) return;
-      if (change.stream) {
-        setMessages((current) => applyStreamToMessages(current, change.stream ?? {}));
-        setMessagesSessionId(sessionId);
-        setMessagesStale(false);
-        setRunning(true);
-        return;
+      if (method !== 'agent.changed' || !params || typeof params !== 'object'
+          || !('session_id' in params) || params.session_id !== sessionId) return;
+      if ('revision' in params && typeof params.revision === 'number' && transcriptRevision.current !== null) {
+        if (params.revision <= transcriptRevision.current) return;
+        if (params.revision === transcriptRevision.current + 1 && !messageRequestsRef.current.has(sessionId)
+            && 'partial' in params && isPartialMessage(params.partial)) {
+          transcriptRevision.current = params.revision;
+          lastLiveUpdate.current = Date.now();
+          const partial = params.partial;
+          setMessages((previous) => [
+            ...(previous[previous.length - 1]?.partial ? previous.slice(0, -1) : previous), partial,
+          ]);
+          setRunning(true);
+          return;
+        }
       }
+      lastLiveUpdate.current = 0;
       void loadMessages(sessionId);
     });
   }, [sessionId, loadMessages]);
@@ -763,7 +794,7 @@ export default function AgentView({
     const active = Boolean(sessionId) && (running || pending.length > 0 || delegations.length > 0 || handoffPending);
     if (active && timerRef.current == null) {
       timerRef.current = window.setInterval(() => {
-        void loadMessages(sessionId);
+        if (Date.now() - lastLiveUpdate.current >= POLL_MS) void loadMessages(sessionId);
       }, POLL_MS);
     }
     if (!active && timerRef.current != null) {
@@ -779,8 +810,8 @@ export default function AgentView({
   }, [sessionId, running, pending.length, delegations.length, handoffPending, loadMessages]);
 
   useEffect(() => {
-    if (atBottomRef.current) listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [messages.length, messages[messages.length - 1]?.content, pending.length, attentionKey, artifactKey]);
+    if (atBottomRef.current && !earlier) listRef.current?.scrollTo?.({ top: listRef.current.scrollHeight });
+  }, [messages.length, messages[messages.length - 1]?.content, pending.length, attentionKey, artifactKey, earlier]);
 
   useEffect(() => {
     atBottomRef.current = true;
@@ -795,7 +826,7 @@ export default function AgentView({
       if (!atBottomRef.current || frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        if (atBottomRef.current) list.scrollTo({ top: list.scrollHeight });
+        if (atBottomRef.current) list.scrollTo?.({ top: list.scrollHeight });
       });
     });
     const watch = () => {
@@ -821,13 +852,94 @@ export default function AgentView({
   };
 
   const jumpToEnd = () => {
+    if (earlier) setEarlier(null);
     atBottomRef.current = true;
     setShowJump(false);
-    listRef.current?.scrollTo({
+    listRef.current?.scrollTo?.({
       top: listRef.current.scrollHeight,
       behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
     });
   };
+
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (historyTarget !== null) {
+      const row = list?.querySelector<HTMLElement>(`[data-entry-ids~="${historyTarget}"]`);
+      row?.scrollIntoView?.({ block: 'center' });
+      row?.focus({ preventScroll: true });
+      setHistoryTarget(null);
+    }
+    const anchor = prependAnchor.current;
+    if (list && anchor?.node.isConnected) list.scrollTop += anchor.node.getBoundingClientRect().top - anchor.top;
+    prependAnchor.current = null;
+  }, [turns, historyTarget]);
+
+  const visitHistory = async (target?: number) => {
+    const cursor = target ?? (earlier ? earlier.before : before);
+    if (historyBusy || cursor === null || !sessionId) return;
+    atBottomRef.current = false;
+    if (target !== undefined && (earlier?.messages ?? messages).some((message) => message.id === target)) {
+      setHistoryTarget(target);
+      return;
+    }
+    const request = ++historyRequest.current;
+    setHistoryBusy(true);
+    try {
+      const page = await (target === undefined
+        ? agentApi.agentMessagesBefore(sessionId, cursor)
+        : agentApi.agentMessagesAround(sessionId, target));
+      if (request !== historyRequest.current || sessionId !== sessionIdRef.current) return;
+      if (target !== undefined) {
+        if (!page.messages.some((message) => message.id === target)) throw new Error('El mensaje ya no está disponible');
+        setEarlier(page);
+        setHistoryTarget(target);
+        setShowJump(true);
+      } else {
+        const list = listRef.current;
+        if (list) {
+          const top = list.getBoundingClientRect().top;
+          const node = Array.from(list.querySelectorAll<HTMLElement>('[data-entry-ids]'))
+            .find((row) => row.getBoundingClientRect().bottom > top);
+          if (node) prependAnchor.current = { node, top: node.getBoundingClientRect().top };
+        }
+        if (earlier) setEarlier({ messages: [...page.messages, ...earlier.messages], before: page.before });
+        else {
+          loadedEarlier.current = true;
+          setMessages((current) => {
+            const ids = new Set(current.map((message) => message.id));
+            return [...page.messages.filter((message) => !ids.has(message.id)), ...current];
+          });
+          setBefore(page.before);
+        }
+      }
+    } catch (error) {
+      if (request === historyRequest.current) addToast({ message: errorMessage(error, 'No se pudo cargar el historial'), type: 'error' });
+    } finally {
+      if (request === historyRequest.current) setHistoryBusy(false);
+    }
+  };
+
+  const jumpToOrigin = async (kind: 'artifact' | 'task', ref: string) => {
+    try {
+      const { id } = await agentApi.agentMessageOrigin(sessionId, kind, ref);
+      if (sessionId !== sessionIdRef.current) return;
+      if (id !== null) await visitHistory(id);
+      else if (kind === 'artifact') {
+        const card = document.getElementById(`agent-artifact-${ref}`);
+        if (card) card.scrollIntoView({ block: 'nearest' });
+        else addToast({ message: 'No se encontró el turno de este entregable', type: 'warning' });
+      }
+    } catch (error) {
+      if (sessionId === sessionIdRef.current)
+        addToast({ message: errorMessage(error, 'No se pudo abrir el origen'), type: 'error' });
+    }
+  };
+
+  useEffect(() => {
+    if (pendingTaskOrigin?.session !== sessionId || loadingMessages) return;
+    setPendingTaskOrigin(null);
+    void jumpToOrigin('task', pendingTaskOrigin.id);
+  }, [pendingTaskOrigin, sessionId, loadingMessages, jumpToOrigin]);
 
   const session = sessions.find((s) => s.id === sessionId) ?? null;
   const hideReasoning = sessionEntry === 'agent' || (sessionEntry === null && !!session?.profile);
@@ -1031,9 +1143,10 @@ export default function AgentView({
     const token =
       option.kind === 'bot' ? `@bot:${option.profile.id} ` : option.kind === 'connector' ? `@${option.mention} ` : '';
     const caret = active.start + token.length;
-    draftVersionRef.current += 1;
-    setDraft(`${draft.slice(0, active.start)}${token}${draft.slice(active.end)}`);
-    if (option.kind === 'skill') setActiveSkill(option.skill);
+    drafts.update(sessionId, (current) => ({
+      text: `${draft.slice(0, active.start)}${token}${draft.slice(active.end)}`,
+      skill: option.kind === 'skill' ? option.skill : current.skill,
+    }), true);
     composer.close(caret);
     window.requestAnimationFrame(() => {
       draftRef.current?.focus();
@@ -1059,9 +1172,8 @@ export default function AgentView({
     }
   };
 
-  const newSession = async (profile?: AgentProfile) => {
+  const newSession = async (profile?: AgentProfile, adoptDraft = false) => {
     const selection = ++sessionSelectionRef.current;
-    const draftVersion = draftVersionRef.current;
     let creation = profile && profileCreationsRef.current.get(profile.id);
     if (!creation) {
       if (!provider) {
@@ -1074,13 +1186,11 @@ export default function AgentView({
     const created = await creation;
     if (profile) profileCreationsRef.current.delete(profile.id);
     if (!created) return null;
+    if (adoptDraft) drafts.adoptNew(created.id);
     if (selection === sessionSelectionRef.current) {
       setSessionEntry(profile ? 'agent' : 'conversation');
       setSessionId(created.id);
-      if (profile?.starter && draftVersion === draftVersionRef.current) {
-        draftVersionRef.current += 1;
-        setDraft(profile.starter);
-      }
+      if (profile?.starter) drafts.update(created.id, () => ({ text: profile.starter }), true);
     }
     return created.id;
   };
@@ -1096,6 +1206,9 @@ export default function AgentView({
     if (!ok) return;
     try {
       await agentApi.agentSessionDelete(id);
+      drafts.discard(id);
+      restoredDrafts.current.delete(id);
+      setPausedQueues((current) => toggleId(current, id, false));
       messageCacheRef.current.delete(id);
       const version = messagesVersionRef.current.get(id);
       if (version) version.version += 1;
@@ -1125,6 +1238,7 @@ export default function AgentView({
   const setIncognito = async (id: string, incognito: boolean) => {
     try {
       await agentApi.agentSessionIncognitoSet(id, incognito);
+      drafts.setPrivate(id, incognito);
       await refreshSessions();
       addToast({ message: incognito ? 'Modo incógnito activado: esta conversación no alimentará la memoria' : 'Modo incógnito desactivado', type: 'success' });
     } catch (err) {
@@ -1279,20 +1393,15 @@ export default function AgentView({
       if (res.accepted !== true)
         throw new Error(correction ? 'No se pudo registrar la indicación' : 'No se pudo registrar el mensaje');
       recordReceipt({ intent, phase: 'received' });
-      if (skillId) setActiveSkill((current) => (current?.id === skillId ? null : current));
       setQueued((previous) => previous.filter((item) => item.session !== id || item.requestId !== requestId));
-      setAttachments((previous) => previous.filter((file) => !attachmentIds.includes(file.id)));
-      if (id === sessionIdRef.current) {
-        const restored = restoredDraftRef.current;
-        if (
-          restored?.session === id &&
-          restored.requestId === requestId &&
-          restored.version === draftVersionRef.current
-        ) {
-          setDraft('');
-          restoredDraftRef.current = null;
-        }
-      }
+      const restored = restoredDrafts.current.get(id);
+      const clearRestored = restored?.requestId === requestId && restored.version === drafts.version(id);
+      if (restored?.requestId === requestId) restoredDrafts.current.delete(id);
+      drafts.update(id, (current) => ({
+        attachments: current.attachments.filter((file) => !attachmentIds.includes(file.id)),
+        skill: skillId && current.skill?.id === skillId ? null : current.skill,
+        text: clearRestored ? '' : current.text,
+      }));
       for (const file of res.files?.rejected ?? []) {
         addToast({ message: `No se autorizó ${file.path}: ${file.reason}`, type: 'warning' });
       }
@@ -1343,14 +1452,14 @@ export default function AgentView({
       return;
     }
     const attachmentIds = suggestion === undefined ? attachments.map((a) => a.id) : [];
-    const version = draftVersionRef.current;
+    const version = drafts.version(sessionId);
     sendInFlightRef.current = true;
     setSending(true);
     try {
-      const id = sessionId || (await newSession());
+      const id = sessionId || (await newSession(undefined, suggestion === undefined));
       if (!id) return;
-      if (suggestion === undefined && version === draftVersionRef.current)
-        setDraft((prev) => (prev.trim() === content ? '' : prev));
+      if (suggestion === undefined && version === drafts.version(id))
+        drafts.update(id, (current) => ({ text: current.text.trim() === content ? '' : current.text }));
       atBottomRef.current = true;
       const failed = sendReceipts.find(
         (receipt) =>
@@ -1362,9 +1471,9 @@ export default function AgentView({
           receipt.intent.skillId === skill?.id,
       );
       const requestId = failed?.intent.requestId ?? newRequestId();
-      if (!correction && !failed && (running || pending.length > 0)) {
+      if (!correction && !failed && (running || pending.length > 0 || queuePaused)) {
         setQueued((q) => [...q, { session: id, text: content, requestId, attachments: attachmentIds }]);
-        setAttachments((previous) => previous.filter((file) => !attachmentIds.includes(file.id)));
+        drafts.update(id, (current) => ({ attachments: current.attachments.filter((file) => !attachmentIds.includes(file.id)) }));
         return;
       }
       const ok = await sendToSession({
@@ -1375,11 +1484,11 @@ export default function AgentView({
         correction,
         ...(skill ? { skillId: skill.id } : {}),
       });
-      if (!ok && suggestion === undefined && id === sessionIdRef.current && version === draftVersionRef.current) {
-        setDraft((prev) => {
-          if (prev.trim()) return prev;
-          restoredDraftRef.current = { session: id, requestId, version };
-          return content;
+      if (!ok && suggestion === undefined && version === drafts.version(id)) {
+        drafts.update(id, (current) => {
+          if (current.text.trim()) return {};
+          restoredDrafts.current.set(id, { requestId, version });
+          return { text: content };
         });
       }
     } finally {
@@ -1404,7 +1513,7 @@ export default function AgentView({
   };
 
   useEffect(() => {
-    if (!sessionId || loadingMessages || running || stopping || modelBusy || messagesStale || pending.length > 0) return;
+    if (!sessionId || loadingMessages || running || stopping || modelBusy || messagesStale || pending.length > 0 || queuePaused) return;
     const next = queued.find((i) => i.session === sessionId && !i.failed);
     if (!next) return;
     const sending = { ...next, failed: true };
@@ -1419,7 +1528,38 @@ export default function AgentView({
       });
       if (ok) setQueued((q) => q.filter((i) => i !== sending));
     })();
-  }, [sessionId, loadingMessages, running, stopping, modelBusy, messagesStale, pending.length, queued]);
+  }, [sessionId, loadingMessages, running, stopping, modelBusy, messagesStale, pending.length, queued, queuePaused]);
+
+  const updateQueuedText = () => {
+    if (!queueEdit?.text.trim()) return;
+    setQueued((items) => items.map((item) => item.session === queueEdit.session && item.requestId === queueEdit.id && !item.failed
+      ? { ...item, text: queueEdit.text.trim() } : item));
+    setQueueEdit(null);
+  };
+
+  const moveQueued = (item: (typeof queued)[number], neighbor: (typeof queued)[number] | undefined) => {
+    if (!neighbor || item.failed || neighbor.failed) return;
+    setQueued((items) => {
+      const from = items.indexOf(item);
+      const to = items.indexOf(neighbor);
+      if (from < 0 || to < 0) return items;
+      const next = [...items];
+      [next[from], next[to]] = [neighbor, item];
+      return next;
+    });
+  };
+
+  const replaceQueuedFiles = async (item: (typeof queued)[number]) => {
+    try {
+      const result = await agentApi.agentAttach('files');
+      if (!result.attachments.length) return;
+      const ids = result.attachments.map((file) => file.id);
+      setQueued((items) => items.map((entry) => entry === item
+        ? { ...entry, attachments: ids, needsFiles: false } : entry));
+    } catch (error) {
+      addToast({ message: errorMessage(error, 'No se pudieron adjuntar los archivos de nuevo'), type: 'error' });
+    }
+  };
 
   const sendCorrection = async (item: (typeof queued)[number]) => {
     if (correctionInFlightRef.current || item.failed) return;
@@ -1472,8 +1612,8 @@ export default function AgentView({
   const attach = async () => {
     try {
       const res = await agentApi.agentAttach('files');
-      if (res.attachments.length) draftVersionRef.current += 1;
-      setAttachments((prev) => [...prev, ...res.attachments]);
+      if (res.attachments.length)
+        drafts.update(sessionId, (current) => ({ attachments: [...current.attachments, ...res.attachments] }), true);
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo adjuntar'), type: 'error' });
     }
@@ -1501,13 +1641,13 @@ export default function AgentView({
         paths: withPath.filter((item) => item.path).map((item) => item.path),
         data,
       });
-      if (res.attachments.length) draftVersionRef.current += 1;
-      setAttachments((prev) => [
-        ...prev,
-        ...res.attachments.map((item, index) =>
-          ordered[index]?.type.startsWith('image/') ? { ...item, preview: URL.createObjectURL(ordered[index]) } : item,
-        ),
-      ]);
+      if (res.attachments.length) {
+        drafts.update(sessionId, (current) => ({
+          attachments: [...current.attachments, ...res.attachments.map((item, index) =>
+            ordered[index]?.type.startsWith('image/') ? { ...item, preview: URL.createObjectURL(ordered[index]) } : item,
+          )],
+        }), true);
+      }
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo adjuntar'), type: 'error' });
     }
@@ -2152,6 +2292,28 @@ export default function AgentView({
             </header>
           )}
 
+          {session && (
+            <div className="mx-auto flex w-full max-w-[768px] flex-wrap justify-end gap-1 px-4">
+              <Button size="sm" variant="ghost" onClick={() => setAttentionInboxOpen(true)}>Encargos por atender</Button>
+              <Button size="sm" variant="ghost" aria-expanded={historySearchOpen}
+                onClick={() => setHistorySearchOpen((open) => !open)}>
+                <Search size={13} /> Buscar mensajes
+              </Button>
+              {artifacts.some((artifact) => artifact.files.length > 0) && (
+                <Button size="sm" variant="ghost" onClick={() => setArtifactShelfOpen(true)}>Entregables</Button>
+              )}
+              {earlier && <Button size="sm" variant="ghost" onClick={jumpToEnd}>Volver a mensajes recientes</Button>}
+            </div>
+          )}
+          {session && historySearchOpen && (
+            <TranscriptSearch key={session.id} sessionId={session.id}
+              onJump={(id) => void visitHistory(id)} onClose={() => setHistorySearchOpen(false)} />
+          )}
+          {session && artifactShelfOpen && <ArtifactShelf artifacts={artifacts}
+            onClose={() => setArtifactShelfOpen(false)} onJump={(id) => {
+              setArtifactShelfOpen(false);
+              void jumpToOrigin('artifact', id);
+            }} />}
           <div
             ref={listRef}
             onScroll={onListScroll}
@@ -2160,6 +2322,13 @@ export default function AgentView({
             tabIndex={-1}
             className="custom-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-4 pb-4 pt-3 [&>*]:mx-auto [&>*]:max-w-[768px]"
           >
+            {(earlier ? earlier.before : before) !== null && (
+              <div className="flex justify-center">
+                <Button size="sm" variant="ghost" disabled={historyBusy} onClick={() => void visitHistory()}>
+                  {historyBusy ? 'Cargando…' : 'Cargar mensajes anteriores'}
+                </Button>
+              </div>
+            )}
             {loadingMessages && (changingSession || !messages.length) ? (
               <p role="status" className="py-8 text-center text-sm text-[var(--text-secondary)]">
                 Cargando conversación…
@@ -2198,8 +2367,13 @@ export default function AgentView({
                   before && (before.role === 'user' ? before.message : before.messages[before.messages.length - 1]);
                 const newDay = !!label && (!previous?.ts || dayLabel(previous.ts) !== label);
                 const results = turnArtifacts.get(turn.key);
+                const entryIds = (turn.role === 'user' ? [turn.message] : turn.messages)
+                  .flatMap((message) => message.id === undefined ? [] : [message.id]);
+                const stableKey = turn.role === 'assistant' && before?.role === 'user' && before.message.id !== undefined
+                  ? `after-${before.message.id}` : first.id ?? turn.key;
                 return (
-                  <div key={`${sessionId}-${turn.role}-${turn.key}`} id={`agent-turn-${turn.key}`} tabIndex={-1}
+                  <div key={`${sessionId}-${turn.role}-${stableKey}`} id={`agent-turn-${turn.key}`}
+                    data-entry-ids={entryIds.join(' ')} tabIndex={-1}
                     className="agent-transcript-turn space-y-4">
                     {newDay && <DaySeparator label={label} />}
                     {first.handoff ? (
@@ -2275,7 +2449,7 @@ export default function AgentView({
           </div>
 
           <div className="relative h-0">
-            {showJump && (
+            {showJump && !earlier && (
               <button
                 type="button"
                 className="absolute -top-12 left-1/2 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full bg-[var(--bg-surface)] px-3 text-[12px] text-[var(--text-secondary)] shadow-[0_2px_10px_rgba(0,0,0,0.12),0_0_1px_rgba(0,0,0,0.3)] transition-colors hover:text-[var(--text-primary)]"
@@ -2324,7 +2498,7 @@ export default function AgentView({
                 </Button>
               </div>
             )}
-            {queuedForSession.length > 0 && (
+            {(queuedForSession.length > 0 || pausedQueues.includes(sessionId)) && (
               <section
                 aria-label="Mensajes en cola"
                 className="agent-queue mb-2 overflow-hidden rounded-xl border border-[var(--border-subtle)]"
@@ -2338,8 +2512,22 @@ export default function AgentView({
                   >
                     {queuedForSession.length}
                   </span>
-                  <span className="ml-auto text-[11px] text-[var(--text-muted)]">Pendientes de envío</span>
+                  <span className="ml-auto text-[11px] text-[var(--text-muted)]">{queuePaused ? 'En pausa' : 'Pendientes de envío'}</span>
+                  <Button variant="ghost" size="sm" aria-label={pausedQueues.includes(sessionId) ? 'Reanudar mensajes en cola' : 'Pausar mensajes en cola'}
+                    onClick={() => setPausedQueues((ids) => toggleId(ids, sessionId, !ids.includes(sessionId)))}>
+                    {pausedQueues.includes(sessionId) ? <Play size={13} /> : <Pause size={13} />}
+                  </Button>
                 </div>
+                {queueEdit?.session === sessionId && (
+                  <div className="space-y-1 px-3 pb-2">
+                    <Textarea aria-label="Editar mensaje en cola" value={queueEdit.text} rows={2}
+                      onChange={(event) => setQueueEdit({ ...queueEdit, text: event.target.value })} className="w-full" />
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => setQueueEdit(null)}>Cancelar edición</Button>
+                      <Button size="sm" onClick={updateQueuedText} disabled={!queueEdit.text.trim()}>Guardar mensaje</Button>
+                    </div>
+                  </div>
+                )}
                 <ol aria-label="Orden de envío" className="custom-scrollbar max-h-40 overflow-y-auto px-1 pb-1">
                   {queuedForSession.map((item, idx) => (
                     <li
@@ -2362,7 +2550,7 @@ export default function AgentView({
                             type="button"
                             className="line-clamp-2 break-words text-left text-[var(--accent-yellow)]"
                             title="Reintentar el envío pendiente"
-                            disabled={modelBusy || stopping}
+                            disabled={modelBusy || stopping || item.needsFiles}
                             onClick={() => {
                               const receipt = sendReceipts.find(
                                 (entry) =>
@@ -2406,7 +2594,7 @@ export default function AgentView({
                                 ? 'Revisar envío'
                                 : item.correction
                                   ? 'Indicación pendiente'
-                                  : idx === 0
+                                  : idx === 0 && !queuePaused
                                     ? 'A continuación'
                                     : 'En espera'}
                           </span>
@@ -2417,15 +2605,30 @@ export default function AgentView({
                             </span>
                           )}
                         </div>
+                        {item.needsFiles && <Button size="sm" variant="ghost" onClick={() => void replaceQueuedFiles(item)}>
+                          Volver a adjuntar archivos
+                        </Button>}
                       </div>
                       <div className="flex shrink-0 items-center gap-0.5">
+                        {!item.failed && (
+                          <>
+                            <Button variant="ghost" size="sm" aria-label="Editar en cola" disabled={queueEdit !== null}
+                              onClick={() => setQueueEdit({ session: item.session, id: item.requestId, text: item.text })}><Pencil size={12} /></Button>
+                            <Button variant="ghost" size="sm" aria-label="Subir en la cola"
+                              disabled={idx === 0 || queuedForSession[idx - 1]?.failed}
+                              onClick={() => moveQueued(item, queuedForSession[idx - 1])}><ArrowUp size={12} /></Button>
+                            <Button variant="ghost" size="sm" aria-label="Bajar en la cola"
+                              disabled={idx === queuedForSession.length - 1 || queuedForSession[idx + 1]?.failed}
+                              onClick={() => moveQueued(item, queuedForSession[idx + 1])}><ArrowDown size={12} /></Button>
+                          </>
+                        )}
                         {(running || pending.length > 0) && !item.failed && (
                           <button
                             type="button"
                             className="flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
                             aria-label="Enviar como corrección"
                             title="Enviar ahora como corrección del encargo en curso"
-                            disabled={sendingCorrection || stopping}
+                            disabled={sendingCorrection || stopping || queueEdit?.id === item.requestId}
                             onClick={() => void sendCorrection(item)}
                           >
                             <CornerDownRight size={12} />
@@ -2437,7 +2640,7 @@ export default function AgentView({
                           className="flex size-7 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
                           aria-label="Quitar de la cola"
                           title="Quitar de la cola"
-                          disabled={requestsInFlightRef.current.has(JSON.stringify([item.session, item.requestId]))}
+                          disabled={queueEdit?.id === item.requestId || requestsInFlightRef.current.has(JSON.stringify([item.session, item.requestId]))}
                           onClick={() => setQueued((q) => q.filter((i) => i !== item))}
                         >
                           <X size={13} />
@@ -2586,7 +2789,7 @@ export default function AgentView({
                       type="button"
                       className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
                       aria-label={`Quitar la skill ${activeSkill.name}`}
-                      onClick={() => setActiveSkill(null)}
+                      onClick={() => drafts.update(sessionId, () => ({ skill: null }), true)}
                     >
                       <X size={10} />
                     </button>
@@ -2627,8 +2830,9 @@ export default function AgentView({
                             className="flex size-5 items-center justify-center rounded-full border border-[var(--border-medium)] bg-[var(--bg-surface)] text-[var(--text-secondary)] shadow-sm transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)]"
                             aria-label={`Quitar ${item.name}`}
                             onClick={() => {
-                              draftVersionRef.current += 1;
-                              setAttachments((prev) => prev.filter((a) => a.id !== item.id));
+                              drafts.update(sessionId, (current) => ({
+                                attachments: current.attachments.filter((a) => a.id !== item.id),
+                              }), true);
                             }}
                           >
                             <X size={11} strokeWidth={2.25} />
@@ -2644,8 +2848,7 @@ export default function AgentView({
                 rows={1}
                 value={draft}
                 onChange={(event) => {
-                  draftVersionRef.current += 1;
-                  setDraft(event.target.value);
+                  drafts.update(sessionId, () => ({ text: event.target.value }), true);
                   composer.edited(event.target.selectionStart);
                 }}
                 onSelect={(event) => composer.moved(event.currentTarget.selectionStart)}
@@ -2937,11 +3140,9 @@ export default function AgentView({
                     void attachFiles(files);
                     const context = notes.length ? `\n${notes.join('\n')}\n` : '';
                     if (!draft.trim()) {
-                      draftVersionRef.current += 1;
-                      setDraft(`Mira mi anotación sobre ${source}: ${context}`);
+                      drafts.update(sessionId, () => ({ text: `Mira mi anotación sobre ${source}: ${context}` }), true);
                     } else if (context) {
-                      draftVersionRef.current += 1;
-                      setDraft(`${draft.trimEnd()}\n${context}`);
+                      drafts.update(sessionId, () => ({ text: `${draft.trimEnd()}\n${context}` }), true);
                     }
                   }
                 : undefined
@@ -2950,6 +3151,14 @@ export default function AgentView({
         )}
         {tasksOpen && session && (
           <ScheduledTasksPanel sessions={sessions} sessionId={session.id} onClose={() => setTasksOpen(false)} />
+        )}
+        {attentionInboxOpen && (
+          <AgentAttentionInbox sessions={sessions} onClose={() => setAttentionInboxOpen(false)}
+            onOpenTask={(task) => {
+              setAttentionInboxOpen(false);
+              setPendingTaskOrigin({ session: task.session_id, id: task.id });
+              selectSession(task.session_id);
+            }} />
         )}
 
         {contextMenu.isOpen &&
