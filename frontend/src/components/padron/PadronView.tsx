@@ -682,7 +682,7 @@ export default function PadronView() {
           if (!jpegBytes) continue;
           const globalIdx = batchStart + k;
           if (globalIdx > 0) pdf.addPage();
-          pdf.addImage(jpegBytes, "JPEG", 0, 0, pdfW, pdfH);
+          pdf.addImage(jpegBytes, "JPEG", 0, 0, pdfW, pdfH, `padron-page-${globalIdx}`);
         }
 
         await yieldToBrowser();
