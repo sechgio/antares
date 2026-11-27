@@ -66,11 +66,12 @@ it('muestra los resultados recientes y pliega los anteriores en lugar de apilarl
 
 it('las respuestas se envían a la conversación y pregunta originales', async () => {
   const answer = vi.spyOn(agentApi, 'agentQuestionAnswer').mockResolvedValue({ question: { id: 'q1', session_id: 's1', questions: [] } });
-  render(<QuestionCard question={{ id: 'q1', session_id: 's1', questions: [{ id: 'template', prompt: 'Plantilla', options: ['A', 'B'] }] }} onAnswered={vi.fn()} />);
-  expect(screen.getByRole('button', { name: 'Responder y continuar' })).toBeDisabled();
+  const onAnswered = vi.fn();
+  render(<QuestionCard question={{ id: 'q1', session_id: 's1', questions: [{ id: 'template', prompt: 'Plantilla', options: ['A', 'B'] }] }} onAnswered={onAnswered} />);
+  expect(screen.getByRole('button', { name: 'Responder' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'B' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Responder y continuar' }));
-  await waitFor(() => expect(answer).toHaveBeenCalledWith('s1', 'q1', { template: 'B' }));
+  await waitFor(() => expect(onAnswered).toHaveBeenCalledTimes(1));
+  expect(answer).toHaveBeenCalledExactlyOnceWith('s1', 'q1', { template: 'B' });
 });
 
 it('abre una página con su conversación y revisión sin acciones de PDF', async () => {

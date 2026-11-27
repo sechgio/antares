@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { expect, it, vi } from 'vitest';
 
 vi.mock('html-to-image', () => ({ toBlob: vi.fn(async () => new Blob(['png'], { type: 'image/png' })) }));
-import MessageMarkdown, { cachedBlocks, parseBlocks, tableClipboard } from './MessageMarkdown';
+import MessageMarkdown, { cachedBlocks, parseBlocks, splitMarkdownBlocks, tableClipboard } from './MessageMarkdown';
 import { chartToMermaid, horizontalChart, niceTicks, parseChartSpec, pieSlices } from '../../../../shared/chart-spec.js';
 import { mermaidTitle } from './ChatMermaid';
 import { FilePreviewContext, localPreviewResource } from './filePreviewContext';
@@ -24,7 +24,7 @@ it('abre referencias locales con espacios y rechaza enlaces remotos o ejecutable
 it('agrupa párrafos, listas, encabezados y bloques de código', () => {
   const blocks = parseBlocks('# Resumen\nTexto\nsigue\n\n- uno\n- dos\n1. a\n2. b\n```\nconst x = 1;\n```\n> nota');
   expect(blocks.map((b) => b.kind)).toEqual(['h', 'p', 'ul', 'ol', 'code', 'quote']);
-  expect(blocks[2]).toEqual({ kind: 'ul', items: ['uno', 'dos'] });
+  expect(blocks[2]).toEqual({ kind: 'ul', items: [{ text: 'uno', depth: 0, kind: 'ul' }, { text: 'dos', depth: 0, kind: 'ul' }] });
   expect(blocks[4]).toEqual({ kind: 'code', text: 'const x = 1;' });
 });
 
@@ -215,6 +215,59 @@ it('enmarca el código con su lenguaje y lo copia al terminar de escribirse', ()
   expect(writeText).toHaveBeenCalledWith('const x = 1;');
 });
 
+it('permite ajustar las líneas largas de un bloque de código', () => {
+  const { container } = render(<MessageMarkdown text={'```ts\nconst linea = "muy larga";\n```'} />);
+  const pre = container.querySelector('pre')!;
+  expect(pre).toHaveClass('overflow-x-auto', 'whitespace-pre');
+  const toggle = screen.getByRole('button', { name: 'Ajustar líneas' });
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: 'No ajustar líneas' })).toBeInTheDocument();
+  expect(pre).toHaveClass('whitespace-pre-wrap', 'break-words');
+  expect(pre).not.toHaveClass('overflow-x-auto');
+});
+
+it('divide el streaming solo en cortes seguros entre bloques', () => {
+  expect(splitMarkdownBlocks('# Título\n\nPrimer párrafo\n\nSegundo')).toEqual(['# Título\n\n', 'Primer párrafo\n\n', 'Segundo']);
+  expect(splitMarkdownBlocks('```ts\nuno\n\ndos\n```\n\nDespués')).toEqual(['```ts\nuno\n\ndos\n```\n\n', 'Después']);
+  expect(splitMarkdownBlocks('- uno\n\n  continuación')).toBeNull();
+});
+
+it('conserva el estado de los bloques cuando termina el streaming', () => {
+  const text = 'Introducción\n\n```ts\nconst x = 1;\n```';
+  const { container, rerender } = render(<MessageMarkdown text={text} streaming />);
+  expect(container.textContent).toContain('▍');
+  fireEvent.click(screen.getByRole('button', { name: 'Ajustar líneas' }));
+  rerender(<MessageMarkdown text={text} />);
+  expect(screen.getByRole('button', { name: 'No ajustar líneas' })).toHaveAttribute('aria-pressed', 'true');
+  expect(container.textContent).not.toContain('▍');
+});
+
+it('renderiza listas anidadas conservando su jerarquía', () => {
+  const { container } = render(<MessageMarkdown text={'- Padre\n  - Hijo\n    - Nieto\n- Hermano'} />);
+  const root = container.querySelector('ul')!;
+  const top = [...root.children] as HTMLElement[];
+  expect(top).toHaveLength(2);
+  expect(top[0]).toHaveTextContent('Padre');
+  expect(top[1]).toHaveTextContent('Hermano');
+  const childList = top[0].querySelector(':scope > ul');
+  expect(childList).not.toBeNull();
+  expect(childList).toHaveTextContent('Hijo');
+  expect(childList!.querySelector(':scope > li > ul > li')).toHaveTextContent('Nieto');
+  expect(top[1].querySelector(':scope > ul')).toBeNull();
+});
+
+it('mezcla listas numeradas dentro de viñetas sin perder la jerarquía', () => {
+  const { container } = render(<MessageMarkdown text={'- Padre\n  1. Primero\n  2. Segundo\n- Hermano'} />);
+  const root = container.querySelector('ul')!;
+  const top = [...root.children] as HTMLElement[];
+  expect(top).toHaveLength(2);
+  const childList = top[0].querySelector(':scope > ol');
+  expect(childList).not.toBeNull();
+  expect([...childList!.children].map((item) => item.textContent)).toEqual(['Primero', 'Segundo']);
+  expect(top[1]).toHaveTextContent('Hermano');
+});
+
 it('reutiliza los bloques de un mensaje terminado y no cachea el que sigue llegando', () => {
   const text = '# Informe\n\nTexto final';
   expect(cachedBlocks(text, false)).toBe(cachedBlocks(text, false));
@@ -225,7 +278,13 @@ it('reutiliza los bloques de un mensaje terminado y no cachea el que sigue llega
 it('dibuja separadores, tachado, tareas, numeración inicial y citas de varias líneas', () => {
   const blocks = parseBlocks('Antes\n\n---\n\n3. tres\n4. cuatro\n\n> uno\n> dos\n\n> otra');
   expect(blocks.map((b) => b.kind)).toEqual(['p', 'hr', 'ol', 'quote', 'quote']);
-  expect(blocks[2]).toEqual({ kind: 'ol', items: ['tres', 'cuatro'], start: 3 });
+  expect(blocks[2]).toEqual({
+    kind: 'ol',
+    items: [
+      { text: 'tres', depth: 0, kind: 'ol', start: 3 },
+      { text: 'cuatro', depth: 0, kind: 'ol', start: 4 },
+    ],
+  });
   expect(blocks[3]).toEqual({ kind: 'quote', text: 'uno\ndos' });
   const { container } = render(<MessageMarkdown text={'~~viejo~~ nuevo\n\n* * *\n\n- [x] Hecho\n- [ ] Pendiente\n- normal\n\n2. b'} />);
   expect(screen.getByText('viejo').tagName).toBe('DEL');

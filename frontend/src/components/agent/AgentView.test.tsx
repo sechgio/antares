@@ -1781,6 +1781,64 @@ it('conserva el foco al llegar una pregunta y lo lleva a la respuesta solo al el
   expect(screen.getByLabelText('Nombre del informe')).toHaveFocus();
 });
 
+it('muestra la pregunta junto al mensaje del agente y conserva la respuesta al volver al chat', async () => {
+  localStorage.setItem('antares-agent-session', 's1');
+  const question = { id: 'q1', session_id: 's1', questions: [{ id: 'format', prompt: '¿Qué formato prefieres?', options: ['PDF', 'Excel'] }] };
+  const call = { id: 'c1', name: 'ask_user', params: { questions: question.questions }, gated: false, status: 'running' as const };
+  const asking = { role: 'assistant' as const, content: 'Puedo preparar el informe.', ts: 2, tool_calls: [call] };
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, messages: [asking], running: true, questions: [question] });
+  const answer = vi.spyOn(agentApi, 'agentQuestionAnswer').mockImplementation(async () => {
+    list.mockResolvedValue({ ...empty, messages: [
+      { ...asking, tool_calls: [{ ...call, status: 'done', result: '{"answers":{"format":"Excel"}}' }] },
+      { role: 'assistant', content: 'Prepararé la hoja de cálculo.', ts: 3 },
+    ] });
+    return { question };
+  });
+  const view = render(<AgentView />);
+  const greeting = await screen.findByText('Puedo preparar el informe.');
+  const form = screen.getByRole('form', { name: 'Pregunta del agente' });
+  expect(greeting.closest('.agent-turn')).toContainElement(form);
+  fireEvent.click(within(form).getByRole('button', { name: 'Excel' }));
+  const receipt = await screen.findByRole('region', { name: 'Pregunta respondida' });
+  expect(receipt).toHaveTextContent('Excel');
+  expect(receipt.compareDocumentPosition(screen.getByText('Prepararé la hoja de cálculo.')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(answer).toHaveBeenCalledExactlyOnceWith('s1', 'q1', { format: 'Excel' });
+  expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  view.unmount();
+  render(<AgentView />);
+  expect(await screen.findByRole('region', { name: 'Pregunta respondida' })).toHaveTextContent('Excel');
+  expect(screen.queryByRole('form', { name: 'Pregunta del agente' })).not.toBeInTheDocument();
+});
+
+it('permite cambiar una opción, escribir una respuesta propia y reintentar el envío', async () => {
+  localStorage.setItem('antares-agent-session', 's1');
+  const question = { id: 'q1', session_id: 's1', questions: [
+    { id: 'format', prompt: 'Formato', options: ['PDF', 'Excel'] }, { id: 'title', prompt: 'Título' },
+  ] };
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, questions: [question] });
+  const answer = vi.spyOn(agentApi, 'agentQuestionAnswer').mockRejectedValueOnce(new Error('Prueba de desconexión')).mockImplementation(async () => {
+    list.mockResolvedValue(empty);
+    return { question };
+  });
+  render(<AgentView />);
+  const form = within(await screen.findByRole('form', { name: 'Pregunta del agente' }));
+  const submit = form.getByRole('button', { name: 'Responder', exact: true });
+  fireEvent.click(form.getByRole('button', { name: 'PDF' }));
+  fireEvent.click(form.getByRole('button', { name: 'Excel' }));
+  expect(form.getByRole('button', { name: 'PDF' })).toHaveAttribute('aria-pressed', 'false');
+  expect(form.getByRole('button', { name: 'Excel' })).toHaveAttribute('aria-pressed', 'true');
+  expect(submit).toBeDisabled();
+  fireEvent.change(form.getByRole('textbox', { name: 'Formato' }), { target: { value: 'CSV' } });
+  fireEvent.change(form.getByRole('textbox', { name: 'Título' }), { target: { value: 'Entregas' } });
+  fireEvent.click(submit);
+  await waitFor(() => expect(addToast).toHaveBeenCalledWith({ message: 'Prueba de desconexión', type: 'error' }));
+  expect(form.getByRole('textbox', { name: 'Formato' })).toHaveValue('CSV');
+  fireEvent.click(submit);
+  await waitFor(() => expect(screen.queryByRole('form', { name: 'Pregunta del agente' })).not.toBeInTheDocument());
+  expect(answer).toHaveBeenCalledTimes(2);
+  expect(answer).toHaveBeenLastCalledWith('s1', 'q1', { format: 'CSV', title: 'Entregas' });
+});
+
 it.each([false, true])('muestra el resultado sin arrastrar el historial cuando se lee arriba: %s', async (readingAbove) => {
   const update = agentUpdates();
   const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,

@@ -1,7 +1,7 @@
 import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppWindow, ArrowLeft, ArrowRight, Ban, BookOpen, Camera, ChevronDown, ChevronRight, CircleCheck, Download, FilePen, FileText, FolderOpen, Globe, Hand, Keyboard, ListChecks, Loader2, Monitor, Mouse, Move, MousePointerClick, Network, Package, Plug, RotateCw, Search, ShieldCheck, Terminal, TriangleAlert, Upload, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { agentApi, AgentApproval, AgentArtifact, AgentChannel, AgentMessage, AgentPanel, AgentToolCall } from '../../api/agentApi';
+import type { agentApi, AgentApproval, AgentArtifact, AgentChannel, AgentMessage, AgentPanel, AgentQuestion, AgentToolCall } from '../../api/agentApi';
 import Button from '../ui/Button';
 import Toggle from '../ui/Toggle';
 import AgentAvatar from './AgentAvatar';
@@ -14,6 +14,7 @@ import { FileCard } from './ContextChips';
 import { FilePreviewContext } from './filePreviewContext';
 import MessageMarkdown from './MessageMarkdown';
 import PanelRenderer, { type PanelRespond } from './PanelRenderer';
+import QuestionCard, { AnsweredQuestion, answeredQuestion } from './QuestionCard';
 import Reasoning, { ThinkingStatus } from './Reasoning';
 import SubagentTrace from './SubagentTrace';
 import { channelLabel } from './channels';
@@ -410,7 +411,7 @@ function UserBubble({ msg }: { msg: AgentMessage }) {
       </div>}
       {msg.content && <div className="flex w-full min-w-0 items-end justify-end gap-1">
         <CopyButton text={msg.content} label="Copiar mensaje" />
-        <div className="agent-message-user min-w-0 max-w-[min(600px,88%)] rounded-[20px] px-4 py-2.5 text-[14px] leading-[22px]">
+        <div className="agent-message-user min-w-0 max-w-[min(600px,88%)] rounded-2xl rounded-br-md px-3.5 py-2 text-sm leading-[22px]">
           <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
         </div>
       </div>}
@@ -604,7 +605,8 @@ export function groupTurns(messages: AgentMessage[]): TimelineTurn[] {
       return;
     }
     const last = turns[turns.length - 1];
-    if (last?.role === 'assistant' && !message.notice && !last.messages[0].notice) last.messages.push(message);
+    if (last?.role === 'assistant' && !message.notice && !last.messages[0].notice
+      && !last.messages[last.messages.length - 1].tool_calls?.some((call) => call.name === 'ask_user')) last.messages.push(message);
     else turns.push({ key: index, role: 'assistant', messages: [message], startedAt });
   });
   return turns;
@@ -694,9 +696,10 @@ function TurnChanges({ calls }: { calls: AgentToolCall[] }) {
   );
 }
 
-export function AssistantTurn({ messages, agent, onUndo, startedAt, results, view = 'normal', panels = [], sessionId, onPanelRespond, hideReasoning = false }: {
+export function AssistantTurn({ messages, agent, onUndo, startedAt, results, view = 'normal', panels = [], pendingQuestions, sessionId, onPanelRespond, hideReasoning = false }: {
   messages: AgentMessage[];
   panels?: AgentPanel[];
+  pendingQuestions?: { items: AgentQuestion[]; onAnswered: () => void };
   sessionId?: string;
   onPanelRespond?: PanelRespond;
   view?: TranscriptView;
@@ -707,8 +710,9 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
   hideReasoning?: boolean;
 }) {
   const last = messages[messages.length - 1];
-  const answer = last?.content && !last.tool_calls?.length ? last : null;
+  const answer = last?.content && (!last.tool_calls?.length || last.tool_calls.some((call) => call.name === 'ask_user')) ? last : null;
   const entries: ActivityEntry[] = [];
+  const answered = new Map<string, NonNullable<ReturnType<typeof answeredQuestion>>>();
   messages.forEach((message, index) => {
     if (message.reasoning) {
       entries.push({ kind: 'reasoning', key: `reasoning-${index}`, text: message.reasoning, ms: message.reasoning_ms,
@@ -717,6 +721,8 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
     if (message.content && message !== answer) entries.push({ kind: 'note', key: `note-${index}`, text: message.content });
     for (const call of message.tool_calls ?? []) {
       if (call.name === 'task_plan' && call.status === 'done') continue;
+      const items = answeredQuestion(call);
+      if (items) answered.set(call.id, items);
       entries.push({ kind: 'call', key: call.id, call });
       for (const panel of panels.filter((item) => item.call_id === call.id)) entries.push({ kind: 'panel', key: `panel-${panel.id}`, panel });
     }
@@ -724,14 +730,18 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
   for (const panel of panels.filter((item) => !entries.some((entry) => entry.kind === 'panel' && entry.panel.id === item.id))) {
     entries.push({ kind: 'panel', key: `panel-${panel.id}`, panel });
   }
-  const steps = entries.filter((entry): entry is StepEntry => entry.kind !== 'panel');
+  const steps = entries.filter((entry): entry is StepEntry => {
+    if (entry.kind === 'panel') return false;
+    if (view === 'verbose' || entry.kind !== 'call' || entry.call.name !== 'ask_user') return true;
+    return !answered.has(entry.call.id) && !(pendingQuestions && ['running', 'queued'].includes(entry.call.status));
+  });
   const panelEntries = entries.flatMap((entry) => (entry.kind === 'panel' ? [entry.panel] : []));
   const working = messages.some((message) => message.partial)
-    || steps.some((entry) => entry.kind === 'call' && ['running', 'queued'].includes(entry.call.status));
+    || entries.some((entry) => entry.kind === 'call' && ['running', 'queued'].includes(entry.call.status));
   const duration = !working && startedAt && last && last.ts > startedAt ? last.ts - startedAt : undefined;
   const thought = steps.length === 1 && steps[0].kind === 'reasoning' ? steps[0] : null;
   return (
-    <div className="agent-trace-in agent-turn group space-y-2.5">
+    <div className="agent-trace-in agent-turn group min-w-0 space-y-2">
       <div className="flex items-center gap-1.5">
         {agent && <AgentAvatar seed={agent.seed} color={agent.color} name={agent.name} size={20} working={working} />}
         <span className="text-[12px] font-medium leading-5 text-[var(--text-muted)]">{agent?.name ?? 'Agente'}</span>
@@ -744,10 +754,12 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
         : steps.length > 0 && <Activity entries={steps} working={working} answering={!!answer} duration={duration} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />}
       {sessionId && onPanelRespond && panelEntries.map((panel) => <PanelRenderer key={panel.id} panel={panel} sessionId={sessionId} onRespond={onPanelRespond} />)}
       {answer && (
-        <div className="agent-message-answer w-fit min-w-0 max-w-full rounded-[18px] px-4 py-3 text-[15px] leading-[26px] text-[var(--text-primary)]">
+        <div className="agent-message-answer w-fit min-w-0 max-w-full rounded-2xl rounded-tl-md px-3.5 py-2.5 text-[15px] leading-6 text-[var(--text-primary)]">
           <MessageMarkdown text={answer.content} streaming={!!answer.partial} />
         </div>
       )}
+      {[...answered].map(([id, items]) => <AnsweredQuestion key={id} items={items} />)}
+      {pendingQuestions?.items.map((question) => <QuestionCard key={question.id} question={question} onAnswered={pendingQuestions.onAnswered} />)}
       {!working && steps.length > 2 && <TurnChanges calls={steps.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []))} />}
       {results}
     </div>

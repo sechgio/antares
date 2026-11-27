@@ -410,6 +410,9 @@ export default function AgentView({
   );
   const turnPanels = useMemo(() => placePanels(turns, panels), [turns, panels]);
   const lastTurn = turns[turns.length - 1];
+  const questionTurn = questions.length && lastTurn?.role === 'assistant'
+    && lastTurn.messages.some((message) => message.tool_calls?.some((call) => call.name === 'ask_user' && ['running', 'queued'].includes(call.status)))
+    ? lastTurn.key : null;
   const openPanel =
     lastTurn?.role === 'assistant'
       ? turnPanels.get(lastTurn.key)?.find((panel) => panel.status === 'open' && (panel.type === 'choice' || panel.type === 'form'))
@@ -1990,7 +1993,7 @@ export default function AgentView({
             role="region"
             aria-label="Mensajes"
             tabIndex={-1}
-            className="custom-scrollbar min-h-0 flex-1 space-y-8 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-4 pb-4 pt-3 [&>*]:mx-auto [&>*]:max-w-[768px]"
+            className="custom-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-4 pb-4 pt-3 [&>*]:mx-auto [&>*]:max-w-[768px]"
           >
             {showHero ? (
               <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
@@ -2040,6 +2043,7 @@ export default function AgentView({
                         view={transcriptView}
                         hideReasoning={!!session?.profile}
                         panels={turnPanels.get(turn.key)}
+                        pendingQuestions={turn.key === questionTurn ? { items: questions, onAnswered: () => void loadMessages(sessionId, false) } : undefined}
                         sessionId={sessionId}
                         onPanelRespond={respondPanel}
                         results={
@@ -2078,8 +2082,8 @@ export default function AgentView({
                 onOpenModule={onOpenModule}
               />
             )}
-            {questions.map((question) => (
-              <div key={question.id} id={`agent-question-${question.id}`}>
+            {questionTurn === null && questions.map((question) => (
+              <div key={question.id}>
                 <QuestionCard question={question} onAnswered={() => void loadMessages(sessionId, false)} />
               </div>
             ))}
