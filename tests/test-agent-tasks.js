@@ -190,8 +190,10 @@ async function main() {
     await idle(session.id);
     await until(async () => {
       const listed = await runtime.handlers.agent_tasks_list({ session_id: session.id });
-      return listed.tasks.some((task) => task.status === 'delivered');
+      return listed.tasks.some((task) => task.status === 'to_verify');
     });
+    const { tasks: settledTasks } = await runtime.handlers.agent_tasks_list({ session_id: session.id });
+    await runtime.handlers.agent_tasks_verify({ id: settledTasks.find((task) => task.status === 'to_verify').id });
     assert.equal(granted.length, 0, 'un encargo del modelo no autoriza las rutas que contiene');
     await runtime.shutdown();
     faux = await open();

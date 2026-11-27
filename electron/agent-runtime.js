@@ -1788,6 +1788,14 @@ function tasksQueue(params) {
   return require('./agent-tasks').queueControl(params || {});
 }
 
+function tasksRespond(params) {
+  return require('./agent-tasks').respondToTask(params || {});
+}
+
+function tasksVerify(params) {
+  return require('./agent-tasks').verifyTask(params || {});
+}
+
 async function _resultEntryFor(conv, callId) {
   const entries = await projection.allEntries(conv);
   const owner = entries.findLastIndex(
@@ -1905,6 +1913,8 @@ module.exports = {
     agent_tasks_cancel: tasksCancel,
     agent_tasks_run: tasksRun,
     agent_tasks_queue: tasksQueue,
+    agent_tasks_respond: tasksRespond,
+    agent_tasks_verify: tasksVerify,
   },
   _internal: {
     state: () => shared.state,

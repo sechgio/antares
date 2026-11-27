@@ -1,8 +1,10 @@
-import { Pause, Play, X } from 'lucide-react';
+import { useState } from 'react';
+import { Check, Pause, Play, X } from 'lucide-react';
 import type {
   AgentQueuePauseReason, AgentQueueState, AgentSession, AgentTask, AgentTaskStatus,
 } from '../../api/agentApi';
 import Button from '../ui/Button';
+import Textarea from '../ui/Textarea';
 
 export interface AgentQueueGroup {
   sessionId: string;
@@ -16,6 +18,9 @@ const QUEUE_STATUS_CLASSES: Record<AgentTaskStatus, string> = {
   delivered: 'bg-[color-mix(in_srgb,var(--accent-green)_12%,transparent)] text-[var(--accent-green)]',
   cancelled: 'bg-[var(--bg-input)] text-[var(--text-muted)]',
   uncertain: 'bg-[color-mix(in_srgb,var(--accent-red)_10%,transparent)] text-[var(--accent-red)]',
+  needs_input: 'bg-[color-mix(in_srgb,var(--accent-yellow)_14%,transparent)] text-[var(--accent-yellow)]',
+  blocked: 'bg-[color-mix(in_srgb,var(--accent-red)_10%,transparent)] text-[var(--accent-red)]',
+  to_verify: 'bg-[color-mix(in_srgb,var(--accent-green)_12%,transparent)] text-[var(--accent-green)]',
 };
 
 function queueReasonText(reason: AgentQueuePauseReason | undefined): string {
@@ -31,16 +36,56 @@ function taskStatusLabel(task: AgentTask, queue: AgentQueueState | undefined): s
   if (task.status === 'delivering') return 'Ejecutando';
   if (task.status === 'delivered') return 'Completado';
   if (task.status === 'cancelled') return 'Cancelado';
+  if (task.status === 'needs_input') return 'Espera respuesta';
+  if (task.status === 'blocked') return 'Bloqueado';
+  if (task.status === 'to_verify') return 'Por verificar';
   return 'Incierto';
 }
 
-export default function AgentQueuePanel({ groups, sessions, busy, onToggle, onCancel, onStop }: {
+export function TaskReplyBox({ question, busy, onSubmit }: {
+  question?: string;
+  busy: boolean;
+  onSubmit: (response: string) => void;
+}) {
+  const [draft, setDraft] = useState('');
+  const submit = () => {
+    const text = draft.trim();
+    if (!text) return;
+    onSubmit(text);
+    setDraft('');
+  };
+  return (
+    <div className="w-full space-y-1.5 rounded-lg border border-[color:color-mix(in_srgb,var(--accent-yellow)_40%,transparent)] bg-[var(--bg-input)] px-3 py-2">
+      <p className="break-words text-[12px] text-[var(--accent-yellow)]">
+        Espera tu respuesta{question ? `: ${question}` : '.'}
+      </p>
+      <Textarea
+        aria-label="Respuesta para el encargo"
+        rows={2}
+        maxLength={4000}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        className="w-full"
+        placeholder="Escribe tu respuesta…"
+      />
+      <div className="flex justify-end">
+        <Button size="sm" disabled={busy || !draft.trim()} onClick={submit}>
+          Responder
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export default function AgentQueuePanel({ groups, sessions, busy, onToggle, onCancel, onStop, onRespond, onVerify }: {
   groups: AgentQueueGroup[];
   sessions: AgentSession[];
   busy: string | null;
   onToggle: (queue: AgentQueueState) => void;
   onCancel: (task: AgentTask) => void;
   onStop: (sessionId: string) => void;
+  onRespond: (task: AgentTask, response: string) => void;
+  onVerify: (task: AgentTask) => void;
 }) {
   return (
     <section className="mb-4 space-y-2" aria-label="Cola de trabajo">
@@ -95,6 +140,17 @@ export default function AgentQueuePanel({ groups, sessions, busy, onToggle, onCa
                         onClick={() => onStop(task.session_id)}>
                         <Pause size={11} /> Detener
                       </Button>
+                    )}
+                    {task.status === 'to_verify' && (
+                      <Button variant="ghost" size="sm" disabled={busy !== null}
+                        aria-label={`Marcar verificado: ${task.content.slice(0, 60)}`}
+                        onClick={() => onVerify(task)}>
+                        <Check size={11} /> Verificado
+                      </Button>
+                    )}
+                    {task.status === 'needs_input' && (
+                      <TaskReplyBox question={task.question} busy={busy !== null}
+                        onSubmit={(response) => onRespond(task, response)} />
                     )}
                   </li>
                 ))}
