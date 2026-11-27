@@ -184,6 +184,25 @@ def test_parse_csv_reads_windows_ansi_file(tmp_path: Path) -> None:
     ]
 
 
+def test_csv_prefers_comma_when_header_also_contains_semicolon(tmp_path: Path) -> None:
+    staged = tmp_path / "datos.csv"
+    staged.write_text("A;detalle,B\n1;2,3\n", encoding="utf-8")
+
+    result = spreadsheet_parse({"path": str(staged), "format_hint": "csv"})
+
+    assert result["sheets"][0]["rows"] == [["A;detalle", "B"], ["1;2", "3"]]
+
+
+def test_csv_sniffing_accepts_utf8_split_at_sample_boundary(tmp_path: Path) -> None:
+    staged = tmp_path / "datos.csv"
+    prefix = "A\n" + "a" * (64 * 1024 - 3)
+    staged.write_text(f"{prefix}ú\n", encoding="utf-8")
+
+    result = spreadsheet_parse({"path": str(staged), "format_hint": "csv"})
+
+    assert result["sheets"][0]["rows"] == [["A"], [f"{prefix[2:]}ú"]]
+
+
 def test_b64_inline_uses_unique_temp_file() -> None:
     from backend.handlers.spreadsheet import _resolve_input_path
 
