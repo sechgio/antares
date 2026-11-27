@@ -55,7 +55,7 @@ export function TaskReplyBox({ question, busy, onSubmit }: {
     setDraft('');
   };
   return (
-    <div className="w-full space-y-1.5 rounded-lg border border-[var(--accent-yellow)]/40 bg-[var(--bg-input)] px-3 py-2">
+    <div className="w-full space-y-1.5 rounded-lg border border-[color:color-mix(in_srgb,var(--accent-yellow)_40%,transparent)] bg-[var(--bg-input)] px-3 py-2">
       <p className="break-words text-[12px] text-[var(--accent-yellow)]">
         Espera tu respuesta{question ? `: ${question}` : '.'}
       </p>
