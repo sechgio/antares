@@ -410,6 +410,7 @@ export interface AgentMemoryItem {
   shared_with_profiles?: string[];
   superseded_by?: string | null;
   supersedes?: string | null;
+  essential?: boolean;
   version: number;
   updated_at: number;
   content?: string;
@@ -633,7 +634,7 @@ export const agentApi = {
   agentSkillCreate: (p: AgentSkillCreateParams) =>
     _invoke<{ skill: AgentSkill }>('agent_skill_create', p),
 
-  agentMemoryUpdate: (params: { id: string; action: 'edit' | 'disable' | 'enable' | 'revert' | 'confirm' | 'discard'; content?: string; date?: string; when?: string; version?: number }) =>
+  agentMemoryUpdate: (params: { id: string; action: 'edit' | 'disable' | 'enable' | 'revert' | 'confirm' | 'discard' | 'pin' | 'unpin'; content?: string; date?: string; when?: string; version?: number }) =>
     _invoke<{ item: AgentMemoryItem }>('agent_memory_update', params),
 
   agentMemoryExplain: (id: string) =>
