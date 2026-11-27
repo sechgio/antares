@@ -27,7 +27,7 @@ if (!process.versions.electron) {
 } else {
   const { app, BrowserWindow, webContents } = require('electron');
   app.setPath('userData', process.env.ANTARES_PAGES_TEST_DIR);
-  async function verifyDesignNavigation(window) {
+  const verifyDesignNavigation = async (window) => {
     const source = fs.readFileSync(path.join(__dirname, '../backend/core/agent/design_canvas.py'), 'utf8');
     const script = source.match(/_SCRIPT = r"""([\s\S]*?)"""/)?.[1];
     assert(script, 'El fixture necesita el script del lienzo de Design');
@@ -58,7 +58,7 @@ if (!process.versions.electron) {
       assert.equal(await run('document.querySelector(".dc-bar select").value'), target);
     }
     console.log('Electron real: los enlaces de Design navegan con clic en ambos sentidos.');
-  }
+  };
   app.whenReady().then(async () => {
     const main = new BrowserWindow({ width: 1100, height: 850, show: false });
     const { stubModule } = require('./helpers/harness');
