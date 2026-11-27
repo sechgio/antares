@@ -1902,16 +1902,12 @@ async function main() {
       }
       return result;
     };
-    await openFaux(
-      [
-        (context) => {
-          requests += 1;
-          seen = JSON.stringify(context.messages);
-          return fauxAssistantMessage('¡Hola! Soy Revisor interactivo. ¿Para qué te gustaría usarme principalmente?');
-        },
-      ],
-      onboardingBridge,
-    );
+    const introduce = (context) => {
+      requests += 1;
+      seen = JSON.stringify(context.messages);
+      return fauxAssistantMessage('¡Hola! Soy Revisor interactivo. ¿Para qué te gustaría usarme principalmente?');
+    };
+    await openFaux([introduce, introduce], onboardingBridge);
     const { profile } = await runtime.handlers.agent_profile_save({
       name: 'Revisor interactivo',
       instructions: '',
@@ -1953,14 +1949,30 @@ async function main() {
       'el agente se presenta en la conversación nueva',
     );
     assert(requests === 1, 'la primera conversación lanza una sola presentación');
-    await runtime.handlers.agent_session_create({
+    assert(!(await runtime.handlers.agent_profiles_list({})).profiles[0].onboarded_at,
+      'presentar al agente no completa su configuración');
+    const { session: retry } = await runtime.handlers.agent_session_create({
       provider: 'faux',
       model: 'faux-1',
       profile_id: profile.id,
     });
+    assert(await waitFor(() => requests === 2), 'el segundo chat retoma una presentación sin confirmar');
+    assert(await waitIdle(retry.id), 'la presentación retomada termina');
+    const { saveSessionOnboarding } = require('../electron/agent-profiles');
+    await saveSessionOnboarding(retry.id, {
+      confirmed: true,
+      identity: { name: profile.name, role: 'Revisor', tone: 'Claro' },
+      user: 'Prefiere informes breves',
+    });
+    const { session: confirmed } = await runtime.handlers.agent_session_create({
+      provider: 'faux',
+      model: 'faux-1',
+      profile_id: profile.id,
+    });
+    assert(await waitIdle(confirmed.id), 'el chat del perfil confirmado está listo');
     assert(
-      !(await waitFor(() => requests === 2, 600)),
-      'la segunda conversación del mismo agente empieza sin repetir el onboarding',
+      (await runtime.handlers.agent_messages_list({ session_id: confirmed.id })).messages.length === 0,
+      'el perfil confirmado abre sin repetir la presentación',
     );
     await runtime.shutdown();
   }

@@ -246,19 +246,6 @@ function savePortableOnboarding(slug, data) {
   return metadata.onboarded_at;
 }
 
-function markPortableOnboarded(slug) {
-  if (typeof slug !== 'string' || !/^[a-z0-9][a-z0-9_-]*$/.test(slug)) throw new Error('Slug de agente inválido');
-  const root = path.resolve(process.env.AGENTS_HOME || './agents');
-  const directory = path.join(root, slug);
-  const file = path.join(directory, 'agent.json');
-  const metadata = JSON.parse(readText(file, root));
-  if (!Number.isFinite(metadata.onboarded_at)) {
-    metadata.onboarded_at = Date.now();
-    writeTextAtomic(file, JSON.stringify(metadata, null, 2) + '\n');
-  }
-  return metadata.onboarded_at;
-}
-
 async function saveSessionOnboarding(sessionId, params) {
   const data = validateOnboarding(params);
   const { shared, sessions, ctx } = require('./agent-shared');
@@ -337,7 +324,6 @@ module.exports = {
   resolvePortableProfile,
   saveSessionOnboarding,
   validateOnboarding,
-  markPortableOnboarded,
   savePortableOnboarding,
   resolveTargetSession,
 };

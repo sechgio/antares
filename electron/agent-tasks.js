@@ -1495,6 +1495,12 @@ async function schedule(args, sessionId, api) {
   };
   return state.harness.commit(async (tx) => {
     const doc = await tx.doc(state.TasksDoc);
+    if (interval || trigger) {
+      const { profiles } = await tx.doc(state.ProfilesDoc);
+      if (hasDeletedProfile(session, profiles) || hasDeletedProfile(target, profiles)) {
+        throw validation('El agente de esta conversación ya no existe');
+      }
+    }
     if (args.action === 'update') {
       const task = doc.tasks[id];
       if (!task || task.session_id !== sessionId) throw validation('El encargo programado no existe');
@@ -1780,9 +1786,29 @@ async function settleScheduledTask(state, session, task) {
   }, ctx());
 }
 
+function hasDeletedProfile(session, profiles) {
+  const profile = session?.profile;
+  return profile && !profile.portable && !profiles[profile.id];
+}
+
+async function cancelOrphanedRoutines(state, tx) {
+  const { tasks } = await tx.doc(state.TasksDoc);
+  const { sessions } = await tx.doc(state.SessionsDoc);
+  const { profiles } = await tx.doc(state.ProfilesDoc);
+  for (const task of Object.values(tasks)) {
+    if (!isActiveTask(task) && !['uncertain', 'blocked'].includes(task.status)) continue;
+    const routine = task.kind === 'queue' ? tasks[task.origin_task_id] : task;
+    if (!routine || (!routine.trigger && (task.kind === 'queue' || !(routine.interval_ms > 0)))) continue;
+    if (!hasDeletedProfile(sessions[routine.session_id], profiles) &&
+        !hasDeletedProfile(sessions[routine.target_session_id], profiles)) continue;
+    transition(task, 'cancelled', 'El agente de esta conversación ya no existe');
+  }
+}
+
 async function reconcileStale(state) {
   const now = Date.now();
   await state.harness.commit(async (tx) => {
+    await cancelOrphanedRoutines(state, tx);
     const doc = await tx.doc(state.TasksDoc);
     const sessionDoc = await tx.doc(state.SessionsDoc);
     for (const task of Object.values(doc.tasks)) {
@@ -1892,6 +1918,8 @@ async function tick() {
             ctx(),
           );
         }
+        const { tasks } = await state.harness.snapshot(state.TasksDoc, ctx());
+        if (tasks[task.id]?.status !== 'delivering' || tasks[task.id]?.claim_id !== claimToken) continue;
         const placed = await conv.submit(
           {
             type: 'input',
@@ -2172,6 +2200,7 @@ module.exports = {
   listTasks,
   saveTask,
   cancelTask,
+  cancelOrphanedRoutines,
   runTaskNow,
   respondToTask,
   verifyTask,
