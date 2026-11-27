@@ -1,2 +1,2 @@
 ### Changed
-- El chat del agente muestra un cuadrado para detener el turno en la barra del mensaje y elimina el botón «Reanudar» de debajo de la barra.
+- El campo de escritura del chat del agente ocupa todo el ancho. Las opciones, el modelo y el botón de envío o detención quedan debajo del texto, y desaparece el botón «Reanudar».

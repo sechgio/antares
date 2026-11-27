@@ -1694,7 +1694,7 @@ it('muestra la bienvenida sin sugerencias de mensajes predefinidos', async () =>
   render(<AgentView />);
   await act(async () => {});
   expect(screen.getByText(/^Puedo ayudarte a preparar informes/)).toBeVisible();
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveAttribute('placeholder', 'Mensaje…');
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveAttribute('placeholder', 'Escribe un mensaje · @ para mencionar · / para usar una skill');
   expect(screen.queryByRole('group', { name: 'Sugerencias' })).not.toBeInTheDocument();
 });
 
@@ -2016,7 +2016,7 @@ it('confirma la recepción solo tras la admisión y conserva ese recibo si falla
   expect(within(screen.getByRole('region', { name: 'Atención del agente' })).getByText(/El estado mostrado puede estar desactualizado/)).toBeVisible();
 });
 
-it('muestra modelo y envío en la cápsula y despliega las opciones con el botón más', async () => {
+it('pone el campo de escritura antes de los controles y despliega las opciones con el botón más', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.mocked(aiProvidersApi.aiProvidersList).mockResolvedValue({ providers: [suggestionProvider] });
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
@@ -2029,8 +2029,10 @@ it('muestra modelo y envío en la cápsula y despliega las opciones con el botó
   render(<AgentView />);
   await act(async () => {});
   const composer = within(screen.getByRole('group', { name: 'Redactar mensaje' }));
+  const input = composer.getByRole('textbox', { name: 'Mensaje para el agente' });
   const trigger = composer.getByRole('button', { name: 'Opciones del mensaje' });
   const model = composer.getByRole('button', { name: 'Elegir proveedor y modelo' });
+  expect(input.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(model).toBeVisible();
   expect(composer.getByRole('button', { name: 'Enviar' })).toBeVisible();
   expect(trigger).toHaveAttribute('aria-expanded', 'false');

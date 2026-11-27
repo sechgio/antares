@@ -2271,7 +2271,7 @@ export default function AgentView({
             <div
               role="group"
               aria-label="Redactar mensaje"
-              className={`agent-composer relative rounded-[26px] border bg-[var(--bg-elevated)] transition-[border-color,box-shadow] ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
+              className={`agent-composer relative rounded-[20px] border bg-[var(--bg-elevated)] transition-[border-color,box-shadow] ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
               onDragOver={(event) => {
                 if (!sessionId || !event.dataTransfer.types.includes('Files')) return;
                 event.preventDefault();
@@ -2451,12 +2451,47 @@ export default function AgentView({
                   })}
                 </div>
               )}
-              <div className="agent-composer-row flex min-w-0 items-end gap-1.5 p-1.5">
+              <textarea
+                ref={draftRef}
+                rows={1}
+                value={draft}
+                onChange={(event) => {
+                  draftVersionRef.current += 1;
+                  setDraft(event.target.value);
+                  composer.edited(event.target.selectionStart);
+                }}
+                onSelect={(event) => composer.moved(event.currentTarget.selectionStart)}
+                onPaste={(event) => {
+                  if (!sessionId || !event.clipboardData.files.length) return;
+                  event.preventDefault();
+                  void attachFiles([...event.clipboardData.files]);
+                }}
+                aria-autocomplete="list"
+                aria-controls={autocomplete ? listboxId : undefined}
+                aria-activedescendant={selectedOptionId}
+                onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
+                  if (e.key === 'Enter' && e.repeat && !e.shiftKey) {
+                    e.preventDefault();
+                    return;
+                  }
+                  if (composer.keyDown(e, pickSuggestion)) return;
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+                placeholder={running || pending.length > 0 ? 'Añade una indicación…' : 'Escribe un mensaje · @ para mencionar · / para usar una skill'}
+                aria-label="Mensaje para el agente"
+                title="Intro para enviar · Mayús+Intro para otra línea · @ para mencionar · / para usar una skill"
+                className="agent-composer-input block w-full resize-none bg-transparent text-[14px] leading-5 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)]"
+              />
+              <div className="flex min-w-0 items-center gap-1.5 px-2.5 pb-2.5">
                 <Button
                   ref={composerOptionsRef}
                   variant="none"
                   size="none"
-                  className="relative mb-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--bg-input)] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                  className="relative flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--bg-input)] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
                   aria-label="Opciones del mensaje"
                   aria-expanded={composerOptionsOpen}
                   aria-controls={composerOptionsId}
@@ -2475,56 +2510,21 @@ export default function AgentView({
                     <span className="absolute right-0.5 top-0.5 size-2 rounded-full bg-[var(--accent-yellow)]" aria-hidden="true" />
                   )}
                 </Button>
-                <textarea
-                  ref={draftRef}
-                  rows={1}
-                  value={draft}
-                  onChange={(event) => {
-                    draftVersionRef.current += 1;
-                    setDraft(event.target.value);
-                    composer.edited(event.target.selectionStart);
-                  }}
-                  onSelect={(event) => composer.moved(event.currentTarget.selectionStart)}
-                  onPaste={(event) => {
-                    if (!sessionId || !event.clipboardData.files.length) return;
-                    event.preventDefault();
-                    void attachFiles([...event.clipboardData.files]);
-                  }}
-                  aria-autocomplete="list"
-                  aria-controls={autocomplete ? listboxId : undefined}
-                  aria-activedescendant={selectedOptionId}
-                  onKeyDown={(e) => {
-                    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
-                    if (e.key === 'Enter' && e.repeat && !e.shiftKey) {
-                      e.preventDefault();
-                      return;
-                    }
-                    if (composer.keyDown(e, pickSuggestion)) return;
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      void send();
-                    }
-                  }}
-                  placeholder={running || pending.length > 0 ? 'Añade una indicación…' : 'Mensaje…'}
-                  aria-label="Mensaje para el agente"
-                  title="Intro para enviar · Mayús+Intro para otra línea · @ para mencionar · / para usar una skill"
-                  className="agent-composer-input block min-w-0 flex-1 resize-none bg-transparent text-[14px] leading-5 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)]"
-                />
                 {readyProviders.length > 0 ? (
                   <ModelPicker
                     providers={readyProviders}
                     value={{ provider: session?.provider ?? provider, model: session?.model ?? model }}
                     onChange={(next) => void changeModel(next)}
                     disabled={sending || modelBusy || reasoningBusy || running || stopping || pending.length > 0}
-                    className="agent-composer-model min-w-0 shrink-0"
+                    className="agent-composer-model"
                   />
                 ) : (
-                  <span className="agent-composer-model shrink-0 px-2 text-xs text-[var(--text-secondary)]">
+                  <span className="agent-composer-model px-2 text-xs text-[var(--text-secondary)]">
                     <span className="truncate">{session?.model || model || providerLabel || 'Proveedor IA'}</span>
                   </span>
                 )}
                 {(running || pending.length > 0) && (
-                  <div className="agent-turn-actions flex shrink-0 items-center gap-0.5">
+                  <div className="flex shrink-0 items-center gap-0.5">
                     <Button
                       variant="ghost"
                       size="none"
