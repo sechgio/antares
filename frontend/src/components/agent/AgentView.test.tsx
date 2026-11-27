@@ -83,6 +83,14 @@ function openComposerOptions() {
   if (options.getAttribute('aria-expanded') === 'false') fireEvent.click(options);
 }
 
+function editComposer(composer: HTMLElement, value: string, caret = value.length) {
+  const text = document.createTextNode(value);
+  composer.replaceChildren(text);
+  composer.focus();
+  document.getSelection()?.collapse(text, caret);
+  fireEvent.input(composer);
+}
+
 it('abre adjuntos y referencias en el visor sin enviar mensajes al agente', async () => {
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty,
     messages: [{ role: 'assistant', content: '[Notas](notas.txt)', ts: 1 }],
@@ -251,22 +259,24 @@ it('sugiere bots con @ y permite elegir con teclado sin enviar el mensaje', asyn
   render(<AgentView />);
   await act(async () => {});
   const composer = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
-  fireEvent.change(composer, { target: { value: 'Consulta @' } });
+  editComposer(composer, 'Consulta @');
   expect(screen.getByRole('listbox', { name: 'Bots y conectores para mencionar' })).toBeVisible();
   expect(screen.getAllByRole('option', { name: /Comprueba firmas/ })).toHaveLength(2);
   fireEvent.keyDown(composer, { key: 'Enter', isComposing: true });
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
-  expect(composer).toHaveValue('Consulta @');
+  expect(composer.textContent).toBe('Consulta @');
   fireEvent.keyDown(composer, { key: 'ArrowDown' });
   expect(screen.getByRole('option', { name: /Redactor/ })).toHaveAttribute('aria-selected', 'true');
   fireEvent.keyDown(composer, { key: 'Enter' });
-  expect(composer).toHaveValue('Consulta @bot:bot-1 ');
+  expect(within(composer).getByRole('img', { hidden: true })).toBeVisible();
+  expect(within(composer).getByText('Redactor')).toBeVisible();
+  expect(composer.textContent).toBe('Consulta Redactor ');
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
-  fireEvent.change(composer, { target: { value: 'Consulta @Revi' } });
+  editComposer(composer, 'Consulta @Revi');
   expect(screen.getAllByRole('option')).toHaveLength(1);
   fireEvent.keyDown(composer, { key: 'Escape' });
   expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
-  expect(composer).toHaveValue('Consulta @Revi');
+  expect(composer.textContent).toBe('Consulta @Revi');
 });
 
 it('sugiere conectores y servidores MCP con @ e inserta la mención que habilita sus herramientas', async () => {
@@ -278,15 +288,15 @@ it('sugiere conectores y servidores MCP con @ e inserta la mención que habilita
   render(<AgentView />);
   await act(async () => {});
   const composer = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
-  fireEvent.change(composer, { target: { value: 'Revisa @gma' } });
+  editComposer(composer, 'Revisa @gma');
   expect(screen.getByRole('option', { name: /Gmail\s*Buscar y leer correos/ })).toHaveAttribute('aria-selected', 'true');
   fireEvent.keyDown(composer, { key: 'Enter' });
-  expect(composer).toHaveValue('Revisa @gmail ');
-  fireEvent.change(composer, { target: { value: 'Busca con @mi' } });
+  expect(composer.textContent).toBe('Revisa @gmail ');
+  editComposer(composer, 'Busca con @mi');
   await act(async () => {});
   expect(screen.getByRole('option', { name: /Mi Servidor\s*Servidor MCP · 3 herramientas/ })).toBeVisible();
   fireEvent.keyDown(composer, { key: 'Tab' });
-  expect(composer).toHaveValue('Busca con @mi-servidor ');
+  expect(composer.textContent).toBe('Busca con @mi-servidor ');
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
 });
 
@@ -299,10 +309,52 @@ it('distingue bots con nombres repetidos y conserva el texto después del cursor
   render(<AgentView />);
   await act(async () => {});
   const composer = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
-  fireEvent.change(composer, { target: { value: 'Pide @ el informe', selectionStart: 6 } });
+  editComposer(composer, 'Pide @ el informe', 6);
   fireEvent.click(screen.getByRole('option', { name: /Especialidad 1/ }));
-  expect(composer).toHaveValue('Pide @bot:bot-1  el informe');
+  expect(composer.textContent).toBe('Pide Révisor  el informe');
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
+  const mention = within(composer).getByText('Révisor');
+  composer.replaceChildren('Pide ', mention, 'el informe');
+  fireEvent.input(composer);
+  await act(async () => { fireEvent.keyDown(composer, { key: 'Enter' }); });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Pide @bot:bot-1 el informe', expect.any(String), []);
+});
+
+it('quita del mensaje el agente cuya mención se borra del borrador', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [{
+    id: 'bot-1', name: 'Revisor', description: '', instructions: 'Revisa', starter: '', tools: null,
+    created_at: 1, updated_at: 1,
+  }] });
+  render(<AgentView />);
+  const composer = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
+  await waitFor(() => expect(agentApi.agentMessagesList).toHaveBeenCalledWith(session.id));
+  editComposer(composer, 'Pide @Rev');
+  fireEvent.click(await screen.findByRole('option', { name: /Revisor/ }));
+  within(composer).getByText('Revisor').remove();
+  fireEvent.input(composer, { inputType: 'deleteContentBackward' });
+  expect(within(composer).queryByText('Revisor')).not.toBeInTheDocument();
+  await act(async () => { fireEvent.keyDown(composer, { key: 'Enter' }); });
+  expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Pide', expect.any(String), []);
+});
+
+it('muestra la mención de un borrador restaurado cuando se carga el perfil', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  localStorage.setItem('antares-agent-draft:s1', 'Consulta @bot:bot-1');
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
+  const profiles = deferred<Awaited<ReturnType<typeof agentApi.agentProfilesList>>>();
+  vi.spyOn(agentApi, 'agentProfilesList').mockReturnValue(profiles.promise);
+  render(<AgentView />);
+  const composer = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
+  await waitFor(() => expect(composer.textContent).toBe('Consulta @bot:bot-1'));
+  await act(async () => profiles.resolve({ profiles: [{
+    id: 'bot-1', name: 'Revisor', description: '', instructions: '', starter: '', tools: null,
+    created_at: 1, updated_at: 1,
+  }] }));
+  expect(within(composer).getByText('Revisor')).toBeVisible();
+  expect(within(composer).getByRole('img', { hidden: true })).toBeVisible();
+  expect(localStorage.getItem('antares-agent-draft:s1')).toBe('Consulta @bot:bot-1');
 });
 
 it('conserva el bot seleccionado en la cola restaurada aunque cambie su nombre', async () => {
@@ -313,7 +365,7 @@ it('conserva el bot seleccionado en la cola restaurada aunque cambie su nombre',
   const profiles = vi.spyOn(agentApi, 'agentProfilesList').mockResolvedValue({ profiles: [original] });
   const view = render(<AgentView />);
   await act(async () => {});
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Consulta @Rev' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Consulta @Rev');
   fireEvent.click(screen.getByRole('option', { name: /Revisor/ }));
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' })); });
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
@@ -346,7 +398,7 @@ it('separa el desplazamiento de agentes y conversaciones y conserva el buscador 
   expect(conversationScroll).toBeInTheDocument();
   expect(conversationScroll).not.toContainElement(agents);
   expect(agents.parentElement?.closest('.overflow-y-auto')).toBeNull();
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador pendiente' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Borrador pendiente');
   fireEvent.click(sidebar.getByRole('button', { name: 'Buscar agentes y conversaciones' }));
   fireEvent.change(sidebar.getByRole('textbox', { name: 'Buscar agentes y conversaciones' }), { target: { value: 'firmas' } });
   expect(sidebar.getByTitle('Abrir conversación con Revisor de PDFs')).toBeInTheDocument();
@@ -356,7 +408,7 @@ it('separa el desplazamiento de agentes y conversaciones y conserva el buscador 
   expect(sidebar.getByRole('button', { name: 'Primera' })).toBeInTheDocument();
   fireEvent.click(sidebar.getByRole('button', { name: 'Cerrar búsqueda' }));
   expect(sidebar.getByTitle('Abrir conversación con Revisor de PDFs')).toBeInTheDocument();
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador pendiente');
+  expect(screen.getByLabelText('Mensaje para el agente').textContent).toBe('Borrador pendiente');
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
 });
 
@@ -591,17 +643,17 @@ it('oculta y muestra la barra lateral sin perder la conversación ni el borrador
   render(<AgentView />);
   await screen.findByText('Respuesta conservada');
   const composer = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
-  fireEvent.change(composer, { target: { value: 'Borrador pendiente' } });
+  editComposer(composer, 'Borrador pendiente');
   fireEvent.click(screen.getByRole('button', { name: 'Ocultar barra lateral' }));
   expect(screen.queryByRole('complementary', { name: 'Agentes y conversaciones' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Mostrar barra lateral' })).toHaveAttribute('aria-expanded', 'false');
   expect(screen.getByText('Respuesta conservada')).toBeVisible();
-  expect(composer).toHaveValue('Borrador pendiente');
+  expect(composer.textContent).toBe('Borrador pendiente');
   fireEvent.click(screen.getByRole('button', { name: 'Mostrar barra lateral' }));
   const sidebar = screen.getByRole('complementary', { name: 'Agentes y conversaciones' });
   expect(within(sidebar).getByRole('button', { name: 'Primera' })).toHaveAttribute('aria-current', 'page');
   expect(screen.getByRole('button', { name: 'Ocultar barra lateral' })).toHaveAttribute('aria-expanded', 'true');
-  expect(composer).toHaveValue('Borrador pendiente');
+  expect(composer.textContent).toBe('Borrador pendiente');
 });
 
 it('permite ocultar la barra sin conversación activa y Ctrl+K la recupera para buscar', async () => {
@@ -923,7 +975,7 @@ it('descarta la lectura previa al envío y drena la actualización pendiente de 
   fireEvent.click(screen.getByText('Primera'));
   expect(list).toHaveBeenCalledTimes(1);
   vi.useFakeTimers();
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Mensaje nuevo' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Mensaje nuevo');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Mensaje nuevo', expect.any(String), []);
   await act(async () => { initial.resolve(empty); });
@@ -1017,7 +1069,7 @@ it('no aplica running=false de una lectura antigua mientras el envío sigue pend
   render(<AgentView />);
   await act(async () => {});
   fireEvent.click(screen.getByText('Primera'));
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Mensaje nuevo' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Mensaje nuevo');
   fireEvent.click(screen.getByLabelText('Enviar'));
   await act(async () => { initial.resolve(empty); });
   expect(within(screen.getByRole('status', { name: 'Avisos del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
@@ -1034,7 +1086,7 @@ it('mantiene el turno activo cuando un sondeo termina antes de que se acepte el 
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
   vi.useFakeTimers();
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Mensaje nuevo' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Mensaje nuevo');
   fireEvent.click(screen.getByLabelText('Enviar'));
   await act(async () => { vi.advanceTimersByTime(1500); });
   expect(list).toHaveBeenCalledTimes(2);
@@ -1054,7 +1106,7 @@ it('un envío pendiente en otra sesión no descarta los mensajes de la sesión s
   render(<AgentView />);
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Mensaje nuevo' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Mensaje nuevo');
   fireEvent.click(screen.getByLabelText('Enviar'));
   fireEvent.click(screen.getByText('Segunda'));
   await act(async () => { send.resolve({ accepted: true }); });
@@ -1164,23 +1216,23 @@ it('aísla borrador y selector de archivos tardío al alternar conversaciones', 
   const { unmount } = render(<AgentView />);
   const first = await screen.findByText('Primera');
   await act(async () => { fireEvent.click(first); });
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador de Primera' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Borrador de Primera');
   openComposerOptions();
   fireEvent.click(screen.getByLabelText('Adjuntar archivos'));
   await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
   await act(async () => picked.resolve({ attachments: [{ id: 'a1', name: 'primera.pdf', kind: 'files' }] }));
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('');
+  expect(screen.getByLabelText('Mensaje para el agente').textContent).toBe('');
   expect(screen.queryByText('primera.pdf')).not.toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador de Segunda' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Borrador de Segunda');
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador de Primera');
+  expect(screen.getByLabelText('Mensaje para el agente').textContent).toBe('Borrador de Primera');
   expect(screen.getByText('primera.pdf')).toBeInTheDocument();
   unmount();
   render(<AgentView />);
-  await waitFor(() => expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador de Primera'));
+  await waitFor(() => expect(screen.getByLabelText('Mensaje para el agente').textContent).toBe('Borrador de Primera'));
   expect(screen.queryByText('primera.pdf')).not.toBeInTheDocument();
   await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador de Segunda');
+  expect(screen.getByLabelText('Mensaje para el agente').textContent).toBe('Borrador de Segunda');
 });
 
 it('activa la carpeta de trabajo antes de enviar y mantiene solo archivos en los adjuntos', async () => {
@@ -1206,7 +1258,7 @@ it('activa la carpeta de trabajo antes de enviar y mantiene solo archivos en los
   expect(tiles.getByRole('button', { name: 'Previsualizar clientes.xlsx' })).toHaveTextContent('clientes.xlsxHoja de cálculo');
   expect(tiles.queryByText('Carpeta')).not.toBeInTheDocument();
   expect(tiles.getByRole('button', { name: 'Quitar clientes.xlsx' }).parentElement).toHaveClass('absolute');
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Genera el informe' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Genera el informe');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Genera el informe', expect.any(String), ['a1']);
   expect(screen.queryByText('clientes.xlsx')).not.toBeInTheDocument();
@@ -1221,13 +1273,13 @@ it('conserva la carpeta y el borrador al cancelar o fallar su selección', async
   render(<AgentView />);
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Revisa el proyecto' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Revisa el proyecto');
   openComposerOptions();
   await act(async () => { fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo')); });
   await act(async () => { fireEvent.click(screen.getByLabelText('Seleccionar carpeta de trabajo')); });
   expect(select).toHaveBeenCalledTimes(2);
   expect(screen.getByLabelText('Seleccionar carpeta de trabajo')).toHaveTextContent('proyecto');
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Revisa el proyecto');
+  expect(screen.getByLabelText('Mensaje para el agente').textContent).toBe('Revisa el proyecto');
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   expect(addToast).toHaveBeenCalledWith({ message: 'Carpeta no disponible', type: 'error' });
 });
@@ -1255,7 +1307,7 @@ it('adjunta archivos soltados por ruta y capturas pegadas por contenido', async 
   ]);
   expect(screen.getByText('informe.pdf')).toBeInTheDocument();
   expect(createObjectURL).toHaveBeenCalledWith(shot);
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Revisa' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Revisa');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Revisa', expect.any(String), ['a1', 'a2']);
   window.electronAPI = previousApi;
@@ -1271,7 +1323,7 @@ it('avisa de las rutas escritas que no se autorizaron', async () => {
   render(<AgentView />);
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa C:\datos' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Usa C:\datos');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   expect(addToast).toHaveBeenCalledWith({
     message: 'No se autorizó C:\datos: una carpeta requiere seleccionar los archivos concretos',
@@ -1286,9 +1338,9 @@ it.each([false, true])('el reintento conserva la identidad solo con los mismos a
   localStorage.setItem('antares-agent-session', 's1');
   render(<AgentView />);
   await act(async () => {});
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Revisa los datos' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Revisa los datos');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Revisa los datos');
+  expect(screen.getByLabelText('Mensaje para el agente').textContent).toBe('Revisa los datos');
   openComposerOptions();
   if (changed) await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
@@ -1304,9 +1356,9 @@ it('un envío fallido conserva el borrador y termina el indicador de ejecución'
   render(<AgentView />);
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Reintentar' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Reintentar');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Reintentar');
+  expect(screen.getByLabelText('Mensaje para el agente').textContent).toBe('Reintentar');
   expect(screen.queryByText('Trabajando en ello')).not.toBeInTheDocument();
   expect(addToast).toHaveBeenCalledWith({ message: 'Sin conexión', type: 'error' });
 
@@ -1314,7 +1366,7 @@ it('un envío fallido conserva el borrador y termina el indicador de ejecución'
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   const [first, second] = vi.mocked(agentApi.agentMessageSend).mock.calls;
   expect(second[2]).toBe(first[2]);
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Otro mensaje' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Otro mensaje');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   expect(vi.mocked(agentApi.agentMessageSend).mock.calls[2][2]).not.toBe(first[2]);
 });
@@ -1327,13 +1379,13 @@ it('presenta la cola en orden y permite quitar un pendiente sin perder el borrad
   await act(async () => {});
   const composer = within(screen.getByRole('group', { name: 'Redactar mensaje' }));
   const input = composer.getByRole('textbox', { name: 'Mensaje para el agente' });
-  fireEvent.change(input, { target: { value: 'Primero revisa las firmas' } });
+  editComposer(input, 'Primero revisa las firmas');
   await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Dejar para después' })); });
   openComposerOptions();
   await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Adjuntar archivos' })); });
-  fireEvent.change(input, { target: { value: 'Después compara el informe' } });
+  editComposer(input, 'Después compara el informe');
   await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Dejar para después' })); });
-  fireEvent.change(input, { target: { value: 'Borrador que sigo escribiendo' } });
+  editComposer(input, 'Borrador que sigo escribiendo');
   await act(async () => { fireEvent.click(composer.getByRole('button', { name: 'Adjuntar archivos' })); });
   const queue = within(screen.getByRole('region', { name: 'Mensajes en cola' }));
   expect(queue.getByLabelText('2 mensajes pendientes')).toBeVisible();
@@ -1347,7 +1399,7 @@ it('presenta la cola en orden y permite quitar un pendiente sin perder el borrad
   expect(queue.queryByText('Primero revisa las firmas')).not.toBeInTheDocument();
   expect(queue.getByText('Después compara el informe')).toBeVisible();
   expect(queue.getByText('A continuación')).toBeVisible();
-  expect(input).toHaveValue('Borrador que sigo escribiendo');
+  expect(input.textContent).toBe('Borrador que sigo escribiendo');
   expect(composer.getByLabelText('Adjuntos')).toHaveTextContent('informe.pdf');
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
 });
@@ -1360,7 +1412,7 @@ it('pausa y reordena la cola, cancela una edición y envía el texto guardado al
   const later = await screen.findByRole('button', { name: 'Dejar para después' });
   const input = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
   for (const value of ['Primero', 'Segundo']) {
-    fireEvent.change(input, { target: { value } });
+    editComposer(input, value);
     await act(async () => fireEvent.click(later));
   }
   fireEvent.click(screen.getByRole('button', { name: 'Pausar mensajes en cola' }));
@@ -1386,9 +1438,9 @@ it('permite desplegar un mensaje largo en cola sin enviarlo ni alterar el borrad
   await act(async () => {});
   const text = 'Revisa el informe completo, conserva los nombres de archivo y compara cada tabla con su versión anterior.\nIncluye también los anexos y las observaciones de la última página.';
   const input = screen.getByRole('textbox', { name: 'Mensaje para el agente' });
-  fireEvent.change(input, { target: { value: text } });
+  editComposer(input, text);
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' })); });
-  fireEvent.change(input, { target: { value: 'Sigo escribiendo' } });
+  editComposer(input, 'Sigo escribiendo');
   const queue = within(screen.getByRole('region', { name: 'Mensajes en cola' }));
   const summary = queue.getByTitle('Ver mensaje completo');
   const details = summary.closest('details');
@@ -1398,7 +1450,7 @@ it('permite desplegar un mensaje largo en cola sin enviarlo ni alterar el borrad
   expect(summary).toHaveTextContent(text.replace('\n', ' '));
   fireEvent.click(summary);
   expect(details).not.toHaveAttribute('open');
-  expect(input).toHaveValue('Sigo escribiendo');
+  expect(input.textContent).toBe('Sigo escribiendo');
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
 });
 
@@ -1452,7 +1504,7 @@ it('detener pausa la cola y conserva las tareas pendientes para un envío explí
   });
   render(<AgentView />);
   await act(async () => {});
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Siguiente tarea' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Siguiente tarea');
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' })); });
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   const composer = within(screen.getByRole('group', { name: 'Redactar mensaje' }));
@@ -1621,7 +1673,7 @@ it('envía un mensaje en cola como corrección del encargo en curso', async () =
   render(<AgentView />);
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa la plantilla B' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Usa la plantilla B');
   fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' }));
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar como corrección')); });
@@ -1636,7 +1688,7 @@ it('admite una indicación inmediata una sola vez y confirma recepción después
   render(<AgentView />);
   await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa la plantilla B' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Usa la plantilla B');
   const indicate = screen.getByRole('button', { name: 'Indicar ahora' });
   fireEvent.click(indicate);
   fireEvent.click(indicate);
@@ -1657,9 +1709,9 @@ it.each(['rechazo', 'sin aceptación'])('una indicación con %s conserva borrado
   await act(async () => { fireEvent.click(screen.getByText('Primera')); });
   openComposerOptions();
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa esta plantilla' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Usa esta plantilla');
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Indicar ahora' })); });
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Usa esta plantilla');
+  expect(screen.getByLabelText('Mensaje para el agente').textContent).toBe('Usa esta plantilla');
   expect(screen.getByText('plantilla.pdf')).toBeInTheDocument();
   expect(screen.getByLabelText('Detener')).toBeInTheDocument();
   expect(screen.queryByText(/Indicación recibida/)).not.toBeInTheDocument();
@@ -1742,9 +1794,9 @@ it('reutiliza la conversación desde la tarjeta fijada y el selector compacto', 
   await act(async () => { fireEvent.click(tile); });
   expect(create).not.toHaveBeenCalled();
   await waitFor(() => expect(list).toHaveBeenCalledWith('s9'));
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador en curso' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Borrador en curso');
   await act(async () => { fireEvent.click(tile); });
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador en curso');
+  expect(screen.getByLabelText('Mensaje para el agente').textContent).toBe('Borrador en curso');
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Antigua' })); });
   await act(async () => { fireEvent.click(tile); });
   expect(list).toHaveBeenLastCalledWith('s8');
@@ -1755,7 +1807,7 @@ it('reutiliza la conversación desde la tarjeta fijada y el selector compacto', 
 
   await act(async () => { fireEvent.click(screen.getByTitle('Abrir conversación con Revisión')); });
   expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba', profile_id: 'p2' });
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Revisa el documento');
+  expect(screen.getByLabelText('Mensaje para el agente').textContent).toBe('Revisa el documento');
 });
 
 it('crea un solo primer chat ante clics rápidos y no cambia la selección al terminar tarde', async () => {
@@ -1779,7 +1831,7 @@ it('crea un solo primer chat ante clics rápidos y no cambia la selección al te
   vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [first, session] });
   await act(async () => { creation.resolve({ session: first }); });
   expect(original).toHaveAttribute('aria-current', 'page');
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('');
+  expect(screen.getByLabelText('Mensaje para el agente').textContent).toBe('');
   await act(async () => { fireEvent.click(profileButton); });
   expect(screen.getByRole('button', { name: first.title })).toHaveAttribute('aria-current', 'page');
   expect(create).toHaveBeenCalledTimes(1);
@@ -1806,7 +1858,7 @@ it.each([false, true])('permite crear otra conversación explícita con el agent
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Nueva conversación con Informe mensual' })); });
   }
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ profile_id: 'p1' }));
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Prepara el informe de este mes');
+  expect(screen.getByLabelText('Mensaje para el agente').textContent).toBe('Prepara el informe de este mes');
 });
 
 it('envía el primer texto una sola vez ante doble Enter y conserva lo escrito durante la creación', async () => {
@@ -1819,15 +1871,15 @@ it('envía el primer texto una sola vez ante doble Enter y conserva lo escrito d
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
   expect(input).toBeEnabled();
-  fireEvent.change(input, { target: { value: 'Mi primer encargo' } });
+  editComposer(input, 'Mi primer encargo');
   fireEvent.keyDown(input, { key: 'Enter' });
   fireEvent.keyDown(input, { key: 'Enter' });
   expect(create).toHaveBeenCalledExactlyOnceWith({ provider: 'local', model: 'prueba' });
-  expect(input).toHaveValue('Mi primer encargo');
-  fireEvent.change(input, { target: { value: 'El siguiente encargo' } });
+  expect(input.textContent).toBe('Mi primer encargo');
+  editComposer(input, 'El siguiente encargo');
   await act(async () => { created.resolve({ session }); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Mi primer encargo', expect.any(String), []);
-  expect(input).toHaveValue('El siguiente encargo');
+  expect(input.textContent).toBe('El siguiente encargo');
 });
 
 it('mantiene activo el primer turno mientras espera la aceptación del mensaje', async () => {
@@ -1839,7 +1891,7 @@ it('mantiene activo el primer turno mientras espera la aceptación del mensaje',
   vi.mocked(agentApi.agentMessageSend).mockReturnValue(send.promise);
   render(<AgentView />);
   await act(async () => {});
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Primer encargo' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Primer encargo');
   await act(async () => { fireEvent.keyDown(screen.getByLabelText('Mensaje para el agente'), { key: 'Enter' }); });
   expect(within(screen.getByRole('status', { name: 'Avisos del agente' })).getByText('Trabajando en ello')).toBeInTheDocument();
   await act(async () => { send.resolve({ accepted: true }); });
@@ -1850,11 +1902,11 @@ it('conserva el primer borrador sin proveedor y no crea ni envía una conversaci
   render(<AgentView />);
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
-  fireEvent.change(input, { target: { value: 'Encargo pendiente' } });
+  editComposer(input, 'Encargo pendiente');
   expect(input).toBeEnabled();
   expect(screen.getByLabelText('Enviar')).toBeDisabled();
   await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }); });
-  expect(input).toHaveValue('Encargo pendiente');
+  expect(input.textContent).toBe('Encargo pendiente');
   expect(addToast).toHaveBeenCalledWith({ message: 'Elige un proveedor IA', type: 'error' });
   expect(create).not.toHaveBeenCalled();
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
@@ -1869,15 +1921,15 @@ it('conserva el primer borrador si falla la creación y permite volver a enviarl
   render(<AgentView />);
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
-  fireEvent.change(input, { target: { value: 'Primer encargo' } });
+  editComposer(input, 'Primer encargo');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
-  expect(input).toHaveValue('Primer encargo');
+  expect(input.textContent).toBe('Primer encargo');
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
   expect(addToast).toHaveBeenCalledWith({ message: 'No se pudo crear', type: 'error' });
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   expect(create).toHaveBeenCalledTimes(2);
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Primer encargo', expect.any(String), []);
-  expect(input).toHaveValue('');
+  expect(input.textContent).toBe('');
 });
 
 it('reintenta el texto con la misma identidad si se pierde la respuesta de aceptación', async () => {
@@ -1895,12 +1947,10 @@ it('reintenta el texto con la misma identidad si se pierde la respuesta de acept
   render(<AgentView />);
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
-  const submit = () => {
-    fireEvent.change(input, { target: { value: 'Encargo aceptado' } });
-    fireEvent.click(screen.getByLabelText('Enviar'));
-  };
-  await act(async () => { submit(); });
-  await act(async () => { submit(); });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (input.textContent !== 'Encargo aceptado') editComposer(input, 'Encargo aceptado');
+    await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
+  }
   expect(agentApi.agentMessageSend).toHaveBeenCalledTimes(2);
   expect(create).toHaveBeenCalledTimes(1);
   expect(accepted.size).toBe(1);
@@ -1932,7 +1982,7 @@ it('muestra la bienvenida sin sugerencias de mensajes predefinidos', async () =>
   render(<AgentView />);
   await act(async () => {});
   expect(screen.getByText(/^Puedo ayudarte a preparar informes/)).toBeVisible();
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveAttribute('placeholder', 'Escribe un mensaje · @ para mencionar · / para usar una skill');
+  expect(screen.getByLabelText('Mensaje para el agente')).toHaveAttribute('aria-placeholder', 'Escribe un mensaje · @ para mencionar · / para usar una skill');
   expect(screen.queryByRole('group', { name: 'Sugerencias' })).not.toBeInTheDocument();
 });
 
@@ -1991,7 +2041,7 @@ it('cambia el modelo del chat actual, conserva los mensajes y retiene el anterio
   await waitFor(() => expect(addToast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Proveedor no disponible' })));
   expect(trigger).toHaveTextContent('otro-modelo');
   list.mockResolvedValue({ ...empty, running: true });
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Continúa' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Continúa');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   expect(trigger).toBeDisabled();
   expect(agentApi.agentMessageSend).toHaveBeenCalledWith('s1', 'Continúa', expect.any(String), []);
@@ -2272,7 +2322,7 @@ it('confirma la recepción solo tras la admisión y conserva ese recibo si falla
   vi.mocked(agentApi.agentMessageSend).mockReturnValue(admitted.promise);
   render(<AgentView />);
   await act(async () => {});
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Prepara el informe' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Prepara el informe');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   const receipts = within(screen.getByRole('region', { name: 'Estado de los envíos' }));
   expect(receipts.getByText('Enviando mensaje…')).toBeVisible();
@@ -2357,14 +2407,14 @@ it('un mensaje sin aceptación conserva su borrador y ofrece recuperar la misma 
   render(<AgentView />);
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
-  fireEvent.change(input, { target: { value: 'Ordena este informe' } });
+  editComposer(input, 'Ordena este informe');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
-  expect(input).toHaveValue('Ordena este informe');
+  expect(input.textContent).toBe('Ordena este informe');
   expect(screen.getByText('Recepción sin confirmar.')).toBeVisible();
   const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Reintentar envío: Ordena este informe' })); });
   expect(vi.mocked(agentApi.agentMessageSend).mock.calls[1]).toEqual(original);
-  expect(input).toHaveValue('');
+  expect(input.textContent).toBe('');
   expect(screen.getByText('Mensaje recibido.')).toBeVisible();
 });
 
@@ -2374,7 +2424,7 @@ it('ignora Intro repetido y composición IME sin impedir Shift+Intro', async () 
   render(<AgentView />);
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
-  fireEvent.change(input, { target: { value: 'Un encargo' } });
+  editComposer(input, 'Un encargo');
   await act(async () => {
     fireEvent.keyDown(input, { key: 'Enter', repeat: true });
     fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
@@ -2382,7 +2432,7 @@ it('ignora Intro repetido y composición IME sin impedir Shift+Intro', async () 
     fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
   });
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
-  expect(input).toHaveValue('Un encargo');
+  expect(input.textContent).toBe('Un encargo');
   await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Un encargo', expect.any(String), []);
 });
@@ -2400,14 +2450,14 @@ it.each(['texto nuevo', 'texto idéntico editado', 'adjunto nuevo', 'adjunto qui
   openComposerOptions();
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
   const input = screen.getByLabelText('Mensaje para el agente');
-  fireEvent.change(input, { target: { value: 'Encargo original' } });
+  editComposer(input, 'Encargo original');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
-  expect(input).toHaveValue('Encargo original');
+  expect(input.textContent).toBe('Encargo original');
   if (change === 'adjunto nuevo') await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
   else if (change === 'adjunto quitado') fireEvent.click(screen.getByLabelText('Quitar original.pdf'));
   else {
-    fireEvent.change(input, { target: { value: 'Borrador nuevo' } });
-    if (change === 'texto idéntico editado') fireEvent.change(input, { target: { value: 'Encargo original' } });
+    editComposer(input, 'Borrador nuevo');
+    if (change === 'texto idéntico editado') editComposer(input, 'Encargo original');
   }
   const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
   const retry = screen.getByRole('button', { name: 'Reintentar envío: Encargo original' });
@@ -2415,7 +2465,7 @@ it.each(['texto nuevo', 'texto idéntico editado', 'adjunto nuevo', 'adjunto qui
   expect(vi.mocked(agentApi.agentMessageSend).mock.calls).toEqual([original, original]);
   expect(screen.getByText('Enviando mensaje…')).toBeVisible();
   await act(async () => { admitted.resolve({ accepted: true, duplicate: true }); });
-  expect(input).toHaveValue(change === 'texto nuevo' ? 'Borrador nuevo' : 'Encargo original');
+  expect(input.textContent).toBe(change === 'texto nuevo' ? 'Borrador nuevo' : 'Encargo original');
   expect(screen.queryByText('original.pdf')).not.toBeInTheDocument();
   if (change === 'adjunto nuevo') expect(screen.getByText('nuevo.pdf')).toBeVisible();
 });
@@ -2433,12 +2483,12 @@ it.each(['aceptado', 'sin confirmar'])('conserva la edición y adjuntos hechos d
   openComposerOptions();
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
   const input = screen.getByLabelText('Mensaje para el agente');
-  fireEvent.change(input, { target: { value: 'Primero' } });
+  editComposer(input, 'Primero');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
-  fireEvent.change(input, { target: { value: 'Segundo' } });
+  editComposer(input, 'Segundo');
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
   await act(async () => { admitted.resolve({ accepted: result === 'aceptado' }); });
-  expect(input).toHaveValue('Segundo');
+  expect(input.textContent).toBe('Segundo');
   expect(screen.getByText('nuevo.pdf')).toBeVisible();
   expect(vi.mocked(agentApi.agentMessageSend).mock.calls[0]).toEqual(['s1', 'Primero', expect.any(String), ['a1']]);
 });
@@ -2452,12 +2502,12 @@ it('captura el mensaje antes de esperar a que se cree el primer chat', async () 
   render(<AgentView />);
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
-  fireEvent.change(input, { target: { value: 'Primer encargo' } });
+  editComposer(input, 'Primer encargo');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
-  fireEvent.change(input, { target: { value: 'Encargo siguiente' } });
+  editComposer(input, 'Encargo siguiente');
   await act(async () => { creation.resolve({ session }); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith('s1', 'Primer encargo', expect.any(String), []);
-  expect(input).toHaveValue('Encargo siguiente');
+  expect(input.textContent).toBe('Encargo siguiente');
 });
 
 it.each(['aceptado', 'sin confirmar'])('mantiene el recibo de un envío %s en su chat al navegar', async (result) => {
@@ -2475,13 +2525,13 @@ it.each(['aceptado', 'sin confirmar'])('mantiene el recibo de un envío %s en su
   const input = screen.getByLabelText('Mensaje para el agente');
   openComposerOptions();
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
-  fireEvent.change(input, { target: { value: 'Encargo del primer chat' } });
+  editComposer(input, 'Encargo del primer chat');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
-  fireEvent.change(input, { target: { value: 'Borrador del segundo chat' } });
+  editComposer(input, 'Borrador del segundo chat');
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
   await act(async () => { admitted.resolve({ accepted: result === 'aceptado' }); });
-  expect(input).toHaveValue('Borrador del segundo chat');
+  expect(input.textContent).toBe('Borrador del segundo chat');
   expect(screen.getByText('otro-chat.pdf')).toBeVisible();
   expect(screen.queryByText('original.pdf')).not.toBeInTheDocument();
   expect(screen.queryByRole('region', { name: 'Estado de los envíos' })).not.toBeInTheDocument();
@@ -2489,10 +2539,10 @@ it.each(['aceptado', 'sin confirmar'])('mantiene el recibo de un envío %s en su
   const receipts = screen.getByRole('region', { name: 'Estado de los envíos' });
   expect(receipts).toHaveTextContent('Encargo del primer chat');
   expect(receipts).toHaveTextContent(result === 'aceptado' ? 'Mensaje recibido.' : 'Recepción sin confirmar.');
-  expect(input).toHaveValue(result === 'aceptado' ? '' : 'Encargo del primer chat');
+  expect(input.textContent).toBe(result === 'aceptado' ? '' : 'Encargo del primer chat');
   expect(screen.queryByText('otro-chat.pdf')).not.toBeInTheDocument();
   await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
-  expect(input).toHaveValue('Borrador del segundo chat');
+  expect(input.textContent).toBe('Borrador del segundo chat');
   expect(screen.getByText('otro-chat.pdf')).toBeVisible();
 });
 
@@ -2504,7 +2554,7 @@ it('conserva varios envíos no confirmados y muestra la recepción del que se ac
   await act(async () => {});
   const input = screen.getByLabelText('Mensaje para el agente');
   for (const text of ['Encargo A', 'Encargo B']) {
-    fireEvent.change(input, { target: { value: text } });
+    editComposer(input, text);
     await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   }
   const receipts = within(screen.getByRole('region', { name: 'Estado de los envíos' }));
@@ -2515,7 +2565,7 @@ it('conserva varios envíos no confirmados y muestra la recepción del que se ac
   expect(vi.mocked(agentApi.agentMessageSend).mock.calls[2]).toEqual(original);
   expect(receipts.getByText('Mensaje recibido.')).toHaveTextContent('Encargo A');
   expect(receipts.getByRole('button', { name: 'Reintentar envío: Encargo B' })).toBeVisible();
-  expect(input).toHaveValue('Encargo B');
+  expect(input.textContent).toBe('Encargo B');
 });
 
 it('conserva una indicación fallida de la cola y la recupera con su misma intención tras remontar', async () => {
@@ -2524,7 +2574,7 @@ it('conserva una indicación fallida de la cola y la recupera con su misma inten
   vi.mocked(agentApi.agentMessageSend).mockResolvedValueOnce({ accepted: false });
   const first = render(<AgentView />);
   await act(async () => {});
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Usa la plantilla B' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Usa la plantilla B');
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dejar para después' })); });
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar como corrección')); });
   const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
@@ -2555,7 +2605,7 @@ it.each([
   await act(async () => {});
   openComposerOptions();
   await act(async () => { fireEvent.click(screen.getByLabelText('Adjuntar archivos')); });
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Encargo original' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Encargo original');
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: correction ? 'Indicar ahora' : 'Enviar', exact: true })); });
   const original = vi.mocked(agentApi.agentMessageSend).mock.calls[0];
   expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([
@@ -2568,10 +2618,10 @@ it.each([
   render(<AgentView />);
   await act(async () => {});
   expect(agentApi.agentMessageSend).toHaveBeenCalledTimes(1);
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador nuevo' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Borrador nuevo');
   await act(async () => { fireEvent.click(screen.getByTitle('Reintentar el envío pendiente')); });
   expect(vi.mocked(agentApi.agentMessageSend).mock.calls[1]).toEqual(original);
-  expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador nuevo');
+  expect(screen.getByLabelText('Mensaje para el agente').textContent).toBe('Borrador nuevo');
   expect(JSON.parse(localStorage.getItem('antares-agent-queue') || '[]')).toEqual([]);
   expect(screen.getByText(correction ? 'Indicación recibida.' : 'Mensaje recibido.')).toBeVisible();
 });
@@ -2612,7 +2662,7 @@ it('un ACK anterior no sustituye el recibo de una indicación más reciente', as
   await act(async () => { fireEvent.click(screen.getByTitle('Reintentar el envío pendiente')); });
   expect(screen.getByText('Enviando mensaje…')).toBeVisible();
   list.mockResolvedValue({ ...empty, running: true });
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Indicación B' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Indicación B');
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Indicar ahora' })); });
   expect(screen.getByText('Indicación recibida.')).toBeVisible();
   await act(async () => { first.resolve({ accepted: true }); });
@@ -2627,7 +2677,7 @@ it('el eco de un texto en el historial no confirma una respuesta de envío perdi
   vi.mocked(agentApi.agentMessageSend).mockRejectedValueOnce(new Error('Respuesta perdida'));
   render(<AgentView />);
   await act(async () => {});
-  fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Texto repetido' } });
+  editComposer(screen.getByLabelText('Mensaje para el agente'), 'Texto repetido');
   await act(async () => { fireEvent.click(screen.getByLabelText('Enviar')); });
   list.mockResolvedValue({ ...empty, messages: [{ role: 'user', content: 'Texto repetido', ts: 1 }] });
   await act(async () => { update(); });
@@ -2648,16 +2698,16 @@ it('invoca una skill con «/»: filtra el catálogo, elige con el teclado y env�
   render(<AgentView />);
   await act(async () => {});
   const box = screen.getByLabelText('Mensaje para el agente');
-  fireEvent.change(box, { target: { value: 'Abre C:/datos' } });
+  editComposer(box, 'Abre C:/datos');
   expect(screen.queryByRole('listbox', { name: 'Skills disponibles' })).not.toBeInTheDocument();
   expect(catalog).not.toHaveBeenCalled();
-  fireEvent.change(box, { target: { value: 'Revisa /if' } });
+  editComposer(box, 'Revisa /if');
   await act(async () => {});
   const listbox = screen.getByRole('listbox', { name: 'Skills disponibles' });
   expect(within(listbox).getAllByRole('option').map((option) => option.textContent)).toEqual(['/informe-tecnicoRedacta informes']);
   fireEvent.keyDown(box, { key: 'Escape' });
   expect(screen.queryByRole('listbox', { name: 'Skills disponibles' })).not.toBeInTheDocument();
-  fireEvent.change(box, { target: { value: 'Revisa /f' } });
+  editComposer(box, 'Revisa /f');
   await act(async () => {});
   expect(within(screen.getByRole('listbox', { name: 'Skills disponibles' })).getAllByRole('option').map((option) => option.textContent?.split('/')[1]))
     .toEqual(['firmasComprueba firmas', 'pdf-reviewRevisa PDFs', 'informe-tecnicoRedacta informes']);
@@ -2668,10 +2718,10 @@ it('invoca una skill con «/»: filtra el catálogo, elige con el teclado y env�
   expect(screen.getByRole('listbox', { name: 'Skills disponibles' }).closest('.agent-command-palette')).toHaveClass('absolute', 'bottom-full');
   fireEvent.keyDown(box, { key: 'Enter' });
   expect(screen.queryByRole('listbox', { name: 'Skills disponibles' })).not.toBeInTheDocument();
-  expect(box).toHaveValue('Revisa ');
+  expect(box.textContent).toBe('Revisa ');
   expect(within(screen.getByLabelText('Skill activa')).getByText('/pdf-review')).toBeVisible();
   expect(agentApi.agentMessageSend).not.toHaveBeenCalled();
-  fireEvent.change(box, { target: { value: 'Revisa el contrato' } });
+  editComposer(box, 'Revisa el contrato');
   await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }); });
   expect(agentApi.agentMessageSend).toHaveBeenCalledExactlyOnceWith(session.id, 'Revisa el contrato', expect.any(String), [], false, 'a'.repeat(24));
   expect(screen.queryByLabelText('Skill activa')).not.toBeInTheDocument();

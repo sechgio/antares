@@ -145,13 +145,32 @@
   border-top: 1px solid var(--border-subtle);
 }
 .agent-workspace .agent-composer-input {
-  field-sizing: content;
   min-height: 46px;
   max-height: 140px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   padding: 12px 14px 8px;
 }
-.agent-workspace .agent-composer-input:placeholder-shown {
-  overflow: hidden;
+.agent-workspace .agent-composer-input[data-empty="true"]::before {
+  position: absolute;
+  inset-inline: 14px;
+  color: var(--text-secondary);
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+.agent-workspace .agent-composer-mention {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  padding-inline-start: 19px;
+  color: color-mix(in srgb, var(--accent-green) 65%, var(--text-primary));
+  font-weight: 500;
+}
+.agent-workspace .agent-composer-mention-icon {
+  position: absolute;
+  inset-block-start: 2.5px;
+  inset-inline-start: 0;
 }
 .agent-workspace .agent-composer-model {
   min-width: 0;
@@ -176,7 +195,7 @@
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
 }
-.agent-workspace :is(.agent-search input, .agent-composer textarea):focus-visible {
+.agent-workspace .agent-search input:focus-visible {
   outline: none;
 }
 .agent-effort-track {
