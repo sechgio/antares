@@ -7,6 +7,7 @@ const path = require('node:path');
 const runtime = require('../electron/agent-runtime');
 const scheduler = require('../electron/agent-tasks');
 const { ctx } = require('../electron/agent-shared');
+const verifyHandoff = require('./helpers/agent-scheduler-handoff');
 
 async function until(check, timeout = 12000) {
   const deadline = Date.now() + timeout;
@@ -15,6 +16,14 @@ async function until(check, timeout = 12000) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error('La comprobación del planificador no terminó a tiempo');
+}
+
+function waitForAbort(signal, onStart) {
+  signal.throwIfAborted();
+  return new Promise((_, reject) => {
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    onStart();
+  });
 }
 
 async function main() {
@@ -185,9 +194,7 @@ async function main() {
     let contContext = '';
     let contHanging = false;
     faux.setResponses([
-      () => new Promise(() => {
-        contHanging = true;
-      }),
+      (_, { signal }) => waitForAbort(signal, () => { contHanging = true; }),
       (context) => {
         contContext = JSON.stringify(context.messages);
         return fauxAssistantMessage('Encargo reanudado y terminado');
@@ -216,9 +223,7 @@ async function main() {
     });
     let capHanging = false;
     faux.setResponses([
-      () => new Promise(() => {
-        capHanging = true;
-      }),
+      (_, { signal }) => waitForAbort(signal, () => { capHanging = true; }),
     ]);
     await runtime.handlers.agent_tasks_run({ id: capTask.scheduled.id });
     await until(() => capHanging);
@@ -237,88 +242,6 @@ async function main() {
       const sdoc = await tx.doc(stateForContinuation.SessionsDoc);
       delete sdoc.sessions[session.id].continuation;
     }, ctx());
-
-    const askTask = await runtime.handlers.agent_tasks_save({
-      session_id: session.id, content: 'Encargo que necesita un dato del usuario', due_at: future,
-    });
-    let replyContext = '';
-    faux.setResponses([
-      () => fauxAssistantMessage('Preparé el borrador pero falta un dato.\nNECESITA ENTRADA: ¿A qué mes corresponde el informe?'),
-      (context) => {
-        replyContext = JSON.stringify(context.messages);
-        return fauxAssistantMessage('Informe de marzo terminado');
-      },
-    ]);
-    await runtime.handlers.agent_tasks_run({ id: askTask.scheduled.id });
-    await until(async () => (await list()).find((task) => task.id === askTask.scheduled.id)?.status === 'needs_input');
-    const asking = (await list()).find((task) => task.id === askTask.scheduled.id);
-    assert.equal(asking.question, '¿A qué mes corresponde el informe?', 'la pregunta queda registrada en el encargo');
-    assert.match(asking.output, /Preparé el borrador/, 'el resultado parcial queda visible sin abrir la sesión');
-    assert.equal(asking.runs.at(-1).status, 'needs_input');
-    await assert.rejects(
-      runtime.handlers.agent_tasks_respond({ id: askTask.scheduled.id, response: '' }),
-      /Indica el encargo y tu respuesta/,
-    );
-    await runtime.handlers.agent_tasks_respond({ id: askTask.scheduled.id, response: 'Marzo' });
-    await until(async () => (await list()).find((task) => task.id === askTask.scheduled.id)?.status === 'to_verify');
-    assert.match(replyContext, /¿A qué mes corresponde el informe\?/, 'la respuesta reutiliza la entrega con la pregunta');
-    assert.match(replyContext, /Respuesta: Marzo/);
-    assert.match(replyContext, /No es un encargo nuevo/);
-    const answered = (await list()).find((task) => task.id === askTask.scheduled.id);
-    assert.equal(answered.output, 'Informe de marzo terminado', 'el resultado final sustituye al parcial');
-    assert.equal(answered.question, undefined, 'la pregunta se limpia al completarse');
-    assert.deepEqual(
-      answered.events.map((event) => event.to),
-      ['delivering', 'needs_input', 'delivering', 'to_verify'],
-      'el log de eventos registra cada transición',
-    );
-    await runtime.handlers.agent_tasks_verify({ id: askTask.scheduled.id });
-    const verified = (await list()).find((task) => task.id === askTask.scheduled.id);
-    assert.equal(verified.status, 'delivered', 'la verificación humana cierra el encargo');
-    assert.equal(verified.events.at(-1).to, 'delivered');
-    const reverified = await runtime.handlers.agent_tasks_verify({ id: askTask.scheduled.id });
-    assert.equal(reverified.verified, true, 'verificar un encargo ya entregado es idempotente');
-    await assert.rejects(
-      runtime.handlers.agent_tasks_respond({ id: askTask.scheduled.id, response: 'Otra cosa' }),
-      /no está esperando una respuesta/,
-      'responder un encargo que ya no espera es un error de validación',
-    );
-
-    const blockedTask = await runtime.handlers.agent_tasks_save({
-      session_id: session.id, content: 'Encargo que no puede continuar', due_at: future,
-    });
-    faux.setResponses([() => fauxAssistantMessage('Lo intenté de dos formas.\nBLOQUEADO: Falta la credencial del servicio externo.')]);
-    await runtime.handlers.agent_tasks_run({ id: blockedTask.scheduled.id });
-    await until(async () => (await list()).find((task) => task.id === blockedTask.scheduled.id)?.status === 'blocked');
-    const blockedDone = (await list()).find((task) => task.id === blockedTask.scheduled.id);
-    assert.match(blockedDone.last_error, /Falta la credencial/, 'el bloqueo lleva el motivo');
-    assert.equal(blockedDone.runs.at(-1).status, 'blocked');
-    faux.setResponses([() => fauxAssistantMessage('Credencial aplicada, encargo terminado')]);
-    await runtime.handlers.agent_tasks_run({ id: blockedTask.scheduled.id });
-    await until(async () => (await list()).find((task) => task.id === blockedTask.scheduled.id)?.status === 'to_verify');
-    assert.equal((await list()).find((task) => task.id === blockedTask.scheduled.id).output,
-      'Credencial aplicada, encargo terminado', 're-ejecutar un bloqueado produce un resultado nuevo');
-
-    await scheduler.schedule({ action: 'pause' }, session.id, { taskId: 'queue-handoff-pause' });
-    const queuedQuestion = await scheduler.schedule({ action: 'enqueue', content: 'Encargo en cola con pregunta' }, session.id, { taskId: 'queue-handoff' });
-    const queuedAfter = await scheduler.schedule({ action: 'enqueue', content: 'Encargo en cola posterior' }, session.id, { taskId: 'queue-handoff' });
-    faux.setResponses([
-      () => fauxAssistantMessage('NECESITA ENTRADA: ¿Confirmo el envío?'),
-      () => fauxAssistantMessage('Posterior terminado'),
-      (context) => {
-        assert.match(JSON.stringify(context.messages), /Respuesta: Sí/, 'la cola reutiliza la entrega para la respuesta');
-        return fauxAssistantMessage('Envío confirmado');
-      },
-    ]);
-    await scheduler.schedule({ action: 'resume' }, session.id, { taskId: 'queue-handoff-resume' });
-    await until(async () => (await queueItems()).find((task) => task.id === queuedQuestion.scheduled.id)?.status === 'needs_input');
-    await new Promise((resolve) => setTimeout(resolve, 1300));
-    assert.equal((await queueItems()).find((task) => task.id === queuedAfter.scheduled.id)?.status, 'to_verify',
-      'una pregunta sin responder no frena el siguiente encargo de la cola');
-    await runtime.handlers.agent_tasks_respond({ id: queuedQuestion.scheduled.id, response: 'Sí' });
-    await until(async () => (await queueItems()).find((task) => task.id === queuedQuestion.scheduled.id)?.status === 'to_verify');
-    await runtime.handlers.agent_tasks_verify({ id: queuedQuestion.scheduled.id });
-    assert.equal((await queueItems()).find((task) => task.id === queuedQuestion.scheduled.id)?.status, 'delivered');
 
     await scheduler.stop();
     const state = runtime._internal.state();
@@ -546,12 +469,22 @@ async function main() {
       /no puede encolar más de 5/,
     );
 
+    await verifyHandoff({ faux, fauxAssistantMessage, until, future });
+
     console.log('[PASS] Planificador: validación, edición, silencio, historial y entrega única tras reiniciar.');
     console.log('[PASS] Cola FIFO: pausa, reanudación, orden, cancelación, persistencia y pausa automática tras fallo.');
+    console.log('[PASS] Handoff: respuesta, verificación, re-ejecución y continuidad de la cola.');
   } finally {
     await runtime.shutdown();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
 
-main().catch((err) => { console.error(err); process.exitCode = 1; });
+let completed = false;
+process.once('beforeExit', () => {
+  if (!completed && !process.exitCode) {
+    console.error('El planificador terminó antes de completar las comprobaciones.');
+    process.exitCode = 1;
+  }
+});
+main().then(() => { completed = true; }).catch((err) => { console.error(err); process.exitCode = 1; });

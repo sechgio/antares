@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarClock, Check, Pause, Pencil, Play, Plus, RefreshCw, X } from 'lucide-react';
 import {
   agentApi, type AgentQueueState, type AgentSession, type AgentTask,
-  type AgentTaskKind, type AgentTaskRun, type AgentTaskStatus,
+  type AgentTaskKind, type AgentTaskStatus,
 } from '../../api/agentApi';
 import { formatMoment } from '../../utils/dates';
 import { errorMessage } from '../../utils/errors';
@@ -14,17 +14,7 @@ import Input from '../ui/Input';
 import Textarea from '../ui/Textarea';
 import ThemedSelect from '../ui/ThemedSelect';
 import AgentQueuePanel, { TaskReplyBox, type AgentQueueGroup } from './AgentQueuePanel';
-
-const STATUS_LABELS: Record<AgentTaskStatus, string> = {
-  pending: 'Programado',
-  delivering: 'Entregando',
-  delivered: 'Entregado',
-  cancelled: 'Cancelado',
-  uncertain: 'Incierto',
-  needs_input: 'Espera respuesta',
-  blocked: 'Bloqueado',
-  to_verify: 'Por verificar',
-};
+import ScheduledTaskHistory, { STATUS_LABELS } from './ScheduledTaskHistory';
 
 const STATUS_CLASSES: Record<AgentTaskStatus, string> = {
   pending: 'bg-[color-mix(in_srgb,var(--accent-primary)_10%,transparent)] text-[var(--accent-primary)]',
@@ -35,14 +25,6 @@ const STATUS_CLASSES: Record<AgentTaskStatus, string> = {
   needs_input: 'bg-[color-mix(in_srgb,var(--accent-yellow)_14%,transparent)] text-[var(--accent-yellow)]',
   blocked: 'bg-[color-mix(in_srgb,var(--accent-red)_10%,transparent)] text-[var(--accent-red)]',
   to_verify: 'bg-[color-mix(in_srgb,var(--accent-green)_12%,transparent)] text-[var(--accent-green)]',
-};
-
-const RUN_LABELS: Record<AgentTaskRun['status'], string> = {
-  delivered: 'Entregado',
-  failed: 'Falló',
-  uncertain: 'Incierto',
-  needs_input: 'Espera respuesta',
-  blocked: 'Bloqueado',
 };
 
 type TaskForm = {
@@ -436,8 +418,6 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
               ) : scheduled.length > 0 ? (
                 <ul className="space-y-2" aria-label="Lista de encargos programados">
                   {scheduled.map((task) => {
-                    const runs = [...(task.runs || [])].reverse();
-                    const events = [...(task.events || [])].reverse();
                     return (
                       <li key={task.id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
                         <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
@@ -492,37 +472,11 @@ export default function ScheduledTasksPanel({ sessions, sessionId, onClose }: {
                           <span className="flex-1" />
                           <Button variant="ghost" size="sm" aria-label={`Historial de ejecuciones: ${task.content.slice(0, 60)}`}
                             onClick={() => setExpanded((current) => current === task.id ? null : task.id)}>
-                            {expanded === task.id ? 'Ocultar historial' : `Historial (${runs.length})`}
+                            {expanded === task.id ? 'Ocultar historial' : `Historial (${task.runs?.length || 0})`}
                           </Button>
                         </div>
                         {expanded === task.id && (
-                          <div className="border-t border-[var(--border-subtle)] px-3 py-2">
-                            {runs.length === 0 ? <p className="text-[12px] text-[var(--text-secondary)]">Todavía no se ejecutó.</p> : (
-                              <ul className="space-y-1">
-                                {runs.map((run, index) => (
-                                  <li key={`${run.at}-${index}`} className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-secondary)]">
-                                    <span className={run.status === 'delivered' ? 'text-[var(--accent-green)]'
-                                      : run.status === 'uncertain' || run.status === 'blocked' ? 'text-[var(--accent-red)]' : 'text-[var(--accent-yellow)]'}>
-                                      {RUN_LABELS[run.status]}
-                                    </span>
-                                    <span>{formatMoment(run.at, task.timezone)}</span>
-                                    {run.error && <span className="min-w-0 flex-1 break-all">{run.error}</span>}
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                            {events.length > 0 && (
-                              <ul className="mt-2 space-y-1 border-t border-[var(--border-subtle)] pt-2" aria-label="Eventos del encargo">
-                                {events.map((event, index) => (
-                                  <li key={`${event.at}-${index}`} className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-secondary)]">
-                                    <span className="text-[var(--text-muted)]">{formatMoment(event.at, task.timezone)}</span>
-                                    <span>{STATUS_LABELS[event.to] || event.to}</span>
-                                    {event.reason && <span className="min-w-0 flex-1 break-all">{event.reason}</span>}
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
+                          <ScheduledTaskHistory task={task} />
                         )}
                       </li>
                     );
