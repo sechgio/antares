@@ -1133,23 +1133,24 @@ it('aísla borrador y selector de archivos tardío al alternar conversaciones', 
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
   vi.spyOn(agentApi, 'agentAttach').mockReturnValue(picked.promise);
   const { unmount } = render(<AgentView />);
-  fireEvent.click(await screen.findByText('Primera'));
+  const first = await screen.findByText('Primera');
+  await act(async () => { fireEvent.click(first); });
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador de Primera' } });
   openComposerOptions();
   fireEvent.click(screen.getByLabelText('Adjuntar archivos'));
-  fireEvent.click(screen.getByText('Segunda'));
+  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
   await act(async () => picked.resolve({ attachments: [{ id: 'a1', name: 'primera.pdf', kind: 'files' }] }));
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('');
   expect(screen.queryByText('primera.pdf')).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Mensaje para el agente'), { target: { value: 'Borrador de Segunda' } });
-  fireEvent.click(screen.getByText('Primera'));
+  await act(async () => { fireEvent.click(screen.getByText('Primera')); });
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador de Primera');
   expect(screen.getByText('primera.pdf')).toBeInTheDocument();
   unmount();
   render(<AgentView />);
   await waitFor(() => expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador de Primera'));
   expect(screen.queryByText('primera.pdf')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByText('Segunda'));
+  await act(async () => { fireEvent.click(screen.getByText('Segunda')); });
   expect(screen.getByLabelText('Mensaje para el agente')).toHaveValue('Borrador de Segunda');
 });
 
