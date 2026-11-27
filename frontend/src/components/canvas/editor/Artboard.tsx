@@ -253,7 +253,27 @@ function Artboard({
   const pageLabelRef = useRef<HTMLDivElement>(null);
   const drawStart = useRef<{ xMm: number; yMm: number } | null>(null);
   const [draft, setDraft] = useState<DrawRect | null>(null);
-  const [marquee, setMarquee] = useState<RectMm | null>(null);
+  const marqueeRef = useRef<HTMLDivElement>(null);
+  const marqueeActiveRef = useRef(false);
+  const [marqueeActive, setMarqueeActive] = useState(false);
+  const setMarquee = useCallback((rect: RectMm | null) => {
+    const active = rect !== null;
+    if (marqueeActiveRef.current !== active) {
+      marqueeActiveRef.current = active;
+      setMarqueeActive(active);
+    }
+    const overlay = marqueeRef.current;
+    if (!overlay) return;
+    if (!rect || rect.w + rect.h <= 0) {
+      overlay.hidden = true;
+      return;
+    }
+    overlay.style.left = `${mmToScreenPx(rect.x, 1)}px`;
+    overlay.style.top = `${mmToScreenPx(rect.y, 1)}px`;
+    overlay.style.width = `${Math.max(mmToScreenPx(rect.w, 1), 1)}px`;
+    overlay.style.height = `${Math.max(mmToScreenPx(rect.h, 1), 1)}px`;
+    overlay.hidden = false;
+  }, []);
   const [lassoPts, setLassoPts] = useState<Array<{ x: number; y: number }> | null>(null);
   const [guides, setGuides] = useState<SmartGuide[]>([]);
   const guidesRef = useRef<SmartGuide[]>([]);
@@ -488,7 +508,7 @@ function Artboard({
     resetGuideDrag();
     setPanning(false);
     setRadiusDrag(null);
-  }, [gestureAbortToken, abortGesturePreview, pointerGestures, resetGuideDrag]);
+  }, [gestureAbortToken, abortGesturePreview, pointerGestures, resetGuideDrag, setMarquee]);
 
   useEffect(() => () => pointerGestures.dispose(), [pointerGestures]);
 
@@ -636,7 +656,7 @@ function Artboard({
       !interactive ||
       editingLayerId ||
       pathEditingLayerId ||
-      marquee ||
+      marqueeActive ||
       draft ||
       lassoPts ||
       eyedropperActive ||
@@ -649,7 +669,7 @@ function Artboard({
     interactive,
     editingLayerId,
     pathEditingLayerId,
-    marquee,
+    marqueeActive,
     draft,
     lassoPts,
     eyedropperActive,
@@ -704,7 +724,7 @@ function Artboard({
         !gestureDirtyRef.current &&
         !editingLayerId &&
         !pathEditingLayerId &&
-        !marquee &&
+        !marqueeActive &&
         !draft &&
         !lassoPts;
       if (!idle) {
@@ -737,7 +757,7 @@ function Artboard({
       gestureActive,
       editingLayerId,
       pathEditingLayerId,
-      marquee,
+      marqueeActive,
       draft,
       lassoPts,
       setHoverLabelsIfChanged,
@@ -1335,23 +1355,19 @@ function Artboard({
             </div>
           ))}
 
-          {marquee && marquee.w + marquee.h > 0 && (
-            <div
-              data-testid="canvas-marquee"
-              style={{
-                position: 'absolute',
-                left: mmToScreenPx(marquee.x, 1),
-                top: mmToScreenPx(marquee.y, 1),
-                width: Math.max(mmToScreenPx(marquee.w, 1), 1),
-                height: Math.max(mmToScreenPx(marquee.h, 1), 1),
-                border: `${screenChromePx(1, zoom)}px solid var(--cv-accent)`,
-                background: 'color-mix(in srgb, var(--cv-accent) 8%, transparent)',
-                pointerEvents: 'none',
-                zIndex: 50,
-                boxSizing: 'border-box',
-              }}
-            />
-          )}
+          <div
+            ref={marqueeRef}
+            hidden
+            data-testid="canvas-marquee"
+            style={{
+              position: 'absolute',
+              border: `${screenChromePx(1, zoom)}px solid var(--cv-accent)`,
+              background: 'color-mix(in srgb, var(--cv-accent) 8%, transparent)',
+              pointerEvents: 'none',
+              zIndex: 50,
+              boxSizing: 'border-box',
+            }}
+          />
 
           {draft && draft.w + draft.h > 0 && tool === 'line' && draft.x0 != null && draft.y0 != null && draft.x1 != null && draft.y1 != null && (
             <svg
