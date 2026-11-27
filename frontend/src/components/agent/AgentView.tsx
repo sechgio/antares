@@ -116,6 +116,7 @@ import { PlanCard } from './AgentPlanCard';
 
 const AgentFilePreview = lazy(() => import('./AgentFilePreview'));
 const POLL_MS = 1500;
+const CHAT_CACHE_LIMIT = 6;
 const SESSION_KEY = 'antares-agent-session';
 const SESSION_ENTRY_KEY = 'antares-agent-session-entry';
 const QUEUE_KEY = 'antares-agent-queue';
@@ -260,6 +261,7 @@ export default function AgentView({
   const sessionSelectionRef = useRef(0);
   const profileCreationsRef = useRef(new Map<string, Promise<AgentSession | null>>());
   const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [messagesSessionId, setMessagesSessionId] = useState('');
   const [transcriptView, setTranscriptView] = useLocalStorageState<TranscriptView>(VIEW_KEY, {
     parse: parseView,
     fallback: 'normal',
@@ -381,10 +383,12 @@ export default function AgentView({
   const [sendingCorrection, setSendingCorrection] = useState(false);
   const [stopping, setStopping] = useState(false);
   const timerRef = useRef<number | null>(null);
-  const inFlightRef = useRef(false);
-  const wantedRef = useRef<{ id: string; silent: boolean } | null>(null);
+  const messageRequestsRef = useRef(new Map<string, { queuedSilent?: boolean }>());
+  const messageCacheRef = useRef(new Map<string, AgentMessage[]>());
   const messagesVersionRef = useRef(new Map<string, { version: number; pending: number }>());
   const sessionIdRef = useRef('');
+  const changingSession = sessionId !== sessionIdRef.current;
+  const loadingMessages = !!sessionId && (changingSession || (messagesSessionId !== sessionId && !messagesStale));
   const listRef = useRef<HTMLDivElement | null>(null);
   const atBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
@@ -499,15 +503,26 @@ export default function AgentView({
 
   const loadMessages = useCallback(
     async (id: string, silent = true) => {
-      const request = { id, silent };
-      wantedRef.current = request;
-      if (inFlightRef.current) return;
-      inFlightRef.current = true;
+      const inFlight = messageRequestsRef.current.get(id);
+      if (inFlight) {
+        inFlight.queuedSilent = (inFlight.queuedSilent ?? true) && silent;
+        return;
+      }
+      const request: { queuedSilent?: boolean } = {};
+      messageRequestsRef.current.set(id, request);
       const version = messagesVersionRef.current.get(id)?.version ?? 0;
       try {
         const res = await agentApi.agentMessagesList(id);
         const current = messagesVersionRef.current.get(id);
         if (id === sessionIdRef.current && version === (current?.version ?? 0) && !current?.pending) {
+          const cache = messageCacheRef.current;
+          cache.delete(id);
+          if (res.messages.length && !res.running && !res.pending_approvals.length && !res.questions?.length) {
+            cache.set(id, res.messages);
+            const oldest = cache.keys().next().value;
+            if (cache.size > CHAT_CACHE_LIMIT && oldest !== undefined) cache.delete(oldest);
+          }
+          setMessagesSessionId(id);
           setMessagesStale(false);
           setMessages(res.messages);
           setArtifacts(res.artifacts ?? []);
@@ -531,14 +546,15 @@ export default function AgentView({
           setTokenBudget(res.token_budget ?? null);
         }
       } catch (err) {
-        if (id === sessionIdRef.current) setMessagesStale(true);
-        if (!silent) {
-          addToast({ message: errorMessage(err, 'No se pudieron cargar los mensajes'), type: 'error' });
+        if (id === sessionIdRef.current) {
+          setMessagesStale(true);
+          if (!silent) addToast({ message: errorMessage(err, 'No se pudieron cargar los mensajes'), type: 'error' });
         }
       } finally {
-        inFlightRef.current = false;
-        const wanted = wantedRef.current;
-        if (wanted && wanted !== request) void loadMessages(wanted.id, wanted.silent);
+        messageRequestsRef.current.delete(id);
+        if (request.queuedSilent !== undefined && id === sessionIdRef.current) {
+          void loadMessages(id, request.queuedSilent);
+        }
       }
     },
     [addToast],
@@ -574,6 +590,8 @@ export default function AgentView({
       } catch (err) {
         addToast({ message: errorMessage(err, 'No se pudieron cargar los proveedores'), type: 'error' });
       }
+    })();
+    void (async () => {
       const restored = await refreshSessions();
       const saved = localStorage.getItem(SESSION_KEY);
       if (sessionSelectionRef.current === 0 && saved && restored?.some((s) => s.id === saved)) setSessionId(saved);
@@ -607,7 +625,8 @@ export default function AgentView({
   useEffect(() => {
     sessionIdRef.current = sessionId;
     if (sessionId) localStorage.setItem(SESSION_KEY, sessionId);
-    setMessages([]);
+    setMessages(messageCacheRef.current.get(sessionId) ?? []);
+    setMessagesSessionId('');
     setArtifacts([]);
     setQuestions([]);
     setPanels([]);
@@ -979,6 +998,10 @@ export default function AgentView({
     if (!ok) return;
     try {
       await agentApi.agentSessionDelete(id);
+      messageCacheRef.current.delete(id);
+      const version = messagesVersionRef.current.get(id);
+      if (version) version.version += 1;
+      else messagesVersionRef.current.set(id, { version: 1, pending: 0 });
       setQueued((q) => q.filter((i) => i.session !== id));
       if (sessionId === id) {
         setSessionEntry(null);
@@ -1283,7 +1306,7 @@ export default function AgentView({
   };
 
   useEffect(() => {
-    if (!sessionId || running || stopping || modelBusy || messagesStale || pending.length > 0) return;
+    if (!sessionId || loadingMessages || running || stopping || modelBusy || messagesStale || pending.length > 0) return;
     const next = queued.find((i) => i.session === sessionId && !i.failed);
     if (!next) return;
     const sending = { ...next, failed: true };
@@ -1298,7 +1321,7 @@ export default function AgentView({
       });
       if (ok) setQueued((q) => q.filter((i) => i !== sending));
     })();
-  }, [sessionId, running, stopping, modelBusy, messagesStale, pending.length, queued]);
+  }, [sessionId, loadingMessages, running, stopping, modelBusy, messagesStale, pending.length, queued]);
 
   const sendCorrection = async (item: (typeof queued)[number]) => {
     if (correctionInFlightRef.current || item.failed) return;
@@ -1470,7 +1493,7 @@ export default function AgentView({
     }
   };
 
-  const showHero = !sessionId || messages.length === 0;
+  const showHero = !sessionId || (messagesSessionId === sessionId && messages.length === 0);
   const activeProfile = session?.profile ? (profiles.find((item) => item.id === session.profile?.id) ?? null) : null;
   const agentIdentity = session
     ? { seed: session.profile?.id ?? session.id, name: session.profile?.name ?? 'Antares', color: activeProfile?.color }
@@ -1992,7 +2015,11 @@ export default function AgentView({
             tabIndex={-1}
             className="custom-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-4 pb-4 pt-3 [&>*]:mx-auto [&>*]:max-w-[768px]"
           >
-            {showHero ? (
+            {loadingMessages && (changingSession || !messages.length) ? (
+              <p role="status" className="py-8 text-center text-sm text-[var(--text-secondary)]">
+                Cargando conversación…
+              </p>
+            ) : showHero ? (
               <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">
                 <AgentAvatar
                   seed={agentIdentity?.seed ?? 'antares-agent'}
@@ -2036,7 +2063,7 @@ export default function AgentView({
                         messages={turn.messages}
                         startedAt={turn.startedAt}
                         agent={agentIdentity}
-                        onUndo={undoEffect}
+                        onUndo={messagesSessionId === sessionId ? undoEffect : undefined}
                         view={visibleTranscriptView}
                         hideReasoning={hideReasoning}
                         panels={turnPanels.get(turn.key)}
