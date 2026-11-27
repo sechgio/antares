@@ -375,6 +375,7 @@ class MemoryStore:
         self._scopes: dict[str, str] = dict(data.get("scopes") or {})
         self._rejections: dict[str, JsonObject] = dict(data.get("rejections") or {})
         self._incognito: set[str] = set(map(str, data.get("incognito") or []))
+        self._capture: dict[str, int] = {str(k): int(v) for k, v in dict(data.get("capture") or {}).items()}
         self.revision = int(data.get("revision") or 0)
         self._index = MemoryIndex(base_dir / "memory_index.sqlite")
 
@@ -385,7 +386,8 @@ class MemoryStore:
                                      **({"revision": revision} if revision else {}),
                                      **({"scopes": self._scopes} if self._scopes else {}),
                                      **({"rejections": self._rejections} if self._rejections else {}),
-                                     **({"incognito": sorted(self._incognito)} if self._incognito else {})})
+                                     **({"incognito": sorted(self._incognito)} if self._incognito else {}),
+                                     **({"capture": self._capture} if self._capture else {})})
         self.revision = revision
         self._index.sync(self._docs())
 
@@ -756,6 +758,52 @@ class MemoryStore:
             if counts["promoted"] or counts["updated"]:
                 self._write()
         return counts
+
+    def capture_watermark(self, session_id: str) -> int:
+        with self._lock:
+            return int(self._capture.get(session_id) or 0)
+
+    def capture(self, session_id: str, memory_scope: str | None, facts: list[JsonObject],
+                preferences: list[JsonObject], up_to_ts: int) -> JsonObject:
+        """Aplica los recuerdos extraídos de una conversación recién cerrada y avanza la marca de agua.
+        La marca se persiste aunque no haya nada que absorber: evita reescanear el mismo tramo."""
+        counts = dict.fromkeys(("promoted", "updated", "deduplicated", "rejected"), 0)
+        with self._lock:
+            if memory_scope == "none":
+                raise ValueError("Este agente no usa memoria; no puede guardar recuerdos ni procedimientos")
+            if session_id in self._incognito:
+                counts["rejected"] += len(facts) + len(preferences)
+                return counts
+            profile_id = self._profiles.get(session_id)
+            source = {"kind": "agent", "session_id": session_id, "via": "capture"}
+            expires_at = _now() + INFERRED_DAYS * 86400000
+            for kind, entries in (("fact", facts), ("preference", preferences)):
+                for entry in entries[:20]:
+                    if not isinstance(entry, dict):
+                        counts["rejected"] += 1
+                        continue
+                    counts[self._absorb(kind, entry, source, profile_id,
+                                        lambda item: self._visible(item, session_id, profile_id=profile_id,
+                                                                   memory_scope=memory_scope),
+                                        expires_at, update=True)] += 1
+            self._capture[session_id] = max(int(up_to_ts), int(self._capture.get(session_id) or 0))
+            self._write()
+        return counts
+
+    def capture_input(self, session_id: str, memory_scope: str | None) -> JsonObject:
+        """Recuerdos vigentes del perfil para que el paso LLM deduplique antes de proponer,
+        junto a la marca de agua de la última captura de esta conversación."""
+        with self._lock:
+            since_ts = int(self._capture.get(session_id) or 0)
+            profile_id = self._profiles.get(session_id)
+            memories = [{"id": v["id"], "kind": v["kind"], "title": _unmarked(v["title"]),
+                         "content": _unmarked(str(v.get("content") or ""))[:DREAM_MEMORY_CHARS]}
+                        for v in (self._view(item) for item in self._items.values())
+                        if v["kind"] in ("fact", "preference") and v["status"] == "active"
+                        and not self._expired(self._items[v["id"]])
+                        and self._visible(self._items[v["id"]], session_id, profile_id=profile_id,
+                                          memory_scope=memory_scope)][:DREAM_MEMORIES]
+        return {"memories": memories, "since_ts": int(since_ts)}
 
     def dream_input(self, profile_id: str, days: int, half_life_days: int = RECENCY_HALF_LIFE_DAYS) -> JsonObject:
         since = (date.today() - timedelta(days=days)).isoformat()

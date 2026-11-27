@@ -40,7 +40,7 @@ def test_validate_drops_empty_description_and_false_multiselect():
     ["x" * 201],
 ])
 def test_validate_rejects_invalid_options(options):
-    with pytest.raises(ValueError, match="Opciones de pregunta inválidas|Descripción de opción inválida"):
+    with pytest.raises(ValueError, match=r"Opciones de pregunta inválidas|Descripción de opción inválida"):
         validate({"questions": [_question(options=options)]})
 
 

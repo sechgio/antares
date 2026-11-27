@@ -36,7 +36,7 @@ def validate(params: JsonObject) -> list[JsonObject]:
             raise ValueError("multiSelect debe ser verdadero o falso")
         if not isinstance(options, list) or len(options) > 10:
             raise ValueError("Opciones de pregunta inválidas")
-        normalized = []
+        normalized: list[str | dict[str, str]] = []
         for value in options:
             if isinstance(value, str):
                 if not value.strip() or len(value) > 200:

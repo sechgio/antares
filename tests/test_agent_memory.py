@@ -580,3 +580,48 @@ def test_pin_unpin_roundtrip_through_ipc_handler(store, monkeypatch):
     assert result["item"]["essential"] is True
     result = agent_internal._memory_update({"id": remembered["id"], "action": "unpin"})
     assert "essential" not in result["item"]
+
+
+def test_capture_absorbs_memories_and_advances_watermark(store):
+    mem = memory.memory_for(store)
+    counts = mem.capture("s1", None, [{"title": "Puerto del servidor", "content": "El servidor usa el 8443"}],
+                         [{"title": "Tono breve", "content": "Prefiere respuestas breves"}], up_to_ts=5000)
+    assert counts["promoted"] == 2
+    assert mem.capture_watermark("s1") == 5000
+    titles = {item["title"] for item in mem.items()}
+    assert {"Puerto del servidor", "Tono breve"} <= titles
+    sources = {item["source"].get("via") for item in mem.items()}
+    assert "capture" in sources
+    again = mem.capture("s1", None, [{"title": "Puerto del servidor", "content": "El servidor usa el 8443"}], [],
+                        up_to_ts=6000)
+    assert again["promoted"] == 0 and again["deduplicated"] + again["updated"] == 1
+    assert mem.capture_watermark("s1") == 6000
+
+
+def test_capture_watermark_never_goes_backwards_and_persists(store, tmp_path):
+    mem = memory.memory_for(store)
+    mem.capture("s1", None, [], [], up_to_ts=9000)
+    mem.capture("s1", None, [], [], up_to_ts=3000)
+    assert mem.capture_watermark("s1") == 9000
+    monkeypatch_store = agent.AgentStore(tmp_path)
+    reloaded = memory.memory_for(monkeypatch_store)
+    assert reloaded.capture_watermark("s1") == 9000, "la marca sobrevive a la relectura del disco"
+
+
+def test_capture_respects_scope_none_and_incognito(store):
+    mem = memory.memory_for(store)
+    with pytest.raises(ValueError, match="no usa memoria"):
+        mem.capture("s1", "none", [{"title": "X", "content": "Y"}], [], up_to_ts=1000)
+    mem._incognito.add("s9")
+    counts = mem.capture("s9", None, [{"title": "X", "content": "Y"}], [], up_to_ts=1000)
+    assert counts["rejected"] == 1
+    assert not any(item["title"] == "X" for item in mem.items())
+
+
+def test_capture_input_lists_active_memories_for_dedupe(store):
+    mem = memory.memory_for(store)
+    agent_tools.run("memory_remember", {"kind": "fact", "title": "Formato carta", "content": "Los informes van en carta"},
+                    store, "s1")
+    result = mem.capture_input("s1", None)
+    assert any(entry["title"] == "Formato carta" for entry in result["memories"])
+    assert result["since_ts"] == 0
