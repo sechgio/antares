@@ -322,7 +322,7 @@ async function _flushCanvasAndQuit(win) {
   try {
     if (win && !win.isDestroyed() && (await _flushCanvasBeforeQuit(win)) === 'save_failed') {
       _isQuittingDeferred = false;
-      appendLogEvent('WARN', 'app.flush-aborted', { component: 'electron', reason: 'editor_save_failed' });
+      appendLogEvent('WARN', 'app.flush-aborted', { component: 'electron', reason: 'save_failed' });
       return;
     }
   } catch (err) {

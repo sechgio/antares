@@ -128,8 +128,8 @@ async function run() {
     }, false);
     await quitPromise;
     assert(failedSave.ok === true, 'trusted renderer can report an unsuccessful save');
-    assert(quitCalls === 0, 'failed editor save keeps the app open');
-    assert(killedPython === 0, 'failed editor save preserves the backend for another attempt');
+    assert(quitCalls === 0, 'failed save keeps the app open');
+    assert(killedPython === 0, 'failed save preserves the backend for another attempt');
 
     const retryQuit = beforeQuit({ preventDefault: () => { prevented += 1; } });
     const accepted = await flushAck({
