@@ -2634,7 +2634,7 @@ export default function AgentView({
                 )}
                 {session && (
                   <PermissionPicker
-                    key={session.id}
+                    key={`permissions-${session.id}`}
                     value={session.permission_mode ?? 'auto'}
                     onChange={(mode) => void changePermissions(mode)}
                     disabled={permissionsBusy || modelBusy || running || stopping || pending.length > 0}
@@ -2645,7 +2645,7 @@ export default function AgentView({
                 )}
                 {!!session?.reasoning_levels?.length && (
                   <ReasoningPicker
-                    key={session.id}
+                    key={`reasoning-${session.id}`}
                     levels={session.reasoning_levels}
                     value={session.reasoning_effort ?? 'low'}
                     model={session.model}

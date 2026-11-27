@@ -2047,6 +2047,24 @@ it('muestra modelo y envío en la cápsula y despliega las opciones con el botó
   expect(saveModel).toHaveBeenLastCalledWith(session.id, session.provider, 'prueba');
 });
 
+it('mantiene un único selector de permisos cuando también hay selector de razonamiento', async () => {
+  localStorage.setItem('antares-agent-session', session.id);
+  const approval: AgentApproval = {
+    id: 'a1', session_id: session.id, call_id: 'c1', method: 'fs_write', params: {},
+    status: 'pending', created_at: 1, decided_at: null, channel: 'files',
+  };
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({
+    sessions: [{ ...session, reasoning_levels: ['high', 'xhigh', 'max'], reasoning_effort: 'max' }],
+  });
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, pending_approvals: [approval] });
+  render(<AgentView />);
+  await act(async () => {});
+  openComposerOptions();
+  const options = within(screen.getByRole('group', { name: 'Opciones del mensaje' }));
+  expect(options.getAllByRole('button', { name: /^Permisos:/ })).toHaveLength(1);
+  expect(options.getAllByRole('button', { name: /^Razonamiento:/ })).toHaveLength(1);
+});
+
 it('un mensaje sin aceptación conserva su borrador y ofrece recuperar la misma petición', async () => {
   localStorage.setItem('antares-agent-session', session.id);
   vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue(empty);
