@@ -76,6 +76,7 @@ const MAX_PLAN_ID_CHARS = Number(PLAN_CONTRACT.max_id_chars) || 64;
 const MAX_PLAN_STEP_DEPENDENCIES = Number(PLAN_CONTRACT.max_step_dependencies) || 20;
 const MAX_PLAN_EVIDENCE_REF_CHARS = Number(PLAN_CONTRACT.max_evidence_ref_chars) || 300;
 const PLAN_EVIDENCE_REF_KINDS = new Set(PLAN_CONTRACT.evidence_ref_kinds || []);
+const DELEGATED_PLAN_REF_KINDS = new Set(PLAN_CONTRACT.delegated_evidence_ref_kinds || []);
 const planWrites = new Map();
 const deletedPlans = new Set();
 
@@ -172,13 +173,18 @@ function planFromParams(params) {
       typeof evidenceRef === 'object' &&
       PLAN_EVIDENCE_REF_KINDS.has(evidenceRef.kind) &&
       String(evidenceRef.ref || '').trim();
+    const sourceSession = typeof evidenceRef?.session_id === 'string' ? evidenceRef.session_id.trim() : '';
     steps.push({
       ...(id ? { id } : {}),
       title: neutralizePlanText(title).slice(0, MAX_PLAN_TITLE_CHARS),
       status,
       ...(evidence ? { evidence: neutralizePlanText(evidence).slice(0, MAX_PLAN_EVIDENCE_CHARS) } : {}),
-      ...(validRef
-        ? { evidence_ref: { kind: evidenceRef.kind, ref: String(evidenceRef.ref).trim().slice(0, MAX_PLAN_EVIDENCE_REF_CHARS) } }
+      ...(validRef && (!sourceSession || (id && sourceSession.length <= 120 && DELEGATED_PLAN_REF_KINDS.has(evidenceRef.kind)))
+        ? { evidence_ref: {
+            kind: evidenceRef.kind,
+            ref: String(evidenceRef.ref).trim().slice(0, MAX_PLAN_EVIDENCE_REF_CHARS),
+            ...(sourceSession ? { session_id: sourceSession } : {}),
+          } }
         : {}),
       ...(dependencies.length ? { dependencies } : {}),
     });

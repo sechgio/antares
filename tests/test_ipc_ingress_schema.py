@@ -112,3 +112,13 @@ def test_invalid_params_rejected_before_dispatch_at_the_real_backend() -> None:
         assert accepted_error.get("category") != "VALIDATION_ERROR", f"error={accepted_error}"
     finally:
         stop_backend(proc)
+
+
+def test_memory_sharing_requires_version_and_explicit_recipients():
+    methods = ipc_catalog._METHODS
+    public = "agent_memory_share"
+    assert methods["agent_internal_memory_share"]["internal"] is True
+    assert methods[public]["inputSchema"] == methods["agent_internal_memory_share"]["inputSchema"]
+    assert validate_params_schema(public, {"id": "fact", "version": 1, "profile_ids": []}) is None
+    missing = validate_params_schema(public, {"id": "fact", "profile_ids": ["recipient"]})
+    assert missing and "version" in missing

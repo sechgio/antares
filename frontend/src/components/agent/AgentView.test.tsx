@@ -35,6 +35,48 @@ const session: AgentSession = {
 };
 const empty: Snapshot = { messages: [], running: false, pending_approvals: [] };
 
+it('muestra el estado de un encargo dirigido y permite volver entre conversaciones', async () => {
+  const peer = { ...session, id: 's2', title: 'Revisor' };
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, peer] });
+  vi.spyOn(agentApi, 'agentMessagesList').mockImplementation(async (id) => ({
+    ...empty,
+    messages: [{
+      role: 'assistant', notice: true, ts: 1,
+      content: id === session.id ? 'Encargo enviado a Revisor' : 'Encargo recibido de Primera',
+      handoff: {
+        task_id: 'queue-id', peer_session_id: id === session.id ? peer.id : session.id, status: 'to_verify',
+      },
+    }],
+  }));
+  render(<AgentView />);
+  fireEvent.click(await screen.findByText('Primera'));
+  expect(await screen.findByText('Encargo enviado a Revisor')).toBeInTheDocument();
+  expect(screen.getByText('Por verificar')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir conversación' }));
+  expect(await screen.findByText('Encargo recibido de Primera')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir conversación' }));
+  expect(await screen.findByText('Encargo enviado a Revisor')).toBeInTheDocument();
+});
+
+it('abre la evidencia de archivo del plan con el visor y la sesión actuales', async () => {
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+    ...empty,
+    messages: [{ role: 'assistant', content: 'Informe revisado', ts: 1 }],
+    plan: { goal: 'Revisar el informe', steps: [{
+      id: 'anexo', title: 'Contrastar el anexo', status: 'done', evidence: 'Cifras comprobadas',
+      evidence_ref: { kind: 'file', ref: 'anexo.txt' },
+    }] },
+  });
+  const preview = vi.spyOn(agentApi, 'agentFilePreview').mockResolvedValue({
+    kind: 'text', name: 'anexo.txt', size: 5, text: 'Cifras del anexo', truncated: false,
+  });
+  render(<AgentView />);
+  fireEvent.click(await screen.findByText('Primera'));
+  fireEvent.click(await screen.findByRole('button', { name: 'Abrir evidencia de Contrastar el anexo' }));
+  expect(await screen.findByText('Cifras del anexo')).toBeInTheDocument();
+  expect(preview).toHaveBeenLastCalledWith(session.id, { kind: 'resource', resource: 'anexo.txt' }, 0, 0);
+});
+
 function openComposerOptions() {
   const options = screen.getByRole('button', { name: 'Opciones del mensaje' });
   if (options.getAttribute('aria-expanded') === 'false') fireEvent.click(options);

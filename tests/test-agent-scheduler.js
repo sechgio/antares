@@ -34,7 +34,16 @@ async function main() {
   const approvals = new Map();
   let approvalSeq = 0;
   const bridge = async (method, params) => {
-    if (method === 'agent_internal_tools') return { tools: [] };
+    if (method === 'agent_internal_tools') return { tools: [
+      { name: 'canvas_list', kind: 'backend', gated: false, replay_safe: true, inputSchema: { type: 'object' } },
+    ] };
+    if (method === 'agent_memory_explain' && params.id === 'procedure-test') {
+      return { item: {
+        id: params.id, kind: 'procedure', status: 'active', version: 1,
+        title: 'Revisar planos', when: 'Al recibir un anexo',
+        steps: [{ tool: 'canvas_list', purpose: 'Consultar los planos' }],
+      } };
+    }
     if (method === 'agent_internal_provider') return { style: 'openai_chat', base_url: 'http://unused', api_key: 'test' };
     if (method === 'agent_internal_approvals_pending') return { approvals: pendingApprovals };
     if (method === 'agent_internal_approval_ensure') {
@@ -469,7 +478,7 @@ async function main() {
       /no puede encolar más de 5/,
     );
 
-    await verifyHandoff({ faux, fauxAssistantMessage, until, future });
+    await verifyHandoff({ faux, fauxAssistantMessage, fauxToolCall, until, future });
 
     console.log('[PASS] Planificador: validación, edición, silencio, historial y entrega única tras reiniciar.');
     console.log('[PASS] Cola FIFO: pausa, reanudación, orden, cancelación, persistencia y pausa automática tras fallo.');

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { handlers } = require('../../electron/agent-runtime');
 const scheduler = require('../../electron/agent-tasks');
 
-module.exports = async function verifyHandoff({ faux, fauxAssistantMessage, until, future }) {
+module.exports = async function verifyHandoff({ faux, fauxAssistantMessage, fauxToolCall, until, future }) {
   const { session } = await handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
   const list = async () => (await handlers.agent_tasks_list({ session_id: session.id })).tasks;
 
@@ -16,9 +16,10 @@ module.exports = async function verifyHandoff({ faux, fauxAssistantMessage, unti
   let replyContext = '';
   faux.setResponses([
     () =>
-      fauxAssistantMessage(
-        'Preparé el borrador pero falta un dato.\nNECESITA ENTRADA: ¿A qué mes corresponde el informe?',
-      ),
+      fauxAssistantMessage([
+        fauxToolCall('task_report', { status: 'needs_input', detail: '¿A qué mes corresponde el informe?' }),
+      ], { stopReason: 'toolUse' }),
+    () => fauxAssistantMessage('Preparé el borrador pero falta un dato.'),
     (context) => {
       replyContext = JSON.stringify(context.messages);
       return fauxAssistantMessage('Informe de marzo terminado');
@@ -115,4 +116,37 @@ module.exports = async function verifyHandoff({ faux, fauxAssistantMessage, unti
   );
   await handlers.agent_tasks_verify({ id: queuedQuestion.scheduled.id });
   assert.equal((await list()).find((task) => task.id === queuedQuestion.scheduled.id)?.status, 'delivered');
+
+  await assert.rejects(handlers.agent_tasks_save({
+    session_id: session.id, kind: 'queue', content: 'Anexo de muestra',
+    procedure_id: 'procedure-test', procedure_version: 2,
+  }), /procedimiento cambió/);
+  await handlers.agent_tools_set({ session_id: session.id, names: ['canvas_list', 'task_schedule', 'task_report'] });
+  faux.setResponses([
+    () => fauxAssistantMessage([
+      fauxToolCall('canvas_list', {}),
+      fauxToolCall('task_schedule', { action: 'enqueue', content: 'No se debe crear' }),
+    ], { stopReason: 'toolUse' }),
+    () => fauxAssistantMessage('Consulté los planos de muestra.'),
+  ]);
+  const { scheduled: trial } = await handlers.agent_tasks_save({
+    session_id: session.id, kind: 'queue', content: 'Anexo de muestra',
+    procedure_id: 'procedure-test', procedure_version: 1,
+  });
+  const routine = { session_id: session.id, content: 'Revisar los planos de producción',
+    due_at: future, every_minutes: 1440, trial_id: trial.id };
+  await assert.rejects(handlers.agent_tasks_save(routine), /Verifica la prueba/);
+  await until(async () => (await list()).find((task) => task.id === trial.id)?.status === 'to_verify');
+  const { messages } = await handlers.agent_messages_list({ session_id: session.id });
+  const calls = messages.flatMap((message) => message.tool_calls ?? []);
+  const reading = calls.findLast((call) => call.name === 'canvas_list');
+  assert.equal(reading?.status, 'done', reading?.result || 'la prueba ejecuta la lectura');
+  const effect = calls.findLast((call) => call.name === 'task_schedule');
+  assert.match(effect?.result || '', /solo admite lecturas/);
+  assert.ok(!(await list()).some((task) => task.content === 'No se debe crear'));
+  await handlers.agent_tasks_verify({ id: trial.id });
+  const { scheduled: created } = await handlers.agent_tasks_save(routine);
+  assert.equal(created.trial_id, trial.id);
+  assert.match(created.content, /Consultar los planos/);
+  assert.doesNotMatch(created.content, /Anexo de muestra/);
 };

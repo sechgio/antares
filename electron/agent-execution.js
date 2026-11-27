@@ -124,7 +124,7 @@ const NEVER_AUTO_APPROVE = new Set([
 const UNATTENDED_ACTION_TOOLS = new Set(['cua_launch_app', ...UI_ACTION_TOOLS]);
 const MAX_UNATTENDED_ACTIONS = 25;
 const MAX_LOADED_TOOLS = 25;
-const CHILD_CONTROL_TOOLS = new Set(['agent_wake_parent', 'agent_room']);
+const CHILD_CONTROL_TOOLS = new Set(['agent_wake_parent', 'agent_room', 'task_report']);
 const MAX_DEFAULT_TOOLS = 100;
 const MAX_OPENAI_TOOLS = 128;
 
@@ -429,6 +429,8 @@ async function allToolSpecs() {
   const merged = new Map(tools.map((tool) => [tool.name, tool]));
   const scheduleTool = require('./agent-tasks').TOOL;
   merged.set(scheduleTool.name, scheduleTool);
+  const reportTool = require('./agent-task-utils').TASK_REPORT_TOOL;
+  merged.set(reportTool.name, reportTool);
   const eventTool = require('./agent-events').TOOL;
   merged.set(eventTool.name, eventTool);
   for (const tool of nativeTools().nativeToolSpecs()) {
@@ -1458,6 +1460,16 @@ async function beforeTool(call, api, context) {
   }
   const sessionId = await sessionForConversation(api.conversationId, api, context);
   const session = await requireSession(sessionId);
+  const trialRead = (spec.kind === 'backend' && spec.delegable === true && !spec.gated) ||
+    ['task_plan', 'task_report'].includes(call.name);
+  if (!trialRead) {
+    const { harness, TasksDoc } = shared.state;
+    const tasks = (await harness.snapshot(TasksDoc, context))?.tasks || {};
+    if (Object.values(tasks).some((task) => task.session_id === sessionId &&
+      task.status === 'delivering' && task.procedure_trial)) {
+      return { block: 'La prueba de un procedimiento solo admite lecturas. Describe cómo ejecutarías este paso.' };
+    }
+  }
   const childControl = !!session.delegation && CHILD_CONTROL_TOOLS.has(call.name);
   if (!childControl && !(await toolEnabled(sessionId, enabledName, context))) {
     return { block: `Herramienta deshabilitada en esta conversación: ${enabledName}` };
@@ -1711,23 +1723,44 @@ async function dispatchAndWait(request, context, api) {
   return String(result);
 }
 
-function validateEvidenceRefs(args, turn) {
+async function validateEvidenceRefs(args, turn, sessionId) {
   const steps = Array.isArray(args && args.steps) ? args.steps : [];
   const missing = [];
-  for (const step of steps) {
-    if (!step || step.status !== 'done' || !step.evidence_ref || typeof step.evidence_ref !== 'object') continue;
-    const ref = step.evidence_ref;
-    if (ref.kind !== 'tool_call') continue;
-    const id = typeof ref.ref === 'string' ? ref.ref : '';
-    if (!id || !(turn.toolCallIds && turn.toolCallIds.has(id))) {
-      missing.push(`«${String(step.title || '').slice(0, 80)}» referencia ${id || 'vacío'}`);
+  const resultsBySession = new Map();
+  const toolResult = async (source, id) => {
+    if (!resultsBySession.has(source)) {
+      const entries = await require('./agent-projection').allEntries(await conversation(source));
+      resultsBySession.set(source, new Set(entries.flatMap((entry) => {
+        const message = entry.model?.[0];
+        return entry.kind === 'pi.tool-result' && message && !message.isError &&
+          countsAsObservation(shared.toolSpecs.get(message.toolName))
+          ? [message.toolCallId] : [];
+      })));
     }
+    return resultsBySession.get(source).has(id);
+  };
+  for (const step of steps) {
+    if (!step || !step.evidence_ref || typeof step.evidence_ref !== 'object') continue;
+    const ref = step.evidence_ref;
+    const source = typeof ref.session_id === 'string' ? ref.session_id.trim() : '';
+    const id = typeof ref.ref === 'string' ? ref.ref.trim() : '';
+    if (!source && step.status !== 'done') continue;
+    if (source) {
+      const child = (await sessions())[source];
+      const assigned = child && !child.deleted && child.delegation?.parent_session_id === sessionId &&
+        child.delegation.step_id && child.delegation.step_id === step.id;
+      if (assigned && ref.kind === 'tool_call' && await toolResult(source, id)) continue;
+      if (assigned && ref.kind === 'artifact') {
+        const { artifacts } = await bridge('agent_internal_artifacts', { session_id: source });
+        if (artifacts?.some((artifact) => artifact.id === id)) continue;
+      }
+    } else if (ref.kind !== 'tool_call' || turn.toolCallIds?.has(id) || await toolResult(sessionId, id)) continue;
+    missing.push(`«${String(step.title || '').slice(0, 80)}» referencia ${id || 'vacío'}`);
   }
   if (!missing.length) return '';
   return (
-    `La evidencia de ${missing.join(', ')} no corresponde a ninguna herramienta ejecutada en este turno. ` +
-    'Verifica primero con una herramienta de lectura y referencia en evidence_ref el id de la llamada que la produjo, ' +
-    'o usa evidence de texto explicando qué observaste.'
+    `La evidencia de ${missing.join(', ')} no corresponde a ninguna herramienta ejecutada o artefacto de esta conversación o de la delegación asignada. ` +
+    'Usa el id de una llamada observada o un artefacto de la delegación y su session_id.'
   );
 }
 
@@ -1772,7 +1805,7 @@ async function executeTool(spec, args, api, context) {
         : null);
   if (rect) turnState(api.conversationId).uiRect = rect;
   if (spec.name === 'task_plan' && parsed && !script.toolFailure(parsed)) {
-    const refError = validateEvidenceRefs(args, turnState(api.conversationId));
+    const refError = await validateEvidenceRefs(parsed.plan || args, turnState(api.conversationId), sessionId);
     if (refError) {
       parsed = { error: refError };
       text = JSON.stringify(parsed);
@@ -1926,6 +1959,9 @@ async function dispatchTool(spec, args, sessionId, api, context) {
     args = target.args;
   }
   if (spec.kind === 'meta') {
+    if (spec.name === 'task_report') {
+      return { text: JSON.stringify(require('./agent-task-utils').normalizeTaskReport(args)) };
+    }
     if (spec.name === 'agent_delegate') {
       const profile = await resolveProfile(args?.agent);
       if (!profile) throw validation('No se encontró un agente único; usa su identificador');

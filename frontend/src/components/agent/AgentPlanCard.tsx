@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, CircleArrowRight, CircleCheck, CircleDashed, CircleX } from 'lucide-react';
 import type { AgentPlan } from '../../api/agentApi';
+import Button from '../ui/Button';
 
 const STATUS_LABEL: Record<AgentPlan['steps'][number]['status'], string> = {
   pending: 'Pendiente',
@@ -28,7 +29,13 @@ function PlanProgress({ done, total }: { done: number; total: number }) {
   );
 }
 
-export function PlanCard({ plan, running }: { plan: AgentPlan; running: boolean }) {
+export type PlanEvidence = NonNullable<AgentPlan['steps'][number]['evidence_ref']>;
+
+export function PlanCard({ plan, running, evidenceAction }: {
+  plan: AgentPlan;
+  running: boolean;
+  evidenceAction?: (evidence: PlanEvidence) => (() => void) | undefined;
+}) {
   const [open, setOpen] = useState(true);
   const done = plan.steps.filter((step) => step.status === 'done').length;
   const failed = plan.steps.filter((step) => step.status === 'failed').length;
@@ -51,21 +58,27 @@ export function PlanCard({ plan, running }: { plan: AgentPlan; running: boolean 
       <div className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
         <div className="agent-subagent-body overflow-hidden" inert={!open} aria-hidden={!open}>
           <ol className="space-y-1 px-3 pb-2.5">
-            {plan.steps.map((step, index) => (
-              <li key={`${index}-${step.title}`} className="flex items-start gap-2">
-                <span key={step.status} data-animate={running || undefined} className="agent-plan-icon flex h-5 shrink-0 items-center"><PlanStepIcon status={step.status} /></span>
-                <span className="min-w-0">
-                  <span className="sr-only">{STATUS_LABEL[step.status]}. </span>
-                  <span data-done={step.status === 'done' || undefined} className={`agent-plan-title ${
-                    step.status === 'in_progress' ? (running ? 'agent-shimmer' : 'text-[var(--text-primary)]')
-                      : step.status === 'pending' ? 'text-[var(--text-muted)]'
-                        : step.status === 'failed' ? 'text-[var(--accent-red)]'
-                          : 'text-[var(--text-muted)]'
-                  }`}>{step.title}</span>
-                  {step.evidence && <span className="block text-[11.5px] leading-4 text-[var(--text-muted)]">{step.evidence}</span>}
-                </span>
-              </li>
-            ))}
+            {plan.steps.map((step, index) => {
+              const openEvidence = step.evidence_ref && evidenceAction?.(step.evidence_ref);
+              return (
+                <li key={step.id ?? `${index}-${step.title}`} className="flex items-start gap-2">
+                  <span key={step.status} data-animate={running || undefined} className="agent-plan-icon flex h-5 shrink-0 items-center"><PlanStepIcon status={step.status} /></span>
+                  <span className="min-w-0">
+                    <span className="sr-only">{STATUS_LABEL[step.status]}. </span>
+                    <span data-done={step.status === 'done' || undefined} className={`agent-plan-title ${
+                      step.status === 'in_progress' ? (running ? 'agent-shimmer' : 'text-[var(--text-primary)]')
+                        : step.status === 'pending' ? 'text-[var(--text-muted)]'
+                          : step.status === 'failed' ? 'text-[var(--accent-red)]'
+                            : 'text-[var(--text-muted)]'
+                    }`}>{step.title}</span>
+                    {step.evidence && <span className="block text-[11.5px] leading-4 text-[var(--text-muted)]">{step.evidence}</span>}
+                    {openEvidence && <Button variant="ghost" size="sm" aria-label={`Abrir evidencia de ${step.title}`} onClick={openEvidence}>
+                      Abrir evidencia
+                    </Button>}
+                  </span>
+                </li>
+              );
+            })}
           </ol>
         </div>
       </div>

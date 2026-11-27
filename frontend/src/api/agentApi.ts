@@ -137,6 +137,7 @@ export interface AgentMessage {
   ts: number;
   partial?: boolean;
   notice?: boolean;
+  handoff?: { task_id: string; peer_session_id: string; status?: AgentTaskStatus };
 }
 export interface AgentUsageTurn {
   input: number;
@@ -262,6 +263,8 @@ export interface AgentTask {
   silent?: boolean;
   origin_task_id?: string;
   target_session_id?: string;
+  procedure_trial?: { id: string; version: number; title: string };
+  trial_id?: string;
   runs?: AgentTaskRun[];
   last_run_at?: number;
   last_status?: AgentTaskRun['status'];
@@ -378,7 +381,14 @@ export interface AgentBrowserBounds {
 
 export interface AgentPlan {
   goal: string;
-  steps: { id?: string; title: string; status: AgentPlanStatus; evidence?: string; dependencies?: string[] }[];
+  steps: {
+    id?: string;
+    title: string;
+    status: AgentPlanStatus;
+    evidence?: string;
+    evidence_ref?: { kind: 'tool_call' | 'file' | 'artifact' | 'url'; ref: string; session_id?: string };
+    dependencies?: string[];
+  }[];
 }
 
 export interface AgentContext {
@@ -396,6 +406,8 @@ export interface AgentMemoryItem {
   reason: string | null;
   confidence?: 'inferred' | 'confirmed';
   expires_at?: number | null;
+  profile_id?: string;
+  shared_with_profiles?: string[];
   superseded_by?: string | null;
   supersedes?: string | null;
   version: number;
@@ -559,6 +571,7 @@ export const agentApi = {
   agentTasksSave: (p: {
     session_id: string; id?: string; kind?: AgentTaskKind; content: string; due_at?: string;
     every_minutes?: number | null; silent?: boolean; timezone?: string; agent?: string;
+    procedure_id?: string; procedure_version?: number; trial_id?: string;
   }) => _invoke<{ scheduled: AgentTask }>('agent_tasks_save', p),
 
   agentTasksCancel: (id: string) =>
@@ -611,6 +624,8 @@ export const agentApi = {
   agentTemplateImport: (template: Record<string, unknown>) => _invoke<{ profile: AgentProfile }>('agent_template_import', { template }),
 
   agentMemoryList: () => _invoke<{ items: AgentMemoryItem[] }>('agent_memory_list'),
+  agentMemoryShare: (id: string, version: number, profile_ids: string[]) =>
+    _invoke<{ item: AgentMemoryItem }>('agent_memory_share', { id, version, profile_ids }),
   agentSkillsList: () =>
     _invoke<{ skills: AgentSkill[]; library: string; warnings: string[]; truncated: boolean }>('agent_skills_list'),
 

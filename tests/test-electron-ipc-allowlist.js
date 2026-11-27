@@ -7,6 +7,10 @@ const API_PATH = path.join(ROOT, 'frontend', 'src', 'api.ts');
 const API_DIR = path.join(ROOT, 'frontend', 'src', 'api');
 const PRELOAD_PATH = path.join(ROOT, 'electron', 'preload.js');
 const CATALOG_PATH = path.join(ROOT, 'shared', 'ipc-method-catalog.js');
+const memoryShare = require('../shared/ipc-method-catalog.json').methods;
+if (memoryShare.agent_memory_share.handler !== 'native:agent' || memoryShare.agent_internal_memory_share.internal !== true) {
+  throw new Error('Compartir memoria valida los perfiles en Electron y reserva la escritura para el backend interno');
+}
 
 const VALID_HANDLERS = /^(backend:[a-z0-9_]+|native:(dialog|autoimg|ubicaciones|spotify|connections|agent|editor|session))$/;
 const VALID_TIMEOUTS = new Set(['normal', 'long', 'heavy']);

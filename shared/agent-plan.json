@@ -7,5 +7,6 @@
   "max_id_chars": 64,
   "max_step_dependencies": 20,
   "max_evidence_ref_chars": 300,
-  "evidence_ref_kinds": ["tool_call", "file", "artifact", "url"]
+  "evidence_ref_kinds": ["tool_call", "file", "artifact", "url"],
+  "delegated_evidence_ref_kinds": ["tool_call", "artifact"]
 }
