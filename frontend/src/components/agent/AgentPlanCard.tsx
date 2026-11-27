@@ -36,27 +36,34 @@ export function PlanCard({ plan, running, evidenceAction }: {
   running: boolean;
   evidenceAction?: (evidence: PlanEvidence) => (() => void) | undefined;
 }) {
-  const [open, setOpen] = useState(true);
+  const [openOverride, setOpenOverride] = useState<boolean | null>(null);
   const done = plan.steps.filter((step) => step.status === 'done').length;
   const failed = plan.steps.filter((step) => step.status === 'failed').length;
   const complete = plan.steps.length > 0 && done === plan.steps.length;
+  const current = plan.steps.find((step) => step.status === 'in_progress')
+    ?? plan.steps.find((step) => step.status === 'failed')
+    ?? plan.steps.find((step) => step.status === 'pending')
+    ?? plan.steps[plan.steps.length - 1];
+  const open = openOverride ?? failed > 0;
+  const headline = complete ? plan.goal : current?.title || plan.goal;
   return (
     <section aria-label="Plan del agente" className="agent-trace-in w-full rounded-xl bg-[color:color-mix(in_srgb,var(--text-primary)_4%,transparent)] text-[13px] leading-5">
       <button
         type="button"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpenOverride(!open)}
         className="group flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
       >
         <PlanProgress done={done} total={plan.steps.length} />
         <span className="shrink-0 font-medium text-[var(--text-primary)]">{complete ? 'Plan completado' : 'Plan'}</span>
-        <span className="min-w-0 flex-1 truncate text-[var(--text-muted)]" title={plan.goal}>{plan.goal}</span>
+        <span className={`min-w-0 flex-1 truncate text-[var(--text-muted)] ${current?.status === 'in_progress' && running && !complete ? 'agent-shimmer' : ''}`} title={headline}>{headline}</span>
         {failed > 0 && <span className="shrink-0 text-[12px] text-[var(--accent-red)]">{failed} fallido{failed === 1 ? '' : 's'}</span>}
         <span className="shrink-0 tabular-nums text-[12px] text-[var(--text-muted)]" aria-label={`${done} de ${plan.steps.length} hechos${failed ? `, ${failed} fallidos` : ''}`}>{done}/{plan.steps.length}</span>
         <ChevronDown size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${open ? '' : '-rotate-90'}`} aria-hidden="true" />
       </button>
       <div className={`grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
         <div className="agent-subagent-body overflow-hidden" inert={!open} aria-hidden={!open}>
+          <p className="truncate px-3 pb-1 text-[11.5px] leading-4 text-[var(--text-muted)]" title={plan.goal}>{plan.goal}</p>
           <ol className="space-y-1 px-3 pb-2.5">
             {plan.steps.map((step, index) => {
               const openEvidence = step.evidence_ref && evidenceAction?.(step.evidence_ref);
@@ -71,7 +78,7 @@ export function PlanCard({ plan, running, evidenceAction }: {
                           : step.status === 'failed' ? 'text-[var(--accent-red)]'
                             : 'text-[var(--text-muted)]'
                     }`}>{step.title}</span>
-                    {step.evidence && <span className="block text-[11.5px] leading-4 text-[var(--text-muted)]">{step.evidence}</span>}
+                    {step.evidence && <span className="line-clamp-2 block break-words text-[11.5px] leading-4 text-[var(--text-muted)]" title={step.evidence}>{step.evidence}</span>}
                     {openEvidence && <Button variant="ghost" size="sm" aria-label={`Abrir evidencia de ${step.title}`} onClick={openEvidence}>
                       Abrir evidencia
                     </Button>}

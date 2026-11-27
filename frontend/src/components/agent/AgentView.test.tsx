@@ -72,6 +72,7 @@ it('abre la evidencia de archivo del plan con el visor y la sesión actuales', a
   });
   render(<AgentView />);
   fireEvent.click(await screen.findByText('Primera'));
+  fireEvent.click(await screen.findByRole('button', { name: /Revisar el informe/ }));
   fireEvent.click(await screen.findByRole('button', { name: 'Abrir evidencia de Contrastar el anexo' }));
   expect(await screen.findByText('Cifras del anexo')).toBeInTheDocument();
   expect(preview).toHaveBeenLastCalledWith(session.id, { kind: 'resource', resource: 'anexo.txt' }, 0, 0);

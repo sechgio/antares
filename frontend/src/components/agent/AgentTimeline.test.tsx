@@ -325,8 +325,9 @@ it('muestra el avance del plan en el anillo, tacha lo hecho y lo da por completa
   const { container, rerender } = render(<PlanCard plan={plan('in_progress')} running />);
   const ring = container.querySelector('.agent-plan-progress');
   expect(Number(ring?.getAttribute('stroke-dashoffset'))).toBeCloseTo(Math.PI * 5);
+  fireEvent.click(screen.getByRole('button', { name: /Revisar/ }));
   expect(screen.getByText('Leer')).toHaveAttribute('data-done');
-  expect(screen.getByText('Revisar')).not.toHaveAttribute('data-done');
+  expect(container.querySelector('.agent-plan-title:not([data-done])')).toHaveTextContent('Revisar');
   expect(container.querySelector('.agent-plan-icon[data-animate]')).not.toBeNull();
   rerender(<PlanCard plan={plan('done')} running={false} />);
   expect(container.querySelector('.agent-plan-progress')).toBeNull();
@@ -807,6 +808,33 @@ it.each([
   expect(screen.getByText('Cuenta: ana@example.com')).toBeInTheDocument();
 });
 
+it('en modo agente muestra solo el estado vivo y conserva las incidencias', () => {
+  const call = (status: 'running' | 'done' | 'failed') => ({ id: 'read', name: 'fs_read', params: { path: 'C:\\app\\a.txt' }, status, gated: false,
+    ...(status === 'failed' ? { result: '{"error":"No se pudo leer"}' } : {}) });
+  const draft = (status: 'running' | 'done' | 'failed') => [{ role: 'assistant' as const, content: 'Nota interna', reasoning: 'Cadena interna', ts: 1,
+    partial: status === 'running', tool_calls: [call(status)] }];
+  const finished = (status: 'done' | 'failed') => [...draft(status).map((message) => ({ ...message, partial: false })),
+    { role: 'assistant' as const, content: 'Listo', ts: 2 }];
+  const { rerender } = render(<AssistantTurn hideReasoning view="normal" messages={draft('running')} />);
+  expect(screen.getByRole('button', { name: 'Leyendo el archivo' })).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByText('Nota interna')).toBeNull();
+  expect(screen.queryByText('Cadena interna')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Leyendo el archivo' }));
+  expect(screen.getByText('Leer un archivo')).toBeInTheDocument();
+  expect(screen.queryByText('Nota interna')).toBeNull();
+
+  rerender(<AssistantTurn hideReasoning view="normal" messages={finished('done')} />);
+  expect(screen.getByText('Listo')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Leyó/ })).toBeNull();
+  expect(screen.queryByText('Nota interna')).toBeNull();
+
+  rerender(<AssistantTurn hideReasoning view="normal" messages={finished('failed')} />);
+  expect(screen.getByRole('button', { name: /Leyó a\.txt/ })).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByText(/No se pudo leer/)).toBeInTheDocument();
+  expect(screen.queryByText('Nota interna')).toBeNull();
+  expect(screen.queryByText('Cadena interna')).toBeNull();
+});
+
 it('no duplica el plan como fila de herramienta', () => {
   render(<AssistantTurn view="normal" messages={[{
     role: 'assistant', content: '', ts: 1,
@@ -841,17 +869,24 @@ it('mantiene los estados del plan alineados con el contrato compartido', () => {
   expect([...AGENT_PLAN_STATUSES]).toEqual(contract.statuses);
 });
 
-it('muestra el plan con su progreso y la evidencia de cada paso', () => {
-  render(<PlanCard running plan={{ goal: 'Preparar el informe', steps: [
+it('muestra el plan compacto y expande progreso y evidencia solo al pedirlo', () => {
+  const { container } = render(<PlanCard running plan={{ goal: 'Preparar el informe', steps: [
     { title: 'Leer el Excel', status: 'done', evidence: 'fs_read devolvió 12 filas' },
     { title: 'Buscar el tipo de cambio', status: 'in_progress' },
     { title: 'Guardar el informe', status: 'pending' },
   ] }} />);
   expect(screen.getByRole('region', { name: 'Plan del agente' })).toBeInTheDocument();
   expect(screen.getByLabelText('1 de 3 hechos')).toHaveTextContent('1/3');
+  const toggle = screen.getByRole('button', { name: /Buscar el tipo de cambio/ });
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByText('Leer el Excel').closest('[inert]')).not.toBeNull();
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByText('Preparar el informe')).toBeInTheDocument();
   expect(screen.getByText('fs_read devolvió 12 filas')).toBeInTheDocument();
-  expect(screen.getByText('Buscar el tipo de cambio')).toHaveClass('agent-shimmer');
-  fireEvent.click(screen.getByRole('button', { name: /Preparar el informe/ }));
+  expect(container.querySelector('.agent-plan-title.agent-shimmer')).toHaveTextContent('Buscar el tipo de cambio');
+  expect(screen.getByText('Leer el Excel').closest('[inert]')).toBeNull();
+  fireEvent.click(toggle);
   expect(screen.getByText('Leer el Excel').closest('[inert]')).not.toBeNull();
 });
 
