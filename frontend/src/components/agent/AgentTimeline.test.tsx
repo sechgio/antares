@@ -194,7 +194,8 @@ it('agrupa el trabajo de un turno en un solo bloque y deja la respuesta final fu
   const turn = turns[1];
   if (turn.role !== 'assistant') throw new Error('turno inesperado');
   render(<AssistantTurn messages={turn.messages} startedAt={turn.startedAt} />);
-  expect(screen.getAllByText('Agente')).toHaveLength(1);
+  expect(screen.getByRole('group', { name: 'Agente' })).toBeVisible();
+  expect(screen.queryByText('Agente')).not.toBeInTheDocument();
   expect(screen.getByText('Todo correcto.')).toBeVisible();
   expect(screen.getByText('Voy a leer los archivos.')).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: 'Leyó 3 archivos · 1 nota · 42 s' }));
@@ -641,14 +642,33 @@ it('dibuja la delegación en otro agente como una traza con sus pasos', () => {
   expect(screen.getByText('completado')).toBeInTheDocument();
 });
 
-it('anima al agente solo durante la respuesta y mantiene un estado textual de trabajo', () => {
+it('muestra el avance antes de la actividad y permite abrir y cerrar los detalles', () => {
   const agent = { seed: 'antares', name: 'Antares', color: '#0E7490' };
-  const { rerender } = render(<MessageRow agent={agent} msg={{ role: 'assistant', content: 'Preparando', partial: true, ts: 1 }} />);
+  const message: AgentMessage = { role: 'assistant', content: 'Ahora te paso el Excel.', ts: 1, tool_calls: [{
+    id: 'read', name: 'fs_read', params: { path: 'resumen.xlsx' }, status: 'running', gated: false,
+  }] };
+  const { rerender } = render(<MessageRow agent={agent} msg={message} />);
+  const turn = screen.getByRole('group', { name: 'Antares' });
+  const progress = within(turn).getByText('Ahora te paso el Excel.');
+  const summary = within(turn).getByRole('button', { name: /Leyendo el archivo/, expanded: false });
+  expect(progress.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(within(turn).getByRole('button', { name: 'Copiar respuesta' })).toBeInTheDocument();
   expect(screen.getByRole('img', { name: 'Antares' })).toHaveAttribute('data-working', 'true');
-  rerender(<MessageRow agent={agent} msg={{ role: 'assistant', content: 'Listo', ts: 1 }} />);
-  expect(screen.getByRole('img', { name: 'Antares' })).toHaveAttribute('data-working', 'false');
   expect(screen.getByRole('img', { name: 'Antares' }).querySelector('path')).toHaveAttribute('stroke', agent.color);
-  rerender(<ThinkingRow agent={agent} elapsedSeconds={61} />);
+  expect(screen.queryByText('resumen.xlsx')).not.toBeInTheDocument();
+  fireEvent.click(summary);
+  expect(screen.getByText('resumen.xlsx')).toBeVisible();
+  expect(screen.getAllByText('Ahora te paso el Excel.')).toHaveLength(1);
+  fireEvent.click(summary);
+  expect(screen.queryByText('resumen.xlsx')).not.toBeInTheDocument();
+  rerender(<MessageRow agent={agent} msg={{ role: 'assistant', content: 'Listo', ts: 2 }} />);
+  expect(screen.queryByRole('img', { name: 'Antares' })).not.toBeInTheDocument();
+  expect(screen.getByText('Listo')).toBeVisible();
+});
+
+it('mantiene el estado textual del indicador de trabajo', () => {
+  const agent = { seed: 'antares', name: 'Antares', color: '#0E7490' };
+  render(<ThinkingRow agent={agent} elapsedSeconds={61} />);
   expect(screen.getByRole('status')).toHaveTextContent('El agente está trabajando');
   expect(screen.getByRole('status')).toHaveTextContent('1m 1s');
   expect(screen.getByRole('img', { name: 'Antares' }).querySelector('path')).toHaveAttribute('stroke', agent.color);

@@ -9,8 +9,8 @@
   background: var(--bg-base);
 }
 .agent-workspace .agent-message-user {
-  background: color-mix(in srgb, var(--accent-primary) 15%, var(--bg-elevated));
-  color: var(--text-primary);
+  background: var(--accent-primary);
+  color: var(--text-on-accent);
 }
 .agent-workspace .agent-message-answer {
   background: var(--bg-elevated);
@@ -438,9 +438,6 @@
 }
 .agent-activity-body {
   animation: agentActivityIn 160ms var(--ease-out) both;
-}
-.agent-activity-note :is(p, ul, ol) {
-  margin-block: 0;
 }
 .agent-artifact-icon {
   background: color-mix(in srgb, var(--accent-red) 14%, transparent);

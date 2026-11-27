@@ -409,9 +409,9 @@ function UserBubble({ msg }: { msg: AgentMessage }) {
           <FileCard path={file.path} folder={file.folder} />
         </Button>)}
       </div>}
-      {msg.content && <div className="flex w-full min-w-0 items-end justify-end gap-1">
+      {msg.content && <div className="flex w-full min-w-0 items-start justify-end gap-1">
         <CopyButton text={msg.content} label="Copiar mensaje" />
-        <div className="agent-message-user min-w-0 max-w-[min(600px,88%)] rounded-2xl rounded-br-md px-3.5 py-2 text-sm leading-[22px]">
+        <div className="agent-message-user min-w-0 max-w-[min(600px,88%)] rounded-[18px] px-3 py-2 text-sm leading-5">
           <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
         </div>
       </div>}
@@ -494,6 +494,17 @@ function liveActivity(entries: ActivityEntry[]): string {
   return workingPhrase('working');
 }
 
+function AssistantBubble({ text, streaming = false }: { text: string; streaming?: boolean }) {
+  return (
+    <div className="group/answer flex min-w-0 items-start gap-1">
+      <div className="agent-message-answer w-fit min-w-0 max-w-full rounded-[18px] rounded-bl-md px-3 py-2 text-sm leading-5 text-[var(--text-primary)]">
+        <MessageMarkdown text={text} streaming={streaming} />
+      </div>
+      {!streaming && <CopyButton text={text} className="mt-2 shrink-0 group-hover/answer:opacity-100" />}
+    </div>
+  );
+}
+
 function ActivityItem({ entry, onUndo, view, hideReasoning = false }: {
   entry: StepEntry;
   onUndo?: (callId: string) => Promise<void>;
@@ -505,13 +516,7 @@ function ActivityItem({ entry, onUndo, view, hideReasoning = false }: {
     if (view === 'normal') return null;
     return <Reasoning text={entry.text} streaming={entry.streaming} ms={entry.ms} defaultOpen />;
   }
-  if (entry.kind === 'note') {
-    return (
-      <div className="agent-activity-note py-1 text-[14px] leading-[23px] text-[var(--text-secondary)]">
-        <MessageMarkdown text={entry.text} />
-      </div>
-    );
-  }
+  if (entry.kind === 'note') return <AssistantBubble text={entry.text} />;
   return (
     <div>
       <ToolCallStep call={entry.call} verbose={view === 'verbose'} />
@@ -520,8 +525,9 @@ function ActivityItem({ entry, onUndo, view, hideReasoning = false }: {
   );
 }
 
-function Activity({ entries, working, answering, duration, onUndo, view, hideReasoning = false }: {
+function Activity({ entries, agent, working, answering, duration, onUndo, view, hideReasoning = false }: {
   entries: StepEntry[];
+  agent?: AgentIdentity;
   working: boolean;
   answering: boolean;
   duration?: number;
@@ -532,13 +538,18 @@ function Activity({ entries, working, answering, duration, onUndo, view, hideRea
   const [expanded, setExpanded] = useState<boolean | null>(null);
   const [showEarlier, setShowEarlier] = useState(false);
   const calls = entries.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []));
+  const notes = entries.filter((entry) => entry.kind === 'note');
+  const latestNote = notes[notes.length - 1];
+  const leadNote = view === 'normal' && calls.length > 0 && !calls.some((call) => call.name === 'subagent_run')
+    ? latestNote : undefined;
+  const detailEntries = leadNote ? entries.filter((entry) => entry !== leadNote) : entries;
   const live = working && !answering;
-  const open = expanded ?? (view === 'verbose' || live || calls.some((call) => NEEDS_REVIEW.includes(call.status)));
-  const latestNote = !open ? [...entries].reverse().find((entry) => entry.kind === 'note') : undefined;
-  const firstReview = entries.findIndex((entry) => entry.kind === 'call' && NEEDS_REVIEW.includes(entry.call.status));
-  const earlier = live && view !== 'verbose' && entries.length > LIVE_TAIL + 1
-    ? Math.min(entries.length - LIVE_TAIL, firstReview === -1 ? Infinity : firstReview) : 0;
-  if (entries.length <= 2) {
+  const open = expanded ?? (view === 'verbose' || (live && !leadNote)
+    || calls.some((call) => NEEDS_REVIEW.includes(call.status) || (live && call.gated)));
+  const firstReview = detailEntries.findIndex((entry) => entry.kind === 'call' && (NEEDS_REVIEW.includes(entry.call.status) || entry.call.gated));
+  const earlier = live && view !== 'verbose' && detailEntries.length > LIVE_TAIL + 1
+    ? Math.min(detailEntries.length - LIVE_TAIL, firstReview === -1 ? Infinity : firstReview) : 0;
+  if (entries.length <= 2 && !leadNote) {
     return (
       <div className="w-full space-y-0.5">
         {entries.map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />)}
@@ -546,18 +557,20 @@ function Activity({ entries, working, answering, duration, onUndo, view, hideRea
     );
   }
   const review = calls.filter((call) => call.status === 'failed' || call.status === 'interrupted').length;
-  const notes = entries.filter((entry) => entry.kind === 'note').length;
   const icons = [...new Set(calls.map((call) => (call.name === 'shell_run' ? Terminal : toolIcon(call.name))))].slice(0, 4);
-  const steps = [stepsSummary(calls), notes > 0 ? count(notes, 'nota', 'notas') : ''].filter(Boolean).join(' · ');
+  const steps = [stepsSummary(calls), notes.length > 0 ? count(notes.length, 'nota', 'notas') : ''].filter(Boolean).join(' · ');
   return (
-    <div className="w-full">
+    <div className="w-full space-y-1.5">
+      {leadNote && <AssistantBubble text={leadNote.text} />}
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setExpanded(!open)}
         className={`agent-tool-row group ${TASK_ROW} w-fit max-w-full pr-2 text-left hover:text-[var(--text-primary)]`}
       >
-        {live ? <Loader2 size={14} className="shrink-0 animate-spin text-[var(--text-secondary)]" aria-hidden="true" />
+        {live ? (agent
+          ? <AgentAvatar seed={agent.seed} color={agent.color} name={agent.name} size={22} className="shrink-0" working />
+          : <Loader2 size={14} className="shrink-0 animate-spin text-[var(--text-secondary)]" aria-hidden="true" />)
           : (
             <span className="agent-activity-icons flex shrink-0 items-center" aria-hidden="true">
               {icons.map((Icon, index) => (
@@ -573,7 +586,7 @@ function Activity({ entries, working, answering, duration, onUndo, view, hideRea
         {review > 0 && <span className="shrink-0 text-[var(--accent-red)]">· {review} por revisar</span>}
         <ChevronRight size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform duration-200 ${open ? 'rotate-90' : ''}`} aria-hidden="true" />
       </button>
-      {latestNote && <ActivityItem entry={latestNote} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />}
+      {!open && !leadNote && latestNote && <AssistantBubble text={latestNote.text} />}
       {open && (
         <div className={`${TASK_BODY} agent-activity-body mt-0.5 space-y-0.5`}>
           {earlier > 0 && (
@@ -583,7 +596,7 @@ function Activity({ entries, working, answering, duration, onUndo, view, hideRea
               {showEarlier ? 'Ocultar pasos anteriores' : count(earlier, 'paso anterior', 'pasos anteriores')}
             </button>
           )}
-          {(showEarlier ? entries : entries.slice(earlier)).map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />)}
+          {(showEarlier ? detailEntries : detailEntries.slice(earlier)).map((entry) => <ActivityItem key={entry.key} entry={entry} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />)}
         </div>
       )}
     </div>
@@ -742,23 +755,14 @@ export function AssistantTurn({ messages, agent, onUndo, startedAt, results, vie
   const activitySteps = hideReasoning ? steps.filter((entry) => entry.kind !== 'reasoning' || entry.streaming) : steps;
   const thought = activitySteps.length === 1 && activitySteps[0].kind === 'reasoning' ? activitySteps[0] : null;
   return (
-    <div className="agent-trace-in agent-turn group min-w-0 space-y-2">
-      <div className="flex items-center gap-1.5">
-        {agent && <AgentAvatar seed={agent.seed} color={agent.color} name={agent.name} size={20} working={working} />}
-        <span className="text-[12px] font-medium leading-5 text-[var(--text-muted)]">{agent?.name ?? 'Agente'}</span>
-        {answer && !answer.partial && <CopyButton text={answer.content} />}
-      </div>
+    <div className="agent-trace-in agent-turn group min-w-0 space-y-2" role="group" aria-label={agent?.name ?? 'Agente'}>
       {thought
         ? (hideReasoning || view === 'normal'
           ? (thought.streaming ? <ThinkingStatus seed={thought.key} /> : null)
           : <Reasoning text={thought.text} streaming={thought.streaming} ms={thought.ms} defaultOpen />)
-        : activitySteps.length > 0 && <Activity entries={activitySteps} working={working} answering={!!answer} duration={duration} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />}
+        : activitySteps.length > 0 && <Activity entries={activitySteps} agent={agent} working={working} answering={!!answer} duration={duration} onUndo={onUndo} view={view} hideReasoning={hideReasoning} />}
       {sessionId && onPanelRespond && panelEntries.map((panel) => <PanelRenderer key={panel.id} panel={panel} sessionId={sessionId} onRespond={onPanelRespond} />)}
-      {answer && (
-        <div className="agent-message-answer w-fit min-w-0 max-w-full rounded-2xl rounded-tl-md px-3.5 py-2.5 text-[15px] leading-6 text-[var(--text-primary)]">
-          <MessageMarkdown text={answer.content} streaming={!!answer.partial} />
-        </div>
-      )}
+      {answer && <AssistantBubble text={answer.content} streaming={!!answer.partial} />}
       {[...answered].map(([id, items]) => <AnsweredQuestion key={id} items={items} />)}
       {pendingQuestions?.items.map((question) => <QuestionCard key={question.id} question={question} onAnswered={pendingQuestions.onAnswered} />)}
       {!working && steps.length > 2 && <TurnChanges calls={steps.flatMap((entry) => (entry.kind === 'call' ? [entry.call] : []))} />}
