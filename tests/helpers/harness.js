@@ -1,9 +1,17 @@
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('path');
 const { EventEmitter } = require('events');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
 const counters = { passed: 0, failed: 0 };
+
+function makeTempDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  process.once('exit', () => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 }));
+  return dir;
+}
 
 function assert(condition, message) {
   if (condition) {
@@ -199,6 +207,7 @@ function installInertTimers({
 }
 
 module.exports = {
+  makeTempDir,
   assert,
   assertActionsPinned,
   assertOrExit,
