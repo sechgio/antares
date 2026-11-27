@@ -43,6 +43,7 @@ import { mcpApi, type McpServer } from '../../api/mcpApi';
 import {
   agentApi,
   type AgentApprovalRules,
+  type AgentAttachment,
   type AgentChannel,
   type AgentPermissionMode,
   type AgentReasoningEffort,
@@ -126,6 +127,7 @@ const AgentFilePreview = lazy(() => import('./AgentFilePreview'));
 const POLL_MS = 1500;
 const CHAT_CACHE_LIMIT = 6;
 const SESSION_KEY = 'antares-agent-session';
+const ATTACHMENT_ONLY_LABEL = 'Mensaje con adjuntos';
 const SESSION_ENTRY_KEY = 'antares-agent-session-entry';
 const QUEUE_KEY = 'antares-agent-queue';
 const PAUSED_QUEUES_KEY = 'antares-agent-paused-message-queues';
@@ -323,10 +325,14 @@ export default function AgentView({
   const [reasoningBusy, setReasoningBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const sendInFlightRef = useRef(false);
+  const initialAttachmentsInFlight = useRef(0);
+  const [attachingInitialDraft, setAttachingInitialDraft] = useState(false);
   const [messagesStale, setMessagesStale] = useState(false);
   const [pendingEvidence, setPendingEvidence] = useState<PlanEvidence | null>(null);
   const drafts = useConversationDrafts(sessionId, sessions);
   const { text: draft, attachments, skill: activeSkill } = drafts.current;
+  const canSendDraft = Boolean(draft.trim() || attachments.length) && (Boolean(sessionId) || !attachingInitialDraft);
+  const canAttach = Boolean(sessionId) || !sending;
   const [skills, setSkills] = useState<AgentSkill[] | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [search, setSearch] = useState('');
@@ -1388,8 +1394,10 @@ export default function AgentView({
   const send = async (correction = false, suggestion?: string) => {
     const skill = suggestion === undefined ? activeSkill : null;
     const content = suggestion ?? (draft.trim() || (skill ? `/${skill.name}` : ''));
+    const attachmentIds = suggestion === undefined ? attachments.map((a) => a.id) : [];
     if (
-      !content ||
+      (!content && !attachmentIds.length) ||
+      (!sessionId && initialAttachmentsInFlight.current > 0) ||
       sendInFlightRef.current ||
       modelBusy ||
       stopping ||
@@ -1401,7 +1409,6 @@ export default function AgentView({
       addToast({ message: 'Espera a que termine el turno en curso para invocar una skill', type: 'warning' });
       return;
     }
-    const attachmentIds = suggestion === undefined ? attachments.map((a) => a.id) : [];
     const version = drafts.version(sessionId);
     sendInFlightRef.current = true;
     setSending(true);
@@ -1559,21 +1566,31 @@ export default function AgentView({
     }
   };
 
-  const attach = async () => {
+  const attachToDraft = async (load: () => Promise<(AgentAttachment & { preview?: string })[]>) => {
+    if (!sessionId) {
+      if (sendInFlightRef.current) return;
+      initialAttachmentsInFlight.current += 1;
+      setAttachingInitialDraft(true);
+    }
     try {
-      const res = await agentApi.agentAttach('files');
-      if (res.attachments.length)
-        drafts.update(sessionId, (current) => ({ attachments: [...current.attachments, ...res.attachments] }), true);
+      const added = await load();
+      if (added.length)
+        drafts.update(sessionId, (current) => ({ attachments: [...current.attachments, ...added] }), true);
     } catch (err) {
       addToast({ message: errorMessage(err, 'No se pudo adjuntar'), type: 'error' });
+    } finally {
+      if (!sessionId) {
+        initialAttachmentsInFlight.current -= 1;
+        if (!initialAttachmentsInFlight.current) setAttachingInitialDraft(false);
+      }
     }
   };
 
   const attachFiles = async (files: File[]) => {
-    if (!sessionId || !files.length) return;
-    const withPath = files.map((file) => ({ file, path: window.electronAPI?.getPathForFile?.(file) || '' }));
-    const pasted = withPath.filter((item) => !item.path).map((item) => item.file);
-    try {
+    if (!files.length) return;
+    await attachToDraft(async () => {
+      const withPath = files.map((file) => ({ file, path: window.electronAPI?.getPathForFile?.(file) || '' }));
+      const pasted = withPath.filter((item) => !item.path).map((item) => item.file);
       const data = await Promise.all(
         pasted.map(
           (file) =>
@@ -1591,16 +1608,10 @@ export default function AgentView({
         paths: withPath.filter((item) => item.path).map((item) => item.path),
         data,
       });
-      if (res.attachments.length) {
-        drafts.update(sessionId, (current) => ({
-          attachments: [...current.attachments, ...res.attachments.map((item, index) =>
-            ordered[index]?.type.startsWith('image/') ? { ...item, preview: URL.createObjectURL(ordered[index]) } : item,
-          )],
-        }), true);
-      }
-    } catch (err) {
-      addToast({ message: errorMessage(err, 'No se pudo adjuntar'), type: 'error' });
-    }
+      return res.attachments.map((item, index) =>
+        ordered[index]?.type.startsWith('image/') ? { ...item, preview: URL.createObjectURL(ordered[index]) } : item,
+      );
+    });
   };
 
   const respondPanel = async (panel: AgentPanel, response: AgentPanelResponse) => {
@@ -2482,7 +2493,7 @@ export default function AgentView({
                       <div className="min-w-0 flex-1">
                         {requestsInFlightRef.current.has(JSON.stringify([item.session, item.requestId])) ? (
                           <p className="line-clamp-2 break-words" title={item.text}>
-                            Enviando: {item.text}
+                            Enviando: {item.text || ATTACHMENT_ONLY_LABEL}
                           </p>
                         ) : item.failed ? (
                           <button
@@ -2506,7 +2517,7 @@ export default function AgentView({
                                 });
                             }}
                           >
-                            {item.text}
+                            {item.text || ATTACHMENT_ONLY_LABEL}
                           </button>
                         ) : (
                           <details className="group/queued">
@@ -2515,7 +2526,7 @@ export default function AgentView({
                               title="Ver mensaje completo"
                             >
                               <span className="min-w-0 flex-1 line-clamp-2 break-words [overflow-wrap:anywhere] group-open/queued:line-clamp-none group-open/queued:whitespace-pre-wrap">
-                                {item.text}
+                                {item.text || ATTACHMENT_ONLY_LABEL}
                               </span>
                               <ChevronDown
                                 size={12}
@@ -2603,7 +2614,7 @@ export default function AgentView({
               aria-label="Redactar mensaje"
               className={`agent-composer relative rounded-[20px] border bg-[var(--bg-elevated)] transition-[border-color,box-shadow] ${dragging ? 'border-[var(--accent-primary)]' : 'border-[var(--border-medium)]'}`}
               onDragOver={(event) => {
-                if (!sessionId || !event.dataTransfer.types.includes('Files')) return;
+                if (!canAttach || !event.dataTransfer.types.includes('Files')) return;
                 event.preventDefault();
                 setDragging(true);
               }}
@@ -2743,7 +2754,7 @@ export default function AgentView({
                         <Button
                           variant="none"
                           size="none"
-                          disabled={item.kind === 'folder'}
+                          disabled={!sessionId || item.kind === 'folder'}
                           aria-label={`Previsualizar ${item.name}`}
                           title={item.name}
                           onClick={() => {
@@ -2792,9 +2803,16 @@ export default function AgentView({
                 }}
                 onSelect={(event) => composer.moved(event.currentTarget.selectionStart)}
                 onPaste={(event) => {
-                  if (!sessionId || !event.clipboardData.files.length) return;
+                  const files = Array.from(event.clipboardData.files ?? []);
+                  if (!files.length) {
+                    for (const item of Array.from(event.clipboardData.items ?? [])) {
+                      const file = item.kind === 'file' ? item.getAsFile() : null;
+                      if (file) files.push(file);
+                    }
+                  }
+                  if (!files.length || !canAttach) return;
                   event.preventDefault();
-                  void attachFiles([...event.clipboardData.files]);
+                  void attachFiles(files);
                 }}
                 aria-autocomplete="list"
                 aria-controls={autocomplete ? listboxId : undefined}
@@ -2861,7 +2879,7 @@ export default function AgentView({
                       className="size-8 rounded-full"
                       aria-label="Dejar para después"
                       onClick={() => void send()}
-                      disabled={!draft.trim() || modelBusy || stopping || sending}
+                      disabled={!canSendDraft || modelBusy || stopping || sending}
                       title="Dejar para después (Intro)"
                     >
                       <ListOrdered size={15} aria-hidden="true" />
@@ -2872,7 +2890,7 @@ export default function AgentView({
                       className="size-8 rounded-full"
                       aria-label="Indicar ahora"
                       onClick={() => void send(true)}
-                      disabled={!draft.trim() || modelBusy || stopping || sending || sendingCorrection}
+                      disabled={!canSendDraft || modelBusy || stopping || sending || sendingCorrection}
                       title="Indicar ahora"
                     >
                       <CornerDownRight size={15} aria-hidden="true" />
@@ -2896,7 +2914,7 @@ export default function AgentView({
                     type="button"
                     className="agent-send flex size-9 shrink-0 items-center justify-center rounded-full transition-[background-color,color,transform] duration-150 active:scale-[0.96] motion-reduce:transform-none disabled:cursor-not-allowed"
                     onClick={() => void send()}
-                    disabled={(!sessionId && !provider) || !draft.trim() || modelBusy || sending || selectingWorkspace}
+                    disabled={(!sessionId && !provider) || !canSendDraft || modelBusy || sending || selectingWorkspace}
                     aria-label="Enviar"
                     title="Enviar (Intro)"
                   >
@@ -2921,8 +2939,8 @@ export default function AgentView({
                   variant="none"
                   size="none"
                   className="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-input)] hover:text-[var(--text-primary)] disabled:opacity-50"
-                  onClick={() => void attach()}
-                  disabled={!sessionId}
+                  onClick={() => void attachToDraft(async () => (await agentApi.agentAttach('files')).attachments)}
+                  disabled={!canAttach}
                   aria-label="Adjuntar archivos"
                   title="Adjuntar archivos (solo lectura para el agente)"
                 >
@@ -3018,7 +3036,7 @@ export default function AgentView({
                             ? 'Indicación sin confirmar.'
                             : 'Recepción sin confirmar.'}
                       <span className="ml-1 break-words text-[var(--text-muted)]">
-                        «{receipt.intent.text.slice(0, 100)}
+                        «{receipt.intent.text.slice(0, 100) || ATTACHMENT_ONLY_LABEL}
                         {receipt.intent.text.length > 100 ? '…' : ''}»
                         {receipt.intent.attachments.length > 0 &&
                           ` · ${receipt.intent.attachments.length} adjunto${receipt.intent.attachments.length === 1 ? '' : 's'}`}
@@ -3029,7 +3047,7 @@ export default function AgentView({
                         <Button
                           variant="ghost"
                           size="sm"
-                          aria-label={`Reintentar envío: ${receipt.intent.text}`}
+                          aria-label={`Reintentar envío: ${receipt.intent.text || ATTACHMENT_ONLY_LABEL}`}
                           title={receipt.reason}
                           disabled={sending || sendingCorrection || modelBusy || stopping}
                           onClick={() => void retrySend(receipt.intent)}

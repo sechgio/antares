@@ -3415,6 +3415,13 @@ async function main() {
       invalid = err;
     }
     assert(invalid && /no válida/.test(invalid.message), 'una ruta soltada debe ser absoluta');
+    let emptyMessage = null;
+    try {
+      await runtime.handlers.agent_message_send({ session_id: session.id, content: '  ', attachments: [] });
+    } catch (err) {
+      emptyMessage = err;
+    }
+    assert(emptyMessage?.message === 'El mensaje está vacío', 'el envío sin texto ni adjuntos se rechaza');
     const res = await runtime.handlers.agent_attach({
       kind: 'files',
       paths: [dropped],
@@ -3426,7 +3433,7 @@ async function main() {
     );
     await runtime.handlers.agent_message_send({
       session_id: session.id,
-      content: 'mira esto',
+      content: '',
       attachments: res.attachments.map((a) => a.id),
     });
     const pasted = state.grants.at(-1).paths[1];
@@ -3436,13 +3443,15 @@ async function main() {
       'lo pegado se guarda en la carpeta de adjuntos del agente',
     );
     assert(await waitIdle(session.id), 'el turno con imágenes termina');
-    const images = seen[0].find((m) => m.role === 'user').content.filter((block) => block.type === 'image');
+    const blocks = seen[0].find((m) => m.role === 'user').content;
+    const images = blocks.filter((block) => block.type === 'image');
     assert(
       images.length === 2 && images.every((block) => block.mimeType === 'image/png'),
       'un modelo con visión recibe las imágenes',
     );
     const { messages } = await runtime.handlers.agent_messages_list({ session_id: session.id });
-    assert(messages[0].content === 'mira esto', 'el transcript solo muestra el texto');
+    assert(blocks.every((block) => block.type !== 'text' || block.text.trim()), 'el proveedor no recibe un bloque vacío');
+    assert(messages[0].content === '' && messages[0].attachments.length === 2, 'el historial conserva el mensaje sin texto');
     runtime._internal.shared.dialog = null;
     await runtime.shutdown();
     process.env.LOCALAPPDATA = previousAppData;
