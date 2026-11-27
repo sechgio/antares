@@ -236,6 +236,11 @@ def test_cold_imports_are_serialized_against_cextension_deadlock() -> None:
     assert "def _core_history" in handler_source
     assert "with serialized_import():" in handler_source
 
+    from backend.core import ipc_catalog
+
+    validator_source = inspect.getsource(ipc_catalog._schema_validator_for)
+    assert "serialized_import" in validator_source
+
 
 def test_cold_import_requests_wait_for_warm_critical(monkeypatch) -> None:
     import backend.main as main
@@ -253,6 +258,12 @@ def test_cold_import_requests_wait_for_warm_critical(monkeypatch) -> None:
 
     source = inspect.getsource(HandlerRegistry.warm_post_ready)
     assert "WARM_CRITICAL_DONE.set()" in source
+    # Lo que los métodos heavy/preview necesitan es que los módulos de handlers
+    # canvas/conversion estén importados; el scan del store de Canvas (stat y
+    # parseo de metadata de cada documento) no bloquea su dispatch y corre
+    # después en el mismo thread, así que el gate se libera antes del scan.
+    assert "list_documents" in source
+    assert source.index("WARM_CRITICAL_DONE.set()") < source.index("list_documents")
 
     waited: list[float | None] = []
 

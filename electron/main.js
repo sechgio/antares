@@ -1,3 +1,7 @@
+try {
+  require('node:module').enableCompileCache();
+} catch {}
+
 const { app, Menu, ipcMain, Tray } = require('electron');
 const { createWindow } = require('./window-manager');
 const { raceTimeout } = require('./async-utils');
@@ -109,12 +113,20 @@ app.whenReady().then(async () => {
   try {
     setAppContext({ appVersion: app.getVersion() });
     const logsDir = initAppLogs();
-    const removedTemp = cleanStaleTempDirs();
-    appendLogLine('INFO', `[main] app started (logs_dir=${logsDir}, stale_temp_dirs_removed=${removedTemp})`);
+    appendLogLine('INFO', `[main] app started (logs_dir=${logsDir})`);
     appendLogEvent('INFO', 'app.started', { component: 'electron' });
   } catch (err) {
-    console.warn('[main] log/temp init failed:', err && err.message);
+    console.warn('[main] log init failed:', err && err.message);
   }
+  const housekeepingTimer = setTimeout(() => {
+    try {
+      const removedTemp = cleanStaleTempDirs();
+      if (removedTemp > 0) appendLogLine('INFO', `[main] stale temp dirs removed=${removedTemp}`);
+    } catch (err) {
+      console.warn('[main] temp cleanup failed:', err && err.message);
+    }
+  }, 20_000);
+  if (housekeepingTimer.unref) housekeepingTimer.unref();
   Menu.setApplicationMenu(null);
   startPythonBackend(isDev)
     .then(() => {

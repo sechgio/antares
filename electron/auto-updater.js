@@ -33,23 +33,26 @@ function _armUpdateInProgress() {
 
 function _loadAutoUpdater() {
   if (_autoUpdater) return _autoUpdater;
+  let loaded;
   try {
-    _autoUpdater = require('electron-updater').autoUpdater;
+    loaded = require('electron-updater').autoUpdater;
   } catch (err) {
     console.warn('[auto-updater] electron-updater no disponible:', err.message);
     return null;
   }
 
-  _autoUpdater.autoDownload = true;
-  _autoUpdater.autoInstallOnAppQuit = false;
+  loaded.autoDownload = true;
+  loaded.autoInstallOnAppQuit = false;
 
-  _autoUpdater.logger = {
+  loaded.logger = {
     info: (...a) => logInfo('[auto-updater]', ...a),
     warn: (...a) => console.warn('[auto-updater]', ...a),
     error: (...a) => console.error('[auto-updater]', ...a),
     debug: () => {},
   };
 
+  _wireUpdaterEvents(loaded);
+  _autoUpdater = loaded;
   return _autoUpdater;
 }
 
@@ -72,43 +75,7 @@ function _isTrustedUpdateRequest(event, method) {
   return false;
 }
 
-function setupAutoUpdater(isDev) {
-  if (process.env.ANTARES_PERF_BENCHMARK === '1') {
-    logInfo('[auto-updater] desactivado (benchmark local).');
-    return;
-  }
-
-  if (isDev || !app.isPackaged) {
-    logInfo('[auto-updater] desactivado (modo dev / app no empaquetada). Registrando manejadores mock.');
-
-    ipcMain.handle('auto-update-check', async (event) => {
-      if (!_isTrustedUpdateRequest(event, 'auto-update-check')) {
-        return { success: false, reason: 'untrusted sender' };
-      }
-      logInfo('[auto-updater] (dev) Manual check requested. Mocking up-to-date.');
-      setTimeout(() => {
-        _broadcastToRenderer('auto-update-status', {
-          status: 'up-to-date',
-          version: app.getVersion(),
-          progress: 0,
-        });
-      }, 500);
-      return { success: true };
-    });
-
-    ipcMain.handle('auto-update-install', async (event) => {
-      if (!_isTrustedUpdateRequest(event, 'auto-update-install')) {
-        return { success: false, reason: 'untrusted sender' };
-      }
-      return { success: false, reason: 'No disponible en modo desarrollo' };
-    });
-
-    return;
-  }
-
-  const updater = _loadAutoUpdater();
-  if (!updater) return;
-
+function _wireUpdaterEvents(updater) {
   updater.on('checking-for-update', () => {
     logInfo('[auto-updater] buscando actualizaciones...');
     appendLogEvent('INFO', 'updater.check_start', {
@@ -189,35 +156,48 @@ function setupAutoUpdater(isDev) {
       message: err && err.message ? err.message : String(err),
     });
   });
+}
 
-  setTimeout(() => {
-    updater.checkForUpdates().catch((err) => {
-      console.warn('[auto-updater] checkForUpdates falló:', err.message);
-      appendLogEvent('WARN', 'updater.error', {
-        outcome: 'failed',
-        reason: 'check_failed',
-        message: err && err.message ? err.message : String(err),
-      });
-    });
-  }, 30_000);
+function setupAutoUpdater(isDev) {
+  if (process.env.ANTARES_PERF_BENCHMARK === '1') {
+    logInfo('[auto-updater] desactivado (benchmark local).');
+    return;
+  }
 
-  _periodicCheckTimer = setInterval(() => {
-    if (_updateInProgress) return;
-    updater.checkForUpdates().catch((err) => {
-      console.warn('[auto-updater] periodic checkForUpdates falló:', err && err.message ? err.message : err);
-      appendLogEvent('WARN', 'updater.error', {
-        outcome: 'failed',
-        reason: 'check_failed',
-        message: err && err.message ? err.message : String(err),
-      });
+  if (isDev || !app.isPackaged) {
+    logInfo('[auto-updater] desactivado (modo dev / app no empaquetada). Registrando manejadores mock.');
+
+    ipcMain.handle('auto-update-check', async (event) => {
+      if (!_isTrustedUpdateRequest(event, 'auto-update-check')) {
+        return { success: false, reason: 'untrusted sender' };
+      }
+      logInfo('[auto-updater] (dev) Manual check requested. Mocking up-to-date.');
+      setTimeout(() => {
+        _broadcastToRenderer('auto-update-status', {
+          status: 'up-to-date',
+          version: app.getVersion(),
+          progress: 0,
+        });
+      }, 500);
+      return { success: true };
     });
-  }, 6 * 60 * 60 * 1000);
+
+    ipcMain.handle('auto-update-install', async (event) => {
+      if (!_isTrustedUpdateRequest(event, 'auto-update-install')) {
+        return { success: false, reason: 'untrusted sender' };
+      }
+      return { success: false, reason: 'No disponible en modo desarrollo' };
+    });
+
+    return;
+  }
 
   ipcMain.handle('auto-update-check', async (event) => {
     if (!_isTrustedUpdateRequest(event, 'auto-update-check')) {
       return { success: false, reason: 'untrusted sender' };
     }
     logInfo('[auto-updater] Manual check requested. In progress:', _updateInProgress);
+    const updater = _loadAutoUpdater();
     if (!updater || _updateInProgress) {
       const reason = !updater ? 'updater not loaded' : 'update in progress';
       logInfo('[auto-updater] Check rejected:', reason);
@@ -247,6 +227,33 @@ function setupAutoUpdater(isDev) {
     _autoUpdater.quitAndInstall(false, true);
     return { success: true };
   });
+
+  setTimeout(() => {
+    const updater = _loadAutoUpdater();
+    if (!updater) return;
+    updater.checkForUpdates().catch((err) => {
+      console.warn('[auto-updater] checkForUpdates falló:', err.message);
+      appendLogEvent('WARN', 'updater.error', {
+        outcome: 'failed',
+        reason: 'check_failed',
+        message: err && err.message ? err.message : String(err),
+      });
+    });
+  }, 30_000);
+
+  _periodicCheckTimer = setInterval(() => {
+    if (_updateInProgress) return;
+    const updater = _loadAutoUpdater();
+    if (!updater) return;
+    updater.checkForUpdates().catch((err) => {
+      console.warn('[auto-updater] periodic checkForUpdates falló:', err && err.message ? err.message : err);
+      appendLogEvent('WARN', 'updater.error', {
+        outcome: 'failed',
+        reason: 'check_failed',
+        message: err && err.message ? err.message : String(err),
+      });
+    });
+  }, 6 * 60 * 60 * 1000);
 }
 
 function cleanupAutoUpdater() {

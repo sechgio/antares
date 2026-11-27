@@ -169,9 +169,6 @@ async function run() {
     mod = freshAutoUpdater();
     mod.setupAutoUpdater(false);
 
-    assert(fakeUpdater.autoDownload === true, 'autoDownload enabled');
-    assert(fakeUpdater.autoInstallOnAppQuit === false, 'autoInstallOnAppQuit disabled');
-    assert(typeof fakeUpdater.logger?.info === 'function', 'updater logger installed');
     assert(
       timers.timeouts.some((t) => t.delay === 30000),
       'initial update check is scheduled',
@@ -180,10 +177,17 @@ async function run() {
       timers.intervals.some((t) => t.delay === 6 * 60 * 60 * 1000),
       'periodic 6h check is scheduled',
     );
+    assert(
+      fakeUpdater.autoDownload !== true,
+      'electron-updater stays unloaded during the boot tick (lazy require)',
+    );
 
     const initialCheck = timers.timeouts.find((t) => t.delay === 30000);
     fakeUpdater.checkResult = Promise.resolve({ version: null });
     initialCheck.fn();
+    assert(fakeUpdater.autoDownload === true, 'autoDownload enabled once the updater loads');
+    assert(fakeUpdater.autoInstallOnAppQuit === false, 'autoInstallOnAppQuit disabled once loaded');
+    assert(typeof fakeUpdater.logger?.info === 'function', 'updater logger installed once loaded');
     assert(fakeUpdater.checkCalls.length === 1, 'initial check calls checkForUpdates once');
 
     res = await ipcMain.handlers.get('auto-update-install')({ trusted: true });

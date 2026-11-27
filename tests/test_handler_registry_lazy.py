@@ -308,6 +308,36 @@ def test_warm_post_ready_releases_critical_waiters_before_formatos_warm(
     )
 
 
+def test_warm_post_ready_releases_critical_waiters_before_canvas_store_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import backend.core.canvas.store as canvas_store_module
+    from backend.handlers import WARM_CRITICAL_DONE, HandlerRegistry
+
+    order: list[str] = []
+    monkeypatch.setattr(WARM_CRITICAL_DONE, "set", lambda: order.append("critical_done"), raising=False)
+
+    class FakeStore:
+        def list_documents(self) -> list:
+            order.append("canvas_store_scan")
+            return []
+
+    monkeypatch.setattr(canvas_store_module, "get_canvas_store", lambda: FakeStore())
+
+    reg = HandlerRegistry()
+    monkeypatch.setattr(reg, "warm", lambda modules=None: order.append("handler_warm"))
+    monkeypatch.setattr(reg, "_warm_formatos_core", lambda: None)
+
+    reg.warm_post_ready()
+
+    assert order.index("critical_done") < order.index("canvas_store_scan"), (
+        f"canvas store scan must run after critical release, got order={order}"
+    )
+    assert order.index("handler_warm") < order.index("critical_done"), (
+        f"critical release must wait for handler modules only, got order={order}"
+    )
+
+
 def test_warm_formatos_core_failure_is_non_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
     from backend.handlers import HandlerRegistry
 

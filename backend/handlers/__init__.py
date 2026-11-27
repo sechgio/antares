@@ -38,6 +38,46 @@ _DEFERRED_HANDLER_MODULES: tuple[str, ...] = tuple(
     if m not in _CORE_HANDLER_MODULES and m not in _POST_READY_HANDLER_MODULES
 )
 
+HEAVY_METHOD_DEPS: dict[str, tuple[str, ...]] = {
+    "agent_internal_file_preview": ("pymupdf", "openpyxl", "docx"),
+    "canvas_export_cmyk_pdf": ("pymupdf",),
+    "db_clear": (),
+    "db_export": ("pandas", "openpyxl"),
+    "db_fields_reset": (),
+    "db_fields_update": (),
+    "db_import": ("openpyxl",),
+    "db_parse_mapping": ("pandas", "openpyxl"),
+    "design_export_pdf": ("weasyprint",),
+    "design_generate": ("weasyprint", "pymupdf"),
+    "design_preflight": ("weasyprint", "pymupdf"),
+    "evidencia_volanteo_render": ("weasyprint", "docx"),
+    "fichas_tecnicas_import_file": ("openpyxl",),
+    "fichas_tecnicas_render_consolidated_html": (),
+    "fichas_tecnicas_render_html": (),
+    "formatos_generate": (),
+    "formatos_render_template_page": ("pymupdf",),
+    "generar_ubicaciones": ("pandas", "openpyxl"),
+    "image_optimizer_save_files": (),
+    "informes_v2_download_template": ("openpyxl",),
+    "informes_v2_import_file": ("openpyxl",),
+    "informes_v2_render_consolidated_html": (),
+    "informes_v2_render_html": (),
+    "panel_aviso_corte_compute_match": (),
+    "panel_aviso_corte_parse_excel": ("openpyxl",),
+    "panel_aviso_corte_render_pdf": ("weasyprint", "docx"),
+    "preview_ubicacion": ("pandas", "openpyxl"),
+    "print_pdf": ("pymupdf",),
+    "sellador_apply": (),
+    "sellador_inspect_pdf": ("pymupdf",),
+    "sellador_render_page": ("pymupdf",),
+    "spreadsheet_export_volantes_template": ("pandas", "openpyxl"),
+    "spreadsheet_get_rows": (),
+    "spreadsheet_parse": ("openpyxl",),
+    "technical_reports_import_file": ("openpyxl",),
+    "technical_reports_render_consolidated_html": (),
+    "technical_reports_render_html": (),
+}
+
 class HandlerRegistry:
 
     def __init__(self) -> None:
@@ -45,6 +85,7 @@ class HandlerRegistry:
         self._loaded_modules: set[str] = set()
         self._lock = threading.RLock()
         self._module_locks: dict[str, threading.RLock] = {}
+        self._heavy_deps_warmed: set[str] = set()
 
     def _module_lock(self, mod_name: str) -> threading.RLock:
         with self._lock:
@@ -88,6 +129,7 @@ class HandlerRegistry:
             self.warm(_POST_READY_HANDLER_MODULES)
         except Exception:
             log_event(logger, logging.ERROR, "handlers.warm_post_ready", outcome="failed", message="canvas/conversion post-ready warm failed", exc_info=True)
+        WARM_CRITICAL_DONE.set()
         try:
             from backend.core.canvas.store import get_canvas_store
 
@@ -95,7 +137,6 @@ class HandlerRegistry:
             log_event(logger, logging.INFO, "handlers.warm_canvas_store", outcome="success", message="canvas store post-ready warm complete")
         except Exception:
             log_event(logger, logging.ERROR, "handlers.warm_canvas_store", outcome="failed", message="canvas store post-ready warm failed", exc_info=True)
-        WARM_CRITICAL_DONE.set()
         self._warm_formatos_core()
         try:
             def _warm_history_bg() -> None:
@@ -117,13 +158,14 @@ class HandlerRegistry:
     def warm_deferred(self) -> None:
         self.warm(_DEFERRED_HANDLER_MODULES)
 
-    def warm_heavy_deps(self) -> None:
+    def warm_heavy_deps(self, deps: tuple[str, ...]) -> None:
         with self._lock:
-            if getattr(self, "_heavy_deps_warmed", False):
-                return
-            self._heavy_deps_warmed = True
+            pending = [module_name for module_name in deps if module_name not in self._heavy_deps_warmed]
+            self._heavy_deps_warmed.update(pending)
+        if not pending:
+            return
         warmed = []
-        for module_name in ("pandas", "openpyxl", "pymupdf", "docx", "weasyprint"):
+        for module_name in pending:
             try:
                 with serialized_import():
                     importlib.import_module(module_name)

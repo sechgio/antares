@@ -18,34 +18,84 @@ import { reportFrontendError } from './utils/observability';
 import { errorMessage } from '@/utils/errors';
 import { bootThemeFromBackend } from './utils/themeApplier';
 import { usePluginEnabled } from './plugins';
+import { KEEP_ALIVE_VIEWS, useKeepAliveViews } from './hooks/useKeepAliveViews';
 
 const LoginScreen = React.lazy(() => import('./auth/LoginScreen'));
 const SettingsModal = React.lazy(() => import('./components/settings/SettingsModal'));
 const PetMascot = React.lazy(() => import('./components/layout/PetMascot'));
 const StickyNotesLayer = React.lazy(() => import('./components/sticky-notes/StickyNotesLayer'));
 
-const ConversionView = React.lazy(() => import('./components/conversion/ConversionView'));
-const FormatosView = React.lazy(() => import('./components/formatos/FormatosView'));
-const SelladorView = React.lazy(() => import('./components/sellador'));
-const PadronView = React.lazy(() => import('./components/padron/PadronView'));
-const VolantesView = React.lazy(() => import('./components/volantes/VolantesView'));
-const ReportesCampoView = React.lazy(() => import('./components/reportes-campo'));
-const ImageOptimizerView = React.lazy(() => import('./components/image-optimizer'));
-const PreviewPanelView = React.lazy(() => import('./components/preview-panel/PreviewPanelView'));
-const TechnicalReportsView = React.lazy(() => import('./components/technical-reports'));
-const InformesV2View = React.lazy(() => import('./components/informes-v2'));
-const PanelAvisoCorteView = React.lazy(() => import('./components/panel-aviso-corte'));
+const loadConversionView = () => import('./components/conversion/ConversionView');
+const loadFormatosView = () => import('./components/formatos/FormatosView');
+const loadSelladorView = () => import('./components/sellador');
+const loadPadronView = () => import('./components/padron/PadronView');
+const loadVolantesView = () => import('./components/volantes/VolantesView');
+const loadReportesCampoView = () => import('./components/reportes-campo');
+const loadImageOptimizerView = () => import('./components/image-optimizer');
+const loadPreviewPanelView = () => import('./components/preview-panel/PreviewPanelView');
+const loadTechnicalReportsView = () => import('./components/technical-reports');
+const loadInformesV2View = () => import('./components/informes-v2');
+const loadPanelAvisoCorteView = () => import('./components/panel-aviso-corte');
+const loadUbicacionesView = () => import('./components/UbicacionesView');
+const loadEvidenciaVolanteoView = () => import('./components/evidencia-volanteo');
+const loadAutoIMGView = () => import('./components/autoimg');
+const loadFichasTecnicasView = () => import('./components/fichas-tecnicas');
+const loadEspaciosView = () => import('./components/espacios');
+const loadCanvasView = () => import('./components/canvas');
+const loadAgentView = () => import('./components/agent');
+const loadComplementosView = () => import('./components/complementos/ComplementosView');
+const loadDesignView = () => import('./components/design');
+
+const ConversionView = React.lazy(loadConversionView);
+const FormatosView = React.lazy(loadFormatosView);
+const SelladorView = React.lazy(loadSelladorView);
+const PadronView = React.lazy(loadPadronView);
+const VolantesView = React.lazy(loadVolantesView);
+const ReportesCampoView = React.lazy(loadReportesCampoView);
+const ImageOptimizerView = React.lazy(loadImageOptimizerView);
+const PreviewPanelView = React.lazy(loadPreviewPanelView);
+const TechnicalReportsView = React.lazy(loadTechnicalReportsView);
+const InformesV2View = React.lazy(loadInformesV2View);
+const PanelAvisoCorteView = React.lazy(loadPanelAvisoCorteView);
 const UbicacionesView = React.lazy(() =>
-  import('./components/UbicacionesView').then((m) => ({ default: m.UbicacionesView })),
+  loadUbicacionesView().then((m) => ({ default: m.UbicacionesView })),
 );
-const EvidenciaVolanteoView = React.lazy(() => import('./components/evidencia-volanteo'));
-const AutoIMGView = React.lazy(() => import('./components/autoimg'));
-const FichasTecnicasView = React.lazy(() => import('./components/fichas-tecnicas'));
-const EspaciosView = React.lazy(() => import('./components/espacios'));
-const CanvasView = React.lazy(() => import('./components/canvas'));
-const AgentView = React.lazy(() => import('./components/agent'));
-const ComplementosView = React.lazy(() => import('./components/complementos/ComplementosView'));
-const DesignView = React.lazy(() => import('./components/design'));
+const EvidenciaVolanteoView = React.lazy(loadEvidenciaVolanteoView);
+const AutoIMGView = React.lazy(loadAutoIMGView);
+const FichasTecnicasView = React.lazy(loadFichasTecnicasView);
+const EspaciosView = React.lazy(loadEspaciosView);
+const CanvasView = React.lazy(loadCanvasView);
+const AgentView = React.lazy(loadAgentView);
+const ComplementosView = React.lazy(loadComplementosView);
+const DesignView = React.lazy(loadDesignView);
+
+type ViewLoader = () => Promise<unknown>;
+const VIEW_LOADERS: Record<TabId, ViewLoader> = {
+  espacios: loadEspaciosView,
+  convert: loadConversionView,
+  formatos: loadFormatosView,
+  sellador: loadSelladorView,
+  padron: loadPadronView,
+  volantes: loadVolantesView,
+  reportesCampo: loadReportesCampoView,
+  technicalReports: loadTechnicalReportsView,
+  informesV2: loadInformesV2View,
+  imageOptimizer: loadImageOptimizerView,
+  previewPanel: loadPreviewPanelView,
+  canvas: loadCanvasView,
+  agent: loadAgentView,
+  complementos: loadComplementosView,
+  panelAvisoCorte: loadPanelAvisoCorteView,
+  ubicaciones: loadUbicacionesView,
+  evidenciaVolanteo: loadEvidenciaVolanteoView,
+  autoimg: loadAutoIMGView,
+  fichasTecnicas: loadFichasTecnicasView,
+  design: loadDesignView,
+};
+
+function prefetchView(tab: TabId) {
+  void VIEW_LOADERS[tab]?.();
+}
 
 const CANVAS_KEEPALIVE_MS = 60 * 1000;
 function prefetchSettingsModal() {
@@ -53,7 +103,7 @@ function prefetchSettingsModal() {
 }
 
 function prefetchCanvasView() {
-  void import('./components/canvas');
+  void loadCanvasView();
 }
 
 function isPetMascotEnabled(): boolean {
@@ -151,7 +201,6 @@ function AppContent() {
   const stickyNotesEnabled = usePluginEnabled('sticky-notes');
 
   const handleTabChange = useCallback((tab: TabId) => {
-    if (tab === 'canvas') prefetchCanvasView();
     startTransition(() => {
       if (tab === 'canvas') setCanvasMounted(true);
       setActiveTab(tab);
@@ -317,11 +366,12 @@ function AppContent() {
     });
   }, []);
 
+  const keepAliveOrder = useKeepAliveViews(activeTab);
   const needsCloudAuth = CLOUD_AUTH_TABS.has(activeTab);
   const cloudAuthBlocked = needsCloudAuth && !user;
   const isFullBleed = FULL_BLEED_TABS.has(activeTab);
   const showCanvas = activeTab === 'canvas';
-  const ActiveView = showCanvas ? null : VIEWS[activeTab];
+  const ActiveView = showCanvas || KEEP_ALIVE_VIEWS.has(activeTab) ? null : VIEWS[activeTab];
   const CanvasKeepAlive = VIEWS.canvas;
 
   return (
@@ -331,9 +381,7 @@ function AppContent() {
         <Sidebar
           activeTab={activeTab}
           onTabChange={handleTabChange}
-          onPrefetchTab={(tab) => {
-            if (tab === 'canvas') prefetchCanvasView();
-          }}
+          onPrefetchTab={prefetchView}
           onOpenSettings={openAppearanceSettings}
         >
           <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -366,6 +414,24 @@ function AppContent() {
                       </ErrorBoundary>
                     </div>
                   )}
+                  {[...KEEP_ALIVE_VIEWS].map((tab) => {
+                    if (tab !== activeTab && !keepAliveOrder.includes(tab)) return null;
+                    const isActive = tab === activeTab;
+                    const KeepAliveView = VIEWS[tab];
+                    return (
+                      <div
+                        key={tab}
+                        data-testid={`keep-alive-${tab}`}
+                        className={`h-full min-h-0 ${FULL_BLEED_TABS.has(tab) ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4 [scrollbar-gutter:stable]'} ${isActive ? '' : 'hidden'}`}
+                        aria-hidden={!isActive}
+                        inert={!isActive ? true : undefined}
+                      >
+                        <ErrorBoundary view={tab}>
+                          <KeepAliveView active={isActive} />
+                        </ErrorBoundary>
+                      </div>
+                    );
+                  })}
                   {ActiveView && (
                     <div className={`h-full min-h-0 ${isFullBleed ? 'overflow-hidden' : 'overflow-y-auto px-6 py-4 [scrollbar-gutter:stable]'}`}>
                       <ErrorBoundary key={activeTab} view={activeTab}>

@@ -3,8 +3,10 @@ from __future__ import annotations
 import functools
 import json
 import logging
+from collections.abc import Iterator
 from typing import Any
 
+from backend.core.import_guard import serialized_import
 from backend.utils.paths import resource_path
 
 logger = logging.getLogger(__name__)
@@ -77,14 +79,42 @@ def input_schema_for(method: str) -> dict[str, object]:
     return schema if isinstance(schema, dict) else {"type": "object", "properties": {}}
 
 
+class _VacuousValidator:
+    def iter_errors(self, _value: object) -> Iterator[Any]:
+        return iter(())
+
+
+_VACUOUS_VALIDATOR = _VacuousValidator()
+_VACUOUS_SCHEMA_KEYS = frozenset({"type", "properties", "$schema"})
+
+
+def _is_vacuous_object_schema(schema: dict[str, Any]) -> bool:  # allowlist: dict[str, Any]
+    """True si el schema no puede fallar para params que ya son dict (IPCMessage
+    lo exige antes de validar): type object sin required/additionalProperties y
+    properties vacías. Esos schemas no justifican importar jsonschema."""
+    if not set(schema) <= _VACUOUS_SCHEMA_KEYS:
+        return False
+    if schema.get("type") != "object":
+        return False
+    properties = schema.get("properties")
+    if properties is None:
+        return True
+    if not isinstance(properties, dict):
+        return False
+    return all(isinstance(prop_schema, dict) and not prop_schema for prop_schema in properties.values())
+
+
 @functools.cache
 def _schema_validator_for(method: str) -> Any:
     entry = _entry(method)
     schema = entry.get("inputSchema") if entry else None
     if not isinstance(schema, dict) or not schema:
         return None
-    from jsonschema import Draft202012Validator
-    from jsonschema.exceptions import SchemaError
+    if _is_vacuous_object_schema(schema):
+        return _VACUOUS_VALIDATOR
+    with serialized_import():
+        from jsonschema import Draft202012Validator
+        from jsonschema.exceptions import SchemaError
 
     try:
         return Draft202012Validator(schema)
