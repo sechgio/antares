@@ -72,8 +72,8 @@ vi.mock('../auth/AuthContext', () => ({
   }),
 }));
 
-vi.mock('../components/editor/EditorView', () => ({
-  EditorView: () => <p>Editor abierto</p>,
+vi.mock('../components/formatos/FormatosView', () => ({
+  default: () => <p>Formatos abierto</p>,
 }));
 
 describe('App view keep-alive', () => {
@@ -119,13 +119,13 @@ describe('App view keep-alive', () => {
   it('unmounts non-whitelisted views when switching away', async () => {
     render(<App />);
 
-    fireEvent.click(await findSidebarTab('Editor'));
-    await screen.findByText('Editor abierto');
+    fireEvent.click(await findSidebarTab('Formatos PDF'));
+    await screen.findByText('Formatos abierto');
 
     fireEvent.click(await findSidebarTab('Conversión'));
     await screen.findByText(/Arrastra imágenes o videos aquí/i, {}, { timeout: 8000 });
 
-    expect(screen.queryByText('Editor abierto')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('keep-alive-editor')).not.toBeInTheDocument();
+    expect(screen.queryByText('Formatos abierto')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('keep-alive-formatos')).not.toBeInTheDocument();
   }, 20000);
 });
