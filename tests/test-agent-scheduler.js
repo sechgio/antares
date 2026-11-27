@@ -139,8 +139,13 @@ async function main() {
       return fauxAssistantMessage('Informe listo');
     }]);
     await runtime.handlers.agent_tasks_run({ id: silent.scheduled.id });
-    await until(async () => (await list()).find((task) => task.id === silent.scheduled.id)?.status === 'delivered');
+    await until(async () => (await list()).find((task) => task.id === silent.scheduled.id)?.status === 'to_verify');
     assert.match(silentContext, /Informe silencioso/, 'el silencio no omite el encargo');
+    const silentDone = (await list()).find((task) => task.id === silent.scheduled.id);
+    assert.equal(silentDone.output, 'Informe listo', 'el resultado final queda visible sin abrir la sesión');
+    await runtime.handlers.agent_tasks_verify({ id: silent.scheduled.id });
+    assert.equal((await list()).find((task) => task.id === silent.scheduled.id).status, 'delivered',
+      'la verificación humana cierra el encargo');
     const silentMessages = (await runtime.handlers.agent_messages_list({ session_id: session.id })).messages;
     assert.ok(!silentMessages.some((message) => message.content.includes('Encargo programado: Informe silencioso')),
       'el token de silencio omite el aviso');
@@ -170,7 +175,7 @@ async function main() {
     assert.equal(midFlight.status, 'delivering', 'el encargo sigue en entrega mientras el turno trabaja');
     assert.equal(midFlight.runs.length, 0, 'no se registra entrega antes de terminar el trabajo');
     releaseSlow();
-    await until(async () => (await list()).find((task) => task.id === slowTask.scheduled.id)?.status === 'delivered');
+    await until(async () => (await list()).find((task) => task.id === slowTask.scheduled.id)?.status === 'to_verify');
     const slowDone = (await list()).find((task) => task.id === slowTask.scheduled.id);
     assert.equal(slowDone.runs.at(-1).status, 'delivered', 'la entrega se registra cuando el turno termina, no al encolar');
 
@@ -201,7 +206,7 @@ async function main() {
     assert.match(contContext, /Encargo que se interrumpe a mitad/, 'la continuación conserva el encargo original');
     assert.match(contContext, /Checkpoint registrado por Antares/, 'la continuación inyecta el checkpoint estructurado');
     assert.match(contContext, /Verificar el resultado/, 'el checkpoint nombra los pasos pendientes');
-    await until(async () => (await list()).find((task) => task.id === contTask.scheduled.id)?.status === 'delivered');
+    await until(async () => (await list()).find((task) => task.id === contTask.scheduled.id)?.status === 'to_verify');
     const contDone = (await list()).find((task) => task.id === contTask.scheduled.id);
     assert.equal(contDone.runs.at(-1).status, 'delivered', 'la continuación automática completa el encargo');
     assert.equal(contDone.current_request_id, undefined, 'el seguimiento de la entrega se limpia al terminar');
@@ -232,6 +237,88 @@ async function main() {
       const sdoc = await tx.doc(stateForContinuation.SessionsDoc);
       delete sdoc.sessions[session.id].continuation;
     }, ctx());
+
+    const askTask = await runtime.handlers.agent_tasks_save({
+      session_id: session.id, content: 'Encargo que necesita un dato del usuario', due_at: future,
+    });
+    let replyContext = '';
+    faux.setResponses([
+      () => fauxAssistantMessage('Preparé el borrador pero falta un dato.\nNECESITA ENTRADA: ¿A qué mes corresponde el informe?'),
+      (context) => {
+        replyContext = JSON.stringify(context.messages);
+        return fauxAssistantMessage('Informe de marzo terminado');
+      },
+    ]);
+    await runtime.handlers.agent_tasks_run({ id: askTask.scheduled.id });
+    await until(async () => (await list()).find((task) => task.id === askTask.scheduled.id)?.status === 'needs_input');
+    const asking = (await list()).find((task) => task.id === askTask.scheduled.id);
+    assert.equal(asking.question, '¿A qué mes corresponde el informe?', 'la pregunta queda registrada en el encargo');
+    assert.match(asking.output, /Preparé el borrador/, 'el resultado parcial queda visible sin abrir la sesión');
+    assert.equal(asking.runs.at(-1).status, 'needs_input');
+    await assert.rejects(
+      runtime.handlers.agent_tasks_respond({ id: askTask.scheduled.id, response: '' }),
+      /Indica el encargo y tu respuesta/,
+    );
+    await runtime.handlers.agent_tasks_respond({ id: askTask.scheduled.id, response: 'Marzo' });
+    await until(async () => (await list()).find((task) => task.id === askTask.scheduled.id)?.status === 'to_verify');
+    assert.match(replyContext, /¿A qué mes corresponde el informe\?/, 'la respuesta reutiliza la entrega con la pregunta');
+    assert.match(replyContext, /Respuesta: Marzo/);
+    assert.match(replyContext, /No es un encargo nuevo/);
+    const answered = (await list()).find((task) => task.id === askTask.scheduled.id);
+    assert.equal(answered.output, 'Informe de marzo terminado', 'el resultado final sustituye al parcial');
+    assert.equal(answered.question, undefined, 'la pregunta se limpia al completarse');
+    assert.deepEqual(
+      answered.events.map((event) => event.to),
+      ['delivering', 'needs_input', 'delivering', 'to_verify'],
+      'el log de eventos registra cada transición',
+    );
+    await runtime.handlers.agent_tasks_verify({ id: askTask.scheduled.id });
+    const verified = (await list()).find((task) => task.id === askTask.scheduled.id);
+    assert.equal(verified.status, 'delivered', 'la verificación humana cierra el encargo');
+    assert.equal(verified.events.at(-1).to, 'delivered');
+    const reverified = await runtime.handlers.agent_tasks_verify({ id: askTask.scheduled.id });
+    assert.equal(reverified.verified, true, 'verificar un encargo ya entregado es idempotente');
+    await assert.rejects(
+      runtime.handlers.agent_tasks_respond({ id: askTask.scheduled.id, response: 'Otra cosa' }),
+      /no está esperando una respuesta/,
+      'responder un encargo que ya no espera es un error de validación',
+    );
+
+    const blockedTask = await runtime.handlers.agent_tasks_save({
+      session_id: session.id, content: 'Encargo que no puede continuar', due_at: future,
+    });
+    faux.setResponses([() => fauxAssistantMessage('Lo intenté de dos formas.\nBLOQUEADO: Falta la credencial del servicio externo.')]);
+    await runtime.handlers.agent_tasks_run({ id: blockedTask.scheduled.id });
+    await until(async () => (await list()).find((task) => task.id === blockedTask.scheduled.id)?.status === 'blocked');
+    const blockedDone = (await list()).find((task) => task.id === blockedTask.scheduled.id);
+    assert.match(blockedDone.last_error, /Falta la credencial/, 'el bloqueo lleva el motivo');
+    assert.equal(blockedDone.runs.at(-1).status, 'blocked');
+    faux.setResponses([() => fauxAssistantMessage('Credencial aplicada, encargo terminado')]);
+    await runtime.handlers.agent_tasks_run({ id: blockedTask.scheduled.id });
+    await until(async () => (await list()).find((task) => task.id === blockedTask.scheduled.id)?.status === 'to_verify');
+    assert.equal((await list()).find((task) => task.id === blockedTask.scheduled.id).output,
+      'Credencial aplicada, encargo terminado', 're-ejecutar un bloqueado produce un resultado nuevo');
+
+    await scheduler.schedule({ action: 'pause' }, session.id, { taskId: 'queue-handoff-pause' });
+    const queuedQuestion = await scheduler.schedule({ action: 'enqueue', content: 'Encargo en cola con pregunta' }, session.id, { taskId: 'queue-handoff' });
+    const queuedAfter = await scheduler.schedule({ action: 'enqueue', content: 'Encargo en cola posterior' }, session.id, { taskId: 'queue-handoff' });
+    faux.setResponses([
+      () => fauxAssistantMessage('NECESITA ENTRADA: ¿Confirmo el envío?'),
+      () => fauxAssistantMessage('Posterior terminado'),
+      (context) => {
+        assert.match(JSON.stringify(context.messages), /Respuesta: Sí/, 'la cola reutiliza la entrega para la respuesta');
+        return fauxAssistantMessage('Envío confirmado');
+      },
+    ]);
+    await scheduler.schedule({ action: 'resume' }, session.id, { taskId: 'queue-handoff-resume' });
+    await until(async () => (await queueItems()).find((task) => task.id === queuedQuestion.scheduled.id)?.status === 'needs_input');
+    await new Promise((resolve) => setTimeout(resolve, 1300));
+    assert.equal((await queueItems()).find((task) => task.id === queuedAfter.scheduled.id)?.status, 'to_verify',
+      'una pregunta sin responder no frena el siguiente encargo de la cola');
+    await runtime.handlers.agent_tasks_respond({ id: queuedQuestion.scheduled.id, response: 'Sí' });
+    await until(async () => (await queueItems()).find((task) => task.id === queuedQuestion.scheduled.id)?.status === 'to_verify');
+    await runtime.handlers.agent_tasks_verify({ id: queuedQuestion.scheduled.id });
+    assert.equal((await queueItems()).find((task) => task.id === queuedQuestion.scheduled.id)?.status, 'delivered');
 
     await scheduler.stop();
     const state = runtime._internal.state();
@@ -317,7 +404,7 @@ async function main() {
       },
     ]);
     await scheduler.schedule({ action: 'resume' }, session.id, { taskId: 'queue-resume' });
-    await until(async () => (await queueItems()).every((task) => task.status === 'delivered'));
+    await until(async () => (await queueItems()).every((task) => task.status === 'to_verify'));
     assert.deepEqual(order, ['primero', 'segundo'], 'la cola ejecuta un encargo a la vez y en orden');
     assert.equal(grants, 0, 'un encargo en cola no concede rutas ni permisos');
     assert.deepEqual((await queueItems()).map((task) => task.runs.at(-1).status), ['delivered', 'delivered']);
@@ -345,7 +432,7 @@ async function main() {
     await until(() => firstStarted);
     await scheduler.schedule({ action: 'pause' }, pauseSession.id, { taskId: 'queue-between-pause' });
     releaseFirst();
-    await until(async () => (await pauseTasks()).find((task) => task.id === held.scheduled.id)?.status === 'delivered');
+    await until(async () => (await pauseTasks()).find((task) => task.id === held.scheduled.id)?.status === 'to_verify');
     await new Promise((resolve) => setTimeout(resolve, 1300));
     assert.equal((await pauseTasks()).find((task) => task.id === waiting.scheduled.id)?.status, 'pending',
       'pausar durante un encargo no despacha el siguiente');
@@ -354,7 +441,7 @@ async function main() {
     assert.ok(!(await runtime.handlers.agent_messages_list({ session_id: pauseSession.id })).messages
       .some((message) => message.content.includes('Segundo retenido')), 'el encargo en espera no se envía hasta reanudar');
     await scheduler.schedule({ action: 'resume' }, pauseSession.id, { taskId: 'queue-between-resume-2' });
-    await until(async () => (await pauseTasks()).find((task) => task.id === waiting.scheduled.id)?.status === 'delivered');
+    await until(async () => (await pauseTasks()).find((task) => task.id === waiting.scheduled.id)?.status === 'to_verify');
 
     const { session: approvalSession } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     await scheduler.schedule({ action: 'pause' }, approvalSession.id, { taskId: 'queue-approval-pause' });
@@ -369,7 +456,7 @@ async function main() {
     'una aprobación pendiente bloquea el siguiente encargo de la cola');
     pendingApprovals = [];
     await until(async () => (await runtime.handlers.agent_tasks_list({ session_id: approvalSession.id })).tasks
-      .find((task) => task.id === approvalQueued.scheduled.id)?.status === 'delivered');
+      .find((task) => task.id === approvalQueued.scheduled.id)?.status === 'to_verify');
 
     await scheduler.schedule({ action: 'pause' }, session.id, { taskId: 'queue-pause-restart' });
     await scheduler.schedule({ action: 'enqueue', content: 'Persistente uno' }, session.id, { taskId: 'queue-restart' });
@@ -390,7 +477,7 @@ async function main() {
       },
     ]);
     await scheduler.schedule({ action: 'resume' }, session.id, { taskId: 'queue-resume-restart' });
-    await until(async () => (await queueItems()).slice(-2).every((task) => task.status === 'delivered'));
+    await until(async () => (await queueItems()).slice(-2).every((task) => task.status === 'to_verify'));
 
     await scheduler.schedule({ action: 'pause' }, session.id, { taskId: 'queue-pause-cancel' });
     const cancelled = await scheduler.schedule({ action: 'enqueue', content: 'Cancelar este' }, session.id, { taskId: 'queue-cancel' });
@@ -401,7 +488,7 @@ async function main() {
       return fauxAssistantMessage('Ejecutado tras cancelar');
     }]);
     await scheduler.schedule({ action: 'resume' }, session.id, { taskId: 'queue-resume-cancel' });
-    await until(async () => (await queueItems()).find((task) => task.id === kept.scheduled.id)?.status === 'delivered');
+    await until(async () => (await queueItems()).find((task) => task.id === kept.scheduled.id)?.status === 'to_verify');
     assert.equal((await queueItems()).find((task) => task.id === cancelled.scheduled.id)?.status, 'cancelled');
     assert.ok(!(await transcript()).some((message) => message.content.includes('Cancelar este')),
       'un encargo cancelado no se envía nunca');
@@ -423,7 +510,7 @@ async function main() {
       return fauxAssistantMessage('Reanudado tras el fallo');
     }]);
     await scheduler.schedule({ action: 'resume' }, session.id, { taskId: 'queue-resume-after-fail' });
-    await until(async () => (await queueItems()).find((task) => task.id === afterFailure.scheduled.id)?.status === 'delivered');
+    await until(async () => (await queueItems()).find((task) => task.id === afterFailure.scheduled.id)?.status === 'to_verify');
 
     const { session: toolSession } = await runtime.handlers.agent_session_create({ provider: 'faux', model: 'faux-1' });
     await runtime.handlers.agent_session_permissions_set({ id: toolSession.id, permission_mode: 'full' });
