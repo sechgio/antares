@@ -113,7 +113,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       revokeDisabledSession(supabaseUser.id);
       return false;
     }
-    setUser(_mapUser(supabaseUser, profile));
+    setUser((prev) => {
+      const next = _mapUser(supabaseUser, profile);
+      if (
+        prev &&
+        prev.id === next.id &&
+        prev.email === next.email &&
+        prev.displayName === next.displayName &&
+        prev.isAdmin === next.isAdmin &&
+        prev.createdAt === next.createdAt
+      ) {
+        return prev;
+      }
+      return next;
+    });
     setLoading(false);
     return true;
   }, [revokeDisabledSession]);

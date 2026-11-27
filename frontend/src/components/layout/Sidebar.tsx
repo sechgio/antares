@@ -168,6 +168,11 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
   });
   const [signingOut, setSigningOut] = useState(false);
   const [browsed, setBrowsed] = useState<{ tab: TabId; group: string } | null>(null);
+  const [pendingTab, setPendingTab] = useState<TabId | null>(null);
+  useEffect(() => {
+    setPendingTab((pending) => (pending === activeTab ? null : pending));
+  }, [activeTab]);
+  const highlightedTab = pendingTab ?? activeTab;
   const account = useAnchoredPopover<HTMLButtonElement, HTMLDivElement>({
     positioner: placeBesideRail,
     stopEscapePropagation: true,
@@ -236,6 +241,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
 
   const openTab = (tabId: TabId) => {
     closePeek();
+    if (tabId !== activeTab) setPendingTab(tabId);
     onTabChange(tabId);
   };
 
@@ -281,7 +287,7 @@ export default function Sidebar({ activeTab, onTabChange, onPrefetchTab, onOpenS
       <nav aria-label={shownGroup.label} className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto overflow-x-hidden px-1.5 pb-1.5">
         {shownGroup.tabs.map((tabId) => {
           const tab = TAB_BY_ID[tabId];
-          const isActive = activeTab === tabId;
+          const isActive = highlightedTab === tabId;
           const Icon = ICONS[tabId];
           return (
             <Button variant="none" size="none"

@@ -186,7 +186,7 @@ function _fmtArg(arg) {
 }
 
 function _redactText(text) {
-  let safeText = String(text);
+  let safeText = String(text).slice(0, 5120);
   for (const pattern of SENSITIVE_TEXT_RE) {
     safeText = safeText.replace(pattern, (...matches) =>
       typeof matches[1] === 'string' ? `${matches[1]}[REDACTED]` : '[REDACTED]',

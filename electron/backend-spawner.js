@@ -738,7 +738,7 @@ function _spawn(isDev) {
   if (!isDev && !fs.existsSync(cmd)) {
     throw new Error(`Backend executable not found: ${cmd}`);
   }
-  pythonProcess = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'], env: _buildChildEnv(isDev) });
+  pythonProcess = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'], env: _buildChildEnv(isDev), windowsHide: true });
   const spawnedProcess = pythonProcess;
   const spawnedPid = spawnedProcess.pid;
   appendLogEvent('INFO', 'backend.starting', {

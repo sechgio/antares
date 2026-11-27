@@ -67,7 +67,7 @@ from backend.core.scheduler import (
     get_scheduler,
     is_memory_pressure,
 )
-from backend.handlers import HANDLERS, WARM_CRITICAL_DONE
+from backend.handlers import HANDLERS, HEAVY_METHOD_DEPS, WARM_CRITICAL_DONE
 from backend.ipc_protocol import _Skip, read_message, send_notification, send_response
 from backend.utils.i18n import t
 from backend.utils.validators import redact_internal_error
@@ -102,18 +102,14 @@ _method_heavy_lock = threading.Lock()
 _method_heavy_inflight: dict[str, int] = {}
 
 
-_heavy_deps_warm_started = False
-
-
-def _trigger_heavy_deps_warm() -> None:
-    global _heavy_deps_warm_started
-    if _heavy_deps_warm_started:
+def _trigger_heavy_deps_warm(method_name: str) -> None:
+    deps = HEAVY_METHOD_DEPS.get(method_name, ())
+    if not deps:
         return
-    _heavy_deps_warm_started = True
 
     def _warm() -> None:
         try:
-            HANDLERS.warm_heavy_deps()
+            HANDLERS.warm_heavy_deps(deps)
         except Exception:
             logger.exception("heavy deps warm failed")
 
@@ -388,7 +384,7 @@ def _submit_handler(handler, params, msg_id, method_name) -> Future | None:
                     _reject_submit(msg_id, method_name, lane, busy_error, rejected="method_busy")
                     return None
                 _method_heavy_inflight[method_name] = in_flight + 1
-            _trigger_heavy_deps_warm()
+            _trigger_heavy_deps_warm(method_name)
             future = scheduler.submit_heavy(_dispatch, handler, params, msg_id, method_name)
         else:
             future = scheduler.submit_light(_dispatch, handler, params, msg_id, method_name)

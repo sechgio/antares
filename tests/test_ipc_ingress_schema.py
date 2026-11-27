@@ -122,3 +122,51 @@ def test_memory_sharing_requires_version_and_explicit_recipients():
     assert validate_params_schema(public, {"id": "fact", "version": 1, "profile_ids": []}) is None
     missing = validate_params_schema(public, {"id": "fact", "profile_ids": ["recipient"]})
     assert missing and "version" in missing
+
+
+def test_vacuous_schema_uses_trivial_validator_without_importing_jsonschema(monkeypatch) -> None:
+    import builtins
+
+    real_import = builtins.__import__
+
+    def guard_import(name, *args, **kwargs):
+        if name == "jsonschema" or name.startswith("jsonschema."):
+            raise AssertionError(f"jsonschema importado para schema vacuo: {name}")
+        return real_import(name, *args, **kwargs)
+
+    assert ipc_catalog._is_vacuous_object_schema(ipc_catalog.input_schema_for("theme_get"))
+    assert ipc_catalog._is_vacuous_object_schema(ipc_catalog.input_schema_for("templates_list"))
+
+    monkeypatch.setattr(builtins, "__import__", guard_import)
+    ipc_catalog._schema_validator_for.cache_clear()
+    try:
+        validator = ipc_catalog._schema_validator_for("theme_get")
+        assert type(validator) is ipc_catalog._VacuousValidator
+        assert validate_params_schema("theme_get", {"cualquier": 1, "extra": [1, 2]}) is None
+        assert validate_params_schema("templates_list", {}) is None
+    finally:
+        ipc_catalog._schema_validator_for.cache_clear()
+
+
+def test_constrained_schema_still_validates_with_jsonschema() -> None:
+    ipc_catalog._schema_validator_for.cache_clear()
+    try:
+        validator = ipc_catalog._schema_validator_for("agent_tasks_cancel")
+        assert isinstance(validator, Draft202012Validator)
+        assert validate_params_schema("agent_tasks_cancel", {"id": "tx-1"}) is None
+        assert validate_params_schema("agent_tasks_cancel", {}) is not None
+    finally:
+        ipc_catalog._schema_validator_for.cache_clear()
+
+
+def test_vacuous_schema_detection_is_conservative() -> None:
+    vacuous = {"type": "object", "properties": {"a": {}, "b": {}}}
+    assert ipc_catalog._is_vacuous_object_schema(vacuous)
+    assert ipc_catalog._is_vacuous_object_schema({"type": "object"})
+    assert ipc_catalog._is_vacuous_object_schema({"$schema": "x", "type": "object", "properties": {}})
+
+    assert not ipc_catalog._is_vacuous_object_schema({"type": "object", "required": []})
+    assert not ipc_catalog._is_vacuous_object_schema({"type": "object", "additionalProperties": False})
+    assert not ipc_catalog._is_vacuous_object_schema({"type": "object", "properties": {"a": {"type": "string"}}})
+    assert not ipc_catalog._is_vacuous_object_schema({"properties": {}})
+    assert not ipc_catalog._is_vacuous_object_schema({"type": "array"})

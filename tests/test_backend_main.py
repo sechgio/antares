@@ -851,3 +851,83 @@ def test_preload_numpy_before_ready_imports_numpy_only_on_windows(monkeypatch) -
     monkeypatch.setattr(backend_main.sys, "platform", "linux")
     backend_main._preload_numpy_before_ready()
     assert imported == []
+
+
+def test_heavy_deps_trigger_warms_only_deps_of_the_method(monkeypatch) -> None:
+    warmed: list[tuple[str, ...]] = []
+
+    class FakeHandlers:
+        def warm_heavy_deps(self, deps: tuple[str, ...]) -> None:
+            warmed.append(deps)
+
+    monkeypatch.setattr(backend_main, "HANDLERS", FakeHandlers())
+    monkeypatch.setattr(backend_main.threading, "Thread", _ImmediateThread)
+
+    backend_main._trigger_heavy_deps_warm("db_import")
+    assert warmed == [("openpyxl",)]
+
+    backend_main._trigger_heavy_deps_warm("design_export_pdf")
+    assert warmed == [("openpyxl",), ("weasyprint",)]
+
+    backend_main._trigger_heavy_deps_warm("db_export")
+    assert warmed[-1] == ("pandas", "openpyxl")
+
+
+def test_heavy_deps_trigger_skips_methods_without_deps(monkeypatch) -> None:
+    warmed: list[tuple[str, ...]] = []
+
+    class FakeHandlers:
+        def warm_heavy_deps(self, deps: tuple[str, ...]) -> None:
+            warmed.append(deps)
+
+    monkeypatch.setattr(backend_main, "HANDLERS", FakeHandlers())
+    monkeypatch.setattr(backend_main.threading, "Thread", _ImmediateThread)
+
+    backend_main._trigger_heavy_deps_warm("db_clear")
+    backend_main._trigger_heavy_deps_warm("spreadsheet_get_rows")
+    backend_main._trigger_heavy_deps_warm("metodo_inexistente")
+    assert warmed == [], "métodos sin deps no deben disparar warm"
+
+    backend_main._trigger_heavy_deps_warm("canvas_export_cmyk_pdf")
+    assert warmed == [("pymupdf",)]
+
+
+def test_heavy_deps_mapping_covers_every_heavy_method_with_known_modules() -> None:
+    from backend.core.ipc_catalog import HEAVY_METHODS
+    from backend.handlers import HEAVY_METHOD_DEPS
+
+    assert set(HEAVY_METHOD_DEPS) == set(HEAVY_METHODS), (
+        "todo método heavy debe tener una entrada deliberada en HEAVY_METHOD_DEPS: "
+        f"faltan={sorted(set(HEAVY_METHODS) - set(HEAVY_METHOD_DEPS))} "
+        f"sobran={sorted(set(HEAVY_METHOD_DEPS) - set(HEAVY_METHODS))}"
+    )
+    known = {"pandas", "openpyxl", "pymupdf", "docx", "weasyprint"}
+    for method, deps in HEAVY_METHOD_DEPS.items():
+        assert all(dep in known for dep in deps), f"{method}: deps desconocidas {deps}"
+        assert len(set(deps)) == len(deps), f"{method}: deps duplicadas {deps}"
+
+
+def test_warm_heavy_deps_imports_each_dep_once_across_calls(monkeypatch) -> None:
+    import importlib
+
+    from backend.handlers import HandlerRegistry
+
+    attempts: list[str] = []
+    real_import = importlib.import_module
+
+    def tracking_import(name, *args, **kwargs):
+        if name.startswith("dep_fake_"):
+            attempts.append(name)
+            raise ModuleNotFoundError(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib, "import_module", tracking_import)
+
+    reg = HandlerRegistry()
+    reg.warm_heavy_deps(("dep_fake_a", "dep_fake_b"))
+    reg.warm_heavy_deps(("dep_fake_b", "dep_fake_c"))
+    reg.warm_heavy_deps(())
+
+    assert attempts == ["dep_fake_a", "dep_fake_b", "dep_fake_c"], (
+        "deps ya calentadas no deben reimportarse; las vacías no importan nada"
+    )

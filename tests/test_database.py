@@ -473,6 +473,94 @@ class TestLowerExpressionIndexes:
         assert "idx_imagenes_lower_codigo" in names
         assert "idx_imagenes_lower_nombre" in names
 
+    def test_segundo_init_db_no_ejecuta_ddl_en_estado_estable(self, db_path, monkeypatch, tmp_path) -> None:
+        self._setup_fields(monkeypatch, tmp_path)
+        db.init_db()
+
+        from backend.core.repository import get_connection
+
+        conn = get_connection(db_path)
+        statements: list[str] = []
+        conn.set_trace_callback(statements.append)
+        try:
+            db.init_db()
+        finally:
+            conn.set_trace_callback(None)
+
+        ddl = [
+            stmt for stmt in statements
+            if stmt.lstrip().upper().startswith(("CREATE", "DROP", "ALTER"))
+        ]
+        assert ddl == [], f"init_db en estado estable no debe emitir DDL: {ddl}"
+        assert statements, "el trace debe capturar las lecturas del init para ser una prueba válida"
+
+    def test_init_db_reconcilia_indices_en_delta(self, db_path, monkeypatch, tmp_path) -> None:
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True, "unique": True},
+            {"name": "nombre", "type": "TEXT"},
+        ])
+        db.init_db()
+
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True},
+            {"name": "nombre", "type": "TEXT"},
+            {"name": "marca", "type": "TEXT"},
+        ])
+        db.init_db()
+
+        import sqlite3
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            names = {
+                row[1]
+                for row in conn.execute("PRAGMA index_list(imagenes)").fetchall()
+            }
+        finally:
+            conn.close()
+
+        assert "idx_imagenes_codigo" not in names
+        assert "idx_imagenes_lower_codigo" in names
+        assert "idx_imagenes_lower_nombre" in names
+        assert "idx_imagenes_lower_marca" in names
+
+    def test_init_db_crea_indice_unique_al_hacerse_unique_el_campo(self, db_path, monkeypatch, tmp_path) -> None:
+        config_path = tmp_path / "fields_config.json"
+        monkeypatch.setattr(
+            "backend.core.config_fields._config_file",
+            lambda: config_path,
+        )
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True},
+            {"name": "nombre", "type": "TEXT"},
+        ])
+        db.init_db()
+
+        save_fields([
+            {"name": "codigo", "type": "TEXT", "required": True, "unique": True},
+            {"name": "nombre", "type": "TEXT"},
+        ])
+        db.init_db()
+
+        import sqlite3
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            indexes = {
+                row[1]: row[2]
+                for row in conn.execute("PRAGMA index_list(imagenes)").fetchall()
+            }
+        finally:
+            conn.close()
+
+        assert "idx_imagenes_codigo" in indexes
+        assert indexes["idx_imagenes_codigo"] == 1
+
     def test_buscar_casefold_con_datos_mixtos(self, db_path, monkeypatch, tmp_path) -> None:
         self._setup_fields(monkeypatch, tmp_path)
         db.init_db()
