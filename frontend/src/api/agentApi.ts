@@ -261,6 +261,7 @@ export interface AgentTask {
   timezone?: string;
   silent?: boolean;
   origin_task_id?: string;
+  target_session_id?: string;
   runs?: AgentTaskRun[];
   last_run_at?: number;
   last_status?: AgentTaskRun['status'];
@@ -557,7 +558,7 @@ export const agentApi = {
 
   agentTasksSave: (p: {
     session_id: string; id?: string; kind?: AgentTaskKind; content: string; due_at?: string;
-    every_minutes?: number | null; silent?: boolean; timezone?: string;
+    every_minutes?: number | null; silent?: boolean; timezone?: string; agent?: string;
   }) => _invoke<{ scheduled: AgentTask }>('agent_tasks_save', p),
 
   agentTasksCancel: (id: string) =>

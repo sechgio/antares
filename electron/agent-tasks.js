@@ -131,10 +131,11 @@ async function fireEvent(event) {
       const outcome = inboxAccept(doc.trigger_inbox, inboxEntry(current.trigger, event, current.id));
       doc.trigger_inbox = outcome.items;
       if (!outcome.accepted) continue;
-      if (!doc.queues[current.session_id]) doc.queues[current.session_id] = { paused: false, updated_at: now };
+      const spawnId = current.target_session_id || current.session_id;
+      if (!doc.queues[spawnId]) doc.queues[spawnId] = { paused: false, updated_at: now };
       const queued = {
         id: crypto.randomUUID(),
-        session_id: current.session_id,
+        session_id: spawnId,
         kind: 'queue',
         seq: doc.next_queue_seq++,
         content: current.content,
@@ -180,6 +181,7 @@ const TOOL = {
     'action=enqueue añade content a una cola FIFO por conversación que se ejecuta en orden, un encargo a la vez, ' +
     'cuando el turno actual termina. action=pause y action=resume pausan o reanudan esa cola entre encargos. ' +
     'action=list consulta encargos y estado de la cola; action=cancel cancela uno por id. ' +
+    'agent dirige el encargo o el trigger a otro agente (id o nombre único): corre con sus reglas y permisos. ' +
     'No encoles trabajo por iniciativa propia ni para sortear aprobaciones.',
   inputSchema: {
     type: 'object',
@@ -201,6 +203,7 @@ const TOOL = {
         required: ['type'],
         additionalProperties: false,
       },
+      agent: { type: 'string', maxLength: 120 },
     },
     required: ['action'],
   },
@@ -1398,7 +1401,11 @@ async function cancelDelegations(sessionId) {
 async function schedule(args, sessionId, api) {
   const session = await requireSession(sessionId);
   const state = shared.state;
-  if (args.action === 'enqueue') return queue.enqueue(args.content, sessionId, api?.taskId);
+  if (args.action === 'enqueue') {
+    const target =
+      args.agent !== undefined ? await require('./agent-profiles').resolveTargetSession(args.agent) : null;
+    return queue.enqueue(args.content, target ? target.id : sessionId, api?.taskId, session.conversationId);
+  }
   if (args.action === 'pause') return queue.setQueuePaused(sessionId, true);
   if (args.action === 'resume') return queue.setQueuePaused(sessionId, false);
   if (args.action === 'list') return listTasks({ session_id: sessionId });
@@ -1456,7 +1463,13 @@ async function schedule(args, sessionId, api) {
     args.action === 'update'
       ? String(args.id || '')
       : crypto.createHash('sha256').update(`${sessionId}:${api?.taskId}`).digest('hex').slice(0, 24);
-  const profileId = session.profile && !session.profile.portable ? session.profile.id : null;
+  // Un encargo dirigido (agent) conserva session_id de quien lo crea — lo lista,
+  // edita y cancela — pero se entrega a la conversación destino: el ejecutor es
+  // target_session_id || session_id en el disparo, la entrega y las respuestas.
+  const target =
+    args.agent !== undefined ? await require('./agent-profiles').resolveTargetSession(args.agent) : null;
+  const executor = target || session;
+  const profileId = executor.profile && !executor.profile.portable ? executor.profile.id : null;
   if (profileId && interval && !api?.byUser && interval < ROUTINE_MIN_MINUTES) {
     throw validation(`Un agente no puede programarse rutinas cada menos de ${ROUTINE_MIN_MINUTES} minutos`);
   }
@@ -1475,7 +1488,7 @@ async function schedule(args, sessionId, api) {
         task.kind !== 'queue' &&
         isActiveTask(task) &&
         task.interval_ms > 0 &&
-        botSessions.has(task.session_id),
+        botSessions.has(task.target_session_id || task.session_id),
     );
     if (active.length >= MAX_ROUTINES)
       throw validation(`Este agente ya tiene ${MAX_ROUTINES} rutinas; cancela alguna antes de crear otra`);
@@ -1492,6 +1505,7 @@ async function schedule(args, sessionId, api) {
       if (hasInterval) task.interval_ms = (interval || 0) * 60000;
       task.silent = silent;
       task.timezone = timezone;
+      if (args.agent !== undefined) task.target_session_id = target.id;
       if (args.apps !== undefined) task.apps = apps;
       task.updated_at = Date.now();
       delete task.retry_at;
@@ -1517,6 +1531,7 @@ async function schedule(args, sessionId, api) {
       silent,
       runs: [],
       ...(apps ? { apps } : {}),
+      ...(target ? { target_session_id: target.id } : {}),
     };
     doc.tasks[id] = task;
     return { scheduled: task };
@@ -1532,10 +1547,12 @@ async function listTasks(params = {}) {
 
 async function saveTask(params = {}) {
   const sessionId = String(params.session_id || '');
-  await requireSession(sessionId);
+  const session = await requireSession(sessionId);
   if (params.kind === 'queue') {
     if (params.id) throw validation('Un encargo en cola no se puede editar; cancélalo y crea otro');
-    return queue.enqueue(params.content, sessionId, crypto.randomUUID());
+    const target =
+      params.agent !== undefined ? await require('./agent-profiles').resolveTargetSession(params.agent) : null;
+    return queue.enqueue(params.content, target ? target.id : sessionId, crypto.randomUUID(), session.conversationId);
   }
   if (params.kind !== undefined && params.kind !== 'schedule') throw validation('Tipo de encargo no válido');
   const id = typeof params.id === 'string' && params.id ? params.id.slice(0, 64) : undefined;
@@ -1597,7 +1614,7 @@ async function respondToTask(params = {}) {
   const task = snapshot?.tasks?.[id];
   if (!task) throw validation('El encargo programado no existe');
   if (task.status !== 'needs_input') throw validation('El encargo no está esperando una respuesta');
-  const session = await requireSession(task.session_id);
+  const session = await requireSession(task.target_session_id || task.session_id);
   const reply = (Number(task.reply_count) || 0) + 1;
   const baseRequestId = task.kind === 'queue' ? `queue:${task.id}` : `schedule:${task.id}:${task.due_at}`;
   const requestId = `${baseRequestId}:reply${reply}`;
@@ -1771,7 +1788,7 @@ async function reconcileStale(state) {
     for (const task of Object.values(doc.tasks)) {
       if (task.kind === 'queue' || task.status !== 'delivering' || (claimToken && task.claim_id === claimToken))
         continue;
-      const session = (sessionDoc.sessions || {})[task.session_id];
+      const session = (sessionDoc.sessions || {})[task.target_session_id || task.session_id];
       let submission = null;
       if (session && session.conversationId) {
         try {
@@ -1824,7 +1841,7 @@ async function tick() {
     for (const task of Object.values(doc?.tasks || {})) {
       if (task.kind === 'queue' || task.status !== 'delivering' || task.trigger) continue;
       const sessionDoc = await state.harness.snapshot(state.SessionsDoc, ctx());
-      const session = sessionDoc.sessions[task.session_id];
+      const session = sessionDoc.sessions[task.target_session_id || task.session_id];
       if (!session || session.deleted) continue;
       await settleScheduledTask(state, session, task);
     }
@@ -1832,7 +1849,7 @@ async function tick() {
       if (task.kind === 'queue' || task.status !== 'pending' || task.trigger || task.due_at > Date.now() || task.retry_at > Date.now())
         continue;
       const sessionDoc = await state.harness.snapshot(state.SessionsDoc, ctx());
-      const session = sessionDoc.sessions[task.session_id];
+      const session = sessionDoc.sessions[task.target_session_id || task.session_id];
       if (!session || session.deleted) {
         await state.harness.commit(async (tx) => {
           transition((await tx.doc(state.TasksDoc)).tasks[task.id], 'cancelled', 'La conversación ya no existe');

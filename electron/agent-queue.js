@@ -33,7 +33,7 @@ function queueRequestId(task) {
   return `queue:${task.id}`;
 }
 
-async function enqueue(content, sessionId, taskId) {
+async function enqueue(content, sessionId, taskId, originConversationId) {
   const session = await requireSession(sessionId);
   const state = shared.state;
   const text = typeof content === 'string' ? content.trim() : '';
@@ -43,7 +43,7 @@ async function enqueue(content, sessionId, taskId) {
   return state.harness.commit(async (tx) => {
     const doc = await tx.doc(state.TasksDoc);
     if (doc.tasks[id]) return { scheduled: { ...doc.tasks[id] }, queue: queueSummary(doc, sessionId) };
-    const live = await tx.doc(shared.deps.pi.LiveDoc, session.conversationId);
+    const live = await tx.doc(shared.deps.pi.LiveDoc, originConversationId || session.conversationId);
     const turnId = live.run?.taskId ? String(live.run.taskId) : origin;
     const active = Object.values(doc.tasks).filter(
       (task) => task.kind === 'queue' && task.session_id === sessionId && isActiveTask(task),
