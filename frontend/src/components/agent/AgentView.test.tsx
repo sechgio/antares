@@ -1860,7 +1860,8 @@ it('permite cambiar una opción, escribir una respuesta propia y reintentar el e
   const form = within(await screen.findByRole('form', { name: 'Pregunta del agente' }));
   const submit = form.getByRole('button', { name: 'Responder', exact: true });
   fireEvent.click(form.getByRole('button', { name: 'PDF' }));
-  fireEvent.click(form.getByRole('button', { name: 'Excel' }));
+  form.getByRole('button', { name: 'PDF' }).focus();
+  fireEvent.keyDown(form.getByRole('button', { name: 'PDF' }), { key: 'b' });
   expect(form.getByRole('button', { name: 'PDF' })).toHaveAttribute('aria-pressed', 'false');
   expect(form.getByRole('button', { name: 'Excel' })).toHaveAttribute('aria-pressed', 'true');
   expect(submit).toBeDisabled();
