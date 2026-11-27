@@ -106,7 +106,7 @@ svg text { font-family: inherit; font-size: 11px; font-variant-numeric: tabular-
 .page-metric :is(span, small) { color: var(--page-muted); font-size: 12.5px; }
 .page-table { overflow-x: auto; }
 .page-chart { min-width: 0; color: var(--page-accent); }
-.page-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.page-chart svg { display: block; max-width: 100%; height: auto; overflow: visible; }
 .page-chart svg .grid { stroke: var(--page-line); }
 .pele { max-width: 100%; color: var(--page-text); }
 pre.pele-diagram { margin: 0; padding: 0; border: 0; background: transparent; font-family: inherit; white-space: normal; }
@@ -156,22 +156,82 @@ const CHART_BOOTSTRAP = `
   var exports = module.exports;
   __CHART_SPEC__
   var ChartSpec = module.exports;
-  function mountDiagram(el, source) {
-    if (!(el instanceof Element)) throw new Error('El diagrama necesita un elemento del documento');
-    if (typeof source !== 'string' || !source.trim()) throw new Error('El diagrama necesita código Mermaid');
-    return pele.mount(el, source, {
+  function mountOptions(width) {
+    var options = {
       links: false,
       images: false,
       fontSize: 13,
       zoom: { labels: { zoomIn: 'Acercar', zoomOut: 'Alejar', reset: 'Restablecer' } },
-    });
+    };
+    if (typeof width === 'number') options.config = { xyChart: { width } };
+    return options;
+  }
+  function mountDiagram(el, source, width) {
+    if (!(el instanceof Element)) throw new Error('El diagrama necesita un elemento del documento');
+    if (typeof source !== 'string' || !source.trim()) throw new Error('El diagrama necesita código Mermaid');
+    return pele.mount(el, source, mountOptions(width));
+  }
+  function measuredChartWidth(el) {
+    var width = el.clientWidth;
+    if (width) {
+      var style = window.getComputedStyle(el);
+      width -= parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    }
+    return Math.floor(width || el.getBoundingClientRect().width || 0);
+  }
+  function chartWidth(el) {
+    var width = measuredChartWidth(el);
+    if (width === 0) return 700;
+    return Math.min(4000, Math.max(240, width));
+  }
+  function mountChart(el, source) {
+    var width = chartWidth(el);
+    var mounted = mountDiagram(el, source, width);
+    if (typeof ResizeObserver === 'undefined') return mounted;
+    var updateTimer;
+    var retryTimer;
+    var retries = 0;
+    function scheduleUpdate() {
+      if (updateTimer !== undefined) clearTimeout(updateTimer);
+      updateTimer = setTimeout(function () {
+        updateTimer = undefined;
+        mounted.update(mounted.source, mountOptions(width));
+      }, 30);
+    }
+    function measure() {
+      if (measuredChartWidth(el) === 0) return;
+      var next = chartWidth(el);
+      if (next === width) return;
+      width = next;
+      scheduleUpdate();
+    }
+    function retryMeasure() {
+      retryTimer = undefined;
+      if (measuredChartWidth(el) === 0 && retries < 50) {
+        retries += 1;
+        retryTimer = setTimeout(retryMeasure, 100);
+        return;
+      }
+      measure();
+    }
+    var observer = new ResizeObserver(measure);
+    observer.observe(el);
+    retryTimer = setTimeout(retryMeasure, 100);
+    var destroy = mounted.destroy.bind(mounted);
+    mounted.destroy = function () {
+      observer.disconnect();
+      if (updateTimer !== undefined) clearTimeout(updateTimer);
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+      destroy();
+    };
+    return mounted;
   }
   window.AntaresPageCharts = Object.freeze({
     diagram: mountDiagram,
     chart(el, spec) {
       var parsed = ChartSpec.parseChartSpec(typeof spec === 'string' ? spec : JSON.stringify(spec));
       if (!parsed) throw new Error('El gráfico necesita {type,title,labels,series} válido');
-      return mountDiagram(el, ChartSpec.chartToMermaid(parsed));
+      return mountChart(el, ChartSpec.chartToMermaid(parsed));
     },
   });
   function scan() {

@@ -62,6 +62,9 @@ const page = { version: 1, title: 'Trabajos', html: '<h1>Trabajos</h1><input id=
     assert.match(html, /AntaresPageCharts/, 'la página expone la API de gráficos');
     assert.match(html, /chartToMermaid/, 'la página incluye el contrato chart compartido');
     assert.match(html, /--pele-series-1/, 'la página tema las series de Pele');
+    assert.match(html, /ResizeObserver/, 'los gráficos escuchan el ancho del contenedor');
+    assert.match(html, /xyChart: \{ width \}/, 'los gráficos se renderizan al ancho del contenedor');
+    assert.match(html, /\.page-chart svg \{ display: block; max-width: 100%/, 'el SVG no se escala más allá de su tamaño intrínseco');
     assert.doesNotMatch(pages.preview(page, 'dark'), /var pele=|AntaresPageCharts/, 'la miniatura no carga el motor');
     assert.doesNotMatch(pages.documents(page, 'dark', { charts: false }).content, /var pele=/, 'charts:false omite el motor');
     assert.match(embeddedHtml, /var pele=/, 'la página embebida también incluye el motor');

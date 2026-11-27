@@ -70,8 +70,14 @@ if (!process.versions.electron) {
         html: '<h1>Trabajos de octubre</h1><p>Filtros y métricas sobre 235 órdenes de trabajo.</p>'
           + '<label>Metrado mínimo <input id="minimum" type="number"></label> '
           + '<button id="reset">Restablecer filtros</button><h2>Resumen</h2><p id="summary"></p>'
+          + '<div id="chart" class="page-chart"></div>'
           + '<table><thead><tr><th>OT</th><th>Metrado (ml)</th></tr></thead><tbody id="rows"></tbody></table>',
         script: `const rows = AntaresPage.rows;
+AntaresPage.chart(document.querySelector('#chart'), {
+  type: 'bar', title: 'OT por urbanización',
+  labels: ['Las Lomas', 'Sol Naciente', 'El Mirador'],
+  series: [{ name: 'OT', data: [14, 12, 10] }],
+});
 const input = document.querySelector('#minimum');
 function render() {
   const filtered = rows.filter(row => row.metrado >= Number(input.value));
@@ -97,6 +103,30 @@ render(); window.ready = true;`,
       assert(frame && await frame.executeJavaScript('window.ready === true'), 'el módulo de la página debe arrancar');
       assert.equal(await frame.executeJavaScript('getComputedStyle(document.documentElement).colorScheme'), 'dark');
       assert.equal(await frame.executeJavaScript('document.querySelector("#summary").textContent'), '235 OT · 12080 ml');
+      const readChartMetrics = () => frame.executeJavaScript(`(() => {
+        const box = document.querySelector('#chart');
+        const svg = box.querySelector('svg');
+        const rect = svg.getBoundingClientRect();
+        return {
+          width: Number(svg.getAttribute('width')),
+          cssWidth: rect.width,
+          container: box.clientWidth,
+          height: Number(svg.getAttribute('height')),
+          bottom: rect.bottom,
+          tableTop: document.querySelector('table').getBoundingClientRect().top,
+        };
+      })()`);
+      const chartDeadline = Date.now() + 3000;
+      let chart;
+      while (Date.now() < chartDeadline) {
+        chart = await readChartMetrics();
+        if (Math.abs(chart.width - chart.container) <= 1 && Math.abs(chart.cssWidth - chart.width) <= 1) break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert(Math.abs(chart.width - chart.container) <= 1, 'el gráfico usa el ancho del contenedor: ' + JSON.stringify(chart));
+      assert(Math.abs(chart.cssWidth - chart.width) <= 1, 'el gráfico conserva su escala: ' + JSON.stringify(chart));
+      assert.equal(chart.height, 500);
+      assert.ok(chart.tableTop >= chart.bottom, 'la tabla empieza después del gráfico');
       await frame.executeJavaScript('document.querySelector("#minimum").value = "80"; document.querySelector("#minimum").dispatchEvent(new Event("input"));');
       assert.equal(await frame.executeJavaScript('document.querySelector("#summary").textContent'), '11 OT · 880 ml');
       assert.equal(await frame.executeJavaScript('document.querySelectorAll("tbody tr").length'), 11);
