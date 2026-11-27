@@ -896,6 +896,55 @@ it('descarta la lectura previa al envío y drena la actualización pendiente de 
   expect(screen.queryByText('Trabajando en ello')).not.toBeInTheDocument();
 });
 
+it('restaura el historial mientras todavía se cargan los proveedores', async () => {
+  const providers = deferred<{ providers: AiProviderSpec[] }>();
+  vi.mocked(aiProvidersApi.aiProvidersList).mockReturnValue(providers.promise);
+  vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({
+    ...empty, messages: [{ role: 'assistant', content: 'Historial restaurado', ts: 1 }],
+  });
+  localStorage.setItem('antares-agent-session', session.id);
+
+  render(<AgentView />);
+  expect(await screen.findByText('Historial restaurado')).toBeVisible();
+  expect(screen.queryByText('Cargando conversación…')).not.toBeInTheDocument();
+  await act(async () => { providers.resolve({ providers: [] }); });
+});
+
+it('abre otro chat sin esperar una lectura anterior y revalida el historial recordado al volver', async () => {
+  const second = { ...session, id: 's2', title: 'Segunda' };
+  vi.mocked(agentApi.agentSessionsList).mockResolvedValue({ sessions: [session, second] });
+  const first = deferred<Snapshot>();
+  const next = deferred<Snapshot>();
+  const fresh = deferred<Snapshot>();
+  const snapshot = (content: string): Snapshot => ({
+    ...empty, messages: [{ role: 'assistant', content, ts: 1 }],
+  });
+  const list = vi.spyOn(agentApi, 'agentMessagesList').mockImplementation((id) =>
+    id === session.id ? first.promise : next.promise,
+  );
+  render(<AgentView />);
+  const conversations = within(screen.getByRole('region', { name: 'Conversaciones' }));
+  fireEvent.click(await conversations.findByRole('button', { name: 'Primera' }));
+  expect(screen.getByText('Cargando conversación…')).toBeVisible();
+  fireEvent.click(conversations.getByRole('button', { name: 'Segunda' }));
+  expect(list).toHaveBeenCalledWith(second.id);
+  await act(async () => { next.resolve(snapshot('Historial de la segunda')); });
+  expect(screen.getByText('Historial de la segunda')).toBeVisible();
+
+  await act(async () => { first.resolve(snapshot('Respuesta tardía de la primera')); });
+  expect(screen.queryByText('Respuesta tardía de la primera')).not.toBeInTheDocument();
+  list.mockImplementation((id) =>
+    id === session.id ? Promise.resolve(snapshot('Historial de la primera')) : fresh.promise,
+  );
+  fireEvent.click(conversations.getByRole('button', { name: 'Primera' }));
+  expect(await screen.findByText('Historial de la primera')).toBeVisible();
+  fireEvent.click(conversations.getByRole('button', { name: 'Segunda' }));
+  expect(screen.getByText('Historial de la segunda')).toBeVisible();
+  expect(screen.queryByText('Historial de la primera')).not.toBeInTheDocument();
+  await act(async () => { fresh.resolve(snapshot('Historial actualizado')); });
+  expect(screen.getByText('Historial actualizado')).toBeVisible();
+});
+
 it('no repite el estado de trabajo mientras una herramienta en curso ya lo muestra', async () => {
   const call = (status: string) => ({ id: 'c', name: 'shell_run', params: { command: 'npm test' }, status, gated: true });
   const list = vi.spyOn(agentApi, 'agentMessagesList').mockResolvedValue({ ...empty, running: true,

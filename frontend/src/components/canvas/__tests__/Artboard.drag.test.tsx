@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { Profiler } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createLayer } from '../constants';
 import Artboard from '../editor/Artboard';
@@ -150,6 +151,56 @@ describe('Artboard drag gestures', () => {
     const layer = createLayer('rect');
     setup([layer], [layer.id]);
     expect(screen.getByTestId('canvas-size-badge').textContent).toBe('50 × 40');
+  });
+
+  it.each(['release', 'Escape'])('updates the marquee without React commits during the drag (%s)', (ending) => {
+    const document = createEmptyDocument('Test');
+    document.layers.push(
+      createLayer('rect', { id: 'inside', cssVars: boxCss('10mm', '10mm', '4mm', '4mm') }),
+      createLayer('rect', { id: 'at-release', cssVars: boxCss('23mm', '23mm', '4mm', '4mm') }),
+    );
+    const onSelectIds = vi.fn();
+    const onRender = vi.fn();
+    render(
+      <Profiler id="artboard" onRender={onRender}>
+        <Artboard
+          document={document}
+          selectedIds={[]}
+          zoom={1}
+          tool="select"
+          pan={{ x: 0, y: 0 }}
+          onPan={() => {}}
+          onSelect={() => {}}
+          onSelectIds={onSelectIds}
+          onChangeLayers={() => {}}
+        />
+      </Profiler>,
+    );
+    fireEvent.pointerDown(screen.getByTestId('canvas-artboard'), { button: 0, clientX: 0, clientY: 0 });
+    expect(screen.queryByTestId('canvas-marquee')?.hidden ?? true).toBe(true);
+    expect(onRender).toHaveBeenCalled();
+    expect(onSelectIds).toHaveBeenCalledWith([]);
+    onRender.mockClear();
+    onSelectIds.mockClear();
+
+    for (const mm of [16, 20]) {
+      const px = mmToScreenPx(mm, 1);
+      fireEvent.pointerMove(window, { clientX: px, clientY: px });
+      act(() => tick());
+      expect(screen.getByTestId('canvas-marquee')).toBeVisible();
+      expect(screen.getByTestId('canvas-marquee').style.width).toBe(`${px}px`);
+    }
+    expect(onRender).not.toHaveBeenCalled();
+    expect(onSelectIds).not.toHaveBeenCalled();
+
+    const end = mmToScreenPx(30, 1);
+    fireEvent.pointerMove(window, { clientX: end, clientY: end });
+    if (ending === 'Escape') fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.pointerUp(window, { clientX: end, clientY: end });
+    act(() => tick());
+
+    expect(screen.queryByTestId('canvas-marquee')?.hidden ?? true).toBe(true);
+    expect(onSelectIds.mock.calls).toEqual(ending === 'release' ? [[['inside', 'at-release']]] : []);
   });
 
   it('coalesces pointermove to one preview per frame and commits once on pointerup', () => {
