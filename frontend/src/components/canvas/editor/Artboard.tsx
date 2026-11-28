@@ -49,8 +49,11 @@ import {
 } from '../ops/pointerGestureSession';
 import {
   applyLayerDomGeometry,
+  applyPlaneDomGeometry,
   clearLayerDomGestureStyles,
+  prepareGestureDomPlane,
   setCanvasGestureActive,
+  type GestureDomPlane,
 } from '../ops/imperativeLayerDom';
 import {
   layerSupportsCornerRadius,
@@ -443,6 +446,7 @@ function Artboard({
     gestureDirtyRef.current = false;
     gestureLayersRef.current = null;
     imperativeMoveIdsRef.current = null;
+    gestureDomPlaneRef.current = null;
     setGestureLayers(null);
     setGestureActive(false);
     setGestureBbox(null);
@@ -456,19 +460,23 @@ function Artboard({
     }
   }, []);
 
+  const gestureDomPlaneRef = useRef<GestureDomPlane | null>(null);
   const applyImperativePreview = useCallback((moved: CanvasLayer[], nextIds: string[]) => {
     if (pinchGestureRef.current) return;
+    const frame = frameRef.current;
     if (!gestureDirtyRef.current) {
       onPreviewLayersRef.current?.(layersRef.current);
       gestureDirtyRef.current = true;
       setGestureActive('transform');
       setCanvasGestureActive(true);
+      gestureDomPlaneRef.current = frame ? prepareGestureDomPlane(frame, moved, nextIds) : null;
     }
     gestureLayersRef.current = moved;
     layersRef.current = moved;
     imperativeMoveIdsRef.current = nextIds;
-    const frame = frameRef.current;
-    if (frame) applyLayerDomGeometry(frame, moved, nextIds);
+    const plane = gestureDomPlaneRef.current;
+    if (plane) applyPlaneDomGeometry(plane, moved);
+    else if (frame) applyLayerDomGeometry(frame, moved, nextIds);
   }, []);
 
   const abortGesturePreview = useCallback(
@@ -485,6 +493,7 @@ function Artboard({
       gestureDirtyRef.current = false;
       gestureLayersRef.current = null;
       imperativeMoveIdsRef.current = null;
+      gestureDomPlaneRef.current = null;
       setGestureLayers(null);
       setGestureActive(false);
       setGestureBbox(null);

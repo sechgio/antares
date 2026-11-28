@@ -6,9 +6,9 @@ import {
   constrainMoveToAxis,
   isPointerClick,
   moveSelection,
-  prepareSnapRails,
-  selectionBounds,
+  prepareSnapPlan,
   snapMoveWithGuides,
+  type SnapPlan,
   snapThresholdMm,
   snapUnalignedAxesToGrid,
   type RectMm,
@@ -25,7 +25,12 @@ import { layerBounds } from '../ops/layerBounds';
 import { expandWithDescendants } from '../ops/layerTree';
 import { isTextualLayerType } from '../layerKinds';
 import { createGestureRaf } from '../ops/gestureRaf';
-import { applyLayerDomTransforms, setCanvasGestureActive } from '../ops/imperativeLayerDom';
+import {
+  applyPlaneDomTransforms,
+  prepareGestureDomPlane,
+  setCanvasGestureActive,
+  type GestureDomPlane,
+} from '../ops/imperativeLayerDom';
 import type {
   PointerGestureOwner,
   PointerGestureSession,
@@ -119,6 +124,7 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
       applyGestureLayers(snapshot);
     };
 
+    let domPlane: GestureDomPlane | null = null;
     const applyMovePreview = (moved: CanvasLayer[], nextMoveIds: string[]) => {
       if (pinchGestureRef.current) return;
       if (!gestureDirtyRef.current) {
@@ -131,7 +137,10 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
       layersRef.current = moved;
       imperativeMoveIdsRef.current = nextMoveIds;
       const frame = frameRef.current;
-      if (frame) applyLayerDomTransforms(frame, moved, nextMoveIds);
+      if (frame) {
+        if (!domPlane) domPlane = prepareGestureDomPlane(frame, moved, nextMoveIds);
+        applyPlaneDomTransforms(domPlane, moved);
+      }
     };
 
     const buildOthers = (snap: CanvasLayer[], moving: string[]) => {
@@ -145,7 +154,7 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
     };
 
     let originBounds: RectMm | null = null;
-    let rails: ReturnType<typeof prepareSnapRails> | undefined;
+    let snapPlan: SnapPlan | undefined;
     let othersRects: RectMm[] = [];
     let refGaps: ReturnType<typeof collectReferenceGaps> | undefined;
 
@@ -157,14 +166,14 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
         if (isPointerClick(dxPx, dyPx)) return;
         dragging = true;
         ensureDuplicate();
-        originBounds = selectionBounds(snapshot, moveIds);
-        rails = prepareSnapRails(
+        snapPlan = prepareSnapPlan(
           snapshot,
           moveIds,
           pageSizeRef.current,
           manualGuidesRef.current,
           marginMm,
         );
+        originBounds = snapPlan.bounds;
         othersRects = buildOthers(snapshot, moveIds);
         refGaps = collectReferenceGaps(othersRects, pageSizeRef.current);
       }
@@ -190,8 +199,9 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
           pageSizeRef.current,
           threshold,
           manualGuidesRef.current,
-          rails,
+          undefined,
           marginMm,
+          snapPlan,
         );
         dx = snapped.dx;
         dy = snapped.dy;
@@ -237,7 +247,9 @@ export function createSelectionMoveStarter(deps: SelectionMoveDeps) {
       setGuidesIfChanged(nextGuides);
       const moved = moveSelection(snapshot, moveIds, dx, dy);
       applyMovePreview(moved, moveIds);
-      const bounds = selectionBounds(moved, moveIds);
+      const bounds = originBounds
+        ? { x: originBounds.x + dx, y: originBounds.y + dy, w: originBounds.w, h: originBounds.h }
+        : null;
       if (bounds) {
         setGestureBbox(bounds);
         setDistanceLabelsIfChanged(

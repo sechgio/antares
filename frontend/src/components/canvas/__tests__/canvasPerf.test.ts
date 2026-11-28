@@ -271,8 +271,8 @@ describe('canvas perf hot path', () => {
     expect(node.style.willChange).toBe('transform');
   });
 
-  it('applyLayerDomTransforms reuses resolved layer nodes across gesture frames', async () => {
-    const { applyLayerDomTransforms } = await import('../ops/imperativeLayerDom');
+  it('gesture dom plane reuses resolved layer nodes across gesture frames', async () => {
+    const { applyPlaneDomTransforms, prepareGestureDomPlane } = await import('../ops/imperativeLayerDom');
     const layer = createLayer('rect', {
       id: 'c1',
       cssVars: { '--translate-x': '10mm', '--translate-y': '20mm', '--width': '8mm', '--height': '8mm' },
@@ -281,18 +281,20 @@ describe('canvas perf hot path', () => {
     const node = document.createElement('div');
     node.dataset.layerId = 'c1';
     root.appendChild(node);
+    const plane = prepareGestureDomPlane(root, [layer], ['c1']);
     const query = vi.spyOn(root, 'querySelector');
-    applyLayerDomTransforms(root, [layer], ['c1']);
+    applyPlaneDomTransforms(plane, [layer]);
+    expect(query).not.toHaveBeenCalled();
     const firstTransform = node.style.transform;
-    applyLayerDomTransforms(root, [{ ...layer, cssVars: { ...layer.cssVars, '--translate-x': '30mm' } }], ['c1']);
-    expect(query).toHaveBeenCalledTimes(1);
+    applyPlaneDomTransforms(plane, [{ ...layer, cssVars: { ...layer.cssVars, '--translate-x': '30mm' } }]);
+    expect(query).not.toHaveBeenCalled();
     expect(node.style.transform).not.toBe(firstTransform);
 
     const replacement = document.createElement('div');
     replacement.dataset.layerId = 'c1';
     root.replaceChild(replacement, node);
-    applyLayerDomTransforms(root, [layer], ['c1']);
-    expect(query).toHaveBeenCalledTimes(2);
+    applyPlaneDomTransforms(plane, [layer]);
+    expect(query).toHaveBeenCalledTimes(1);
     expect(replacement.style.transform).toContain('translate(');
   });
 

@@ -5,7 +5,7 @@ import { clientToMm, MM_TO_PX } from '../ops/drawHelpers';
 import {
   angleFromCenter,
   computeResizeBox,
-  prepareSnapRails,
+  prepareSnapPlan,
   resizeSelection,
   rotateSelection,
   selectionBounds,
@@ -115,16 +115,16 @@ export function createArtboardTransformGestures(deps: ArtboardTransformGestureDe
     const startX = e.clientX;
     const startY = e.clientY;
     const ids = [...editableSelected];
-    const origin = selectionBounds(snapshot, ids);
-    if (!origin) return;
-    gestureDirtyRef.current = false;
-    const rails = prepareSnapRails(
+    const snapPlan = prepareSnapPlan(
       snapshot,
       ids,
       pageSizeRef.current,
       manualGuidesRef.current,
       pageMarginRef.current,
     );
+    const origin = snapPlan.bounds;
+    if (!origin) return;
+    gestureDirtyRef.current = false;
 
     const raf = createGestureRaf((ev: PointerEvent) => flushSync(() => {
       const z = zoomRef.current;
@@ -143,7 +143,9 @@ export function createArtboardTransformGestures(deps: ArtboardTransformGestureDe
           pageSizeRef.current,
           snapThresholdMm(z),
           manualGuidesRef.current,
-          rails,
+          undefined,
+          0,
+          snapPlan,
         );
         nextBox = snapped.box;
         setGuidesIfChanged(snapped.guides);
