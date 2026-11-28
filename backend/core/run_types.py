@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -274,7 +275,7 @@ def _compile_validator(schema: dict[str, Any]) -> Any:
         msg = f"Claves de schema sin soporte en el validador compilado: {sorted(unsupported)}"
         raise ValueError(msg)
 
-    checks = []
+    checks: list[Callable[[Any], None]] = []
     raw_type = schema.get("type")
     if raw_type is not None:
         type_names = (raw_type,) if isinstance(raw_type, str) else tuple(raw_type)
