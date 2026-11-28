@@ -604,7 +604,7 @@ function alignedGuideSpanFlat(
   let aligned = false;
   for (let i = 0; i < edges.length; i++) {
     if (Math.abs(edges[i]! - pos) > GUIDE_SPAN_EPS_MM) continue;
-    const layerIndex = (i / 3) | 0;
+    const layerIndex = Math.trunc(i / 3);
     aligned = true;
     if (spanFrom[layerIndex]! < from) from = spanFrom[layerIndex]!;
     if (spanTo[layerIndex]! > to) to = spanTo[layerIndex]!;

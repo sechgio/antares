@@ -388,6 +388,7 @@ describe('selectionTransform', () => {
     expect(resized.cssVars['--border-width']).toBe('2px');
     expect(resized.meta?.path?.points[1].x).toBeCloseTo(120, 5);
   });
+
   it('snapMoveWithGuides with a prepared plan matches the unplanned result', () => {
     const page = { widthMm: 210, heightMm: 297 };
     const guides = [createGuide('x', 30), createGuide('y', 40)];
