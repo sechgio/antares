@@ -1341,13 +1341,13 @@ it('permite quitar y volver a adjuntar archivos antes de enviar el primer mensaj
   const dataTransfer = { files: [file], types: ['Files'] };
   expect(fireEvent.dragOver(composer, { dataTransfer })).toBe(false);
   fireEvent.drop(composer, { dataTransfer });
-  fireEvent.change(input, { target: { value: 'Espera el archivo' } });
+  editComposer(input, 'Espera el archivo');
   fireEvent.keyDown(input, { key: 'Enter' });
   expect(send).toBeDisabled();
   expect(create).not.toHaveBeenCalled();
   await waitFor(() => expect(attach).toHaveBeenCalledTimes(2));
   await act(async () => pending.resolve({ attachments: [pdf] }));
-  fireEvent.change(input, { target: { value: '' } });
+  editComposer(input, '');
   const shot = new File(['png'], 'captura.png', { type: 'image/png' });
   fireEvent.paste(input, { clipboardData: { files: [], items: [{ kind: 'file', getAsFile: () => shot }] } });
   await screen.findByText('captura.png');

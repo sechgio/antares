@@ -7,8 +7,8 @@ function makeHarness() {
   const webContents = new EventEmitter();
   webContents.session = {
     webRequest: { onHeadersReceived: () => {}, onBeforeSendHeaders: () => {} },
-    setPermissionRequestHandler: () => {},
-    setPermissionCheckHandler: () => {},
+    setPermissionRequestHandler: (handler) => { state.permissionRequest = handler; },
+    setPermissionCheckHandler: (handler) => { state.permissionCheck = handler; },
   };
   webContents.setBackgroundThrottling = () => {};
   webContents.setWindowOpenHandler = () => {};
@@ -103,6 +103,26 @@ async function main() {
     );
     assert(readyEvent !== undefined, 'ready-to-show records the desktop startup duration');
     assert(Number.isFinite(readyEvent[2].duration_ms), 'ready-to-show duration is finite');
+
+    const dev = makeHarness();
+    require('../electron/window-manager.js').createWindow(true);
+    const contents = dev.win.webContents;
+    for (const isMainFrame of [true, false]) {
+      const details = { isMainFrame };
+      let granted;
+      dev.permissionRequest(contents, 'media', (value) => { granted = value; }, details);
+      assert(granted === isMainFrame, 'permission request distinguishes the main frame from a child');
+      assert(dev.permissionCheck(contents, 'clipboard-sanitized-write', dev.currentURL, details) === isMainFrame,
+        'permission check distinguishes the main frame from a child');
+    }
+    assert(!dev.permissionCheck(contents, 'clipboard-read', dev.currentURL, { isMainFrame: true }), 'clipboard read stays denied');
+    for (const channel of ['will-navigate', 'will-redirect']) {
+      for (const [url, blocked] of [['http://localhost:5173/', false], ['http://localhost:51730/', true]]) {
+        const event = { url, isMainFrame: true, prevented: false, preventDefault() { this.prevented = true; } };
+        contents.emit(channel, event, url);
+        assert(event.prevented === blocked, `${channel} checks the parsed origin and exact port`);
+      }
+    }
   } finally {
     timers.restore();
     evictModule('electron/window-manager.js');

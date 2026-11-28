@@ -122,6 +122,12 @@ async function run() {
     assert(wrongOrigin.ok === false, 'ACK from the main renderer with an untrusted origin is rejected');
     assert(quitCalls === 0, 'wrong-origin ACK cannot trigger app quit');
 
+    const malformed = await flushAck({
+      sender: { id: mainWindow.webContents.id, mainFrame: mainWindow.webContents.mainFrame },
+      senderFrame: mainWindow.webContents.mainFrame,
+    }, 'false');
+    assert(malformed.ok === false && quitCalls === 0, 'a malformed ACK cannot acknowledge a save');
+
     const failedSave = await flushAck({
       sender: { id: mainWindow.webContents.id, mainFrame: mainWindow.webContents.mainFrame },
       senderFrame: mainWindow.webContents.mainFrame,

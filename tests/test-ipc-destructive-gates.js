@@ -163,6 +163,8 @@ async function main() {
           agent_sessions_list: async () => ({ sessions: [{ id: 's1', permission_mode: 'ask' }] }),
           agent_session_permissions_set: async (params) => { calls.push(['permissions', params]); return { ok: true }; },
           agent_policy_rules_set: async (params) => { calls.push(['policy', params]); return { ok: true }; },
+          agent_approve: async (params) => { calls.push(['approval', params]); return { ok: true }; },
+          agent_tasks_save: async (params) => { calls.push(['task', params]); return { ok: true }; },
         },
       });
       evictModule('electron/agent-handlers');
@@ -170,13 +172,21 @@ async function main() {
     };
 
     let handlers = loadAgentHandlers(1);
+    await assert.rejects(
+      () => handlers.handleAgentCall('agent_session_permissions_set', { id: 's1', permission_mode: 'full' }),
+      /cancelada/,
+    );
+    assert.strictEqual(calls.length, 0, 'cancelar Acceso completo conserva el modo actual');
+    assert.match(dialogs[0].message, /«Acceso completo»/);
+
+    handlers = loadAgentHandlers(0);
     await handlers.handleAgentCall('agent_session_permissions_set', { id: 's1', permission_mode: 'full' });
     await handlers.handleAgentCall('agent_session_permissions_set', { id: 's1', permission_mode: 'ask' });
     assert.deepStrictEqual(calls, [
       ['permissions', { id: 's1', permission_mode: 'full' }],
       ['permissions', { id: 's1', permission_mode: 'ask' }],
     ]);
-    assert.strictEqual(dialogs.length, 0, 'seleccionar Acceso completo y volver a Solicitar aprobación no abre diálogos');
+    assert.strictEqual(dialogs.length, 1, 'volver a Solicitar aprobación es inmediato');
 
     handlers = loadAgentHandlers(1);
     await assert.rejects(
@@ -207,6 +217,31 @@ async function main() {
     );
     assert.strictEqual(calls.length, 0, 'la regla allow cancelada no llega al runtime');
     assert.match(dialogs[0].detail, /C:\\Docs/, 'el diálogo muestra el alcance permitido');
+
+    const approval = { status: 'pending', method: 'copy_document', channel: 'files', params: { path: 'fixture.txt' } };
+    stubModule('electron/ipc-router', {
+      _callBackend: async (method, params) => {
+        assert.strictEqual(method, 'agent_internal_approval_status');
+        assert.deepStrictEqual(params, { approval_id: 'pending-1' });
+        return { approval };
+      },
+    });
+    handlers = loadAgentHandlers(1);
+    const request = { approval_id: 'pending-1', channel: 'files', rule: 'allow' };
+    await assert.rejects(() => handlers.handleAgentCall('agent_approve', request), /cancelada/);
+    assert.strictEqual(calls.length, 0, 'una aprobación cancelada no decide ni persiste reglas');
+    assert.match(dialogs[0].message, /copy_document/, 'el diálogo toma el método de la aprobación guardada');
+    assert.match(dialogs[0].detail, /fixture\.txt/, 'el diálogo muestra el destino guardado');
+    handlers = loadAgentHandlers(0);
+    await assert.rejects(() => handlers.handleAgentCall('agent_approve', { ...request, channel: 'shell' }), /no coincide/);
+    assert.strictEqual(dialogs.length, 0, 'una regla para un canal ajeno no abre diálogo');
+    await handlers.handleAgentCall('agent_approve', request);
+    assert.deepStrictEqual(calls, [['approval', request]]);
+
+    const draft = { session_id: 's1', content: 'Revisar documentos' };
+    await assert.rejects(() => handlers.handleAgentCall('agent_tasks_save', { ...draft, apps: ['editor'] }), /requiere/);
+    await handlers.handleAgentCall('agent_tasks_save', draft);
+    assert.deepStrictEqual(calls.at(-1), ['task', draft]);
   }
 
   finish();

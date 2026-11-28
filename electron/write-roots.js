@@ -96,8 +96,14 @@ function _assertSafePdfOutputPath(outputPath) {
     throw new Error('La ruta de salida del PDF no está permitida: symlink no permitido en ruta de salida');
   }
 
-  if (fs.existsSync(resolved)) {
-    if (fs.lstatSync(resolved).isSymbolicLink()) {
+  let stat;
+  try {
+    stat = fs.lstatSync(resolved);
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+  if (stat) {
+    if (stat.isSymbolicLink()) {
       throw new Error('La ruta de salida del PDF no está permitida: symlink no permitido en ruta de salida');
     }
     const realFile = fs.realpathSync(resolved);

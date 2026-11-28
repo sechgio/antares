@@ -1,6 +1,29 @@
+import os
+import subprocess
 from pathlib import Path
 
+import pytest
+
 from backend.handlers import templates
+
+
+def test_template_get_keeps_nested_reads_inside_root(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "templates"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (nested / "report.html").write_text("local", encoding="utf-8")
+    (outside / "report.html").write_text("outside", encoding="utf-8")
+    junction = root / "linked"
+    if os.name == "nt":
+        subprocess.run(["cmd.exe", "/c", "mklink", "/J", str(junction), str(outside)], check=True, capture_output=True)
+    else:
+        junction.symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(templates, "_preview_template_dirs", lambda: [root])
+    assert templates.template_get({"name": "nested/report.html"})["content"] == "local"
+    with pytest.raises(ValueError, match="Template not found"):
+        templates.template_get({"name": "linked/report.html"})
 
 
 def test_templates_list_and_get_across_multiple_dirs(tmp_path: Path, monkeypatch) -> None:

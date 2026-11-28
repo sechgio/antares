@@ -3415,6 +3415,14 @@ async function main() {
       invalid = err;
     }
     assert(invalid && /no válida/.test(invalid.message), 'una ruta soltada debe ser absoluta');
+    let unauthorized = null;
+    try {
+      await runtime.handlers.agent_attach({ kind: 'files', paths: [dropped] });
+    } catch (err) {
+      unauthorized = err;
+    }
+    assert(unauthorized && /no autorizado/.test(unauthorized.message), 'soltar exige una ruta registrada por el preload');
+    require('../electron/path-allowlist').registerAllowedReadPath(dropped);
     let emptyMessage = null;
     try {
       await runtime.handlers.agent_message_send({ session_id: session.id, content: '  ', attachments: [] });

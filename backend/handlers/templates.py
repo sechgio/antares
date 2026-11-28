@@ -68,13 +68,13 @@ def template_get(params: dict[str, Any]) -> dict[str, Any]:
     dirs = _preview_template_dirs()
     target_file: Path | None = None
     for templates_dir in dirs:
-        target = templates_dir / name
         try:
-            target.relative_to(templates_dir.resolve())
-            if target.exists() and target.is_file():
+            target = (templates_dir / name).resolve(strict=True)
+            target.relative_to(templates_dir)
+            if target.is_file():
                 target_file = target
                 break
-        except (ValueError, OSError):
+        except (ValueError, OSError, RuntimeError):
             continue
 
     if target_file is None:

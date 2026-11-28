@@ -34,11 +34,11 @@ function run() {
   assert(allowed.length === 2, 'allowlist stays minimal (deny-by-default, no extra grants)');
 
   assert(
-    /callback\(\s*isTrustedMainFrame\(webContents\)\s*&&\s*allowedPermissions\.has\(permission\)\s*\)/.test(source),
+    /callback\(\s*isTrustedMainFrame\(webContents, details\)\s*&&\s*allowedPermissions\.has\(permission\)\s*\)/.test(source),
     'request handler grants only listed permissions to the trusted main frame and denies the rest',
   );
   assert(
-    /isTrustedMainFrame\(webContents\)\s*&&\s*allowedPermissions\.has\(permission\)/.test(source),
+    /isTrustedMainFrame\(webContents, details\)\s*&&\s*allowedPermissions\.has\(permission\)/.test(source),
     'check handler answers from the same allowlist for the trusted main frame',
   );
   assert(

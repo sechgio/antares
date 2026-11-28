@@ -236,7 +236,7 @@ ipcMain.handle('canvas-flush-ack', async (event, saved) => {
       appendLogEvent('WARN', 'app.flush-ack-rejected', { component: 'electron', reason: 'untrusted_sender' });
     }
   } catch {}
-  if (!trustedSender) return { ok: false };
+  if (!trustedSender || (saved !== undefined && typeof saved !== 'boolean')) return { ok: false };
   if (_canvasFlushResolver) {
     const resolve = _canvasFlushResolver;
     _canvasFlushResolver = null;

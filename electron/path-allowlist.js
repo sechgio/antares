@@ -78,12 +78,12 @@ function assertAllowedReadPath(rawPath) {
   }
 
   const resolved = path.resolve(rawPath);
+  if (!_allowedReadPaths.has(resolved)) {
+    throw new Error('path not allowed');
+  }
   const stat = assertPathNotSymlink(resolved);
   if (!stat.isFile()) {
     throw new Error('not a file');
-  }
-  if (!_allowedReadPaths.has(resolved)) {
-    throw new Error('path not allowed');
   }
   if (hasSymlinkAncestor(resolved)) {
     throw new Error('symbolic links not allowed');
