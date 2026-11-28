@@ -195,6 +195,7 @@ class CanvasStore:
         self._listing_cache: list[dict[str, str]] = []
         self._history_digests: dict[str, str] = {}
         self._history_signatures: dict[str, _FileSignature] = {}
+        self._history_layouts: dict[str, tuple[str, int, int, int, int, tuple[int, ...], tuple[int, ...]]] = {}
         self._recover_pending_spills()
         self._cleanup_orphan_tmp_files()
 
@@ -498,6 +499,15 @@ class CanvasStore:
                 return True
             _write_atomic(path, encoded)
             self._history_digests[str(doc_id)] = digest
+            self._history_layouts[str(doc_id)] = (
+                digest,
+                len(encoded_past),
+                len(b",".join(encoded_past)),
+                len(encoded_future),
+                len(b",".join(encoded_future)),
+                tuple(len(e) for e in encoded_past),
+                tuple(len(e) for e in encoded_future),
+            )
             signature = _file_signature(path)
             if signature is None:
                 self._history_signatures.pop(str(doc_id), None)
@@ -519,11 +529,71 @@ class CanvasStore:
             except OSError:
                 self._history_digests.pop(str(doc_id), None)
                 self._history_signatures.pop(str(doc_id), None)
+                self._history_layouts.pop(str(doc_id), None)
                 return None
             digest = hashlib.sha256(encoded).hexdigest()
             self._history_digests[str(doc_id)] = digest
             self._history_signatures[str(doc_id)] = signature
             return digest
+
+    def _encode_history_delta_incremental(
+        self,
+        raw: bytes,
+        *,
+        past_prefix: int,
+        past_suffix: list[dict[str, Any]],  # allowlist: dict[str, Any]
+        future_prefix: int,
+        future_suffix: list[dict[str, Any]],  # allowlist: dict[str, Any]
+        max_history: int,
+        doc_id: str,
+        base_digest: str,
+    ) -> tuple[bytes, tuple[str, int, int, int, int, tuple[int, ...], tuple[int, ...]]] | None:
+        """Encode a delta reusing the certified-unchanged prefix bytes verbatim.
+
+        Applies when the layout recorded at our last write matches ``base_digest`` and
+        both prefixes cover their entire arrays (the dominant append case), including
+        appends at the retention cap that drop the oldest entries; any other shape
+        returns None so the caller re-encodes in full.
+        """
+        layout = self._history_layouts.get(doc_id)
+        if layout is None or layout[0] != base_digest:
+            return None
+        _, past_count, past_blen, future_count, future_blen, past_lens, future_lens = layout
+        if past_prefix != past_count or future_prefix != future_count:
+            return None
+        past_drop = max(0, past_count + len(past_suffix) - max_history)
+        future_drop = max(0, future_count + len(future_suffix) - max_history)
+        if past_drop > len(past_lens) or future_drop > len(future_lens):
+            return None
+        encoded_past_suffix = self._select_encoded_history_entries(past_suffix, max_history, doc_id)
+        encoded_future_suffix = self._select_encoded_history_entries(future_suffix, max_history, doc_id)
+        head = len(b'{"past":[')
+        past_offset = sum(past_lens[:past_drop]) + past_drop
+        future_offset = sum(future_lens[:future_drop]) + future_drop
+        past_region = raw[head + past_offset:head + past_blen]
+        future_head = head + past_blen + len(b'],"future":[')
+        future_region = raw[future_head + future_offset:future_head + future_blen]
+        if len(raw) != future_head + future_blen + len(b"]}"):
+            return None
+        past_joined = b",".join(encoded_past_suffix)
+        future_joined = b",".join(encoded_future_suffix)
+        sep_past = b"," if past_region and past_joined else b""
+        past_body = past_region + sep_past + past_joined
+        sep_future = b"," if future_region and future_joined else b""
+        future_body = future_region + sep_future + future_joined
+        encoded = b'{"past":[' + past_body + b'],"future":[' + future_body + b"]}"
+        kept_past_lens = past_lens[past_drop:]
+        kept_future_lens = future_lens[future_drop:]
+        new_layout = (
+            "",  # digest filled in by the caller once computed
+            len(kept_past_lens) + len(encoded_past_suffix),
+            len(past_body),
+            len(kept_future_lens) + len(encoded_future_suffix),
+            len(future_body),
+            (*kept_past_lens, *(len(e) for e in encoded_past_suffix)),
+            (*kept_future_lens, *(len(e) for e in encoded_future_suffix)),
+        )
+        return encoded, new_layout
 
     def save_history_delta(
         self,
@@ -539,18 +609,59 @@ class CanvasStore:
         with self._doc_lock(str(doc_id)):
             if not base_digest or self.get_history_digest(str(doc_id)) != base_digest:
                 raise ValueError("La base del historial Canvas cambió")
-            current = self.get_history(str(doc_id))
-            current_past = current["past"]
-            current_future = current["future"]
-            if not 0 <= past_prefix <= len(current_past) or not 0 <= future_prefix <= len(current_future):
-                raise ValueError("El prefijo del historial Canvas no coincide")
-            return self.save_history(
-                str(doc_id),
-                [*current_past[:past_prefix], *past_suffix],
-                [*current_future[:future_prefix], *future_suffix],
-                max_history=max_history,
-            )
-
+            encoded: bytes | None = None
+            new_layout: tuple[str, int, int, int, int, tuple[int, ...], tuple[int, ...]] | None = None
+            path = self._history_path_for(str(doc_id))
+            try:
+                raw = path.read_bytes()
+            except OSError:
+                raw = None
+            if raw is not None:
+                try:
+                    incremental = self._encode_history_delta_incremental(
+                        raw,
+                        past_prefix=past_prefix,
+                        past_suffix=past_suffix,
+                        future_prefix=future_prefix,
+                        future_suffix=future_suffix,
+                        max_history=max_history,
+                        doc_id=str(doc_id),
+                        base_digest=base_digest,
+                    )
+                except (TypeError, ValueError, UnicodeError) as exc:
+                    raise ValueError("El historial Canvas contiene datos no serializables") from exc
+                if incremental is not None:
+                    encoded, new_layout = incremental
+            if encoded is None:
+                current = self.get_history(str(doc_id))
+                current_past = current["past"]
+                current_future = current["future"]
+                if not 0 <= past_prefix <= len(current_past) or not 0 <= future_prefix <= len(current_future):
+                    raise ValueError("El prefijo del historial Canvas no coincide")
+                return self.save_history(
+                    str(doc_id),
+                    [*current_past[:past_prefix], *past_suffix],
+                    [*current_future[:future_prefix], *future_suffix],
+                    max_history=max_history,
+                )
+            if len(encoded) > MAX_CANVAS_HISTORY_BYTES:
+                raise ValueError(
+                    f"El historial Canvas excede el límite agregado de almacenamiento ({MAX_CANVAS_HISTORY_BYTES} bytes)",
+                )
+            digest = hashlib.sha256(encoded).hexdigest()
+            if digest == base_digest:
+                return True
+            self.history_dir.mkdir(parents=True, exist_ok=True)
+            _write_atomic(path, encoded)
+            self._history_digests[str(doc_id)] = digest
+            if new_layout is not None:
+                self._history_layouts[str(doc_id)] = (digest, *new_layout[1:])
+            signature = _file_signature(path)
+            if signature is None:
+                self._history_signatures.pop(str(doc_id), None)
+            else:
+                self._history_signatures[str(doc_id)] = signature
+            return True
     def save(
         self,
         document: dict[str, Any],  # allowlist: dict[str, Any]
@@ -609,6 +720,7 @@ class CanvasStore:
                     spill_path.unlink()
             self._history_digests.pop(str(doc_id), None)
             self._history_signatures.pop(str(doc_id), None)
+            self._history_layouts.pop(str(doc_id), None)
             with self._index_lock:
                 if not path.exists():
                     return False
