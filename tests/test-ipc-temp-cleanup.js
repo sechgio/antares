@@ -69,9 +69,25 @@ async function main() {
 
   const { handleDialogCall } = require('../electron/dialog-handlers.js');
   const { createFileCapability, resolveCapability } = require('../electron/file-capabilities.js');
+  const ordinaryFile = path.join(spillDir, `ordinary-token-${process.pid}.json`);
+  await fsp.writeFile(ordinaryFile, '{}', 'utf8');
+  try {
+    const cap = createFileCapability({ filePath: ordinaryFile, mode: 'read', webContentsId: 1 });
+    const window = { webContents: { id: 1 } };
+    const results = await Promise.allSettled([
+      handleDialogCall('file_token_read_json', { token: cap.token }, {}, window),
+      handleDialogCall('file_token_read_json', { token: cap.token }, {}, window),
+    ]);
+    assert.deepStrictEqual(results.map((result) => result.status), ['fulfilled', 'rejected']);
+    assert.ok(fs.existsSync(ordinaryFile), 'a read token cannot grant deletion of an ordinary file');
+  } finally {
+    await fsp.rm(ordinaryFile, { force: true });
+  }
   const cleanupSpill = path.join(spillDir, `cleanup-token-${process.pid}.json`);
   await fsp.writeFile(cleanupSpill, '{"sheets":[]}', 'utf8');
-  const cap = createFileCapability({ filePath: cleanupSpill, mode: 'read', webContentsId: 1 });
+  const router = require('./helpers/ipc-router').loadIpcRouter();
+  const { result_file_token: token } = router._maybeTokenizeResultPaths('spreadsheet_parse', { result_path: cleanupSpill }, { webContents: { id: 1 } });
+  const cap = resolveCapability(token, 'read', 1);
   const cleaned = await handleDialogCall('file_token_cleanup', { token: cap.token }, {}, { webContents: { id: 1 } });
   assert.strictEqual(cleaned.handled, true);
   assert.strictEqual(cleaned.result.cleaned, true);

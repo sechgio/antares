@@ -34,22 +34,10 @@ const {
 
 const NATIVE_METHODS = new Set(require('../shared/ipc-method-catalog').NATIVE_METHODS);
 
-function _resolveTokenPath(token, webContentsId) {
-  const cap = resolveCapability(token, 'read', webContentsId ?? null);
-  return cap.path;
-}
-
-function _resolveReadPathParam(params, webContentsId) {
-  let resolvedPath = params && params.path;
-  if (typeof resolvedPath === 'string' && resolvedPath.startsWith('antares-read_')) {
-    resolvedPath = _resolveTokenPath(resolvedPath, webContentsId);
-    registerAllowedReadPath(resolvedPath);
-  }
-  if (params && params.file_token) {
-    resolvedPath = _resolveTokenPath(params.file_token, webContentsId);
-    registerAllowedReadPath(resolvedPath);
-  }
-  return resolvedPath;
+function _imagePathOrToken(params) {
+  const token = params?.file_token;
+  if (token && (typeof token !== 'string' || !token.startsWith('antares-read_'))) throw new Error('invalid token');
+  return token || params?.path;
 }
 
 function registerFileInputPath(rawPath) {
@@ -75,7 +63,8 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
 
   if (method === 'file_token_read_json') {
     const token = params && params.token;
-    const filePath = _resolveTokenPath(token, webContentsId);
+    const { path: filePath, spreadsheetSpill, stagedSessionToken } = resolveCapability(token, 'read', webContentsId);
+    revokeCapability(token);
     const MAX_JSON_READ = 64 * 1024 * 1024;
     let parsed;
     try {
@@ -89,8 +78,8 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
       const raw = await fs.promises.readFile(filePath, 'utf8');
       parsed = JSON.parse(raw);
     } finally {
-      await cleanupSpreadsheetSpillFile(filePath);
-      revokeCapability(token);
+      if (spreadsheetSpill) await cleanupSpreadsheetSpillFile(filePath);
+      if (stagedSessionToken) await abortStagedSession(stagedSessionToken, webContentsId);
     }
     void sweepIpcTempDirs();
     return { handled: true, result: parsed };
@@ -101,15 +90,18 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
     if (!token || typeof token !== 'string') {
       return { handled: true, result: { cleaned: false } };
     }
-    let filePath;
+    let cap;
     try {
-      filePath = _resolveTokenPath(token, webContentsId);
+      cap = resolveCapability(token, 'read', webContentsId);
     } catch {
       return { handled: true, result: { cleaned: false } };
     }
-    await cleanupSpreadsheetSpillFile(filePath);
-    await cleanupStagedCapability(token, webContentsId);
-    revokeCapability(token);
+    if (cap.staged) {
+      await cleanupStagedCapability(token, webContentsId);
+    } else {
+      revokeCapability(token);
+      if (cap.spreadsheetSpill) await cleanupSpreadsheetSpillFile(cap.path);
+    }
     return { handled: true, result: { cleaned: true } };
   }
 
@@ -176,18 +168,17 @@ async function handleDialogCall(method, params = {}, dialog, window, electronMod
 
   if (method === 'local_thumbnail') {
     const { nativeImage } = electronModules;
-    const resolvedPath = _resolveReadPathParam(params, webContentsId);
     const result = await createLocalThumbnail(
-      resolvedPath,
+      _imagePathOrToken(params),
       params && params.maxEdge,
       nativeImage,
+      webContentsId,
     );
     return { handled: true, result };
   }
 
   if (method === 'local_image_data_url') {
-    const resolvedPath = _resolveReadPathParam(params, webContentsId);
-    const result = await createLocalImageDataUrl(resolvedPath);
+    const result = await createLocalImageDataUrl(_imagePathOrToken(params), webContentsId);
     return { handled: true, result };
   }
 

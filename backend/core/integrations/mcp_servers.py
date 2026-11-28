@@ -158,7 +158,7 @@ def add_server(
         base = _slug(name)
         server_id = base
         i = 2
-        while any(s.get("id") == server_id for s in servers):
+        while any(s.get("id") == server_id for s in servers) or _secrets_path(server_id).exists():
             server_id = f"{base}-{i}"
             i += 1
         server: JsonObject = {
@@ -197,8 +197,8 @@ def remove_server(server_id: str) -> JsonObject:
         _save(kept)
         _tools_cache.pop(server_id, None)
         _tools_status.pop(server_id, None)
-    with contextlib.suppress(OSError):
-        _secrets_path(server_id).unlink(missing_ok=True)
+        with contextlib.suppress(OSError):
+            _secrets_path(server_id).unlink(missing_ok=True)
     return {"deleted": True, "id": server_id}
 
 
@@ -282,13 +282,12 @@ def approval_context(server_id: str, advertised_name: str, *, force: bool = Fals
 
 
 def list_tools(server_id: str, *, force: bool = False) -> list[JsonObject]:
-    server = get_server(server_id)
     with _lock:
+        server = get_server(server_id)
         cached = _tools_cache.get(server_id)
         if cached and not force and time.time() - cached[0] < _TOOLS_TTL_S:
             return [{**tool, "enabled": tool["name"] not in server.get("disabled_tools", [])} for tool in cached[1]]
-    secrets = _secrets(server_id)
-    with _lock:
+        secrets = _secrets(server_id)
         previous = dict(_tools_status.get(server_id) or {})
     backoff_until = float(previous.get("backoff_until") or 0)
     if not force and backoff_until > time.time():

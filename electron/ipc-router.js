@@ -23,10 +23,11 @@ const { isTrustedRendererFrame } = require('./renderer-trust');
 const { _maybeResolveFileTokens, _validateAndResolveWriteParams } = require('./ipc-file-policy');
 
 const _pendingRequests = new Map();
-const _pendingMethodCounts = new Map();
-let _pendingRequestCount = 0;
+const _backendAdmission = { count: 0, methods: new Map() };
+const _rendererAdmission = { count: 0, methods: new Map(), bytes: 0 };
 let _pendingRequestBytes = 0;
 const _stdinBackpressure = new WeakSet();
+const _transientBackendErrors = new WeakSet();
 let _attachedProcess = null;
 
 let _ipcMethodsCache = null;
@@ -87,7 +88,7 @@ const MAX_PENDING_PER_METHOD = _positiveIntegerEnv(
 let _ipcBackpressureWaits = 0;
 const ANTARES_IPC_ERROR_PREFIX = 'ANTARES_IPC_ERROR:';
 
-const _WIN_ABS_PATH_RE = /[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]*/g;
+const _WIN_ABS_PATH_RE = /(?:[A-Za-z]:[\\/]|\\\\)(?:[^\\/:*?"<>|\r\n]+[\\/])*[^\\/:*?"<>|\r\n]*/g;
 const _POSIX_ABS_PATH_RE = /(?<![\w])\/(?:[\w.\-]+\/)+[\w.\-]*/g;
 
 function _redactInternalPaths(message) {
@@ -102,7 +103,9 @@ function _toRendererIpcError(err) {
     details: err && err.details !== undefined ? err.details : undefined,
     request_id: err && typeof err.ipc_request_id === 'string' ? err.ipc_request_id : undefined,
   };
-  return new Error(ANTARES_IPC_ERROR_PREFIX + JSON.stringify(payload));
+  return new Error(ANTARES_IPC_ERROR_PREFIX + JSON.stringify(payload, (_key, value) =>
+    typeof value === 'string' ? _redactInternalPaths(value) : value,
+  ));
 }
 
 function _isIdempotentMethod(method) {
@@ -110,6 +113,7 @@ function _isIdempotentMethod(method) {
 }
 
 let _lastBackendRestartAt = 0;
+let _backendRestartInFlight = false;
 
 function _resolveIsDev() {
   try {
@@ -140,7 +144,7 @@ function _handleBackendTermination(proc) {
     if (entry.proc !== proc) continue;
     clearTimeout(entry.timeout);
     _pendingRequests.delete(id);
-    entry.reject(new Error('Backend process exited while waiting for response'));
+    entry.reject(_transientBackendError('Backend process exited while waiting for response'));
     entry.releasePending();
   }
 
@@ -151,37 +155,33 @@ function _handleBackendTermination(proc) {
 
 function _consumeStdoutLines(pending, chunk, maxPendingBytes = Infinity) {
   const piece = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-  const bufs = pending.bufs;
-  const totalLen = pending.len + piece.length;
-  let newline = piece.indexOf(0x0a);
-
-  if (newline === -1) {
-    if (totalLen > maxPendingBytes) {
-      return { pending: { bufs: [], len: 0 }, lines: [], dropped: true };
-    }
-    bufs.push(piece);
-    return { pending: { bufs, len: totalLen }, lines: [], dropped: false };
-  }
-
   const lines = [];
-  const firstLen = pending.len + newline;
-  if (firstLen > 0) {
-    const head = piece.subarray(0, newline);
-    lines.push(bufs.length === 0 ? head : Buffer.concat([...bufs, head], firstLen));
-  }
-  let start = newline + 1;
-  while ((newline = piece.indexOf(0x0a, start)) !== -1) {
-    if (newline > start) lines.push(piece.subarray(start, newline));
+  let dropped = false;
+  let start = 0;
+  for (let newline = piece.indexOf(0x0a); newline !== -1; newline = piece.indexOf(0x0a, start)) {
+    const length = pending.len + newline - start;
+    if (!pending.discarding && length > 0) {
+      if (length > maxPendingBytes) {
+        dropped = true;
+      } else {
+        const tail = piece.subarray(start, newline);
+        lines.push(pending.len ? Buffer.concat([...pending.bufs, tail], length) : tail);
+      }
+    }
+    pending = { bufs: [], len: 0 };
     start = newline + 1;
   }
-  const pendingRemLen = piece.length - start;
-  if (pendingRemLen > maxPendingBytes) {
-    return { pending: { bufs: [], len: 0 }, lines, dropped: true };
+  if (!pending.discarding && start < piece.length) {
+    const length = pending.len + piece.length - start;
+    if (length > maxPendingBytes) {
+      pending = { bufs: [], len: 0, discarding: true };
+      dropped = true;
+    } else {
+      pending.bufs.push(piece.subarray(start));
+      pending.len = length;
+    }
   }
-  if (pendingRemLen === 0) {
-    return { pending: { bufs: [], len: 0 }, lines, dropped: false };
-  }
-  return { pending: { bufs: [piece.subarray(start)], len: pendingRemLen }, lines, dropped: false };
+  return { pending, lines, dropped };
 }
 
 function _ensureListeners() {
@@ -198,7 +198,7 @@ function _ensureListeners() {
     const framed = _consumeStdoutLines(pending, data, MAX_STDOUT_PENDING_BYTES);
     pending = framed.pending;
     if (framed.dropped) {
-      console.error('[ipc-router] dropped oversized stdout line (>68 MiB partial); backend framing is corrupted');
+      console.error('[ipc-router] dropped oversized stdout line (>68 MiB)');
       for (const [id, entry] of _pendingRequests) {
         if (entry.proc !== proc) continue;
         clearTimeout(entry.timeout);
@@ -216,6 +216,7 @@ function _ensureListeners() {
       try {
         const msg = JSON.parse(line);
         if (msg.method && msg.params !== undefined && msg.id === undefined) {
+          if (getProcess() !== proc) continue;
           if (
             msg.method === 'process.progress' ||
             msg.method === 'process.heartbeat' ||
@@ -234,6 +235,7 @@ function _ensureListeners() {
         }
         if (msg.id !== undefined && _pendingRequests.has(String(msg.id))) {
           const entry = _pendingRequests.get(String(msg.id));
+          if (entry.proc !== proc) continue;
           clearTimeout(entry.timeout);
           _pendingRequests.delete(String(msg.id));
           entry.releasePending();
@@ -287,23 +289,23 @@ function _capacityError(reason, pending, limit) {
   return err;
 }
 
-function _reservePendingRequest(method) {
-  if (_pendingRequestCount >= MAX_PENDING_REQUESTS) {
-    return { error: _capacityError('ipc_total_pending_limit', _pendingRequestCount, MAX_PENDING_REQUESTS) };
+function _reservePendingRequest(method, admission = _backendAdmission) {
+  if (admission.count >= MAX_PENDING_REQUESTS) {
+    return { error: _capacityError('ipc_total_pending_limit', admission.count, MAX_PENDING_REQUESTS) };
   }
-  const methodPending = _pendingMethodCounts.get(method) || 0;
+  const methodPending = admission.methods.get(method) || 0;
   if (methodPending >= MAX_PENDING_PER_METHOD) {
     return { error: _capacityError('ipc_method_pending_limit', methodPending, MAX_PENDING_PER_METHOD) };
   }
 
-  _pendingRequestCount += 1;
-  _pendingMethodCounts.set(method, methodPending + 1);
+  admission.count += 1;
+  admission.methods.set(method, methodPending + 1);
   return {
     release: () => {
-      _pendingRequestCount -= 1;
-      const current = _pendingMethodCounts.get(method) || 0;
-      if (current <= 1) _pendingMethodCounts.delete(method);
-      else _pendingMethodCounts.set(method, current - 1);
+      admission.count -= 1;
+      const current = admission.methods.get(method) || 0;
+      if (current <= 1) admission.methods.delete(method);
+      else admission.methods.set(method, current - 1);
     },
   };
 }
@@ -334,10 +336,18 @@ function _estimateStringJsonBytes(value) {
 
 const _ESTIMATE_NODE_BUDGET = 20000;
 
-function _estimatePayloadBytes(value) {
+function _estimatePayloadBytes(value, ingress = false) {
   const ancestors = new Set();
-  let nodesLeft = _ESTIMATE_NODE_BUDGET;
-  const estimate = (entry, inArray = false) => {
+  let nodesLeft = ingress ? 250_000 : _ESTIMATE_NODE_BUDGET;
+  const limit = MAX_PENDING_REQUEST_BYTES - _rendererAdmission.bytes;
+  const checkBytes = (bytes) => {
+    if (ingress && bytes > limit) {
+      throw _capacityError('ipc_pending_bytes_limit', _rendererAdmission.bytes, MAX_PENDING_REQUEST_BYTES);
+    }
+    return bytes;
+  };
+  const estimate = (entry, inArray = false, depth = 0) => {
+    if (ingress && (depth > 64 || nodesLeft <= 0)) throw new TypeError('IPC payload is too complex');
     if (nodesLeft <= 0) return 64;
     nodesLeft -= 1;
     if (entry === null) return 4;
@@ -358,7 +368,7 @@ function _estimatePayloadBytes(value) {
         let bytes = 2;
         for (let index = 0; index < entry.length; index += 1) {
           if (index > 0) bytes += 1;
-          bytes += estimate(entry[index], true);
+          bytes = checkBytes(bytes + estimate(entry[index], true, depth + 1));
         }
         return bytes;
       }
@@ -371,7 +381,7 @@ function _estimatePayloadBytes(value) {
         if (typeof child === 'undefined' || typeof child === 'function' || typeof child === 'symbol') continue;
         if (!first) bytes += 1;
         first = false;
-        bytes += _estimateStringJsonBytes(key) + 1 + estimate(child);
+        bytes = checkBytes(bytes + _estimateStringJsonBytes(key) + 1 + estimate(child, false, depth + 1));
       }
       return bytes;
     } finally {
@@ -380,8 +390,9 @@ function _estimatePayloadBytes(value) {
   };
 
   try {
-    return estimate(value);
-  } catch {
+    return checkBytes(estimate(value));
+  } catch (err) {
+    if (ingress) throw err;
     return 0;
   }
 }
@@ -528,7 +539,7 @@ function _writeStdinWithBackpressure(proc, payload) {
 function _sendRequest(method, params) {
   const proc = getProcess();
   if (!proc || proc.killed) {
-    return Promise.reject(new Error('Backend process not available'));
+    return Promise.reject(_transientBackendError('Backend process not available'));
   }
 
   const id = crypto.randomUUID();
@@ -627,6 +638,7 @@ function _sendRequest(method, params) {
         settle(resolve, result);
       },
       reject: (err) => {
+        if (settled) return;
         const outcome = err && err.message && /timeout/i.test(err.message) ? 'timeout' : 'error';
         if (err && typeof err === 'object') {
           try {
@@ -663,7 +675,7 @@ function _sendRequest(method, params) {
         clearTimeout(entry.timeout);
         _pendingRequests.delete(id);
         entry.releasePending();
-        entry.reject(new Error(`Backend stdin write failed: ${err.message}`));
+        entry.reject(_transientBackendError(`Backend stdin write failed: ${err.message}`));
       })
       .finally(() => {
         writeFinished = true;
@@ -675,7 +687,7 @@ function _sendRequest(method, params) {
 function _buildUnavailableError() {
   const state = getState();
   const last = getLastError();
-  const tail = getStderrTail();
+  const tail = _isPackaged() ? '' : getStderrTail();
 
   if (state === STATE.FATAL) {
     const base = last?.message || 'El backend no pudo iniciarse.';
@@ -700,13 +712,10 @@ function _buildUnavailableError() {
   return err;
 }
 
-function _isTransientBackendError(err) {
-  const msg = err.message || '';
-  return (
-    msg.includes('Backend process exited') ||
-    msg.includes('Backend process not available') ||
-    msg.includes('stdin write failed')
-  );
+function _transientBackendError(message) {
+  const err = new Error(message);
+  _transientBackendErrors.add(err);
+  return err;
 }
 
 const DB_CLEAR_MIN_INTERVAL_MS = 5000;
@@ -782,7 +791,7 @@ async function _callBackend(method, params) {
       return await _sendRequest(method, params);
     } catch (err) {
       lastErr = err;
-      if (!_isTransientBackendError(err) || !_isIdempotentMethod(method) || attempt === MID_FLIGHT_RETRIES) {
+      if (!_transientBackendErrors.has(err) || !_isIdempotentMethod(method) || attempt === MID_FLIGHT_RETRIES) {
         throw err;
       }
       const msg = err.message || '';
@@ -823,6 +832,7 @@ function _maybeTokenizeResultPaths(method, result, win) {
     webContentsId,
     name: defaultName,
   });
+  cap.spreadsheetSpill = method === 'spreadsheet_parse';
   const next = { ...result, result_file_token: cap.token };
   delete next.result_path;
   return next;
@@ -887,19 +897,7 @@ function _tagValidationError(err, method) {
 function registerIpcHandlers() {
   if (!_isPackaged()) reloadIpcMethods();
 
-  ipcMain.handle('ipc-call', async (event, method, params) => {
-    _requireTrustedSender(event, typeof method === 'string' ? method : undefined);
-    if (typeof method !== 'string' || !_getAllowedMethods().has(method)) {
-      _logSecurityRejection('method_not_allowed', typeof method === 'string' ? method : undefined);
-      const hint = ' Reinicia Antares por completo (cierra todas las ventanas) para recargar la allowlist IPC.';
-      throw new Error(`IPC method not allowed: ${method}.${hint}`);
-    }
-    if (_ipcCatalog().INTERNAL_METHODS.has(method)) {
-      _logSecurityRejection('internal_method', method);
-      throw new Error(`IPC method not allowed: ${method} (internal)`);
-    }
-
-    const win = getMainWindow();
+  const dispatch = async (method, params, win) => {
     const { BrowserWindow, session, nativeImage } = require('electron');
     try {
       const nativeHandler = _ipcCatalog().nativeDispatchFor(method);
@@ -930,7 +928,12 @@ function registerIpcHandlers() {
         }
         const nativeCall = _NATIVE_CALLS[nativeHandler];
         try {
-          const result = await nativeCall(method, nativeParams, win, { BrowserWindow, session, nativeImage });
+          const result = await nativeCall(method, nativeParams, win, {
+            BrowserWindow,
+            session,
+            nativeImage,
+            confirmPdfOutputPath: (outputPath) => _validateAndResolveWriteParams({ outputPath }, win, method),
+          });
           if (result && result.handled) {
             const responseBytes = _estimatePayloadBytes(result.result);
             _logIpcTelemetry({
@@ -985,16 +988,54 @@ function registerIpcHandlers() {
     } catch (err) {
       throw _toRendererIpcError(err);
     }
+  };
+
+  ipcMain.handle('ipc-call', async (event, method, params) => {
+    const methodName = typeof method === 'string' ? method.slice(0, 120) : undefined;
+    _requireTrustedSender(event, methodName);
+    if (typeof method !== 'string' || !_getAllowedMethods().has(method)) {
+      _logSecurityRejection('method_not_allowed');
+      const hint = ' Reinicia Antares por completo (cierra todas las ventanas) para recargar la allowlist IPC.';
+      throw new Error(`IPC method not allowed: ${methodName ?? ''}.${hint}`);
+    }
+    if (_ipcCatalog().INTERNAL_METHODS.has(method)) {
+      _logSecurityRejection('internal_method', method);
+      throw new Error(`IPC method not allowed: ${method} (internal)`);
+    }
+    const reservation = _reservePendingRequest(method, _rendererAdmission);
+    if (reservation.error) throw _toRendererIpcError(reservation.error);
+    let bytes = 0;
+    try {
+      try {
+        if (params != null && (typeof params !== 'object' || Array.isArray(params))) {
+          throw new TypeError('IPC params must be an object');
+        }
+        bytes = _estimatePayloadBytes(params, true);
+      } catch (err) {
+        if (err instanceof TypeError) _tagValidationError(err, method);
+        throw _toRendererIpcError(err);
+      }
+      _rendererAdmission.bytes += bytes;
+      return await dispatch(method, params, getMainWindow());
+    } finally {
+      _rendererAdmission.bytes -= bytes;
+      reservation.release();
+    }
   });
 
   ipcMain.handle('backend-status', async (event) => {
     _requireTrustedSender(event, 'backend-status');
     const isPackaged = _isPackaged();
     const { degraded, failedHandlerModules } = getReadyDegraded();
+    const lastError = getLastError();
     return {
       state: getState(),
       ready: isReady(),
-      lastError: getLastError(),
+      lastError: isPackaged && lastError ? {
+        ...lastError,
+        message: _redactInternalPaths(lastError.message),
+        stderrTail: '',
+      } : lastError,
       health: getHealthStatus(),
       degraded,
       failedHandlerModules,
@@ -1005,27 +1046,29 @@ function registerIpcHandlers() {
   ipcMain.handle('backend-restart', async (event) => {
     _requireTrustedSender(event, 'backend-restart');
     const now = Date.now();
-    if (now - _lastBackendRestartAt < BACKEND_RESTART_MIN_INTERVAL_MS) {
+    if (_backendRestartInFlight || now - _lastBackendRestartAt < BACKEND_RESTART_MIN_INTERVAL_MS) {
       return { success: false, state: getState(), error: 'rate_limited' };
     }
 
-    const win = getMainWindow();
-    const { response } = await dialog.showMessageBox(win, {
-      type: 'question',
-      buttons: ['Reiniciar', 'Cancelar'],
-      defaultId: 1,
-      cancelId: 1,
-      title: 'Reiniciar backend',
-      message: '¿Reiniciar el servicio de Antares?',
-      detail: 'Las operaciones en curso pueden interrumpirse.',
-    });
-    if (response !== 0) {
-      return { success: false, state: getState(), cancelled: true };
-    }
-
+    _backendRestartInFlight = true;
     _lastBackendRestartAt = now;
-    const ok = await manualRestart(_resolveIsDev(), { force: true, reason: 'user_requested' });
-    return { success: ok, state: getState() };
+    try {
+      const win = getMainWindow();
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'question',
+        buttons: ['Reiniciar', 'Cancelar'],
+        defaultId: 1,
+        cancelId: 1,
+        title: 'Reiniciar backend',
+        message: '¿Reiniciar el servicio de Antares?',
+        detail: 'Las operaciones en curso pueden interrumpirse.',
+      });
+      if (response !== 0) return { success: false, state: getState(), cancelled: true };
+      const ok = await manualRestart(_resolveIsDev(), { force: true, reason: 'user_requested' });
+      return { success: ok, state: getState() };
+    } finally {
+      _backendRestartInFlight = false;
+    }
   });
 
   ipcMain.handle('window-control', async (event, action) => {

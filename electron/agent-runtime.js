@@ -1303,9 +1303,11 @@ async function _droppedPaths(paths) {
   const out = [];
   for (const raw of Array.isArray(paths) ? paths.slice(0, MAX_ATTACHMENTS) : []) {
     if (typeof raw !== 'string' || !path.isAbsolute(raw)) throw validation('Ruta de adjunto no válida');
-    const stat = await fs.promises.stat(raw).catch(() => null);
-    if (!stat || !stat.isFile()) throw validation(`No se puede adjuntar: ${path.basename(raw)}`);
-    out.push(raw);
+    try {
+      out.push(require('./path-allowlist').assertAllowedReadPath(raw));
+    } catch {
+      throw validation(`Adjunto no autorizado: ${path.basename(raw)}`);
+    }
   }
   return out;
 }

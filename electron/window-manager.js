@@ -81,17 +81,17 @@ function createWindow(isDev) {
 
   const allowedPermissions = new Set(['media', 'clipboard-sanitized-write']);
   const { isTrustedRendererUrl } = require('./renderer-trust');
-  const isTrustedMainFrame = (webContents) => {
-    if (!webContents || webContents.isDestroyed?.()) return false;
+  const isTrustedMainFrame = (webContents, details) => {
+    if (details?.isMainFrame !== true || !webContents || webContents.isDestroyed?.()) return false;
     if (!mainWindow || mainWindow.isDestroyed()) return false;
     if (webContents.id !== mainWindow.webContents.id) return false;
     return isTrustedRendererUrl(String(webContents.getURL() || ''), isDev);
   };
-  mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
-    callback(isTrustedMainFrame(webContents) && allowedPermissions.has(permission));
+  mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    callback(isTrustedMainFrame(webContents, details) && allowedPermissions.has(permission));
   });
   mainWindow.webContents.session.setPermissionCheckHandler(
-    (webContents, permission) => isTrustedMainFrame(webContents) && allowedPermissions.has(permission),
+    (webContents, permission, _origin, details) => isTrustedMainFrame(webContents, details) && allowedPermissions.has(permission),
   );
 
   mainWindow.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
@@ -202,20 +202,12 @@ function createWindow(isDev) {
     return { action: 'deny' };
   });
 
-  const { pathToFileURL } = require('url');
-  const distFileUrlPrefix = pathToFileURL(path.dirname(htmlPath) + path.sep).toString();
-
-  const isAllowedMainFrameUrl = (url) =>
-    isDev
-      ? url.startsWith('http://localhost:5173') || url.startsWith('http://127.0.0.1:5173')
-      : url.startsWith(distFileUrlPrefix);
-
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (!isAllowedMainFrameUrl(url)) event.preventDefault();
+  mainWindow.webContents.on('will-navigate', (event) => {
+    if (!isTrustedRendererUrl(event.url, isDev)) event.preventDefault();
   });
 
-  mainWindow.webContents.on('will-redirect', (event, url) => {
-    if (isAllowedMainFrameUrl(url)) return;
+  mainWindow.webContents.on('will-redirect', (event) => {
+    if (isTrustedRendererUrl(event.url, isDev)) return;
     event.preventDefault();
     appendLogEvent('WARN', 'security.rejected', {
       component: 'window',

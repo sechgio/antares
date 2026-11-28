@@ -208,6 +208,17 @@ def test_custom_model_can_remove_its_key(tmp_path, monkeypatch):
     assert ai_providers.public_state(provider)["key_masked"] == "••••ueva"
 
 
+def test_custom_model_never_reuses_key_after_origin_changes(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
+    provider = ai_providers.upsert_custom(_custom())["id"]
+    ai_providers.upsert_custom(_custom(id=provider, api_key="", base_url="https://gateway.example.com/v2"))
+    assert ai_providers.get_config(provider)["api_key"] == "sk-custom-9876"
+    ai_providers.upsert_custom(_custom(id=provider, api_key="", base_url="https://new-gateway.example.com/v1"))
+    assert "api_key" not in ai_providers.get_config(provider)
+    ai_providers.upsert_custom(_custom(id=provider, api_key="sk-replacement"))
+    assert ai_providers.get_config(provider)["api_key"] == "sk-replacement"
+
+
 def test_custom_model_validates_input(tmp_path, monkeypatch):
     monkeypatch.setattr(ai_providers, "user_data_path", lambda rel: tmp_path / rel)
     cases = [

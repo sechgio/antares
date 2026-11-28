@@ -111,6 +111,10 @@ async function run() {
       },
     };
     await handleDialogCall('dialog_folder', { pickOnly: true }, dialog, { id: 1 });
+    const deniedPreview = router._validateAndResolveWriteParams({ destino: tmpRoot, files: [] }, null, 'preview');
+    assert(deniedPreview.destino === undefined, 'preview cannot probe an unapproved directory');
+    const allowedPreview = router._validateAndResolveWriteParams({ destino: customDir, files: [] }, null, 'preview');
+    assert(allowedPreview.destino === customDir, 'preview still checks collisions in the selected directory');
     let scriptBlocked = '';
     try {
       router._validateAndResolveWriteParams(
@@ -150,6 +154,23 @@ async function run() {
       rootOverwriteCancelled = e.message;
     }
     assert(/cancelada/.test(rootOverwriteCancelled), 'una write root ya no permite sobrescribir silenciosamente');
+
+    for (const [method, key, extension] of [
+      ['db_template', 'path', '.xlsx'], ['html_to_pdf', 'outputPath', '.pdf'],
+    ]) {
+      const base = path.join(customDir, `destino-${method}`);
+      await fs.promises.writeFile(base + extension, 'original');
+      let denied = false;
+      try {
+        rootDenyRouter._validateAndResolveWriteParams({ [key]: base }, null, method);
+      } catch (err) {
+        denied = /cancelada/.test(err.message);
+      }
+      assert(denied, `${method} autoriza el nombre que se escribe, incluida la extensión`);
+      const fresh = base + '-nuevo';
+      assert(rootDenyRouter._validateAndResolveWriteParams({ [key]: fresh }, null, method)[key] === fresh,
+        `${method} admite un archivo nuevo sin cambiar el contrato de entrada`);
+    }
 
     const dangling = path.join(customDir, 'colgante.xlsx');
     let symlinkCreated = false;

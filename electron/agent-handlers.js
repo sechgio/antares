@@ -7,6 +7,7 @@ const AGENT_METHODS = nativeMethods('agent');
 const AGENT_PRIVILEGE_CONFIRM_MIN_INTERVAL_MS = 5000;
 const PERMISSION_LABELS = { ask: 'Solicitar aprobación', auto: 'Aprobar por mí', full: 'Acceso completo' };
 let _lastAgentPrivilegeConfirmAt = 0;
+let _agentApprovalInFlight = false;
 
 function _ruleElevationSummary(params) {
   const lines = [];
@@ -28,15 +29,18 @@ async function _confirmAgentPrivilegeEscalation(method, params, runtime) {
   let message = '';
   let lines = [];
   if (method === 'agent_session_permissions_set') {
-    if (params.permission_mode !== 'auto') return;
+    const mode = params.permission_mode;
+    if (mode !== 'auto' && mode !== 'full') return;
     const sessions = await runtime.handlers.agent_sessions_list({});
     const current = (sessions.sessions || []).find((session) => session.id === params.id);
     const currentMode = current && current.permission_mode ? current.permission_mode : 'ask';
-    if (currentMode === 'auto' || currentMode === 'full') return;
+    if (mode === 'auto' && (currentMode === 'auto' || currentMode === 'full')) return;
     title = 'Elevar permisos del agente';
-    message = `¿Activar «${PERMISSION_LABELS.auto}» en esta conversación?`;
+    message = `¿Activar «${PERMISSION_LABELS[mode]}» en esta conversación?`;
     lines = [
-      'El agente podrá realizar acciones de bajo riesgo sin pedir confirmación en cada paso.',
+      mode === 'full'
+        ? 'El agente podrá ejecutar acciones con tus permisos sin pedir confirmación en cada paso.'
+        : 'El agente podrá realizar acciones de bajo riesgo sin pedir confirmación en cada paso.',
       '',
       `Modo actual: ${PERMISSION_LABELS[currentMode] || currentMode}.`,
     ];
@@ -72,7 +76,54 @@ async function _confirmAgentPrivilegeEscalation(method, params, runtime) {
   if (response !== 0) throw new Error('Elevación de permisos del agente cancelada');
 }
 
+async function _approveAgentAction(params, handler) {
+  const { approval_id, remember, grant_app, channel, rule } = params;
+  if (typeof approval_id !== 'string' || !approval_id ||
+      (remember !== undefined && typeof remember !== 'boolean') ||
+      (grant_app !== undefined && typeof grant_app !== 'boolean')) {
+    throw new Error('Aprobación no válida');
+  }
+  if (_agentApprovalInFlight) throw new Error('Ya hay una confirmación del agente abierta');
+  _agentApprovalInFlight = true;
+  try {
+    const { _callBackend } = require('./ipc-router');
+    const { approval } = await _callBackend('agent_internal_approval_status', { approval_id });
+    if (!approval || approval.status !== 'pending') throw new Error('La aprobación ya no está pendiente');
+    if ((channel !== undefined || rule !== undefined) && (channel !== approval.channel || rule !== 'allow')) {
+      throw new Error('La regla no coincide con la aprobación pendiente');
+    }
+    const { params: effect, context } = approval;
+    const detail = [effect?.command, effect?.path, context?.page_url, context?.computer?.app]
+      .filter((value) => typeof value === 'string' && value)
+      .map((value) => JSON.stringify(value))
+      .join('\n');
+    if (detail.length > 1800) throw new Error('La acción supera el tamaño del diálogo de aprobación');
+    const scope = remember || grant_app || rule
+      ? `La decisión también puede guardar un permiso para futuras acciones del canal ${approval.channel}.`
+      : 'La decisión solo se aplica a esta solicitud.';
+    const { dialog } = require('electron');
+    const win = require('./window-manager').getMainWindow();
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['Aprobar', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+      title: 'Aprobar acción del agente',
+      message: `¿Permitir que el agente ejecute ${approval.method}?`,
+      detail: detail ? `${detail}\n\n${scope}` : scope,
+    });
+    if (response !== 0) throw new Error('Aprobación cancelada');
+    return await handler(params);
+  } finally {
+    _agentApprovalInFlight = false;
+  }
+}
+
 async function handleAgentCall(method, params) {
+  if (method === 'agent_tasks_save' && params?.apps !== undefined) {
+    throw new Error('La lista de aplicaciones desatendidas requiere la aprobación del encargo');
+  }
   if (method === 'agent_artifact_action') {
     return { handled: true, result: await artifactAction(params || {}) };
   }
@@ -84,6 +135,7 @@ async function handleAgentCall(method, params) {
   await _confirmAgentPrivilegeEscalation(method, params || {}, runtime);
   const handler = runtime.handlers[method];
   if (!handler) throw new Error(`Método de agente no soportado: ${method}`);
+  if (method === 'agent_approve') return { handled: true, result: await _approveAgentAction(params || {}, handler) };
   return { handled: true, result: await handler(params || {}) };
 }
 

@@ -10,6 +10,7 @@ from pypdf import PdfWriter
 import backend.handlers.ubicaciones as hub
 from backend.core.ubicaciones import cache as u_cache
 from backend.core.ubicaciones import client as u_client
+from backend.core.ubicaciones import composer as u_composer
 from backend.core.ubicaciones import consolidator as u_consolidator
 from backend.core.ubicaciones.cache import (
     _clear_ubicaciones_caches,
@@ -57,6 +58,25 @@ def test_composer_unique_pdf_filename() -> None:
     assert f1 == "COD_01.pdf"
     assert f2 == "COD_01_2.pdf"
     assert f3 == "COD_01_3.pdf"
+
+
+def test_composer_pdf_replaces_file_only_after_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    output = tmp_path / "report.pdf"
+    output.write_bytes(b"previous PDF")
+    monkeypatch.setattr(u_composer, "render_imagen_ubicacion", lambda *args, **kwargs: Image.new("RGB", (4, 4)))
+    with monkeypatch.context() as scoped:
+        def interrupted(_image: Image.Image, target: Path, *args: object, **kwargs: object) -> None:
+            Path(target).write_bytes(b"partial PDF")
+            raise OSError("interrupted")
+
+        scoped.setattr(Image.Image, "save", interrupted)
+        with pytest.raises(OSError, match="interrupted"):
+            u_composer.generar_imagen_ubicacion({}, str(output), "vertical")
+
+    assert output.read_bytes() == b"previous PDF"
+    assert list(tmp_path.iterdir()) == [output]
+    u_composer.generar_imagen_ubicacion({}, str(output), "vertical")
+    assert output.read_bytes().startswith(b"%PDF")
 
 
 def test_cache_clear_empties_all() -> None:

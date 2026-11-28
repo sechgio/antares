@@ -28,6 +28,11 @@ async function run() {
       rejected = /not allowed/i.test(err.message);
     }
     assert(rejected, 'unregistered path should be rejected');
+    try {
+      assertAllowedReadPath(path.join(tempDir, 'missing.jpg'));
+    } catch (err) {
+      assert(/not allowed/i.test(err.message), 'permission is checked before testing file existence');
+    }
 
     registerAllowedReadPath(filePath);
     assert(isAllowedReadPath(filePath), 'registered path should be allowed');

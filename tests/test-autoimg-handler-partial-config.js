@@ -23,6 +23,10 @@ async function main() {
   evictModule('electron/autoimg-handlers');
 
   const { handleAutoimgCall } = require('../electron/autoimg-handlers');
+  const { runLocked } = require('../electron/autoimg-operations');
+  await runLocked('folders', async () => {
+    await assert.rejects(() => handleAutoimgCall('autoimg_sheets_open', { sheet_id: 'sheet-2' }), /operación en curso/);
+  });
   const response = await handleAutoimgCall('autoimg_sheets_open', { sheet_id: 'sheet-1' });
 
   assert.equal(response.handled, true);

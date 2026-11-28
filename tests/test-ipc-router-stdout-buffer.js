@@ -57,8 +57,8 @@ function run() {
 
   {
     const small = Buffer.from('{"id":1,"result":1}\n');
-    const r1 = _consumeStdoutLines(emptyPending(), small, 16);
-    assert.strictEqual(r1.lines.length, 1, 'complete line parses before cap applies');
+    const r1 = _consumeStdoutLines(emptyPending(), small, small.length - 1);
+    assert.strictEqual(r1.lines.length, 1, 'complete line at the cap is accepted');
     assert.strictEqual(r1.dropped, false);
 
     const r2 = _consumeStdoutLines(emptyPending(), Buffer.from('{"bigger":'), 8);
@@ -66,9 +66,18 @@ function run() {
     assert.strictEqual(r2.dropped, true, 'oversized partial line is dropped');
     assert.strictEqual(r2.pending.len, 0, 'pending reset after drop');
 
-    const r3 = _consumeStdoutLines(emptyPending(), small, 8);
-    assert.strictEqual(r3.lines.length, 1, 'next complete line still parses after a drop');
+    const r3 = _consumeStdoutLines(r2.pending, Buffer.from('tail\nok\n'), 8);
+    assert.deepStrictEqual(r3.lines.map((line) => line.toString()), ['ok'], 'only frames after the next delimiter are accepted');
     assert.strictEqual(r3.dropped, false);
+
+    const r4 = _consumeStdoutLines(emptyPending(), small, 8);
+    assert.strictEqual(r4.lines.length, 0, 'the cap also applies to complete lines');
+    assert.strictEqual(r4.dropped, true);
+
+    const r5 = _consumeStdoutLines(emptyPending(), Buffer.from('12345678'), 8);
+    const r6 = _consumeStdoutLines(r5.pending, Buffer.from('9\nok\n'), 8);
+    assert.deepStrictEqual(r6.lines.map((line) => line.toString()), ['ok'], 'the final chunk cannot carry a frame past the cap');
+    assert.strictEqual(r6.dropped, true);
   }
 
   {

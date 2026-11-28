@@ -52,6 +52,7 @@ const _retainedSessions = new Map();
 const _allStagedSessions = [_stagedSessions, _retainedSessions];
 let _stagedRoot = null;
 let _sweepTimer = null;
+let _retiringStagedBytes = 0;
 
 function _logCapabilityDenial(reason) {
   try {
@@ -211,9 +212,7 @@ function sweepExpired() {
   for (const sessions of _allStagedSessions) {
     for (const [k, v] of sessions) {
       if (v.expiresAt <= now || now - v.createdAt >= MAX_STAGED_AGE_MS) {
-        if (v.readToken) _capabilities.delete(v.readToken);
-        if (v.tmpPath) fsp.rm(v.tmpPath, { force: true }).catch(() => {});
-        sessions.delete(k);
+        void abortStagedSession(k);
       }
     }
   }
@@ -238,9 +237,9 @@ function _deleteStaged(token) {
 }
 
 function _sumStagedBytes() {
-  let sum = 0;
+  let sum = _retiringStagedBytes;
   for (const sessions of _allStagedSessions) {
-    for (const session of sessions.values()) sum += session.bytesWritten;
+    for (const session of sessions.values()) sum += session.bytesWritten + session.queuedBytes;
   }
   return sum;
 }
@@ -269,6 +268,7 @@ function createStagedSession({ name, size, webContentsId }) {
     size: typeof size === 'number' ? size : null,
     tmpPath,
     bytesWritten: 0,
+    queuedBytes: 0,
     webContentsId: webContentsId ?? null,
     createdAt: _now(),
     expiresAt: _now() + TOKEN_TTL_MS,
@@ -295,32 +295,32 @@ function _chunkToBuffer(chunk) {
 async function appendStagedChunk(token, chunk, webContentsId) {
   const session = _findStaged(token);
   if (!session) throw new Error('staged session not found');
-  if (_isExpired(session)) {
-    _deleteStaged(token);
-    throw new Error('staged session expired');
-  }
   if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId)
     throw new Error('staged session window mismatch');
-  if (_retainedSessions.has(token) || session.completing) throw new Error('staged session already completed');
-  if (_now() - session.createdAt >= MAX_STAGED_AGE_MS) {
-    _deleteStaged(token);
-    throw new Error('staged session lifetime exceeded');
+  const expired = _isExpired(session);
+  if (expired || _now() - session.createdAt >= MAX_STAGED_AGE_MS) {
+    await abortStagedSession(token, webContentsId);
+    throw new Error(expired ? 'staged session expired' : 'staged session lifetime exceeded');
   }
+  if (_retainedSessions.has(token) || session.completing) throw new Error('staged session already completed');
   const buf = _chunkToBuffer(chunk);
   if (buf.length === 0) throw new Error('empty chunk');
   if (buf.length > MAX_CHUNK_BYTES) throw new Error('chunk too large');
   const stagedBytes = _sumStagedBytes();
   if (stagedBytes + buf.length > MAX_STAGED_TOTAL_BYTES) throw new Error('staged uploads exceed global budget');
+  if (session.bytesWritten + session.queuedBytes + buf.length > MAX_STAGED_FILE_BYTES)
+    throw new Error('staged file exceeds 1 GiB');
+  session.queuedBytes += buf.length;
   const write = session.pendingWrite
-    .catch(() => {})
     .then(async () => {
-      if (session.bytesWritten + buf.length > MAX_STAGED_FILE_BYTES) throw new Error('staged file exceeds 1 GiB');
+      if (_findStaged(token) !== session) throw new Error('staged session cancelled');
       await _ensureStagedRoot();
       await fsp.appendFile(session.tmpPath, buf);
       session.bytesWritten += buf.length;
       session.expiresAt = _now() + TOKEN_TTL_MS;
       return { bytesWritten: session.bytesWritten };
-    });
+    })
+    .finally(() => { session.queuedBytes -= buf.length; });
   session.pendingWrite = write;
   return write;
 }
@@ -328,12 +328,12 @@ async function appendStagedChunk(token, chunk, webContentsId) {
 async function completeStagedSession(token, webContentsId) {
   const session = _findStaged(token);
   if (!session) throw new Error('staged session not found');
-  if (_isExpired(session)) {
-    _deleteStaged(token);
-    throw new Error('staged session expired');
-  }
   if (session.webContentsId !== null && webContentsId !== null && session.webContentsId !== webContentsId)
     throw new Error('staged session window mismatch');
+  if (_isExpired(session)) {
+    await abortStagedSession(token, webContentsId);
+    throw new Error('staged session expired');
+  }
   if (_retainedSessions.has(token) || session.completing) throw new Error('already completed');
   session.completing = true;
   try {
@@ -344,6 +344,7 @@ async function completeStagedSession(token, webContentsId) {
     } catch {
       throw new Error('staged file missing');
     }
+    if (_findStaged(token) !== session) throw new Error('staged session cancelled');
     if (!stat.isFile()) throw new Error('not a file');
     if (stat.size > MAX_STAGED_FILE_BYTES) throw new Error('staged file too large');
     const cap = createFileCapability({
@@ -356,6 +357,7 @@ async function completeStagedSession(token, webContentsId) {
     cap.staged = true;
     cap.stagedSessionToken = token;
     session.readToken = cap.token;
+    session.expiresAt = cap.expiresAt;
     _stagedSessions.delete(token);
     _retainedSessions.set(token, session);
     return cap;
@@ -371,17 +373,17 @@ async function abortStagedSession(token, webContentsId = null) {
     throw new Error('staged session window mismatch');
   _deleteStaged(token);
   if (session.readToken) _capabilities.delete(session.readToken);
+  const retiringBytes = session.bytesWritten + session.queuedBytes;
+  _retiringStagedBytes += retiringBytes;
+  await session.pendingWrite.catch(() => {});
   if (session.tmpPath) await fsp.rm(session.tmpPath, { force: true }).catch(() => {});
+  _retiringStagedBytes -= retiringBytes;
 }
 
 async function cleanupAllStaged() {
   _cleanupSweep();
   for (const sessions of _allStagedSessions) {
-    for (const v of sessions.values()) {
-      if (v.tmpPath) await fsp.rm(v.tmpPath, { force: true }).catch(() => {});
-      if (v.readToken) _capabilities.delete(v.readToken);
-    }
-    sessions.clear();
+    await Promise.all([...sessions.keys()].map((token) => abortStagedSession(token)));
   }
   if (_stagedRoot) await fsp.rm(_stagedRoot, { recursive: true, force: true }).catch(() => {});
   for (const [k, v] of _capabilities) {
@@ -464,7 +466,7 @@ function _assertNoRawAbsolutePaths(params, options = {}) {
       });
       return;
     }
-    if (!value || typeof value !== 'object') return;
+    if (!value || typeof value !== 'object' || ArrayBuffer.isView(value) || value instanceof ArrayBuffer) return;
     for (const [key, child] of Object.entries(value)) {
       const nextInherited =
         PATH_CONTAINER_KEYS.has(String(inheritedKey).toLowerCase()) &&

@@ -332,6 +332,11 @@ function _assertAllowedRawOutputPath(outRaw) {
   const { isAllowedReadPath } = require('./path-allowlist');
   try {
     const resolved = path.resolve(outRaw);
+    const parent = path.dirname(resolved);
+    const { isUnderAllowedWriteRoot } = require('./dialog-handlers');
+    if (!isUnderAllowedWriteRoot(resolved) && !isAllowedReadPath(resolved) && !isAllowedReadPath(parent)) {
+      throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
+    }
     let finalStat = null;
     try {
       finalStat = fs.lstatSync(resolved);
@@ -341,8 +346,7 @@ function _assertAllowedRawOutputPath(outRaw) {
     if (finalStat && finalStat.isSymbolicLink()) {
       throw new Error('symlink no permitido en ruta de salida');
     }
-    const dir = finalStat && finalStat.isDirectory() ? resolved : path.dirname(resolved);
-    const { isUnderAllowedWriteRoot } = require('./dialog-handlers');
+    const dir = finalStat && finalStat.isDirectory() ? resolved : parent;
     if (!isUnderAllowedWriteRoot(dir) && !isAllowedReadPath(resolved) && !isAllowedReadPath(dir)) {
       throw new Error('La ruta de salida no está permitida. Usa el diálogo de guardado.');
     }
@@ -371,6 +375,20 @@ function _assertAllowedRawOutputPath(outRaw) {
 
 function validateAndResolveWriteParams(params, win, method) {
   if (!params || typeof params !== 'object') return params;
+  if (method === 'preview' && typeof params.destino === 'string' && params.destino) {
+    const { _isUnderRegisteredWriteRoot } = require('./write-roots');
+    const { hasSymlinkAncestor } = require('./path-allowlist');
+    const destination = params.destino;
+    let allowed = false;
+    try {
+      allowed = path.isAbsolute(destination) && _isUnderRegisteredWriteRoot(destination) &&
+        !hasSymlinkAncestor(destination) && fs.lstatSync(destination).isDirectory();
+    } catch {}
+    if (!allowed) {
+      params = { ...params };
+      delete params.destino;
+    }
+  }
   if ('_resolved_output_path' in params || '_write_token' in params) {
     params = { ...params };
     delete params._resolved_output_path;
@@ -398,7 +416,13 @@ function validateAndResolveWriteParams(params, win, method) {
       throw new Error(`invalid output path for ${key}`);
     }
     if (!value.startsWith('antares-write_')) {
-      _assertAllowedRawOutputPath(value);
+      if (method === 'html_to_pdf' && key === 'outputPath') {
+        const { _sanitizeFilename } = require('./write-roots');
+        _assertAllowedRawOutputPath(path.join(path.dirname(value), _sanitizeFilename(path.basename(value))));
+      } else {
+        _assertAllowedRawOutputPath(method === 'db_template' && key === 'path' && !value.toLowerCase().endsWith('.xlsx')
+          ? `${value}.xlsx` : value);
+      }
       continue;
     }
     const { resolveCapability } = require('./file-capabilities');

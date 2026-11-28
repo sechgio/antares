@@ -1,6 +1,6 @@
 const { EventEmitter } = require('events');
 
-const { assert, finish } = require('./helpers/harness');
+const { assert, finish, waitFor } = require('./helpers/harness');
 const { loadIpcRouter } = require('./helpers/ipc-router');
 
 function makeProc(pid) {
@@ -64,6 +64,62 @@ async function getRejection(request) {
 
 async function run() {
   console.log('Testing IPC pending-request admission...\n');
+
+  {
+    const handlers = new Map();
+    const frame = { url: require('node:url').pathToFileURL(require('node:path').resolve('frontend/dist/index.html')).href };
+    const sender = { id: 1, mainFrame: frame };
+    const event = { sender, senderFrame: frame };
+    const fileDialogs = [];
+    const restartDialogs = [];
+    const router = loadIpcRouter({
+      electron: {
+        ipcMain: { handle: (name, listener) => handlers.set(name, listener) },
+        dialog: {
+          showOpenDialog: () => new Promise((resolve) => { fileDialogs.push(resolve); }),
+          showMessageBox: () => new Promise((resolve) => { restartDialogs.push(resolve); }),
+        },
+      },
+      windowManager: { getMainWindow: () => ({ webContents: sender }), getIsDev: () => false },
+      backend: {
+        getReadyDegraded: () => ({ degraded: false, failedHandlerModules: [] }),
+        getHealthStatus: () => ({}),
+        getLastError: () => ({ kind: 'error', message: 'Archivo C:/private/state.json', stderrTail: 'private diagnostics' }),
+        getStderrTail: () => 'private diagnostics',
+      },
+    });
+    router.registerIpcHandlers();
+    const ipc = (params) => handlers.get('ipc-call')(event, 'dialog_files', params);
+    let nested = {};
+    for (let i = 0; i < 70; i++) nested = { nested };
+    const invalid = ipc(nested);
+    const malformed = await getRejection(invalid);
+    assert(malformed?.message.includes('IPC payload is too complex') && fileDialogs.length === 0, 'deep input is rejected before native dispatch');
+    while (fileDialogs.length) fileDialogs.pop()({ canceled: true });
+    await invalid.catch(() => {});
+
+    const first = ipc({ title: 'x'.repeat(33 * 1024 * 1024) });
+    assert(await waitFor(() => fileDialogs.length === 1), 'ordinary object reached the native dialog');
+    const busy = ipc({ title: 'x'.repeat(33 * 1024 * 1024) });
+    const capacity = await getRejection(busy);
+    assert(capacity?.message.includes('ipc_pending_bytes_limit') && fileDialogs.length === 1,
+      'held native request uses the same byte admission limit');
+    while (fileDialogs.length) fileDialogs.pop()({ canceled: true });
+    await Promise.allSettled([first, busy]);
+    const next = ipc({});
+    assert(await waitFor(() => fileDialogs.length === 1), 'completion releases admission for another call');
+    while (fileDialogs.length) fileDialogs.pop()({ canceled: true });
+    await next;
+
+    const status = await handlers.get('backend-status')(event);
+    assert(!JSON.stringify(status).includes('private'), 'packaged status redacts nested diagnostics');
+    const restart = handlers.get('backend-restart')(event);
+    const competing = handlers.get('backend-restart')(event);
+    assert(restartDialogs.length === 1, 'only one restart confirmation is admitted');
+    while (restartDialogs.length) restartDialogs.pop()({ response: 1 });
+    assert((await competing).error === 'rate_limited', 'a second restart is rate limited');
+    assert((await restart).cancelled, 'dismissing the prompt cancels the restart');
+  }
 
   {
     const proc = makeProc(990);

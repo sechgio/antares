@@ -475,6 +475,26 @@ async function run() {
 
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-dialog-test-'));
   try {
+    const latePath = path.join(tempDir, 'late.pdf');
+    await handleDialogCall('dialog_save', {}, { showSaveDialog: async () => ({ filePath: latePath }) }, win);
+    _resetPdfRenderPool();
+    let onDestroyed;
+    const timedOut = new Promise((resolve) => { onDestroyed = resolve; });
+    class LateBrowserWindow extends DeferredBrowserWindow {
+      destroy() {
+        super.destroy();
+        onDestroyed(this);
+      }
+    }
+    const lateRender = handleDialogCall('html_to_pdf', {
+      html: '<html><body>Late</body></html>', filename: 'late.pdf', outputPath: latePath, timeoutMs: 500,
+    }, dialog, win, { BrowserWindow: LateBrowserWindow }).catch((err) => err);
+    const lateWindow = await Promise.race([timedOut, lateRender]);
+    assert(typeof lateWindow?.resolvePrint === 'function', 'the timeout destroys the window while printToPDF is pending');
+    lateWindow?.resolvePrint(Buffer.from('%PDF-late'));
+    assert(/Tiempo agotado/.test((await lateRender).message), 'the PDF request reports the timeout');
+    assert(!fs.existsSync(latePath), 'a late PDF reply does not create the selected file');
+
     const outputPath = path.join(tempDir, 'salida.pdf');
     await handleDialogCall(
       'dialog_save',
@@ -591,14 +611,20 @@ async function run() {
   try {
     assertSafeLocalPath(process.platform === 'win32' ? 'C:\\definitely-missing-antares-thumb-xyz.jpg' : '/tmp/definitely-missing-antares-thumb-xyz.jpg');
   } catch (err) {
-    rejectedMissing = /not a file/i.test(err.message);
+    rejectedMissing = /not allowed/i.test(err.message);
   }
-  assert(rejectedMissing, 'assertSafeLocalPath should reject non-existent files');
+  assert(rejectedMissing, 'assertSafeLocalPath denies unregistered paths before probing existence');
 
   const thumbTempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'antares-thumb-test-'));
   try {
     const imgPath = path.join(thumbTempDir, 'tiny.jpg');
     await fs.promises.writeFile(imgPath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+    const { createFileCapability } = require('../electron/file-capabilities');
+    const tokenWindow = { webContents: { id: 1 } };
+    const read = createFileCapability({ filePath: imgPath, mode: 'read', webContentsId: tokenWindow.webContents.id });
+    const image = await handleDialogCall('local_image_data_url', { file_token: read.token }, dialog, tokenWindow);
+    assert(image.result.dataUrl.startsWith('data:image/jpeg;') && !isAllowedReadPath(imgPath),
+      'a thumbnail read capability does not grant persistent access to its path');
 
     const thumbCap = createFileCapability({
       filePath: imgPath,

@@ -28,5 +28,13 @@ assert(
   'los mensajes sin rutas cruzan intactos',
 );
 
+const structured = router._toRendererIpcError(Object.assign(new Error('Recuperación'), {
+  details: { retryable: true, recovery: [{ path: 'C:/private/recovery.json' }, '\\\\host\\share\\recovery.json'] },
+}));
+const { details } = JSON.parse(structured.message.slice('ANTARES_IPC_ERROR:'.length));
+assert(details.retryable === true, 'structured flags are preserved');
+assert(details.recovery[0].path === '[ruta interna]' && details.recovery[1] === '[ruta interna]',
+  'nested error details redact drive and UNC paths');
+
 console.log(`\n${counters.passed} passed, ${counters.failed} failed`);
 finish();

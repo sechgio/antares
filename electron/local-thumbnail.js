@@ -301,12 +301,21 @@ async function _probeImageFileDimensions(filePath) {
   }
 }
 
-async function createLocalThumbnail(filePath, maxEdge, nativeImage) {
+function resolveImagePath(filePath, webContentsId) {
+  if (typeof filePath === 'string' && filePath.startsWith('antares-read_')) {
+    const { path: resolved } = require('./file-capabilities').resolveCapability(filePath, 'read', webContentsId);
+    if (require('./path-allowlist').hasSymlinkAncestor(resolved)) throw new Error('symbolic links not allowed');
+    return resolved;
+  }
+  return assertSafeLocalPath(filePath);
+}
+
+async function createLocalThumbnail(filePath, maxEdge, nativeImage, webContentsId = null) {
   if (!nativeImage) {
     throw new Error('nativeImage not available');
   }
 
-  const resolved = assertSafeLocalPath(filePath);
+  const resolved = resolveImagePath(filePath, webContentsId);
   const edge = clampMaxEdge(maxEdge);
 
   let st;
@@ -375,8 +384,8 @@ async function createLocalThumbnail(filePath, maxEdge, nativeImage) {
   throw new Error('unable to encode thumbnail');
 }
 
-async function createLocalImageDataUrl(filePath) {
-  const resolved = assertSafeLocalPath(filePath);
+async function createLocalImageDataUrl(filePath, webContentsId = null) {
+  const resolved = resolveImagePath(filePath, webContentsId);
   const ext = path.extname(resolved).toLowerCase();
   const mime = EXT_MIME[ext];
   if (!mime) {

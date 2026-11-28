@@ -296,7 +296,10 @@ def upsert_custom(config: JsonObject) -> JsonObject:
         "base_url": _validate_base_url(base_url),
         "model": _custom_text(config.get("model"), _CUSTOM_MODEL_MAX, "El modelo"),
     }
-    if config.get("remove_key") is True:
+    old_base = existing.get("base_url")
+    if config.get("remove_key") is True or (
+        isinstance(old_base, str) and _origin(old_base) != _origin(saved["base_url"])
+    ):
         saved.pop("api_key", None)
     api_key = config.get("api_key")
     if api_key is not None:
@@ -350,8 +353,10 @@ def _base_url(spec: JsonObject, config: JsonObject | None) -> str:
 
 
 def public_state(provider: str) -> JsonObject:
-    spec = get_provider(provider)
-    config = get_config(provider) or {}
+    return _public_state(provider, get_provider(provider), get_config(provider) or {})
+
+
+def _public_state(provider: str, spec: JsonObject, config: JsonObject) -> JsonObject:
     key = config.get("api_key")
     return {
         "provider": provider,
@@ -402,7 +407,8 @@ def _status_model_ids(models: list[object]) -> list[str]:
 
 def status(provider: str) -> JsonObject:
     spec = get_provider(provider)
-    state = public_state(provider)
+    config = get_config(provider) or {}
+    state = _public_state(provider, spec, config)
     out: JsonObject = {
         **state,
         "reachable": False,
@@ -424,7 +430,6 @@ def status(provider: str) -> JsonObject:
         str(key): str(value) for key, value in (auth.get("extra_headers") or {}).items()
     }
     if auth.get("type") == "api_key":
-        config = get_config(provider) or {}
         api_key = config.get("api_key")
         if not isinstance(api_key, str) or not api_key:
             out["error"] = "Falta la API key; guárdala primero"

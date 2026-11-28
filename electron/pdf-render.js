@@ -296,6 +296,7 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
       pageSize: 'A4',
       margins: { marginType: 'none' },
     });
+    if (timedOut) throw new Error('Tiempo agotado generando el PDF');
 
     if (params.canvas_manifest_b64) {
       pdfBuffer = await embedCanvasManifest(pdfBuffer, params.canvas_manifest_b64);
@@ -322,10 +323,28 @@ async function _renderHtmlToPdf(params = {}, electronModules = {}, slot, webCont
     }
 
     await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
-    if (typeof params.outputPath === 'string' && params.outputPath.trim()) {
-      _assertSafePdfOutputPath(outputPath);
+    if (timedOut) throw new Error('Tiempo agotado generando el PDF');
+    const requestedPath = typeof params.outputPath === 'string' && params.outputPath.trim();
+    if (requestedPath) _assertSafePdfOutputPath(outputPath);
+    const stagedPath = path.join(path.dirname(outputPath), `.antares-pdf-${crypto.randomUUID()}.tmp`);
+    const stagedFile = await fs.promises.open(stagedPath, 'wx');
+    try {
+      try {
+        if (timedOut) throw new Error('Tiempo agotado generando el PDF');
+        await stagedFile.writeFile(pdfBuffer);
+      } finally {
+        await stagedFile.close();
+      }
+      if (timedOut) throw new Error('Tiempo agotado generando el PDF');
+      if (requestedPath) {
+        _assertSafePdfOutputPath(outputPath);
+        electronModules.confirmPdfOutputPath?.(outputPath);
+      }
+      clearTimeout(timeoutHandle);
+      await fs.promises.rename(stagedPath, outputPath);
+    } finally {
+      await fs.promises.rm(stagedPath, { force: true }).catch(() => {});
     }
-    await fs.promises.writeFile(outputPath, pdfBuffer);
 
     const cap = createFileCapability({
       filePath: outputPath,

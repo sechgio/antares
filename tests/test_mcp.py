@@ -70,6 +70,18 @@ def test_add_and_list_servers(mcp_root):
     assert "secreto" not in json.dumps(listed)
 
 
+def test_reused_server_name_does_not_inherit_orphaned_credentials(mcp_root):
+    key = "dummy-credential"
+    old = mcp_servers.add_server("Fixture", "http", url="https://old.example.test/mcp")
+    mcp_servers.remove_server(old["id"])
+    vault.seal(f"mcp:{old['id']}", mcp_servers._secrets_path(old["id"]), {"headers": {"Authorization": key}})
+
+    replacement = mcp_servers.add_server("Fixture", "http", url="https://new.example.test/mcp")
+
+    assert replacement["id"] != old["id"]
+    assert replacement["secret_keys"] == []
+
+
 def test_agent_can_diagnose_a_failed_mcp_catalog_without_receiving_secrets(mcp_root, monkeypatch):
     from backend.core.agent import agent, agent_chat, agent_tools
 

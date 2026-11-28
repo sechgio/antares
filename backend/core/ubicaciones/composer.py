@@ -7,6 +7,7 @@ from typing import Any, cast
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from backend.core.ubicaciones.client import _is_na, _parse_combined_coord_value
+from backend.utils.atomic_write import atomic_output_file
 from backend.utils.validators import sanitizar_nombre
 
 logger = logging.getLogger(__name__)
@@ -405,7 +406,8 @@ def generar_imagen_ubicacion(
     try:
         rgb = final_img.convert("RGB")
         try:
-            rgb.save(output_path, "PDF", resolution=300.0)
+            with atomic_output_file(output_path, extension=None, overwrite=True, write_token=True) as target:
+                rgb.save(target.tmp_path, "PDF", resolution=300.0)
         finally:
             rgb.close()
     finally:

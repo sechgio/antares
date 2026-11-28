@@ -103,6 +103,18 @@ async function main() {
   }
 
   {
+    const session = createStagedSession({ name: 'cancelado.bin', size: 4, webContentsId: 1 });
+    const writing = appendStagedChunk(session.token, Buffer.from('data'), 1);
+    const written = Promise.allSettled([writing]);
+    const completing = completeStagedSession(session.token, 1);
+    const cancelledCompletion = assert.rejects(completing, /staged session (cancelled|not found)/);
+    await abortStagedSession(session.token, 1);
+    await written;
+    await cancelledCompletion;
+    assert.ok(!fs.existsSync(session.tmpPath), 'abort leaves no file even with a queued append');
+  }
+
+  {
     const owners = [];
     for (let i = 0; i < 4; i++) {
       const flight = createStagedSession({ name: `vuelo-${i}.bin`, size: 4, webContentsId: 7 });

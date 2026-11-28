@@ -7,6 +7,7 @@ const engine = require('./autoimg-sync-engine');
 const { sanitizeError, sanitizeErrorMessage, sanitizeErrorText, assertNoSecretInObject } = require('./autoimg-security');
 const { assertAllowedSheetRange } = require('./autoimg-sheet-ranges');
 const { emit } = require('./autoimg-notify');
+const { runLocked } = require('./autoimg-operations');
 
 async function handleAutoimgCall(method, params = {}) {
   if (!AUTOIMG_METHODS.has(method)) return { handled: false };
@@ -65,21 +66,22 @@ async function handleAutoimgCall(method, params = {}) {
       case 'autoimg_sheets_auth_revoke':
         return { handled: true, result: await sheets.revokeAuth() };
 
-      case 'autoimg_sheets_open': {
-        const result = await sheets.openSpreadsheet(params.sheet_id || params.url || '');
-        let persistence = { persisted: true };
-        if (result?.sheet_id) {
-          persistence = await engine.persistSheetIdConfig(result.sheet_id);
-        }
-        return {
-          handled: true,
-          result: {
-            ...result,
-            config_persisted: persistence.persisted,
-            ...(persistence.error ? { config_error: sanitizeErrorMessage(persistence.error) } : {}),
-          },
-        };
-      }
+      case 'autoimg_sheets_open':
+        return await runLocked('sheet_open', async () => {
+          const result = await sheets.openSpreadsheet(params.sheet_id || params.url || '');
+          let persistence = { persisted: true };
+          if (result?.sheet_id) {
+            persistence = await engine.persistSheetIdConfig(result.sheet_id);
+          }
+          return {
+            handled: true,
+            result: {
+              ...result,
+              config_persisted: persistence.persisted,
+              ...(persistence.error ? { config_error: sanitizeErrorMessage(persistence.error) } : {}),
+            },
+          };
+        });
 
       case 'autoimg_sheets_get_config':
         return { handled: true, result: await sheets.restorePersistedSheet() };

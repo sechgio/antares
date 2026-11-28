@@ -11,17 +11,13 @@ function ipcTempDirs() {
   return TEMP_DIR_NAMES.map((name) => path.join(os.tmpdir(), name));
 }
 
-function isUnderDir(filePath, dir) {
-  const resolved = path.resolve(filePath);
-  const root = path.resolve(dir);
-  return resolved === root || resolved.startsWith(root + path.sep);
-}
-
 async function cleanupSpreadsheetSpillFile(filePath) {
   if (typeof filePath !== 'string' || !filePath) return;
   const spillRoot = path.join(os.tmpdir(), 'antares-spreadsheet-results');
-  if (!isUnderDir(filePath, spillRoot)) return;
-  await fsp.rm(filePath, { force: true }).catch(() => {});
+  if (path.dirname(path.resolve(filePath)) !== path.resolve(spillRoot)) return;
+  try {
+    if ((await fsp.lstat(spillRoot)).isDirectory()) await fsp.rm(filePath, { force: true });
+  } catch {}
 }
 
 async function _sweepIpcTempDirsOnce(nowMs) {
@@ -29,6 +25,7 @@ async function _sweepIpcTempDirsOnce(nowMs) {
   for (const dir of ipcTempDirs()) {
     let entries;
     try {
+      if (!(await fsp.lstat(dir)).isDirectory()) continue;
       entries = await fsp.readdir(dir, { withFileTypes: true });
     } catch {
       continue;

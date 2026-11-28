@@ -176,6 +176,46 @@ async function run() {
 
   console.log('\nTesting mid-flight retry idempotency...\n');
   {
+    const proc = makeFakeProc(1701);
+    let writes = 0;
+    let waits = 0;
+    const router = loadIpcRouter({
+      currentProc: { ref: proc },
+      waitForReady: async () => { waits += 1; return true; },
+    });
+    proc.stdin.write = (line) => {
+      writes += 1;
+      const { id } = JSON.parse(line);
+      queueMicrotask(() => proc.stdout.emit('data', Buffer.from(JSON.stringify({
+        jsonrpc: '2.0', id, error: { message: 'Backend process not available', code: -32602 },
+      }) + '\n')));
+      return true;
+    };
+    await router._callBackend('version', {}).then(
+      () => assert(false, 'backend error must reject'),
+      (err) => assert(err.code === -32602, 'backend error code survives the transport'),
+    );
+    assert(writes === 1 && waits === 0, 'backend error text cannot initiate a retry');
+  }
+
+  {
+    const oldProcess = makeFakeProc(1702);
+    const newProcess = makeFakeProc(1703);
+    const currentProc = { ref: oldProcess };
+    const router = loadIpcRouter({ currentProc });
+    router._ensureListeners();
+    currentProc.ref = newProcess;
+    let request;
+    newProcess.stdin.write = (line) => { request = JSON.parse(line); return true; };
+    const result = router._sendRequest('version', {});
+    const respond = (proc, value) => proc.stdout.emit('data', Buffer.from(JSON.stringify({
+      jsonrpc: '2.0', id: request.id, result: value,
+    }) + '\n'));
+    respond(oldProcess, 'stale');
+    respond(newProcess, 'current');
+    assert(await result === 'current', 'a response can settle only a request sent to that process');
+  }
+  {
     const currentProc = { ref: null };
     const { _isIdempotentMethod } = loadIpcRouter({
       currentProc,
