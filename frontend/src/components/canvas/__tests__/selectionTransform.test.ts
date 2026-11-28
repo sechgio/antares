@@ -5,6 +5,7 @@ import { MM_TO_PX } from '../ops/drawHelpers';
 import { createGuide } from '../ops/guides';
 import {
   constrainMoveToAxis,
+  prepareSnapPlan,
   isPointerClick,
   layersInMarquee,
   moveSelection,
@@ -387,4 +388,73 @@ describe('selectionTransform', () => {
     expect(resized.cssVars['--border-width']).toBe('2px');
     expect(resized.meta?.path?.points[1].x).toBeCloseTo(120, 5);
   });
+  it('snapMoveWithGuides with a prepared plan matches the unplanned result', () => {
+    const page = { widthMm: 210, heightMm: 297 };
+    const guides = [createGuide('x', 30), createGuide('y', 40)];
+    let seed = 7;
+    const rand = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    for (let scenario = 0; scenario < 25; scenario++) {
+      const layers = Array.from({ length: 12 }, (_, i) =>
+        createLayer(i === 3 ? 'group' : 'rect', {
+          id: `s${scenario}-l${i}`,
+          cssVars: {
+            '--translate-x': `${Math.round(rand() * 180)}mm`,
+            '--translate-y': `${Math.round(rand() * 260)}mm`,
+            '--width': `${5 + Math.round(rand() * 30)}mm`,
+            '--height': `${5 + Math.round(rand() * 30)}mm`,
+            ...(i === 5 ? { '--rotate': '30deg' } : {}),
+          },
+          visible: i === 8 ? false : undefined,
+          locked: i === 9 ? true : undefined,
+          parentId: i > 3 && i < 7 ? `s${scenario}-l3` : undefined,
+        }),
+      );
+      const moveIds = [`s${scenario}-l0`, `s${scenario}-l3`];
+      const plan = prepareSnapPlan(layers, moveIds, page, guides, 5);
+      for (const [dx, dy] of [[-17.7, 0], [3.2, -8.4], [0, 0], [11.9, 22.6]]) {
+        const expected = snapMoveWithGuides(layers, moveIds, dx, dy, page, 0.5, guides, undefined, 5);
+        const actual = snapMoveWithGuides(layers, moveIds, dx, dy, page, 0.5, guides, undefined, 5, plan);
+        expect(actual).toStrictEqual(expected);
+      }
+    }
+  });
+
+  it('snapResizeBox with a prepared plan matches the unplanned result', () => {
+    const page = { widthMm: 210, heightMm: 297 };
+    let seed = 13;
+    const rand = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    for (let scenario = 0; scenario < 25; scenario++) {
+      const layers = Array.from({ length: 10 }, (_, i) =>
+        createLayer('rect', {
+          id: `r${scenario}-l${i}`,
+          cssVars: {
+            '--translate-x': `${Math.round(rand() * 180)}mm`,
+            '--translate-y': `${Math.round(rand() * 260)}mm`,
+            '--width': `${5 + Math.round(rand() * 30)}mm`,
+            '--height': `${5 + Math.round(rand() * 30)}mm`,
+            ...(i === 4 ? { '--rotate': '45deg' } : {}),
+          },
+          visible: i === 6 ? false : undefined,
+        }),
+      );
+      const ids = [`r${scenario}-l0`];
+      const plan = prepareSnapPlan(layers, ids, page);
+      for (const box of [
+        { x: 20, y: 20, w: 30, h: 20 },
+        { x: 99.6, y: 100, w: 40, h: 30 },
+        { x: 0, y: 0, w: 10, h: 10 },
+      ]) {
+        const expected = snapResizeBox(layers, ids, box, page, 0.5);
+        const actual = snapResizeBox(layers, ids, box, page, 0.5, [], undefined, 0, plan);
+        expect(actual).toStrictEqual(expected);
+      }
+    }
+  });
+
 });

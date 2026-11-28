@@ -2,36 +2,97 @@ import { expandWithDescendants } from './layerTree';
 import { layerGeometry } from './layerGeometry';
 import type { CanvasLayer } from '../types';
 
-const layerElCache = new WeakMap<HTMLElement, Map<string, HTMLElement>>();
-
-function findLayerEl(root: HTMLElement, id: string): HTMLElement | null {
-  let cache = layerElCache.get(root);
-  if (!cache) {
-    cache = new Map();
-    layerElCache.set(root, cache);
-  }
-  const cached = cache.get(id);
-  if (cached && root.contains(cached) && cached.dataset.layerId === id) return cached;
-  const el = root.querySelector<HTMLElement>(`[data-layer-id="${id}"]`);
-  if (el) cache.set(id, el);
-  else cache.delete(id);
-  return el;
+export interface GestureDomPlane {
+  root: HTMLElement;
+  ids: string[];
+  indices: number[];
+  els: (HTMLElement | null)[];
 }
 
-function forGestureLayerEls(
+function queryLayerEl(root: HTMLElement, id: string): HTMLElement | null {
+  return root.querySelector<HTMLElement>(`[data-layer-id="${id}"]`);
+}
+
+export function prepareGestureDomPlane(
   root: HTMLElement,
   layers: CanvasLayer[],
   ids: string[],
-  visit: (el: HTMLElement, layer: CanvasLayer) => void,
-): void {
+): GestureDomPlane {
   const idSet = new Set(expandWithDescendants(layers, ids));
-  const byId = new Map(layers.map((l) => [l.id, l]));
-  for (const id of idSet) {
-    const layer = byId.get(id);
-    if (!layer || layer.type === 'frame') continue;
-    const el = findLayerEl(root, id);
+  const plane: GestureDomPlane = { root, ids: [], indices: [], els: [] };
+  for (let i = 0; i < layers.length; i++) {
+    const layer = layers[i]!;
+    if (!idSet.has(layer.id) || layer.type === 'frame') continue;
+    plane.ids.push(layer.id);
+    plane.indices.push(i);
+    plane.els.push(queryLayerEl(root, layer.id));
+  }
+  return plane;
+}
+
+function resolvePlaneEl(plane: GestureDomPlane, slot: number): HTMLElement | null {
+  const id = plane.ids[slot]!;
+  const current = plane.els[slot];
+  if (current && current.dataset.layerId === id && plane.root.contains(current)) return current;
+  const el = queryLayerEl(plane.root, id);
+  plane.els[slot] = el;
+  return el;
+}
+
+function planeLayerAt(plane: GestureDomPlane, layers: CanvasLayer[], slot: number): CanvasLayer | null {
+  const layer = layers[plane.indices[slot]!];
+  if (layer && layer.id === plane.ids[slot]) return layer;
+  return null;
+}
+
+export function applyPlaneDomTransforms(
+  plane: GestureDomPlane,
+  layers: CanvasLayer[],
+  options?: { scale?: number; willChange?: boolean },
+): void {
+  const scale = options?.scale ?? 1;
+  const willChange = options?.willChange ?? true;
+  for (let slot = 0; slot < plane.ids.length; slot++) {
+    const layer = planeLayerAt(plane, layers, slot);
+    if (!layer) continue;
+    const el = resolvePlaneEl(plane, slot);
     if (!el) continue;
-    visit(el, layer);
+    const g = layerGeometry(layer, scale);
+    el.style.transform = g.transform;
+    if (g.transformOrigin) el.style.transformOrigin = g.transformOrigin;
+    if (willChange) el.style.willChange = 'transform';
+  }
+}
+
+export function applyPlaneDomGeometry(
+  plane: GestureDomPlane,
+  layers: CanvasLayer[],
+  options?: { scale?: number; willChange?: boolean },
+): void {
+  const scale = options?.scale ?? 1;
+  const willChange = options?.willChange ?? true;
+  for (let slot = 0; slot < plane.ids.length; slot++) {
+    const layer = planeLayerAt(plane, layers, slot);
+    if (!layer) continue;
+    const el = resolvePlaneEl(plane, slot);
+    if (!el) continue;
+    const g = layerGeometry(layer, scale);
+    el.style.transform = g.transform;
+    if (g.transformOrigin) el.style.transformOrigin = g.transformOrigin;
+    const nextW = `${g.widthPx}px`;
+    if (el.style.width !== nextW) el.style.width = nextW;
+    const nextH = `${g.heightPx}px`;
+    if (el.style.height !== nextH) el.style.height = nextH;
+    if (willChange) el.style.willChange = 'transform';
+  }
+}
+
+export function clearPlaneDomGestureStyles(plane: GestureDomPlane): void {
+  for (let slot = 0; slot < plane.ids.length; slot++) {
+    const el = plane.els[slot];
+    if (!el || !plane.root.contains(el)) continue;
+    el.style.willChange = '';
+    if (el.style.transformOrigin) el.style.transformOrigin = '';
   }
 }
 
@@ -41,14 +102,7 @@ export function applyLayerDomTransforms(
   ids: string[],
   options?: { scale?: number; willChange?: boolean },
 ): void {
-  const scale = options?.scale ?? 1;
-  const willChange = options?.willChange ?? true;
-  forGestureLayerEls(root, layers, ids, (el, layer) => {
-    const g = layerGeometry(layer, scale);
-    el.style.transform = g.transform;
-    if (g.transformOrigin) el.style.transformOrigin = g.transformOrigin;
-    if (willChange) el.style.willChange = 'transform';
-  });
+  applyPlaneDomTransforms(prepareGestureDomPlane(root, layers, ids), layers, options);
 }
 
 export function applyLayerDomGeometry(
@@ -57,18 +111,7 @@ export function applyLayerDomGeometry(
   ids: string[],
   options?: { scale?: number; willChange?: boolean },
 ): void {
-  const scale = options?.scale ?? 1;
-  const willChange = options?.willChange ?? true;
-  forGestureLayerEls(root, layers, ids, (el, layer) => {
-    const g = layerGeometry(layer, scale);
-    el.style.transform = g.transform;
-    if (g.transformOrigin) el.style.transformOrigin = g.transformOrigin;
-    const nextW = `${g.widthPx}px`;
-    if (el.style.width !== nextW) el.style.width = nextW;
-    const nextH = `${g.heightPx}px`;
-    if (el.style.height !== nextH) el.style.height = nextH;
-    if (willChange) el.style.willChange = 'transform';
-  });
+  applyPlaneDomGeometry(prepareGestureDomPlane(root, layers, ids), layers, options);
 }
 
 export function clearLayerDomGestureStyles(
@@ -76,11 +119,7 @@ export function clearLayerDomGestureStyles(
   layers: CanvasLayer[],
   ids: string[],
 ): void {
-  forGestureLayerEls(root, layers, ids, (el) => {
-    el.style.willChange = '';
-    if (el.style.transformOrigin) el.style.transformOrigin = '';
-  });
-  layerElCache.delete(root);
+  clearPlaneDomGestureStyles(prepareGestureDomPlane(root, layers, ids));
 }
 
 export function setCanvasGestureActive(active: boolean): void {

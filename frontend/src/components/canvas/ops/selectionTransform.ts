@@ -546,6 +546,72 @@ export function prepareSnapRails(
 
 const GUIDE_SPAN_EPS_MM = 0.01;
 
+export interface SnapPlan {
+  rails: SnapRails;
+  bounds: RectMm | null;
+  xEdges: Float64Array;
+  xSpanFrom: Float64Array;
+  xSpanTo: Float64Array;
+  yEdges: Float64Array;
+  ySpanFrom: Float64Array;
+  ySpanTo: Float64Array;
+}
+
+export function prepareSnapPlan(
+  layers: CanvasLayer[],
+  ids: string[],
+  page: { widthMm: number; heightMm: number },
+  manualGuides: CanvasGuide[] = [],
+  pageMarginMm = 0,
+): SnapPlan {
+  const exclude = new Set(expandWithDescendants(layers, ids));
+  const xEdges: number[] = [];
+  const xSpanFrom: number[] = [];
+  const xSpanTo: number[] = [];
+  const yEdges: number[] = [];
+  const ySpanFrom: number[] = [];
+  const ySpanTo: number[] = [];
+  for (const layer of layers) {
+    if (exclude.has(layer.id) || !isTransformable(layer)) continue;
+    const b = layerBounds(layer);
+    xEdges.push(b.x, b.cx, b.right);
+    xSpanFrom.push(b.y);
+    xSpanTo.push(b.bottom);
+    yEdges.push(b.y, b.cy, b.bottom);
+    ySpanFrom.push(b.x);
+    ySpanTo.push(b.right);
+  }
+  return {
+    rails: guidePositionsCached(layers, exclude, page, manualGuides, pageMarginMm),
+    bounds: selectionBounds(layers, ids),
+    xEdges: Float64Array.from(xEdges),
+    xSpanFrom: Float64Array.from(xSpanFrom),
+    xSpanTo: Float64Array.from(xSpanTo),
+    yEdges: Float64Array.from(yEdges),
+    ySpanFrom: Float64Array.from(ySpanFrom),
+    ySpanTo: Float64Array.from(ySpanTo),
+  };
+}
+
+function alignedGuideSpanFlat(
+  edges: Float64Array,
+  spanFrom: Float64Array,
+  spanTo: Float64Array,
+  pos: number,
+  span: { from: number; to: number },
+): Pick<SmartGuide, 'from' | 'to'> {
+  let { from, to } = span;
+  let aligned = false;
+  for (let i = 0; i < edges.length; i++) {
+    if (Math.abs(edges[i]! - pos) > GUIDE_SPAN_EPS_MM) continue;
+    const layerIndex = (i / 3) | 0;
+    aligned = true;
+    if (spanFrom[layerIndex]! < from) from = spanFrom[layerIndex]!;
+    if (spanTo[layerIndex]! > to) to = spanTo[layerIndex]!;
+  }
+  return aligned ? { from, to } : {};
+}
+
 function alignedGuideSpan(
   layers: CanvasLayer[],
   ids: string[],
@@ -581,11 +647,12 @@ export function snapMoveWithGuides(
   manualGuides: CanvasGuide[] = [],
   rails?: SnapRails,
   pageMarginMm = 0,
+  plan?: SnapPlan,
 ): { dx: number; dy: number; guides: SmartGuide[] } {
-  const bounds = selectionBounds(layers, ids);
+  const bounds = plan ? plan.bounds : selectionBounds(layers, ids);
   if (!bounds) return { dx: dxMm, dy: dyMm, guides: [] };
 
-  const { xs, ys } = rails ?? prepareSnapRails(layers, ids, page, manualGuides, pageMarginMm);
+  const { xs, ys } = rails ?? plan?.rails ?? prepareSnapRails(layers, ids, page, manualGuides, pageMarginMm);
 
   const edgesX = [
     { kind: 'left' as const, pos: bounds.x + dxMm },
@@ -630,11 +697,17 @@ export function snapMoveWithGuides(
   const guides: SmartGuide[] = [];
   if (guideX != null) {
     const span = { from: bounds.y + bestDy, to: bounds.y + bounds.h + bestDy };
-    guides.push({ axis: 'x', pos: guideX, ...alignedGuideSpan(layers, ids, 'x', guideX, span) });
+    const spanHit = plan
+      ? alignedGuideSpanFlat(plan.xEdges, plan.xSpanFrom, plan.xSpanTo, guideX, span)
+      : alignedGuideSpan(layers, ids, 'x', guideX, span);
+    guides.push({ axis: 'x', pos: guideX, ...spanHit });
   }
   if (guideY != null) {
     const span = { from: bounds.x + bestDx, to: bounds.x + bounds.w + bestDx };
-    guides.push({ axis: 'y', pos: guideY, ...alignedGuideSpan(layers, ids, 'y', guideY, span) });
+    const spanHit = plan
+      ? alignedGuideSpanFlat(plan.yEdges, plan.ySpanFrom, plan.ySpanTo, guideY, span)
+      : alignedGuideSpan(layers, ids, 'y', guideY, span);
+    guides.push({ axis: 'y', pos: guideY, ...spanHit });
   }
   return { dx: bestDx, dy: bestDy, guides };
 }
@@ -648,8 +721,9 @@ export function snapResizeBox(
   manualGuides: CanvasGuide[] = [],
   rails?: SnapRails,
   pageMarginMm = 0,
+  plan?: SnapPlan,
 ): { box: RectMm; guides: SmartGuide[] } {
-  const { xs, ys } = rails ?? prepareSnapRails(layers, ids, page, manualGuides, pageMarginMm);
+  const { xs, ys } = rails ?? plan?.rails ?? prepareSnapRails(layers, ids, page, manualGuides, pageMarginMm);
 
   let { x, y, w, h } = box;
   let guideX: number | null = null;
@@ -698,10 +772,16 @@ export function snapResizeBox(
 
   const guides: SmartGuide[] = [];
   if (guideX != null) {
-    guides.push({ axis: 'x', pos: guideX, ...alignedGuideSpan(layers, ids, 'x', guideX, { from: y, to: y + h }) });
+    const spanHit = plan
+      ? alignedGuideSpanFlat(plan.xEdges, plan.xSpanFrom, plan.xSpanTo, guideX, { from: y, to: y + h })
+      : alignedGuideSpan(layers, ids, 'x', guideX, { from: y, to: y + h });
+    guides.push({ axis: 'x', pos: guideX, ...spanHit });
   }
   if (guideY != null) {
-    guides.push({ axis: 'y', pos: guideY, ...alignedGuideSpan(layers, ids, 'y', guideY, { from: x, to: x + w }) });
+    const spanHit = plan
+      ? alignedGuideSpanFlat(plan.yEdges, plan.ySpanFrom, plan.ySpanTo, guideY, { from: x, to: x + w })
+      : alignedGuideSpan(layers, ids, 'y', guideY, { from: x, to: x + w });
+    guides.push({ axis: 'y', pos: guideY, ...spanHit });
   }
   return { box: { x, y, w, h }, guides };
 }
